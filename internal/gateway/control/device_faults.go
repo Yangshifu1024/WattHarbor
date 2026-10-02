@@ -1,7 +1,6 @@
 package control
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -10,6 +9,8 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 )
 
 // registerDeviceFaults 把 device_event 故障证据暴露给 central 的告警同步：
@@ -22,12 +23,7 @@ func (a TelemetryAPI) registerDeviceFaults(r *gin.Engine) {
 }
 
 // deviceFaultReport 是一条未处理的 dc589 故障事件，载荷为原始 event_json。
-type deviceFaultReport struct {
-	ID         uint64    `json:"id"`
-	EventKey   string    `json:"event_key"`
-	ReceivedAt time.Time `json:"received_at"`
-	Payload    string    `json:"payload"`
-}
+type deviceFaultReport = store.DeviceFaultEvent
 
 // deviceFaults 按 id 升序返回未处理故障，limit 1–100，默认 100。
 func (a TelemetryAPI) deviceFaults(c *gin.Context) {
@@ -43,11 +39,8 @@ func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 		}
 		limit = parsed
 	}
-	var reports []deviceFaultReport
-	if err := a.DB.WithContext(c.Request.Context()).Table("device_event").
-		Select("id, event_key, received_at, event_json AS payload").
-		Where("event_type = 'fault' AND protocol_name = 'dc589' AND processed_at IS NULL").
-		Order("id").Limit(limit).Find(&reports).Error; err != nil {
+	reports, err := store.ListUnprocessedFaults(c.Request.Context(), a.DB, limit)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "故障事件暂不可读取", nil)
 		return
 	}
@@ -72,18 +65,9 @@ func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 	}
 	marked := int64(0)
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var rows []struct{ ID uint64 }
-		if err := tx.Table("device_event").Select("id").
-			Where("id IN ? AND processed_at IS NULL", body.IDs).Find(&rows).Error; err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return nil
-		}
-		result := tx.Table("device_event").Where("id IN ? AND processed_at IS NULL", body.IDs).
-			Update("processed_at", gorm.Expr("UTC_TIMESTAMP(3)"))
-		marked = result.RowsAffected
-		return result.Error
+		count, err := store.MarkEventsProcessed(tx, body.IDs)
+		marked = count
+		return err
 	})
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "处理标记暂不可写", nil)
@@ -111,31 +95,20 @@ func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 		return
 	}
 	if key := c.Query("after_key"); key != "" {
-		var source struct {
-			ReceivedAt time.Time `gorm:"column:received_at"`
-		}
-		found := a.DB.WithContext(c.Request.Context()).Table("device_event").
-			Select("received_at").Where("device_id = ? AND event_key = ?", device, key).Take(&source)
-		if found.Error != nil {
-			if errors.Is(found.Error, gorm.ErrRecordNotFound) {
+		receivedAt, found := store.FindEventReceivedAt(c.Request.Context(), a.DB, device, key)
+		if found != nil {
+			if errors.Is(found, gorm.ErrRecordNotFound) {
 				httpapi.OK(c, gin.H{"found": false})
 				return
 			}
 			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "心跳证据暂不可读取", nil)
 			return
 		}
-		after = source.ReceivedAt
+		after = receivedAt
 	}
-	var row struct {
-		ReceivedAt time.Time       `gorm:"column:received_at"`
-		Payload    json.RawMessage `gorm:"column:event_json"`
-	}
-	found := a.DB.WithContext(c.Request.Context()).Table("device_event").
-		Select("received_at, event_json").
-		Where("device_id = ? AND protocol_name = 'dc589' AND event_type = 'heartbeat' AND received_at > ?", device, after.UTC()).
-		Order("received_at DESC, id DESC").Take(&row)
-	if found.Error != nil {
-		if errors.Is(found.Error, gorm.ErrRecordNotFound) {
+	row, err := store.LatestHeartbeatAfter(c.Request.Context(), a.DB, device, after.UTC())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.OK(c, gin.H{"found": false})
 			return
 		}
