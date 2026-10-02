@@ -2,6 +2,8 @@ package admin
 
 import (
 	"encoding/json"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"testing"
 )
 
@@ -11,10 +13,10 @@ func TestPublicUserIDsRemainExactDecimalStrings(t *testing.T) {
 		value any
 		key   string
 	}{
-		{ChargeUserRow{ID: id, InviterID: &id}, "id"},
-		{ChargeUserRow{ID: id, InviterID: &id}, "inviter_id"},
+		{database.ChargeUserRow{ID: id, InviterID: &id}, "id"},
+		{database.ChargeUserRow{ID: id, InviterID: &id}, "inviter_id"},
 		{OrderView{UserID: id}, "user_id"},
-		{PaymentOrderView{UserID: id}, "user_id"},
+		{orderstore.PaymentOrderView{UserID: id}, "user_id"},
 	} {
 		raw, err := json.Marshal(tc.value)
 		if err != nil {

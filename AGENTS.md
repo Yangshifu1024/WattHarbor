@@ -102,6 +102,8 @@ charge-pilot/
 │   │   │   ├── device_repository.go            device_meta / device_import
 │   │   │   ├── device_store.go                设备模型、资料编辑与分页查询
 │   │   │   ├── device_import_store.go         批量导入任务与设备清单 DTO
+│   │   │   ├── charge_user_store.go           user 读模型与用户档案查询
+│   │   │   ├── payment_order_view.go          支付单列表投影与分页查询
 │   │   │   ├── metering_store.go             设备计费方式与导入校验取数
 │   │   │   ├── scheme_target_store.go         方案下发前的设备能力校验
 │   │   │   ├── pricing_scope_store.go        计费模板行与规则作用域
