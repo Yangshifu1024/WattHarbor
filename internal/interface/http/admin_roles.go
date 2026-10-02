@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // 本文件实现角色管理与权限字典查询。
@@ -31,14 +31,8 @@ type RoleRow struct {
 	UserCount   int64    `json:"user_count"`           // 仍挂在这个角色上的未删除账号数，大于 0 时不允许删除该角色
 }
 
-// PermissionRow 是权限字典的一行，角色编辑器勾选权限时读的就是这张表。
-type PermissionRow struct {
-	ID          uint64 `json:"id"`          // 权限主键
-	Code        string `json:"code"`        // 权限编码，路由 Auth.Require(perm) 用的就是它
-	Name        string `json:"name"`        // 权限中文名，前端按模块分组展示
-	Module      string `json:"module"`      // 所属模块，如 alert、pricing、webhook
-	Description string `json:"description"` // 权限说明，库中为 NULL 时由 SQL 补空串
-}
+// PermissionRow 是权限字典的一行，定义在持久化层。
+type PermissionRow = database.PermissionRow
 
 // registerRoles 挂载角色与权限字典的接口：角色增删改查，权限字典只读。
 func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
@@ -55,46 +49,23 @@ func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
 // 的这些角色合起来持有的权限编码（去重）。被软
 // 删除的角色不参与：删掉的角色不该继续给人授权。
 func (a AdminAccounts) permissionCodesFor(ctx context.Context, codes ...string) ([]string, error) {
-	var result []string
-	err := a.DB.WithContext(ctx).Table("permission AS p").
-		Joins("JOIN role_permission rp ON rp.permission_id = p.id").
-		Joins("JOIN role r ON r.id = rp.role_id AND r.deleted_at IS NULL").
-		Where("r.code IN ?", codes).Distinct("p.code").Pluck("p.code", &result).Error
-	return operations.WithoutRetiredPermissions(result), err
+	return (database.RoleStore{DB: a.DB}).PermissionCodesForRoles(ctx, codes...)
 }
 
 // listRoles 按 ID 升序返回未删除角色，附带权限编码及关联账号数。
 func (a AdminAccounts) listRoles(c *gin.Context) {
-	var rows []RoleRow
-	if err := a.DB.WithContext(c.Request.Context()).Table("role AS r").
-		Where("r.deleted_at IS NULL").Order("r.id").Find(&rows).Error; err != nil {
+	rows, err := (database.RoleStore{DB: a.DB}).ListRoles(c.Request.Context())
+	if err != nil {
 		AdminResourceFailure(c, err)
 		return
-	}
-	for i := range rows {
-		var codes []string
-		if err := a.DB.WithContext(c.Request.Context()).Table("permission AS p").
-			Joins("JOIN role_permission rp ON rp.permission_id = p.id").
-			Where("rp.role_id = ?", rows[i].ID).Order("p.code").Pluck("p.code", &codes).Error; err != nil {
-			AdminResourceFailure(c, err)
-			return
-		}
-		rows[i].Permissions = operations.WithoutRetiredPermissions(codes)
-		if err := a.DB.WithContext(c.Request.Context()).Table("admin_user").
-			Where("role_id = ? AND deleted_at IS NULL", rows[i].ID).Count(&rows[i].UserCount).Error; err != nil {
-			AdminResourceFailure(c, err)
-			return
-		}
 	}
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
 // listPermissions 按模块、编码排序返回权限列表，分组由前端处理。
 func (a AdminAccounts) listPermissions(c *gin.Context) {
-	rows := []PermissionRow{}
-	if err := a.DB.WithContext(c.Request.Context()).Table("permission").
-		Select("id, code, name, CASE WHEN code LIKE 'feedback.%' THEN 'device' ELSE module END AS module, COALESCE(description, '') AS description").
-		Order("module, code").Find(&rows).Error; err != nil {
+	rows, err := (database.RoleStore{DB: a.DB}).ListPermissions(c.Request.Context())
+	if err != nil {
 		AdminResourceFailure(c, err)
 		return
 	}
@@ -165,15 +136,12 @@ func (a AdminAccounts) createRole(c *gin.Context) {
 	var id uint64
 	var auditPending []AuditEntry
 	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		if err := tx.Table("role").Create(map[string]any{
-			"code": in.Code, "name": in.Name, "description": in.Description, "is_builtin": false,
-		}).Error; err != nil {
+		created, err := (database.RoleStore{DB: tx}).InsertRole(tx, in.Code, in.Name, in.Description)
+		if err != nil {
 			return err
 		}
-		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
-			return err
-		}
-		if err := replaceRolePermissions(tx, id, in.Permissions); err != nil {
+		id = created
+		if err := database.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
 			return err
 		}
 		auditPending = []AuditEntry{{Action: "create", Target: "role", ID: id, Before: nil, After: in, RequestID: ""}}
@@ -207,9 +175,9 @@ func (a AdminAccounts) updateRole(c *gin.Context) {
 		httpapi.BadRequest(c, "角色无效：只能从自己已持有的权限中选择")
 		return
 	}
-	var before RoleRow
-	if err := a.DB.WithContext(c.Request.Context()).Table("role").
-		Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+	store := database.RoleStore{DB: a.DB}
+	before, err := store.FindRole(c.Request.Context(), a.DB, id)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.Write(c, http.StatusNotFound, 1004, "角色不存在", nil)
 			return
@@ -220,18 +188,12 @@ func (a AdminAccounts) updateRole(c *gin.Context) {
 	// 内置角色仅允许修改名称和说明，其权限集合固定，避免破坏基础管理权限。
 	var auditPending []AuditEntry
 	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		if before.IsBuiltin {
-			if err := tx.Table("role").Where("id = ?", id).
-				Updates(map[string]any{"name": in.Name, "description": in.Description}).Error; err != nil {
-				return err
-			}
-		} else {
-			if err := tx.Table("role").Where("id = ?", id).Updates(map[string]any{
-				"name": in.Name, "description": in.Description,
-			}).Error; err != nil {
-				return err
-			}
-			if err := replaceRolePermissions(tx, id, in.Permissions); err != nil {
+		// 内置角色仅允许修改名称与说明，权限集合固定。
+		if err := store.UpdateRoleName(tx, id, in.Name, in.Description); err != nil {
+			return err
+		}
+		if !before.IsBuiltin {
+			if err := database.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
 				return err
 			}
 		}
@@ -247,22 +209,6 @@ func (a AdminAccounts) updateRole(c *gin.Context) {
 
 // replaceRolePermissions 整体替换某个角色的权限绑定：先清空旧绑定，再按编码逐个
 // 查 permission 的 id 插入。只在调用方已校验过编码的前提下调用。
-func replaceRolePermissions(tx *gorm.DB, roleID uint64, codes []string) error {
-	if err := tx.Exec("DELETE FROM role_permission WHERE role_id = ?", roleID).Error; err != nil {
-		return err
-	}
-	for _, code := range codes {
-		code = strings.TrimSpace(code)
-		if code == "" {
-			continue
-		}
-		if err := tx.Exec("INSERT INTO role_permission (role_id, permission_id) SELECT ?, id FROM permission WHERE code = ?", roleID, code).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // deleteRole 软删除角色，保留历史审计引用。
 // 内置角色、仍有关联账号的角色及调用者当前角色均不可删除。
 func (a AdminAccounts) deleteRole(c *gin.Context) {
@@ -271,9 +217,9 @@ func (a AdminAccounts) deleteRole(c *gin.Context) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
-	var role RoleRow
-	if err := a.DB.WithContext(c.Request.Context()).Table("role").
-		Where("id = ? AND deleted_at IS NULL", id).Take(&role).Error; err != nil {
+	store := database.RoleStore{DB: a.DB}
+	role, err := store.FindRole(c.Request.Context(), a.DB, id)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.Write(c, http.StatusNotFound, 1004, "角色不存在", nil)
 			return
@@ -289,9 +235,8 @@ func (a AdminAccounts) deleteRole(c *gin.Context) {
 		httpapi.Write(c, http.StatusConflict, 2009, "不能删除自己正在使用的角色", nil)
 		return
 	}
-	var held int64
-	if err := a.DB.WithContext(c.Request.Context()).Table("admin_user").
-		Where("role_id = ? AND deleted_at IS NULL", id).Count(&held).Error; err != nil {
+	held, err := store.CountRoleUsers(c.Request.Context(), id)
+	if err != nil {
 		AdminResourceFailure(c, err)
 		return
 	}
@@ -301,14 +246,9 @@ func (a AdminAccounts) deleteRole(c *gin.Context) {
 		return
 	}
 	var auditPending []AuditEntry
-	err := AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		changed := tx.Table("role").Where("id = ? AND deleted_at IS NULL", id).
-			Updates(map[string]any{"deleted_at": time.Now().UTC()})
-		if changed.Error != nil {
-			return changed.Error
-		}
-		if changed.RowsAffected != 1 {
-			return gorm.ErrRecordNotFound
+	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
+		if _, err := store.SoftDeleteRole(tx, id); err != nil {
+			return err
 		}
 		if err := tx.Exec("DELETE FROM role_permission WHERE role_id = ?", id).Error; err != nil {
 			return err
