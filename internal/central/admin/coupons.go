@@ -4,36 +4,20 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"regexp"
-	"time"
 )
-
-// couponRow 表示优惠券模板，供列表、创建参数和审计快照共用，以主键 id 标识。
-// 优惠类型互斥：amount 使用 DiscountValueCents，percentage 使用 DiscountPercent，time_free 使用 FreeMinutes。
-type couponRow struct {
-	ID                 uint64           `json:"id"`                   // 券模板主键，也是券的唯一标识；创建时必须为 0，由数据库自增
-	Name               string           `json:"name"`                 // 券名称，非空且不超过 128 字符
-	DiscountType       string           `json:"discount_type"`        // 优惠形式：amount 满减 / percentage 折扣 / time_free 免时长
-	DiscountValueCents *int64           `json:"discount_value_cents"` // 满减金额（分）；指针，仅 amount 模式非空且须大于 0
-	DiscountPercent    *decimal.Decimal `json:"discount_percent"`     // 折扣百分比（打折数而非减免数）；指针，仅 percentage 模式非空，须大于 0 且小于 100，且最多两位小数
-	FreeMinutes        *uint32          `json:"free_minutes"`         // 免单时长（分钟）；指针，仅 time_free 模式非空，取值 1–1440
-	MinChargeCents     int64            `json:"min_charge_cents"`     // 使用门槛（分），订单总额须不低于此值，不可为负
-	ValidHours         uint32           `json:"valid_hours"`          // 领取后的有效小时数，取值 1–87600
-	TotalQuota         uint32           `json:"total_quota"`          // 发放总量上限，0 表示不限量
-	PerUserQuota       uint32           `json:"per_user_quota"`       // 每人发放上限，必须大于 0
-	Status             string           `json:"status"`               // 模板状态：active / disabled
-	StartAt            *time.Time       `json:"start_at"`             // 生效开始时间；指针，为空表示立即生效
-	EndAt              *time.Time       `json:"end_at"`               // 生效结束时间；指针，为空表示长期有效，与 StartAt 同时给出时须晚于 StartAt
-}
 
 // registerCoupons 挂载优惠券模板的查询、新建、编辑、统计与人工发放五类路由，
 // 人工发放单独要求 coupon.grant 权限，因为它能直接影响用户资产。
+//
+// 模板与发放的读写都在 paystore.AdminCouponStore / GrantCouponInTx；
+// 本文件只做入参校验与审计编排。
 func (a ResourceAPI) registerCoupons(r *gin.Engine) {
 	r.GET("/api/v1/admin/coupons", a.Auth.Require("coupon.read"), a.coupons)
 	r.POST("/api/v1/admin/coupons", a.Auth.Require("coupon.create"), a.createCoupon)
@@ -42,46 +26,36 @@ func (a ResourceAPI) registerCoupons(r *gin.Engine) {
 	r.POST("/api/v1/admin/coupons/:id/grants", a.Auth.Require("coupon.grant"), a.grantCoupon)
 }
 
-// coupons 是 GET /api/v1/admin/coupons 的处理函数：返回全部未删除的券模板，
-// 按 ID 倒序，一次性返回不分页。
+// coupons 返回全部未删除的券模板，按 ID 倒序，一次性返回不分页。
 func (a ResourceAPI) coupons(c *gin.Context) {
-	rows := []couponRow{}
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("coupon").Where("deleted_at IS NULL").Order("id DESC").Find(&rows).Error; err != nil {
+	rows, err := (paystore.AdminCouponStore{DB: a.Store.UserDB}).ListCoupons(c.Request.Context())
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// createCoupon 是 POST /api/v1/admin/coupons 的处理函数：新建券模板。
-// 入参就是 couponRow，因此 ID 必须为 0（由库自增），没有 Code 字段需要传；
-// 状态强制置为 active，不接受调用方指定。新建成功才返回，之后统一补审计。
+// createCoupon 新建券模板。状态强制置为 active，不接受调用方指定。
 func (a ResourceAPI) createCoupon(c *gin.Context) {
-	var in couponRow
+	var in paystore.AdminCouponRow
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if in.ID != 0 || !operations.ValidText(in.Name, 128) || in.MinChargeCents < 0 || in.ValidHours == 0 || in.ValidHours > 87600 || in.PerUserQuota == 0 || (in.EndAt != nil && in.StartAt != nil && !in.EndAt.After(*in.StartAt)) {
+	if in.ID != 0 || !operations.ValidText(in.Name, 128) || in.MinChargeCents < 0 ||
+		in.ValidHours == 0 || in.ValidHours > 87600 || in.PerUserQuota == 0 ||
+		(in.EndAt != nil && in.StartAt != nil && !in.EndAt.After(*in.StartAt)) {
 		httpapi.BadRequest(c, "优惠券名称、有效期或额度无效")
 		return
 	}
-	valid := false
-	switch in.DiscountType {
-	case "amount":
-		valid = in.DiscountValueCents != nil && *in.DiscountValueCents > 0 && in.DiscountPercent == nil && in.FreeMinutes == nil
-	case "percentage":
-		valid = in.DiscountPercent != nil && in.DiscountPercent.GreaterThan(decimal.Zero) && in.DiscountPercent.LessThan(decimal.NewFromInt(100)) && in.DiscountPercent.Equal(in.DiscountPercent.Round(2)) && in.DiscountValueCents == nil && in.FreeMinutes == nil
-	case "time_free":
-		valid = in.FreeMinutes != nil && *in.FreeMinutes > 0 && *in.FreeMinutes <= 1440 && in.DiscountPercent == nil && in.DiscountValueCents == nil
-	}
-	if !valid {
+	if !validDiscount(in) {
 		httpapi.BadRequest(c, "优惠参数无效：满减分值须大于 0，折扣为 0–100 之间，免费时长为 1–1440 分钟")
 		return
 	}
 	in.Status = "active"
 	var auditPending []chargehttp.AuditEntry
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		if err := tx.Table("coupon").Create(&in).Error; err != nil {
+		if err := (paystore.AdminCouponStore{DB: tx}).CreateCoupon(c.Request.Context(), &in); err != nil {
 			return err
 		}
 		auditPending = []chargehttp.AuditEntry{{Action: "create", Target: "coupon", ID: in.ID, Before: nil, After: in, RequestID: ""}}
@@ -94,9 +68,27 @@ func (a ResourceAPI) createCoupon(c *gin.Context) {
 	httpapi.OK(c, in)
 }
 
-// updateCoupon 是 PUT /api/v1/admin/coupons/：id 的处理函数。
-// 只能改名称和启停状态，额度与优惠力度一旦发出去就不能再改，否则已发出的券无法解释。
-// 改动前对券行加写锁并留存旧值快照，审计在事务提交后另行写入。
+// validDiscount 校验优惠三选一的互斥约束：满减用分值、折扣用百分比、免时长用分钟数，
+// 另外两种字段必须为空，避免一份券同时带多种优惠口径。
+func validDiscount(in paystore.AdminCouponRow) bool {
+	switch in.DiscountType {
+	case "amount":
+		return in.DiscountValueCents != nil && *in.DiscountValueCents > 0 &&
+			in.DiscountPercent == nil && in.FreeMinutes == nil
+	case "percentage":
+		return in.DiscountPercent != nil && in.DiscountPercent.GreaterThan(decimal.Zero) &&
+			in.DiscountPercent.LessThan(decimal.NewFromInt(100)) &&
+			in.DiscountPercent.Equal(in.DiscountPercent.Round(2)) &&
+			in.DiscountValueCents == nil && in.FreeMinutes == nil
+	case "time_free":
+		return in.FreeMinutes != nil && *in.FreeMinutes > 0 && *in.FreeMinutes <= 1440 &&
+			in.DiscountPercent == nil && in.DiscountValueCents == nil
+	}
+	return false
+}
+
+// updateCoupon 只能改名称和启停状态；额度与优惠力度一旦发出去就不能再改，
+// 否则已发出的券无法解释。
 func (a ResourceAPI) updateCoupon(c *gin.Context) {
 	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
@@ -113,13 +105,12 @@ func (a ResourceAPI) updateCoupon(c *gin.Context) {
 		httpapi.BadRequest(c, "名称或状态无效")
 		return
 	}
+	var before paystore.AdminCouponRow
 	var auditPending []chargehttp.AuditEntry
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		var before couponRow
-		if err := tx.Table("coupon").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
-			return err
-		}
-		if err := tx.Table("coupon").Where("id=?", id).Updates(map[string]any{"name": in.Name, "status": in.Status}).Error; err != nil {
+		var err error
+		before, err = (paystore.AdminCouponStore{DB: tx}).UpdateCoupon(c.Request.Context(), id, in.Name, in.Status)
+		if err != nil {
 			return err
 		}
 		auditPending = []chargehttp.AuditEntry{{Action: "update", Target: "coupon", ID: id, Before: before, After: in, RequestID: ""}}
@@ -132,45 +123,25 @@ func (a ResourceAPI) updateCoupon(c *gin.Context) {
 	httpapi.OK(c, in)
 }
 
-// couponStats 是 GET /api/v1/admin/coupons/：id/stats 的处理函数：
-// 统计该券模板已发放、未使用、已使用、已过期四种发放记录的数量及使用率。
-// 未使用与已过期是按当前时刻动态判定的（status 仍是 unused 但已过期的记为过期），
-// 四个状态互斥，加总等于发放总数。
+// couponStats 统计该券模板已发放、未使用、已使用、已过期四种发放记录的数量及使用率。
 func (a ResourceAPI) couponStats(c *gin.Context) {
 	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
-	var coupon couponRow
-	db := a.Store.UserDB.WithContext(c.Request.Context())
-	if err := db.Table("coupon").Where("id=? AND deleted_at IS NULL", id).Take(&coupon).Error; err != nil {
+	stats, err := (paystore.AdminCouponStore{DB: a.Store.UserDB}).Stats(c.Request.Context(), id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	// 四个状态互斥，发放总数 = 未使用 + 已使用 + 已过期。
-	var stats struct {
-		GrantedCount int64 `json:"granted_count"`
-		UnusedCount  int64 `json:"unused_count"`
-		UsedCount    int64 `json:"used_count"`
-		ExpiredCount int64 `json:"expired_count"`
-	}
-	if err := db.Table("coupon_grant").Select("COUNT(*) AS granted_count,COALESCE(SUM(status='unused' AND expired_at>UTC_TIMESTAMP(3)),0) AS unused_count,COALESCE(SUM(status='used'),0) AS used_count,COALESCE(SUM(status='expired' OR (status='unused' AND expired_at<=UTC_TIMESTAMP(3))),0) AS expired_count").Where("coupon_id=?", id).Scan(&stats).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	rate := float64(0)
-	if stats.GrantedCount > 0 {
-		rate = float64(stats.UsedCount) / float64(stats.GrantedCount)
-	}
-	httpapi.OK(c, gin.H{"total_quota": coupon.TotalQuota, "granted_count": stats.GrantedCount, "unused_count": stats.UnusedCount, "used_count": stats.UsedCount, "expired_count": stats.ExpiredCount, "usage_rate": rate})
+	httpapi.OK(c, stats)
 }
 
 // requestIDPattern 校验 UUID 请求号，供发券幂等回执使用。
 var requestIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// grantCoupon 在事务中锁定模板并校验有效期、用户状态、总量及单人额度，再向用户发券。
-// 同一 request_id、模板和用户返回首次券 ID；同号不同内容返回 409。
-// 到期时间取领取后有效期与模板结束时间的较早值。
+// grantCoupon 人工发券。资格判定、到期计算与幂等回执都在 GrantCouponInTx，
+// 这里只校验入参并把发放与审计放进同一事务。
 func (a ResourceAPI) grantCoupon(c *gin.Context) {
 	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
@@ -191,52 +162,13 @@ func (a ResourceAPI) grantCoupon(c *gin.Context) {
 	var grantID uint64
 	var auditPending []chargehttp.AuditEntry
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		var coupon couponRow
-		if err := tx.Table("coupon").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&coupon).Error; err != nil {
-			return err
-		}
-		var receipt struct{ CouponID, UserID, CouponGrantID uint64 }
-		err := tx.Table("coupon_grant_request").Where("request_id=?", in.RequestID).Take(&receipt).Error
-		if err == nil {
-			prior, replayErr := money.ReplayGrant(money.CouponGrantReceipt{RequestID: in.RequestID, CouponID: receipt.CouponID,
-				UserID: receipt.UserID, CouponGrantID: receipt.CouponGrantID}, in.RequestID, id, userID)
-			if replayErr != nil {
-				return errConflict
-			}
-			grantID = prior
-			return nil
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		now := time.Now().UTC()
-		var user struct{ Status string }
-		if err := tx.Table("user").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", userID).Take(&user).Error; err != nil {
-			return err
-		}
-		if user.Status != "active" {
+		var err error
+		grantID, err = paystore.GrantCouponInTx(tx, id, userID, in.RequestID)
+		if errors.Is(err, money.ErrCouponGrant) {
+			// 业务拒绝，不是故障：映射到统一的 409，否则会被当成 503 让运营反复重试。
 			return errConflict
 		}
-		var total, perUser int64
-		if err := tx.Table("coupon_grant").Where("coupon_id=?", id).Count(&total).Error; err != nil {
-			return err
-		}
-		if err := tx.Table("coupon_grant").Where("coupon_id=? AND user_id=?", id, userID).Count(&perUser).Error; err != nil {
-			return err
-		}
-		template := money.CouponTemplate{TemplateID: coupon.ID, Status: coupon.Status, TotalQuota: coupon.TotalQuota,
-			PerUserQuota: coupon.PerUserQuota, ValidHours: coupon.ValidHours, StartAt: coupon.StartAt, EndAt: coupon.EndAt}
-		if err := money.CheckGrantable(now, template, money.CouponUsage{TotalGranted: total, UserGranted: perUser}); err != nil {
-			return errConflict
-		}
-		expires := money.GrantExpiry(now, template)
-		if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": id, "user_id": userID, "grant_source": "manual", "status": "unused", "expired_at": expires, "source_event_id": in.RequestID}).Error; err != nil {
-			return err
-		}
-		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&grantID).Error; err != nil {
-			return err
-		}
-		if err := tx.Table("coupon_grant_request").Create(map[string]any{"request_id": in.RequestID, "coupon_id": id, "user_id": userID, "coupon_grant_id": grantID}).Error; err != nil {
+		if err != nil {
 			return err
 		}
 		auditPending = []chargehttp.AuditEntry{{Action: "grant", Target: "coupon", ID: id, Before: nil, After: in, RequestID: in.RequestID}}
