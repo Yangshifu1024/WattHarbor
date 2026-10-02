@@ -29,21 +29,3 @@ func TestPublicUserIDsRemainExactDecimalStrings(t *testing.T) {
 		}
 	}
 }
-
-func TestPublicBillingSourceKeepsPersistedNumbersExact(t *testing.T) {
-	raw := json.RawMessage(`{"user_id":893327963750400123,"charge_order_id":7,"meter":{"charged_wh":12}}`)
-	copy, err := publicBillingSource(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(copy, &fields); err != nil {
-		t.Fatal(err)
-	}
-	if string(fields["user_id"]) != `"893327963750400123"` || string(fields["charge_order_id"]) != "7" {
-		t.Fatal(string(copy))
-	}
-	if string(raw) != `{"user_id":893327963750400123,"charge_order_id":7,"meter":{"charged_wh":12}}` {
-		t.Fatal("persisted input changed")
-	}
-}

@@ -1,15 +1,10 @@
-package admin
+package database
 
 import (
-	"errors"
 	"gorm.io/gorm"
-	"regexp"
 )
 
-var errAlreadyReported = errors.New("response already written")
-var deviceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-
-type pricingTemplateRow struct {
+type PricingTemplateRow struct {
 	ID          uint64 `gorm:"column:id"`           // 模板主键
 	Name        string `gorm:"column:name"`         // 模板名称
 	Remark      string `gorm:"column:remark"`       // 模板备注
@@ -19,7 +14,7 @@ type pricingTemplateRow struct {
 	Version     uint32 `gorm:"column:version"`      // 模板版本号，每次修改或停用都 +1，用作 expected_version 乐观锁
 }
 
-func ruleScope(stationID uint64, deviceID string) func(*gorm.DB) *gorm.DB {
+func RuleScope(stationID uint64, deviceID string) func(*gorm.DB) *gorm.DB {
 	return func(q *gorm.DB) *gorm.DB {
 		if deviceID == "" {
 			return q.Where("station_id=? AND device_id IS NULL", stationID)
@@ -28,7 +23,7 @@ func ruleScope(stationID uint64, deviceID string) func(*gorm.DB) *gorm.DB {
 	}
 }
 
-func nullableDevice(deviceID string) any {
+func NullableDevice(deviceID string) any {
 	if deviceID == "" {
 		return nil
 	}

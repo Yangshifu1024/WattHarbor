@@ -63,7 +63,8 @@ charge-pilot/
 │   │   ├── devices/                            协议无关
 │   │   │   ├── station.go  device.go  vendor.go
 │   │   │   ├── fault.go                        故障语义（烟雾/高温/离线）
-│   │   │   └── telemetry.go                    遥测（功率、电量、时长）
+│   │   │   ├── telemetry.go                    遥测（功率、电量、时长）
+│   │   │   └── identity.go                     设备编号合法性
 │   │   │
 │   │   └── operations/                         运营后台的业务概念
 │   │       ├── account.go                      后台账号身份、权限清单、退役权限
@@ -101,6 +102,9 @@ charge-pilot/
 │   │   │   ├── device_repository.go            device_meta / device_import
 │   │   │   ├── device_store.go                设备模型、资料编辑与分页查询
 │   │   │   ├── device_import_store.go         批量导入任务与设备清单 DTO
+│   │   │   ├── metering_store.go             设备计费方式与导入校验取数
+│   │   │   ├── scheme_target_store.go         方案下发前的设备能力校验
+│   │   │   ├── pricing_scope_store.go        计费模板行与规则作用域
 │   │   │   ├── admin_repository.go             role / permission / audit_log
 │   │   │   ├── admin_account.go                admin_user 账号与登录判定
 │   │   │   └── admin_scope.go                  admin_data_scope / admin_field_mask

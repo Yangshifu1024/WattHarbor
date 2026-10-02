@@ -9,7 +9,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"strconv"
 	"strings"
 )
 
@@ -78,7 +77,7 @@ func (a ResourceAPI) meterReviews(c *gin.Context) {
 		return
 	}
 	for i := range rows {
-		publicSource, err := publicBillingSource(rows[i].SourceJSON)
+		publicSource, err := httpapi.DecimalizeIDField(rows[i].SourceJSON, "user_id")
 		if err != nil {
 			chargehttp.AdminResourceFailure(c, err)
 			return
@@ -95,24 +94,6 @@ func (a ResourceAPI) meterReviews(c *gin.Context) {
 
 // Preserve the exact persisted billing payload; only its public copy uses a
 // string user ID. Internal receipts still decode historical numeric IDs.
-func publicBillingSource(raw json.RawMessage) (json.RawMessage, error) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return raw, nil
-	}
-	var source map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &source); err != nil {
-		return nil, err
-	}
-	if value, ok := source["user_id"]; ok {
-		var id uint64
-		if err := json.Unmarshal(value, &id); err != nil {
-			return nil, err
-		}
-		source["user_id"], _ = json.Marshal(strconv.FormatUint(id, 10))
-	}
-	return json.Marshal(source)
-}
-
 // meterFailure 把核实相关的领域错误翻成管理端提示：状态被并发改动、原始数据对不上
 // 或审核人重复归 409 并提示刷新；计量分段和价格快照的校验失败归 400；其余交给通用的
 // resourceFailure 处理。

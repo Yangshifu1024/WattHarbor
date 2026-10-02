@@ -40,3 +40,27 @@ func (id *DecimalID) UnmarshalJSON(data []byte) error {
 	*id = DecimalID(parsed)
 	return nil
 }
+
+// DecimalizeIDField 把一段已序列化的 JSON 对象里指定字段的整数 ID 改写为十进制字符串。
+// 用于 DecimalID 覆盖不到的场合：原始 JSON 文本、审计快照、第三方报文被原样存回库后
+// 再原样返回。大 ID 以字符串传输，避免 JavaScript number 在发出请求前就丢掉精度。
+// 字段缺失或值不是整数时保持原样，不猜测、不改写。
+func DecimalizeIDField(raw []byte, field string) ([]byte, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return raw, nil
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	value, ok := object[field]
+	if !ok {
+		return json.Marshal(object)
+	}
+	var id uint64
+	if err := json.Unmarshal(value, &id); err != nil {
+		return json.Marshal(object)
+	}
+	object[field], _ = json.Marshal(strconv.FormatUint(id, 10))
+	return json.Marshal(object)
+}

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -23,6 +23,10 @@ import (
 	"unicode/utf8"
 )
 
+// errAlreadyReported 表示某个 goroutine 已经写过 HTTP 响应。
+// 导入任务会异步调网关，返回错误时若响应已写出，调用方据此跳过第二次写响应。
+var errAlreadyReported = errors.New("response already written")
+
 // registerImports 挂载设备批量导入的三个路由：任务列表、提交导入、重试。
 // 三者共用 device.import 权限——导入本身就是开通设备的动作，查看列表也一并受它约束。
 func (a ResourceAPI) registerImports(r *gin.Engine) {
@@ -33,7 +37,7 @@ func (a ResourceAPI) registerImports(r *gin.Engine) {
 
 // imports 返回最近的导入任务（最多 100 条），供运营在看板上确认某批设备到底导进去没有。
 func (a ResourceAPI) imports(c *gin.Context) {
-	rows := []paystore.ImportJob{}
+	rows := []dbstore.ImportJob{}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("device_import").Order("created_at DESC").Limit(100).Find(&rows).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -41,7 +45,7 @@ func (a ResourceAPI) imports(c *gin.Context) {
 	httpapi.OK(c, rows)
 }
 
-func requireImportScope(c *gin.Context, scope operations.DataScope, devices []paystore.ImportDevice) bool {
+func requireImportScope(c *gin.Context, scope operations.DataScope, devices []dbstore.ImportDevice) bool {
 	for _, device := range devices {
 		if !scope.AllowsStation(device.StationID) || !scope.AllowsVendor(device.VendorID) {
 			httpapi.Write(c, 403, 1003, "导入设备的站点或厂商不在您的数据范围内", nil)
@@ -55,8 +59,8 @@ func requireImportScope(c *gin.Context, scope operations.DataScope, devices []pa
 // 事务内校验请求及设备身份幂等性，仅对新增设备执行能力检查；保存 pending 任务后执行导入。
 func (a ResourceAPI) createImport(c *gin.Context) {
 	var in struct {
-		ImportID string                  `json:"import_id"` // 导入任务号，UUID，作为幂等键
-		Devices  []paystore.ImportDevice `json:"devices"`   // 设备清单，1–100 台，批内编号不得重复
+		ImportID string                 `json:"import_id"` // 导入任务号，UUID，作为幂等键
+		Devices  []dbstore.ImportDevice `json:"devices"`   // 设备清单，1–100 台，批内编号不得重复
 	}
 	if !chargehttp.DecodeResource(c, &in) {
 		return
@@ -72,7 +76,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			httpapi.BadRequest(c, "设备编号、端口数、厂商或站点无效/重复")
 			return
 		}
-		if d.ChargeMode != "" && !validDeviceChargeMode(d.ChargeMode) {
+		if d.ChargeMode != "" && !charging.ValidDeviceChargeMode(d.ChargeMode) {
 			// 提交任务前校验计费模式，避免保存无法执行的导入。
 			httpapi.BadRequest(c, "设备 "+d.DeviceID+" 的计费方式无效")
 			return
@@ -112,10 +116,10 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 	body, _ := json.Marshal(in.Devices)
 	p := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var prior paystore.ImportJob
+		var prior dbstore.ImportJob
 		err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).Where("import_id=?", in.ImportID).Take(&prior).Error
 		if err == nil {
-			var old []paystore.ImportDevice
+			var old []dbstore.ImportDevice
 			if json.Unmarshal([]byte(prior.RequestJSON), &old) != nil {
 				return errConflict
 			}
@@ -129,7 +133,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			return err
 		}
 		for _, d := range in.Devices {
-			var station paystore.Station
+			var station dbstore.Station
 			if err := tx.Where("id=? AND deleted_at IS NULL AND status='active'", d.StationID).Take(&station).Error; err != nil {
 				return err
 			}
@@ -141,7 +145,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			if err := tx.Table("device_import_identity").Clauses(clause.Locking{Strength: "UPDATE"}).Where("device_id=?", d.DeviceID).Take(&identity).Error; err != nil {
 				return err
 			}
-			var old paystore.ImportDevice
+			var old dbstore.ImportDevice
 			_ = json.Unmarshal([]byte(identity.RequestJSON), &old)
 			oldJSON, _ := json.Marshal(old)
 			if string(oldJSON) != string(b) {
@@ -149,13 +153,13 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			}
 		}
 		// 仅新增设备需要能力校验；已归属本站点的设备保持已有配置。
-		arriving, err := newDevicesOnly(tx, in.Devices)
+		arriving, err := dbstore.NewDevicesOnly(tx, in.Devices)
 		if err != nil {
 			return err
 		}
 		// 整批设备统一校验，任一设备不兼容时拒绝整批导入。
-		if err := checkImportAgainstStation(tx, arriving); err != nil {
-			var blocked *errMeteringBlocked
+		if err := dbstore.CheckImportAgainstStation(tx, arriving); err != nil {
+			var blocked *dbstore.ErrMeteringBlocked
 			if errors.As(err, &blocked) {
 				httpapi.Write(c, 409, 1009, err.Error()+"，请检查所选通信协议或站点计费方式", nil)
 				return errAlreadyReported
@@ -195,14 +199,14 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 	if !ok {
 		return
 	}
-	var result paystore.ImportJob
+	var result dbstore.ImportJob
 	// 在这次有界的内部请求期间一直持着任务锁。崩溃会把元数据一起回滚，
 	// 重放则能安全地看到网关那边已经持久占用的设备身份。
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).Where("import_id=?", id).Take(&result).Error; err != nil {
 			return err
 		}
-		var devices []paystore.ImportDevice
+		var devices []dbstore.ImportDevice
 		if err := json.Unmarshal([]byte(result.RequestJSON), &devices); err != nil {
 			return err
 		}

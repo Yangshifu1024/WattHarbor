@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -38,7 +39,7 @@ type schemeInput struct {
 }
 
 func (a ResourceAPI) chargingSchemes(c *gin.Context) {
-	rows := []pricingTemplateRow{}
+	rows := []paystore.PricingTemplateRow{}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("pricing_template").Where("deleted_at IS NULL").Order("id DESC").Find(&rows).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -76,7 +77,7 @@ func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 	display, _ := json.Marshal(in.Scheme.Display)
 	version := uint32(1)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var before pricingTemplateRow
+		var before paystore.PricingTemplateRow
 		if id > 0 {
 			if err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
 				return err
@@ -125,7 +126,7 @@ func (a ResourceAPI) changeChargingScheme(c *gin.Context, remove bool) {
 		return
 	}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var before pricingTemplateRow
+		var before paystore.PricingTemplateRow
 		if err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
 			return err
 		}
@@ -164,7 +165,7 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if uuid.Validate(in.RequestID) != nil || in.StationID == 0 || in.DeviceID != "" && !deviceIDPattern.MatchString(in.DeviceID) || (in.TemplateID == 0) == (in.Scheme == nil) {
+	if uuid.Validate(in.RequestID) != nil || in.StationID == 0 || in.DeviceID != "" && !devices.ValidDeviceID(in.DeviceID) || (in.TemplateID == 0) == (in.Scheme == nil) {
 		httpapi.BadRequest(c, "请选择模板或完整方案，并提供请求编号与站点")
 		return
 	}
@@ -204,7 +205,7 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 		}
 		scheme := in.Scheme
 		if in.TemplateID > 0 {
-			var tmpl pricingTemplateRow
+			var tmpl paystore.PricingTemplateRow
 			if err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND status='active' AND deleted_at IS NULL", in.TemplateID).Take(&tmpl).Error; err != nil {
 				return err
 			}
@@ -222,11 +223,11 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 		if err := scheme.Validate(); err != nil {
 			return fmt.Errorf("%w: %s", errConflict, err)
 		}
-		if err := checkSchemeTargets(tx, in.StationID, in.DeviceID, *scheme); err != nil {
+		if err := paystore.CheckSchemeTargets(tx, in.StationID, in.DeviceID, *scheme); err != nil {
 			return fmt.Errorf("%w: %s", errConflict, err)
 		}
 		var current struct{ Version uint32 }
-		q := ruleScope(in.StationID, in.DeviceID)(tx.Table("pricing_rule"))
+		q := paystore.RuleScope(in.StationID, in.DeviceID)(tx.Table("pricing_rule"))
 		if err := q.Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
 			return err
 		}
@@ -234,11 +235,11 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 			return errConflict
 		}
 		version = current.Version + 1
-		if err := ruleScope(in.StationID, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
+		if err := paystore.RuleScope(in.StationID, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
 			return err
 		}
 		snapshot, _ := json.Marshal(scheme.SpecFor(scheme.Packages[0]))
-		row := map[string]any{"name": scheme.Name, "station_id": in.StationID, "device_id": nullableDevice(in.DeviceID), "template_id": nil, "spec_json": string(snapshot), "channel": "default", "version": version, "status": "active"}
+		row := map[string]any{"name": scheme.Name, "station_id": in.StationID, "device_id": paystore.NullableDevice(in.DeviceID), "template_id": nil, "spec_json": string(snapshot), "channel": "default", "version": version, "status": "active"}
 		if in.TemplateID > 0 {
 			row["template_id"] = in.TemplateID
 		}
@@ -258,35 +259,6 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "version": version, "replayed": replayed})
-}
-
-func checkSchemeTargets(tx *gorm.DB, station uint64, device string, scheme charging.Scheme) error {
-	var rows []struct {
-		DeviceID        string
-		ProtocolAdapter string
-	}
-	q := tx.Table("device_meta").Where("station_id=? AND deleted_at IS NULL", station)
-	if device != "" {
-		q = q.Where("device_id=?", device)
-	} else {
-		q = q.Where("device_id NOT IN (SELECT device_id FROM pricing_rule WHERE station_id=? AND device_id IS NOT NULL AND "+effectiveRuleSQL+")", station)
-	}
-	if err := q.Clauses(clause.Locking{Strength: "SHARE"}).Find(&rows).Error; err != nil {
-		return err
-	}
-	if device != "" && len(rows) != 1 {
-		return gorm.ErrRecordNotFound
-	}
-	for _, d := range rows {
-		cap, err := charging.ProtocolCapabilities(d.ProtocolAdapter)
-		if err != nil {
-			return fmt.Errorf("设备%s：%s", d.DeviceID, err)
-		}
-		if err := scheme.ValidateCapabilities(cap); err != nil {
-			return fmt.Errorf("设备%s：%s", d.DeviceID, err)
-		}
-	}
-	return nil
 }
 
 func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
@@ -311,7 +283,7 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 		}
 	}
 	var current struct{ Version uint32 }
-	if err := ruleScope(station, device)(db.Table("pricing_rule")).Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
+	if err := paystore.RuleScope(station, device)(db.Table("pricing_rule")).Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -339,7 +311,7 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if in.DeviceID == "" || !deviceIDPattern.MatchString(in.DeviceID) {
+	if in.DeviceID == "" || !devices.ValidDeviceID(in.DeviceID) {
 		httpapi.BadRequest(c, "请选择设备")
 		return
 	}
@@ -355,17 +327,17 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if err := checkSchemeTargets(tx, station, in.DeviceID, *rule.Spec.Scheme); err != nil {
+		if err := paystore.CheckSchemeTargets(tx, station, in.DeviceID, *rule.Spec.Scheme); err != nil {
 			return fmt.Errorf("%w: %s", errConflict, err)
 		}
 		var current struct{ Version uint32 }
-		if err := ruleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
+		if err := paystore.RuleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
 			return err
 		}
 		if current.Version != in.ExpectedVersion {
 			return errConflict
 		}
-		if err := ruleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
+		if err := paystore.RuleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.inherit", "station", station, nil, in, c.ClientIP(), httpapi.RequestID(c))
@@ -401,7 +373,7 @@ func (a ResourceAPI) executionCapabilities(c *gin.Context) {
 		return
 	}
 	device := c.Query("device_id")
-	if !deviceIDPattern.MatchString(device) {
+	if !devices.ValidDeviceID(device) {
 		httpapi.BadRequest(c, "请选择设备")
 		return
 	}

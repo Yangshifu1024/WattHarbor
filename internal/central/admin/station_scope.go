@@ -10,8 +10,6 @@ import (
 	"strconv"
 )
 
-const effectiveRuleSQL = "status='active' AND deleted_at IS NULL AND (effective_from IS NULL OR effective_from<=NOW(3)) AND (effective_to IS NULL OR effective_to>NOW(3))"
-
 func (a ResourceAPI) stationScope(c *gin.Context) (operations.DataScope, bool) {
 	scope, err := database.LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
