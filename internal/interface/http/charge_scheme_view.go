@@ -29,8 +29,8 @@ func (a UserQueryAPI) schemeView(ctx context.Context, order orderstore.ChargeOrd
 			payload["rule_description"] = frozen.Rule.Spec.Scheme.Remark
 		}
 	}
-	var job struct{ Status string }
-	if err := a.DB.WithContext(ctx).Table("charge_billing_job").Where("charge_order_id=?", order.ID).Find(&job).Error; err != nil {
+	job, err := orderstore.FindBillingJob(ctx, a.DB, order.ID)
+	if err != nil {
 		return err
 	}
 	payload["billing_status"] = job.Status
@@ -40,11 +40,8 @@ func (a UserQueryAPI) schemeView(ctx context.Context, order orderstore.ChargeOrd
 	}
 	payload["card_operations"] = operations
 	payload["start_confirmation_pending"] = order.Status == "paid"
-	var cutoff struct {
-		CutoffAt *string `json:"cutoff_at"`
-		Reason   string  `json:"reason"`
-	}
-	if err := a.DB.WithContext(ctx).Table("charge_billing_cutoff").Where("charge_order_id=?", order.ID).Find(&cutoff).Error; err != nil {
+	cutoff, err := orderstore.FindBillingCutoff(ctx, a.DB, order.ID)
+	if err != nil {
 		return err
 	}
 	payload["billing_cutoff"] = cutoff
