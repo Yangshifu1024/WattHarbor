@@ -1,0 +1,82 @@
+// Package user 定义用户聚合：访问令牌校验与账号状态判定。
+// 不认识 HTTP，失败一律以哨兵错误返回，由接口层翻译成状态码。
+package user
+
+import (
+	"context"
+	"errors"
+	"strconv"
+)
+
+// 认证失败的四类原因。区分它们是为了让接口层能各自映射到正确的 HTTP 状态：
+// 凭据问题回 401，会话过期回 401，存储故障回 503（可重试），账号冻结回 403。
+var (
+	ErrTokenInvalid    = errors.New("access token invalid")
+	ErrSessionExpired  = errors.New("session expired")
+	ErrUserUnavailable = errors.New("user storage unavailable")
+	ErrAccountFrozen   = errors.New("account frozen")
+)
+
+// SessionChecker 判断会话是否仍然存活。
+type SessionChecker interface {
+	Exists(context.Context, string) (bool, error)
+}
+
+// UserStatusChecker 读取账号当前状态，冻结账号不得继续使用会话。
+type UserStatusChecker interface {
+	Active(context.Context, uint64) (bool, error)
+}
+
+// TokenVerifier 校验签名并取出声明。实现方负责选择算法与密钥管理，
+// 并自行拒绝 kind 不匹配的令牌——C 端与后台的令牌不通用。
+type TokenVerifier interface {
+	Verify(token string) (subject string, sessionID string, err error)
+}
+
+// Authenticator 校验一份访问令牌，返回令牌所属的用户 ID。
+//
+// 它不认识 HTTP：失败一律以哨兵错误返回，由 interface/http 的适配器翻译成
+// 状态码与响应体。这样业务包可以依赖本包而不必依赖 gin。
+type Authenticator struct {
+	Tokens   TokenVerifier
+	Sessions SessionChecker
+	Users    UserStatusChecker
+}
+
+// Authenticate 依次校验令牌签名、会话存活与账号状态。
+//
+// 返回的错误必定是上述四个哨兵之一，调用方可用 errors.Is 判定。
+func (a Authenticator) Authenticate(ctx context.Context, token string) (uint64, error) {
+	if token == "" {
+		return 0, ErrTokenInvalid
+	}
+	subject, sessionID, err := a.Tokens.Verify(token)
+	if err != nil || sessionID == "" {
+		return 0, ErrTokenInvalid
+	}
+	if a.Sessions == nil {
+		return 0, ErrUserUnavailable
+	}
+	valid, err := a.Sessions.Exists(ctx, sessionID)
+	if err != nil {
+		return 0, ErrUserUnavailable
+	}
+	if !valid {
+		return 0, ErrSessionExpired
+	}
+	id, err := strconv.ParseUint(subject, 10, 64)
+	if err != nil || id == 0 {
+		return 0, ErrTokenInvalid
+	}
+	if a.Users == nil {
+		return 0, ErrUserUnavailable
+	}
+	active, err := a.Users.Active(ctx, id)
+	if err != nil {
+		return 0, ErrUserUnavailable
+	}
+	if !active {
+		return 0, ErrAccountFrozen
+	}
+	return id, nil
+}

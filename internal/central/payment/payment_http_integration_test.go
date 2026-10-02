@@ -103,7 +103,7 @@ func TestSimulationHTTPPaymentCreatesChargeOnlyAfterCallback(t *testing.T) {
 	router := httpapi.NewRouter()
 	serviceToken := "test-service-token"
 	callbackStore := PaymentCallbackStore{DB: testGORMDB(t, userDB), ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}
-	PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: scanSession{}, Users: scanUser{}},
+	PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, scanSession{}, scanUser{})},
 		Scan: ScanAPI{Operations: DeviceOperationStore{DB: adminORM}, GatewayURL: gateway.URL, ServiceToken: serviceToken}, Pricing: pricing.Store{DB: adminORM},
 		Intents: PaymentIntentStore{DB: testGORMDB(t, userDB)}, Provider: channel.Simulator{}}.Register(router)
 	SimulationCallbackAPI{DB: testGORMDB(t, userDB), Store: callbackStore, ServiceToken: serviceToken}.Register(router)

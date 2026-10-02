@@ -1,67 +1,28 @@
 package userhttp
 
 import (
-	"context"
-	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+
+	identity "github.com/ChargePilot2026/charge-pilot/internal/central/identity/user"
 )
 
+// SessionAuthenticator 是 C 端鉴权的 HTTP 适配器。
+//
+// 认证规则本身在 identity/user 包，本类型只做两件事：从请求头取出令牌、
+// 把领域哨兵错误翻译成 HTTP 状态码。判定顺序与错误语义见该包。
 type SessionAuthenticator struct {
-	JWT      *auth.JWT
-	Sessions interface {
-		Exists(context.Context, string) (bool, error)
-	}
-	Users interface {
-		Active(context.Context, uint64) (bool, error)
-	}
+	Auth identity.Authenticator
 }
 
-// Authenticate 在每个用户请求上校验签名过的 token、存活的会话
-// 以及当前的账号状态。ok 为 false 时调用方必须直接返回。
+// Authenticate 在每个 C 端请求上校验令牌、会话与账号状态。
+// ok 为 false 时响应已写好，调用方必须直接返回。
 func (a SessionAuthenticator) Authenticate(c *gin.Context) (userID uint64, ok bool) {
 	parts := strings.Fields(c.GetHeader("Authorization"))
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "access token invalid", nil)
+		authError(c, identity.ErrTokenInvalid)
 		return 0, false
 	}
-	claims, err := a.JWT.Verify(parts[1], "user", time.Now())
-	if err != nil || claims.SessionID == "" {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "access token invalid", nil)
-		return 0, false
-	}
-	valid, err := a.Sessions.Exists(c.Request.Context(), claims.SessionID)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "session unavailable", nil)
-		return 0, false
-	}
-	if !valid {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "session expired", nil)
-		return 0, false
-	}
-	id, err := strconv.ParseUint(claims.Subject, 10, 64)
-	if err != nil || id == 0 {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "access token invalid", nil)
-		return 0, false
-	}
-	if a.Users == nil {
-		// 认证存储未配置时返回可重试错误，避免访问 nil 依赖。
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "user unavailable", nil)
-		return 0, false
-	}
-	active, err := a.Users.Active(c.Request.Context(), id)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "user unavailable", nil)
-		return 0, false
-	}
-	if !active {
-		httpapi.Write(c, http.StatusForbidden, 1003, "account frozen", nil)
-		return 0, false
-	}
-	return id, true
+	return authenticate(c, a.Auth)
 }

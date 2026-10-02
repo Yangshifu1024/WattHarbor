@@ -141,7 +141,7 @@ func TestUserCurveReadsTelemetryValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := UserQueryAPI{
-		Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: orm}},
+		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
 		DB:   orm, GatewayURL: gateway.URL, ServiceToken: "svc", Gateway: serviceclient.Client{},
 	}
 	api.Register(router)
@@ -252,7 +252,7 @@ func TestUserHistoryAndDetailExposeFees(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := UserQueryAPI{
-		Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: orm}},
+		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
 		DB:   orm, Gateway: serviceclient.Client{},
 	}
 	api.Register(router)
@@ -372,7 +372,7 @@ func TestUserDetailHidesForeignOrder(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	UserQueryAPI{
-		Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: orm}},
+		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
 		DB:   orm, Gateway: serviceclient.Client{},
 	}.Register(router)
 

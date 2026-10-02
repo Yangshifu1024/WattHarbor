@@ -77,16 +77,16 @@ func accountRouterWithGateway(t *testing.T, userDB, adminDB *gorm.DB, userID uin
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	UserAccountAPI{
-		Auth:   identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: userDB}},
+		Auth:   identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
 		UserDB: userDB, AdminDB: adminDB, Gateway: serviceclient.Client{},
 		GatewayURL: gatewayURL, ServiceToken: "svc", Prepay: channel.Simulator{},
 	}.Register(router)
 	identityhttp.PhoneAPI{
-		Auth:             identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: userDB}},
+		Auth:             identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
 		Users:            identitystore.UserStore{DB: userDB},
 		DevelopmentPhone: true,
 	}.Register(router)
-	payment.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: userDB}}, DB: userDB, Store: payment.PaymentCallbackStore{DB: userDB, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}}.Register(router)
+	payment.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})}, DB: userDB, Store: payment.PaymentCallbackStore{DB: userDB, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}}.Register(router)
 	// 使用请求包装器注入 Bearer 令牌，覆盖已注册路由；Gin 的 Use 只影响后续注册路由。
 	return &authenticatedRouter{Engine: router, token: token}
 }

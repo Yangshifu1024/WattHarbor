@@ -147,7 +147,7 @@ func TestPaymentNumberSources(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	UserAccountAPI{Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: scanSession{}, Users: identitystore.UserStore{DB: tx}}, UserDB: tx, Prepay: channel.Simulator{}}.Register(router)
+	UserAccountAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, scanSession{}, identitystore.UserStore{DB: tx})}, UserDB: tx, Prepay: channel.Simulator{}}.Register(router)
 	requests := &authenticatedRouter{Engine: router, token: token}
 	for range 2 {
 		request := map[string]any{"request_id": uuid.NewString(), "amount_cents": 1000}

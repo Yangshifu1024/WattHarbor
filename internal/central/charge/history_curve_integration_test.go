@@ -67,7 +67,7 @@ func TestHistoryCurveChecksOwnerAndForwardsOrderWindow(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	UserQueryAPI{Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: cache}, Users: identitystore.UserStore{DB: orm}}, DB: orm, GatewayURL: gateway.URL, ServiceToken: "svc", Gateway: serviceclient.Client{}}.Register(router)
+	UserQueryAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: cache}, identitystore.UserStore{DB: orm})}, DB: orm, GatewayURL: gateway.URL, ServiceToken: "svc", Gateway: serviceclient.Client{}}.Register(router)
 	path := "/api/v1/user/charge/" + orderNo + "/curve?granularity=hourly"
 	unauthorized := httptest.NewRecorder()
 	router.ServeHTTP(unauthorized, httptest.NewRequest("GET", path, nil))

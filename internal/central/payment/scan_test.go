@@ -54,7 +54,7 @@ func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := httpapi.NewRouter()
-	ScanAPI{Operations: scanOperation("enabled"), Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: scanSession{}, Users: scanUser{}}, GatewayURL: backend.URL, ServiceToken: "service-token"}.Register(router)
+	ScanAPI{Operations: scanOperation("enabled"), Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, scanSession{}, scanUser{})}, GatewayURL: backend.URL, ServiceToken: "service-token"}.Register(router)
 	for _, route := range []string{"/api/v1/user/scan/resolve", "/api/v1/user/scan/port"} {
 		body := `{"code":"board:1"}`
 		if route == "/api/v1/user/scan/port" {
