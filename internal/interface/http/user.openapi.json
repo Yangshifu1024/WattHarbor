@@ -460,6 +460,266 @@
             }
           }
         }
+      },
+      "StationRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "站点主键，十进制字符串"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "description": "经度，字符串形式"
+          },
+          "latitude": {
+            "type": "string",
+            "description": "纬度，字符串形式"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "construction"
+            ]
+          },
+          "contact_phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "distance_km": {
+            "type": "number",
+            "nullable": true,
+            "description": "距当前定位的公里数；未传经纬度时为 null"
+          }
+        }
+      },
+      "StationPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "附近站点列表。**不含 total**：结果会逐条过滤掉 50 公里外的站点，计数与实际返回条数对不上，给一个不可信的总数比不给更糟。",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/StationRow"
+                }
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              },
+              "located": {
+                "type": "boolean",
+                "description": "是否按定位排了序；未传经纬度时按创建时间返回，为 false"
+              }
+            }
+          }
+        }
+      },
+      "StationDetailResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "station": {
+                "$ref": "#/components/schemas/StationRow"
+              },
+              "port_count": {
+                "type": "integer",
+                "description": "在营充电端口数"
+              },
+              "available_offer_count": {
+                "type": "integer",
+                "description": "可选价格档数量"
+              }
+            }
+          }
+        }
+      },
+      "ScanResolveRequest": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "设备面板上的扫码结果"
+          }
+        }
+      },
+      "ScanResolveResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "device_id": {
+                "type": "string"
+              },
+              "device_name": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "端口号列表"
+              }
+            }
+          }
+        }
+      },
+      "ScanPortRequest": {
+        "type": "object",
+        "required": [
+          "port_id"
+        ],
+        "properties": {
+          "port_id": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "形如 <设备号>:<端口号>"
+          }
+        }
+      },
+      "ScanOffersRequest": {
+        "type": "object",
+        "required": [
+          "client_request_id",
+          "port_id",
+          "offer_id"
+        ],
+        "properties": {
+          "client_request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "幂等键"
+          },
+          "port_id": {
+            "type": "string"
+          },
+          "offer_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ScanStartRequest": {
+        "type": "object",
+        "required": [
+          "client_request_id",
+          "port_id",
+          "offer_id"
+        ],
+        "properties": {
+          "client_request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "幂等键；相同请求号重放返回同一订单"
+          },
+          "port_id": {
+            "type": "string"
+          },
+          "offer_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "payment_order_no": {
+            "type": "string",
+            "description": "选用的支付方式，如 wallet / wechat"
+          }
+        }
+      },
+      "ScanOfferRow": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "description": "价格档名称"
+          },
+          "mode": {
+            "type": "string",
+            "description": "计费方式，如 amount / duration / energy"
+          },
+          "price_cents": {
+            "type": "integer",
+            "description": "价格，单位分"
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "description": "时长档的分钟数；非时长档为 0"
+          },
+          "energy_wh": {
+            "type": "integer",
+            "description": "电量档的瓦时数；非电量档为 0"
+          }
+        }
+      },
+      "ScanOffersResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "port_id": {
+                "type": "string"
+              },
+              "station": {
+                "$ref": "#/components/schemas/StationRow"
+              },
+              "offers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ScanOfferRow"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ScanStartResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "order_no": {
+                "type": "string",
+                "description": "充电订单号"
+              },
+              "charge_order_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "payment": {
+                "type": "object",
+                "description": "需要拉起支付时返回预下单参数；余额支付则为空"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -476,6 +736,14 @@
     {
       "name": "wallet",
       "description": "钱包与充值退款"
+    },
+    {
+      "name": "station",
+      "description": "站点查询"
+    },
+    {
+      "name": "scan",
+      "description": "扫码与起充"
     }
   ],
   "paths": {
@@ -816,6 +1084,250 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WalletRefundPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/station/nearby": {
+      "get": {
+        "summary": "查询附近站点",
+        "operationId": "user_station_nearby",
+        "tags": [
+          "station"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "longitude",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "description": "经度；与 latitude 同时给出才按距离排序"
+          },
+          {
+            "name": "latitude",
+            "in": "query",
+            "schema": {
+              "type": "number"
+            },
+            "description": "纬度"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/station/{id}": {
+      "get": {
+        "summary": "查询站点详情",
+        "operationId": "user_station_detail",
+        "tags": [
+          "station"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "站点主键"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationDetailResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/scan/resolve": {
+      "post": {
+        "summary": "解析扫码结果得到设备与端口",
+        "operationId": "user_scan_resolve",
+        "tags": [
+          "scan"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResolveResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/scan/port": {
+      "post": {
+        "summary": "按端口号查询设备信息",
+        "operationId": "user_scan_port",
+        "tags": [
+          "scan"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanPortRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResolveResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/scan/offers": {
+      "post": {
+        "summary": "查询该端口可选的价格档",
+        "operationId": "user_scan_offers",
+        "tags": [
+          "scan"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanOffersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOffersResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/scan/start": {
+      "post": {
+        "summary": "发起充电并创建订单",
+        "operationId": "user_scan_start",
+        "tags": [
+          "scan"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStartResult"
                 }
               }
             }
