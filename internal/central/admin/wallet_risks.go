@@ -10,7 +10,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strconv"
 	"time"
 )
@@ -23,6 +22,11 @@ func (a ResourceAPI) registerWalletRisks(r *gin.Engine) {
 	r.POST("/api/v1/admin/billing/wallet-risks/:request_id/release", a.Auth.Require("finance.wallet_risk.release"), a.releaseWalletRisk)
 }
 
+// walletRiskStore 返回风控审核与解冻的读写入口。
+func (a ResourceAPI) walletRiskStore() database.WalletRiskStore {
+	return database.WalletRiskStore{DB: a.Store.UserDB}
+}
+
 // walletRisks 分页查询关联冻结记录的退款风控请求。
 // pending、reviewed 分别表示未审核和已审核；已审核记录可按解冻状态过滤。
 // can_review、can_release 按权限及审核、冻结状态计算，解冻还要求 wallet_refund_frequency 规则。
@@ -31,21 +35,12 @@ func (a ResourceAPI) walletRisks(c *gin.Context) {
 	if !ok {
 		return
 	}
-	db := a.Store.UserDB.WithContext(c.Request.Context()).Table("wallet_refund_request r").Joins("LEFT JOIN wallet_risk_review v ON v.request_id=r.request_id LEFT JOIN wallet_risk_freeze_link l ON l.request_id=r.request_id LEFT JOIN risk_freeze_log f ON f.id=l.freeze_id LEFT JOIN wallet_risk_release x ON x.request_id=r.request_id").Where("l.freeze_id IS NOT NULL")
-	if q.Status == "reviewed" {
-		db = db.Where("v.request_id IS NOT NULL")
-	} else {
-		db = db.Where("v.request_id IS NULL")
-	}
-	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
-	if e := db.Count(&out.Total).Error; e != nil {
-		chargehttp.AdminResourceFailure(c, e)
+	rows, total, err := a.walletRiskStore().ListWalletRisks(c.Request.Context(), q.Status, q.Page, q.PageSize)
+	if err != nil {
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if e := db.Select("r.request_id,r.user_id,r.amount_cents,r.reason,r.created_at,v.response_json AS review_json,v.created_at AS review_created_at,x.response_json AS release_json,x.created_at AS release_created_at,f.status AS freeze_status,f.trigger_rule,l.freeze_id").Order("r.created_at DESC,r.request_id").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; e != nil {
-		chargehttp.AdminResourceFailure(c, e)
-		return
-	}
+	out := Page[map[string]any]{Items: rows, Page: q.Page, PageSize: q.PageSize, Total: total}
 	normalizeRows(out.Items)
 	httpapi.DecimalizeRowIDsAll(out.Items, "user_id")
 	p := c.MustGet("admin_profile").(operations.Profile)
@@ -61,21 +56,6 @@ func (a ResourceAPI) walletRisks(c *gin.Context) {
 		delete(row, "freeze_id")
 	}
 	httpapi.OK(c, out)
-}
-
-// riskRequest 是钱包退款风控审核所需的最小字段投影。
-type riskRequest struct {
-	RequestID   string  // 请求号，业务主键，审核、解冻、幂等都按它定位
-	UserID      uint64  // 申请退款的用户 ID，冻结与退款记录都挂在该用户上
-	AmountCents int64   // 申请退款金额，单位分
-	Reason      *string // 申请原因，可空
-}
-
-// riskWallet 是 wallet_account 一行的最小投影，用于校验可用余额与冻结额、比对乐观锁版本。
-type riskWallet struct {
-	ID, UserID, Version       uint64
-	BalanceCents, FrozenCents int64  // 余额与已冻结金额（均为分）；可退额度 = 余额 - 冻结额
-	Status                    string // 钱包状态，如 active / frozen
 }
 
 // reviewWalletRisk 要求财务或客服角色，并验证请求恰好关联一条 wallet_refund_frequency 冻结记录。
@@ -100,18 +80,13 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 	}
 	var response map[string]any
 	var auditPending []chargehttp.AuditEntry
+	store := a.walletRiskStore()
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		var req riskRequest
-		if err := tx.Table("wallet_refund_request").Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", c.Param("request_id")).Take(&req).Error; err != nil {
+		req, err := store.LockRefundRequest(tx, c.Param("request_id"))
+		if err != nil {
 			return err
 		}
-		var prior struct {
-			ActorID      uint64 // 首次审核人 ID，重放时必须仍是同一个人
-			Approved     bool   // 首次审核结论
-			Comment      string // 首次审核依据
-			ResponseJSON string // 首次审核的返回体，重放时原样回给调用方
-		}
-		err := tx.Table("wallet_risk_review").Where("request_id=?", req.RequestID).Take(&prior).Error
+		prior, err := store.FindRiskReview(tx, req.RequestID)
 		if err == nil {
 			if err := money.ReviewReplay(money.PriorReview{ActorID: prior.ActorID, Approved: prior.Approved, Comment: prior.Comment}, p.ID, *in.Approved, in.Comment); err != nil {
 				return errConflict
@@ -121,8 +96,8 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		var linked int64
-		if err := tx.Table("wallet_risk_freeze_link l").Joins("JOIN risk_freeze_log f ON f.id=l.freeze_id").Where("l.request_id=? AND f.user_id=? AND f.trigger_rule='wallet_refund_frequency'", req.RequestID, req.UserID).Count(&linked).Error; err != nil {
+		linked, err := store.CountFrequencyFreezes(tx, req.RequestID, req.UserID)
+		if err != nil {
 			return err
 		}
 		if linked != 1 {
@@ -135,7 +110,7 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 		}
 		response = map[string]any{"actor_id": strconv.FormatUint(p.ID, 10), "approved": *in.Approved, "comment": in.Comment}
 		b, _ := json.Marshal(response)
-		if err := tx.Table("wallet_risk_review").Create(map[string]any{"request_id": req.RequestID, "actor_id": p.ID, "approved": *in.Approved, "comment": in.Comment, "response_json": string(b)}).Error; err != nil {
+		if err := store.InsertRiskReview(tx, req.RequestID, p.ID, *in.Approved, in.Comment, string(b)); err != nil {
 			return err
 		}
 		auditPending = []chargehttp.AuditEntry{{Action: "review", Target: "wallet_risk", ID: req.UserID, Before: nil, After: gin.H{"request_id": req.RequestID, "review": response}, RequestID: req.RequestID}}
@@ -150,7 +125,7 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 
 // reserveWalletRefund 按申请金额拆分微信充值支付单，创建 automatic/pending 退款并冻结钱包余额。
 // 仅使用全额实付且有微信交易号的充值，扣除已有退款占用与已退金额；资金不足时整笔事务回滚。
-func reserveWalletRefund(tx *gorm.DB, req riskRequest) error {
+func reserveWalletRefund(tx *gorm.DB, req database.WalletRiskRequest) error {
 	err := database.ReserveRefund(tx, database.WalletRefundReservation{RequestID: req.RequestID, UserID: req.UserID, AmountCents: req.AmountCents, Reason: "wallet risk approved"})
 	if errors.Is(err, database.ErrWalletRefundConflict) {
 		return errConflict
@@ -178,16 +153,13 @@ func (a ResourceAPI) releaseWalletRisk(c *gin.Context) {
 	}
 	var response map[string]any
 	var auditPending []chargehttp.AuditEntry
+	store := a.walletRiskStore()
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		var req riskRequest
-		if err := tx.Table("wallet_refund_request").Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", c.Param("request_id")).Take(&req).Error; err != nil {
+		req, err := store.LockRefundRequest(tx, c.Param("request_id"))
+		if err != nil {
 			return err
 		}
-		var prior struct {
-			ActorID               uint64 // 首次解冻人 ID
-			Comment, ResponseJSON string // 首次解冻依据与返回体，重放时原样返回
-		}
-		err := tx.Table("wallet_risk_release").Where("request_id=?", req.RequestID).Take(&prior).Error
+		prior, err := store.FindRiskRelease(tx, req.RequestID)
 		if err == nil {
 			if err := money.ReleaseReplay(money.PriorReview{ActorID: prior.ActorID, Comment: prior.Comment}, p.ID, in.Comment); err != nil {
 				return errConflict
@@ -197,47 +169,44 @@ func (a ResourceAPI) releaseWalletRisk(c *gin.Context) {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		var count int64
-		if err := tx.Table("wallet_risk_review").Where("request_id=?", req.RequestID).Count(&count).Error; err != nil {
+		count, err := store.CountRiskReviews(tx, req.RequestID)
+		if err != nil {
 			return err
 		}
 		if count != 1 {
 			return errConflict
 		}
-		var w riskWallet
-		if err := tx.Table("wallet_account").Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id=? AND deleted_at IS NULL", req.UserID).Take(&w).Error; err != nil {
+		w, err := store.LockWallet(tx, req.UserID)
+		if err != nil {
 			return err
 		}
-		var freeze struct {
-			ID                  uint64 // 冻结记录主键，解冻时按它更新 risk_freeze_log
-			UserID              uint64 // 被冻结用户，必须与风控请求的申请人对得上
-			Status, TriggerRule string // 冻结状态（须为 frozen）与触发规则（须为 wallet_refund_frequency）
-		}
-		if err := tx.Table("risk_freeze_log f").Select("f.id,f.user_id,f.status,f.trigger_rule").Joins("JOIN wallet_risk_freeze_link l ON l.freeze_id=f.id").Where("l.request_id=?", req.RequestID).Clauses(clause.Locking{Strength: "UPDATE"}).Take(&freeze).Error; err != nil {
+		freeze, err := store.LockFreeze(tx, req.RequestID)
+		if err != nil {
 			return err
 		}
 		if freeze.UserID != req.UserID || freeze.TriggerRule != "wallet_refund_frequency" || freeze.Status != "frozen" {
 			return errConflict
 		}
-		if err := tx.Table("risk_freeze_log").Where("id=?", freeze.ID).Updates(map[string]any{"status": "unfrozen", "unfreeze_at": time.Now().UTC()}).Error; err != nil {
+		if err := store.Unfreeze(tx, freeze.ID, time.Now().UTC()); err != nil {
 			return err
 		}
-		if err := tx.Table("risk_freeze_log").Where("user_id=? AND status='frozen'", req.UserID).Count(&count).Error; err != nil {
+		active, err := store.CountActiveFreezes(tx, req.UserID)
+		if err != nil {
 			return err
 		}
-		var user struct{ Status string }
-		if err := tx.Table("user").Where("id=? AND deleted_at IS NULL", req.UserID).Take(&user).Error; err != nil {
+		userStatus, err := store.UserStatus(tx, req.UserID)
+		if err != nil {
 			return err
 		}
-		active := count == 0 && user.Status == "active"
-		if active {
-			if err := tx.Table("wallet_account").Where("id=?", w.ID).Updates(map[string]any{"status": "active", "version": gorm.Expr("version+1")}).Error; err != nil {
+		restore := active == 0 && userStatus == "active"
+		if restore {
+			if err := store.ActivateWallet(tx, w.ID); err != nil {
 				return err
 			}
 		}
-		response = map[string]any{"actor_id": strconv.FormatUint(p.ID, 10), "comment": in.Comment, "wallet_active": active}
+		response = map[string]any{"actor_id": strconv.FormatUint(p.ID, 10), "comment": in.Comment, "wallet_active": restore}
 		b, _ := json.Marshal(response)
-		if err := tx.Table("wallet_risk_release").Create(map[string]any{"request_id": req.RequestID, "actor_id": p.ID, "comment": in.Comment, "response_json": string(b)}).Error; err != nil {
+		if err := store.InsertRiskRelease(tx, req.RequestID, p.ID, in.Comment, string(b)); err != nil {
 			return err
 		}
 		auditPending = []chargehttp.AuditEntry{{Action: "release", Target: "wallet_risk", ID: req.UserID, Before: nil, After: gin.H{"request_id": req.RequestID, "release": response}, RequestID: req.RequestID}}
