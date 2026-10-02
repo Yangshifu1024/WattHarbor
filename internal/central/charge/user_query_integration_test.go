@@ -3,6 +3,7 @@ package charge
 import (
 	"context"
 	"encoding/json"
+	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,9 +11,8 @@ import (
 	"testing"
 	"time"
 
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
-	identitystate "github.com/ChargePilot2026/charge-pilot/internal/central/identity/state"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
+	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -141,7 +141,7 @@ func TestUserCurveReadsTelemetryValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := UserQueryAPI{
-		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
+		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
 		DB:   orm, GatewayURL: gateway.URL, ServiceToken: "svc", Gateway: serviceclient.Client{},
 	}
 	api.Register(router)
@@ -252,7 +252,7 @@ func TestUserHistoryAndDetailExposeFees(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := UserQueryAPI{
-		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
+		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
 		DB:   orm, Gateway: serviceclient.Client{},
 	}
 	api.Register(router)
@@ -372,7 +372,7 @@ func TestUserDetailHidesForeignOrder(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	UserQueryAPI{
-		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
+		Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: orm})},
 		DB:   orm, Gateway: serviceclient.Client{},
 	}.Register(router)
 

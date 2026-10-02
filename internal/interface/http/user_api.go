@@ -1,4 +1,4 @@
-package userhttp
+package http
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/model"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/state"
+	identityauth "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/auth"
+	identityuser "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/user"
+	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -18,18 +19,18 @@ import (
 const accessTTL = 15 * time.Minute
 
 type UserRepository interface {
-	Login(context.Context, string, string) (model.User, error)
+	Login(context.Context, string, string) (identityuser.User, error)
 	Active(context.Context, uint64) (bool, error)
-	Profile(context.Context, uint64) (model.Profile, error)
+	Profile(context.Context, uint64) (identityuser.Profile, error)
 }
 type SessionRepository interface {
-	Create(context.Context, model.User) (string, string, error)
-	Rotate(context.Context, string) (model.User, string, string, error)
+	Create(context.Context, identityuser.User) (string, string, error)
+	Rotate(context.Context, string) (identityuser.User, string, string, error)
 	Revoke(context.Context, string) error
 	Exists(context.Context, string) (bool, error)
 }
 type API struct {
-	WeChat   state.CodeExchanger
+	WeChat   identityauth.CodeExchanger
 	Users    UserRepository
 	Sessions SessionRepository
 	JWT      *auth.JWT
@@ -56,7 +57,7 @@ func (a API) login(c *gin.Context) {
 		return
 	}
 	user, err := a.Users.Login(c.Request.Context(), identity.OpenID, identity.UnionID)
-	if errors.Is(err, model.ErrUserFrozen) {
+	if errors.Is(err, identityuser.ErrUserFrozen) {
 		httpapi.Write(c, http.StatusForbidden, 1003, "account frozen", nil)
 		return
 	}
@@ -81,7 +82,7 @@ func (a API) login(c *gin.Context) {
 func (a API) refresh(c *gin.Context) {
 	token := bearer(c)
 	user, sid, next, err := a.Sessions.Rotate(c.Request.Context(), token)
-	if errors.Is(err, state.ErrInvalidRefresh) {
+	if errors.Is(err, sessionstore.ErrInvalidRefresh) {
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "refresh token invalid", nil)
 		return
 	}
@@ -108,7 +109,7 @@ func (a API) refresh(c *gin.Context) {
 }
 
 func (a API) logout(c *gin.Context) {
-	if err := a.Sessions.Revoke(c.Request.Context(), bearer(c)); errors.Is(err, state.ErrInvalidRefresh) {
+	if err := a.Sessions.Revoke(c.Request.Context(), bearer(c)); errors.Is(err, sessionstore.ErrInvalidRefresh) {
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "refresh token invalid", nil)
 		return
 	} else if err != nil {
@@ -151,7 +152,7 @@ func (a API) profile(c *gin.Context) {
 	httpapi.OK(c, profile)
 }
 
-func (a API) sign(user model.User, sid string) (string, error) {
+func (a API) sign(user identityuser.User, sid string) (string, error) {
 	now := time.Now().Unix()
 	return a.JWT.Sign(auth.Claims{Subject: strconv.FormatUint(user.ID, 10), Kind: "user", OpenID: user.OpenID, SessionID: sid, IssuedAt: now, ExpiresAt: now + int64(accessTTL.Seconds())})
 }

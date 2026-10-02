@@ -1,11 +1,11 @@
-package state
+package redis
 
 import (
 	"encoding/json"
 	"strconv"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/model"
+	identityuser "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/user"
 )
 
 func TestSessionUserIDJSONPreservesPrecisionAndLegacyRecords(t *testing.T) {
@@ -35,7 +35,7 @@ func TestSessionUserIDJSONPreservesPrecisionAndLegacyRecords(t *testing.T) {
 
 func TestProfileSerializesUserIDAsDecimalString(t *testing.T) {
 	const userID = uint64(923456789012345678)
-	raw, err := json.Marshal(model.Profile{UserID: userID})
+	raw, err := json.Marshal(identityuser.Profile{UserID: userID})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
 	"github.com/gin-gonic/gin"

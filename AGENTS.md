@@ -36,12 +36,13 @@ charge-pilot/
 │   ├── domain/                                 零 gorm、零 gin、零 Redis
 │   │   │
 │   │   ├── identity/
-│   │   │   ├── user.go                         User / Profile / ErrUserFrozen
-│   │   │   │                                   UserRepository 接口
-│   │   │   ├── session.go                      Session / ErrInvalidRefresh
-│   │   │   │                                   SessionRepository 接口
-│   │   │   ├── auth.go                         登录授权规则、令牌签发
-│   │   │   └── phone.go                        手机号绑定规则、号码占用
+│   │   │   ├── user/                           用户聚合（已落地）
+│   │   │   │   ├── user.go                     User / Profile / ErrUserFrozen
+│   │   │   │   └── auth.go                     访问令牌校验、账号状态哨兵
+│   │   │   └── auth/                           登录身份来源
+│   │   │       ├── wechat.go                   微信小程序 code 换取
+│   │   │       └── development.go              开发模式身份
+│   │   │   （session 与 phone 的规则尚未迁入）
 │   │   │
 │   │   ├── charging/
 │   │   │   ├── order.go                        ChargeOrder：状态机、方案冻结
@@ -264,7 +265,7 @@ charge-pilot/
 
   ```
   domain/
-    identity/    user.go  session.go  auth.go  phone.go
+    identity/    user/（user.go auth.go）  auth/（wechat.go development.go）
     charging/    order.go  session.go  billing.go  stop.go  scheme.go
     money/       payment.go  wallet.go  refund.go  coupon.go
                  card.go  settlement.go  channel.go

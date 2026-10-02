@@ -1,4 +1,4 @@
-package state
+package redis
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/model"
+	identityuser "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/user"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -62,7 +62,7 @@ func (id *sessionUserID) UnmarshalJSON(raw []byte) error {
 
 type Sessions struct{ Redis *redis.Client }
 
-func (s Sessions) Create(ctx context.Context, user model.User) (string, string, error) {
+func (s Sessions) Create(ctx context.Context, user identityuser.User) (string, string, error) {
 	sid, err := randomPart(16)
 	if err != nil {
 		return "", "", err
@@ -101,7 +101,7 @@ redis.call('SET', KEYS[1], cjson.encode(record), 'KEEPTTL')
 return value
 `)
 
-func (s Sessions) Rotate(ctx context.Context, token string) (model.User, string, string, error) {
+func (s Sessions) Rotate(ctx context.Context, token string) (identityuser.User, string, string, error) {
 	sid, oldSecret, ok := parseRefresh(token)
 	if !ok {
 		return User{}, "", "", ErrInvalidRefresh
@@ -192,4 +192,4 @@ func parseRefresh(token string) (string, string, bool) {
 }
 
 // User 是本包对外返回的登录身份，定义在 model 包供三层共享。
-type User = model.User
+type User = identityuser.User

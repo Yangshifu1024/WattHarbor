@@ -3,6 +3,7 @@ package charge
 import (
 	"context"
 	"encoding/json"
+	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,10 +14,9 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
-	identitystate "github.com/ChargePilot2026/charge-pilot/internal/central/identity/state"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
+	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
@@ -77,16 +77,16 @@ func accountRouterWithGateway(t *testing.T, userDB, adminDB *gorm.DB, userID uin
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	UserAccountAPI{
-		Auth:   identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
+		Auth:   identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
 		UserDB: userDB, AdminDB: adminDB, Gateway: serviceclient.Client{},
 		GatewayURL: gatewayURL, ServiceToken: "svc", Prepay: channel.Simulator{},
 	}.Register(router)
 	identityhttp.PhoneAPI{
-		Auth:             identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
+		Auth:             identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
 		Users:            identitystore.UserStore{DB: userDB},
 		DevelopmentPhone: true,
 	}.Register(router)
-	payment.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})}, DB: userDB, Store: payment.PaymentCallbackStore{DB: userDB, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}}.Register(router)
+	payment.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})}, DB: userDB, Store: payment.PaymentCallbackStore{DB: userDB, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}}.Register(router)
 	// 使用请求包装器注入 Bearer 令牌，覆盖已注册路由；Gin 的 Use 只影响后续注册路由。
 	return &authenticatedRouter{Engine: router, token: token}
 }

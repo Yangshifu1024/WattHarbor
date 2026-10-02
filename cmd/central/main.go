@@ -19,11 +19,12 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/charge"
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
-	identitystate "github.com/ChargePilot2026/charge-pilot/internal/central/identity/state"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	identityauth "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/auth"
+	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
@@ -99,7 +100,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	// C 端鉴权规则在 identity/user 包，此处只装配一次供全部 C 端接口复用。
-	cEndAuth := identityhttp.NewAuthenticator(jwt, identitystate.Sessions{Redis: cache}, identitystore.UserStore{DB: userORM})
+	cEndAuth := identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: cache}, identitystore.UserStore{DB: userORM})
 	adminAPI := admin.API{Store: adminStore, Sessions: admin.Sessions{Redis: cache}, JWT: jwt}
 	adminAPI.Register(router)
 	admin.RegulatoryEventsAPI{Queue: admin.RegulatoryQueue{AdminDB: adminDB}, ServiceToken: cfg.ServiceToken}.Register(router)
@@ -127,16 +128,16 @@ func run(ctx context.Context) error {
 		}
 	}()
 	admin.Dashboard{UserDB: userORM, AdminDB: adminORM}.Register(router, adminAPI)
-	var loginExchanger identitystate.CodeExchanger = identitystate.MiniProgram{SDK: wechat}
+	var loginExchanger identityauth.CodeExchanger = identityauth.MiniProgram{SDK: wechat}
 	if cfg.LoginMode == "development" {
-		loginExchanger = identitystate.DevelopmentExchanger{}
+		loginExchanger = identityauth.DevelopmentExchanger{}
 	}
-	identityhttp.API{WeChat: loginExchanger, Users: identitystore.UserStore{DB: userORM}, Sessions: identitystate.Sessions{Redis: cache}, JWT: jwt}.Register(router)
+	identityhttp.API{WeChat: loginExchanger, Users: identitystore.UserStore{DB: userORM}, Sessions: sessionstore.Sessions{Redis: cache}, JWT: jwt}.Register(router)
 	order.StartAuthorization{DB: userORM, ServiceToken: cfg.ServiceToken}.Register(router)
 	order.StartResultAPI{Store: order.StartResultStore{DB: userORM}, ServiceToken: cfg.ServiceToken}.Register(router)
 	order.EndResultAPI{Store: order.EndResultStore{DB: userORM}, ServiceToken: cfg.ServiceToken}.Register(router)
 	charge.StopAuthorization{DB: userORM, ServiceToken: cfg.ServiceToken}.Register(router)
-	charge.UserStopAPI{JWT: jwt, Sessions: identitystate.Sessions{Redis: cache}, Users: identitystore.UserStore{DB: userORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	charge.UserStopAPI{JWT: jwt, Sessions: sessionstore.Sessions{Redis: cache}, Users: identitystore.UserStore{DB: userORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
 	payment.ScanAPI{Operations: payment.DeviceOperationStore{DB: adminORM}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
 	var prepay payment.PrepayProvider
 	var refundProvider channel.RefundProvider

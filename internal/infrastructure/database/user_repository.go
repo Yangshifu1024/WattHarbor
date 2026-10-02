@@ -1,4 +1,4 @@
-package store
+package database
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/model"
+	identityuser "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/user"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
@@ -16,7 +16,7 @@ import (
 
 type UserStore struct{ DB *gorm.DB }
 
-func (s UserStore) Login(ctx context.Context, openID, unionID string) (model.User, error) {
+func (s UserStore) Login(ctx context.Context, openID, unionID string) (identityuser.User, error) {
 	if openID == "" || len(openID) > 64 || len(unionID) > 64 {
 		return User{}, errors.New("invalid WeChat identity")
 	}
@@ -39,7 +39,7 @@ func retryableMySQL(err error) bool {
 	return errors.As(err, &mysqlErr) && (mysqlErr.Number == 1213 || mysqlErr.Number == 1205)
 }
 
-func (s UserStore) loginOnce(ctx context.Context, openID, unionID string) (model.User, error) {
+func (s UserStore) loginOnce(ctx context.Context, openID, unionID string) (identityuser.User, error) {
 	// 以自动提交模式创建 identity 行。
 	// 事务里并发的 INSERT IGNORE
 	// 可能在 FOR UPDATE 之前就因缺失键间隙而死锁。
@@ -83,7 +83,7 @@ func (s UserStore) loginOnce(ctx context.Context, openID, unionID string) (model
 		if err := tx.Create(&WalletAccount{UserID: created.ID}).Error; err != nil {
 			return err
 		}
-		user = model.User{ID: created.ID, OpenID: openID, IsNew: true}
+		user = identityuser.User{ID: created.ID, OpenID: openID, IsNew: true}
 		return nil
 	})
 	return user, err
@@ -101,7 +101,7 @@ func (s UserStore) Active(ctx context.Context, id uint64) (bool, error) {
 	return user.Status == "active", nil
 }
 
-func (s UserStore) Profile(ctx context.Context, id uint64) (model.Profile, error) {
+func (s UserStore) Profile(ctx context.Context, id uint64) (identityuser.Profile, error) {
 	var row profileRow
 	result := s.DB.WithContext(ctx).Raw(`SELECT u.id, u.nickname, u.avatar_url, u.phone, u.first_seen_at,
 		w.balance_cents, w.frozen_cents,
@@ -109,12 +109,12 @@ func (s UserStore) Profile(ctx context.Context, id uint64) (model.Profile, error
 		FROM user AS u JOIN wallet_account AS w ON w.user_id = u.id AND w.deleted_at IS NULL
 		WHERE u.id = ? AND u.status = 'active' AND u.deleted_at IS NULL LIMIT 1`, id).Scan(&row)
 	if result.Error != nil {
-		return model.Profile{}, result.Error
+		return identityuser.Profile{}, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return model.Profile{}, gorm.ErrRecordNotFound
+		return identityuser.Profile{}, gorm.ErrRecordNotFound
 	}
-	profile := model.Profile{UserID: row.ID, Nickname: row.Nickname.String, AvatarURL: row.AvatarURL.String, PhoneBound: row.Phone.Valid && row.Phone.String != "", RegisteredAt: row.FirstSeenAt.UTC(), CouponUnusedCount: row.CouponUnusedCount}
+	profile := identityuser.Profile{UserID: row.ID, Nickname: row.Nickname.String, AvatarURL: row.AvatarURL.String, PhoneBound: row.Phone.Valid && row.Phone.String != "", RegisteredAt: row.FirstSeenAt.UTC(), CouponUnusedCount: row.CouponUnusedCount}
 	profile.Wallet.AvailableCents = row.BalanceCents
 	profile.Wallet.FrozenCents = row.FrozenCents
 	return profile, nil
@@ -185,9 +185,9 @@ func (s UserStore) BindPhone(ctx context.Context, userID uint64, value *string) 
 // 跨层共享的数据契约在 model 包定义，此处保留别名供包内既有调用点使用，
 // 避免同一文件内反复写限定符。
 type (
-	User    = model.User
-	Profile = model.Profile
+	User    = identityuser.User
+	Profile = identityuser.Profile
 )
 
 // ErrUserFrozen 是账号冻结哨兵，供本包与上层 errors.Is 匹配。
-var ErrUserFrozen = model.ErrUserFrozen
+var ErrUserFrozen = identityuser.ErrUserFrozen

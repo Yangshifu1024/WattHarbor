@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"

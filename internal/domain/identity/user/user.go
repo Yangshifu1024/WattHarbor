@@ -1,7 +1,7 @@
-// Package model 定义 identity 领域跨层共享的纯数据契约。
-// 这里只有结构体与哨兵，不含 gorm、不含 SQL、不含 gin，
-// 因此 state、store、http 三层都可以依赖它而不产生反向依赖。
-package model
+// Package user 定义用户聚合的实体与值对象：登录身份与用户档案。
+// 只有结构体与哨兵，不含 gorm、不含 SQL、不含 gin，
+// 持久化与接口分别由 infrastructure 和 interface 承担。
+package user
 
 import (
 	"errors"
