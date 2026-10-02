@@ -9093,6 +9093,31 @@
             }
           }
         }
+      },
+      "ChargingScheme": {
+        "type": "object",
+        "description": "计费方案列表的一行。只返回含方案定义的模板；spec_json 解析不出 scheme 的模板不列出。",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "模板主键"
+          },
+          "scheme": {
+            "type": "object",
+            "description": "冻结的计费方案定义；下单时按此快照计价，不读当前模板"
+          },
+          "version": {
+            "type": "integer",
+            "description": "模板版本号，每次修改或停用 +1，用作乐观锁"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          }
+        }
       }
     }
   }
