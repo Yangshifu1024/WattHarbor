@@ -9,6 +9,7 @@ import (
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -54,7 +55,7 @@ func (a ResourceAPI) chargingSchemes(c *gin.Context) {
 }
 func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 	var in schemeInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	in.Scheme = in.Scheme.Normalized()
@@ -116,7 +117,7 @@ func (a ResourceAPI) changeChargingScheme(c *gin.Context, remove bool) {
 		ExpectedVersion uint32 `json:"expected_version"`
 		Status          string `json:"status"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !remove && in.Status != "active" && in.Status != "disabled" {
@@ -160,7 +161,7 @@ type applySchemeInput struct {
 
 func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 	var in applySchemeInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if uuid.Validate(in.RequestID) != nil || in.StationID == 0 || in.DeviceID != "" && !deviceIDPattern.MatchString(in.DeviceID) || (in.TemplateID == 0) == (in.Scheme == nil) {
@@ -335,7 +336,7 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 		DeviceID        string `json:"device_id"`
 		ExpectedVersion uint32 `json:"expected_version"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.DeviceID == "" || !deviceIDPattern.MatchString(in.DeviceID) {
@@ -384,7 +385,7 @@ func (a ResourceAPI) previewChargingScheme(c *gin.Context) {
 		Scenario    string               `json:"scenario"`
 		WalletCents int64                `json:"wallet_cents"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	result, err := in.Scheme.PreviewScenario(in.PackageID, in.Meter, in.Scenario, in.WalletCents)

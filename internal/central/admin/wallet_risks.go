@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -104,7 +105,7 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 		Approved *bool  `json:"approved"` // 审核结论，true 通过 / false 驳回；必须显式给出，指针为 nil 视为未填
 		Comment  string `json:"comment"`  // 审核依据，1–255 字且不含控制字符
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.Approved == nil || !validComment(in.Comment) {
@@ -182,7 +183,7 @@ func (a ResourceAPI) releaseWalletRisk(c *gin.Context) {
 	var in struct {
 		Comment string `json:"comment"` // 解冻依据，1–255 字且不含控制字符
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !validComment(in.Comment) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -74,7 +75,7 @@ func (a ResourceAPI) reviewInvoice(c *gin.Context) {
 		InvoiceURL string `json:"invoice_url"` // 审批时必填的 HTTPS 发票链接。
 		Reason     string `json:"reason"`      // 驳回原因，最长 255 字符；审批时可留空。
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	approve := c.FullPath() == "/api/v1/admin/billing/invoices/:id/approve"

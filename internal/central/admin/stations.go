@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -146,7 +147,7 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 		}
 	}
 	var input StationInput
-	if !decodeResource(c, &input) {
+	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
 	if input.Code != nil {

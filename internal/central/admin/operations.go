@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/netguard"
 	"github.com/gin-gonic/gin"
@@ -153,7 +154,7 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 		RoleID      uint64 `json:"role_id"`      // 角色 id，0 视为无效
 		Phone       string `json:"phone"`        // 联系电话，可空，最长 32 字符
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_.-]{3,64}$`).MatchString(in.Username) || len(in.Password) < 12 || len(in.Password) > 72 || utf8.RuneCountInString(in.DisplayName) > 64 || len(in.Phone) > 32 || in.RoleID == 0 {
@@ -245,7 +246,7 @@ func (a ResourceAPI) createAnnouncement(c *gin.Context) {
 		StartAt   time.Time  `json:"start_at"`   // 生效时间，必填
 		EndAt     *time.Time `json:"end_at"`     // 失效时间，可空表示不限；非空时必须晚于 start_at
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !validText(in.Title, 128) || !validText(in.Content, 20000) || in.Scope == "" || !oneOf(in.Scope, "global station city") || in.StartAt.IsZero() || (in.EndAt != nil && !in.EndAt.After(in.StartAt)) || (in.Scope != "global" && len(in.TargetIDs) == 0) {
@@ -278,7 +279,7 @@ func (a ResourceAPI) createWebhook(c *gin.Context) {
 		URL        string   `json:"url"`         // 接收地址，必须是可公网访问的 HTTPS 链接
 		EventTypes []string `json:"event_types"` // 订阅的事件类型，1–3 个，不重复
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !validText(in.Name, 64) || !httpsURL(in.URL) || len(in.EventTypes) == 0 || len(in.EventTypes) > 3 {
@@ -367,7 +368,7 @@ func (a ResourceAPI) whitelabel(c *gin.Context) {
 // 调用方必须提交完整配置；省略的键按默认值处理。
 func (a ResourceAPI) saveWhitelabel(c *gin.Context) {
 	in := map[string]string{}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	for k, v := range in {

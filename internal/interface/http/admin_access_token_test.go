@@ -1,4 +1,4 @@
-package admin
+package http
 
 import (
 	"encoding/json"
@@ -21,7 +21,7 @@ func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 	}
 	router := httpapi.NewRouter()
 	router.GET("/issue", func(c *gin.Context) {
-		(API{JWT: jwt}).issue(c, operations.Profile{ID: 7, RoleID: 8}, "fixture-session", "fixture-refresh")
+		(AdminAuth{JWT: jwt}).issue(c, operations.Profile{ID: 7, RoleID: 8}, "fixture-session", "fixture-refresh")
 	})
 	reply := httptest.NewRecorder()
 	router.ServeHTTP(reply, httptest.NewRequest(http.MethodGet, "/issue", nil))

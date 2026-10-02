@@ -117,7 +117,9 @@ charge-pilot/
 │   │   ├── http/
 │   │   │   ├── user_api.go                     /api/v1/user/*      → cmd/user
 │   │   │   ├── public_api.go                   /api/v1/user/auth/* → cmd/user
-│   │   │   ├── admin_api.go                    /api/v1/admin/*     → cmd/admin
+│   │   │   ├── admin_auth.go                   后台鉴权与会话入口
+│   │   ├── admin_mfa_settings.go           自助 MFA 开通与关闭
+│   │   ├── admin_api.go                    /api/v1/admin/*     → cmd/admin
 │   │   │   ├── internal_api.go                 /api/v1/internal/* → cmd/central
 │   │   │   ├── device_api.go                   设备端点            → cmd/gateway
 │   │   │   ├── worker_api.go                   运维端点            → cmd/worker
@@ -261,11 +263,14 @@ charge-pilot/
   protocol        →  无（契约自足）
   application     →  domain
   infrastructure  →  domain
-  interface       →  domain + application
+  interface       →  domain + application + infrastructure
   worker/gateway  →  protocol + domain + application + infrastructure
   cmd/*           →  interface + application + infrastructure + platform
   ```
 
+  真正被约束的是**方向**：`interface` 允许直接持有仓储（`infrastructure`），
+  因为处理器本身就是编排的最后一层，再往里包一层接口只会平移代码。
+  被禁止的是反向——`domain`、`application`、`infrastructure` 一律不得 import `interface`。
   `domain` 与 `protocol` 是平行层，互不 import。除 `worker/` 与 `gateway/` 外任何包不得 import `protocol`。这三条由 `make layers` 机检，违反即失败。
 
 - `internal/domain/` 是业务核心，零 gorm、零 gin、零 Redis。子域目录用业务概念命名，不是表名或集群名：

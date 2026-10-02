@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
@@ -65,7 +66,7 @@ func TestRetiredAdminRoutesAreRemoved(t *testing.T) {
 	var document struct {
 		Paths map[string]any `json:"paths"`
 	}
-	if err := json.Unmarshal(openAPIDocument, &document); err != nil {
+	if err := json.Unmarshal(chargehttp.OpenAPIDocument, &document); err != nil {
 		t.Fatal(err)
 	}
 	for path := range document.Paths {

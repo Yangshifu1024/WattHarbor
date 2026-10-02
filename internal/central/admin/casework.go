@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -76,7 +77,7 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 		Action       string `json:"action"`        // reply 回复 / close 关闭，二选一
 		ReplyContent string `json:"reply_content"` // 回复正文，action 为 reply 时必填，1–2000 字
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.Action != "close" && (in.Action != "reply" || !validText(in.ReplyContent, 2000)) {
@@ -167,7 +168,7 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 		AssignedTo uint64  `json:"assigned_to"` // 处理人管理员 ID，必填且非 0
 		Note       *string `json:"note"`        // 备注，可空；非空时最多 2000 字
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.AssignedTo == 0 || (in.Note != nil && utf8.RuneCountInString(*in.Note) > 2000) {
@@ -224,7 +225,7 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 		Status string  `json:"status"` // 目标状态：fixed 已修复 或 closed 已关闭
 		Note   *string `json:"note"`   // 备注；status 为 fixed 时必填，1–2000 字
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if (in.Status != "fixed" && in.Status != "closed") || (in.Note != nil && utf8.RuneCountInString(*in.Note) > 2000) || (in.Status == "fixed" && (in.Note == nil || !validText(*in.Note, 2000))) {

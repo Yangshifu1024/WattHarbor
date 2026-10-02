@@ -1,4 +1,4 @@
-package admin
+package http
 
 import (
 	"encoding/json"
@@ -14,7 +14,7 @@ import (
 
 func TestSelfMFASettingsRejectsClientSecretsAndInvalidProofs(t *testing.T) {
 	router := httpapi.NewRouter()
-	router.POST("/settings", (API{}).mfaSettings)
+	router.POST("/settings", (AdminAuth{}).mfaSettings)
 	for _, input := range []string{
 		`{}`, `{"action":"unknown"}`, `{"action":"enrol"}`, `{"action":"enrol","password":"password","secret":"chosen-secret"}`,
 		`{"action":"enrol","password":"password","admin_user_id":9}`, `{"action":"enrol","password":"password","code":"123456"}`,
@@ -31,24 +31,11 @@ func TestSelfMFASettingsRejectsClientSecretsAndInvalidProofs(t *testing.T) {
 
 func TestSelfMFASettingsRequiresSession(t *testing.T) {
 	router := httpapi.NewRouter()
-	(API{}).Register(router)
+	(AdminAuth{}).Register(router)
 	reply := httptest.NewRecorder()
 	router.ServeHTTP(reply, httptest.NewRequest(http.MethodPost, "/api/v1/admin/auth/mfa-settings", strings.NewReader(`{"action":"enrol","password":"password"}`)))
 	if reply.Code != http.StatusUnauthorized {
 		t.Fatalf("MFA settings bypassed session: %d", reply.Code)
-	}
-}
-
-func TestAdministratorMFAEndpointStillRejectsSelfOperation(t *testing.T) {
-	router := httpapi.NewRouter()
-	router.POST("/admin-users/:id/mfa", func(c *gin.Context) {
-		c.Set("admin_profile", operations.Profile{ID: 7})
-		(ResourceAPI{}).adminUserMFA(c)
-	})
-	reply := httptest.NewRecorder()
-	router.ServeHTTP(reply, httptest.NewRequest(http.MethodPost, "/admin-users/7/mfa", strings.NewReader(`{"action":"enrol"}`)))
-	if reply.Code != http.StatusConflict {
-		t.Fatalf("administrator management endpoint allowed self MFA: %d", reply.Code)
 	}
 }
 
@@ -57,7 +44,7 @@ func TestIssuedIdentityIncludesDisplayNameActualRoleAndMFAState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := API{JWT: jwt}
+	a := AdminAuth{JWT: jwt}
 	router := httpapi.NewRouter()
 	router.GET("/identity", func(c *gin.Context) {
 		a.issue(c, operations.Profile{ID: 7, Username: "fixture", DisplayName: "管理员显示名", Role: "custom", RoleName: "自定义中文角色", RoleID: 8, MFAEnabled: true}, "fixture-session", "fixture-refresh")

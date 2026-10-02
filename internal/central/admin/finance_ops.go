@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -43,7 +44,7 @@ func (a ResourceAPI) createWithdraw(c *gin.Context) {
 		AmountCents int64   `json:"amount_cents"` // 申请金额,单位分,必须大于 0 且不超过可提现余额
 		Note        *string `json:"note"`         // 备注(可空),最长 255 字符
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.RequestID == "" || !validUUID(in.RequestID) || in.PartyID == 0 || in.AmountCents <= 0 || (in.Note != nil && utf8Count(*in.Note) > 255) {
@@ -77,7 +78,7 @@ func (a ResourceAPI) decideWithdraw(c *gin.Context) {
 		Approve *bool   `json:"approve"` // 是否通过(可空);为 true 表示通过,为 false 时必须同时给 reason
 		Reason  *string `json:"reason"`  // 审核意见(可空),驳回时必填且不能是空白,最长 255 字符
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if no == "" || len(no) > 64 || (in.Approve == nil && in.Reason == nil) {
@@ -106,7 +107,7 @@ func (a ResourceAPI) payWithdraw(c *gin.Context) {
 	var in struct {
 		Note *string `json:"note"` // 打款备注(可空),最长 255 字符
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if no == "" || len(no) > 64 {
@@ -166,7 +167,7 @@ func (a ResourceAPI) runReconcile(c *gin.Context) {
 		Date          string            `json:"date"`            // 对账日期,格式 YYYY-MM-DD
 		Channel       []ReconcileAmount `json:"channel_amounts"` // 渠道上报明细,1-2000 条,按参照号累加后与内部比对
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !oneOf(in.ReconcileType, "wechat_refund wechat_pay split withdraw") {
@@ -336,7 +337,7 @@ func (a ResourceAPI) resolveReconcile(c *gin.Context) {
 		Resolved bool   `json:"resolved"` // 是否标记为已处理
 		Note     string `json:"note"`     // 处理备注,最长 255 字符
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if utf8Count(in.Note) > 255 {

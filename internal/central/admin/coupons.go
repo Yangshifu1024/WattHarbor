@@ -2,6 +2,7 @@ package admin
 
 import (
 	"errors"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -55,7 +56,7 @@ func (a ResourceAPI) coupons(c *gin.Context) {
 // 状态强制置为 active，不接受调用方指定。新建成功才返回，之后统一补审计。
 func (a ResourceAPI) createCoupon(c *gin.Context) {
 	var in couponRow
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.ID != 0 || !validText(in.Name, 128) || in.MinChargeCents < 0 || in.ValidHours == 0 || in.ValidHours > 87600 || in.PerUserQuota == 0 || (in.EndAt != nil && in.StartAt != nil && !in.EndAt.After(*in.StartAt)) {
@@ -103,7 +104,7 @@ func (a ResourceAPI) updateCoupon(c *gin.Context) {
 		Name   string `json:"name"`
 		Status string `json:"status"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !validText(in.Name, 128) || (in.Status != "active" && in.Status != "disabled") {
@@ -177,7 +178,7 @@ func (a ResourceAPI) grantCoupon(c *gin.Context) {
 		RequestID string            `json:"request_id"`
 		UserID    httpapi.DecimalID `json:"user_id"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	userID := uint64(in.UserID)

@@ -92,7 +92,7 @@ func run(ctx context.Context) error {
 	}
 	// C 端鉴权规则在 identity/user 包，此处只装配一次供全部 C 端接口复用。
 	cEndAuth := identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: cache}, identitystore.UserStore{DB: userORM})
-	adminAPI := admin.API{Store: adminStore, Sessions: sessionstore.AdminSessions{Redis: cache}, JWT: jwt}
+	adminAPI := identityhttp.AdminAuth{Store: adminStore, Sessions: sessionstore.AdminSessions{Redis: cache}, JWT: jwt}
 	adminAPI.Register(router)
 	admin.RegulatoryEventsAPI{Queue: admin.RegulatoryQueue{AdminDB: adminDB}, ServiceToken: cfg.ServiceToken}.Register(router)
 	admin.DeliveryDispatchAPI{Webhook: admin.WebhookDispatch{AdminDB: adminORM}, Regulatory: admin.RegulatoryDispatch{AdminDB: adminORM}, ServiceToken: cfg.ServiceToken}.Register(router)

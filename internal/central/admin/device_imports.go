@@ -8,6 +8,7 @@ import (
 	"fmt"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -82,7 +83,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 		ImportID string         `json:"import_id"` // 导入任务号，UUID，作为幂等键
 		Devices  []ImportDevice `json:"devices"`   // 设备清单，1–100 台，批内编号不得重复
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !requestIDPattern.MatchString(in.ImportID) || len(in.Devices) == 0 || len(in.Devices) > 100 {

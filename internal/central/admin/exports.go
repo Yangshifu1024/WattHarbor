@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -22,10 +23,10 @@ import (
 // ExportTask 提供 CSV、XLSX 和汇总 PDF 导出，限制单次行数。
 // 申请时校验资源权限和数据范围；下载时复查权限、归属、范围及有效期。
 type ExportTask struct {
-	Store     ResourceStore // 数据库连接集合,导出时按资源选择用户库/管理库/计费库
-	Auth      API           // 鉴权器,申请与下载两个动作都走它的权限校验
-	ExportDir string        // 导出文件目录,留空则用系统临时目录下的 chargepilot-exports
-	MaxRows   int           // 单次导出行数上限,留空默认 50000,超出直接判失败而不是截断
+	Store     ResourceStore        // 数据库连接集合,导出时按资源选择用户库/管理库/计费库
+	Auth      chargehttp.AdminAuth // 鉴权器,申请与下载两个动作都走它的权限校验
+	ExportDir string               // 导出文件目录,留空则用系统临时目录下的 chargepilot-exports
+	MaxRows   int                  // 单次导出行数上限,留空默认 50000,超出直接判失败而不是截断
 }
 
 // exportRow 对应 central_db.export_task，保存导出申请和有效期。
@@ -250,7 +251,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 		Format    string         `json:"format"`     // 文件格式,留空按 csv;pdf 只支持 bills 与 reconciles
 		Filter    map[string]any `json:"filter"`     // 筛选条件,bills/reconciles 必填 from/to 且跨度不超过 31 天
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !validUUID(in.RequestID) {

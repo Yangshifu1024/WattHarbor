@@ -1,4 +1,4 @@
-package admin
+package http
 
 import (
 	"context"
@@ -82,9 +82,9 @@ func (in mfaSettingsInput) valid() bool {
 }
 
 // mfaSettings 操作人始终取当前会话，既不接受目标账号也不接受客户端提交的密钥。
-func (a API) mfaSettings(c *gin.Context) {
+func (a AdminAuth) mfaSettings(c *gin.Context) {
 	var in mfaSettingsInput
-	if !decodeResource(c, &in) {
+	if !DecodeResource(c, &in) {
 		return
 	}
 	in.Code = strings.TrimSpace(in.Code)
@@ -141,7 +141,7 @@ func (a API) mfaSettings(c *gin.Context) {
 	httpapi.OK(c, result)
 }
 
-func (a API) mfaSettingsFailure(c *gin.Context, err error) {
+func (a AdminAuth) mfaSettingsFailure(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errMFAProof), errors.Is(err, operations.ErrInvalidTOTP):
 		httpapi.Write(c, http.StatusBadRequest, 1002, errMFAProof.Error(), nil)
@@ -152,7 +152,7 @@ func (a API) mfaSettingsFailure(c *gin.Context, err error) {
 	}
 }
 
-func (a API) applyMFASettings(ctx context.Context, p operations.Profile, sid string, in mfaSettingsInput, ip string) (mfaSettingsResult, error) {
+func (a AdminAuth) applyMFASettings(ctx context.Context, p operations.Profile, sid string, in mfaSettingsInput, ip string) (mfaSettingsResult, error) {
 	var result mfaSettingsResult
 	err := a.Store.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var account database.AdminAccount

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -149,7 +150,7 @@ var errRoleInput = errors.New("invalid role")
 // 权限集合在事务提交后单独写审计，避免审计写失败把角色回滚成"建了但没权限"的中间态。
 func (a ResourceAPI) createRole(c *gin.Context) {
 	var in roleInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
@@ -194,7 +195,7 @@ func (a ResourceAPI) updateRole(c *gin.Context) {
 		return
 	}
 	var in roleInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)

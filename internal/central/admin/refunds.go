@@ -6,6 +6,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -58,7 +59,7 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 		AmountCents int64  `json:"amount_cents"` // 本次退款金额，单位分，必须为正整数
 		Reason      string `json:"reason"`       // 退款原因，必填，最多 255 字，用于工单与审计追溯
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !requestIDPattern.MatchString(in.RequestID) || in.AmountCents <= 0 || !validText(in.Reason, 255) {
@@ -164,7 +165,7 @@ func (a ResourceAPI) reviewRefund(c *gin.Context) {
 		ApproveComment string `json:"approve_comment"` // 通过时必填的审核意见，1–255 字
 		Reason         string `json:"reason"`          // 驳回时必填的驳回理由，1–255 字
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	approve := strings.HasSuffix(c.FullPath(), "/approve")
@@ -199,7 +200,7 @@ func (a ResourceAPI) retryRefund(c *gin.Context) {
 	var in struct {
 		Reason string `json:"reason"` // 重投原因，必填，1–255 字，落审计用
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !validText(in.Reason, 255) {

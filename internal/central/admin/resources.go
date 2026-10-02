@@ -4,12 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -22,10 +21,10 @@ type ResourceStore struct{ AdminDB, UserDB, BillingDB *gorm.DB }
 // ResourceAPI 是除登录鉴权外全部后台业务接口的处理器，聚合了数据句柄、鉴权中间件
 // 和调用网关所需的地址与令牌。
 type ResourceAPI struct {
-	Store                    ResourceStore // 各模块的数据库句柄
-	Auth                     API           // 鉴权与权限中间件（API.Register 负责认证路由）
-	GatewayURL, ServiceToken string        // 调用网关用的地址与内部服务令牌
-	ExportDir                string        // 导出任务的落地目录
+	Store                    ResourceStore        // 各模块的数据库句柄
+	Auth                     chargehttp.AdminAuth // 鉴权与权限中间件（chargehttp.AdminAuth.Register 负责认证路由）
+	GatewayURL, ServiceToken string               // 调用网关用的地址与内部服务令牌
+	ExportDir                string               // 导出任务的落地目录
 }
 
 // Register 把所有后台业务路由挂到引擎上：先交给各业务域自己的 register 函数，
@@ -146,24 +145,6 @@ func resourceFailure(c *gin.Context, err error) {
 	default:
 		httpapi.Write(c, 503, 5003, "数据暂时无法读取或保存，请稍后重试", nil)
 	}
-}
-
-// decodeResource 限制请求体为 64 KB，拒绝未知字段及多个 JSON 对象。
-// 各业务接口在解析成功后继续执行参数校验。
-func decodeResource(c *gin.Context, dst any) bool {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-	d := json.NewDecoder(c.Request.Body)
-	d.DisallowUnknownFields()
-	if err := d.Decode(dst); err != nil {
-		httpapi.BadRequest(c, "请求内容无效或包含未知字段")
-		return false
-	}
-	var extra any
-	if err := d.Decode(&extra); err != io.EOF {
-		httpapi.BadRequest(c, "请求只能包含一个 JSON 对象")
-		return false
-	}
-	return true
 }
 
 // resourceAudit 在业务事务内保存变更快照、操作人、对象、客户端 IP 和请求号。

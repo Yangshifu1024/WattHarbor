@@ -1,4 +1,4 @@
-package admin
+package http
 
 import (
 	"errors"
@@ -15,9 +15,9 @@ import (
 	"time"
 )
 
-// API 是管理后台的鉴权与会话入口：持有账号存储、JWT 签发器和 Redis 会话，
+// AdminAuth 是管理后台的鉴权与会话入口：持有账号存储、JWT 签发器和 Redis 会话，
 // 登录、续期、改密、登出以及所有后台路由的权限校验都从这里出。
-type API struct {
+type AdminAuth struct {
 	Store    database.AdminStore        // 账号与权限的持久化入口
 	Sessions sessionstore.AdminSessions // Redis 会话管理，登录态的存在与撤销都以它为准
 	JWT      *auth.JWT                  // 后台访问令牌的签发与校验
@@ -27,8 +27,8 @@ const adminAccessTTL = 8 * time.Hour
 
 // Register 挂载鉴权相关路由：OpenAPI 文档、登录、MFA 验证、令牌续期、改密、登出和"我是谁"。
 // 除登录与文档外，每条路由都先过 a.Require 鉴权；Require 传空串表示"只要求登录，不额外要求权限位"。
-func (a API) Register(r *gin.Engine) {
-	r.GET("/api/docs/admin.openapi.json", func(c *gin.Context) { c.Data(200, "application/json; charset=utf-8", openAPIDocument) })
+func (a AdminAuth) Register(r *gin.Engine) {
+	r.GET("/api/docs/admin.openapi.json", func(c *gin.Context) { c.Data(200, "application/json; charset=utf-8", OpenAPIDocument) })
 	r.POST("/api/v1/admin/auth/login", a.login)
 	r.POST("/api/v1/admin/auth/mfa", a.verifyMFA)
 	r.POST("/api/v1/admin/auth/refresh", a.refresh)
@@ -43,7 +43,7 @@ var limitScript = redis.NewScript(`local n=redis.call('INCR',KEYS[1]); if n==1 t
 
 // rate 将同一 IP 的登录请求限制为每 60 秒 5 次，超限返回 429 和 Retry-After。
 // Redis 不可用时返回 503，保持失败关闭。
-func (a API) rate(c *gin.Context) bool {
+func (a AdminAuth) rate(c *gin.Context) bool {
 	n, err := limitScript.Run(c.Request.Context(), a.Sessions.Redis, []string{"admin:login-rate:" + c.ClientIP()}).Int()
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "登录服务暂不可用", nil)
@@ -59,7 +59,7 @@ func (a API) rate(c *gin.Context) bool {
 
 // login 先执行 IP 限流，再验证账号和口令。
 // 启用 MFA 的账号返回短期 challenge，验证二次因素后发放会话；其他账号直接完成登录。
-func (a API) login(c *gin.Context) {
+func (a AdminAuth) login(c *gin.Context) {
 	if !a.rate(c) {
 		return
 	}
@@ -91,7 +91,7 @@ func (a API) login(c *gin.Context) {
 
 // verifyMFA 完成被双因素挡住的登录：用 challenge 换回账号，再用 TOTP 码校验，成功后销掉 challenge 并发放会话。
 // verifyMFA 收尾一次因二次因素而暂停的登录。
-func (a API) verifyMFA(c *gin.Context) {
+func (a AdminAuth) verifyMFA(c *gin.Context) {
 	if !a.rate(c) {
 		return
 	}
@@ -119,7 +119,7 @@ func (a API) verifyMFA(c *gin.Context) {
 
 // completeLogin 读取权限档案，创建会话并返回 SID、刷新令牌和访问令牌。
 // 各阶段错误由 failure 统一映射到响应。
-func (a API) completeLogin(c *gin.Context, account database.AdminAccount) {
+func (a AdminAuth) completeLogin(c *gin.Context, account database.AdminAccount) {
 	profile, err := a.Store.Profile(c.Request.Context(), account.ID)
 	if err != nil {
 		a.failure(c, err)
@@ -135,7 +135,7 @@ func (a API) completeLogin(c *gin.Context, account database.AdminAccount) {
 
 // refresh 用刷新令牌换一对新令牌。旧刷新令牌立即作废（Rotate 里轮换），防重放。
 // 若账号的 authVersion 已变（改密、角色调整导致旧令牌全部失效），就把新会话也撤销并按凭证错误返回。
-func (a API) refresh(c *gin.Context) {
+func (a AdminAuth) refresh(c *gin.Context) {
 	if !a.rate(c) {
 		return
 	}
@@ -167,7 +167,7 @@ func (a API) refresh(c *gin.Context) {
 
 // issue 签发 8 小时有效的访问令牌，返回令牌、有效期、身份及权限。
 // 令牌里带 kind="admin"、会话 sid 和角色 ID，后台与用户侧的令牌因此不能互相通用。
-func (a API) issue(c *gin.Context, p operations.Profile, sid, refresh string) {
+func (a AdminAuth) issue(c *gin.Context, p operations.Profile, sid, refresh string) {
 	now := time.Now()
 	token, err := a.JWT.Sign(auth.Claims{Subject: strconv.FormatUint(p.ID, 10), Kind: "admin", SessionID: sid, RoleIDs: []uint64{p.RoleID}, IssuedAt: now.Unix(), ExpiresAt: now.Add(adminAccessTTL).Unix()})
 	if err != nil {
@@ -180,7 +180,7 @@ func (a API) issue(c *gin.Context, p operations.Profile, sid, refresh string) {
 // Require 返回鉴权中间件：校验 Bearer 令牌、Redis 会话是否还在、档案与令牌是否匹配，
 // 再按 permission 检查权限位（传空串只要求登录）。通过后把档案和 sid 放进上下文供后续处理函数使用。
 // 任何一环不通过都直接写响应并 Abort，权限不足与凭证无效的提示是分开的两条。
-func (a API) Require(permission string) gin.HandlerFunc {
+func (a AdminAuth) Require(permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := c.GetHeader("Authorization")
 		if !strings.HasPrefix(raw, "Bearer ") {
@@ -244,7 +244,7 @@ func (a API) Require(permission string) gin.HandlerFunc {
 }
 
 // logout 主动登出：按上下文里的 sid 直接删掉 Redis 会话，删掉后所有用该 sid 签发的令牌立即失效。
-func (a API) logout(c *gin.Context) {
+func (a AdminAuth) logout(c *gin.Context) {
 	if err := a.Sessions.RevokeSession(c.Request.Context(), c.GetString("admin_sid")); err != nil {
 		a.failure(c, err)
 		return
@@ -254,7 +254,7 @@ func (a API) logout(c *gin.Context) {
 
 // failure 把鉴权/账号类错误翻译成统一的 HTTP 状态与业务码：凭证类一律 401，账号锁定 423，TOTP 或 MFA 挑战无效 401，
 // 其余（含 Redis 故障）按 503 服务不可用处理，不向调用方泄露内部细节。
-func (a API) failure(c *gin.Context, err error) {
+func (a AdminAuth) failure(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, operations.ErrCredentials), errors.Is(err, operations.ErrInvalidRefresh):
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "用户名或密码错误，或登录已失效", nil)
@@ -271,7 +271,7 @@ func (a API) failure(c *gin.Context, err error) {
 
 // changePassword 后台账号自助改密。要求新旧密码不同、新密码 12–72 字节；
 // 改密由存储层连带提升 authVersion，因此该账号在其他设备上的登录态会一起失效。
-func (a API) changePassword(c *gin.Context) {
+func (a AdminAuth) changePassword(c *gin.Context) {
 	var request struct {
 		OldPassword string `json:"old_password" binding:"required,max=72"`        // 旧口令，必填
 		NewPassword string `json:"new_password" binding:"required,min=12,max=72"` // 新口令，长度 12–72 字节且不得与旧口令相同

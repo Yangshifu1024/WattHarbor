@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"io"
@@ -157,7 +158,7 @@ func (a ResourceAPI) createVendor(c *gin.Context) {
 		return
 	}
 	var in vendorInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	var out vendorRow
@@ -175,7 +176,7 @@ func (a ResourceAPI) updateVendor(c *gin.Context) {
 		return
 	}
 	var in vendorInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	path := "/" + strconv.FormatUint(id, 10)

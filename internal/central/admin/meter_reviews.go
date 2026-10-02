@@ -6,6 +6,7 @@ import (
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -32,7 +33,7 @@ func (a ResourceAPI) resolveMeterAmount(c *gin.Context) {
 		return
 	}
 	var in paystore.ManualSettlement
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	in.ChargeOrderID = id
@@ -146,7 +147,7 @@ func (a ResourceAPI) proposeMeter(c *gin.Context) {
 		Reason    string                  `json:"reason"`     // 核实依据，去空白后最长 500 字符。
 		Segments  []charging.MeterSegment `json:"segments"`   // 人工修正后的计量分段，须连续覆盖原始时段且总电量与原始一致。
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
@@ -179,7 +180,7 @@ func (a ResourceAPI) decideMeter(c *gin.Context) {
 		Approve  *bool  `json:"approve"`   // 是否通过；指针是为了把"没传"和 false 区分开，拒绝时必须另填原因。
 		Reason   string `json:"reason"`    // 拒绝原因，去空白后最长 500 字符；通过时可留空。
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	in.Reason = strings.TrimSpace(in.Reason)

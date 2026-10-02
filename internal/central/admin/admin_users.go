@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -118,7 +119,7 @@ func (a ResourceAPI) updateAdminUser(c *gin.Context) {
 		RoleID      *uint64 `json:"role_id"`
 		Status      *string `json:"status"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.DisplayName != nil && utf8.RuneCountInString(*in.DisplayName) > 128 {
@@ -276,7 +277,7 @@ func (a ResourceAPI) resetAdminPassword(c *gin.Context) {
 	var in struct {
 		NewPassword string `json:"new_password"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if len(in.NewPassword) < 12 || len(in.NewPassword) > 72 {
@@ -336,7 +337,7 @@ func (a ResourceAPI) adminUserMFA(c *gin.Context) {
 		Secret string `json:"secret"`
 		Code   string `json:"code"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	now := time.Now().UTC()

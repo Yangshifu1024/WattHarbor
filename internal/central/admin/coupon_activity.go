@@ -3,6 +3,7 @@ package admin
 import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -177,7 +178,7 @@ var errActivityInput = errors.New("invalid activity rule")
 // createActivityRule 新建一个券活动。校验通过且所引用的券都可用后写入 coupon_activity_rule。
 func (a ResourceAPI) createActivityRule(c *gin.Context) {
 	var in activityRuleInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	start, end, err := in.validate()
@@ -227,7 +228,7 @@ func (a ResourceAPI) updateActivityRule(c *gin.Context) {
 		return
 	}
 	var in activityRuleInput
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	start, end, err := in.validate()

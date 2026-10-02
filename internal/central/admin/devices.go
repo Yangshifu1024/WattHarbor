@@ -7,6 +7,7 @@ import (
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -238,7 +239,7 @@ func (a ResourceAPI) setDeviceStatus(c *gin.Context) {
 		httpapi.BadRequest(c, "设备编号无效")
 		return
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if in.Status != "enabled" && in.Status != "disabled" {
@@ -375,7 +376,7 @@ func (a ResourceAPI) updateDevice(c *gin.Context) {
 		return
 	}
 	var input DeviceInput
-	if !decodeResource(c, &input) {
+	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
 	metadata, expected, err := input.metadata()

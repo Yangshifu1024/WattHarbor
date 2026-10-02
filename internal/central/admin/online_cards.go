@@ -5,6 +5,7 @@ import (
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	cardstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -31,7 +32,7 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 		UserID httpapi.DecimalID `json:"user_id"`
 		Reason string            `json:"reason"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	userID := uint64(in.UserID)
@@ -86,7 +87,7 @@ func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
 		Status string `json:"status"`
 		Reason string `json:"reason"`
 	}
-	if !decodeResource(c, &in) {
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
 	if !oneOf(in.Status, "active lost disabled unbound") || in.Status == "" || !validText(in.Reason, 500) {

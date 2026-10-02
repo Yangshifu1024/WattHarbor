@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -126,7 +127,7 @@ func (a ResourceAPI) createSplitTemplate(c *gin.Context) {
 		Mode    string                     `json:"mode"`
 		Parties []paystore.SplitPartyInput `json:"parties"`
 	}
-	if !decodeResource(c, &input) {
+	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
 	if !paystore.CodePattern.MatchString(input.Code) || strings.TrimSpace(input.Name) == "" ||
@@ -185,7 +186,7 @@ func (a ResourceAPI) updateSplitTemplate(c *gin.Context) {
 		Mode   string `json:"mode"`
 		Status string `json:"status"`
 	}
-	if !decodeResource(c, &input) {
+	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
 	if strings.TrimSpace(input.Name) == "" ||
@@ -217,7 +218,7 @@ func (a ResourceAPI) replaceSplitParties(c *gin.Context) {
 	var input struct {
 		Parties []paystore.SplitPartyInput `json:"parties"`
 	}
-	if !decodeResource(c, &input) {
+	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
 	if !paystore.ValidParties(input.Parties) {
@@ -271,7 +272,7 @@ func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
 		TemplateID         uint64  `json:"template_id"`
 		ExpectedTemplateID *uint64 `json:"expected_template_id"`
 	}
-	if !decodeResource(c, &input) {
+	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
 	if input.TemplateID == 0 || input.ExpectedTemplateID == nil {

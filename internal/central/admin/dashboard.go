@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -93,7 +94,7 @@ func (d Dashboard) Read(ctx context.Context, now time.Time) (Metrics, error) {
 
 // Register 注册 GET /api/v1/admin/dashboard，需要 dashboard.read 权限；
 // 读取失败时返回 503 而不是空指标，避免看板被误读成“业务正常”。
-func (d Dashboard) Register(r *gin.Engine, a API) {
+func (d Dashboard) Register(r *gin.Engine, a chargehttp.AdminAuth) {
 	r.GET("/api/v1/admin/dashboard", a.Require("dashboard.read"), func(c *gin.Context) {
 		m, err := d.Read(c.Request.Context(), time.Now())
 		if err != nil {
