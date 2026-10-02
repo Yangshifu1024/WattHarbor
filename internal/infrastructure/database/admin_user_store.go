@@ -169,3 +169,13 @@ func UpdateAdminMFAStaged(tx *gorm.DB, id uint64, secret string) error {
 	return tx.Table("admin_user").Where("id = ? AND deleted_at IS NULL", id).
 		Updates(map[string]any{"mfa_secret": secret, "mfa_enabled": false}).Error
 }
+
+// LockActiveAdmin 在行锁下取一个启用且未删除的后台账号。
+// MFA 开通与关闭都要先在这里拿账号，再比对 auth_version——
+// 版本对不上说明会话已被别处作废（改密、停用、删除），必须让操作重新登录。
+func (s AdminStore) LockActiveAdmin(tx *gorm.DB, id uint64) (AdminAccount, error) {
+	var row AdminAccount
+	err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id=? AND status='active' AND deleted_at IS NULL", id).Take(&row).Error
+	return row, err
+}

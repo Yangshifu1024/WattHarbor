@@ -11,7 +11,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var (
@@ -83,8 +82,8 @@ func (a UserAccountAPI) submitFeedback(c *gin.Context) {
 			Status   string
 		}
 		// 订单表按 created_month 分区，此处按订单主键定位需要加锁的记录。
-		if err := tx.Table("charge_order").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND deleted_at IS NULL", orderID).Take(&order).Error; err != nil {
+		order, err := orderstore.LockFeedbackOrder(tx, orderID)
+		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errOrderNotReady
 			}
@@ -93,22 +92,15 @@ func (a UserAccountAPI) submitFeedback(c *gin.Context) {
 		if order.UserID != userID || !oneOfStatus(order.Status, "completed refunding refunded") {
 			return errOrderNotReady
 		}
-		var existing int64
-		if err := tx.Table("feedback").Where("order_id = ? AND deleted_at IS NULL", orderID).
-			Count(&existing).Error; err != nil {
+		existing, err := orderstore.CountOrderFeedback(tx, orderID)
+		if err != nil {
 			return err
 		}
 		if existing > 0 {
 			return errFeedbackExists
 		}
-		if err := tx.Table("feedback").Create(map[string]any{
-			"user_id": userID, "order_id": orderID, "device_id": order.DeviceID,
-			"rating": in.Rating, "category": in.Category, "content": in.Content,
-			"images_json": string(images), "status": "pending",
-		}).Error; err != nil {
-			return err
-		}
-		return tx.Raw("SELECT LAST_INSERT_ID()").Scan(&feedbackID).Error
+		feedbackID, err = orderstore.InsertFeedback(tx, userID, orderID, order.DeviceID, in.Rating, in.Category, in.Content, string(images))
+		return err
 	})
 	switch {
 	case errors.Is(tx, errOrderNotReady):

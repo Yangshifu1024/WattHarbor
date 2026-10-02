@@ -16,7 +16,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type CardAPI struct {
@@ -74,14 +73,11 @@ func (a CardAPI) cardStatus(c *gin.Context) {
 		return
 	}
 	err := a.Store.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var card paystore.OnlineCard
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("card_no=? AND user_id=? AND status<>'unbound'", c.Param("card_no"), user).Take(&card).Error; err != nil {
+		card, err := (paystore.UserCardStore{DB: a.Store.DB}).LockUserCard(tx, c.Param("card_no"), user)
+		if err != nil {
 			return err
 		}
-		if err := tx.Model(&card).Update("status", in.Status).Error; err != nil {
-			return err
-		}
-		return tx.Table("online_card_audit").Create(map[string]any{"card_id": card.ID, "actor_id": user, "action": "user_" + in.Status, "detail": "用户主动" + in.Status}).Error
+		return (paystore.UserCardStore{DB: a.Store.DB}).SetUserCardStatus(tx, card, user, in.Status)
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "卡不存在", nil)
@@ -107,13 +103,13 @@ func (a CardAPI) swipe(c *gin.Context) {
 		httpapi.BadRequest(c, "刷卡事件、卡号、端口无效")
 		return
 	}
-	var prior orderstore.CardOperation
-	found := a.Store.DB.WithContext(c.Request.Context()).Table("card_operation o").Select("o.*").Joins("JOIN online_card c ON c.id=o.card_id").Joins("JOIN card_charge s ON s.charge_order_id=o.charge_order_id").Where("o.event_id=? AND c.card_no=? AND s.port_code=?", in.EventID, in.CardNo, in.PortID).Find(&prior)
-	if found.Error != nil {
+	prior, replayed, err := (orderstore.UserCardStore{DB: a.Store.DB}).FindCardOperationByEvent(
+		c.Request.Context(), a.Store.DB, in.EventID, in.CardNo, in.PortID)
+	if err != nil {
 		httpapi.Write(c, 503, 5001, "刷卡事件暂不可读取", nil)
 		return
 	}
-	if found.RowsAffected > 0 {
+	if replayed {
 		httpapi.OK(c, prior)
 		return
 	}

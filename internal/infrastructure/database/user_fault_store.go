@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 
+	"gorm.io/gorm/clause"
+
 	"gorm.io/gorm"
 )
 
@@ -75,4 +77,40 @@ func ListUserVisibleFaultEvents(ctx context.Context, db *gorm.DB, reportID uint6
 		Select("event_type, from_status, to_status, note, created_at").
 		Order("id ASC").Find(&rows).Error
 	return rows, err
+}
+
+// FeedbackOrder 是提交反馈时要核对的订单。charge_order 按 created_month 分区，
+// 按主键定位要加锁的记录，所以这里在事务内取。
+type FeedbackOrder struct {
+	ID       uint64
+	UserID   uint64
+	DeviceID string
+	Status   string
+}
+
+// LockFeedbackOrder 在行锁下取订单，取不到返回 gorm.ErrRecordNotFound。
+func LockFeedbackOrder(tx *gorm.DB, orderID uint64) (FeedbackOrder, error) {
+	var row FeedbackOrder
+	err := tx.Table("charge_order").Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND deleted_at IS NULL", orderID).Take(&row).Error
+	return FeedbackOrder{ID: row.ID, UserID: row.UserID, DeviceID: row.DeviceID, Status: row.Status}, err
+}
+
+// CountOrderFeedback 数出订单上已有的反馈条数。
+func CountOrderFeedback(tx *gorm.DB, orderID uint64) (int64, error) {
+	var count int64
+	err := tx.Table("feedback").Where("order_id = ? AND deleted_at IS NULL", orderID).Count(&count).Error
+	return count, err
+}
+
+// InsertFeedback 落一条用户反馈，返回新反馈 ID。
+func InsertFeedback(tx *gorm.DB, userID, orderID uint64, deviceID string, rating int8, category string, content *string, imagesJSON string) (uint64, error) {
+	if err := tx.Table("feedback").Create(map[string]any{
+		"user_id": userID, "order_id": orderID, "device_id": deviceID,
+		"rating": rating, "category": category, "content": content,
+		"images_json": imagesJSON, "status": "pending",
+	}).Error; err != nil {
+		return 0, err
+	}
+	return LastInsertID(tx)
 }

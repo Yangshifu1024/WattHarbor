@@ -14,7 +14,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"net/http"
 	"strings"
 	"time"
@@ -155,8 +154,8 @@ func (a AdminAuth) mfaSettingsFailure(c *gin.Context, err error) {
 func (a AdminAuth) applyMFASettings(ctx context.Context, p operations.Profile, sid string, in mfaSettingsInput, ip string) (mfaSettingsResult, error) {
 	var result mfaSettingsResult
 	err := a.Store.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var account database.AdminAccount
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND status='active' AND deleted_at IS NULL", p.ID).Take(&account).Error; err != nil {
+		account, err := (database.AdminStore{DB: tx}).LockActiveAdmin(tx, p.ID)
+		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return operations.ErrCredentials
 			}
@@ -222,7 +221,7 @@ func (a AdminAuth) applyMFASettings(ctx context.Context, p operations.Profile, s
 			if consumed != 1 {
 				return errMFAPending
 			}
-			if err := tx.Model(&database.AdminAccount{}).Where("id=?", account.ID).Updates(map[string]any{"mfa_secret": pending.Secret, "mfa_enabled": true, "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
+			if err := database.UpdateAdminMFASecret(tx, account.ID, &pending.Secret, true, true); err != nil {
 				return err
 			}
 			// audit 只记录账号和动作，永不持久化密钥、验证码或密码。
@@ -244,7 +243,7 @@ func (a AdminAuth) applyMFASettings(ctx context.Context, p operations.Profile, s
 			if err := a.Sessions.Redis.Del(ctx, mfaPendingKey(account.ID)).Err(); err != nil {
 				return err
 			}
-			if err := tx.Model(&database.AdminAccount{}).Where("id=?", account.ID).Updates(map[string]any{"mfa_secret": nil, "mfa_enabled": false, "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
+			if err := database.UpdateAdminMFASecret(tx, account.ID, nil, false, true); err != nil {
 				return err
 			}
 			if err := database.WriteAuthAudit(tx, account, "mfa_disable", ip); err != nil {
