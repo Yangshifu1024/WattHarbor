@@ -4,15 +4,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/netguard"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"regexp"
 	"strings"
 	"time"
@@ -30,14 +29,15 @@ func (a ResourceAPI) registerOperations(r *gin.Engine) {
 	// get 生成一个"按 id 倒序列出整表"的列表接口：soft 为真时过滤软删除行，
 	// columns 决定返回哪些列——敏感列在 SQL 表达式里就裁掉（如 webhook 只取
 	// secret 前 8 位），不会先查出来再丢弃。
-	get := func(path, perm, table, columns string, soft bool) {
+	get := func(path, perm, resource string) {
 		r.GET("/api/v1/admin/"+path, a.Auth.Require(perm), func(c *gin.Context) {
-			rows := []map[string]any{}
-			q := a.Store.AdminDB.WithContext(c.Request.Context()).Table(table).Select(columns)
-			if soft {
-				q = q.Where("deleted_at IS NULL")
+			spec, known := database.AdminListSpecOf(resource)
+			if !known {
+				chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
+				return
 			}
-			if err := q.Order("id DESC").Find(&rows).Error; err != nil {
+			rows, err := (database.AdminOpsStore{DB: a.Store.AdminDB}).ListRows(c.Request.Context(), spec)
+			if err != nil {
 				chargehttp.AdminResourceFailure(c, err)
 				return
 			}
@@ -45,9 +45,9 @@ func (a ResourceAPI) registerOperations(r *gin.Engine) {
 			httpapi.OK(c, gin.H{"items": rows})
 		})
 	}
-	get("alerts", "alert.read", "alert_event", "id,device_id,severity,metric,status,created_at", false)
-	get("announcements", "announcement.read", "announcement", "id,title,content,scope,target_ids,status,start_at,end_at", true)
-	get("webhooks", "webhook.read", "webhook_subscription", "id,name,url,enabled,event_types,LEFT(secret,8) AS secret_prefix", true)
+	get("alerts", "alert.read", "alerts")
+	get("announcements", "announcement.read", "announcements")
+	get("webhooks", "webhook.read", "webhooks")
 	r.POST("/api/v1/admin/admin-users", a.Auth.Require("admin_user.create"), a.createUser)
 	r.POST("/api/v1/admin/alerts/:id/ack", a.Auth.Require("alert.ack"), a.ackAlert)
 	r.POST("/api/v1/admin/announcements", a.Auth.Require("announcement.create"), a.createAnnouncement)
@@ -101,22 +101,24 @@ func normalizeRows(rows []map[string]any) {
 // id=0 时新增并回填主键；否则锁定原记录，读取更新前快照后执行更新。
 func (a ResourceAPI) adminWrite(c *gin.Context, table, action string, id uint64, values map[string]any) (uint64, bool) {
 	p := c.MustGet("admin_profile").(operations.Profile)
+	store := database.AdminOpsStore{DB: a.Store.AdminDB}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var before map[string]any
 		if id != 0 {
-			if err := tx.Table(table).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&before).Error; err != nil {
+			snapshot, err := store.LockRow(tx, table, id)
+			if err != nil {
 				return err
 			}
-			if err := tx.Table(table).Where("id = ?", id).Updates(values).Error; err != nil {
+			before = snapshot
+			if err := store.UpdateRow(tx, table, id, values); err != nil {
 				return err
 			}
 		} else {
-			if err := tx.Table(table).Create(values).Error; err != nil {
+			created, err := store.InsertRow(tx, table, values)
+			if err != nil {
 				return err
 			}
-			if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
-				return err
-			}
+			id = created
 		}
 		return chargehttp.AdminResourceAudit(tx, p, action, table, id, before, values, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
@@ -147,8 +149,8 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 		return
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	var codes []string
-	if err := a.Store.AdminDB.Table("role AS r").Joins("JOIN role_permission rp ON rp.role_id=r.id JOIN permission p ON p.id=rp.permission_id").Where("r.id=? AND r.deleted_at IS NULL", in.RoleID).Pluck("p.code", &codes).Error; err != nil {
+	codes, err := (database.AdminOpsStore{DB: a.Store.AdminDB}).RolePermissionCodes(a.Store.AdminDB, in.RoleID)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -171,12 +173,11 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 	var id uint64
 	err = a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		row := map[string]any{"username": in.Username, "display_name": in.DisplayName, "password_hash": string(hash), "phone": in.Phone, "role_id": in.RoleID, "status": "active"}
-		if err := tx.Table("admin_user").Create(row).Error; err != nil {
+		created, err := (database.AdminOpsStore{DB: tx}).CreateAdminUser(tx, row)
+		if err != nil {
 			return err
 		}
-		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
-			return err
-		}
+		id = created
 		return chargehttp.AdminResourceAudit(tx, p, "create", "admin_user", id, nil, gin.H{"username": in.Username, "role_id": in.RoleID}, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
 	if err != nil {
@@ -194,10 +195,10 @@ func (a ResourceAPI) ackAlert(c *gin.Context) {
 		return
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
+	store := database.AdminOpsStore{DB: a.Store.AdminDB}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		// row 只取状态列：active 表示未认领，acknowledged 表示已被认领。
-		var row struct{ Status string }
-		if err := tx.Table("alert_event").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&row).Error; err != nil {
+		row, err := store.LockAlertStatus(tx, id)
+		if err != nil {
 			return err
 		}
 		if row.Status == "acknowledged" {
@@ -206,10 +207,10 @@ func (a ResourceAPI) ackAlert(c *gin.Context) {
 		if row.Status != "active" {
 			return errConflict
 		}
-		if err := tx.Table("alert_event").Where("id=?", id).Updates(map[string]any{"status": "acknowledged", "acked_by": p.ID, "acked_at": time.Now()}).Error; err != nil {
+		if err := store.AckAlert(tx, id, p.ID, time.Now()); err != nil {
 			return err
 		}
-		return chargehttp.AdminResourceAudit(tx, p, "ack", "alert", id, row, gin.H{"status": "acknowledged"}, c.ClientIP(), "")
+		return chargehttp.AdminResourceAudit(tx, p, "ack", "alert", id, gin.H{"status": row.Status}, gin.H{"status": "acknowledged"}, c.ClientIP(), "")
 	})
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
@@ -293,12 +294,13 @@ func (a ResourceAPI) createWebhook(c *gin.Context) {
 	events, _ := json.Marshal(in.EventTypes)
 	var id uint64
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("webhook_subscription").Create(map[string]any{"name": in.Name, "url": in.URL, "event_types": string(events), "secret": secret, "enabled": true}).Error; err != nil {
+		created, err := (database.AdminOpsStore{DB: tx}).CreateWebhookSubscription(tx, map[string]any{
+			"name": in.Name, "url": in.URL, "event_types": string(events), "secret": secret, "enabled": true,
+		})
+		if err != nil {
 			return err
 		}
-		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
-			return err
-		}
+		id = created
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "webhook", id, nil, in, c.ClientIP(), "")
 	})
 	if err != nil {
@@ -314,25 +316,22 @@ var whiteKeys = map[string]int{"miniprogram_name": 64, "miniprogram_logo_url": 5
 // whiteRead 读出当前生效的白标配置。whitelabel_config 只有 id=1 这一行；
 // 没有记录时返回内置默认值，存量数据里不在白名单内的键被丢弃且不覆盖默认值。
 func (a ResourceAPI) whiteRead(c *gin.Context) (map[string]string, error) {
-	// row 只取 config_json 一列；指针为 nil 表示这行还没有写过配置。
-	var row struct{ ConfigJSON *string }
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("whitelabel_config").Where("id=1").Take(&row).Error
-	config := map[string]string{"miniprogram_name": "ChargePilot", "theme_color": "#1677ff"}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return config, nil
-	}
+	// configJSON 为 nil 表示这一行还没有写过配置，直接用内置默认值。
+	saved, err := (database.AdminOpsStore{DB: a.Store.AdminDB}).WhitelabelConfigJSON(c.Request.Context())
 	if err != nil {
 		return nil, err
 	}
-	if row.ConfigJSON != nil {
-		var saved map[string]string
-		if err = json.Unmarshal([]byte(*row.ConfigJSON), &saved); err != nil {
-			return nil, err
-		}
-		for k, v := range saved {
-			if _, ok := whiteKeys[k]; ok {
-				config[k] = v
-			}
+	config := map[string]string{"miniprogram_name": "ChargePilot", "theme_color": "#1677ff"}
+	if saved == nil {
+		return config, nil
+	}
+	var stored map[string]string
+	if err := json.Unmarshal([]byte(*saved), &stored); err != nil {
+		return nil, err
+	}
+	for k, v := range stored {
+		if _, ok := whiteKeys[k]; ok {
+			config[k] = v
 		}
 	}
 	return config, nil
@@ -373,7 +372,7 @@ func (a ResourceAPI) saveWhitelabel(c *gin.Context) {
 	}
 	b, _ := json.Marshal(in)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("INSERT INTO whitelabel_config (id,name,mini_program_name,theme_color,config_json) VALUES (1,?,?,?,?) ON DUPLICATE KEY UPDATE mini_program_name=VALUES(mini_program_name),theme_color=VALUES(theme_color),config_json=VALUES(config_json)", "default", in["miniprogram_name"], in["theme_color"], string(b)).Error; err != nil {
+		if err := (database.AdminOpsStore{DB: tx}).SaveWhitelabel(tx, in["miniprogram_name"], in["theme_color"], string(b)); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "whitelabel", 1, nil, in, c.ClientIP(), "")
