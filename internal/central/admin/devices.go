@@ -100,7 +100,7 @@ func (s ResourceStore) Devices(ctx context.Context, q PageQuery, scopes ...opera
 		query = query.Where("d.status = ?", q.Status)
 	}
 	if q.Keyword != "" {
-		v := likePattern(q.Keyword)
+		v := chargehttp.AdminLikePattern(q.Keyword)
 		query = query.Where("(d.device_id LIKE ? ESCAPE '!' OR d.model LIKE ? ESCAPE '!' OR s.name LIKE ? ESCAPE '!')", v, v, v)
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
@@ -124,7 +124,7 @@ func (s ResourceStore) Devices(ctx context.Context, q PageQuery, scopes ...opera
 // devices 响应设备分页列表，状态入参只接受 enabled/disabled/retired/fault，
 // 并把当前管理员的权限列表一并带回，供前端决定按钮的可见性。
 func (a ResourceAPI) devices(c *gin.Context) {
-	q, ok := parsePage(c, "enabled disabled retired fault")
+	q, ok := chargehttp.ReadAdminPage(c, "enabled disabled retired fault")
 	if !ok {
 		return
 	}
@@ -142,7 +142,7 @@ func (a ResourceAPI) devices(c *gin.Context) {
 	}
 	out, err := a.Store.Devices(c.Request.Context(), q, scope)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	out.Permissions = c.MustGet("admin_profile").(operations.Profile).Permissions
@@ -165,11 +165,11 @@ func (a ResourceAPI) device(c *gin.Context) {
 	}
 	query := database.ScopeVendors(scope, database.ScopeStations(scope, a.Store.deviceQuery(c.Request.Context()), "d.station_id"), "d.vendor_id")
 	if err := query.Select(deviceColumns).Where("d.device_id = ?", id).Take(&row).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := row.normalizeMetadata(); err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	cap, _ := charging.ProtocolCapabilities(row.ProtocolAdapter)
@@ -269,10 +269,10 @@ func (a ResourceAPI) setDeviceStatus(c *gin.Context) {
 		if err := tx.Table("device_meta").Where("id=?", row.ID).Updates(map[string]any{"status": in.Status, "updated_at": row.UpdatedAt}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.status", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.status", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, row)
@@ -414,10 +414,10 @@ func (a ResourceAPI) updateDevice(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.update", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.update", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	cap, _ := charging.ProtocolCapabilities(row.ProtocolAdapter)

@@ -45,7 +45,7 @@ func (a ResourceAPI) registerCoupons(r *gin.Engine) {
 func (a ResourceAPI) coupons(c *gin.Context) {
 	rows := []couponRow{}
 	if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("coupon").Where("deleted_at IS NULL").Order("id DESC").Find(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"items": rows})
@@ -77,16 +77,16 @@ func (a ResourceAPI) createCoupon(c *gin.Context) {
 		return
 	}
 	in.Status = "active"
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		if err := tx.Table("coupon").Create(&in).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{"create", "coupon", in.ID, nil, in, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: "create", Target: "coupon", ID: in.ID, Before: nil, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, in)
@@ -96,7 +96,7 @@ func (a ResourceAPI) createCoupon(c *gin.Context) {
 // 只能改名称和启停状态，额度与优惠力度一旦发出去就不能再改，否则已发出的券无法解释。
 // 改动前对券行加写锁并留存旧值快照，审计在事务提交后另行写入。
 func (a ResourceAPI) updateCoupon(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -111,8 +111,8 @@ func (a ResourceAPI) updateCoupon(c *gin.Context) {
 		httpapi.BadRequest(c, "名称或状态无效")
 		return
 	}
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var before couponRow
 		if err := tx.Table("coupon").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
 			return err
@@ -120,11 +120,11 @@ func (a ResourceAPI) updateCoupon(c *gin.Context) {
 		if err := tx.Table("coupon").Where("id=?", id).Updates(map[string]any{"name": in.Name, "status": in.Status}).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{"update", "coupon", id, before, in, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: "update", Target: "coupon", ID: id, Before: before, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, in)
@@ -135,14 +135,14 @@ func (a ResourceAPI) updateCoupon(c *gin.Context) {
 // 未使用与已过期是按当前时刻动态判定的（status 仍是 unused 但已过期的记为过期），
 // 四个状态互斥，加总等于发放总数。
 func (a ResourceAPI) couponStats(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	var coupon couponRow
 	db := a.Store.UserDB.WithContext(c.Request.Context())
 	if err := db.Table("coupon").Where("id=? AND deleted_at IS NULL", id).Take(&coupon).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	// 四个状态互斥，发放总数 = 未使用 + 已使用 + 已过期。
@@ -153,7 +153,7 @@ func (a ResourceAPI) couponStats(c *gin.Context) {
 		ExpiredCount int64 `json:"expired_count"`
 	}
 	if err := db.Table("coupon_grant").Select("COUNT(*) AS granted_count,COALESCE(SUM(status='unused' AND expired_at>UTC_TIMESTAMP(3)),0) AS unused_count,COALESCE(SUM(status='used'),0) AS used_count,COALESCE(SUM(status='expired' OR (status='unused' AND expired_at<=UTC_TIMESTAMP(3))),0) AS expired_count").Where("coupon_id=?", id).Scan(&stats).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	rate := float64(0)
@@ -170,7 +170,7 @@ var requestIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-
 // 同一 request_id、模板和用户返回首次券 ID；同号不同内容返回 409。
 // 到期时间取领取后有效期与模板结束时间的较早值。
 func (a ResourceAPI) grantCoupon(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -187,8 +187,8 @@ func (a ResourceAPI) grantCoupon(c *gin.Context) {
 		return
 	}
 	var grantID uint64
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var coupon couponRow
 		if err := tx.Table("coupon").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&coupon).Error; err != nil {
 			return err
@@ -239,11 +239,11 @@ func (a ResourceAPI) grantCoupon(c *gin.Context) {
 		if err := tx.Table("coupon_grant_request").Create(map[string]any{"request_id": in.RequestID, "coupon_id": id, "user_id": userID, "coupon_grant_id": grantID}).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{"grant", "coupon", id, nil, in, in.RequestID}}
+		auditPending = []chargehttp.AuditEntry{{Action: "grant", Target: "coupon", ID: id, Before: nil, After: in, RequestID: in.RequestID}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"coupon_grant_id": grantID, "request_id": in.RequestID})

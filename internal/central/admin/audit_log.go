@@ -1,32 +1,12 @@
 package admin
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"log"
 	"time"
 )
-
-// 网关变更由远端提交，收到响应后记录运营审计。
-// central 内的业务变更与审计通过 auditedTransaction 在同一事务提交。
-func (a ResourceAPI) auditToAdmin(c *gin.Context, action, target string, id uint64, before, after any, requestID string) {
-	if err := resourceAudit(a.Store.AdminDB.WithContext(c.Request.Context()), c.MustGet("admin_profile").(operations.Profile), action, target, id, before, after, c.ClientIP(), firstNonEmpty(requestID, httpapi.RequestID(c))); err != nil {
-		log.Printf("gateway audit failed action=%s target=%s id=%d: %v", action, target, id, err)
-	}
-}
-
-// firstNonEmpty 依次取参数中第一个非空字符串，全空则返回空串。
-// 用来让业务自己带的请求号优先于框架生成的。
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
 
 // auditRow 映射 central_db.audit_log；可空字段使用指针保留 NULL 语义。
 type auditRow struct {
@@ -53,7 +33,7 @@ func (a ResourceAPI) registerAuditLogs(r *gin.Engine) {
 // listAuditLogs 按模块、动作、操作人、目标类型及时间分页查询审计记录，按 ID 倒序。
 // 时间参数必须符合 RFC3339；分页或时间参数无效时返回 400。
 func (a ResourceAPI) listAuditLogs(c *gin.Context) {
-	page, ok := parsePage(c, "")
+	page, ok := chargehttp.ReadAdminPage(c, "")
 	if !ok {
 		return
 	}
@@ -96,7 +76,7 @@ func (a ResourceAPI) listAuditLogs(c *gin.Context) {
 			q = q.Where("action = ?", action)
 		}
 		if actor != "" {
-			q = q.Where("actor_name LIKE ?", likePattern(actor))
+			q = q.Where("actor_name LIKE ?", chargehttp.AdminLikePattern(actor))
 		}
 		if target != "" {
 			q = q.Where("target_type = ?", target)
@@ -110,7 +90,7 @@ func (a ResourceAPI) listAuditLogs(c *gin.Context) {
 		return q
 	}
 	if err := filtered().Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	var rows []auditRow
@@ -119,35 +99,9 @@ func (a ResourceAPI) listAuditLogs(c *gin.Context) {
 		Select("id, actor_id, actor_name, module, action, target_type, target_id, request_id, client_ip, " +
 			"CAST(before_json AS CHAR) AS before_json, CAST(after_json AS CHAR) AS after_json, created_at").
 		Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Scan(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	out.Items = rows
 	httpapi.OK(c, out)
-}
-
-// auditEntry is committed in the same central_db transaction as its business change.
-type auditEntry struct {
-	action    string // 动作，如 create / update / grant
-	target    string // 目标类型，同时也是所属模块，如 coupon
-	id        uint64 // 目标主键
-	before    any    // 变更前快照，新建时为 nil
-	after     any    // 变更后快照
-	requestID string // 关联请求号，可为空
-}
-
-// auditedTransaction rolls back the business change if its audit cannot be stored.
-func (a ResourceAPI) auditedTransaction(c *gin.Context, db *gorm.DB, entries *[]auditEntry, apply func(*gorm.DB) error) error {
-	return db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := apply(tx); err != nil {
-			return err
-		}
-		p := c.MustGet("admin_profile").(operations.Profile)
-		for _, entry := range *entries {
-			if err := resourceAudit(tx, p, entry.action, entry.target, entry.id, entry.before, entry.after, c.ClientIP(), firstNonEmpty(entry.requestID, httpapi.RequestID(c))); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }

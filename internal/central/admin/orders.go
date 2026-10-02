@@ -179,13 +179,13 @@ func (s ResourceStore) orderStations(ctx context.Context, rows []OrderView) erro
 // orders 是 GET /api/v1/admin/orders 的处理函数：校验并组装查询条件后返回分页结果。
 // 订单号与设备号限长 64，站点 ID 必须是正整数，时间须为 ISO 8601 且开始不晚于结束。
 func (a ResourceAPI) orders(c *gin.Context) {
-	page, ok := parsePage(c, "pending_payment paid charging completed cancelled failed refunding refunded")
+	page, ok := chargehttp.ReadAdminPage(c, "pending_payment paid charging completed cancelled failed refunding refunded")
 	if !ok {
 		return
 	}
 	q := OrderQuery{PageQuery: page, OrderNo: c.Query("order_no"), DeviceID: c.Query("device_id"),
 		BusinessStatus: c.Query("business_status"), PaymentStatus: c.Query("payment_status"), StartSource: c.Query("start_source")}
-	if !oneOf(q.BusinessStatus, "pending_start charging completed") || !oneOf(q.PaymentStatus, "pending paid refunded partial_refunded") || !oneOf(q.StartSource, "payment balance card") {
+	if !chargehttp.AdminOneOf(q.BusinessStatus, "pending_start charging completed") || !chargehttp.AdminOneOf(q.PaymentStatus, "pending paid refunded partial_refunded") || !chargehttp.AdminOneOf(q.StartSource, "payment balance card") {
 		httpapi.BadRequest(c, "业务状态、支付状态或启动来源无效")
 		return
 	}
@@ -217,7 +217,7 @@ func (a ResourceAPI) orders(c *gin.Context) {
 	}
 	out, err := a.Store.Orders(c.Request.Context(), q)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	a.orderLive(c.Request.Context(), out.Items)
@@ -227,19 +227,19 @@ func (a ResourceAPI) orders(c *gin.Context) {
 // order 返回订单详情、计费单号及分账汇总。
 // 仅对持有 order.refund.create 权限的操作人回填 RefundApplicantID，供界面显示退款入口；后端另行校验退款权限。
 func (a ResourceAPI) order(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	ctx := c.Request.Context()
 	var row OrderView
 	if err := a.Store.orderQuery(ctx).Select(orderColumns).Where("c.id = ?", id).Take(&row).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	rows := []OrderView{row}
 	if err := a.Store.orderStations(ctx, rows); err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	row = rows[0]
@@ -247,7 +247,7 @@ func (a ResourceAPI) order(c *gin.Context) {
 	row = rows[0]
 	selectedPackage, err := a.Store.orderPackage(ctx, row.OrderID)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	row.SelectedPackage = selectedPackage
@@ -257,18 +257,18 @@ func (a ResourceAPI) order(c *gin.Context) {
 	// calculation_no 可空：计费完成前还没有计费单。
 	var fee struct{ CalculationNo *string }
 	if err := a.Store.BillingDB.WithContext(ctx).Table("fee_receipt").Select("calculation_no").Where("charge_order_id = ?", id).Limit(1).Scan(&fee).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	billing.CalculationNo = fee.CalculationNo
 	if err := a.Store.BillingDB.WithContext(ctx).Table("settlement").Where("order_no = ?", row.OrderNo).Order("id").Find(&billing.Settlements).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	for i := range billing.Settlements {
 		billing.Settlements[i].Parties = []PartyView{}
 		if err := a.Store.BillingDB.WithContext(ctx).Table("settlement_party_amount").Where("settlement_id = ?", billing.Settlements[i].SettlementID).Order("id").Find(&billing.Settlements[i].Parties).Error; err != nil {
-			resourceFailure(c, err)
+			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
 	}
@@ -286,14 +286,14 @@ func (a ResourceAPI) order(c *gin.Context) {
 // 按发生时间顺序返回该订单的事件日志，用于还原一次充电从下单到结束的完整过程。
 // 先确认订单存在再查日志，避免对不存在的订单返回空列表。
 func (a ResourceAPI) timeline(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	ctx := c.Request.Context()
 	var order struct{ ID uint64 }
 	if err := a.Store.UserDB.WithContext(ctx).Table("charge_order").Select("id").Where("id = ? AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	rows := []struct {
@@ -304,7 +304,7 @@ func (a ResourceAPI) timeline(c *gin.Context) {
 		Detail  string    `json:"detail"`
 	}{}
 	if err := a.Store.UserDB.WithContext(ctx).Table("charge_event_log").Where("charge_order_id = ?", id).Order("occurred_at,id").Find(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"order_id": id, "timeline": rows})

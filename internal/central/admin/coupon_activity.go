@@ -70,7 +70,7 @@ func (a ResourceAPI) grantedCounts(tx *gorm.DB, ruleIDs []uint64) (map[uint64]in
 // listActivityRules 分页返回券活动列表，支持按状态（active/disabled）和活动名关键词过滤，
 // 并把每条活动券的实际发放份数补进 GrantedCount，让运营直接看到活动成本。
 func (a ResourceAPI) listActivityRules(c *gin.Context) {
-	page, ok := parsePage(c, "active disabled")
+	page, ok := chargehttp.ReadAdminPage(c, "active disabled")
 	if !ok {
 		return
 	}
@@ -82,17 +82,17 @@ func (a ResourceAPI) listActivityRules(c *gin.Context) {
 		query = query.Where("r.status = ?", page.Status)
 	}
 	if page.Keyword != "" {
-		query = query.Where("r.name LIKE ?", likePattern(page.Keyword))
+		query = query.Where("r.name LIKE ?", chargehttp.AdminLikePattern(page.Keyword))
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	var rows []activityRuleRow
 	if err := query.Session(&gorm.Session{}).
 		Select("r.id, r.name, r.trigger_type, r.coupon_id, c.name AS coupon_name, r.inviter_coupon_id, r.threshold_cents, r.max_grants, r.per_user_limit, r.status, r.start_at, r.end_at, r.created_at").
 		Order("r.id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Scan(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	ids := make([]uint64, 0, len(rows))
@@ -101,7 +101,7 @@ func (a ResourceAPI) listActivityRules(c *gin.Context) {
 	}
 	counts, err := a.grantedCounts(a.Store.UserDB, ids)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	for i := range rows {
@@ -211,10 +211,10 @@ func (a ResourceAPI) createActivityRule(c *gin.Context) {
 		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "coupon_activity", id, nil, in, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "coupon_activity", id, nil, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
@@ -223,7 +223,7 @@ func (a ResourceAPI) createActivityRule(c *gin.Context) {
 // updateActivityRule 更新活动配置但保持 trigger_type 不变，确保历史发放的触发语义一致。
 // 更新前读取旧值用于审计；规则不存在时返回 404。
 func (a ResourceAPI) updateActivityRule(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -248,7 +248,7 @@ func (a ResourceAPI) updateActivityRule(c *gin.Context) {
 			httpapi.Write(c, http.StatusNotFound, 1004, "活动规则不存在", nil)
 			return
 		}
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	err = a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
@@ -264,10 +264,10 @@ func (a ResourceAPI) updateActivityRule(c *gin.Context) {
 		if changed.RowsAffected != 1 {
 			return gorm.ErrRecordNotFound
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "coupon_activity", id, before, in, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "coupon_activity", id, before, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})

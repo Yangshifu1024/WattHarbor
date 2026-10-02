@@ -60,7 +60,7 @@ func (a ResourceAPI) registerImports(r *gin.Engine) {
 func (a ResourceAPI) imports(c *gin.Context) {
 	rows := []ImportJob{}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("device_import").Order("created_at DESC").Limit(100).Find(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, rows)
@@ -190,14 +190,14 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 		if err := tx.Table("device_import").Create(map[string]any{"import_id": in.ImportID, "actor_id": p.ID, "request_json": string(body), "status": "pending"}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, p, "create", "device_import", 0, nil, in, c.ClientIP(), in.ImportID)
+		return chargehttp.AdminResourceAudit(tx, p, "create", "device_import", 0, nil, in, c.ClientIP(), in.ImportID)
 	})
 	// 校验失败已写入响应，立即返回，避免追加第二份 JSON 响应。
 	if errors.Is(err, errAlreadyReported) {
 		return
 	}
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	a.runImport(c, in.ImportID)
@@ -293,13 +293,13 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 		if err := tx.Table("device_import").Where("import_id=?", id).Updates(map[string]any{"status": "completed", "last_error": nil, "attempts": gorm.Expr("attempts+1"), "retryable": false}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "complete", "device_import", 0, nil, gin.H{"import_id": id, "count": len(devices)}, c.ClientIP(), id)
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "complete", "device_import", 0, nil, gin.H{"import_id": id, "count": len(devices)}, c.ClientIP(), id)
 	})
 	if errors.Is(err, errAlreadyReported) {
 		return
 	}
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if result.Status == "failed" {

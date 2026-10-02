@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"math"
@@ -14,7 +15,7 @@ const effectiveRuleSQL = "status='active' AND deleted_at IS NULL AND (effective_
 func (a ResourceAPI) stationScope(c *gin.Context) (operations.DataScope, bool) {
 	scope, err := database.LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return scope, false
 	}
 	return scope, true
@@ -55,7 +56,7 @@ func (a ResourceAPI) requirePricingTargetScope(c *gin.Context, stationID uint64,
 	var device struct{ VendorID uint64 }
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("device_meta").Select("vendor_id").
 		Where("station_id=? AND device_id=? AND deleted_at IS NULL", stationID, deviceID).Take(&device).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return false
 	}
 	if !scope.AllowsVendor(device.VendorID) {

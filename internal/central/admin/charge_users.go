@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/phone"
 	"github.com/gin-gonic/gin"
@@ -89,17 +90,17 @@ func (a ResourceAPI) registerChargeUsers(r *gin.Engine) {
 //
 // 关键词匹配昵称、openid 和手机号；完整手机号精确查询，号码片段支持模糊查询。
 func (a ResourceAPI) chargeUsers(c *gin.Context) {
-	q, ok := parsePage(c, "active frozen")
+	q, ok := chargehttp.ReadAdminPage(c, "active frozen")
 	if !ok {
 		return
 	}
 	rows, total, err := a.Store.ChargeUsers(c.Request.Context(), q)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := a.decorateChargeUsers(c.Request.Context(), rows); err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, Page[ChargeUserRow]{Items: rows, Total: total, Page: q.Page, PageSize: q.PageSize,
@@ -108,18 +109,18 @@ func (a ResourceAPI) chargeUsers(c *gin.Context) {
 
 // chargeUser 返回单个充电用户的完整档案：钱包、累计消费、最近订单、券与报障计数。
 func (a ResourceAPI) chargeUser(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	detail, err := a.Store.ChargeUserDetail(c.Request.Context(), id, chargeUserDetailOrderLimit)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	row := []ChargeUserRow{detail.ChargeUserRow}
 	if err := a.decorateChargeUsers(c.Request.Context(), row); err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	detail.ChargeUserRow = row[0]
@@ -128,7 +129,7 @@ func (a ResourceAPI) chargeUser(c *gin.Context) {
 
 // chargeUserRecharges 分页读取路径用户的充值支付单，查询参数不能改变用户或业务范围。
 func (a ResourceAPI) chargeUserRecharges(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -143,13 +144,13 @@ func (a ResourceAPI) chargeUserRecharges(c *gin.Context) {
 			return
 		}
 	}
-	page, ok := parsePage(c, "")
+	page, ok := chargehttp.ReadAdminPage(c, "")
 	if !ok {
 		return
 	}
 	out, err := a.Store.ChargeUserRecharges(c.Request.Context(), id, page)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)
@@ -207,7 +208,7 @@ func (s ResourceStore) ChargeUsers(ctx context.Context, q PageQuery) ([]ChargeUs
 		if phone.Valid(q.Keyword) {
 			query = query.Where("phone = ?", phone.Normalize(q.Keyword))
 		} else {
-			pattern := likePattern(q.Keyword)
+			pattern := chargehttp.AdminLikePattern(q.Keyword)
 			query = query.Where("nickname LIKE ? ESCAPE '!' OR openid LIKE ? ESCAPE '!' OR unionid LIKE ? ESCAPE '!' OR phone LIKE ? ESCAPE '!'", pattern, pattern, pattern, pattern)
 		}
 	}

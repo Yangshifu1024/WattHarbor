@@ -21,7 +21,7 @@ func (a ResourceAPI) registerOnlineCards(r *gin.Engine) {
 func (a ResourceAPI) onlineCards(c *gin.Context) {
 	rows := []cardstore.OnlineCard{}
 	if err := a.Store.UserDB.WithContext(c.Request.Context()).Order("id DESC").Limit(500).Find(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"items": rows, "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
@@ -73,13 +73,13 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(operations.Profile).ID, "action": "bind", "detail": in.Reason}).Error
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
 }
 func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -90,7 +90,7 @@ func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !oneOf(in.Status, "active lost disabled unbound") || in.Status == "" || !validText(in.Reason, 500) {
+	if !chargehttp.AdminOneOf(in.Status, "active lost disabled unbound") || in.Status == "" || !validText(in.Reason, 500) {
 		httpapi.BadRequest(c, "卡状态与依据无效")
 		return
 	}
@@ -108,7 +108,7 @@ func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
 		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(operations.Profile).ID, "action": in.Status, "detail": in.Reason}).Error
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})

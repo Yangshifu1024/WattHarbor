@@ -24,7 +24,7 @@ func (a ResourceAPI) registerMeterReviews(r *gin.Engine) {
 }
 
 func (a ResourceAPI) resolveMeterAmount(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -48,7 +48,7 @@ func (a ResourceAPI) resolveMeterAmount(c *gin.Context) {
 
 // meterReviews 按 pending、resolved 状态及订单号分页查询人工定价工单，逐单补充计量核实记录。
 func (a ResourceAPI) meterReviews(c *gin.Context) {
-	q, ok := parsePage(c, "pending resolved")
+	q, ok := chargehttp.ReadAdminPage(c, "pending resolved")
 	if !ok {
 		return
 	}
@@ -67,27 +67,27 @@ func (a ResourceAPI) meterReviews(c *gin.Context) {
 		db = db.Where("status=?", q.Status)
 	}
 	if q.Keyword != "" {
-		db = db.Where("order_no LIKE ? ESCAPE '!'", likePattern(q.Keyword))
+		db = db.Where("order_no LIKE ? ESCAPE '!'", chargehttp.AdminLikePattern(q.Keyword))
 	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := db.Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	for i := range rows {
 		publicSource, err := publicBillingSource(rows[i].SourceJSON)
 		if err != nil {
-			resourceFailure(c, err)
+			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
 		rows[i].SourceJSON = publicSource
 		rows[i].Reviews = []paystore.MeterReview{}
 		if err := a.Store.UserDB.WithContext(c.Request.Context()).Where("charge_order_id=?", rows[i].ChargeOrderID).Order("id DESC").Find(&rows[i].Reviews).Error; err != nil {
-			resourceFailure(c, err)
+			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
 	}
@@ -126,14 +126,14 @@ func meterFailure(c *gin.Context, err error) {
 		httpapi.BadRequest(c, "计量分段须连续覆盖原始时段、总电量一致，且各段不得跨不同费率；价格快照必须有效")
 		return
 	}
-	resourceFailure(c, err)
+	chargehttp.AdminResourceFailure(c, err)
 }
 
 // proposeMeter 提交一次计量核实申请，path 上的 id 是兜底单的 charge_order_id。
 // 分段必须连续覆盖原始时段、总电量一致、且各段不跨不同费率，上限 10080 段
 // （七天按分钟切分）；request_id 必须是 UUID，用来保证重放同一次提交不会产生多条核实记录。
 func (a ResourceAPI) proposeMeter(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -166,7 +166,7 @@ func (a ResourceAPI) proposeMeter(c *gin.Context) {
 // decideMeter 校验核实记录所属订单，并用 Approve 指针区分缺失字段与拒绝。
 // 拒绝必须填写原因；通过前复查首次核实人的账号和权限是否仍有效。
 func (a ResourceAPI) decideMeter(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -190,7 +190,7 @@ func (a ResourceAPI) decideMeter(c *gin.Context) {
 	}
 	var review paystore.MeterReview
 	if err := a.Store.UserDB.WithContext(c.Request.Context()).Where("id=? AND charge_order_id=?", in.ReviewID, id).Take(&review).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if *in.Approve {

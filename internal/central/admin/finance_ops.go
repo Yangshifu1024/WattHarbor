@@ -23,7 +23,7 @@ func (s ResourceStore) Withdraws(ctx context.Context, page PageQuery) (Page[pays
 		query = query.Where("status = ?", page.Status)
 	}
 	if page.Keyword != "" {
-		query = query.Where("withdraw_no LIKE ? OR party_code LIKE ?", likePattern(page.Keyword), likePattern(page.Keyword))
+		query = query.Where("withdraw_no LIKE ? OR party_code LIKE ?", chargehttp.AdminLikePattern(page.Keyword), chargehttp.AdminLikePattern(page.Keyword))
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
 		return out, err
@@ -61,11 +61,11 @@ func (a ResourceAPI) createWithdraw(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		return resourceAudit(tx, profile, "create", "withdraw", in.PartyID, nil,
+		return chargehttp.AdminResourceAudit(tx, profile, "create", "withdraw", in.PartyID, nil,
 			gin.H{"withdraw_no": no, "party_id": in.PartyID, "amount_cents": in.AmountCents}, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
 	if err != nil {
-		resourceFailure(c, asConflict(err))
+		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"withdraw_no": no, "status": "pending"})
@@ -91,10 +91,10 @@ func (a ResourceAPI) decideWithdraw(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		return resourceAudit(tx, profile, action, "withdraw", rowID, nil, gin.H{"withdraw_no": no}, c.ClientIP(), c.GetHeader("X-Request-ID"))
+		return chargehttp.AdminResourceAudit(tx, profile, action, "withdraw", rowID, nil, gin.H{"withdraw_no": no}, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
 	if err != nil {
-		resourceFailure(c, asConflict(err))
+		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"withdraw_no": no})
@@ -125,10 +125,10 @@ func (a ResourceAPI) payWithdraw(c *gin.Context) {
 			alreadyPaid = true
 			return nil
 		}
-		return resourceAudit(tx, profile, "pay", "withdraw", rowID, nil, gin.H{"withdraw_no": no}, c.ClientIP(), c.GetHeader("X-Request-ID"))
+		return chargehttp.AdminResourceAudit(tx, profile, "pay", "withdraw", rowID, nil, gin.H{"withdraw_no": no}, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
 	if err != nil {
-		resourceFailure(c, asConflict(err))
+		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"withdraw_no": no, "status": "paid", "already_paid": alreadyPaid})
@@ -170,7 +170,7 @@ func (a ResourceAPI) runReconcile(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !oneOf(in.ReconcileType, "wechat_refund wechat_pay split withdraw") {
+	if !chargehttp.AdminOneOf(in.ReconcileType, "wechat_refund wechat_pay split withdraw") {
 		httpapi.BadRequest(c, "对账类型无效")
 		return
 	}
@@ -193,7 +193,7 @@ func (a ResourceAPI) runReconcile(c *gin.Context) {
 	}
 	created, err := a.reconcileType(c, in.ReconcileType, date, channel)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, created)
@@ -329,7 +329,7 @@ func indexAmounts[T any](rows []T, pick func(int) (string, int64)) map[string]in
 
 // resolveReconcile 标记一条对账记录是否已处理，行锁下按 ID 更新，重复调用结果一致。
 func (a ResourceAPI) resolveReconcile(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -352,7 +352,7 @@ func (a ResourceAPI) resolveReconcile(c *gin.Context) {
 		return tx.Table("finance_reconcile_log").Where("id = ?", id).Updates(map[string]any{"resolved": in.Resolved}).Error
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "resolved": in.Resolved})
@@ -384,7 +384,7 @@ func (a ResourceAPI) registerFinanceOps(r *gin.Engine) {
 // settlements 分页查询分账汇总及各参与方的金额和比例。
 // 查询列显式映射到 Go 字段，保持聚合结果与模型一致。
 func (a ResourceAPI) settlements(c *gin.Context) {
-	page, ok := parsePage(c, "pending confirmed paid failed")
+	page, ok := chargehttp.ReadAdminPage(c, "pending confirmed paid failed")
 	if !ok {
 		return
 	}
@@ -420,14 +420,14 @@ func (a ResourceAPI) settlements(c *gin.Context) {
 		query = query.Where("status = ?", page.Status)
 	}
 	if page.Keyword != "" {
-		query = query.Where("settlement_no LIKE ? OR order_no LIKE ?", likePattern(page.Keyword), likePattern(page.Keyword))
+		query = query.Where("settlement_no LIKE ? OR order_no LIKE ?", chargehttp.AdminLikePattern(page.Keyword), chargehttp.AdminLikePattern(page.Keyword))
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := query.Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	for i := range out.Items {
@@ -435,7 +435,7 @@ func (a ResourceAPI) settlements(c *gin.Context) {
 		if err := a.Store.BillingDB.WithContext(c.Request.Context()).Table("settlement_party_amount").
 			Where("settlement_id = ?", out.Items[i].ID).Order("party_code").
 			Find(&out.Items[i].Parties).Error; err != nil {
-			resourceFailure(c, err)
+			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
 	}
@@ -444,13 +444,13 @@ func (a ResourceAPI) settlements(c *gin.Context) {
 
 // withdraws 分页返回提现单，状态与关键字过滤交给 ResourceStore，避免两个接口各写一套。
 func (a ResourceAPI) withdraws(c *gin.Context) {
-	page, ok := parsePage(c, "pending approved rejected paid failed")
+	page, ok := chargehttp.ReadAdminPage(c, "pending approved rejected paid failed")
 	if !ok {
 		return
 	}
 	out, err := a.Store.Withdraws(c.Request.Context(), page)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)
@@ -458,7 +458,7 @@ func (a ResourceAPI) withdraws(c *gin.Context) {
 
 // reconciles 按类型和处理状态分页查询对账记录，将 diffs_json 转为文本后逐条解码。
 func (a ResourceAPI) reconciles(c *gin.Context) {
-	page, ok := parsePage(c, "wechat_refund wechat_pay split withdraw")
+	page, ok := chargehttp.ReadAdminPage(c, "wechat_refund wechat_pay split withdraw")
 	if !ok {
 		return
 	}
@@ -471,11 +471,11 @@ func (a ResourceAPI) reconciles(c *gin.Context) {
 		query = query.Where("resolved = ?", raw == "true")
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := query.Order("reconcile_date DESC, id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	// 将 diffs_json 转为文本后解码到 any 字段。
@@ -529,25 +529,25 @@ type WebhookDeliveryRow struct {
 
 // webhookDeliveries 分页返回某个订阅的投递日志，支持按事件 ID 或事件类型关键字过滤，按 ID 倒序。
 func (a ResourceAPI) webhookDeliveries(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
-	page, ok := parsePage(c, "")
+	page, ok := chargehttp.ReadAdminPage(c, "")
 	if !ok {
 		return
 	}
 	out := Page[WebhookDeliveryRow]{Items: []WebhookDeliveryRow{}, Page: page.Page, PageSize: page.PageSize}
 	query := a.Store.AdminDB.WithContext(c.Request.Context()).Table("webhook_delivery_log").Where("subscription_id = ?", id)
 	if page.Keyword != "" {
-		query = query.Where("event_id LIKE ? OR event_type LIKE ?", likePattern(page.Keyword), likePattern(page.Keyword))
+		query = query.Where("event_id LIKE ? OR event_type LIKE ?", chargehttp.AdminLikePattern(page.Keyword), chargehttp.AdminLikePattern(page.Keyword))
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := query.Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)
@@ -556,7 +556,7 @@ func (a ResourceAPI) webhookDeliveries(c *gin.Context) {
 // retryWebhookDelivery 从原始事件体生成新事件，复用正式签名投递链路。
 // 使用新的事件 ID；订阅停用时拒绝重发。
 func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -574,7 +574,7 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 	}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("webhook_subscription").
 		Where("id = ? AND deleted_at IS NULL", id).Take(&subscription).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if !subscription.Enabled {
@@ -587,7 +587,7 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 	}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("webhook_delivery_log").
 		Where("subscription_id = ? AND event_id = ?", id, eventID).Take(&delivery).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	// 经由事件流重新投递，是为了让签名、SSRF 检查和投递日志都留在同一条投递
@@ -598,7 +598,7 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 	}
 	payload, err := json.Marshal(envelope)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
@@ -607,9 +607,9 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, profile, "retry", "webhook", id, nil, gin.H{"event_id": eventID, "subscription_id": id}, c.ClientIP(), c.GetHeader("X-Request-ID"))
+		return chargehttp.AdminResourceAudit(tx, profile, "retry", "webhook", id, nil, gin.H{"event_id": eventID, "subscription_id": id}, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	}); err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"event_id": eventID, "requeued": true})

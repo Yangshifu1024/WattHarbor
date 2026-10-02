@@ -27,7 +27,7 @@ func (a ResourceAPI) registerWalletRisks(r *gin.Engine) {
 // pending、reviewed 分别表示未审核和已审核；已审核记录可按解冻状态过滤。
 // can_review、can_release 按权限及审核、冻结状态计算，解冻还要求 wallet_refund_frequency 规则。
 func (a ResourceAPI) walletRisks(c *gin.Context) {
-	q, ok := parsePage(c, "pending reviewed")
+	q, ok := chargehttp.ReadAdminPage(c, "pending reviewed")
 	if !ok {
 		return
 	}
@@ -39,11 +39,11 @@ func (a ResourceAPI) walletRisks(c *gin.Context) {
 	}
 	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
 	if e := db.Count(&out.Total).Error; e != nil {
-		resourceFailure(c, e)
+		chargehttp.AdminResourceFailure(c, e)
 		return
 	}
 	if e := db.Select("r.request_id,r.user_id,r.amount_cents,r.reason,r.created_at,v.response_json AS review_json,v.created_at AS review_created_at,x.response_json AS release_json,x.created_at AS release_created_at,f.status AS freeze_status,f.trigger_rule,l.freeze_id").Order("r.created_at DESC,r.request_id").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; e != nil {
-		resourceFailure(c, e)
+		chargehttp.AdminResourceFailure(c, e)
 		return
 	}
 	normalizeRows(out.Items)
@@ -113,8 +113,8 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 		return
 	}
 	var response map[string]any
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var req riskRequest
 		if err := tx.Table("wallet_refund_request").Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", c.Param("request_id")).Take(&req).Error; err != nil {
 			return err
@@ -152,11 +152,11 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 		if err := tx.Table("wallet_risk_review").Create(map[string]any{"request_id": req.RequestID, "actor_id": p.ID, "approved": *in.Approved, "comment": in.Comment, "response_json": string(b)}).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{"review", "wallet_risk", req.UserID, nil, gin.H{"request_id": req.RequestID, "review": response}, req.RequestID}}
+		auditPending = []chargehttp.AuditEntry{{Action: "review", Target: "wallet_risk", ID: req.UserID, Before: nil, After: gin.H{"request_id": req.RequestID, "review": response}, RequestID: req.RequestID}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, response)
@@ -191,8 +191,8 @@ func (a ResourceAPI) releaseWalletRisk(c *gin.Context) {
 		return
 	}
 	var response map[string]any
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var req riskRequest
 		if err := tx.Table("wallet_refund_request").Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", c.Param("request_id")).Take(&req).Error; err != nil {
 			return err
@@ -254,11 +254,11 @@ func (a ResourceAPI) releaseWalletRisk(c *gin.Context) {
 		if err := tx.Table("wallet_risk_release").Create(map[string]any{"request_id": req.RequestID, "actor_id": p.ID, "comment": in.Comment, "response_json": string(b)}).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{"release", "wallet_risk", req.UserID, nil, gin.H{"request_id": req.RequestID, "release": response}, req.RequestID}}
+		auditPending = []chargehttp.AuditEntry{{Action: "release", Target: "wallet_risk", ID: req.UserID, Before: nil, After: gin.H{"request_id": req.RequestID, "release": response}, RequestID: req.RequestID}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, response)

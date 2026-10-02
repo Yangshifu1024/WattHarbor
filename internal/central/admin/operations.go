@@ -21,8 +21,8 @@ import (
 )
 
 // errConflict 表示这条记录当前的状态不接受这次写入（例如期望版本号已被别人改过），
-// 由 resourceFailure 统一转成 409，提示前端刷新后重试。
-var errConflict = errors.New("当前记录状态不允许此操作，请刷新后重试")
+// 由 AdminResourceFailure 统一转成 409，提示前端刷新后重试。
+var errConflict = chargehttp.ErrConflict
 
 // registerOperations 挂载运营类接口：后台账号、告警事件、公告、
 // Webhook 订阅、白标配置。列表接口大多由 get 闭包统一生成，只有写操作
@@ -39,7 +39,7 @@ func (a ResourceAPI) registerOperations(r *gin.Engine) {
 				q = q.Where("deleted_at IS NULL")
 			}
 			if err := q.Order("id DESC").Find(&rows).Error; err != nil {
-				resourceFailure(c, err)
+				chargehttp.AdminResourceFailure(c, err)
 				return
 			}
 			normalizeRows(rows)
@@ -133,10 +133,10 @@ func (a ResourceAPI) adminWrite(c *gin.Context, table, action string, id uint64,
 				return err
 			}
 		}
-		return resourceAudit(tx, p, action, table, id, before, values, c.ClientIP(), c.GetHeader("X-Request-ID"))
+		return chargehttp.AdminResourceAudit(tx, p, action, table, id, before, values, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return 0, false
 	}
 	return id, true
@@ -164,7 +164,7 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 	p := c.MustGet("admin_profile").(operations.Profile)
 	var codes []string
 	if err := a.Store.AdminDB.Table("role AS r").Joins("JOIN role_permission rp ON rp.role_id=r.id JOIN permission p ON p.id=rp.permission_id").Where("r.id=? AND r.deleted_at IS NULL", in.RoleID).Pluck("p.code", &codes).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	codes = operations.WithoutRetiredPermissions(codes)
@@ -180,7 +180,7 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	var id uint64
@@ -192,10 +192,10 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, p, "create", "admin_user", id, nil, gin.H{"username": in.Username, "role_id": in.RoleID}, c.ClientIP(), c.GetHeader("X-Request-ID"))
+		return chargehttp.AdminResourceAudit(tx, p, "create", "admin_user", id, nil, gin.H{"username": in.Username, "role_id": in.RoleID}, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
@@ -204,7 +204,7 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 // ackAlert 认领一条告警：只允许 active（未处理）→ acknowledged（已认领），
 // 对已认领的告警重复提交按幂等返回成功，其它状态报冲突。认领人取当前登录者。
 func (a ResourceAPI) ackAlert(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -224,10 +224,10 @@ func (a ResourceAPI) ackAlert(c *gin.Context) {
 		if err := tx.Table("alert_event").Where("id=?", id).Updates(map[string]any{"status": "acknowledged", "acked_by": p.ID, "acked_at": time.Now()}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, p, "ack", "alert", id, row, gin.H{"status": "acknowledged"}, c.ClientIP(), "")
+		return chargehttp.AdminResourceAudit(tx, p, "ack", "alert", id, row, gin.H{"status": "acknowledged"}, c.ClientIP(), "")
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"acknowledged": true})
@@ -249,7 +249,7 @@ func (a ResourceAPI) createAnnouncement(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !validText(in.Title, 128) || !validText(in.Content, 20000) || in.Scope == "" || !oneOf(in.Scope, "global station city") || in.StartAt.IsZero() || (in.EndAt != nil && !in.EndAt.After(in.StartAt)) || (in.Scope != "global" && len(in.TargetIDs) == 0) {
+	if !validText(in.Title, 128) || !validText(in.Content, 20000) || in.Scope == "" || !chargehttp.AdminOneOf(in.Scope, "global station city") || in.StartAt.IsZero() || (in.EndAt != nil && !in.EndAt.After(in.StartAt)) || (in.Scope != "global" && len(in.TargetIDs) == 0) {
 		httpapi.BadRequest(c, "请填写标题、内容、有效时间和公告目标")
 		return
 	}
@@ -293,7 +293,7 @@ func (a ResourceAPI) createWebhook(c *gin.Context) {
 	}
 	seen := map[string]bool{}
 	for _, v := range in.EventTypes {
-		if v == "" || !oneOf(v, "alert charge_ended refund_completed") || seen[v] {
+		if v == "" || !chargehttp.AdminOneOf(v, "alert charge_ended refund_completed") || seen[v] {
 			httpapi.BadRequest(c, "订阅事件无效或重复")
 			return
 		}
@@ -301,7 +301,7 @@ func (a ResourceAPI) createWebhook(c *gin.Context) {
 	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	secret := hex.EncodeToString(b)
@@ -314,10 +314,10 @@ func (a ResourceAPI) createWebhook(c *gin.Context) {
 		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "webhook", id, nil, in, c.ClientIP(), "")
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "webhook", id, nil, in, c.ClientIP(), "")
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "secret": secret})
@@ -357,7 +357,7 @@ func (a ResourceAPI) whiteRead(c *gin.Context) (map[string]string, error) {
 func (a ResourceAPI) whitelabel(c *gin.Context) {
 	v, e := a.whiteRead(c)
 	if e != nil {
-		resourceFailure(c, e)
+		chargehttp.AdminResourceFailure(c, e)
 		return
 	}
 	httpapi.OK(c, v)
@@ -391,10 +391,10 @@ func (a ResourceAPI) saveWhitelabel(c *gin.Context) {
 		if err := tx.Exec("INSERT INTO whitelabel_config (id,name,mini_program_name,theme_color,config_json) VALUES (1,?,?,?,?) ON DUPLICATE KEY UPDATE mini_program_name=VALUES(mini_program_name),theme_color=VALUES(theme_color),config_json=VALUES(config_json)", "default", in["miniprogram_name"], in["theme_color"], string(b)).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "whitelabel", 1, nil, in, c.ClientIP(), "")
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "whitelabel", 1, nil, in, c.ClientIP(), "")
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"config": in})

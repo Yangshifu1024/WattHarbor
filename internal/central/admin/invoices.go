@@ -25,7 +25,7 @@ func (a ResourceAPI) invoices(c *gin.Context) {
 	rows := []map[string]any{}
 	err := a.Store.UserDB.WithContext(c.Request.Context()).Table("invoice_request i").Select("i.id AS invoice_request_id,i.invoice_no,i.user_id,i.biz_type,i.biz_id,i.total_cents,i.invoice_type,i.title,i.tax_no,i.email,i.review_status,COALESCE(r.review_status,i.review_status) AS queue_review_status,r.reject_reason AS queue_reject_reason,r.first_reviewer_id,r.second_reviewer_id,i.reject_reason,COALESCE(r.invoice_url,i.invoice_url) AS invoice_url,i.created_at").Joins("LEFT JOIN invoice_admin_review r ON r.invoice_request_id=i.id").Where("i.deleted_at IS NULL").Order("i.id DESC").Find(&rows).Error
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	normalizeRows(rows)
@@ -62,7 +62,7 @@ func (a ResourceAPI) invoiceReviewStore() paystore.InvoiceReviewStore {
 // reviewInvoice 处理审批和驳回。双审与申请单状态机的写入归属 settlement 家族，
 // 本 handler 只做输入校验、权限、审计与错误映射。
 func (a ResourceAPI) reviewInvoice(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -85,8 +85,8 @@ func (a ResourceAPI) reviewInvoice(c *gin.Context) {
 	}
 	status := ""
 	var before map[string]any
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		status, before, err = a.invoiceReviewStore().Review(c.Request.Context(), tx, id, paystore.InvoiceDecision{
 			Approve: approve, InvoiceURL: in.InvoiceURL, Reason: in.Reason, ActorID: p.ID,
@@ -94,11 +94,11 @@ func (a ResourceAPI) reviewInvoice(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{status, "invoice", id, before, in, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: status, Target: "invoice", ID: id, Before: before, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, asConflict(err))
+		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"review_status": status})

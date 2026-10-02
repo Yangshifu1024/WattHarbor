@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -76,7 +77,7 @@ func parseOrderProcessQuery(c *gin.Context) (orderProcessQuery, bool) {
 
 // orderProcess 只从有效订单取规范身份，客户端只能指定分页，不能改变订单归属。
 func (a ResourceAPI) orderProcess(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -85,13 +86,13 @@ func (a ResourceAPI) orderProcess(c *gin.Context) {
 		return
 	}
 	if a.Store.UserDB == nil {
-		resourceFailure(c, errOrderProcess)
+		chargehttp.AdminResourceFailure(c, errOrderProcess)
 		return
 	}
 	var order orderProcessIdentity
 	if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("charge_order").
 		Select("id,order_no,device_id,port_no").Where("id=? AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	page, err := a.readOrderProcess(c.Request.Context(), order, q)

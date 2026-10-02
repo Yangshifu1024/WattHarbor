@@ -37,7 +37,7 @@ func stringIDs(rows []map[string]any, keys ...string) {
 // caseList 复用反馈与报修列表查询，表名和合法状态由调用方指定。
 // 响应将 images_json 转为 images 数组，无图片时返回空数组。
 func (a ResourceAPI) caseList(c *gin.Context, table, statuses string) {
-	q, ok := parsePage(c, statuses)
+	q, ok := chargehttp.ReadAdminPage(c, statuses)
 	if !ok {
 		return
 	}
@@ -47,11 +47,11 @@ func (a ResourceAPI) caseList(c *gin.Context, table, statuses string) {
 	}
 	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
 	if err := db.Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := db.Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	normalizeRows(out.Items)
@@ -69,7 +69,7 @@ func (a ResourceAPI) caseList(c *gin.Context, table, statuses string) {
 // replyFeedback 处理用户反馈：action 为 reply 时写入回复并把状态从 pending 推到 processed，
 // 为 close 时直接置为 closed。对已关闭的工单重复关闭是幂等的，重复回复或对已关闭再回复则判冲突。
 func (a ResourceAPI) replyFeedback(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -85,8 +85,8 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 		return
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var row struct{ Status string } // 反馈当前状态：pending 待处理 / processed 已回复 / closed 已关闭
 		if err := tx.Table("feedback").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
 			return err
@@ -104,11 +104,11 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 		if err := tx.Table("feedback").Where("id=?", id).Updates(v).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{in.Action, "feedback", id, row, v, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: in.Action, Target: "feedback", ID: id, Before: row, After: v, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"saved": true})
@@ -117,32 +117,32 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 // faultHistory 分页读取报修单的流转事件、操作人、备注及可见性。
 // 先校验工单存在，不存在时返回错误，避免与无历史记录混淆。
 func (a ResourceAPI) faultHistory(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
-	q, ok := parsePage(c, "")
+	q, ok := chargehttp.ReadAdminPage(c, "")
 	if !ok {
 		return
 	}
 	var n int64
 	db := a.Store.UserDB.WithContext(c.Request.Context())
 	if err := db.Table("device_fault_report").Where("id=? AND deleted_at IS NULL", id).Count(&n).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if n == 0 {
-		resourceFailure(c, gorm.ErrRecordNotFound)
+		chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
 		return
 	}
 	query := db.Table("device_fault_report_event").Where("report_id=?", id)
 	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
 	if err := query.Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := query.Select("id AS event_id,event_type,actor_id,assigned_to,from_status,to_status,note,created_at,user_visible").Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	normalizeRows(out.Items)
@@ -160,7 +160,7 @@ type faultRow struct {
 // dispatchFault 校验处理人存在且持有 fault.resolve 权限，将报修置为 dispatched。
 // 已有处理人时记录 reassigned，否则记录 dispatched；处理历史对用户可见，同人重复指派幂等。
 func (a ResourceAPI) dispatchFault(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -181,8 +181,8 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 		return
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	var auditPending []auditEntry
-	err = a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err = chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var row faultRow
 		if err := tx.Table("device_fault_report").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
 			return err
@@ -203,11 +203,11 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 		if err := tx.Table("device_fault_report_event").Create(map[string]any{"report_id": id, "actor_id": p.ID, "event_type": event, "from_status": row.Status, "to_status": "dispatched", "assigned_to": in.AssignedTo, "note": in.Note, "user_visible": true}).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{event, "device_fault_report", id, row, in, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: event, Target: "device_fault_report", ID: id, Before: row, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"assigned_to": in.AssignedTo, "status": "dispatched"})
@@ -217,7 +217,7 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 // 只有被指派的本人能操作；fixed 必须从 dispatched 来、closed 必须从 fixed 来，保证修复和关闭两步都留痕。
 // 标记 fixed 时必须写修复说明。重复提交同一目标状态是幂等的。
 func (a ResourceAPI) resolveFault(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -233,8 +233,8 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 		return
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var row faultRow
 		if err := tx.Table("device_fault_report").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
 			return err
@@ -254,11 +254,11 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 		if err := tx.Table("device_fault_report_event").Create(map[string]any{"report_id": id, "actor_id": p.ID, "event_type": in.Status, "from_status": row.Status, "to_status": in.Status, "assigned_to": p.ID, "note": in.Note, "user_visible": true}).Error; err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{in.Status, "device_fault_report", id, row, in, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: in.Status, Target: "device_fault_report", ID: id, Before: row, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"status": in.Status})

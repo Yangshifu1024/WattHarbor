@@ -184,13 +184,13 @@ func (t ExportTask) register(r *gin.Engine) {
 
 // detailTask 返回单个导出任务的状态且不含文件路径；能不能下载由下载接口单独判定。
 func (t ExportTask) detailTask(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	var row exportRow
 	if err := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").Where("id = ?", id).Take(&row).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	// FilePath 不参与 JSON 响应；下载接口单独校验申请人和资源权限。
@@ -203,7 +203,7 @@ func (t ExportTask) listResources(c *gin.Context) {
 	profile := c.MustGet("admin_profile").(operations.Profile)
 	scope, err := database.LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	items := []string{}
@@ -222,7 +222,7 @@ func exportRequiresGlobalScope(resource string) bool {
 
 // listTasks 分页返回导出任务，支持按状态过滤，按 ID 倒序。
 func (t ExportTask) listTasks(c *gin.Context) {
-	page, ok := parsePage(c, "pending running completed failed expired")
+	page, ok := chargehttp.ReadAdminPage(c, "pending running completed failed expired")
 	if !ok {
 		return
 	}
@@ -232,11 +232,11 @@ func (t ExportTask) listTasks(c *gin.Context) {
 		query = query.Where("status = ?", page.Status)
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := query.Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)
@@ -286,7 +286,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 	if exportRequiresGlobalScope(in.Resource) {
 		scope, err := database.LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
 		if err != nil {
-			resourceFailure(c, err)
+			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
 		if !scope.Unrestricted {
@@ -326,10 +326,10 @@ func (t ExportTask) createTask(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, profile, "create", "export_task", 0, nil, gin.H{"resource": in.Resource, "task_no": taskNo}, c.ClientIP(), c.GetHeader("X-Request-ID"))
+		return chargehttp.AdminResourceAudit(tx, profile, "create", "export_task", 0, nil, gin.H{"resource": in.Resource, "task_no": taskNo}, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if replayed != nil {
@@ -477,7 +477,7 @@ func truncate(value string, max int) string {
 // downloadTask 每次下载复查归属、资源权限、数据范围及有效期。
 // 过期文件被删除，任务置为 expired；权限撤销后禁止继续下载。
 func (t ExportTask) downloadTask(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -485,7 +485,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 	var row exportRow
 	if err := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").
 		Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&row).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if row.RequestedBy != profile.ID && !profile.HasPermission("admin_user.read") {
@@ -501,7 +501,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 	if exportRequiresGlobalScope(row.Resource) {
 		scope, err := database.LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
 		if err != nil {
-			resourceFailure(c, err)
+			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
 		if !scope.Unrestricted {

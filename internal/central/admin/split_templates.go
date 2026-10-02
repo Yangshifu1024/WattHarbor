@@ -34,7 +34,7 @@ type splitTemplateDetail struct {
 
 // splitTemplates 分页返回分账模板列表，支持按状态（active / disabled）和编码/名称关键词过滤。
 func (a ResourceAPI) splitTemplates(c *gin.Context) {
-	page, ok := parsePage(c, "active disabled")
+	page, ok := chargehttp.ReadAdminPage(c, "active disabled")
 	if !ok {
 		return
 	}
@@ -44,15 +44,15 @@ func (a ResourceAPI) splitTemplates(c *gin.Context) {
 		query = query.Where("status = ?", page.Status)
 	}
 	if page.Keyword != "" {
-		pattern := likePattern(page.Keyword)
+		pattern := chargehttp.AdminLikePattern(page.Keyword)
 		query = query.Where("(code LIKE ? ESCAPE '!' OR name LIKE ? ESCAPE '!')", pattern, pattern)
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := query.Select("id,code,name,mode,status").Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)
@@ -60,13 +60,13 @@ func (a ResourceAPI) splitTemplates(c *gin.Context) {
 
 // splitTemplate 返回单份分账模板详情（含参与方），站点绑定接口改绑完成后也复用它回显。
 func (a ResourceAPI) splitTemplate(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	detail, err := a.loadSplitTemplate(c, id)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, detail)
@@ -74,13 +74,13 @@ func (a ResourceAPI) splitTemplate(c *gin.Context) {
 
 // splitTemplateParties 只返回某份模板的参与方列表，供不需要模板本体的场景使用。
 func (a ResourceAPI) splitTemplateParties(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	detail, err := a.loadSplitTemplate(c, id)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"items": detail.Parties})
@@ -131,7 +131,7 @@ func (a ResourceAPI) createSplitTemplate(c *gin.Context) {
 		return
 	}
 	if !paystore.CodePattern.MatchString(input.Code) || strings.TrimSpace(input.Name) == "" ||
-		!oneOf(input.Mode, "mode_a mode_b") || !paystore.ValidParties(input.Parties) {
+		!chargehttp.AdminOneOf(input.Mode, "mode_a mode_b") || !paystore.ValidParties(input.Parties) {
 		httpapi.BadRequest(c, paystore.ErrSplitParties.Error())
 		return
 	}
@@ -143,7 +143,7 @@ func (a ResourceAPI) createSplitTemplate(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		return resourceAudit(tx, profile, "create", "split_template", templateID, nil,
+		return chargehttp.AdminResourceAudit(tx, profile, "create", "split_template", templateID, nil,
 			gin.H{"code": input.Code, "mode": input.Mode, "parties": splitPartyAudit(input.Parties)}, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
@@ -152,7 +152,7 @@ func (a ResourceAPI) createSplitTemplate(c *gin.Context) {
 	}
 	detail, err := a.loadSplitTemplate(c, templateID)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, detail)
@@ -177,7 +177,7 @@ func splitPartyAudit(parties []paystore.SplitPartyInput) []gin.H {
 
 // updateSplitTemplate 修改模板的名称、模式和状态；改绑约束与比例复核归属 settlement 家族。
 func (a ResourceAPI) updateSplitTemplate(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -200,7 +200,7 @@ func (a ResourceAPI) updateSplitTemplate(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		return resourceAudit(tx, profile, "update", "split_template", id, before, after, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, profile, "update", "split_template", id, before, after, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		splitTemplateFailure(c, err)
@@ -211,7 +211,7 @@ func (a ResourceAPI) updateSplitTemplate(c *gin.Context) {
 
 // replaceSplitParties 整体替换某份模板的参与方：改前改后两组参与方（脱敏后）写进审计。
 func (a ResourceAPI) replaceSplitParties(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -235,7 +235,7 @@ func (a ResourceAPI) replaceSplitParties(c *gin.Context) {
 		for _, party := range before {
 			old = append(old, paystore.SplitPartyInput{PartyCode: party.PartyCode, PartyName: party.PartyName, RatioBP: party.RatioBP, BankAccount: party.BankAccount})
 		}
-		return resourceAudit(tx, profile, "replace_parties", "split_template", id,
+		return chargehttp.AdminResourceAudit(tx, profile, "replace_parties", "split_template", id,
 			splitPartyAudit(old), splitPartyAudit(input.Parties), c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
@@ -252,7 +252,7 @@ func splitTemplateFailure(c *gin.Context, err error) {
 		httpapi.Write(c, 409, 2009, err.Error(), nil)
 		return
 	}
-	resourceFailure(c, err)
+	chargehttp.AdminResourceFailure(c, err)
 }
 
 // 已有的站点只有在还没产生任何充值或充电记录之前才允许改绑。
@@ -264,7 +264,7 @@ func splitTemplateFailure(c *gin.Context, err error) {
 // 没有充电订单、且已被停用时才可改绑，避免历史（含延迟到账的）结算被按新模板重新分配。
 // 改绑完成后回显站点详情。
 func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -335,7 +335,7 @@ func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
 		if err := tx.Table("station").Where("id = ?", id).Update("split_template_id", input.TemplateID).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, profile, "bind_split_template", "station", id,
+		return chargehttp.AdminResourceAudit(tx, profile, "bind_split_template", "station", id,
 			gin.H{"split_template_id": current}, gin.H{"split_template_id": input.TemplateID}, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {

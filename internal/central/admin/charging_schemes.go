@@ -40,7 +40,7 @@ type schemeInput struct {
 func (a ResourceAPI) chargingSchemes(c *gin.Context) {
 	rows := []pricingTemplateRow{}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("pricing_template").Where("deleted_at IS NULL").Order("id DESC").Find(&rows).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	items := []gin.H{}
@@ -67,7 +67,7 @@ func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 	id := uint64(0)
 	if c.Request.Method == "PUT" {
 		var ok bool
-		id, ok = pathID(c)
+		id, ok = chargehttp.AdminPathID(c)
 		if !ok {
 			return
 		}
@@ -98,10 +98,10 @@ func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 		} else if err := tx.Table("pricing_template").Where("id=?", id).Updates(row).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.save", "pricing_template", id, before, in.Scheme, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.save", "pricing_template", id, before, in.Scheme, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "version": version})
@@ -109,7 +109,7 @@ func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 func (a ResourceAPI) chargingSchemeStatus(c *gin.Context) { a.changeChargingScheme(c, false) }
 func (a ResourceAPI) deleteChargingScheme(c *gin.Context) { a.changeChargingScheme(c, true) }
 func (a ResourceAPI) changeChargingScheme(c *gin.Context, remove bool) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -140,10 +140,10 @@ func (a ResourceAPI) changeChargingScheme(c *gin.Context, remove bool) {
 		if err := tx.Table("pricing_template").Where("id=?", id).Updates(row).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.status", "pricing_template", id, before, in, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.status", "pricing_template", id, before, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
@@ -251,10 +251,10 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 		if err := tx.Table("pricing_publication").Create(map[string]any{"request_id": in.RequestID, "actor_id": actor.ID, "payload_hash": hash, "rule_id": id, "version": version}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, actor, "charging_scheme.apply", "pricing_rule", id, nil, row, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, actor, "charging_scheme.apply", "pricing_rule", id, nil, row, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "version": version, "replayed": replayed})
@@ -290,7 +290,7 @@ func checkSchemeTargets(tx *gorm.DB, station uint64, device string, scheme charg
 }
 
 func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
-	station, ok := pathID(c)
+	station, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -302,17 +302,17 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 	if device != "" {
 		var count int64
 		if err := db.Table("device_meta").Where("station_id=? AND device_id=? AND deleted_at IS NULL", station, device).Count(&count).Error; err != nil {
-			resourceFailure(c, err)
+			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
 		if count != 1 {
-			resourceFailure(c, gorm.ErrRecordNotFound)
+			chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
 			return
 		}
 	}
 	var current struct{ Version uint32 }
 	if err := ruleScope(station, device)(db.Table("pricing_rule")).Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	rule, err := (database.PricingStore{DB: db}).ActiveDeviceRule(c.Request.Context(), station, device)
@@ -321,14 +321,14 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"scheme": rule.Spec.Scheme, "version": current.Version, "rule_id": rule.ID, "inherited": device != "" && rule.DeviceID == "", "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 
 func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
-	station, ok := pathID(c)
+	station, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -368,10 +368,10 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 		if err := ruleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.inherit", "station", station, nil, in, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.inherit", "station", station, nil, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"inherited": true})
@@ -410,7 +410,7 @@ func (a ResourceAPI) executionCapabilities(c *gin.Context) {
 	}
 	adapter, cap, err := (database.PricingStore{DB: a.Store.AdminDB}).DeviceCapabilities(c.Request.Context(), station, device)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"protocol_adapter": adapter, "capabilities": cap, "reports_energy": cap.ReportsEnergy, "reports_segmented_power": cap.ReportsSegmentedPower})

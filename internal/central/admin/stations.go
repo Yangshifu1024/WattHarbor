@@ -53,7 +53,7 @@ type StationInput struct {
 // 合法区间内，状态必须是 active/disabled/construction 之一，分账模板 ID 不得为 0，
 // 地址和联系电话两个可空文本字段各有长度上限。站点全年无休，不配置营业时间。
 func (input StationInput) valid() bool {
-	if strings.TrimSpace(input.Name) == "" || utf8.RuneCountInString(input.Name) > 128 || input.Longitude == nil || input.Latitude == nil || math.IsNaN(*input.Longitude) || math.IsNaN(*input.Latitude) || math.Abs(*input.Longitude) > 180 || math.Abs(*input.Latitude) > 90 || input.Status == "" || !oneOf(input.Status, "active disabled construction") {
+	if strings.TrimSpace(input.Name) == "" || utf8.RuneCountInString(input.Name) > 128 || input.Longitude == nil || input.Latitude == nil || math.IsNaN(*input.Longitude) || math.IsNaN(*input.Latitude) || math.Abs(*input.Longitude) > 180 || math.Abs(*input.Latitude) > 90 || input.Status == "" || !chargehttp.AdminOneOf(input.Status, "active disabled construction") {
 		return false
 	}
 	if input.SplitTemplateID != nil && *input.SplitTemplateID == 0 {
@@ -79,7 +79,7 @@ func (s ResourceStore) Stations(ctx context.Context, q PageQuery, scopes ...oper
 		query = query.Where("status = ?", q.Status)
 	}
 	if q.Keyword != "" {
-		pattern := likePattern(q.Keyword)
+		pattern := chargehttp.AdminLikePattern(q.Keyword)
 		query = query.Where("(name LIKE ? ESCAPE '!' OR address LIKE ? ESCAPE '!')", pattern, pattern)
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
@@ -92,7 +92,7 @@ func (s ResourceStore) Stations(ctx context.Context, q PageQuery, scopes ...oper
 // stations 响应站点分页列表，状态入参只接受 active/disabled/construction，
 // 并把当前管理员的权限列表一并带回，供前端决定按钮的可见性。
 func (a ResourceAPI) stations(c *gin.Context) {
-	q, ok := parsePage(c, "active disabled construction")
+	q, ok := chargehttp.ReadAdminPage(c, "active disabled construction")
 	if !ok {
 		return
 	}
@@ -102,7 +102,7 @@ func (a ResourceAPI) stations(c *gin.Context) {
 	}
 	out, err := a.Store.Stations(c.Request.Context(), q, scope)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	out.Permissions = c.MustGet("admin_profile").(operations.Profile).Permissions
@@ -111,7 +111,7 @@ func (a ResourceAPI) stations(c *gin.Context) {
 
 // station 按主键返回单个站点详情；已软删除的站点等同不存在，由 resourceFailure 回 404。
 func (a ResourceAPI) station(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -120,7 +120,7 @@ func (a ResourceAPI) station(c *gin.Context) {
 	}
 	var row Station
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, row)
@@ -138,7 +138,7 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 	var id uint64
 	if !create {
 		var ok bool
-		id, ok = pathID(c)
+		id, ok = chargehttp.AdminPathID(c)
 		if !ok {
 			return
 		}
@@ -170,7 +170,7 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
-			return resourceAudit(tx, p, "create", "station", row.ID, nil, row, c.ClientIP(), httpapi.RequestID(c))
+			return chargehttp.AdminResourceAudit(tx, p, "create", "station", row.ID, nil, row, c.ClientIP(), httpapi.RequestID(c))
 		}
 		var before Station
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
@@ -180,10 +180,10 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 		if err := tx.Model(&Station{}).Where("id = ?", id).Updates(map[string]any{"name": row.Name, "address": row.Address, "longitude": row.Longitude, "latitude": row.Latitude, "status": row.Status, "contact_phone": row.ContactPhone}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, p, "update", "station", id, before, row, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, p, "update", "station", id, before, row, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, row)

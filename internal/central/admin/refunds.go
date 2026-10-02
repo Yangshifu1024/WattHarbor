@@ -50,7 +50,7 @@ func asConflict(err error) error {
 
 // manualRefund 创建待双人复核的人工退款。同一 request_id、相同内容返回原退款单；同号不同内容返回冲突。
 func (a ResourceAPI) manualRefund(c *gin.Context) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
@@ -70,8 +70,8 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 	created := false
 	refundNo := ""
 	var recordID uint64
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		created, refundNo, recordID, err = a.refundReviewStore().ManualCreate(c.Request.Context(), tx, orderstore.ManualRefundInput{
 			ActorID: p.ID, OrderID: id, RequestID: in.RequestID, AmountCents: in.AmountCents, Reason: in.Reason,
@@ -80,12 +80,12 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 			return err
 		}
 		if created {
-			auditPending = []auditEntry{{"request", "refund", recordID, nil, in, in.RequestID}}
+			auditPending = []chargehttp.AuditEntry{{Action: "request", Target: "refund", ID: recordID, Before: nil, After: in, RequestID: in.RequestID}}
 		}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, asConflict(err))
+		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"created": created, "refund_no": refundNo, "request_id": in.RequestID})
@@ -94,7 +94,7 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 // refunds 分页返回退款记录及当前操作人的 can_approve、can_reject、can_retry。
 // 仅 pending、manual_review 记录可复核，首签人不能再次签署；自动退款的执行进度放入 task。
 func (a ResourceAPI) refunds(c *gin.Context) {
-	q, ok := parsePage(c, "pending processing success failed rejected")
+	q, ok := chargehttp.ReadAdminPage(c, "pending processing success failed rejected")
 	if !ok {
 		return
 	}
@@ -111,11 +111,11 @@ func (a ResourceAPI) refunds(c *gin.Context) {
 	}
 	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
 	if err := db.Count(&out.Total).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	if err := db.Select("r.id,r.refund_no,r.user_id,r.payment_order_id,r.refund_cents,r.status,r.reason,r.failure_reason,r.created_at,r.completed_at,r.execution_policy,r.retry_count,r.next_attempt_at,v.first_signer,v.second_signer,v.first_comment,v.second_comment").Order("r.id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	normalizeRows(out.Items)
@@ -175,8 +175,8 @@ func (a ResourceAPI) reviewRefund(c *gin.Context) {
 	}
 	status := ""
 	var recordID uint64
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		status, recordID, err = a.refundReviewStore().Review(c.Request.Context(), tx, c.Param("refund_no"), orderstore.ReviewDecision{
 			Approve: approve, ApproveComment: in.ApproveComment, Reason: in.Reason, ActorID: p.ID,
@@ -184,11 +184,11 @@ func (a ResourceAPI) reviewRefund(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{status, "refund", recordID, nil, in, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: status, Target: "refund", ID: recordID, Before: nil, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, asConflict(err))
+		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"review_status": status})
@@ -208,18 +208,18 @@ func (a ResourceAPI) retryRefund(c *gin.Context) {
 		return
 	}
 	var recordID uint64
-	var auditPending []auditEntry
-	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []chargehttp.AuditEntry
+	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		recordID, err = a.refundReviewStore().Retry(c.Request.Context(), tx, c.Param("refund_no"))
 		if err != nil {
 			return err
 		}
-		auditPending = []auditEntry{{"retry", "refund", recordID, nil, in, ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: "retry", Target: "refund", ID: recordID, Before: nil, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		resourceFailure(c, asConflict(err))
+		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"scheduled": true})

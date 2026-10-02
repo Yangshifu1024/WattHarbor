@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -74,14 +75,14 @@ func (s ResourceStore) PaymentOrders(ctx context.Context, q PaymentOrderQuery) (
 }
 
 func (a ResourceAPI) paymentOrders(c *gin.Context) {
-	page, ok := parsePage(c, "")
+	page, ok := chargehttp.ReadAdminPage(c, "")
 	if !ok {
 		return
 	}
 	q := PaymentOrderQuery{PageQuery: page, OrderNo: c.Query("order_no"), BizType: c.Query("biz_type"),
 		PayMethod: c.Query("pay_method"), PaymentStatus: c.Query("payment_status")}
-	if utf8.RuneCountInString(q.OrderNo) > 64 || !oneOf(q.BizType, "charge wallet_recharge") ||
-		!oneOf(q.PayMethod, "wechat balance") || !oneOf(q.PaymentStatus, "pending paid refunded partial_refunded") {
+	if utf8.RuneCountInString(q.OrderNo) > 64 || !chargehttp.AdminOneOf(q.BizType, "charge wallet_recharge") ||
+		!chargehttp.AdminOneOf(q.PayMethod, "wechat balance") || !chargehttp.AdminOneOf(q.PaymentStatus, "pending paid refunded partial_refunded") {
 		httpapi.BadRequest(c, "支付单号、用途、支付方式或支付状态无效")
 		return
 	}
@@ -93,7 +94,7 @@ func (a ResourceAPI) paymentOrders(c *gin.Context) {
 	}
 	out, err := a.Store.PaymentOrders(c.Request.Context(), q)
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)

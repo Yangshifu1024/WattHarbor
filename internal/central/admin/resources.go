@@ -1,18 +1,9 @@
 package admin
 
 import (
-	"encoding/json"
-	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
-	"strconv"
-	"strings"
-	"time"
-	"unicode/utf8"
 )
 
 // ResourceStore contains domain views of the same central database handle.
@@ -67,101 +58,9 @@ func (a ResourceAPI) Register(r *gin.Engine) {
 }
 
 // PageQuery 是全后台统一的分页与筛选入参，各列表接口在此基础上再拼自己的条件。
-type PageQuery struct {
-	Page            int    // 页码，从 1 开始
-	PageSize        int    // 每页条数，1–100
-	Keyword, Status string // 关键词模糊查询条件；状态过滤，须落在各接口给定的白名单内
-	StationID       uint64 // Optional device-list station filter, parsed and scope-checked by devices.
-}
+type PageQuery = chargehttp.AdminPageQuery
 
-// Page[T] 是列表接口的统一响应体，额外带上权限清单供前端决定按钮可见性。
-type Page[T any] struct {
-	Items       []T      `json:"items"`                 // 当页数据
-	Total       int64    `json:"total"`                 // 符合条件的总条数
-	Page        int      `json:"page"`                  // 当前页码
-	PageSize    int      `json:"page_size"`             // 每页条数
-	Permissions []string `json:"permissions,omitempty"` // 操作人权限码；为空时整个字段省略
-}
-
-// parsePage 解析并校验通用分页参数：page ≥ 1、page_size 1–100（page 上限 1000000），
-// 关键词不超过 128 字符，状态必须在该接口传入的白名单内（留空表示不按状态过滤）。
-// 任一项不合法直接写 400 并返回 false，调用方必须立即 return。
-func parsePage(c *gin.Context, statuses string) (PageQuery, bool) {
-	// 分页参数走统一解析：后台的 page 上限比 C 端高一个数量级，
-	// 导出与对账需要翻到很深的页，这是有意保留的差异。
-	page, pageSize, paged := httpapi.ReadPaging(c, 20, httpapi.MaxAdminPageLimit)
-	if !paged {
-		return PageQuery{}, false
-	}
-	q := PageQuery{Page: page, PageSize: pageSize, Keyword: strings.TrimSpace(c.Query("keyword")), Status: c.Query("status")}
-	if utf8.RuneCountInString(q.Keyword) > 128 || !oneOf(q.Status, statuses) {
-		httpapi.BadRequest(c, "关键词过长或状态无效")
-		return q, false
-	}
-	return q, true
-}
-
-// oneOf 判断值是否落在以空格分隔的白名单里；空值一律放行，表示不按这一项过滤。
-func oneOf(value, allowed string) bool {
-	if value == "" {
-		return true
-	}
-	for _, v := range strings.Fields(allowed) {
-		if value == v {
-			return true
-		}
-	}
-	return false
-}
-
-// likePattern 把关键词转成 LIKE 模式，并转义 !、%、_ 三个通配符，
-// 否则用户输入的百分号会变成通配、搜出范围之外的数据。
-func likePattern(value string) string {
-	return "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(value) + "%"
-}
-
-// pathID 读取路径参数 :id 并要求它是正整数，不合法直接写 400 并返回 false。
-// 本包所有 :id 路由的形参都必须命名为 id，否则这里取不到值。
-func pathID(c *gin.Context) (uint64, bool) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil || id == 0 {
-		httpapi.BadRequest(c, "ID 必须为正整数")
-		return 0, false
-	}
-	return id, true
-}
-
-// resourceFailure 把存储层错误翻译成统一响应：业务冲突 409、记录不存在 404、
-// 唯一索引冲突 409，其余一律 503 通用提示，不把底层错误暴露给前端。
-func resourceFailure(c *gin.Context, err error) {
-	var duplicate *mysql.MySQLError
-	switch {
-	case errors.Is(err, errConflict):
-		httpapi.Write(c, 409, 2009, err.Error(), nil)
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		httpapi.Write(c, 404, 1004, "记录不存在或已删除", nil)
-	case errors.As(err, &duplicate) && duplicate.Number == 1062:
-		httpapi.Write(c, 409, 2009, "编码已存在，请使用其他编码", nil)
-	default:
-		httpapi.Write(c, 503, 5003, "数据暂时无法读取或保存，请稍后重试", nil)
-	}
-}
-
-// resourceAudit 在业务事务内保存变更快照、操作人、对象、客户端 IP 和请求号。
-func resourceAudit(tx *gorm.DB, p operations.Profile, action, target string, id uint64, before, after any, ip, requestID string) error {
-	old, err := json.Marshal(before)
-	if err != nil {
-		return err
-	}
-	next, err := json.Marshal(after)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	if len(requestID) > 64 {
-		requestID = requestID[:64]
-	}
-	return tx.Table("audit_log").Create(map[string]any{"actor_id": p.ID, "actor_name": p.Username, "module": target, "action": action, "target_type": target, "target_id": strconv.FormatUint(id, 10), "before_json": string(old), "after_json": string(next), "client_ip": ip, "request_id": requestID, "created_month": time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}).Error
-}
+// Page 是后台列表接口的统一响应体。
+type Page[T any] = chargehttp.AdminPage[T]
 
 func normalizeBool(value bool) bool { return value }

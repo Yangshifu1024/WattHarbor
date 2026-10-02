@@ -71,7 +71,7 @@ func vendorIDs(ids []uint64) string {
 func (a ResourceAPI) vendorScope(c *gin.Context) (operations.DataScope, bool) {
 	scope, err := database.LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
-		resourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, err)
 		return scope, false
 	}
 	return scope, true
@@ -81,7 +81,7 @@ func (a ResourceAPI) listVendors(c *gin.Context)   { a.listVendorPage(c, false) 
 func (a ResourceAPI) vendorOptions(c *gin.Context) { a.listVendorPage(c, true) }
 
 func (a ResourceAPI) listVendorPage(c *gin.Context, optionsOnly bool) {
-	page, ok := parsePage(c, "enabled disabled")
+	page, ok := chargehttp.ReadAdminPage(c, "enabled disabled")
 	if !ok {
 		return
 	}
@@ -120,7 +120,7 @@ func (a ResourceAPI) listVendorPage(c *gin.Context, optionsOnly bool) {
 }
 
 func (a ResourceAPI) visibleVendorID(c *gin.Context) (uint64, bool) {
-	id, ok := pathID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return 0, false
 	}
@@ -166,7 +166,7 @@ func (a ResourceAPI) createVendor(c *gin.Context) {
 		vendorFailure(c, err)
 		return
 	}
-	a.auditToAdmin(c, "create", "vendor", out.ID, nil, out, "")
+	chargehttp.AuditToAdmin(c, a.Store.AdminDB, "create", "vendor", out.ID, nil, out, "")
 	httpapi.OK(c, out)
 }
 
@@ -189,7 +189,7 @@ func (a ResourceAPI) updateVendor(c *gin.Context) {
 		vendorFailure(c, err)
 		return
 	}
-	a.auditToAdmin(c, "update", "vendor", id, before, out, "")
+	chargehttp.AuditToAdmin(c, a.Store.AdminDB, "update", "vendor", id, before, out, "")
 	httpapi.OK(c, out)
 }
 
