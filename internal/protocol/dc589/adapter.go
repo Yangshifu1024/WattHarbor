@@ -33,7 +33,7 @@ func remoteAddrOf(conn net.Conn) string {
 }
 
 // finish 保存会话终态；未实现 SessionRecorder 的 sink 跳过审计，不阻止设备通信。
-func (a TCPAdapter) finish(ctx context.Context, sink protocol.Sink, audit *protocol.SessionAudit, deviceID string, reason protocol.CloseReason) {
+func (a TCPAdapter) finish(ctx context.Context, sink protocol.Sink, audit *SessionAudit, deviceID string, reason protocol.CloseReason) {
 	recorder, ok := sink.(protocol.SessionRecorder)
 	if !ok {
 		return
@@ -49,7 +49,7 @@ func (a TCPAdapter) finish(ctx context.Context, sink protocol.Sink, audit *proto
 // protocol.Adapter，不必改动本包。
 type TCPAdapter struct {
 	Clock          func() time.Time
-	Registry       *protocol.Registry
+	Registry       protocol.SessionRouter
 	DebugHeartbeat bool
 }
 
@@ -92,7 +92,7 @@ func (a TCPAdapter) ServeConn(ctx context.Context, conn net.Conn, sink protocol.
 	if _, err := rand.Read(serverSession[:]); err != nil {
 		return err
 	}
-	audit := protocol.NewSessionAudit(protocol.TransportTCP, hex.EncodeToString(serverSession[:]), remoteAddrOf(conn), clock())
+	audit := NewSessionAudit(protocol.TransportTCP, hex.EncodeToString(serverSession[:]), remoteAddrOf(conn), clock())
 	// 新连接替换本连接时标记 replaced，区分替换与设备主动断开。
 	var replaced atomic.Bool
 	// 连接退出后记录结束原因；审计存储错误仅记录日志，不覆盖原通信错误。
@@ -349,7 +349,7 @@ func (a TCPAdapter) ServeConn(ctx context.Context, conn net.Conn, sink protocol.
 type connection struct {
 	conn             net.Conn
 	mu               sync.Mutex
-	audit            *protocol.SessionAudit
+	audit            *SessionAudit
 	deviceID         string
 	debugHeartbeat   bool
 	logger           *log.Logger

@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/listener"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/provision"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
@@ -56,7 +58,7 @@ func run(ctx context.Context) error {
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
 	provision.API{DB: orm, ServiceToken: cfg.ServiceToken}.Register(router)
-	deviceConnections := &protocol.Registry{}
+	deviceConnections := &session.Registry{}
 	control.CardReplyAPI{Devices: deviceConnections, ServiceToken: cfg.ServiceToken}.Register(router)
 	control.StartAPI{Service: control.StartService{
 		Orders: control.CentralAuthorizer{BaseURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken},
@@ -90,7 +92,7 @@ func run(ctx context.Context) error {
 		return err
 	})
 	group.Go(func() error {
-		err := protocol.Serve(groupCtx, []protocol.Endpoint{{Address: cfg.DC589Addr, Adapter: dc589.TCPAdapter{Registry: deviceConnections, DebugHeartbeat: cfg.DebugHeartbeat}}}, sink, cfg.MaxConnections)
+		err := listener.Serve(groupCtx, []protocol.Endpoint{{Address: cfg.DC589Addr, Adapter: dc589.TCPAdapter{Registry: deviceConnections, DebugHeartbeat: cfg.DebugHeartbeat}}}, sink, cfg.MaxConnections)
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}

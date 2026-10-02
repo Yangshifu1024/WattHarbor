@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
@@ -66,7 +67,7 @@ func TestPaidStartIsDurableAndRequiresMatchedDeviceACK(t *testing.T) {
 	defer db.ExecContext(ctx, "DELETE FROM device_event WHERE device_id = ?", deviceID)
 	defer db.ExecContext(ctx, "DELETE FROM event_outbox WHERE event_id IN (SELECT event_key FROM device_event WHERE device_id = ?)", deviceID)
 	paid := store.PaidOrder{ChargeOrderID: chargeOrderID, PaymentOrderID: 456, OrderNo: orderNo, UserID: 789, DeviceID: deviceID, PortNo: 1, ChargeMode: 4, ChargeQuantity: 600}
-	registry := &protocol.Registry{}
+	registry := &session.Registry{}
 	session := &recordingSession{}
 	detach := registry.Attach(deviceID, session, nil)
 	defer detach()

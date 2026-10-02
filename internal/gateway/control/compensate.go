@@ -7,15 +7,15 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 )
 
 type Compensation struct {
 	Store   store.MySQLSink
-	Devices *protocol.Registry
+	Devices *session.Registry
 }
 
 func (c Compensation) Request(ctx context.Context, orderNo, commandID string) error {

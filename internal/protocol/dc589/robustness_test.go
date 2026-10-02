@@ -62,6 +62,6 @@ func TestSessionAuditRecordsUnknownCommands(t *testing.T) {
 	}
 }
 
-func newAudit() *protocol.SessionAudit {
-	return protocol.NewSessionAudit(protocol.TransportTCP, "sess", "127.0.0.1:1", time.Now())
+func newAudit() *SessionAudit {
+	return NewSessionAudit(protocol.TransportTCP, "sess", "127.0.0.1:1", time.Now())
 }

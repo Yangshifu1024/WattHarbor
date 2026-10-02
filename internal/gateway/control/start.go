@@ -6,15 +6,15 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 )
 
 type StartService struct {
 	Orders  PaidOrderAuthorizer
 	Store   store.MySQLSink
-	Devices *protocol.Registry
+	Devices *session.Registry
 }
 
 // Start 绝不把一次 socket 写入当成设备成功。它先把归属和命令落库，

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
@@ -11,7 +12,7 @@ import (
 )
 
 type CardReplyAPI struct {
-	Devices      *protocol.Registry
+	Devices      *session.Registry
 	ServiceToken string
 }
 

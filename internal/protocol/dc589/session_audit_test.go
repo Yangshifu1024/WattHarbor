@@ -1,4 +1,4 @@
-package protocol
+package dc589
 
 import (
 	"testing"

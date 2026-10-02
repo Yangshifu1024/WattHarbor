@@ -1,4 +1,4 @@
-package protocol
+package listener
 
 import (
 	"context"
@@ -7,16 +7,13 @@ import (
 	"log"
 	"net"
 	"sync"
-)
 
-type Endpoint struct {
-	Address string
-	Adapter Adapter
-}
+	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+)
 
 // Serve 在接收任何设备之前先把所有协议端口都绑定好。任何一个绑定失败
 // 都不会留下半启动状态的监听器。
-func Serve(ctx context.Context, endpoints []Endpoint, sink Sink, maxConnections int) error {
+func Serve(ctx context.Context, endpoints []protocol.Endpoint, sink protocol.Sink, maxConnections int) error {
 	if len(endpoints) == 0 || sink == nil || maxConnections < 1 {
 		return errors.New("invalid protocol listener configuration")
 	}

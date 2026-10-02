@@ -1,4 +1,4 @@
-package protocol
+package listener
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
 type testAdapter struct {
@@ -14,7 +16,7 @@ type testAdapter struct {
 }
 
 func (a testAdapter) Name() string { return a.name }
-func (a testAdapter) ServeConn(ctx context.Context, conn net.Conn, _ Sink) error {
+func (a testAdapter) ServeConn(ctx context.Context, conn net.Conn, _ protocol.Sink) error {
 	a.connected <- a.name
 	<-ctx.Done()
 	return ctx.Err()
@@ -22,8 +24,8 @@ func (a testAdapter) ServeConn(ctx context.Context, conn net.Conn, _ Sink) error
 
 type testSink struct{}
 
-func (testSink) Register(context.Context, Registration) error { return nil }
-func (testSink) Record(context.Context, Event) error          { return nil }
+func (testSink) Register(context.Context, protocol.Registration) error { return nil }
+func (testSink) Record(context.Context, protocol.Event) error          { return nil }
 
 func TestServeMultipleProtocolPorts(t *testing.T) {
 	ports := make([]string, 2)
@@ -40,7 +42,7 @@ func TestServeMultipleProtocolPorts(t *testing.T) {
 	connected := make(chan string, 2)
 	result := make(chan error, 1)
 	go func() {
-		result <- Serve(ctx, []Endpoint{{Address: ports[0], Adapter: testAdapter{"dc589", connected}}, {Address: ports[1], Adapter: testAdapter{"future", connected}}}, testSink{}, 2)
+		result <- Serve(ctx, []protocol.Endpoint{{Address: ports[0], Adapter: testAdapter{"dc589", connected}}, {Address: ports[1], Adapter: testAdapter{"future", connected}}}, testSink{}, 2)
 	}()
 	var wg sync.WaitGroup
 	for _, address := range ports {

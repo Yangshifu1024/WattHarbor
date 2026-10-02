@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 )
@@ -65,14 +66,14 @@ func (s *recordingSink) deviceID() string {
 func (s *recordingSink) heartbeatCount() int { return len(s.ofType(protocol.Heartbeat)) }
 
 // serveGateway 在回环端口启动适配器，并返回 registry，供测试通过控制路径下发命令。
-func serveGateway(t *testing.T, ctx context.Context, sink protocol.Sink) (string, *protocol.Registry) {
+func serveGateway(t *testing.T, ctx context.Context, sink protocol.Sink) (string, *session.Registry) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = listener.Close() })
-	registry := &protocol.Registry{}
+	registry := &session.Registry{}
 	go func() {
 		adapter := dc589.TCPAdapter{Registry: registry}
 		for {
@@ -283,7 +284,7 @@ func waitForEnd(t *testing.T, sink *recordingSink, limit time.Duration) protocol
 }
 
 // commandThrough 经适配器 registry 按设备 ID 路由命令。
-func commandThrough(t *testing.T, registry *protocol.Registry, deviceID string, command protocol.Command) error {
+func commandThrough(t *testing.T, registry *session.Registry, deviceID string, command protocol.Command) error {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -291,7 +292,7 @@ func commandThrough(t *testing.T, registry *protocol.Registry, deviceID string, 
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, protocol.ErrOffline) {
+		if !errors.Is(err, session.ErrOffline) {
 			return err
 		}
 		if time.Now().After(deadline) {

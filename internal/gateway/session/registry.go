@@ -1,41 +1,14 @@
-package protocol
+package session
 
 import (
 	"context"
 	"errors"
 	"sync"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
 var ErrOffline = errors.New("device is not connected")
-
-type CommandKind string
-
-const (
-	CommandStart       CommandKind = "start"
-	CommandStop        CommandKind = "stop"
-	CommandReboot      CommandKind = "reboot"
-	CommandCardDenied  CommandKind = "card_denied"
-	CommandCardBalance CommandKind = "card_balance"
-)
-
-// Command 表示与厂商协议无关的命令，须由领域层持久化并鉴权后发送。
-type Command struct {
-	ConsumerType     uint8
-	CardNumber       uint32
-	CardBalanceUnits uint16
-	CardInvalid      bool
-	Kind             CommandKind
-	SessionID        [6]byte
-	Port             uint8
-	OrderBCD         [8]byte
-	Mode             uint8
-	Quantity         uint16
-}
-
-type Session interface {
-	Send(context.Context, Command) error
-	Close() error
-}
 
 // Registry 将命令路由至设备当前已认证的连接。
 // 新连接替换旧会话；旧会话的延迟断开回调不会移除新连接。
@@ -44,11 +17,11 @@ type Registry struct {
 	sessions map[string]*registryEntry
 }
 
-type registryEntry struct{ session Session }
+type registryEntry struct{ session protocol.Session }
 
 // Attach 登记设备当前会话并返回 detach 函数。
 // 新会话替换并关闭同设备的旧连接，通过可选 onReplaced 回调记录替换原因。
-func (r *Registry) Attach(deviceID string, session Session, onReplaced func(Session)) func() {
+func (r *Registry) Attach(deviceID string, session protocol.Session, onReplaced func(protocol.Session)) func() {
 	r.mu.Lock()
 	if r.sessions == nil {
 		r.sessions = make(map[string]*registryEntry)
@@ -72,7 +45,7 @@ func (r *Registry) Attach(deviceID string, session Session, onReplaced func(Sess
 	}
 }
 
-func (r *Registry) Send(ctx context.Context, deviceID string, command Command) error {
+func (r *Registry) Send(ctx context.Context, deviceID string, command protocol.Command) error {
 	r.mu.RLock()
 	entry := r.sessions[deviceID]
 	r.mu.RUnlock()
@@ -87,3 +60,10 @@ func (r *Registry) Connected(deviceID string) bool {
 	defer r.mu.RUnlock()
 	return r.sessions[deviceID] != nil
 }
+
+// Registry 同时是适配器依赖的会话登记入口和运行时的命令下发器。
+// 两条断言在编译期锁定这两个形状，避免实现漂移后才发现不满足。
+var (
+	_ protocol.SessionRouter = (*Registry)(nil)
+	_ protocol.CommandSender = (*Registry)(nil)
+)
