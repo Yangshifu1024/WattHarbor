@@ -15,7 +15,7 @@ func TestPublicUserIDsRemainExactDecimalStrings(t *testing.T) {
 	}{
 		{database.ChargeUserRow{ID: id, InviterID: &id}, "id"},
 		{database.ChargeUserRow{ID: id, InviterID: &id}, "inviter_id"},
-		{OrderView{UserID: id}, "user_id"},
+		{orderstore.OrderView{UserID: id}, "user_id"},
 		{orderstore.PaymentOrderView{UserID: id}, "user_id"},
 	} {
 		raw, err := json.Marshal(tc.value)

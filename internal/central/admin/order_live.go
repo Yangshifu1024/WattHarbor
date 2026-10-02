@@ -2,13 +2,14 @@ package admin
 
 import (
 	"context"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"sync"
 	"time"
 )
 
-func (a ResourceAPI) orderLive(ctx context.Context, rows []OrderView) {
+func (a ResourceAPI) orderLive(ctx context.Context, rows []orderstore.OrderView) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	service := chargehttp.LiveMeterService{DB: a.Store.UserDB, GatewayURL: a.GatewayURL, ServiceToken: a.ServiceToken, Client: serviceclient.Client{Timeout: 2 * time.Second}}

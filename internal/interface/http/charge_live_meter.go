@@ -19,20 +19,12 @@ import (
 	"gorm.io/gorm"
 )
 
-type LiveMeterView struct {
-	At             time.Time `json:"at"`
-	Stale          bool      `json:"stale"`
-	KWh            float64   `json:"kwh"`
-	Seconds        uint32    `json:"seconds"`
-	Fee            *LiveFee  `json:"fee,omitempty"`
-	FeeUnavailable string    `json:"fee_unavailable,omitempty"`
-}
+// LiveMeterView 与 LiveFee 是实时电表读数的投影，定义在领域层：
+// 后台订单列表也要挂同一份实时读数，持久化层不能反向依赖接口层。
+type LiveMeterView = charging.LiveMeterView
 
-type LiveFee struct {
-	ElectricCents int64 `json:"electric_cents"`
-	ServiceCents  int64 `json:"service_cents"`
-	TotalCents    int64 `json:"total_cents"`
-}
+// LiveFee 是实时读数对应的费用拆分。
+type LiveFee = charging.LiveFee
 
 type LiveMeterService struct {
 	DB                       *gorm.DB

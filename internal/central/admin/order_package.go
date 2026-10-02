@@ -62,7 +62,7 @@ func selectedPackageName(selected *OrderPackage) *string {
 }
 
 // orderSchemeNames 分页之后一次读取当页快照，避免为每条订单读取当前站点或单独查库。
-func (s ResourceStore) orderSchemeNames(ctx context.Context, rows []OrderView) error {
+func (s ResourceStore) orderSchemeNames(ctx context.Context, rows []orderstore.OrderView) error {
 	ids := make([]uint64, 0, len(rows))
 	for i := range rows {
 		rows[i].SelectedSchemeName = nil
