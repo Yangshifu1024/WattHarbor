@@ -10,16 +10,22 @@ import "database/sql"
 // admin_event_outbox 多一个可空的 stream_message_id，读取时不需要它。
 //
 // 事件与业务写入同事务提交，是幂等重放与断线补偿的依据。
+// Status / ScheduledAt 用指针并带 default 标签：新建事件时不设置它们，gorm 便省略这两列，
+// 交给数据库的列默认值（status='pending'、scheduled_at=CURRENT_TIMESTAMP(3)）。
+//
+// 用值类型时 Go 零值会被显式写成空串，撞上枚举与 datetime 报 Data truncated；
+// 用无 default 的指针则会被显式写成 NULL，报 Column cannot be null。两者都不可取。
+// 这两个字段只在投递器更新投递状态时才需要写回。
 type EventOutboxRecord struct {
 	ID           uint64         `gorm:"column:id;primaryKey"`
 	EventID      string         `gorm:"column:event_id"`
 	Stream       string         `gorm:"column:stream"`
 	EnvelopeJSON []byte         `gorm:"column:envelope_json"`
-	Status       string         `gorm:"column:status"`       // pending 待发 / published 已发 / failed 待重试
-	RetryCount   uint32         `gorm:"column:retry_count"`  // 已重试次数，用于指数退避
-	LastError    sql.NullString `gorm:"column:last_error"`   // 最近一次失败原因
-	ScheduledAt  string         `gorm:"column:scheduled_at"` // 下次可投递时间，失败退避时后推
-	PublishedAt  *string        `gorm:"column:published_at"` // 成功投递时间；指针，未投递为 null
+	Status       *string        `gorm:"column:status;default:pending"`                    // pending 待发 / published 已发 / failed 待重试
+	RetryCount   uint32         `gorm:"column:retry_count"`                               // 已重试次数，用于指数退避
+	LastError    sql.NullString `gorm:"column:last_error"`                                // 最近一次失败原因
+	ScheduledAt  *string        `gorm:"column:scheduled_at;default:CURRENT_TIMESTAMP(3)"` // 下次可投递时间，失败退避时后推
+	PublishedAt  *string        `gorm:"column:published_at"`                              // 成功投递时间；nil 表示尚未投递
 }
 
 func (EventOutboxRecord) TableName() string { return "event_outbox" }

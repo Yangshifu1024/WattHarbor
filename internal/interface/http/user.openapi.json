@@ -630,23 +630,37 @@
           },
           "offer_id": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "description": "价格档 ID，取自 /api/v1/user/scan/offers 返回的 items[].id；同一响应里还有 package_id（对应方案内的套餐），两者不同，传错会返回 2004。"
           }
         }
       },
       "ScanOfferRow": {
         "type": "object",
         "properties": {
-          "offer_id": {
-            "type": "integer"
+          "id": {
+            "type": "integer",
+            "description": "价格档 ID"
+          },
+          "package_id": {
+            "type": "integer",
+            "description": "对应方案里的套餐 ID"
+          },
+          "station_id": {
+            "type": "string",
+            "description": "站点 ID，十进制字符串"
           },
           "name": {
             "type": "string",
-            "description": "价格档名称"
+            "description": "套餐名称"
           },
           "mode": {
             "type": "string",
-            "description": "计费方式，如 amount / duration / energy"
+            "enum": [
+              "amount",
+              "duration",
+              "energy"
+            ]
           },
           "price_cents": {
             "type": "integer",
@@ -659,6 +673,10 @@
           "energy_wh": {
             "type": "integer",
             "description": "电量档的瓦时数；非电量档为 0"
+          },
+          "max_minutes": {
+            "type": "integer",
+            "description": "该档允许的最长充电时长"
           }
         }
       },
@@ -667,25 +685,23 @@
         "properties": {
           "data": {
             "type": "object",
-            "description": "价格档由服务器按该端口当前生效的方案算出，客户端不传也不得自带价格。",
             "properties": {
-              "station_id": {
-                "type": "integer",
-                "description": "站点 ID，十进制字符串"
-              },
               "port_id": {
                 "type": "string"
+              },
+              "station_id": {
+                "type": "string",
+                "description": "站点 ID，十进制字符串"
               },
               "items": {
                 "type": "array",
                 "items": {
-                  "type": "object"
-                },
-                "description": "该端口的可选价格档"
+                  "$ref": "#/components/schemas/ScanOfferRow"
+                }
               },
               "display": {
                 "type": "object",
-                "description": "用户端展示开关"
+                "description": "用户端展示开关；字段随版本增补，未声明的按 false 处理"
               },
               "stop_when_full": {
                 "type": "boolean",
@@ -697,25 +713,58 @@
       },
       "ScanStartResult": {
         "type": "object",
+        "description": "起充返回的是**支付意图**而非充电订单：此时充电订单尚未创建，要等渠道回调确认付款后才建单并启动设备。",
         "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "order_no": {
-                "type": "string",
-                "description": "充电订单号"
-              },
-              "charge_order_id": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string"
-              },
-              "payment": {
-                "type": "object",
-                "description": "需要拉起支付时返回预下单参数；余额支付则为空"
-              }
-            }
+          "intent_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "支付意图 ID"
+          },
+          "merchant_order_no": {
+            "type": "string",
+            "description": "渠道侧商户单号，拉起支付与后续对账都用它"
+          },
+          "port_id": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "station_id": {
+            "type": "string",
+            "description": "站点 ID，十进制字符串"
+          },
+          "payable_cents": {
+            "type": "integer",
+            "description": "应付金额，单位分"
+          },
+          "total_cents": {
+            "type": "integer",
+            "description": "原始金额，单位分"
+          },
+          "electric_cents": {
+            "type": "integer",
+            "description": "电费，单位分"
+          },
+          "service_cents": {
+            "type": "integer",
+            "description": "服务费，单位分"
+          },
+          "discount_cents": {
+            "type": "integer",
+            "description": "优惠券抵扣，单位分"
+          },
+          "coupon_grant_id": {
+            "type": "integer",
+            "description": "使用的券发放记录 ID；未用券为 0"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "支付意图过期时间；过期后付款会原路退回"
+          },
+          "payment_params": {
+            "$ref": "#/components/schemas/PaymentParams"
           }
         }
       },
@@ -1707,6 +1756,37 @@
                 "type": "string"
               }
             }
+          }
+        }
+      },
+      "PaymentParams": {
+        "type": "object",
+        "description": "渠道预下单参数，直接透传给支付控件。开发模拟模式下只有 provider 与 prepay_id 有值，其余为空串。",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "渠道名，如 simulation / wechat_direct"
+          },
+          "prepay_id": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "timeStamp": {
+            "type": "string"
+          },
+          "nonceStr": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          },
+          "signType": {
+            "type": "string"
+          },
+          "paySign": {
+            "type": "string"
           }
         }
       }
