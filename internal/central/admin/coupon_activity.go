@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -14,23 +15,6 @@ import (
 
 // 本文件提供优惠券活动规则的运营接口；发放逻辑由 charge 包实现。
 // 金额单位为分，活动时间使用绝对起止时间，是否生效由状态及时间窗口共同判断。
-// activityRuleRow 是活动列表投影，包含规则、券名称和累计发放数量。
-type activityRuleRow struct {
-	ID              uint64    `json:"id"`                // 活动规则主键
-	Name            string    `json:"name"`              // 活动名称，运营可读，不参与业务判定
-	TriggerType     string    `json:"trigger_type"`      // 触发类型：first_recharge 首充、invite_reward 邀请有奖、threshold_redeem 满减、holiday 节日
-	CouponID        uint64    `json:"coupon_id"`         // 活动发放的券 ID
-	CouponName      string    `json:"coupon_name"`       // 关联券的名称，从 central_db.coupon 联查出来只用于展示
-	InviterCouponID *uint64   `json:"inviter_coupon_id"` // 邀请人奖励券 ID，指针为 nil 表示该活动不是邀请有奖类型
-	ThresholdCents  int64     `json:"threshold_cents"`   // 触发门槛，单位分；满减类必填，其余类型必须为 0
-	MaxGrants       int       `json:"max_grants"`        // 活动总发放上限，0 表示不限；用于控制活动成本
-	GrantedCount    int64     `json:"granted_count"`     // 该券由活动/邀请奖励实际发出的份数，聚合 coupon_grant 得出，不落库
-	PerUserLimit    int       `json:"per_user_limit"`    // 单用户可领份数，0 表示不限
-	Status          string    `json:"status"`            // 活动状态：active 进行中 / disabled 已停用
-	StartAt         time.Time `json:"start_at"`          // 活动开始时间，UTC 绝对时间，是否在进行中由引擎按时间比较得出
-	EndAt           time.Time `json:"end_at"`            // 活动结束时间，UTC 绝对时间，须晚于开始时间
-	CreatedAt       time.Time `json:"created_at"`        // 创建时间
-}
 
 // registerActivityRules 挂载券活动的后台路由：列表（只读）、新建、修改，均为管理后台侧，
 // 活动引擎本身在 charge 服务里，这里只负责运营的查看与开关。
@@ -40,30 +24,6 @@ func (a ResourceAPI) registerActivityRules(r *gin.Engine) {
 	r.PUT("/api/v1/admin/coupon-activities/:id", a.Auth.Require("coupon.activity.manage"), a.updateActivityRule)
 }
 
-// grantedCounts 按券 ID 聚合 activity 和 invite_reward 来源的发放数量。
-// 不同活动引用同一张券时，共享该券的累计计数。
-func (a ResourceAPI) grantedCounts(tx *gorm.DB, ruleIDs []uint64) (map[uint64]int64, error) {
-	counts := map[uint64]int64{}
-	if len(ruleIDs) == 0 {
-		return counts, nil
-	}
-	type row struct {
-		CouponID uint64 // 被统计的券 ID，作为 map 的键
-		Total    int64  // 该券的活动类发放总份数
-	}
-	var rows []row
-	if err := tx.Table("coupon_grant").
-		Select("coupon_id, COUNT(*) AS total").
-		Where("coupon_id IN ? AND grant_source IN ('activity','invite_reward') AND deleted_at IS NULL", ruleIDs).
-		Group("coupon_id").Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	for _, r := range rows {
-		counts[r.CouponID] = r.Total
-	}
-	return counts, nil
-}
-
 // listActivityRules 分页返回券活动列表，支持按状态（active/disabled）和活动名关键词过滤，
 // 并把每条活动券的实际发放份数补进 GrantedCount，让运营直接看到活动成本。
 func (a ResourceAPI) listActivityRules(c *gin.Context) {
@@ -71,41 +31,14 @@ func (a ResourceAPI) listActivityRules(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[activityRuleRow]{Items: []activityRuleRow{}, Page: page.Page, PageSize: page.PageSize}
-	query := a.Store.UserDB.WithContext(c.Request.Context()).Table("coupon_activity_rule AS r").
-		Joins("LEFT JOIN coupon AS c ON c.id = r.coupon_id").
-		Where("r.deleted_at IS NULL")
-	if page.Status != "" {
-		query = query.Where("r.status = ?", page.Status)
-	}
-	if page.Keyword != "" {
-		query = query.Where("r.name LIKE ?", chargehttp.AdminLikePattern(page.Keyword))
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	var rows []activityRuleRow
-	if err := query.Session(&gorm.Session{}).
-		Select("r.id, r.name, r.trigger_type, r.coupon_id, c.name AS coupon_name, r.inviter_coupon_id, r.threshold_cents, r.max_grants, r.per_user_limit, r.status, r.start_at, r.end_at, r.created_at").
-		Order("r.id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Scan(&rows).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	ids := make([]uint64, 0, len(rows))
-	for _, row := range rows {
-		ids = append(ids, row.CouponID)
-	}
-	counts, err := a.grantedCounts(a.Store.UserDB, ids)
+	rows, total, err := (paystore.AdminActivityStore{DB: a.Store.UserDB}).
+		ListActivityRules(c.Request.Context(), page.Status, page.Keyword, page.Page, page.PageSize)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	for i := range rows {
-		rows[i].GrantedCount = counts[rows[i].CouponID]
-	}
-	out.Items = rows
-	httpapi.OK(c, out)
+	httpapi.OK(c, chargehttp.AdminPage[paystore.AdminActivityRuleRow]{
+		Items: rows, Total: total, Page: page.Page, PageSize: page.PageSize})
 }
 
 // activityRuleInput 是创建和更新活动的请求体。
@@ -151,18 +84,16 @@ func (a ResourceAPI) createActivityRule(c *gin.Context) {
 			return
 		}
 	}
+	input := paystore.AdminActivityRuleInput{Name: in.Name, TriggerType: in.TriggerType,
+		CouponID: in.CouponID, InviterCouponID: in.InviterCouponID, ThresholdCents: in.ThresholdCents,
+		MaxGrants: in.MaxGrants, PerUserLimit: in.PerUserLimit, Status: in.Status,
+		StartAt: start, EndAt: end}
+	store := paystore.AdminActivityStore{DB: a.Store.UserDB}
 	var id uint64
-	tx := a.Store.UserDB.WithContext(c.Request.Context())
-	err = tx.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("coupon_activity_rule").Create(map[string]any{
-			"name": in.Name, "trigger_type": in.TriggerType,
-			"coupon_id": in.CouponID, "inviter_coupon_id": in.InviterCouponID,
-			"threshold_cents": in.ThresholdCents, "max_grants": in.MaxGrants,
-			"per_user_limit": in.PerUserLimit, "status": in.Status, "start_at": start, "end_at": end,
-		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
+	err = a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var err error
+		id, err = store.CreateActivityRule(c.Request.Context(), input)
+		if err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "coupon_activity", id, nil, in, c.ClientIP(), httpapi.RequestID(c))
@@ -197,32 +128,24 @@ func (a ResourceAPI) updateActivityRule(c *gin.Context) {
 		httpapi.BadRequest(c, "活动券不存在或已停用")
 		return
 	}
-	// 使用具体类型接收审计快照，避免 GORM 反射 nil 接口时 panic。
-	var before activityRuleRow
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).
-		Table("coupon_activity_rule").Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			httpapi.Write(c, http.StatusNotFound, 1004, "活动规则不存在", nil)
-			return
-		}
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
+	input := paystore.AdminActivityRuleInput{Name: in.Name, TriggerType: in.TriggerType,
+		CouponID: in.CouponID, InviterCouponID: in.InviterCouponID, ThresholdCents: in.ThresholdCents,
+		MaxGrants: in.MaxGrants, PerUserLimit: in.PerUserLimit, Status: in.Status,
+		StartAt: start, EndAt: end}
+	store := paystore.AdminActivityStore{DB: a.Store.UserDB}
+	var before paystore.AdminActivityRuleRow
 	err = a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		changed := tx.Table("coupon_activity_rule").Where("id = ? AND deleted_at IS NULL", id).
-			Updates(map[string]any{
-				"name": in.Name, "coupon_id": in.CouponID, "inviter_coupon_id": in.InviterCouponID,
-				"threshold_cents": in.ThresholdCents, "max_grants": in.MaxGrants,
-				"per_user_limit": in.PerUserLimit, "status": in.Status, "start_at": start, "end_at": end,
-			})
-		if changed.Error != nil {
-			return changed.Error
-		}
-		if changed.RowsAffected != 1 {
-			return gorm.ErrRecordNotFound
+		var err error
+		before, err = store.UpdateActivityRule(c.Request.Context(), id, input)
+		if err != nil {
+			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "coupon_activity", id, before, in, c.ClientIP(), httpapi.RequestID(c))
 	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		httpapi.Write(c, http.StatusNotFound, 1004, "活动规则不存在", nil)
+		return
+	}
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -232,13 +155,11 @@ func (a ResourceAPI) updateActivityRule(c *gin.Context) {
 
 // couponUsable 校验券存在、状态为 active 且未软删除；不满足时返回 errActivityInput。
 func (a ResourceAPI) couponUsable(c *gin.Context, couponID uint64) error {
-	var count int64
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("coupon").
-		Where("id = ? AND status = 'active' AND deleted_at IS NULL", couponID).Count(&count).Error; err != nil {
+	usable, err := paystore.CouponUsable(c.Request.Context(), a.Store.UserDB, couponID)
+	if err != nil {
 		return err
 	}
-	// Count 不将零行视为错误，因此必须显式拒绝不存在或不可用的券。
-	if count == 0 {
+	if !usable {
 		return errActivityInput
 	}
 	return nil
