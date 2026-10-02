@@ -37,9 +37,9 @@ type API struct {
 }
 
 func (a API) Register(router *gin.Engine) {
-	router.POST("/api/v1/public/auth/login", a.login)
-	router.POST("/api/v1/public/auth/refresh", a.refresh)
-	router.POST("/api/v1/public/auth/logout", a.logout)
+	router.POST("/api/v1/user/auth/login", a.login)
+	router.POST("/api/v1/user/auth/refresh", a.refresh)
+	router.POST("/api/v1/user/auth/logout", a.logout)
 	router.GET("/api/v1/user/profile", a.profile)
 }
 

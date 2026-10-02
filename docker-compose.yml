@@ -67,12 +67,33 @@ services:
       DATABASE_URL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/gateway_db
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       DC589_ADDR: :9100
-      CENTRAL_INTERNAL_URL: http://chargepilot-central:8080
+      CENTRAL_INTERNAL_URL: http://chargepilot-central:8082
     ports: ["9100:9100"]
     expose: ["8083"]
     depends_on:
       chargepilot-migrate: { condition: service_completed_successfully }
 
+  # C 端。对外只经 Caddy 进入。
+  chargepilot-user:
+    build:
+      <<: *go-build
+      args: { SERVICE: user }
+    restart: unless-stopped
+    environment:
+      DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
+      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
+      JWT_SECRET: ${JWT_SECRET:?required}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
+      WECHAT_APPID: ${WECHAT_APPID:?required}
+      WECHAT_SECRET: ${WECHAT_SECRET:?required}
+      GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
+    expose: ["8080"]
+    depends_on:
+      chargepilot-migrate: { condition: service_completed_successfully }
+      chargepilot-redis-cache: { condition: service_healthy }
+
+  # 对内服务间接口。不映射端口，对外只有 Caddy 一个入口。
+  # 不取 JWT_SECRET：internal 端点一律走服务令牌，会话签发不在这一侧。
   chargepilot-central:
     build:
       <<: *go-build
@@ -82,12 +103,11 @@ services:
       DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
       REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
       REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD}@chargepilot-redis-stream:6379/0
-      JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       WECHAT_APPID: ${WECHAT_APPID:?required}
       WECHAT_SECRET: ${WECHAT_SECRET:?required}
       GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
-    expose: ["8080"]
+    expose: ["8082"]
     depends_on:
       chargepilot-migrate: { condition: service_completed_successfully }
       chargepilot-redis-cache: { condition: service_healthy }
@@ -127,7 +147,7 @@ services:
       DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
       REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD}@chargepilot-redis-stream:6379/0
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      CENTRAL_INTERNAL_URL: http://chargepilot-central:8080
+      CENTRAL_INTERNAL_URL: http://chargepilot-central:8082
       GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
       REGULATORY_MODE: ${REGULATORY_MODE:-disabled}
       REGULATORY_ENDPOINT: ${REGULATORY_ENDPOINT:-}

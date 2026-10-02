@@ -18,9 +18,8 @@ import (
 	"gorm.io/gorm"
 )
 
-type PrepayProvider interface {
-	Prepay(context.Context, orderstore.PrepayRequest) (orderstore.PrepayParams, error)
-}
+// PrepayProvider 是预下单渠道契约，定义在持久化层以便 user 与 central 共用渠道构造。
+type PrepayProvider = orderstore.PrepayProvider
 
 type PaymentStartAPI struct {
 	Auth     SessionAuthenticator

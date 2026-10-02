@@ -27,9 +27,15 @@ type CardAPI struct {
 	ServiceToken string
 }
 
-func (a CardAPI) Register(r *gin.Engine) {
+// RegisterUser 挂载 C 端在线卡接口。这些路由归 user 进程，鉴权用用户访问令牌。
+func (a CardAPI) RegisterUser(r *gin.Engine) {
 	r.GET("/api/v1/user/cards", a.cards)
 	r.POST("/api/v1/user/cards/:card_no/status", a.cardStatus)
+}
+
+// RegisterInternal 挂载设备侧刷卡的内部接口。这些路由归 central 进程，
+// 由 gateway 携服务令牌调用，用户令牌不适用。
+func (a CardAPI) RegisterInternal(r *gin.Engine) {
 	r.POST("/api/v1/internal/cards/swipe", a.swipe)
 	r.GET("/api/v1/internal/cards/balance", a.balance)
 }

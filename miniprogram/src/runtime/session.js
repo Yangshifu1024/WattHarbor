@@ -28,9 +28,9 @@ export const application = {
   async login() {
     const generation = ++this._generation;
     const code = await new Promise        ((resolve,reject) => wx.login({success:(r     )=>resolve(r.code),fail:reject}));
-    const session = await this.rawRequest('POST','/public/auth/login',{code});
+    const session = await this.rawRequest('POST','/user/auth/login',{code});
     if (generation !== this._generation || this._loggingOut) {
-      await this.rawRequest('POST','/public/auth/logout',undefined,session.refresh_token).catch(()=>{});
+      await this.rawRequest('POST','/user/auth/logout',undefined,session.refresh_token).catch(()=>{});
       throw new Error('登录已取消');
     }
     if (!session || typeof session.user_id !== 'string' || !/^[1-9]\d{0,19}$/.test(session.user_id)) {
@@ -44,9 +44,9 @@ export const application = {
     if (!this.globalData.refreshToken) throw new Error('请重新登录');
     const generation = this._generation;
     this._refreshPromise = (async () => {
-      const session = await this.rawRequest('POST','/public/auth/refresh',undefined,this.globalData.refreshToken);
+      const session = await this.rawRequest('POST','/user/auth/refresh',undefined,this.globalData.refreshToken);
       if (generation !== this._generation) {
-        await this.rawRequest('POST','/public/auth/logout',undefined,session.refresh_token).catch(()=>{});
+        await this.rawRequest('POST','/user/auth/logout',undefined,session.refresh_token).catch(()=>{});
         throw new Error('登录状态已改变');
       }
       this.saveSession(session);
@@ -59,7 +59,7 @@ export const application = {
     this._loggingOut = true;
     try {
       if (this._refreshPromise) await this._refreshPromise.catch(()=>{});
-      if (this.globalData.refreshToken) await this.rawRequest('POST','/public/auth/logout',undefined,this.globalData.refreshToken);
+      if (this.globalData.refreshToken) await this.rawRequest('POST','/user/auth/logout',undefined,this.globalData.refreshToken);
       this._generation++; this.clearSession();
     } finally { this._loggingOut = false; }
   },

@@ -22,9 +22,17 @@
         reverse_proxy chargepilot-admin:8081
     }
 
-    # 其余（C 端与支付回调）走 central。
+    # C 端与支付回调。支付回调由渠道服务器打进来，同样属于对外进程。
+    handle /api/v1/user/* {
+        reverse_proxy chargepilot-user:8080
+    }
+    handle /api/v1/public/* {
+        reverse_proxy chargepilot-user:8080
+    }
+
+    # 其余一律对内，不经 Caddy。
     handle /api/* {
-        reverse_proxy chargepilot-central:8080
+        respond 404
     }
 
     handle_path /admin/* {

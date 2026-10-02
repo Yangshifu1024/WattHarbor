@@ -6,7 +6,7 @@
 - `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。业务实现按分层位于 `internal/domain`、`internal/application`、`internal/infrastructure`、`internal/interface`；进程特有编排位于 `internal/worker`、`internal/gateway`、`internal/delivery`；设备契约位于 `internal/protocol`；无业务语义的通用能力位于 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。五个进程共享同一套 `domain`/`application`/`infrastructure`，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
 - 后台进程不取微信与支付凭据：它不替用户登录，也不发起支付。`config.Admin` 与 `config.Central` 分开定义，让"这个进程需要什么凭据"在类型上就是清楚的——多给一份 `WECHAT_SECRET` 就等于多一处泄露面。
-- C 端充电中的遥测、历史曲线与设备摘要由 `user` 回调 `central` 的 `/api/v1/internal/*`，经 `CENTRAL_INTERNAL_URL` 走服务令牌。拆进程时这根线最容易漏：漏了表现为"充电中页面轮询转圈到超时"，而不是任何显式报错。
+- C 端充电中的遥测、历史曲线、充电采样与设备摘要，经 `GATEWAY_INTERNAL_URL` 回调 **gateway**（`:8083`）的 `/api/v1/internal/devices/*`，携服务令牌。这些端点由 `internal/gateway/control` 提供，不在 central 进程里——判断回调对象要看代码用的 base URL 字段，不能只看路径里有 `/internal`。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
 - 公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
@@ -132,8 +132,8 @@ charge-pilot/
 │   │
 │   ├── interface/
 │   │   ├── http/
-│   │   │   ├── user_api.go                     /api/v1/user/*      → cmd/user
-│   │   │   ├── public_api.go                   /api/v1/user/auth/* → cmd/user
+│   │   │   ├── user_api.go                     /api/v1/user/*  → cmd/user
+│   │   │   │                                  含 /api/v1/user/auth/* 登录
 │   │   │   ├── admin_auth.go                   后台鉴权与会话入口
 │   │   ├── admin_mfa_settings.go           自助 MFA 开通与关闭
 │   │   ├── admin_resource.go               列表分页、错误映射、审计事务
@@ -312,7 +312,7 @@ charge-pilot/
 
 - `internal/infrastructure/` 按外部系统分子包：`database/`（gorm 只在此处，数据库表名只在此处）、`redis/`、`wechat/`、`gateway_client/`。
 
-- `internal/interface/http/` 按服务分文件：`user_api.go`（`/api/v1/user/*`）、`public_api.go`（`/api/v1/user/auth/*`）、`admin_api.go`（`/api/v1/admin/*`）、`internal_api.go`（`/api/v1/internal/*`）、`device_api.go`、`worker_api.go`。`gin.Context` 只在此处出现；`middleware.go` 管鉴权与数据范围，`error_mapper.go` 把领域错误映射为 HTTP 状态。
+- `internal/interface/http/` 按服务分文件：`user_api.go`（`/api/v1/user/*`，含 `/api/v1/user/auth/*` 登录）、`admin_auth.go` 与 `admin_*.go`（`/api/v1/admin/*`）、`internal_api.go` 等（`/api/v1/internal/*`）、`device_api.go`、`worker_api.go`。`gin.Context` 只在此处出现；`middleware.go` 管鉴权与数据范围，`error_mapper.go` 把领域错误映射为 HTTP 状态。
 
 - `internal/protocol/` 是 gateway 与 central 共享的设备契约层，与 `domain` 平级，既不属于 `domain` 也不属于 `infrastructure`：
   - 根包只放跨进程契约：`Adapter`（`Name` + `ServeConn`）、`Sink`、`Event`、`Command`、`Registry`、`Listener`。
