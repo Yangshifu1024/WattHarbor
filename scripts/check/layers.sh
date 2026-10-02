@@ -167,26 +167,20 @@ while IFS= read -r file; do
   fi
 done < <(find internal/protocol -name '*.go' ! -name '*_test.go')
 
-# OpenAPI 契约：文档里写的后台端点必须真的注册了。
+# OpenAPI 契约：文档里写的端点必须真的注册了，且没有悬空的 schema 引用。
 # 端点下线后忘记改文档，会让调用方（包括人）对着不存在的接口排查；
 # 这类漂移此前已发生——文档里长期留着 16 个已下线功能的端点。
-# 只校验这一个方向：文档多写比文档少写更危险，缺文档另行补全。
-if [[ -f internal/interface/http/admin.openapi.json ]]; then
-  phantom=$(python3 - <<'PY'
-import json, re, subprocess
-doc = json.load(open('internal/interface/http/admin.openapi.json'))
-out = subprocess.run(['grep', '-rhoE', '"/api/v1/admin/[^"]*"', '--include=*.go',
-                      'internal/', 'cmd/'], capture_output=True, text=True).stdout
-registered = {re.sub(r':[A-Za-z_]+', '{id}', m) for m in re.findall(r'"(/api/v1/admin/[^"]*)"', out)}
-for path in sorted(doc.get('paths', {})):
-    if re.sub(r'\{[^}]+\}', '{id}', path) not in registered:
-        print(path)
-PY
-)
-  while IFS= read -r path; do
-    [[ -n $path ]] && report "OpenAPI 文档声明了未注册的端点：$path"
-  done <<<"$phantom"
-fi
+# 只校验"文档多写"这一个方向：文档少写是补全工作，另行跟踪，不在此处阻断。
+for spec in "admin.openapi.json admin" "user.openapi.json user"; do
+  set -- $spec
+  file="internal/interface/http/$1"
+  [[ -f $file ]] || continue
+  if ! problems=$(python3 scripts/check/openapi_check.py "$file" "$2"); then
+    while IFS= read -r line; do
+      [[ -n $line ]] && report "OpenAPI 文档 $1 与代码不一致：$line"
+    done <<<"$problems"
+  fi
+done
 
 # 过渡中的 central/admin 只放 HTTP 处理：不得再定义 gorm 模型或表名映射。
 # 模型留在 infrastructure/database，规则留在 domain——这条守住就不再回退。

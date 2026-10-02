@@ -1,0 +1,827 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ChargePilot C 端接口",
+    "version": "1.0.0",
+    "description": "充电用户端接口。由 user 进程（:8080）承载，是唯一直接对用户开放的业务进程。\n\n鉴权：除登录、刷新与站点查询等公开接口外，其余接口都要求 `Authorization: Bearer <token>`。\n令牌由 `/api/v1/user/auth/login` 签发，8 小时有效。\n\n**大 ID 一律以十进制字符串传输**：用户 ID、订单 ID、设备 ID 等字段在响应里是字符串，避免 JavaScript number 在发出请求前就丢掉精度。请求里同样要传字符串。"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "经对外入口访问；开发栈为 http://127.0.0.1:8080"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "小程序登录拿到的临时凭证。开发模式为 dev:<账号名>"
+          }
+        }
+      },
+      "LoginResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "token": {
+                "type": "string",
+                "description": "访问令牌，8 小时有效"
+              },
+              "refresh_token": {
+                "type": "string",
+                "description": "刷新令牌，7 天有效，用完即轮换"
+              },
+              "jwt": {
+                "type": "string",
+                "description": "访问令牌；与 token 同值，为兼容既有客户端保留"
+              },
+              "jwt_expires_in": {
+                "type": "integer",
+                "description": "访问令牌剩余秒数"
+              },
+              "user_id": {
+                "type": "string",
+                "description": "十进制字符串形式的用户 ID"
+              },
+              "is_new_user": {
+                "type": "boolean",
+                "description": "本次登录是否完成注册"
+              }
+            }
+          }
+        }
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      },
+      "RefreshResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "jwt": {
+                "type": "string"
+              },
+              "jwt_expires_in": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "LogoutRequest": {
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      },
+      "LogoutResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "revoked": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "ProfileResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "description": "十进制字符串形式的用户 ID"
+              },
+              "nickname": {
+                "type": "string",
+                "description": "未授权昵称时为空串"
+              },
+              "avatar_url": {
+                "type": "string",
+                "description": "未设置时为空串"
+              },
+              "phone_bound": {
+                "type": "boolean",
+                "description": "是否已绑定手机号；未绑定时不下发号码本身"
+              },
+              "registered_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "wallet": {
+                "type": "object",
+                "properties": {
+                  "available_cents": {
+                    "type": "integer",
+                    "description": "可用余额，单位分"
+                  },
+                  "frozen_cents": {
+                    "type": "integer",
+                    "description": "冻结金额，单位分"
+                  }
+                }
+              },
+              "coupon_unused_count": {
+                "type": "integer",
+                "description": "当前未使用的优惠券张数"
+              }
+            }
+          }
+        }
+      },
+      "WalletBalanceResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "balance_cents": {
+                "type": "integer",
+                "description": "账户余额，单位分"
+              },
+              "available_cents": {
+                "type": "integer",
+                "description": "可提现/可支付额度 = 余额 - 冻结，单位分"
+              },
+              "frozen_cents": {
+                "type": "integer",
+                "description": "冻结金额，单位分"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "frozen"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "WalletRechargeRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "amount_cents"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "幂等键；相同请求号重放返回首次结果"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "充值金额，单位分"
+          }
+        }
+      },
+      "WalletRefundRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "amount_cents",
+          "reason"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "幂等键"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "退款金额，单位分"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      },
+      "WalletRechargeRow": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "客户端幂等键"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "description": "充值金额，单位分"
+          },
+          "status": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "can_pay": {
+            "type": "boolean",
+            "description": "是否仍可支付；已关闭或已过期的为 false"
+          }
+        }
+      },
+      "WalletRefundRow": {
+        "type": "object",
+        "properties": {
+          "refund_no": {
+            "type": "string"
+          },
+          "refund_cents": {
+            "type": "integer",
+            "description": "退款金额，单位分"
+          },
+          "status": {
+            "type": "string"
+          },
+          "failure_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "WalletTxnRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "流水 ID，十进制字符串"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "description": "变动金额，单位分；收入为正、支出为负"
+          },
+          "type": {
+            "type": "string",
+            "description": "流水类型，如 recharge / refund / charge"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remark": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "WalletRechargePageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WalletRechargeRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              },
+              "user_id": {
+                "type": "string",
+                "description": "十进制字符串形式的用户 ID"
+              }
+            }
+          }
+        }
+      },
+      "WalletRefundPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WalletRefundRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              },
+              "user_id": {
+                "type": "string",
+                "description": "十进制字符串形式的用户 ID"
+              }
+            }
+          }
+        }
+      },
+      "WalletTxnPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WalletTxnRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              },
+              "user_id": {
+                "type": "string",
+                "description": "十进制字符串形式的用户 ID"
+              }
+            }
+          }
+        }
+      },
+      "WalletRechargeResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "payment_order_id": {
+                "type": "string",
+                "description": "支付单 ID，十进制字符串"
+              },
+              "merchant_order_no": {
+                "type": "string",
+                "description": "渠道侧商户单号，拉起支付时用"
+              },
+              "amount_cents": {
+                "type": "integer",
+                "description": "充值金额，单位分"
+              },
+              "status": {
+                "type": "string"
+              },
+              "can_pay": {
+                "type": "boolean"
+              },
+              "payment_params": {
+                "type": "object",
+                "description": "渠道预下单参数，直接透传给支付控件；开发模拟模式下为模拟参数"
+              }
+            }
+          }
+        }
+      },
+      "WalletRefundResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "refund_no": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "description": "申请已受理，进入风控审核"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "auth",
+      "description": "登录与会话"
+    },
+    {
+      "name": "wallet",
+      "description": "钱包与充值退款"
+    }
+  ],
+  "paths": {
+    "/api/v1/user/auth/login": {
+      "post": {
+        "summary": "小程序登录",
+        "operationId": "user_login",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/auth/refresh": {
+      "post": {
+        "summary": "用刷新令牌换新令牌",
+        "operationId": "user_refresh",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/auth/logout": {
+      "post": {
+        "summary": "登出并作废刷新令牌",
+        "operationId": "user_logout",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/profile": {
+      "get": {
+        "summary": "读取当前用户资料",
+        "operationId": "user_profile",
+        "tags": [
+          "auth"
+        ],
+        "security": {
+          "bearerAuth": []
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/wallet/balance": {
+      "get": {
+        "summary": "查询钱包余额",
+        "operationId": "wallet_balance",
+        "tags": [
+          "wallet"
+        ],
+        "security": {
+          "bearerAuth": []
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalanceResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/wallet/txns": {
+      "get": {
+        "summary": "分页查询钱包流水",
+        "operationId": "wallet_txns",
+        "tags": [
+          "wallet"
+        ],
+        "security": {
+          "bearerAuth": []
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletTxnPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/wallet/recharge": {
+      "post": {
+        "summary": "发起余额充值",
+        "operationId": "wallet_recharge",
+        "tags": [
+          "wallet"
+        ],
+        "security": {
+          "bearerAuth": []
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletRechargeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletRechargeResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/wallet/recharges": {
+      "get": {
+        "summary": "分页查询充值记录",
+        "operationId": "wallet_recharges",
+        "tags": [
+          "wallet"
+        ],
+        "security": {
+          "bearerAuth": []
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletRechargePageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/wallet/refund": {
+      "post": {
+        "summary": "申请余额退款",
+        "operationId": "wallet_refund",
+        "tags": [
+          "wallet"
+        ],
+        "security": {
+          "bearerAuth": []
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletRefundRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletRefundResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/wallet/refunds": {
+      "get": {
+        "summary": "分页查询退款记录",
+        "operationId": "wallet_refunds",
+        "tags": [
+          "wallet"
+        ],
+        "security": {
+          "bearerAuth": []
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletRefundPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
