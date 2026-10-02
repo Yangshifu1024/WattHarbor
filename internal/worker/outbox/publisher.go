@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"time"
 )
 
 type Publisher struct {
@@ -16,17 +16,6 @@ type Publisher struct {
 	DB     *gorm.DB
 	Stream *redis.Client
 }
-
-type eventOutboxRow struct {
-	ID           uint64         `gorm:"column:id;primaryKey"`
-	EventID      string         `gorm:"column:event_id"`
-	Stream       string         `gorm:"column:stream"`
-	EnvelopeJSON []byte         `gorm:"column:envelope_json"`
-	RetryCount   uint32         `gorm:"column:retry_count"`
-	LastError    sql.NullString `gorm:"column:last_error"`
-}
-
-func (eventOutboxRow) TableName() string { return "event_outbox" }
 
 // PublishBatch 会一直锁住 MySQL 的行，直到 Redis 确认收到这次发布。
 // 如果 MySQL 提交失败，Redis 侧可能已经收到一份重复消息；
@@ -37,11 +26,11 @@ func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 	}
 	table := "event_outbox"
 	if p.Source == "admin" {
-		table = "admin_event_outbox"
+		table = database.AdminEventOutboxTable
 	}
 	published := 0
 	err := p.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var rows []eventOutboxRow
+		var rows []database.EventOutboxRecord
 		if err := tx.Table(table).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where("status IN ('pending','failed') AND scheduled_at <= NOW(3)").Order("id").Limit(100).Find(&rows).Error; err != nil {
 			return err

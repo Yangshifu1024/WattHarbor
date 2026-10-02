@@ -188,6 +188,13 @@ PY
   done <<<"$phantom"
 fi
 
+# 过渡中的 central/admin 只放 HTTP 处理：不得再定义 gorm 模型或表名映射。
+# 模型留在 infrastructure/database，规则留在 domain——这条守住就不再回退。
+while IFS= read -r file; do
+  grep -qE 'gorm:"column:|func \([A-Za-z]+\) TableName\(\) string' "$file" &&
+    report "$file: 处理器文件里出现 gorm 模型或表名映射，模型应归 infrastructure/database"
+done < <(find internal/central -name '*.go' ! -name '*_test.go')
+
 if ((violations > 0)); then
   printf '\n分层约定未满足：%d 处。修完再提交。\n' "$violations" >&2
   exit 1

@@ -29,26 +29,6 @@ type ExportTask struct {
 	MaxRows   int                  // 单次导出行数上限,留空默认 50000,超出直接判失败而不是截断
 }
 
-// exportRow 对应 central_db.export_task，保存导出申请和有效期。
-type exportRow struct {
-	ID          uint64  `json:"id"`                                      // 导出任务主键 ID
-	TaskNo      string  `json:"task_no" gorm:"column:task_no"`           // 任务号,形如 EXP + 32 位 UUID(大写无横线),同时用作文件名
-	Resource    string  `json:"resource" gorm:"column:resource"`         // 导出资源名,取自 exportRegistry:orders/stations/devices/settlements/bills/reconciles
-	FileFormat  string  `json:"file_format" gorm:"column:file_format"`   // 文件格式:csv / xlsx / pdf;PDF 只支持 bills 与 reconciles
-	Status      string  `json:"status" gorm:"column:status"`             // 任务状态:pending 待生成 / running 生成中 / completed 已完成 / failed 失败 / expired 已过期
-	RequestedBy uint64  `json:"requested_by" gorm:"column:requested_by"` // 发起导出的管理员 ID,下载时用于校验归属
-	FilterJSON  *string `json:"filter_json" gorm:"column:filter_json"`   // 筛选条件 JSON 原文(可空),如 from/to 日期区间
-	RowCount    uint32  `json:"row_count" gorm:"column:row_count"`       // 实际导出行数,生成完成时写入
-	FilePath    *string `json:"-" gorm:"column:file_path"`               // 服务器上的文件路径,不返回给前端(json:"-"),只在下载与清理时内部使用
-	ErrorMsg    *string `json:"error_msg" gorm:"column:error_msg"`       // 失败原因(可空),最长 255 字符
-	ExpiresAt   *string `json:"expires_at" gorm:"column:expires_at"`     // 下载截止时间,创建时为 24 小时后
-	CreatedAt   string  `json:"created_at" gorm:"column:created_at"`     // 申请时间,UTC
-	CompletedAt *string `json:"completed_at" gorm:"column:completed_at"` // 生成完成时间(可空)
-}
-
-// TableName 指定 export_task 表映射。
-func (exportRow) TableName() string { return "export_task" }
-
 // maxRows 返回单次导出的行数上限，未配置时回落到 50000；取数会多取一行用来判断是否超限。
 func (t ExportTask) maxRows() int {
 	if t.MaxRows > 0 {
@@ -68,7 +48,7 @@ func (t ExportTask) exportDir() string {
 // CleanupExpired 每批清理最多 1000 个过期任务，删除文件并更新状态为 expired。
 // 下载窗口为 24 小时，文件路径按任务重新推导，不信任数据库中存储的路径。
 func (t ExportTask) CleanupExpired(ctx context.Context) (int, error) {
-	rows := []exportRow{}
+	rows := []database.ExportTaskRow{}
 	if err := t.Store.AdminDB.WithContext(ctx).Table("export_task").
 		Where("status IN ? AND expires_at <= ?", []string{"completed", "failed"}, time.Now().UTC()).
 		Order("id").Limit(1000).Find(&rows).Error; err != nil {
@@ -188,7 +168,7 @@ func (t ExportTask) detailTask(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var row exportRow
+	var row database.ExportTaskRow
 	if err := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").Where("id = ?", id).Take(&row).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -226,7 +206,7 @@ func (t ExportTask) listTasks(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[exportRow]{Items: []exportRow{}, Page: page.Page, PageSize: page.PageSize}
+	out := Page[database.ExportTaskRow]{Items: []database.ExportTaskRow{}, Page: page.Page, PageSize: page.PageSize}
 	query := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task")
 	if page.Status != "" {
 		query = query.Where("status = ?", page.Status)
@@ -302,9 +282,9 @@ func (t ExportTask) createTask(c *gin.Context) {
 		httpapi.BadRequest(c, "导出筛选条件无效")
 		return
 	}
-	var replayed *exportRow
+	var replayed *database.ExportTaskRow
 	err = t.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var existing exportRow
+		var existing database.ExportTaskRow
 		found := tx.Table("export_task").Where("task_no = ?", taskNo).Take(&existing)
 		if found.Error == nil {
 			var savedFilter map[string]any
@@ -341,7 +321,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 		httpapi.OK(c, gin.H{"task_no": taskNo, "status": "failed", "message": "导出失败，请稍后重试"})
 		return
 	}
-	var finished exportRow
+	var finished database.ExportTaskRow
 	t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").Where("task_no = ?", taskNo).Take(&finished)
 	httpapi.OK(c, gin.H{"task_no": taskNo, "status": finished.Status, "row_count": finished.RowCount, "expires_at": finished.ExpiresAt})
 }
@@ -353,7 +333,7 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, pro
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return t.fail(ctx, taskNo, err)
 	}
-	var row exportRow
+	var row database.ExportTaskRow
 	if err := t.Store.AdminDB.WithContext(ctx).Table("export_task").Where("task_no = ?", taskNo).Take(&row).Error; err != nil {
 		return err
 	}
@@ -440,14 +420,14 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, pro
 		os.Remove(pending)
 		return t.fail(ctx, taskNo, err)
 	}
-	return t.Store.AdminDB.WithContext(ctx).Model(&exportRow{}).Where("task_no = ?", taskNo).
+	return t.Store.AdminDB.WithContext(ctx).Model(&database.ExportTaskRow{}).Where("task_no = ?", taskNo).
 		Updates(map[string]any{"status": "completed", "row_count": uint32(len(records)), "file_path": path,
 			"completed_at": time.Now().UTC()}).Error
 }
 
 // fail 把任务标记为失败并记录截断后的错误原因，同时把错误原样返回给调用方。
 func (t ExportTask) fail(ctx context.Context, taskNo string, cause error) error {
-	_ = t.Store.AdminDB.WithContext(ctx).Model(&exportRow{}).Where("task_no = ?", taskNo).
+	_ = t.Store.AdminDB.WithContext(ctx).Model(&database.ExportTaskRow{}).Where("task_no = ?", taskNo).
 		Updates(map[string]any{"status": "failed", "error_msg": truncate(cause.Error(), 255)}).Error
 	return cause
 }
@@ -482,7 +462,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
-	var row exportRow
+	var row database.ExportTaskRow
 	if err := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").
 		Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&row).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
@@ -520,7 +500,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 	if row.ExpiresAt != nil && *row.ExpiresAt != "" {
 		expiry, err := time.Parse("2006-01-02 15:04:05.999", *row.ExpiresAt)
 		if err == nil && time.Now().UTC().After(expiry) {
-			_ = t.Store.AdminDB.WithContext(c.Request.Context()).Model(&exportRow{}).
+			_ = t.Store.AdminDB.WithContext(c.Request.Context()).Model(&database.ExportTaskRow{}).
 				Where("task_no = ?", row.TaskNo).Update("status", "expired").Error
 			_ = os.Remove(*row.FilePath)
 			httpapi.Write(c, http.StatusGone, httpapi.CodeResourceExpired, "导出文件已过期，请重新导出", nil)

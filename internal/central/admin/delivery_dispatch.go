@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/delivery"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -42,10 +43,7 @@ func (w WebhookDispatch) ActiveSubscriptions(ctx context.Context) ([]WebhookSubs
 	for _, row := range rows {
 		ids = append(ids, row.ID)
 	}
-	var types []struct {
-		ID         uint64 `gorm:"column:id"`
-		EventTypes []byte `gorm:"column:event_types"`
-	}
+	var types []database.WebhookEventTypesRow
 	if err := w.AdminDB.WithContext(ctx).Table("webhook_subscription").
 		Select("id, CAST(event_types AS CHAR) AS event_types").
 		Where("id IN ?", ids).Find(&types).Error; err != nil {
@@ -140,13 +138,7 @@ func (r RegulatoryDispatch) Claim(ctx context.Context, limit int) ([]ClaimedRepo
 		return nil, errors.New("claim limit must be between 1 and 20")
 	}
 	now := time.Now().UTC()
-	var pending []struct {
-		ID         uint64
-		EventID    string
-		ObjectType string
-		ObjectKey  string
-		Payload    string `gorm:"column:payload"`
-	}
+	var pending []database.WebhookDeliveryRow
 	tx := r.AdminDB.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, tx.Error

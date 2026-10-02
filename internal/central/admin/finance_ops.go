@@ -268,33 +268,16 @@ func (a ResourceAPI) settlements(c *gin.Context) {
 	if !ok {
 		return
 	}
-	type party struct {
-		PartyID     uint64 `gorm:"column:party_id" json:"party_id"`             // 参与方 ID
-		PartyCode   string `gorm:"column:party_code" json:"party_code"`         // 参与方编码
-		PartyName   string `gorm:"column:party_name" json:"party_name"`         // 参与方名称
-		RatioBP     uint32 `gorm:"column:ratio_bp" json:"ratio_bp"`             // 分成比例,单位万分比(bp),10000 表示 100%
-		Electric    int64  `gorm:"column:electric_cents" json:"electric_cents"` // 该参与方分到的电费金额,单位分
-		Service     int64  `gorm:"column:service_cents" json:"service_cents"`   // 该参与方分到的服务费金额,单位分
-		AmountCents int64  `gorm:"column:amount_cents" json:"amount_cents"`     // 该参与方分成合计,单位分
-		Status      string `gorm:"column:status" json:"status"`                 // 这笔分成的状态:pending 待付 / paid 已付 / failed 失败
-	}
+	type party = paystore.SettlementPartyRow
 	// 显式映射查询列名，避免字段名称不一致导致扫描结果为零值。
-	type row struct {
-		ID               uint64  `gorm:"column:id" json:"id"`                                                                 // 分账汇总主键 ID
-		SettlementNo     string  `gorm:"column:settlement_no" json:"settlement_no"`                                           // 分账单号
-		OrderNo          string  `gorm:"column:order_no" json:"order_no"`                                                     // 来源充电订单号
-		Mode             string  `gorm:"column:mode" json:"mode"`                                                             // 分账模式:mode_a 电费与服务费都进分账池 / mode_b 只有服务费进分账池
-		TemplateCode     *string `gorm:"column:split_template_code" json:"split_template_code"`                               // 分账模板编码快照(可空),早期分账只记模板 ID
-		Status           string  `gorm:"column:status" json:"status"`                                                         // 分账单状态:pending 待确认 / confirmed 已确认 / paid 已付出 / failed 失败
-		TotalCents       int64   `gorm:"column:total_cents" json:"total_cents"`                                               // 订单总金额,单位分
-		ElectricCents    int64   `gorm:"column:electric_cents" json:"electric_cents"`                                         // 订单电费金额,单位分
-		ServiceCents     int64   `gorm:"column:service_cents" json:"service_cents"`                                           // 订单服务费金额,单位分
-		SplitPoolCents   int64   `gorm:"column:split_pool_cents" json:"split_pool_cents"`                                     // 进入分账池的金额,单位分
-		ExcludedElectric int64   `gorm:"column:split_pool_excluded_electric_cents" json:"split_pool_excluded_electric_cents"` // mode_b 下被排除、不进分账池的电费金额,单位分
-		CreatedAt        string  `gorm:"column:created_at" json:"created_at"`                                                 // 分账单创建时间
-		Parties          []party `json:"parties" gorm:"-"`                                                                    // 各参与方分成明细,查询后按分账 ID 二次回填
+	type row = paystore.SettlementListRow
+
+	// 各参与方分成明细，查询后按分账 ID 二次回填。
+	type rowWithParties struct {
+		paystore.SettlementListRow
+		Parties []party `json:"parties" gorm:"-"`
 	}
-	out := Page[row]{Items: []row{}, Page: page.Page, PageSize: page.PageSize}
+	out := Page[rowWithParties]{Items: []rowWithParties{}, Page: page.Page, PageSize: page.PageSize}
 	query := a.Store.BillingDB.WithContext(c.Request.Context()).Table("settlement")
 	if page.Status != "" {
 		query = query.Where("status = ?", page.Status)
@@ -365,10 +348,7 @@ func (a ResourceAPI) reconciles(c *gin.Context) {
 	}
 	diffs := map[uint64][]byte{}
 	if len(ids) > 0 {
-		var stored []struct {
-			ID    uint64 `gorm:"column:id"`
-			Diffs []byte `gorm:"column:diffs_json"`
-		}
+		var stored []paystore.ReconcileDiffsRow
 		if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("finance_reconcile_log").
 			Select("id, CAST(diffs_json AS CHAR) AS diffs_json").Where("id IN ?", ids).Find(&stored).Error; err == nil {
 			for _, row := range stored {
@@ -482,7 +462,7 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 		return
 	}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&eventOutboxRow{
+		if err := tx.Table(paystore.AdminEventOutboxTable).Create(&paystore.EventOutboxRecord{
 			EventID: envelope["event_id"].(string), Stream: "charge_events_stream", EnvelopeJSON: payload,
 		}).Error; err != nil {
 			return err
@@ -493,14 +473,4 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 		return
 	}
 	httpapi.OK(c, gin.H{"event_id": eventID, "requeued": true})
-}
-
-// TableName 指定 GORM 写入central_db.admin_event_outbox 表（事件流投递队列）。
-func (eventOutboxRow) TableName() string { return "admin_event_outbox" }
-
-// eventOutboxRow 是发往事件流的信封，手动重发 Webhook 时用它把事件重新排队。
-type eventOutboxRow struct {
-	EventID      string `gorm:"column:event_id"`      // 重发事件 ID,retry- 加新 UUID,避免与原事件去重键冲突
-	Stream       string `gorm:"column:stream"`        // 目标事件流名称,固定 charge_events_stream
-	EnvelopeJSON []byte `gorm:"column:envelope_json"` // 事件信封 JSON
 }

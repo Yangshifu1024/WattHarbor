@@ -131,13 +131,7 @@ func (a ResourceAPI) timeline(c *gin.Context) {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	rows := []struct {
-		EventID string    `json:"event_id"`
-		At      time.Time `json:"at" gorm:"column:occurred_at"`
-		Event   string    `json:"event"`
-		Actor   string    `json:"actor"`
-		Detail  string    `json:"detail"`
-	}{}
+	rows := []orderstore.OrderTimelineRow{}
 	if err := a.Store.UserDB.WithContext(ctx).Table("charge_event_log").Where("charge_order_id = ?", id).Order("occurred_at,id").Find(&rows).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

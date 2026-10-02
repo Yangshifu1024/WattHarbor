@@ -100,6 +100,8 @@ charge-pilot/
 │   │   │   ├── station_repository.go           station
 │   │   │   ├── station_store.go               站点模型、写入校验与分页查询
 │   │   │   ├── page.go                        PageQuery / Page 分页原语
+│   │   │   ├── export_task_store.go           导出任务记录
+│   │   │   ├── admin_projection.go            后台列表与详情的查询投影
 │   │   │   ├── device_repository.go            device_meta / device_import
 │   │   │   ├── device_store.go                设备模型、资料编辑与分页查询
 │   │   │   ├── device_import_store.go         批量导入任务与设备清单 DTO
