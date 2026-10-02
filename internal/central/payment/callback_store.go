@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	refundpkg "github.com/ChargePilot2026/charge-pilot/internal/central/refund"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"strconv"
@@ -65,7 +65,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 	var callbackResult PaymentCallbackResult
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 先按渠道商户单号定位支付订单，再按业务类型分流；钱包充值不创建支付意图。
-		var order PaymentOrderRecord
+		var order money.PaymentOrderRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("order_no = ?", payment.MerchantOrderNo).Take(&order).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -79,7 +79,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 		if order.BizType != "charge" {
 			return ErrPaymentCallbackConflict
 		}
-		var intent PaymentIntentRecord
+		var intent money.PaymentIntentRecord
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("merchant_order_no = ?", payment.MerchantOrderNo).Take(&intent).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrPaymentCallbackConflict
@@ -97,7 +97,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 			return ErrPaymentCallbackConflict
 		}
 
-		var previousDigest PaymentCallbackDigestRecord
+		var previousDigest money.PaymentCallbackDigestRecord
 		digestErr := tx.Where("wechat_transaction_id = ?", payment.TransactionID).Take(&previousDigest).Error
 		if digestErr != nil && !errors.Is(digestErr, gorm.ErrRecordNotFound) {
 			return digestErr
@@ -127,14 +127,14 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 		if order.Status != "initiated" || order.BizID != 0 || digestErr == nil {
 			return ErrPaymentCallbackConflict
 		}
-		if err := tx.Create(&PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
+		if err := tx.Create(&money.PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
 			if dbutil.IsMySQLDuplicate(err) {
 				return ErrPaymentCallbackConflict
 			}
 			return err
 		}
 
-		updated := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'initiated' AND total_cents = ? AND paid_cents = 0", order.ID, order.OrderNo, payment.PaidCents).
+		updated := tx.Model(&money.PaymentOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'initiated' AND total_cents = ? AND paid_cents = 0", order.ID, order.OrderNo, payment.PaidCents).
 			Updates(map[string]any{"status": "paid", "paid_cents": payment.PaidCents, "wechat_transaction_id": payment.TransactionID, "paid_at": paidAt})
 		if updated.Error != nil {
 			return updated.Error
@@ -182,14 +182,14 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 			UserID: intent.UserID, PortCode: intent.PortCode, PricingSnapshot: intent.PricingSnapshot}).Error; err != nil {
 			return err
 		}
-		bound := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND biz_id = 0 AND status = 'paid'", order.ID).Update("biz_id", chargeOrder.ID)
+		bound := tx.Model(&money.PaymentOrderRecord{}).Where("id = ? AND biz_id = 0 AND status = 'paid'", order.ID).Update("biz_id", chargeOrder.ID)
 		if bound.Error != nil {
 			return bound.Error
 		}
 		if bound.RowsAffected != 1 {
 			return ErrPaymentCallbackConflict
 		}
-		paid := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status = 'initiated' AND charge_order_id IS NULL", intent.IntentID).
+		paid := tx.Model(&money.PaymentIntentRecord{}).Where("intent_id = ? AND status = 'initiated' AND charge_order_id IS NULL", intent.IntentID).
 			Updates(map[string]any{"status": "paid", "paid_at": paidAt, "charge_order_id": chargeOrder.ID})
 		if paid.Error != nil {
 			return paid.Error
@@ -216,8 +216,8 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 	return callbackResult, err
 }
 
-func queueLatePaymentRefund(tx *gorm.DB, intent PaymentIntentRecord, order PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time) error {
-	changed := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status IN ('initiated','expired')", intent.IntentID).
+func queueLatePaymentRefund(tx *gorm.DB, intent money.PaymentIntentRecord, order money.PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time) error {
+	changed := tx.Model(&money.PaymentIntentRecord{}).Where("intent_id = ? AND status IN ('initiated','expired')", intent.IntentID).
 		Updates(map[string]any{"status": "refund_required", "paid_at": paidAt})
 	if changed.Error != nil {
 		return changed.Error
@@ -226,7 +226,7 @@ func queueLatePaymentRefund(tx *gorm.DB, intent PaymentIntentRecord, order Payme
 		return ErrPaymentCallbackConflict
 	}
 	refundNo := "REF" + digest[:32]
-	if err := tx.Create(&refundpkg.RefundRecord{ExecutionPolicy: "automatic", RefundNo: refundNo, PaymentOrderID: order.ID, UserID: intent.UserID, BizType: "charge",
+	if err := tx.Create(&money.RefundRecord{ExecutionPolicy: "automatic", RefundNo: refundNo, PaymentOrderID: order.ID, UserID: intent.UserID, BizType: "charge",
 		BizID: 0, RefundCents: payment.PaidCents, Reason: sql.NullString{String: "payment arrived after intent expired", Valid: true},
 		Status: "pending", CreatedMonth: dbutil.MonthStart()}).Error; err != nil {
 		return err
@@ -253,7 +253,7 @@ func decimalAmount(amount int64) string { return strconv.FormatInt(amount, 10) }
 
 // settleWalletRecharge 对验签通过且金额匹配的渠道充值入账。
 // 钱包冻结或其他不可用状态不阻止资金记账；可用性限制仅影响后续消费。
-func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time, result *PaymentCallbackResult) error {
+func settleWalletRecharge(tx *gorm.DB, order money.PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time, result *PaymentCallbackResult) error {
 	// wallet_recharge_request 以客户端请求号为键；
 	// 它既没有代理主键也没有软删除列，request_id 是唯一的抓手。
 	var request struct {
@@ -274,7 +274,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 		return ErrPaymentCallbackConflict
 	}
 
-	var previousDigest PaymentCallbackDigestRecord
+	var previousDigest money.PaymentCallbackDigestRecord
 	digestErr := tx.Where("wechat_transaction_id = ?", payment.TransactionID).Take(&previousDigest).Error
 	if digestErr != nil && !errors.Is(digestErr, gorm.ErrRecordNotFound) {
 		return digestErr
@@ -295,13 +295,13 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	if order.Status != "initiated" || order.BizID != 0 || digestErr == nil {
 		return ErrPaymentCallbackConflict
 	}
-	if err := tx.Create(&PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
+	if err := tx.Create(&money.PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
 		if dbutil.IsMySQLDuplicate(err) {
 			return ErrPaymentCallbackConflict
 		}
 		return err
 	}
-	paid := tx.Model(&PaymentOrderRecord{}).
+	paid := tx.Model(&money.PaymentOrderRecord{}).
 		Where("id = ? AND order_no = ? AND status = 'initiated' AND total_cents = ? AND paid_cents = 0",
 			order.ID, order.OrderNo, payment.PaidCents).
 		Updates(map[string]any{"status": "paid", "paid_cents": payment.PaidCents,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"os"
 	"testing"
 	"time"
@@ -133,7 +134,7 @@ func TestRejectedStartQueuesRefundAtomicallyAndIdempotently(t *testing.T) {
 		t.Fatal(err)
 	}
 	orm := testGORMDB(t, db)
-	var refund RefundRecord
+	var refund money.RefundRecord
 	if err := orm.Where("payment_order_id = ?", paymentID).Take(&refund).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestRejectedStartQueuesRefundAtomicallyAndIdempotently(t *testing.T) {
 	if err := orm.Where("id=?", orderID).Take(&pendingRefundOrder).Error; err != nil || pendingRefundOrder.BusinessStatus != "completed" || pendingRefundOrder.PaymentStatus != "paid" {
 		t.Fatalf("refund request/unknown outcome changed payment state: %+v err=%v", pendingRefundOrder, err)
 	}
-	if err := orm.Model(&RefundRecord{}).Where("id = ?", refund.ID).Update("next_attempt_at", time.Now().Add(-time.Minute)).Error; err != nil {
+	if err := orm.Model(&money.RefundRecord{}).Where("id = ?", refund.ID).Update("next_attempt_at", time.Now().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {

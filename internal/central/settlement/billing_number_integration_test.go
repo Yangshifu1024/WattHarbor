@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"os"
 	"strings"
 	"testing"
@@ -64,7 +64,7 @@ func TestBillingNumbersRoundTripNewAndHistoricOrders(t *testing.T) {
 			}
 			// No user row or existing account is modified for this numbering test.
 			userID := uint64(9223372036854000000)
-			payment := payment.PaymentOrderRecord{OrderNo: "number-pay-" + tag, BizType: "charge", UserID: userID,
+			payment := money.PaymentOrderRecord{OrderNo: "number-pay-" + tag, BizType: "charge", UserID: userID,
 				PayMethod: "wechat", TotalCents: 100, PaidCents: 100, Status: "paid", CreatedMonth: dbutil.MonthStart()}
 			if err := userTx.Create(&payment).Error; err != nil {
 				t.Fatal(err)

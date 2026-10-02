@@ -8,8 +8,8 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/refund"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
 	walletrefund "github.com/ChargePilot2026/charge-pilot/internal/central/wallet"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"math"
 	"net/url"
 	"strconv"
@@ -185,7 +185,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		httpapi.Write(c, 409, 2009, "账号身份不可用", nil)
 		return
 	}
-	var order payment.PaymentOrderRecord
+	var order money.PaymentOrderRecord
 	err := a.UserDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Serialize all wallet requests for one owner, including simultaneous retries.
 		var owner struct{ ID uint64 }
@@ -214,7 +214,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		err = tx.Table("wallet_recharge_request").Where("request_id=?", in.RequestID).Take(&prior).Error
 		if err == nil {
 			if prior.UserID != user || prior.AmountCents != in.AmountCents {
-				return payment.ErrPaymentIntentConflict
+				return money.ErrPaymentIntentConflict
 			}
 			return tx.Where("id=?", prior.PaymentOrderID).Take(&order).Error
 		}
@@ -226,13 +226,13 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		order = payment.PaymentOrderRecord{OrderNo: orderNo, BizType: "wallet_recharge", UserID: user, PayMethod: "wechat", TotalCents: in.AmountCents, Status: "initiated", ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
+		order = money.PaymentOrderRecord{OrderNo: orderNo, BizType: "wallet_recharge", UserID: user, PayMethod: "wechat", TotalCents: in.AmountCents, Status: "initiated", ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
 		return tx.Table("wallet_recharge_request").Create(map[string]any{"request_id": in.RequestID, "user_id": user, "amount_cents": in.AmountCents, "payment_order_id": order.ID, "request_json": mustJSON(in)}).Error
 	})
-	if errors.Is(err, payment.ErrPaymentIntentConflict) || errors.Is(err, errWalletFrozen) {
+	if errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, errWalletFrozen) {
 		httpapi.Write(c, 409, 2009, "请求号冲突或钱包已冻结", nil)
 		return
 	}
@@ -243,7 +243,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 	canPay := order.Status == "initiated" && order.ExpiredAt.Valid && order.ExpiredAt.Time.After(time.Now())
 	response := gin.H{"request_id": in.RequestID, "payment_order_id": order.ID, "merchant_order_no": order.OrderNo, "amount_cents": order.TotalCents, "status": order.Status, "can_pay": canPay}
 	if canPay {
-		var stored payment.ChargePrepayRecord
+		var stored money.ChargePrepayRecord
 		var params channel.PrepayParams
 		err := a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error
 		if err == nil {
@@ -256,7 +256,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 			params, err = a.Prepay.Prepay(ctx, channel.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openid, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
 			if err == nil {
 				encoded, _ := json.Marshal(params)
-				stored = payment.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
+				stored = money.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
 				err = a.UserDB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&stored).Error
 				if err == nil {
 					err = a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error
@@ -1020,7 +1020,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 	}
 	// 开票金额取自计费回执，
 	// 与订单视图同源，绝不取自计费任务从不写入的列。
-	receipt := settlement.ChargeFeeRecord{}
+	receipt := money.ChargeFeeRecord{}
 	if err := a.UserDB.WithContext(ctx).Where("charge_order_id = ?", order.ID).Take(&receipt).Error; err != nil {
 		httpapi.Write(c, 409, 2009, "订单尚未计费，暂不能申请发票", nil)
 		return

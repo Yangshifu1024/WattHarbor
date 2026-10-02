@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	paymentpkg "github.com/ChargePilot2026/charge-pilot/internal/central/payment"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -115,7 +115,7 @@ func TestChargeUserRechargesPaginationAndScopeIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var payments []paymentpkg.PaymentOrderRecord
+	var payments []money.PaymentOrderRecord
 	states := []struct {
 		status, payment string
 		paid, refunded  int64
@@ -123,13 +123,13 @@ func TestChargeUserRechargesPaginationAndScopeIntegration(t *testing.T) {
 		{"initiated", "pending", 0, 0}, {"closed", "pending", 0, 0}, {"failed", "pending", 0, 0},
 		{"paid", "paid", 500, 0}, {"partial_refunded", "partial_refunded", 500, 125}, {"refunded", "refunded", 500, 500},
 	}
-	createPayment := func(owner uint64, biz string, index int, deleted bool) paymentpkg.PaymentOrderRecord {
+	createPayment := func(owner uint64, biz string, index int, deleted bool) money.PaymentOrderRecord {
 		t.Helper()
 		state := states[3]
 		if index < len(states) {
 			state = states[index]
 		}
-		payment := paymentpkg.PaymentOrderRecord{OrderNo: fmt.Sprintf("recharge-%s-%d", tag, index), UserID: owner,
+		payment := money.PaymentOrderRecord{OrderNo: fmt.Sprintf("recharge-%s-%d", tag, index), UserID: owner,
 			BizType: biz, PayMethod: "wechat", TotalCents: 500, PaidCents: state.paid, RefundedCents: state.refunded,
 			Status: state.status, CreatedMonth: time.Date(2077, 6, 1, 0, 0, 0, 0, time.UTC)}
 		if state.paid > 0 {
@@ -188,7 +188,7 @@ func TestChargeUserRechargesPaginationAndScopeIntegration(t *testing.T) {
 		return envelope.Data
 	}
 	// 不同创建时间优先；同一创建时间按 ID 倒序，翻页不重复或遗漏。
-	want := []paymentpkg.PaymentOrderRecord{payments[0], payments[1]}
+	want := []money.PaymentOrderRecord{payments[0], payments[1]}
 	for i := len(payments) - 1; i >= 2; i-- {
 		want = append(want, payments[i])
 	}

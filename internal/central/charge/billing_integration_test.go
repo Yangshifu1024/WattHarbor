@@ -8,6 +8,7 @@ import (
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	refundpkg "github.com/ChargePilot2026/charge-pilot/internal/central/refund"
 	settlementpkg "github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"os"
 	"sync"
 	"testing"
@@ -164,7 +165,7 @@ func TestActualBillingPersistsAndRefundsOnce(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("fees %d", count)
 	}
-	var refund refundpkg.RefundRecord
+	var refund money.RefundRecord
 	if err := userDB.Where("payment_order_id=?", pid).Take(&refund).Error; err != nil || refund.RefundCents != 175 {
 		t.Fatalf("refund %+v %v", refund, err)
 	}
@@ -185,7 +186,7 @@ func TestActualBillingPersistsAndRefundsOnce(t *testing.T) {
 	if _, err := service.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
-	userDB.Model(&refundpkg.RefundRecord{}).Where("payment_order_id=?", pid).Count(&count)
+	userDB.Model(&money.RefundRecord{}).Where("payment_order_id=?", pid).Count(&count)
 	if count != 1 {
 		t.Fatalf("duplicate refund %d", count)
 	}
@@ -284,7 +285,7 @@ func TestActualBillingPersistsAndRefundsOnce(t *testing.T) {
 	if shortfall != 0 {
 		t.Fatalf("shortfall %d", shortfall)
 	}
-	userDB.Model(&refundpkg.RefundRecord{}).Where("payment_order_id=?", debtPayment).Count(&count)
+	userDB.Model(&money.RefundRecord{}).Where("payment_order_id=?", debtPayment).Count(&count)
 	if count != 0 {
 		t.Fatal("underpaid order refunded")
 	}

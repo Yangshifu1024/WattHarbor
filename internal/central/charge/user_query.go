@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	settlementpkg "github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"net/url"
 	"strings"
 	"time"
@@ -336,7 +336,7 @@ func (a UserQueryAPI) historyCurve(c *gin.Context) {
 
 // fee 从已确认的计费回执读取订单费用及未结金额。
 func (a UserQueryAPI) fee(ctx context.Context, orderID uint64) (electric, service, total, shortfall int64, ok bool) {
-	var receipt settlementpkg.ChargeFeeRecord
+	var receipt money.ChargeFeeRecord
 	if err := a.DB.WithContext(ctx).Where("charge_order_id = ?", orderID).Take(&receipt).Error; err != nil {
 		return 0, 0, 0, 0, false
 	}
@@ -401,12 +401,12 @@ func (a UserQueryAPI) history(c *gin.Context) {
 		for _, r := range rows {
 			ids = append(ids, r.OrderID)
 		}
-		receipts := []settlementpkg.ChargeFeeRecord{}
+		receipts := []money.ChargeFeeRecord{}
 		if err := a.DB.WithContext(c.Request.Context()).Where("charge_order_id IN ?", ids).Find(&receipts).Error; err != nil {
 			httpapi.Write(c, 503, 5003, "费用暂时无法读取", nil)
 			return
 		}
-		byOrder := map[uint64]settlementpkg.ChargeFeeRecord{}
+		byOrder := map[uint64]money.ChargeFeeRecord{}
 		for _, receipt := range receipts {
 			byOrder[receipt.ChargeOrderID] = receipt
 		}

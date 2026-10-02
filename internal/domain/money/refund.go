@@ -1,6 +1,6 @@
 // Package refund 承载退款家族的表记录类型：refund_record 及其回执表。
 // 退款执行器（RefundExecutor）与内部派发端点（RefundAPI）逻辑见 executor.go / http.go。
-package refund
+package money
 
 import (
 	"database/sql"

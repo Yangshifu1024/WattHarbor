@@ -2,12 +2,13 @@ package card
 
 import (
 	"errors"
+	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -22,7 +23,7 @@ type CardAPI struct {
 	Store        CardStore
 	Auth         identityhttp.SessionAuthenticator
 	Pricing      database.PricingStore
-	Scan         PortLookup
+	Scan         money.PortLookup
 	ServiceToken string
 }
 
@@ -100,7 +101,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		httpapi.BadRequest(c, "刷卡事件、卡号、端口无效")
 		return
 	}
-	var prior CardOperation
+	var prior money.CardOperation
 	found := a.Store.DB.WithContext(c.Request.Context()).Table("card_operation o").Select("o.*").Joins("JOIN online_card c ON c.id=o.card_id").Joins("JOIN card_charge s ON s.charge_order_id=o.charge_order_id").Where("o.event_id=? AND c.card_no=? AND s.port_code=?", in.EventID, in.CardNo, in.PortID).Find(&prior)
 	if found.Error != nil {
 		httpapi.Write(c, 503, 5001, "刷卡事件暂不可读取", nil)
@@ -133,7 +134,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		return
 	}
 	var active int64
-	if err := a.Store.DB.WithContext(c.Request.Context()).Model(&CardCharge{}).Where("active_port=?", in.PortID).Count(&active).Error; err != nil {
+	if err := a.Store.DB.WithContext(c.Request.Context()).Model(&money.CardCharge{}).Where("active_port=?", in.PortID).Count(&active).Error; err != nil {
 		httpapi.Write(c, 503, 5001, "当前刷卡订单暂不可读取", nil)
 		return
 	}
@@ -160,7 +161,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 	}
 	op, err := a.Store.Swipe(c.Request.Context(), in.CardNo, in.EventID, port, rule)
 	if err != nil {
-		if errors.Is(err, ErrCardOperation) || errors.Is(err, payment.ErrPaymentIntentConflict) || errors.Is(err, orderpkg.ErrChargeNumberConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, ErrCardOperation) || errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, orderpkg.ErrChargeNumberConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.Write(c, 409, 2009, ErrCardOperation.Error(), gin.H{"insufficient_balance": errors.Is(err, ErrCardBalance)})
 		} else {
 			httpapi.Write(c, 503, 5001, "刷卡操作结果暂不可读取，请按同一事件编号查询", nil)
@@ -169,3 +170,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 	}
 	httpapi.OK(c, op)
 }
+
+// portCodePattern 校验刷卡请求中的端口编码字符集与长度。
+// 与 scan 家族各自维护输入契约，故不与领域层共享。
+var portCodePattern = regexp.MustCompile(`^[A-Za-z0-9_:-]{1,64}$`)

@@ -1,7 +1,7 @@
 // Package payment 承载支付订单家族的表记录类型：
 // payment_order / charge_payment_intent / charge_prepay /
 // payment_callback_idempotent。渠道适配器在 central/channel。
-package payment
+package money
 
 import (
 	"database/sql"

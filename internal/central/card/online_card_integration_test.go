@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"errors"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"os"
 	"strconv"
 	"sync"
@@ -86,14 +87,14 @@ func TestCardServerExtensionDebitsOnceAndRefundsUnusedMinutes(t *testing.T) {
 	}
 	s := charging.Scheme{Name: "服务器刷卡测试", Packages: []charging.Package{{ID: 1, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}}, Card: charging.CardPolicy{PackageID: 1, MaxMinutes: 600}, Display: charging.DefaultDisplay()}.Normalized()
 	rule := charging.Rule{ID: 31, StationID: 9, Version: 1, Spec: s.SpecFor(s.Packages[0])}
-	port := card.PortRef{Found: true, Kind: "port", DeviceID: device, StationID: 9, PortID: portCode, PortNo: 1, Online: true, Available: true}
+	port := money.PortRef{Found: true, Kind: "port", DeviceID: device, StationID: 9, PortID: portCode, PortNo: 1, Online: true, Available: true}
 	store := card.CardStore{DB: orm}
 	event := uuid.NewString()
 	first, err := store.Swipe(ctx, cardNo, event, port, rule)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertConcurrentReplay := func(event string, expected card.CardOperation) {
+	assertConcurrentReplay := func(event string, expected money.CardOperation) {
 		t.Helper()
 		var group sync.WaitGroup
 		for range 5 {
@@ -127,7 +128,7 @@ func TestCardServerExtensionDebitsOnceAndRefundsUnusedMinutes(t *testing.T) {
 		t.Fatalf("%+v %v", extension, err)
 	}
 	assertConcurrentReplay(extensionEvent, extension)
-	var session card.CardCharge
+	var session money.CardCharge
 	if err := orm.Where("charge_order_id=?", order.ID).Take(&session).Error; err != nil {
 		t.Fatal(err)
 	}

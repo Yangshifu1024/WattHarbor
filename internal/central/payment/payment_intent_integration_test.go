@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"errors"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"os"
 	"testing"
 
@@ -48,7 +49,7 @@ func TestPaymentIntentHoldsPortWithoutCreatingChargeOrder(t *testing.T) {
 		t.Fatalf("replay=%+v err=%v", second, err)
 	}
 	input.ClientRequestID = uuid.NewString()
-	if _, err := store.Reserve(ctx, input); !errors.Is(err, ErrPaymentIntentConflict) {
+	if _, err := store.Reserve(ctx, input); !errors.Is(err, money.ErrPaymentIntentConflict) {
 		t.Fatalf("active port conflict: %v", err)
 	}
 	var charges, payments, intents int

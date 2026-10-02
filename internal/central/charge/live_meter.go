@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"net/url"
 	"slices"
 	"time"
@@ -77,7 +77,7 @@ func (s LiveMeterService) Read(ctx context.Context, id uint64, device string, po
 		view.FeeUnavailable = "缺少订单计费快照"
 		return view, nil
 	}
-	var card card.CardCharge
+	var card money.CardCharge
 	if err := s.DB.WithContext(ctx).Where("charge_order_id=?", id).Find(&card).Error; err != nil {
 		return view, err
 	}

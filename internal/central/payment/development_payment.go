@@ -3,6 +3,7 @@ package payment
 import (
 	"encoding/json"
 	"errors"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"time"
 
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -51,7 +52,7 @@ func (a DevelopmentPaymentAPI) confirm(c *gin.Context) {
 		httpapi.Write(c, 503, 5001, "payment unavailable", nil)
 		return
 	}
-	var prepay ChargePrepayRecord
+	var prepay money.ChargePrepayRecord
 	var params struct {
 		Provider string `json:"provider"`
 	}

@@ -6,6 +6,7 @@ import (
 	cardpkg "github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"net/http"
 	"os"
@@ -49,15 +50,15 @@ func TestPaymentNumberSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
-	readPayment := func(no string) payment.PaymentOrderRecord {
+	readPayment := func(no string) money.PaymentOrderRecord {
 		t.Helper()
-		var row payment.PaymentOrderRecord
+		var row money.PaymentOrderRecord
 		if err := tx.Where("order_no=? AND user_id=?", no, userID).Take(&row).Error; err != nil {
 			t.Fatal(err)
 		}
 		return row
 	}
-	assertNewNumber := func(row payment.PaymentOrderRecord) {
+	assertNewNumber := func(row money.PaymentOrderRecord) {
 		t.Helper()
 		if !strings.HasPrefix(row.OrderNo, "P") {
 			t.Fatalf("new payment lacks P prefix: %+v", row)
@@ -72,8 +73,8 @@ func TestPaymentNumberSources(t *testing.T) {
 		return payment.ScanResult{Kind: "port", DeviceID: tag, StationID: 9,
 			Port: &payment.ScanPort{PortID: tag + ":" + strconv.Itoa(int(no)), DeviceID: tag, PortNo: no, Available: true, Online: true}}
 	}
-	cardPort := func(no uint8) cardpkg.PortRef {
-		return cardpkg.PortRef{Found: true, Kind: "port", DeviceID: tag, StationID: 9,
+	cardPort := func(no uint8) money.PortRef {
+		return money.PortRef{Found: true, Kind: "port", DeviceID: tag, StationID: 9,
 			PortID: tag + ":" + strconv.Itoa(int(no)), PortNo: no, Available: true, Online: true}
 	}
 	intents := payment.PaymentIntentStore{DB: tx}
@@ -126,7 +127,7 @@ func TestPaymentNumberSources(t *testing.T) {
 		if err := tx.Where("id=? AND user_id=?", first.ChargeOrderID, userID).Take(&order).Error; err != nil {
 			t.Fatal(err)
 		}
-		var paid payment.PaymentOrderRecord
+		var paid money.PaymentOrderRecord
 		if err := tx.Where("id=?", order.PaymentOrderID.Int64).Take(&paid).Error; err != nil || paid.PayMethod != "balance" {
 			t.Fatalf("card payment: %+v %v", paid, err)
 		}
@@ -164,7 +165,7 @@ func TestPaymentNumberSources(t *testing.T) {
 	}
 
 	var payments, charges, walletTxns int64
-	if err := tx.Model(&payment.PaymentOrderRecord{}).Where("user_id=?", userID).Count(&payments).Error; err != nil || payments != 6 {
+	if err := tx.Model(&money.PaymentOrderRecord{}).Where("user_id=?", userID).Count(&payments).Error; err != nil || payments != 6 {
 		t.Fatalf("replays created extra payments: %d %v", payments, err)
 	}
 	if err := tx.Table("wallet_txn").Where("user_id=?", userID).Count(&walletTxns).Error; err != nil || walletTxns != 2 {

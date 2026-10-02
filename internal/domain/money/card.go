@@ -1,6 +1,6 @@
 // Package card 承载在线卡家族的表记录类型：card_charge / card_operation 等。
 // 卡业务逻辑仍暂在 central/charge（online_card.go 等），随批次迁入。
-package card
+package money
 
 type CardCharge struct {
 	ChargeOrderID    uint64

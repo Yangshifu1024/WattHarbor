@@ -1,6 +1,6 @@
 // Package settlement 承载结算家族的表记录类型：charge_fee_receipt 等。
 // 结算逻辑仍暂在 central/charge，随批次迁入。
-package settlement
+package money
 
 import "encoding/json"
 

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	paymentpkg "github.com/ChargePilot2026/charge-pilot/internal/central/payment"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"os"
 	"testing"
 
@@ -32,7 +32,7 @@ func TestOrderBusinessAndPaymentStatesPersistIndependently(t *testing.T) {
 		Openid string
 	}{Openid: "order-states-" + tag}
 	var order orderpkg.ChargeOrderRecord
-	var payment paymentpkg.PaymentOrderRecord
+	var payment money.PaymentOrderRecord
 	t.Cleanup(func() {
 		for _, statement := range []struct {
 			query string
@@ -50,7 +50,7 @@ func TestOrderBusinessAndPaymentStatesPersistIndependently(t *testing.T) {
 	if err := orm.Table("user").Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
-	payment = paymentpkg.PaymentOrderRecord{OrderNo: "state-pay-" + tag, BizType: "charge", UserID: user.ID, PayMethod: "wechat", TotalCents: 100, Status: "initiated", CreatedMonth: dbutil.MonthStart()}
+	payment = money.PaymentOrderRecord{OrderNo: "state-pay-" + tag, BizType: "charge", UserID: user.ID, PayMethod: "wechat", TotalCents: 100, Status: "initiated", CreatedMonth: dbutil.MonthStart()}
 	if err := orm.Create(&payment).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestOrderBusinessAndPaymentStatesPersistIndependently(t *testing.T) {
 	applyPayment := func(paid, refunded int64, ledgerStatus, want string) {
 		t.Helper()
 		if err := orm.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(&paymentpkg.PaymentOrderRecord{}).Where("id=?", payment.ID).Updates(map[string]any{"paid_cents": paid, "refunded_cents": refunded, "status": ledgerStatus}).Error; err != nil {
+			if err := tx.Model(&money.PaymentOrderRecord{}).Where("id=?", payment.ID).Updates(map[string]any{"paid_cents": paid, "refunded_cents": refunded, "status": ledgerStatus}).Error; err != nil {
 				return err
 			}
 			return orderpkg.SyncOrderPaymentStatus(tx, payment.ID)
@@ -98,7 +98,7 @@ func TestOrderBusinessAndPaymentStatesPersistIndependently(t *testing.T) {
 	applyPayment(100, 40, "partial_refunded", "partial_refunded")
 	rollback := errors.New("fixture abort after state synchronization")
 	err = orm.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&paymentpkg.PaymentOrderRecord{}).Where("id=?", payment.ID).Updates(map[string]any{"refunded_cents": 100, "status": "refunded"}).Error; err != nil {
+		if err := tx.Model(&money.PaymentOrderRecord{}).Where("id=?", payment.ID).Updates(map[string]any{"refunded_cents": 100, "status": "refunded"}).Error; err != nil {
 			return err
 		}
 		if err := orderpkg.SyncOrderPaymentStatus(tx, payment.ID); err != nil {
@@ -110,7 +110,7 @@ func TestOrderBusinessAndPaymentStatesPersistIndependently(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("completed", "completed", "partial_refunded")
-	var paid paymentpkg.PaymentOrderRecord
+	var paid money.PaymentOrderRecord
 	if err := orm.Where("id=?", payment.ID).Take(&paid).Error; err != nil || paid.RefundedCents != 40 {
 		t.Fatalf("refund rollback changed amounts: %+v err=%v", paid, err)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"io"
 	"net/http"
 	"time"
@@ -100,7 +101,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 	}
 	{
 		previous, replayErr := a.Intents.Replay(c.Request.Context(), userID, body.ClientRequestID, body.PortID, body.OfferID, 0)
-		if errors.Is(replayErr, ErrPaymentIntentConflict) {
+		if errors.Is(replayErr, money.ErrPaymentIntentConflict) {
 			httpapi.Write(c, http.StatusConflict, 2001, "payment intent unavailable", nil)
 			return
 		}
@@ -180,7 +181,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 		httpapi.BadRequest(c, "未达到该优惠券的使用门槛")
 		return
 	}
-	if errors.Is(err, ErrPaymentIntentConflict) {
+	if errors.Is(err, money.ErrPaymentIntentConflict) {
 		httpapi.Write(c, http.StatusConflict, 2001, "payment intent unavailable", nil)
 		return
 	}
@@ -271,7 +272,7 @@ func (a SimulationCallbackAPI) callback(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid simulation request")
 		return
 	}
-	var intent PaymentIntentRecord
+	var intent money.PaymentIntentRecord
 	err := a.DB.WithContext(c.Request.Context()).Where("merchant_order_no = ?", body.MerchantOrderNo).Take(&intent).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusNotFound, 1004, "payment intent not found", nil)

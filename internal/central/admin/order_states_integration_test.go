@@ -4,8 +4,7 @@ import (
 	"context"
 	"database/sql"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	paymentpkg "github.com/ChargePilot2026/charge-pilot/internal/central/payment"
-	refundpkg "github.com/ChargePilot2026/charge-pilot/internal/central/refund"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"os"
 	"testing"
 	"time"
@@ -55,9 +54,9 @@ func TestSeparateOrderListsAndThreeChargingSources(t *testing.T) {
 		{"wechat", "charge", "initiated", 0, 0},
 		{"wechat", "charge", "paid", 100, 0}, // soft-deleted payment is never joined.
 	}
-	payments := make([]paymentpkg.PaymentOrderRecord, len(paymentSpecs))
+	payments := make([]money.PaymentOrderRecord, len(paymentSpecs))
 	for i, spec := range paymentSpecs {
-		p := paymentpkg.PaymentOrderRecord{OrderNo: "list-pay-" + tag + string(rune('a'+i)), UserID: user.ID,
+		p := money.PaymentOrderRecord{OrderNo: "list-pay-" + tag + string(rune('a'+i)), UserID: user.ID,
 			BizType: spec.biz, PayMethod: spec.method, TotalCents: 500, PaidCents: spec.paid,
 			RefundedCents: spec.refunded, Status: spec.status, CreatedMonth: month}
 		if err := tx.Create(&p).Error; err != nil {
@@ -92,7 +91,7 @@ func TestSeparateOrderListsAndThreeChargingSources(t *testing.T) {
 	if err := tx.Exec("INSERT INTO card_charge(charge_order_id,card_id,port_code,paid_cents,purchased_minutes,max_minutes,card_no,wallet_after_cents,package_json) VALUES(?,1,?,200,30,60,?,0,'{}')", orders[2].ID, tag, tag).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Create(&refundpkg.RefundRecord{RefundNo: "list-refund-" + tag, PaymentOrderID: payments[0].ID,
+	if err := tx.Create(&money.RefundRecord{RefundNo: "list-refund-" + tag, PaymentOrderID: payments[0].ID,
 		UserID: user.ID, BizType: "charge", BizID: orders[0].ID, RefundCents: 10, Status: "pending", CreatedMonth: month}).Error; err != nil {
 		t.Fatal(err)
 	}

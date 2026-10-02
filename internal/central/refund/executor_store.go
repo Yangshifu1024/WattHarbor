@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ import (
 var ErrRefundConflict = errors.New("refund identity or amount conflict")
 
 // walletSettlement 把退款行映射为钱包结算的最小事实集合。
-func walletSettlement(r RefundRecord) wallet.Settlement {
+func walletSettlement(r money.RefundRecord) wallet.Settlement {
 	return wallet.Settlement{ID: r.ID, UserID: r.UserID, RefundNo: r.RefundNo, BizType: r.BizType, RefundCents: r.RefundCents}
 }
 
@@ -54,7 +55,7 @@ func (e RefundExecutor) Batch(ctx context.Context) (int, error) {
 	if e.Provider == nil {
 		return 0, nil
 	}
-	var rows []RefundRecord
+	var rows []money.RefundRecord
 	if err := e.DB.WithContext(ctx).Where("execution_policy='automatic' AND biz_type IN ('charge','wallet_recharge') AND status IN ('pending','processing') AND next_attempt_at <= UTC_TIMESTAMP(3) AND deleted_at IS NULL").Order("next_attempt_at,id").Limit(20).Find(&rows).Error; err != nil {
 		return 0, err
 	}
@@ -90,13 +91,13 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	}
 	if err != nil {
 		// 只落库脱敏后的诊断信息，绝不落 SDK 响应体或凭据。
-		_ = e.DB.WithContext(ctx).Model(&RefundRecord{}).Where("id = ? AND status='processing'", id).Update("failure_reason", "provider result unknown; query scheduled").Error
+		_ = e.DB.WithContext(ctx).Model(&money.RefundRecord{}).Where("id = ? AND status='processing'", id).Update("failure_reason", "provider result unknown; query scheduled").Error
 		return fmt.Errorf("refund %s: provider result unknown", r.RefundNo)
 	}
 	return e.apply(ctx, r, request, result)
 }
-func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, channel.RefundRequest, bool, error) {
-	var r RefundRecord
+func (e RefundExecutor) claim(ctx context.Context, id uint64) (money.RefundRecord, channel.RefundRequest, bool, error) {
+	var r money.RefundRecord
 	var request channel.RefundRequest
 	claimed := false
 	err := e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -148,7 +149,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, cha
 		}
 
 		var reserved int64
-		if err := tx.Model(&RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").Where("payment_order_id = ? AND id <> ? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID, r.ID).Scan(&reserved).Error; err != nil {
+		if err := tx.Model(&money.RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").Where("payment_order_id = ? AND id <> ? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID, r.ID).Scan(&reserved).Error; err != nil {
 			return err
 		}
 		if reserved > p.PaidCents-p.RefundedCents-r.RefundCents {
@@ -157,7 +158,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, cha
 		request = channel.RefundRequest{RefundNo: r.RefundNo, MerchantOrderNo: p.OrderNo, TransactionID: p.WechatTransactionID.String, TotalCents: p.TotalCents, RefundCents: r.RefundCents}
 		// 这把持久化的租约同时提供了崩溃之后的有界指数退避重试。
 		delay := time.Duration(30*(1<<min(r.RetryCount, uint32(7)))) * time.Second
-		update := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "processing", "retry_count": gorm.Expr("retry_count+1"), "next_attempt_at": time.Now().UTC().Add(delay)})
+		update := tx.Model(&money.RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "processing", "retry_count": gorm.Expr("retry_count+1"), "next_attempt_at": time.Now().UTC().Add(delay)})
 		if update.Error != nil {
 			return update.Error
 		}
@@ -166,7 +167,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, cha
 	})
 	return r, request, claimed, err
 }
-func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request channel.RefundRequest, result channel.RefundResult) error {
+func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request channel.RefundRequest, result channel.RefundResult) error {
 	if result.RefundNo != request.RefundNo || result.MerchantOrderNo != request.MerchantOrderNo || result.TransactionID != request.TransactionID || result.TotalCents != request.TotalCents || result.RefundCents != request.RefundCents || result.RefundID == "" || len(result.RefundID) > 64 {
 		return ErrRefundConflict
 	}
@@ -178,7 +179,7 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request chann
 			if err := wallet.LockRefundWallet(tx, walletSettlement(r)); err != nil {
 				return err
 			}
-			var current RefundRecord
+			var current money.RefundRecord
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", r.ID).Take(&current).Error; err != nil {
 				return err
 			}
@@ -191,7 +192,7 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request chann
 			if err := wallet.ReleaseFailedRefund(tx, walletSettlement(r)); err != nil {
 				return err
 			}
-			return tx.Model(&RefundRecord{}).Where("id=?", r.ID).Updates(map[string]any{"status": "failed", "wechat_refund_id": result.RefundID, "failure_reason": "provider refund " + result.Status}).Error
+			return tx.Model(&money.RefundRecord{}).Where("id=?", r.ID).Updates(map[string]any{"status": "failed", "wechat_refund_id": result.RefundID, "failure_reason": "provider refund " + result.Status}).Error
 		})
 	case "SUCCESS":
 		if result.SuccessAt.IsZero() {
@@ -208,7 +209,7 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request chann
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("payment_order").Where("id = ?", r.PaymentOrderID).Take(&p).Error; err != nil {
 			return err
 		}
-		var current RefundRecord
+		var current money.RefundRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", r.ID).Take(&current).Error; err != nil {
 			return err
 		}
@@ -243,7 +244,7 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request chann
 		if err := orderpkg.SyncOrderPaymentStatus(tx, p.ID); err != nil {
 			return err
 		}
-		if err := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "success", "wechat_refund_id": result.RefundID, "completed_at": result.SuccessAt.UTC(), "failure_reason": nil}).Error; err != nil {
+		if err := tx.Model(&money.RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "success", "wechat_refund_id": result.RefundID, "completed_at": result.SuccessAt.UTC(), "failure_reason": nil}).Error; err != nil {
 			return err
 		}
 		if err := wallet.SettleRefundWallet(tx, walletSettlement(r)); err != nil {
@@ -256,7 +257,7 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request chann
 				}
 			} else {
 				var pending int64
-				if err := tx.Model(&RefundRecord{}).Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID).Count(&pending).Error; err != nil {
+				if err := tx.Model(&money.RefundRecord{}).Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID).Count(&pending).Error; err != nil {
 					return err
 				}
 				if pending == 0 {

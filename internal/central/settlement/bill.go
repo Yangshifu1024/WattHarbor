@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"strconv"
 	"time"
 
@@ -63,7 +64,7 @@ func (s BillStore) Issue(ctx context.Context, chargeOrderID uint64) (Bill, bool,
 	if err != nil {
 		return Bill{}, false, err
 	}
-	var receipt ChargeFeeRecord
+	var receipt money.ChargeFeeRecord
 	if err := s.DB.WithContext(ctx).Where("charge_order_id = ?", order.ID).Take(&receipt).Error; err != nil {
 		// 计费未完成时尚无账单。
 		return Bill{}, false, nil

@@ -1,16 +1,9 @@
 // 刷卡所需的端口实时状态抽象。端口发现与扫描能力归属 scan 家族
 // （charge.ScanAPI），card 包只依赖本接口，由 cmd/central 接线注入，
 // 避免 card 反向依赖 charge。
-package card
+package money
 
-import (
-	"context"
-	"regexp"
-)
-
-// portCodePattern 校验刷卡请求中的端口编码字符集与长度。
-// 与 charge 侧 scan 家族的 userScanCodePattern 同口径，属各自输入契约，独立维护。
-var portCodePattern = regexp.MustCompile(`^[A-Za-z0-9_:-]{1,64}$`)
+import "context"
 
 // PortRef 是刷卡事务所需的最小端口事实集合（来自 scan 家族的实时查询）。
 type PortRef struct {

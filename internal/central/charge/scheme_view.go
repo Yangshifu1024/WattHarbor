@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/gin-gonic/gin"
 )
 
@@ -35,7 +35,7 @@ func (a UserQueryAPI) schemeView(ctx context.Context, order orderpkg.ChargeOrder
 		return err
 	}
 	payload["billing_status"] = job.Status
-	operations := []card.CardOperation{}
+	operations := []money.CardOperation{}
 	if err := a.DB.WithContext(ctx).Where("charge_order_id=?", order.ID).Order("created_at").Find(&operations).Error; err != nil {
 		return err
 	}
