@@ -13,6 +13,239 @@
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
 - 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.sh`；`make check` 顺序执行四项。
+- 目录结构定稿如下。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
+
+```text
+charge-pilot/
+│
+├── cmd/                                        部署单元
+│   ├── user/main.go                            C 端接口进程      :8080
+│   ├── admin/main.go                           后台接口进程      :8081
+│   ├── central/main.go                         用例编排进程      :8082
+│   ├── gateway/main.go                         设备接入进程      :8083 + TCP :9100
+│   ├── worker/main.go                          消费调度进程      :8085
+│   ├── migrate/main.go  devseed/main.go  simulator-dc589/main.go
+│
+├── config/                                     配置装载（由 platform/config 提上来）
+│   ├── user.go  admin.go  central.go  gateway.go  worker.go
+│
+├── internal/
+│   │
+│   │ ═══ 业务核心 ═══════════════════════════════════════════
+│   │
+│   ├── domain/                                 零 gorm、零 gin、零 Redis
+│   │   │
+│   │   ├── identity/
+│   │   │   ├── user.go                         User / Profile / ErrUserFrozen
+│   │   │   │                                   UserRepository 接口
+│   │   │   ├── session.go                      Session / ErrInvalidRefresh
+│   │   │   │                                   SessionRepository 接口
+│   │   │   ├── auth.go                         登录授权规则、令牌签发
+│   │   │   └── phone.go                        手机号绑定规则、号码占用
+│   │   │
+│   │   ├── charging/
+│   │   │   ├── order.go                        ChargeOrder：状态机、方案冻结
+│   │   │   ├── session.go                      充电过程：启动/结束/回执
+│   │   │   ├── billing.go                      计量、截止点、账单出具
+│   │   │   ├── stop.go                         停机判定
+│   │   │   └── scheme.go                       计费方案、计量证据校验
+│   │   │
+│   │   ├── money/
+│   │   │   ├── payment.go                      支付单、意图、回调核验
+│   │   │   ├── wallet.go                       余额、流水、冻结
+│   │   │   ├── refund.go                       退款单、双人复核、到账
+│   │   │   ├── coupon.go                       券、活动规则、核销
+│   │   │   ├── card.go                         在线卡、刷卡、扣款
+│   │   │   ├── settlement.go                   分账、结算、提现
+│   │   │   └── channel.go                      支付渠道契约
+│   │   │
+│   │   ├── devices/                            协议无关
+│   │   │   ├── station.go  device.go  vendor.go
+│   │   │   ├── fault.go                        故障语义（烟雾/高温/离线）
+│   │   │   └── telemetry.go                    遥测（功率、电量、时长）
+│   │   │
+│   │   └── operations/
+│   │       ├── role.go  audit.go  announcement.go
+│   │       ├── export.go  webhook.go  alert.go  whitelabel.go
+│   │
+│   │ ═══ 用例编排 ═══════════════════════════════════════════
+│   │
+│   ├── application/                            扁平单包，跨聚合事务在此
+│   │   ├── user_service.go                     建档、冻结、档案
+│   │   ├── auth_service.go                     登录、刷新、登出
+│   │   ├── recharge_service.go                 充值入账
+│   │   ├── charge_service.go                   下单、扫码、刷卡
+│   │   ├── start_service.go                    启动判定、失败退余额
+│   │   ├── end_service.go                      结束计量、费用核算
+│   │   ├── refund_service.go                   自动退款、人工复核
+│   │   ├── settlement_service.go               分账、提现
+│   │   └── *_test.go
+│   │
+│   │ ═══ 外部依赖实现 ═══════════════════════════════════════
+│   │
+│   ├── infrastructure/
+│   │   ├── database/                           gorm 只在这里
+│   │   │   ├── client.go                       连接池
+│   │   │   ├── user_repository.go              user / user_login_identity
+│   │   │   ├── order_repository.go             charge_order 家族
+│   │   │   ├── payment_repository.go           payment_order 家族
+│   │   │   ├── wallet_repository.go            wallet_* 家族
+│   │   │   ├── refund_repository.go            refund_* 家族
+│   │   │   ├── settlement_repository.go        settlement / split / withdraw
+│   │   │   ├── station_repository.go           station
+│   │   │   ├── device_repository.go            device_meta / device_import
+│   │   │   └── admin_repository.go             role / permission / audit_log
+│   │   ├── redis/
+│   │   │   ├── session_store.go                user:session: / admin:session:
+│   │   │   ├── stream.go                       event_outbox 消费
+│   │   │   └── idempotent.go                   幂等凭据
+│   │   ├── wechat/
+│   │   │   ├── client.go  pay.go  refund.go
+│   │   └── gateway_client/                     内部 HTTP 客户端
+│   │       └── client.go
+│   │
+│   │ ═══ 协议适配 ═══════════════════════════════════════════
+│   │
+│   ├── interface/
+│   │   ├── http/
+│   │   │   ├── user_api.go                     /api/v1/user/*      → cmd/user
+│   │   │   ├── public_api.go                   /api/v1/user/auth/* → cmd/user
+│   │   │   ├── admin_api.go                    /api/v1/admin/*     → cmd/admin
+│   │   │   ├── internal_api.go                 /api/v1/internal/* → cmd/central
+│   │   │   ├── device_api.go                   设备端点            → cmd/gateway
+│   │   │   ├── worker_api.go                   运维端点            → cmd/worker
+│   │   │   ├── middleware.go                   鉴权、权限、数据范围
+│   │   │   └── error_mapper.go                 领域错误 → HTTP
+│   │
+│   │ ═══ 协议契约（独立层，三进程共享）═══════════════════════
+│   │
+│   ├── protocol/
+│   │   ├── adapter.go                          Adapter / Sink / Event / Command
+│   │   ├── registry.go                         会话注册表
+│   │   ├── listener.go                         监听与协议分派
+│   │   ├── session_audit.go                    收发字节审计
+│   │   ├── dc589/
+│   │   │   ├── adapter.go                      实现 protocol.Adapter
+│   │   │   ├── frame.go  codec.go              帧编解码、校验
+│   │   │   ├── command.go                      启动/停止/刷卡指令
+│   │   │   ├── measurements.go                 电量、功率、时长解析
+│   │   │   ├── log_data.go                     日志帧解析
+│   │   │   ├── fault.go                        0xBB 烟雾 → 领域语义
+│   │   │   └── units.go                        分 → 协议余额单位
+│   │   └── <新协议>/                            将来只加目录
+│   │
+│   │ ═══ 进程特有编排 ═══════════════════════════════════════
+│   │
+│   ├── worker/                                 事件消费、定时、投递编排
+│   │   ├── consumer/
+│   │   │   ├── charge_events.go                消费 charge_events_stream
+│   │   │   ├── charge_ended.go                 消费 charge_ended_stream
+│   │   │   ├── device_event.go                 消费 device_event_stream
+│   │   │   ├── refund_required.go              消费 refund_required_stream
+│   │   │   └── refund_succeeded.go             消费 refund_succeeded_stream
+│   │   │
+│   │   ├── sync/                               命令与结果同步
+│   │   │   ├── start_sync.go                   启动回执同步（192 行）
+│   │   │   ├── end_sync.go                     结束事件同步（187 行）
+│   │   │   ├── card_sync.go                    刷卡决策同步（237 行）
+│   │   │   ├── paid_start.go                   已支付订单启动（109 行）
+│   │   │   ├── meter_segments.go               计量分段上报（82 行）
+│   │   │   └── client.go                       gatewaySyncAPI 封装（64 行）
+│   │   │
+│   │   ├── trigger/                            薄触发器，只发意图
+│   │   │   ├── auto_stop.go                    触发停机扫描（36 行）
+│   │   │   ├── alert_sync.go                   触发告警同步（37 行）
+│   │   │   ├── billing_dispatch.go             触发账单下发（16 行）
+│   │   │   └── refund_dispatch.go              触发退款派发（16 行）
+│   │   │
+│   │   ├── outbox/
+│   │   │   ├── publisher.go                    事件写入 outbox（88 行）
+│   │   │   └── dlq.go                          死信与重放（310 行）
+│   │   │
+│   │   ├── schedule/
+│   │   │   ├── scheduler.go                    cron 解析与执行（206 行）
+│   │   │   └── http.go                         调度运维端点（121 行）
+│   │   │
+│   │   └── ops/                                worker 自身运维
+│   │       ├── ops_api.go                      积压、死信、重放（106 行）
+│   │       └── http.go                         内部 HTTP 出口（47 行）
+│   │
+│   ├── delivery/                               外部投递实现
+│   │   ├── events.go                           Event 契约与校验（129 行）
+│   │   ├── webhook.go                          订阅匹配、签名、外投（332 行）
+│   │   ├── regulatory.go                       监管报送签名与发送（90 行）
+│   │   └── senders.go                          HTTP 发送器（76 行）
+│   │
+│   ├── gateway/                                设备接入运行时
+│   │   ├── listener/
+│   │   │   └── server.go                       监听 endpoint、连接分派
+│   │   │
+│   │   ├── session/
+│   │   │   ├── session.go                      连接会话（144 行）
+│   │   │   └── registry.go                     设备到会话的索引
+│   │   │
+│   │   ├── command/
+│   │   │   ├── start.go                        启动指令（68 行）
+│   │   │   ├── authorize.go                    启动授权（116 行）
+│   │   │   ├── scan.go                         扫码（51 行）
+│   │   │   ├── cards.go                        刷卡（49 行）
+│   │   │   ├── user_stop.go                    用户主动停机（112 行）
+│   │   │   └── charge_process.go               充电进程（107 行）
+│   │   │
+│   │   ├── telemetry/
+│   │   │   ├── telemetry.go                    遥测入口（252 行）
+│   │   │   ├── charging_samples.go             充电采样（161 行）
+│   │   │   ├── device_faults.go                故障原始载荷（146 行）
+│   │   │   ├── device_summary.go                设备摘要（78 行）
+│   │   │   ├── historical_curve.go             历史曲线（90 行）
+│   │   │   └── worker_sync.go                  worker 同步端点（574 行）
+│   │   │
+│   │   ├── compensate/
+│   │   │   ├── compensate.go                   迟到回执补偿（91 行）
+│   │   │   └── backfill.go                     历史数据回填（276 行）
+│   │   │
+│   │   ├── store/                              gateway_db 持久化
+│   │   │   ├── mysql.go                        连接池（328 行）
+│   │   │   ├── gorm_models.go                  记录类型（99 行）
+│   │   │   ├── session.go                      会话落库（85 行）
+│   │   │   ├── charge_start.go                 启动与回执（197 行）
+│   │   │   ├── charge_process.go               充电进程（121 行）
+│   │   │   ├── user_stop.go                    停机落库（125 行）
+│   │   │   ├── scan.go                         扫码会话（79 行）
+│   │   │   ├── aggregate.go                    聚合读（68 行）
+│   │   │   └── compensation.go                 补偿台账（107 行）
+│   │   │
+│   │   ├── provision/                          开通与厂商（gateway 侧）
+│   │   │   ├── http.go                         开通端点（131 行）
+│   │   │   └── vendors.go                      厂商同步（339 行）
+│   │   │
+│   │   └── simulator/                          联调工具，不参与生产
+│   │       └── dc589/
+│   │           ├── simulator.go                 模拟器主体（859 行）
+│   │           ├── behavior.go                  行为脚本（646 行）
+│   │           └── tui.go                       终端界面（462 行）
+│   │
+│   └── platform/                               无业务语义的通用能力
+│       ├── config/config.go                    100 行 → 移到 config/
+│       ├── dbconn/mysql.go                     83 行  连接池与 DSN
+│       ├── dbutil/dbutil.go                    34 行  UTCDate / 重复键判定
+│       ├── httpapi/
+│       │   ├── gin.go                          113 行  引擎、信封、ReadPaging
+│       │   ├── codes.go                        36 行   错误码常量
+│       │   ├── decimal_id.go                   42 行   Snowflake 序列化
+│       │   └── metrics.go                      72 行   指标中间件
+│       ├── auth/jwt.go                         98 行   签发与校验
+│       ├── snowflake/snowflake.go              88 行   ID 分配
+│       ├── netguard/guard.go                   92 行   出站 SSRF 防护
+│       ├── phone/phone.go                      24 行   规范化、脱敏
+│       └── serviceclient/client.go             115 行  内部 HTTP 客户端
+│
+├── migrations/{central_db,gateway_db,worker_db}/
+├── bin/                                        编译产物（已忽略）
+├── admin-web/  miniprogram/
+└── Makefile  go.mod  AGENTS.md  README.md
+```
+
 - 代码按分层组织，依赖单向、无例外：
 
   ```
