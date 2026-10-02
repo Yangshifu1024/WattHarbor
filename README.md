@@ -31,7 +31,9 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 
 central 中的 AdminDB、UserDB、BillingDB 是同一数据库句柄的领域名称。跨服务操作通过持久任务、幂等回执和内部 API 协作。Redis Cache 保存会话等缓存；Redis Stream 保存事件，两者独立部署。
 
-`internal/central/` 按业务能力分包（order、payment、refund、settlement、wallet、card、coupon、identity、pricing、channel、billing、charge），包内再按文件后缀分三层，依赖只允许自上而下：
+`internal/central/` 按业务能力分包（order、payment、refund、settlement、wallet、card、coupon、identity、pricing、channel、billing、charge），`admin` 是后台 HTTP 编排层。
+
+层内按文件后缀分层，依赖只允许自上而下：
 
 | 后缀 | 层 | 允许出现 | 职责 |
 | --- | --- | --- | --- |
@@ -39,7 +41,9 @@ central 中的 AdminDB、UserDB、BillingDB 是同一数据库句柄的领域名
 | `*_store.go`、`models.go` | 持久化层 | gorm、数据库表名 | 全部 SQL 与记录类型；表名只写在这里 |
 | 其余 | 领域层 | 无 gin、无 gorm | 状态机、金额与计量规则、纯计算，可独立测试 |
 
-三条边界由 `make layers`（`scripts/check/layers.sh`）机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 是服务间适配层，均不参与该检查。
+三层均有实质内容的包（`payment`、`identity`、`admin`、`charge`、`card`）再分子目录 `state/`（领域）、`store/`（持久化）、`http/`（接口），跨层共享的纯数据契约放 `model/`。依赖方向恒为 `http → state`、`http → store`、`store → state`，反向与同层横向依赖均不允许。`wallet`、`coupon` 只有持久化逻辑，`pricing`、`channel` 只有领域逻辑，`order`、`refund`、`settlement` 的领域与接口层文件过薄——这七个保持单层，不为单层包建立空目录。
+
+以上边界由 `make layers`（`scripts/check/layers.sh`）机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 与 `delivery` 是服务间适配层，均不参与该检查。
 
 ```text
 cmd/                 central、gateway、worker、migrate、devseed、simulator-dc589

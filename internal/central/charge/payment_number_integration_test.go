@@ -14,7 +14,8 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
+	identitystore "github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
@@ -146,7 +147,7 @@ func TestPaymentNumberSources(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	UserAccountAPI{Auth: identity.SessionAuthenticator{JWT: jwt, Sessions: scanSession{}, Users: identity.UserStore{DB: tx}}, UserDB: tx, Prepay: channel.Simulator{}}.Register(router)
+	UserAccountAPI{Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: scanSession{}, Users: identitystore.UserStore{DB: tx}}, UserDB: tx, Prepay: channel.Simulator{}}.Register(router)
 	requests := &authenticatedRouter{Engine: router, token: token}
 	for range 2 {
 		request := map[string]any{"request_id": uuid.NewString(), "amount_cents": 1000}

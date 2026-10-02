@@ -1,9 +1,10 @@
-package identity
+package userhttp
 
 import (
 	"context"
 	"errors"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/phone"
 	"github.com/gin-gonic/gin"
@@ -15,7 +16,7 @@ import (
 // 正式绑定必须使用微信授权凭证，开发模式的明文号码仅供联调。
 type PhoneAPI struct {
 	Auth             SessionAuthenticator
-	Users            UserStore
+	Users            store.UserStore
 	DevelopmentPhone bool
 	PhoneExchange    func(context.Context, string) (string, error)
 }
@@ -62,7 +63,7 @@ func (a PhoneAPI) bind(c *gin.Context) {
 	err := a.Users.BindPhone(c.Request.Context(), userID, &in.Phone)
 	var duplicate *mysql.MySQLError
 	switch {
-	case errors.Is(err, ErrPhoneTaken) || errors.As(err, &duplicate) && duplicate.Number == 1062:
+	case errors.Is(err, store.ErrPhoneTaken) || errors.As(err, &duplicate) && duplicate.Number == 1062:
 		httpapi.Write(c, 409, 2009, "该手机号已绑定其他账号", nil)
 	case err != nil:
 		httpapi.Write(c, 503, 5003, "数据暂时无法保存，请稍后重试", nil)

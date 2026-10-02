@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -54,7 +54,7 @@ func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := httpapi.NewRouter()
-	ScanAPI{Operations: scanOperation("enabled"), Auth: identity.SessionAuthenticator{JWT: jwt, Sessions: scanSession{}, Users: scanUser{}}, GatewayURL: backend.URL, ServiceToken: "service-token"}.Register(router)
+	ScanAPI{Operations: scanOperation("enabled"), Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: scanSession{}, Users: scanUser{}}, GatewayURL: backend.URL, ServiceToken: "service-token"}.Register(router)
 	for _, route := range []string{"/api/v1/user/scan/resolve", "/api/v1/user/scan/port"} {
 		body := `{"code":"board:1"}`
 		if route == "/api/v1/user/scan/port" {

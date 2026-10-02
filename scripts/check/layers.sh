@@ -1,36 +1,39 @@
 #!/usr/bin/env bash
-# 校验业务包内的分层约定：同一包内按文件后缀区分接口层、持久化层与领域层。
-# 目的是让"某个函数属于哪一层"成为可以机检的事实，而不是靠人记。
+# 校验业务包内的分层约定。目的是让"某个函数属于哪一层"成为可以机检的事实，
+# 而不是靠人记。两种形态都被承认：
 #
-# 三条规则（只对参与分层的包生效）：
-#   1. 含 *gin.Context 的文件必须命名为 *_http.go 或 *_middleware.go
-#   2. 含 gorm 的文件必须命名为 *_store.go 或 models.go
-#   3. 出现数据库表名的文件必须命名为 *_store.go 或 models.go
-# 不满足即退出码 1。中间件是接口层设施而非处理器，单独承认 *_middleware.go 这一类。
+#   单层包：包内按文件后缀分层。gin.Context 只在 *_http.go / *_middleware.go；
+#          gorm 与表名只在 *_store.go / models.go；其余文件是领域层。
+#   多层包：包内再分子目录 state/（领域）、store/（持久化）、http/（接口），
+#          文件后缀不再单独承担分层职责，目录本身即层。
+#
+# 多层包的依赖方向恒为 http → state、http → store、store → state；
+# 反向与同层横向依赖不允许。
 #
 # 不参与分层的目录：platform 是无业务语义的通用能力，cmd 是进程装配，
-# protocol 是设备契约，simulator 是联调工具，worker 侧只做消费与投递、
-# 不承载业务判定，其 *_sync.go / *_client.go 属服务间调用适配层。
+# protocol 是设备契约，simulator 是联调工具，gateway/store 与 gateway/control
+# 各自整体即单一层，worker/* 与 delivery 是服务间适配层。
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
-# 包级豁免：整个包就是单一层，不按文件后缀要求。
-# gateway/store 全部是持久化；gateway/control 全部是设备接口层；
-# worker 各包是服务间适配层。
-packages=(
+# 三层均有实质内容的包才分子目录；其余单层包保持一个目录，
+# 避免为纯持久化或纯领域的包建立空目录。
+nested=(
+  internal/central/payment
   internal/central/identity
+  internal/central/admin
+  internal/central/charge
+  internal/central/card
+)
+flat=(
+  internal/central/order
+  internal/central/refund
+  internal/central/settlement
+  internal/central/wallet
+  internal/central/coupon
   internal/central/pricing
   internal/central/channel
   internal/central/billing
-  internal/central/wallet
-  internal/central/card
-  internal/central/coupon
-  internal/central/order
-  internal/central/payment
-  internal/central/refund
-  internal/central/settlement
-  internal/central/charge
-  internal/central/admin
 )
 
 # 表名清单从 schema 提取，不在脚本里硬编码，新增表时规则不会失真。
@@ -47,22 +50,81 @@ fi
 violations=0
 report() { violations=$((violations + 1)); printf '%s\n' "$1"; }
 
-for dir in "${packages[@]}"; do
+# 判定某文件相对所在目录属于哪一层。gin 优先于 gorm：混合文件按接口层处理，
+# 这会把它标成违规，逼出真正的拆分而不是让它蒙混过关。
+layer_of() {
+  local file=$1 stem
+  stem=$(basename "${file%.go}")
+  if [[ $stem == *_http || $stem == http || $stem == *_middleware ]]; then
+    printf 'http'
+  elif [[ $stem == *_store || $stem == store || $stem == *_model || $stem == models ]]; then
+    printf 'store'
+  else
+    printf 'domain'
+  fi
+}
+
+# 多层包：目录即层，逐目录校验内容与依赖方向。
+for pkg in "${nested[@]}"; do
+  [[ -d $pkg ]] || continue
+  for layer in state store http; do
+    dir="$pkg/$layer"
+    [[ -d $dir ]] || continue
+    while IFS= read -r file; do
+      if [[ $layer == state ]]; then
+        grep -q 'gin\.Context' "$file" &&
+          report "$file: 领域层出现 gin.Context"
+        grep -qE 'gorm\.DB|gorm\.Expr|gorm\.DeletedAt|clause\.OnConflict|"gorm\.io/gorm"' "$file" &&
+          report "$file: 领域层出现 gorm"
+      elif [[ $layer == http ]]; then
+        grep -qE 'gorm\.DB|gorm\.Expr|clause\.OnConflict|"gorm\.io/gorm"' "$file" &&
+          report "$file: 接口层持有 gorm，数据库访问应下沉到 store"
+      fi
+      # 表名只认 SQL 构造位置（Table/FROM/JOIN/INTO/UPDATE 后面），
+      # 避免把 StopUser = "user"、ExecutorDevice = "device" 这类枚举值误判。
+      hits=$(grep -oE '(Table\(|FROM |JOIN |INTO |UPDATE )`?"?[a-z0-9_]+' "$file" |
+        grep -oE '[a-z0-9_]+$' | sort -u | grep -xF -f "$tables" | head -3)
+      if [[ -n $hits && $layer != store ]]; then
+        report "$file: 出现数据库表名（$(echo "$hits" | tr '\n' ' ')）但不在 store 层"
+      fi
+    done < <(find "$dir" -maxdepth 1 -name '*.go' ! -name '*_test.go')
+  done
+  # 依赖方向：state 不得被 store 反向依赖以外的层反向引用；
+  # store 不得 import http。
+  if [[ -d $pkg/store ]]; then
+    for file in "$pkg"/store/*.go; do
+      [[ -e $file ]] || continue
+      grep -q "central/$(basename $pkg)/http" "$file" &&
+        report "$file: store 反向依赖 http 层"
+    done
+  fi
+  if [[ -d $pkg/state ]]; then
+    for file in "$pkg"/state/*.go; do
+      [[ -e $file ]] || continue
+      grep -qE "central/$(basename $pkg)/(http|store)" "$file" &&
+        report "$file: state 依赖了上层，方向反了"
+    done
+  fi
+  # 包根目录不应再留生产 Go 文件：有子目录的包一律归位。
+  leftovers=$(find "$pkg" -maxdepth 1 -name '*.go' ! -name '*_test.go')
+  if [[ -n $leftovers ]]; then
+    while IFS= read -r file; do
+      [[ -e $file ]] && report "$file: 已分子目录的包，根目录不应残留生产文件"
+    done <<<"$leftovers"
+  fi
+done
+
+# 单层包：按文件后缀判定。
+for dir in "${flat[@]}"; do
   [[ -d $dir ]] || continue
   while IFS= read -r file; do
-    stem=$(basename "${file%.go}")
-    layer=domain
-    [[ $stem == *_http || $stem == http || $stem == *_middleware ]] && layer=http
-    [[ $stem == *_store || $stem == store || $stem == *_model || $stem == models ]] && layer=store
-
+    layer=$(layer_of "$file")
     if grep -q 'gin\.Context' "$file" && [[ $layer != http ]]; then
       report "$file: 含 gin.Context 但不是 *_http.go（接口层）"
     fi
     if grep -qE 'gorm\.DB|gorm\.Expr|gorm\.DeletedAt|clause\.OnConflict|"gorm\.io/gorm"' "$file" && [[ $layer != store ]]; then
       report "$file: 含 gorm 但不是 *_store.go / models.go（持久化层）"
     fi
-    # 表名只认出现在 SQL 构造位置的形式（Table/FROM/JOIN/INTO/UPDATE 后面），
-    # 避免把 StopUser = "user"、ExecutorDevice = "device" 这类枚举值误判为表访问。
     hits=$(grep -oE '(Table\(|FROM |JOIN |INTO |UPDATE )`?"?[a-z0-9_]+' "$file" |
       grep -oE '[a-z0-9_]+$' | sort -u | grep -xF -f "$tables" | head -3)
     if [[ -n $hits && $layer != store ]]; then

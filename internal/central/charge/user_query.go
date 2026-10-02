@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -26,7 +26,7 @@ var (
 // UserQueryAPI 提供用户实时状态、遥测曲线及订单历史。
 // 遥测由 gateway_db 管理，通过带服务令牌的网关接口读取。
 type UserQueryAPI struct {
-	Auth           identity.SessionAuthenticator
+	Auth           identityhttp.SessionAuthenticator
 	DB             *gorm.DB
 	GatewayURL     string
 	ServiceToken   string

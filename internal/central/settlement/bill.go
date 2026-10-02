@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -244,7 +244,7 @@ func (s BillStore) MarkRead(ctx context.Context, userID, billID uint64) error {
 
 // BillHTTP 把账单视图暴露给客户。
 type BillHTTP struct {
-	Auth  identity.SessionAuthenticator
+	Auth  identityhttp.SessionAuthenticator
 	Bills BillStore
 }
 

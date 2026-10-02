@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -28,7 +28,7 @@ import (
 
 // UserAccountAPI 提供钱包、优惠券、发票、公告、附近站点、手机号绑定及用户故障上报接口。
 type UserAccountAPI struct {
-	Auth         identity.SessionAuthenticator
+	Auth         identityhttp.SessionAuthenticator
 	UserDB       *gorm.DB
 	AdminDB      *gorm.DB
 	GatewayURL   string

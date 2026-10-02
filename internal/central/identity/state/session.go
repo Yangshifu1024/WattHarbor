@@ -1,4 +1,4 @@
-package identity
+package state
 
 import (
 	"context"
@@ -12,12 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/model"
 	"github.com/redis/go-redis/v9"
 )
 
 var ErrInvalidRefresh = errors.New("invalid or expired refresh token")
 
-const refreshTTL = 7 * 24 * time.Hour
+// RefreshTTL 是刷新令牌的 Redis 存活时长。会话记录以该 TTL 写入，
+// 外部改写记录时必须沿用同一时长，因此对外可见。
+const RefreshTTL = 7 * 24 * time.Hour
 
 type sessionRecord struct {
 	UserID   sessionUserID `json:"uid"`
@@ -59,7 +62,7 @@ func (id *sessionUserID) UnmarshalJSON(raw []byte) error {
 
 type Sessions struct{ Redis *redis.Client }
 
-func (s Sessions) Create(ctx context.Context, user User) (string, string, error) {
+func (s Sessions) Create(ctx context.Context, user model.User) (string, string, error) {
 	sid, err := randomPart(16)
 	if err != nil {
 		return "", "", err
@@ -73,7 +76,7 @@ func (s Sessions) Create(ctx context.Context, user User) (string, string, error)
 	if err != nil {
 		return "", "", err
 	}
-	if err := s.Redis.Set(ctx, sessionKey(sid), record, refreshTTL).Err(); err != nil {
+	if err := s.Redis.Set(ctx, sessionKey(sid), record, RefreshTTL).Err(); err != nil {
 		return "", "", err
 	}
 	return sid, token, nil
@@ -98,7 +101,7 @@ redis.call('SET', KEYS[1], cjson.encode(record), 'KEEPTTL')
 return value
 `)
 
-func (s Sessions) Rotate(ctx context.Context, token string) (User, string, string, error) {
+func (s Sessions) Rotate(ctx context.Context, token string) (model.User, string, string, error) {
 	sid, oldSecret, ok := parseRefresh(token)
 	if !ok {
 		return User{}, "", "", ErrInvalidRefresh
@@ -187,3 +190,6 @@ func parseRefresh(token string) (string, string, bool) {
 	}
 	return parts[0], parts[1], true
 }
+
+// User 是本包对外返回的登录身份，定义在 model 包供三层共享。
+type User = model.User

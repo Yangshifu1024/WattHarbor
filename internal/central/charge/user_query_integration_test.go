@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
+	identitystate "github.com/ChargePilot2026/charge-pilot/internal/central/identity/state"
+	identitystore "github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -139,7 +141,7 @@ func TestUserCurveReadsTelemetryValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := UserQueryAPI{
-		Auth: identity.SessionAuthenticator{JWT: jwt, Sessions: identity.Sessions{Redis: client}, Users: identity.UserStore{DB: orm}},
+		Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: orm}},
 		DB:   orm, GatewayURL: gateway.URL, ServiceToken: "svc", Gateway: serviceclient.Client{},
 	}
 	api.Register(router)
@@ -250,7 +252,7 @@ func TestUserHistoryAndDetailExposeFees(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := UserQueryAPI{
-		Auth: identity.SessionAuthenticator{JWT: jwt, Sessions: identity.Sessions{Redis: client}, Users: identity.UserStore{DB: orm}},
+		Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: orm}},
 		DB:   orm, Gateway: serviceclient.Client{},
 	}
 	api.Register(router)
@@ -370,7 +372,7 @@ func TestUserDetailHidesForeignOrder(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	UserQueryAPI{
-		Auth: identity.SessionAuthenticator{JWT: jwt, Sessions: identity.Sessions{Redis: client}, Users: identity.UserStore{DB: orm}},
+		Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: client}, Users: identitystore.UserStore{DB: orm}},
 		DB:   orm, Gateway: serviceclient.Client{},
 	}.Register(router)
 

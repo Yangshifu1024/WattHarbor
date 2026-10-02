@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -241,7 +241,7 @@ func RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) error {
 
 // CouponAPI 提供用户优惠券的只读视图；核销由支付确认流程执行。
 type CouponAPI struct {
-	Auth    identity.SessionAuthenticator
+	Auth    identityhttp.SessionAuthenticator
 	Coupons CouponStore
 }
 

@@ -1,4 +1,4 @@
-package identity
+package userhttp
 
 import (
 	"context"
@@ -14,6 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/model"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/state"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -22,8 +25,8 @@ import (
 
 type fakeExchange struct{ openID string }
 
-func (f fakeExchange) Exchange(context.Context, string) (WeChatIdentity, error) {
-	return WeChatIdentity{OpenID: f.openID}, nil
+func (f fakeExchange) Exchange(context.Context, string) (state.WeChatIdentity, error) {
+	return state.WeChatIdentity{OpenID: f.openID}, nil
 }
 
 // 只在调用方显式指定的、用完即弃的库上运行。
@@ -49,13 +52,13 @@ func TestLoginAndRefreshIntegration(t *testing.T) {
 	}
 	cache := redis.NewClient(options)
 	defer cache.Close()
-	store := UserStore{DB: userORM}
+	store := store.UserStore{DB: userORM}
 	openid := "go-test-login-" + uuidPart(t)
 	defer db.ExecContext(ctx, "DELETE FROM wallet_account WHERE user_id IN (SELECT id FROM user WHERE openid = ?)", openid)
 	defer db.ExecContext(ctx, "DELETE FROM user WHERE openid = ?", openid)
 	defer db.ExecContext(ctx, "DELETE FROM user_login_identity WHERE openid = ?", []byte(openid))
 	var wg sync.WaitGroup
-	users := make([]User, 8)
+	users := make([]model.User, 8)
 	errs := make([]error, 8)
 	for i := range users {
 		wg.Add(1)
@@ -88,7 +91,7 @@ func TestLoginAndRefreshIntegration(t *testing.T) {
 	if err != nil || profile.UserID != users[0].ID || profile.Wallet.AvailableCents != 0 {
 		t.Fatalf("profile=%+v err=%v", profile, err)
 	}
-	sessions := Sessions{Redis: cache}
+	sessions := state.Sessions{Redis: cache}
 	sid, original, err := sessions.Create(ctx, users[0])
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +101,7 @@ func TestLoginAndRefreshIntegration(t *testing.T) {
 	if err != nil || rotated.ID != users[0].ID || rotatedSID != sid {
 		t.Fatalf("rotate: %+v %s %v", rotated, rotatedSID, err)
 	}
-	if _, _, _, err := sessions.Rotate(ctx, original); !errors.Is(err, ErrInvalidRefresh) {
+	if _, _, _, err := sessions.Rotate(ctx, original); !errors.Is(err, state.ErrInvalidRefresh) {
 		t.Fatalf("old refresh reused: %v", err)
 	}
 	rotated, rotatedSID, newest, err := sessions.Rotate(ctx, next)
@@ -108,13 +111,13 @@ func TestLoginAndRefreshIntegration(t *testing.T) {
 	if err := sessions.Revoke(ctx, original); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := sessions.Rotate(ctx, newest); !errors.Is(err, ErrInvalidRefresh) {
+	if _, _, _, err := sessions.Rotate(ctx, newest); !errors.Is(err, state.ErrInvalidRefresh) {
 		t.Fatalf("logout did not revoke: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, "UPDATE user SET status = 'frozen' WHERE id = ?", users[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Login(ctx, openid, ""); !errors.Is(err, ErrUserFrozen) {
+	if _, err := store.Login(ctx, openid, ""); !errors.Is(err, model.ErrUserFrozen) {
 		t.Fatalf("frozen login: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, "UPDATE user SET status = 'active' WHERE id = ?", users[0].ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -152,7 +155,7 @@ func TestAuthHTTPIntegration(t *testing.T) {
 	defer db.ExecContext(ctx, "DELETE FROM user WHERE openid = ?", openid)
 	defer db.ExecContext(ctx, "DELETE FROM user_login_identity WHERE openid = ?", []byte(openid))
 	router := httpapi.NewRouter()
-	API{WeChat: fakeExchange{openid}, Users: UserStore{DB: userORM}, Sessions: Sessions{Redis: cache}, JWT: jwt}.Register(router)
+	API{WeChat: fakeExchange{openid}, Users: store.UserStore{DB: userORM}, Sessions: state.Sessions{Redis: cache}, JWT: jwt}.Register(router)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/public/auth/login", strings.NewReader(`{"code":"test-code"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -264,7 +267,7 @@ func TestLegacyUserKeepsIDIntegration(t *testing.T) {
 	}
 	defer db.ExecContext(ctx, "DELETE FROM user WHERE openid=?", openid)
 	defer db.ExecContext(ctx, "DELETE FROM user_login_identity WHERE openid=?", []byte(openid))
-	store := UserStore{DB: orm}
+	store := store.UserStore{DB: orm}
 	for range 2 {
 		user, err := store.Login(ctx, openid, "")
 		if err != nil || user.ID != legacyID || user.IsNew {
@@ -285,9 +288,9 @@ func TestLegacyNumericSessionRefreshIntegration(t *testing.T) {
 	cache := redis.NewClient(options)
 	defer cache.Close()
 	ctx := context.Background()
-	sessions := Sessions{Redis: cache}
+	sessions := state.Sessions{Redis: cache}
 	const legacyID = uint64(923456789012345678)
-	sid, token, err := sessions.Create(ctx, User{ID: legacyID, OpenID: "go-test-legacy-" + uuidPart(t)})
+	sid, token, err := sessions.Create(ctx, model.User{ID: legacyID, OpenID: "go-test-legacy-" + uuidPart(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +308,7 @@ func TestLegacyNumericSessionRefreshIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cache.Set(ctx, sessionKey(sid), stored, refreshTTL).Err(); err != nil {
+	if err := cache.Set(ctx, sessionKey(sid), stored, state.RefreshTTL).Err(); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
@@ -324,3 +327,8 @@ func uuidPart(t *testing.T) string {
 	t.Helper()
 	return strconv.FormatInt(time.Now().UnixNano(), 36)
 }
+
+// sessionKey 按 state.Sessions 的键格式重建会话键。
+// 这里刻意不复用 state 的内部函数：测试要锁定的是"会话键在 Redis 里的形态"这个
+// 外部契约，而不是某个私有实现，写死格式才能在实现改名时立刻发现破坏。
+func sessionKey(sid string) string { return "user:session:" + sid }

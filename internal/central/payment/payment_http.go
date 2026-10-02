@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -25,7 +25,7 @@ type PrepayProvider interface {
 }
 
 type PaymentStartAPI struct {
-	Auth     identity.SessionAuthenticator
+	Auth     identityhttp.SessionAuthenticator
 	Scan     ScanAPI
 	Pricing  pricing.Store
 	Intents  PaymentIntentStore

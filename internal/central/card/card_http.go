@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
@@ -20,7 +20,7 @@ import (
 
 type CardAPI struct {
 	Store        CardStore
-	Auth         identity.SessionAuthenticator
+	Auth         identityhttp.SessionAuthenticator
 	Pricing      pricing.Store
 	Scan         PortLookup
 	ServiceToken string

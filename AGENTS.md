@@ -13,11 +13,13 @@
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
 - 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.sh`；`make check` 顺序执行四项。
-- 包按业务能力划分（`internal/central/{order,payment,refund,settlement,wallet,card,coupon,identity,pricing,channel,billing,charge}`），包内按文件后缀分三层，依赖只允许自上而下：
-  - `*_http.go`——接口层，唯一的 `gin.Context` 出现处；只做输入校验、权限、错误映射与响应组装。
+- 包按业务能力划分（`internal/central/{order,payment,refund,settlement,wallet,card,coupon,identity,pricing,channel,billing,charge}`），`internal/central/admin` 是后台 HTTP 编排层。层内按文件后缀分层，依赖只允许自上而下：
+  - `*_http.go` 与 `*_middleware.go`——接口层，唯一的 `gin.Context` 出现处；只做输入校验、权限、错误映射与响应组装，不持有数据库句柄。
   - `*_store.go` 与 `models.go`——持久化层，唯一的 gorm 与数据库表名出现处；表名只写在这里，不进接口层与领域层。
   - 其余文件为领域层——状态机、金额与计量规则、纯计算；不 import gin 与 gorm，可独立测试。
-  三条约定由 `make layers` 机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 是服务间适配层，均不参与该检查。
+  三条约定由 `make layers` 机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 与 `delivery` 是服务间适配层，均不参与该检查。
+- 目录深度按包的层厚度决定，不按层数一刀切。经实测三层均有实质内容的包为 `payment`、`identity`、`admin`、`charge`、`card`，这五个再按 `state/`（领域）、`store/`（持久化）、`http/`（接口）分子目录，`models.go` 随持久化层放在 `store/`。`wallet`、`coupon` 只有持久化逻辑、`pricing`、`channel` 只有领域逻辑、`order`、`refund`、`settlement` 领域与接口层文件过薄，这七个保持单层，只用文件后缀区分。为单层包建立空目录不获批准。
+  拆成子目录后子目录即独立包，跨层调用必须走导出符号；导出面只暴露该层需要被上层调用的部分，层内实现细节保持未导出。依赖方向恒为 `http → state`、`http → store`、`store → state`，反向与同层横向依赖均不允许。
 - 前端使用 Node.js 24、npm 和已提交的 `package-lock.json`。以 `npm ci` 安装，保留 `miniprogram/.npmrc` 的依赖配置。
 - Go 注释用严肃、精炼的语言说明行为、单位、约束、并发关系或错误条件。复杂事务和协议解释保留必要细节；删除口语、重复说明、操作过程和失效历史。保留 `go:embed` 等编译指令及 `Deprecated:` 标记。
 - 不提交构建产物、依赖目录、真实配置、凭证、数据库备份或临时脚本；临时文件置于 `.tmp/`。

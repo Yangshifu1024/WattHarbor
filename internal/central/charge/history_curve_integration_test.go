@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
+	identitystate "github.com/ChargePilot2026/charge-pilot/internal/central/identity/state"
+	identitystore "github.com/ChargePilot2026/charge-pilot/internal/central/identity/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -65,7 +67,7 @@ func TestHistoryCurveChecksOwnerAndForwardsOrderWindow(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	UserQueryAPI{Auth: identity.SessionAuthenticator{JWT: jwt, Sessions: identity.Sessions{Redis: cache}, Users: identity.UserStore{DB: orm}}, DB: orm, GatewayURL: gateway.URL, ServiceToken: "svc", Gateway: serviceclient.Client{}}.Register(router)
+	UserQueryAPI{Auth: identityhttp.SessionAuthenticator{JWT: jwt, Sessions: identitystate.Sessions{Redis: cache}, Users: identitystore.UserStore{DB: orm}}, DB: orm, GatewayURL: gateway.URL, ServiceToken: "svc", Gateway: serviceclient.Client{}}.Register(router)
 	path := "/api/v1/user/charge/" + orderNo + "/curve?granularity=hourly"
 	unauthorized := httptest.NewRecorder()
 	router.ServeHTTP(unauthorized, httptest.NewRequest("GET", path, nil))

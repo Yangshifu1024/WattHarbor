@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/identity"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/central/identity/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -14,7 +14,7 @@ import (
 // DevelopmentPaymentAPI 仅在 PAYMENT_MODE=simulation 时注册。
 // 通过正常支付回调事务确认当前用户的模拟结算，不接受任意金额或用户身份。
 type DevelopmentPaymentAPI struct {
-	Auth  identity.SessionAuthenticator
+	Auth  identityhttp.SessionAuthenticator
 	DB    *gorm.DB
 	Store PaymentCallbackStore
 }
