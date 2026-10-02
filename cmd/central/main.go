@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/application"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
@@ -159,7 +160,7 @@ func run(ctx context.Context) error {
 		payment.WechatCallbackAPI{Verifier: direct, Store: payment.PaymentCallbackStore{DB: userORM, ExpectedProvider: "wechat_direct", ExpectedMerchantID: cfg.WechatMchID, ExpectedAppID: cfg.WeChatAppID}}.Register(router)
 	}
 	refund.RefundAPI{Executor: refund.RefundExecutor{DB: userORM, Provider: refundProvider, ProviderName: cfg.PaymentMode}, ServiceToken: cfg.ServiceToken}.Register(router)
-	charge.AutoStopAPI{Stopper: charge.AutoStopper{UserDB: userORM, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
+	application.AutoStopAPI{Stopper: application.AutoStopper{UserDB: userORM, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
 	admin.DeviceAlertSyncAPI{Sync: admin.DeviceAlertSync{AdminDB: adminORM, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
 	charge.UserAccountAPI{
 		Auth:   identityhttp.SessionAuthenticator{Auth: cEndAuth},

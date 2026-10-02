@@ -1,4 +1,4 @@
-package charge
+package application
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/application"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -235,7 +234,7 @@ func measuredMeter(order autoStopOrder, latest meterReading, samples []protocol.
 		EndedAt:        ended,
 		ChargedSeconds: latest.seconds, EnergyMilliKWh: latest.wh,
 	}
-	meter.Segments = charging.MeasuredSegments(order.StartedAt, span, application.ReadingSamplesOf(samples))
+	meter.Segments = charging.MeasuredSegments(order.StartedAt, span, ReadingSamplesOf(samples))
 	return meter
 }
 
