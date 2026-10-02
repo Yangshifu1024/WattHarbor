@@ -126,8 +126,10 @@ charge-pilot/
 │   │   │   ├── charge_process.go                充电进程
 │   │   │   ├── telemetry.go  charging_samples.go
 │   │   │   ├── historical_curve.go  device_summary.go
-│   │   │   ├── device_faults.go  cards.go  scan.go  user_stop.go
-│   │   │   ├── worker_sync.go                   worker 同步端点
+│   │   │   ├── device_faults.go  scan.go  user_stop.go
+│   │   │   ├── worker_sync.go                   启动/结束回执同步端点
+│   │   │   ├── card_delivery.go                 刷卡事件投递与回复冻结
+│   │   │   ├── worker_sync_models.go            同步端点的记录类型
 │   │   │   ├── backfill.go  compensate.go       历史回填与迟到补偿
 │   │   │   └── session.go
 │   │   ├── store/                              gateway_db 持久化
