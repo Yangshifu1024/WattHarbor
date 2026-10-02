@@ -28,18 +28,6 @@ cd "$(dirname "$0")/../.."
 domain=(
   internal/domain
 )
-# 旧结构，待迁移：包内按文件后缀分层。
-legacy_flat=(
-  internal/central/order
-  internal/central/refund
-  internal/central/settlement
-  internal/central/wallet
-  internal/central/coupon
-  internal/central/pricing
-  internal/central/channel
-  internal/central/billing
-)
-
 # 表名清单从 schema 提取，不在脚本里硬编码，新增表时规则不会失真。
 # sed 而非 grep -oE '[a-z_]+$'：后者在 BSD grep 上锚定行为不一致，会漏表。
 tables=$(mktemp)
@@ -68,57 +56,9 @@ layer_of() {
   fi
 }
 
-# 多层包：目录即层，逐目录校验内容与依赖方向。
-for pkg in "${legacy_flat[@]}"; do
-  [[ -d $pkg ]] || continue
-  for layer in state store http; do
-    dir="$pkg/$layer"
-    [[ -d $dir ]] || continue
-    while IFS= read -r file; do
-      if [[ $layer == state ]]; then
-        grep -q 'gin\.Context' "$file" &&
-          report "$file: 领域层出现 gin.Context"
-        grep -qE 'gorm\.DB|gorm\.Expr|gorm\.DeletedAt|clause\.OnConflict|"gorm\.io/gorm"' "$file" &&
-          report "$file: 领域层出现 gorm"
-      elif [[ $layer == http ]]; then
-        grep -qE 'gorm\.DB|gorm\.Expr|clause\.OnConflict|"gorm\.io/gorm"' "$file" &&
-          report "$file: 接口层持有 gorm，数据库访问应下沉到 store"
-      fi
-      # 表名只认 SQL 构造位置（Table/FROM/JOIN/INTO/UPDATE 后面），
-      # 避免把 StopUser = "user"、ExecutorDevice = "device" 这类枚举值误判。
-      hits=$(grep -oE '(Table\(|FROM |JOIN |INTO |UPDATE )`?"?[a-z0-9_]+' "$file" |
-        grep -oE '[a-z0-9_]+$' | sort -u | grep -xF -f "$tables" | head -3)
-      if [[ -n $hits && $layer != store ]]; then
-        report "$file: 出现数据库表名（$(echo "$hits" | tr '\n' ' ')）但不在 store 层"
-      fi
-    done < <(find "$dir" -maxdepth 1 -name '*.go' ! -name '*_test.go')
-  done
-  # 依赖方向：state 不得被 store 反向依赖以外的层反向引用；
-  # store 不得 import http。
-  if [[ -d $pkg/store ]]; then
-    for file in "$pkg"/store/*.go; do
-      [[ -e $file ]] || continue
-      grep -q "central/$(basename $pkg)/http" "$file" &&
-        report "$file: store 反向依赖 http 层"
-    done
-  fi
-  if [[ -d $pkg/state ]]; then
-    for file in "$pkg"/state/*.go; do
-      [[ -e $file ]] || continue
-      grep -qE "central/$(basename $pkg)/(http|store)" "$file" &&
-        report "$file: state 依赖了上层，方向反了"
-    done
-  fi
-  # 包根目录不应再留生产 Go 文件：有子目录的包一律归位。
-  leftovers=$(find "$pkg" -maxdepth 1 -name '*.go' ! -name '*_test.go')
-  if [[ -n $leftovers ]]; then
-    while IFS= read -r file; do
-      [[ -e $file ]] && report "$file: 已分子目录的包，根目录不应残留生产文件"
-    done <<<"$leftovers"
-  fi
-done
-
-
+# 迁移期间 internal/central/* 曾按"单包内文件后缀分层"检查，那批包
+# （order/refund/settlement/wallet/coupon/pricing/channel/billing）已全部迁走，
+# 规则随之撤销。留在表里的目录已不存在，规则空转等于没有规则。
 
 # 领域层检查：零 gorm、零 gin、零 redis，且不得依赖协议层或实现层。
 # 这是"业务规则不认识框架"这条约束的落地点。
