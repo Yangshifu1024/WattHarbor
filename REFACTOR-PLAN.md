@@ -227,15 +227,32 @@ C 端登录从 central 移到 user，路径由 `/api/v1/public/auth/*` 统一为
 
 规模 20 文件，风险中。
 
-### 阶段 6：devices + operations
+### 阶段 6：devices + operations（已做）
 
-`central/admin`（15405 行 / 45 张表）与 `central/devices` 相关表
-→ `domain/devices/` + `domain/operations/` + repository + `admin_api.go`。
+`domain/devices/`、`domain/operations/` 与 admin 层不再出现的 gorm 模型
+已就位；`central/admin` 的内联 SQL 也在本轮全部下沉完毕。
 
-后台读写必须经 `application` 用例，**不得沿用现在直查 45 张表的写法**。
-后台列表查询（分页、关键词、数据范围过滤）全部要在 application 层新建。
+实际做法与原计划有一处偏离：**没有**为每个后台列表在 `application` 新建用例。
+后台接口大多是单表读取加一次联表回填，套一层用例只会平移代码而换不来
+业务不变量的表达。分界按"有没有跨聚合不变量"划：
 
-规模 40 文件，风险高，拆多个 PR。
+- 有不变量的留在处理器（角色判定、状态机、重放裁定、审计编排），
+  数据访问交给 `infrastructure/database` 的 store 方法；
+- 没有不变量的（列表、详情、单条读取）整体进 store，处理器不碰 gorm。
+
+判据是**表名只出现在 `infrastructure/database`**。原先 `internal/central/admin`
+下有 24 个文件在处理器里拼 SQL，现已归零。
+
+本轮顺带修掉的既有缺陷（都不是重构引入的）：
+
+| 缺陷 | 表现 | 原因 |
+|---|---|---|
+| 对账差异金额全是零 | 运营看到的每条差异金额都是 0 | 领域类型缺 JSON tag，存 `ChannelCents`、读 `channel_cents`，解码不报错 |
+| 站点导出多一列空值 | 每次导出恒定带一列空 `编码` | `code` 列早已删除，导出列清单没跟上 |
+| 在线卡绑定对真卡号不可用 | 任何真实卡号都被判非法 | 卡号校验用了 `ParseUint(..., 32)`，只容得下约十位 |
+| 目录树护栏无判别力 | 从未真正抓到过任何东西 | 路径解析失败时退回「按文件名在别处找」 |
+
+每条都补了回归用例或在注释里固定了前提。
 
 ### worker / gateway 重组（最后做）
 
