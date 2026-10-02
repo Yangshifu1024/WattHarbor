@@ -1,6 +1,7 @@
 package control
 
 import (
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,17 +38,12 @@ func (a TelemetryAPI) historicalCurve(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnprocessableEntity, 2018, "历史遥测已超过三年保留期", nil)
 		return
 	}
-	var bucket time.Duration
-	var table string
-	switch c.Query("granularity") {
-	case "15min":
-		bucket, table = 15*time.Minute, "telemetry_aggregate_15min"
-	case "hourly":
-		bucket, table = time.Hour, "telemetry_aggregate_hourly"
-	default:
+	granularity, ok := gatewaystore.CurveGranularityFor(c.Query("granularity"))
+	if !ok {
 		httpapi.BadRequest(c, "granularity 须为 15min 或 hourly")
 		return
 	}
+	bucket, table := granularity.Bucket, granularity.Table
 	startBucket, endBucket := from.UTC().Truncate(bucket), to.UTC().Truncate(bucket)
 	limit := a.maxPoints()
 	if int(endBucket.Sub(startBucket)/bucket)+1 > limit {
@@ -59,15 +55,8 @@ func (a TelemetryAPI) historicalCurve(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "历史遥测暂时无法读取", nil)
 		return
 	}
-	var peaks []struct {
-		Metric string `gorm:"column:metric"`
-		Peak   string `gorm:"column:peak"`
-		Avg    string `gorm:"column:average_value"`
-	}
-	if err := a.DB.WithContext(c.Request.Context()).Table(table).
-		Select("metric, CAST(MAX(max_value) AS CHAR) AS peak, CAST(SUM(avg_value * count) / NULLIF(SUM(count), 0) AS CHAR) AS average_value").
-		Where("device_id = ? AND port_no = ? AND bucket_start >= ? AND bucket_start <= ? AND metric IN ?", deviceID, portNo, startBucket, endBucket, []string{"power_w", "temperature_c"}).
-		Group("metric").Find(&peaks).Error; err != nil {
+	peaks, err := gatewaystore.MetricPeaksInRange(c.Request.Context(), a.DB, table, deviceID, uint16(portNo), startBucket, endBucket)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "历史遥测摘要暂时无法读取", nil)
 		return
 	}

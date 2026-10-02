@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"strconv"
 	"time"
 
@@ -36,16 +37,8 @@ type chargingEvidenceSample struct {
 // nextAfterID 继续取下一段。单段行数上限 chargingEvidenceMaxRows。
 func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string, port uint8, from time.Time, afterID uint64, limit int) ([]chargingEvidenceSample, uint64, bool, error) {
 	now := time.Now().UTC()
-	query := a.DB.WithContext(ctx).Table("device_event").Select("id, event_json").
-		Where("device_id=? AND event_type='heartbeat' AND received_at>=? AND received_at<=?", device, from.UTC(), now)
-	if afterID > 0 {
-		query = query.Where("id > ?", afterID)
-	}
-	var rows []struct {
-		ID        uint64 `gorm:"column:id"`
-		EventJSON []byte `gorm:"column:event_json"`
-	}
-	if err := query.Order("id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
+	rows, err := gatewaystore.ListHeartbeatsInWindow(ctx, a.DB, device, from, now, afterID, limit)
+	if err != nil {
 		return nil, 0, false, err
 	}
 	complete := len(rows) <= limit
