@@ -8,7 +8,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 	"time"
 )
@@ -38,20 +37,8 @@ func (a ResourceAPI) splitTemplates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[paystore.SplitTemplateRow]{Items: []paystore.SplitTemplateRow{}, Page: page.Page, PageSize: page.PageSize}
-	query := a.Store.AdminDB.WithContext(c.Request.Context()).Table("split_template").Where("deleted_at IS NULL")
-	if page.Status != "" {
-		query = query.Where("status = ?", page.Status)
-	}
-	if page.Keyword != "" {
-		pattern := chargehttp.AdminLikePattern(page.Keyword)
-		query = query.Where("(code LIKE ? ESCAPE '!' OR name LIKE ? ESCAPE '!')", pattern, pattern)
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	if err := query.Select("id,code,name,mode,status").Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
+	out, err := paystore.ListSplitTemplates(c.Request.Context(), a.Store.AdminDB, page)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -89,13 +76,12 @@ func (a ResourceAPI) splitTemplateParties(c *gin.Context) {
 // loadSplitTemplate 读出一份模板及其参与方，是详情、参与方列表、创建/修改回显和站点绑定回显的共同读取路径。
 // 输出时银行账号一律截断为后四位，完整账号只留在库里。
 func (a ResourceAPI) loadSplitTemplate(c *gin.Context, id uint64) (splitTemplateDetail, error) {
-	var row paystore.SplitTemplateRow
-	db := a.Store.AdminDB.WithContext(c.Request.Context())
-	if err := db.Table("split_template").Select("id,code,name,mode,status").Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
+	row, err := paystore.FindSplitTemplate(c.Request.Context(), a.Store.AdminDB, id)
+	if err != nil {
 		return splitTemplateDetail{}, err
 	}
-	parties := []paystore.SplitPartyRow{}
-	if err := db.Table("split_party").Where("split_template_id = ?", id).Order("id").Find(&parties).Error; err != nil {
+	parties, err := paystore.ListSplitParties(c.Request.Context(), a.Store.AdminDB, id)
+	if err != nil {
 		return splitTemplateDetail{}, err
 	}
 	detail := splitTemplateDetail{SplitTemplateRow: row, Parties: make([]gin.H, 0, len(parties))}
@@ -284,14 +270,8 @@ func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
 		if err := paystore.UsableTemplate(tx, input.TemplateID); err != nil {
 			return err
 		}
-		var before struct {
-			ID              uint64
-			Status          string
-			SplitTemplateID *uint64
-			UpdatedAt       time.Time
-		}
-		if err := tx.Table("station").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+		before, err := paystore.LockStationTemplateBinding(tx, id)
+		if err != nil {
 			return err
 		}
 		current := uint64(0)
@@ -307,13 +287,12 @@ func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
 		if before.Status != "disabled" {
 			return errConflict
 		}
-		devices := []string{}
-		if err := tx.Table("device_meta").Where("station_id = ? AND deleted_at IS NULL", id).Pluck("device_id", &devices).Error; err != nil {
+		devices, err := paystore.StationDeviceIDs(tx, id)
+		if err != nil {
 			return err
 		}
-		var intentHistory int64
-		if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("charge_payment_intent").
-			Where("station_id = ?", id).Count(&intentHistory).Error; err != nil {
+		intentHistory, err := paystore.CountStationPaymentIntents(c.Request.Context(), a.Store.UserDB, id)
+		if err != nil {
 			return err
 		}
 		if intentHistory > 0 {
@@ -323,16 +302,15 @@ func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
 			if before.UpdatedAt.After(time.Now().UTC().Add(-5 * time.Minute)) {
 				return errConflict
 			}
-			var chargeHistory int64
-			if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("charge_order").
-				Where("device_id IN ?", devices).Count(&chargeHistory).Error; err != nil {
+			chargeHistory, err := paystore.CountDeviceOrders(c.Request.Context(), a.Store.UserDB, devices)
+			if err != nil {
 				return err
 			}
 			if chargeHistory > 0 {
 				return errConflict
 			}
 		}
-		if err := tx.Table("station").Where("id = ?", id).Update("split_template_id", input.TemplateID).Error; err != nil {
+		if err := paystore.BindSplitTemplate(tx, id, input.TemplateID); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, profile, "bind_split_template", "station", id,
