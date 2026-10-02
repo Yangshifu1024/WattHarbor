@@ -167,6 +167,27 @@ while IFS= read -r file; do
   fi
 done < <(find internal/protocol -name '*.go' ! -name '*_test.go')
 
+# OpenAPI 契约：文档里写的后台端点必须真的注册了。
+# 端点下线后忘记改文档，会让调用方（包括人）对着不存在的接口排查；
+# 这类漂移此前已发生——文档里长期留着 16 个已下线功能的端点。
+# 只校验这一个方向：文档多写比文档少写更危险，缺文档另行补全。
+if [[ -f internal/interface/http/admin.openapi.json ]]; then
+  phantom=$(python3 - <<'PY'
+import json, re, subprocess
+doc = json.load(open('internal/interface/http/admin.openapi.json'))
+out = subprocess.run(['grep', '-rhoE', '"/api/v1/admin/[^"]*"', '--include=*.go',
+                      'internal/', 'cmd/'], capture_output=True, text=True).stdout
+registered = {re.sub(r':[A-Za-z_]+', '{id}', m) for m in re.findall(r'"(/api/v1/admin/[^"]*)"', out)}
+for path in sorted(doc.get('paths', {})):
+    if re.sub(r'\{[^}]+\}', '{id}', path) not in registered:
+        print(path)
+PY
+)
+  while IFS= read -r path; do
+    [[ -n $path ]] && report "OpenAPI 文档声明了未注册的端点：$path"
+  done <<<"$phantom"
+fi
+
 if ((violations > 0)); then
   printf '\n分层约定未满足：%d 处。修完再提交。\n' "$violations" >&2
   exit 1
