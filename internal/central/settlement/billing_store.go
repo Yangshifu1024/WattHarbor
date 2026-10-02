@@ -8,7 +8,7 @@ import (
 	"fmt"
 	cardpkg "github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/eventoutbox"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/infrastructure/database"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	paymentpkg "github.com/ChargePilot2026/charge-pilot/internal/central/payment"
 	refundpkg "github.com/ChargePilot2026/charge-pilot/internal/central/refund"
@@ -263,7 +263,7 @@ func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
 				}
 				eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("billing-refund:"+result.CalculationNo)).String()
 				payload, _ := json.Marshal(map[string]any{"event_id": eventID, "refund_no": refund.RefundNo, "charge_order_id": order.ID, "refund_cents": surplus})
-				if err := tx.Create(&eventoutbox.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: payload}).Error; err != nil {
+				if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: payload}).Error; err != nil {
 					return err
 				}
 			}
@@ -276,7 +276,7 @@ func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&eventoutbox.EventOutboxRecord{EventID: eventID, Stream: "charge_settled_stream", EnvelopeJSON: payload}).Error; err != nil {
+		if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "charge_settled_stream", EnvelopeJSON: payload}).Error; err != nil {
 			return err
 		}
 		return tx.Table("charge_billing_job").Where("charge_order_id=?", order.ID).Updates(map[string]any{"status": "done", "last_error": nil}).Error

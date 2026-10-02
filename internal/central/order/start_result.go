@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/eventoutbox"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/wallet"
 	"math"
 	"net/http"
@@ -191,7 +191,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 				if err != nil {
 					return err
 				}
-				if err := tx.Create(&eventoutbox.EventOutboxRecord{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}).Error; err != nil {
+				if err := tx.Create(&database.EventOutboxRecord{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}).Error; err != nil {
 					return err
 				}
 			}
@@ -205,7 +205,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&eventoutbox.EventOutboxRecord{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope}).Error; err != nil {
+		if err := tx.Create(&database.EventOutboxRecord{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope}).Error; err != nil {
 			return err
 		}
 		return nil

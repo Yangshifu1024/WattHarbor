@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/eventoutbox"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/infrastructure/database"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"strings"
 	"time"
@@ -272,6 +272,6 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request chann
 		if err != nil {
 			return err
 		}
-		return tx.Create(&eventoutbox.EventOutboxRecord{EventID: eventID, Stream: "refund_succeeded_stream", EnvelopeJSON: body}).Error
+		return tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "refund_succeeded_stream", EnvelopeJSON: body}).Error
 	})
 }

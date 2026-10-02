@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/eventoutbox"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/infrastructure/database"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	refundpkg "github.com/ChargePilot2026/charge-pilot/internal/central/refund"
 	"math"
@@ -207,7 +207,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&eventoutbox.EventOutboxRecord{EventID: eventID, Stream: "charge_payment_confirmed_stream", EnvelopeJSON: envelope}).Error; err != nil {
+		if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "charge_payment_confirmed_stream", EnvelopeJSON: envelope}).Error; err != nil {
 			return err
 		}
 		callbackResult = PaymentCallbackResult{ChargeOrderID: chargeOrder.ID, ChargeOrderNo: chargeNo}
@@ -236,7 +236,7 @@ func queueLatePaymentRefund(tx *gorm.DB, intent PaymentIntentRecord, order Payme
 	if err != nil {
 		return err
 	}
-	if err := tx.Create(&eventoutbox.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: envelope}).Error; err != nil {
+	if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: envelope}).Error; err != nil {
 		return err
 	}
 	return nil
@@ -352,7 +352,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	if err != nil {
 		return err
 	}
-	if err := tx.Create(&eventoutbox.EventOutboxRecord{EventID: eventID, Stream: "wallet_recharge_settled_stream", EnvelopeJSON: envelope}).Error; err != nil {
+	if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "wallet_recharge_settled_stream", EnvelopeJSON: envelope}).Error; err != nil {
 		return err
 	}
 	*result = PaymentCallbackResult{}

@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/eventoutbox"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/infrastructure/database"
 	"math"
 	"net/http"
 	"time"
@@ -125,7 +125,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if err := tx.Table("charge_billing_job").Create(map[string]any{"charge_order_id": result.ChargeOrderID}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&eventoutbox.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error
+		return tx.Create(&database.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	return replayed, err
 }
