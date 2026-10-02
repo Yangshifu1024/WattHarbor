@@ -15,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 )
 
@@ -33,14 +32,23 @@ func (a ResourceAPI) registerChargingSchemes(r *gin.Engine) {
 	r.GET("/api/v1/admin/settings/device-capabilities", a.Auth.Require("pricing.read"), a.executionCapabilities)
 }
 
+// asPricingConflict 把持久化层的版本冲突哨兵转成后台统一的业务冲突，
+// 让「别人刚改过这一版」返回 409 而不是 500。
+func asPricingConflict(err error) error {
+	if errors.Is(err, paystore.ErrPricingVersionConflict) {
+		return errConflict
+	}
+	return err
+}
+
 type schemeInput struct {
 	Scheme          charging.Scheme `json:"scheme"`
 	ExpectedVersion uint32          `json:"expected_version"`
 }
 
 func (a ResourceAPI) chargingSchemes(c *gin.Context) {
-	rows := []paystore.PricingTemplateRow{}
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("pricing_template").Where("deleted_at IS NULL").Order("id DESC").Find(&rows).Error; err != nil {
+	rows, err := (paystore.PricingStore{DB: a.Store.AdminDB}).ListPricingTemplates(c.Request.Context())
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -75,34 +83,19 @@ func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 	}
 	raw, _ := json.Marshal(in.Scheme.SpecFor(in.Scheme.Packages[0]))
 	display, _ := json.Marshal(in.Scheme.Display)
-	version := uint32(1)
+	var version uint32
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var before paystore.PricingTemplateRow
-		if id > 0 {
-			if err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
-				return err
-			}
-			if before.Version != in.ExpectedVersion {
-				return errConflict
-			}
-			version = before.Version + 1
-		}
-		row := map[string]any{"name": in.Scheme.Name, "remark": in.Scheme.Remark, "spec_json": string(raw), "display_json": string(display), "version": version}
-		if id == 0 {
-			row["status"] = "active"
-			if err := tx.Table("pricing_template").Create(row).Error; err != nil {
-				return err
-			}
-			if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
-				return err
-			}
-		} else if err := tx.Table("pricing_template").Where("id=?", id).Updates(row).Error; err != nil {
+		saved, savedVersion, before, err := (paystore.PricingStore{DB: tx}).SavePricingTemplate(tx, id, in.ExpectedVersion, paystore.PricingTemplateInput{
+			Name: in.Scheme.Name, Remark: in.Scheme.Remark, SpecJSON: string(raw), DisplayJSON: string(display),
+		})
+		if err != nil {
 			return err
 		}
+		id, version = saved, savedVersion
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.save", "pricing_template", id, before, in.Scheme, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, asPricingConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "version": version})
@@ -126,25 +119,14 @@ func (a ResourceAPI) changeChargingScheme(c *gin.Context, remove bool) {
 		return
 	}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var before paystore.PricingTemplateRow
-		if err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
-			return err
-		}
-		if in.ExpectedVersion != before.Version {
-			return errConflict
-		}
-		row := map[string]any{"version": before.Version + 1, "status": in.Status}
-		if remove {
-			row["status"] = "disabled"
-			row["deleted_at"] = gorm.Expr("UTC_TIMESTAMP(3)")
-		}
-		if err := tx.Table("pricing_template").Where("id=?", id).Updates(row).Error; err != nil {
+		before, err := (paystore.PricingStore{DB: tx}).ChangePricingTemplateStatus(tx, id, in.ExpectedVersion, in.Status, remove)
+		if err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.status", "pricing_template", id, before, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, asPricingConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
@@ -179,44 +161,38 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 	var id uint64
 	var version uint32
 	replayed := false
+	store := paystore.PricingStore{DB: a.Store.AdminDB}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		// Lock the target before checking the receipt so concurrent identical
-		// requests serialize and both return the first published result.
-		var station paystore.Station
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", in.StationID).Take(&station).Error; err != nil {
+		// 先锁目标站点再查下发凭据：并发到达的相同请求会串行化，
+		// 后到的那个才能看到先到者写下的凭据，两者都返回首次发布的结果。
+		if err := store.LockStation(tx, in.StationID); err != nil {
 			return err
 		}
-		var receipt struct {
-			ActorID     uint64
-			PayloadHash string
-			RuleID      uint64
-			Version     uint32
-		}
-		found := tx.Table("pricing_publication").Where("request_id=?", in.RequestID).Find(&receipt)
-		if found.Error != nil {
-			return found.Error
-		}
-		if found.RowsAffected > 0 {
+		receipt, found := store.FindPublication(tx, in.RequestID)
+		if found == nil {
 			if receipt.ActorID != actor.ID || receipt.PayloadHash != hash {
 				return errConflict
 			}
 			id, version, replayed = receipt.RuleID, receipt.Version, true
 			return nil
 		}
+		if !errors.Is(found, gorm.ErrRecordNotFound) {
+			return found
+		}
 		scheme := in.Scheme
 		if in.TemplateID > 0 {
-			var tmpl paystore.PricingTemplateRow
-			if err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND status='active' AND deleted_at IS NULL", in.TemplateID).Take(&tmpl).Error; err != nil {
+			tmpl, err := store.ActivePricingTemplate(tx, in.TemplateID)
+			if err != nil {
 				return err
 			}
 			if tmpl.Version != in.TemplateVersion {
 				return errConflict
 			}
-			var spec charging.Spec
-			if json.Unmarshal(tmpl.SpecJSON, &spec) != nil || spec.Scheme == nil {
-				return charging.ErrInvalidPricing
+			parsed, err := paystore.PricingTemplateScheme(tmpl)
+			if err != nil {
+				return err
 			}
-			scheme = spec.Scheme
+			scheme = &parsed
 		}
 		normalized := scheme.Normalized()
 		scheme = &normalized
@@ -226,36 +202,36 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 		if err := paystore.CheckSchemeTargets(tx, in.StationID, in.DeviceID, *scheme); err != nil {
 			return fmt.Errorf("%w: %s", errConflict, err)
 		}
-		var current struct{ Version uint32 }
-		q := paystore.RuleScope(in.StationID, in.DeviceID)(tx.Table("pricing_rule"))
-		if err := q.Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
+		current, err := store.CurrentRuleVersion(tx, in.StationID, in.DeviceID)
+		if err != nil {
 			return err
 		}
-		if current.Version != in.ExpectedVersion {
+		if current != in.ExpectedVersion {
 			return errConflict
 		}
-		version = current.Version + 1
-		if err := paystore.RuleScope(in.StationID, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
-			return err
-		}
+		version = current + 1
 		snapshot, _ := json.Marshal(scheme.SpecFor(scheme.Packages[0]))
-		row := map[string]any{"name": scheme.Name, "station_id": in.StationID, "device_id": paystore.NullableDevice(in.DeviceID), "template_id": nil, "spec_json": string(snapshot), "channel": "default", "version": version, "status": "active"}
-		if in.TemplateID > 0 {
-			row["template_id"] = in.TemplateID
-		}
-		if err := tx.Table("pricing_rule").Create(row).Error; err != nil {
+		published, err := store.PublishPricingRule(tx, in.StationID, in.DeviceID, version, paystore.PublishRuleInput{
+			Name: scheme.Name, TemplateID: in.TemplateID, SpecJSON: string(snapshot),
+		})
+		if err != nil {
 			return err
 		}
-		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
+		id = published
+		if err := store.RecordPublication(tx, paystore.PricingPublication{
+			RequestID: in.RequestID, ActorID: actor.ID, PayloadHash: hash, RuleID: id, Version: version,
+		}); err != nil {
 			return err
 		}
-		if err := tx.Table("pricing_publication").Create(map[string]any{"request_id": in.RequestID, "actor_id": actor.ID, "payload_hash": hash, "rule_id": id, "version": version}).Error; err != nil {
-			return err
-		}
-		return chargehttp.AdminResourceAudit(tx, actor, "charging_scheme.apply", "pricing_rule", id, nil, row, c.ClientIP(), httpapi.RequestID(c))
+		return chargehttp.AdminResourceAudit(tx, actor, "charging_scheme.apply", "pricing_rule", id, nil,
+			gin.H{
+				"name": scheme.Name, "station_id": in.StationID, "device_id": in.DeviceID,
+				"template_id": in.TemplateID, "spec_json": string(snapshot),
+				"channel": "default", "version": version, "status": "active",
+			}, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, asPricingConflict(err))
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "version": version, "replayed": replayed})
@@ -271,9 +247,10 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 		return
 	}
 	db := a.Store.AdminDB.WithContext(c.Request.Context())
+	store := paystore.PricingStore{DB: db}
 	if device != "" {
-		var count int64
-		if err := db.Table("device_meta").Where("station_id=? AND device_id=? AND deleted_at IS NULL", station, device).Count(&count).Error; err != nil {
+		count, err := store.CountStationDevice(c.Request.Context(), station, device)
+		if err != nil {
 			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
@@ -282,21 +259,21 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 			return
 		}
 	}
-	var current struct{ Version uint32 }
-	if err := paystore.RuleScope(station, device)(db.Table("pricing_rule")).Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
+	current, err := store.CurrentRuleVersion(db, station, device)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	rule, err := (paystore.PricingStore{DB: db}).ActiveDeviceRule(c.Request.Context(), station, device)
 	if errors.Is(err, charging.ErrRuleUnavailable) {
-		httpapi.OK(c, gin.H{"scheme": nil, "version": current.Version, "inherited": false})
+		httpapi.OK(c, gin.H{"scheme": nil, "version": current, "inherited": false})
 		return
 	}
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	httpapi.OK(c, gin.H{"scheme": rule.Spec.Scheme, "version": current.Version, "rule_id": rule.ID, "inherited": device != "" && rule.DeviceID == "", "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
+	httpapi.OK(c, gin.H{"scheme": rule.Spec.Scheme, "version": current, "rule_id": rule.ID, "inherited": device != "" && rule.DeviceID == "", "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 
 func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
@@ -318,9 +295,9 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 	if !a.requirePricingTargetScope(c, station, in.DeviceID) {
 		return
 	}
+	store := paystore.PricingStore{DB: a.Store.AdminDB}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var s paystore.Station
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", station).Take(&s).Error; err != nil {
+		if err := store.LockStation(tx, station); err != nil {
 			return err
 		}
 		rule, err := (paystore.PricingStore{DB: tx}).ActiveStationRule(c.Request.Context(), station)
@@ -330,14 +307,14 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 		if err := paystore.CheckSchemeTargets(tx, station, in.DeviceID, *rule.Spec.Scheme); err != nil {
 			return fmt.Errorf("%w: %s", errConflict, err)
 		}
-		var current struct{ Version uint32 }
-		if err := paystore.RuleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Order("version DESC,id DESC").Limit(1).Find(&current).Error; err != nil {
+		current, err := store.CurrentRuleVersion(tx, station, in.DeviceID)
+		if err != nil {
 			return err
 		}
-		if current.Version != in.ExpectedVersion {
+		if current != in.ExpectedVersion {
 			return errConflict
 		}
-		if err := paystore.RuleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
+		if err := store.InheritStationRule(tx, station, in.DeviceID); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.inherit", "station", station, nil, in, c.ClientIP(), httpapi.RequestID(c))
