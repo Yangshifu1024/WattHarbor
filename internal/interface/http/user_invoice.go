@@ -157,6 +157,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 var (
 	ErrInsufficientBalance = errors.New("可用余额不足")
 	errWalletFrozen        = errors.New("钱包已冻结")
+	errWalletIdentity      = errors.New("账号身份不可用")
 	errInvoiceDuplicate    = errors.New("订单已申请发票")
 )
 

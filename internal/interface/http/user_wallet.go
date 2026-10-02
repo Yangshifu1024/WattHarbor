@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	walletrefund "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -22,13 +23,7 @@ func (a UserAccountAPI) walletBalance(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var wallet struct {
-		BalanceCents int64  `gorm:"column:balance_cents"`
-		FrozenCents  int64  `gorm:"column:frozen_cents"`
-		Status       string `gorm:"column:status"`
-	}
-	err := a.UserDB.WithContext(c.Request.Context()).Table("wallet_account").
-		Where("user_id = ? AND deleted_at IS NULL", userID).Take(&wallet).Error
+	wallet, err := (database.WalletUserStore{DB: a.UserDB}).FindWalletBalance(c.Request.Context(), userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.OK(c, gin.H{"balance_cents": 0, "frozen_cents": 0, "available_cents": 0, "status": "active"})
 		return
@@ -54,26 +49,16 @@ func (a UserAccountAPI) walletTxns(c *gin.Context) {
 		return
 	}
 	direction := strings.TrimSpace(c.Query("direction"))
-	query := a.UserDB.WithContext(c.Request.Context()).Table("wallet_txn").Where("user_id = ?", userID)
-	if direction != "" {
-		if direction != "in" && direction != "out" {
-			httpapi.BadRequest(c, "收支方向无效")
-			return
-		}
-		query = query.Where("direction = ?", direction)
+	if direction != "" && direction != "in" && direction != "out" {
+		httpapi.BadRequest(c, "收支方向无效")
+		return
 	}
-	var total int64
-	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	out, err := (database.WalletUserStore{DB: a.UserDB}).ListWalletTxns(c.Request.Context(), userID, direction, page, pageSize)
+	if err != nil {
 		httpapi.Write(c, 503, 5003, "资金流水暂时无法读取", nil)
 		return
 	}
-	rows := []map[string]any{}
-	if err := query.Select("txn_no, direction, amount_cents, balance_after_cents, biz_type, biz_ref, note, created_at, created_month").
-		Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
-		httpapi.Write(c, 503, 5003, "资金流水暂时无法读取", nil)
-		return
-	}
-	httpapi.OK(c, gin.H{"items": rows, "total": total, "page": page, "page_size": pageSize})
+	httpapi.OK(c, gin.H{"items": out.Items, "total": out.Total, "page": page, "page_size": pageSize})
 }
 
 // Wallet requests use owner-scoped UUIDs. The payment and frozen funds are
@@ -87,28 +72,15 @@ func (a UserAccountAPI) walletRecharges(c *gin.Context) {
 	if !ok {
 		return
 	}
-	q := a.UserDB.WithContext(c.Request.Context()).Table("wallet_recharge_request r").Where("r.user_id=?", user)
-	var total int64
-	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	out, err := (database.WalletUserStore{DB: a.UserDB}).ListWalletRecharges(c.Request.Context(), user, page, size)
+	if err != nil {
 		resourceWriteFailure(c, err)
 		return
 	}
-	rows := []struct {
-		RequestID   string     `json:"request_id"`
-		AmountCents int64      `json:"amount_cents"`
-		Status      string     `json:"status"`
-		ExpiredAt   *time.Time `json:"expires_at"`
-		CreatedAt   time.Time  `json:"created_at"`
-		CanPay      bool       `json:"can_pay" gorm:"-"`
-	}{}
-	if err := q.Select("r.request_id,r.amount_cents,r.created_at,p.status,p.expired_at").Joins("JOIN payment_order p ON p.id=r.payment_order_id").Order("r.created_at DESC,r.request_id").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
-		resourceWriteFailure(c, err)
-		return
+	for i := range out.Items {
+		out.Items[i].CanPay = out.Items[i].Status == "initiated" && out.Items[i].ExpiredAt != nil && out.Items[i].ExpiredAt.After(time.Now())
 	}
-	for i := range rows {
-		rows[i].CanPay = rows[i].Status == "initiated" && rows[i].ExpiredAt != nil && rows[i].ExpiredAt.After(time.Now())
-	}
-	httpapi.OK(c, gin.H{"user_id": strconv.FormatUint(user, 10), "items": rows, "total": total, "page": page, "page_size": size})
+	httpapi.OK(c, gin.H{"user_id": strconv.FormatUint(user, 10), "items": out.Items, "total": out.Total, "page": page, "page_size": size})
 }
 func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 	user, ok := a.userID(c)
@@ -129,25 +101,22 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	var openid string
-	if err := a.UserDB.WithContext(ctx).Table("user").Where("id=? AND deleted_at IS NULL", user).Pluck("openid", &openid).Error; err != nil || openid == "" {
-		httpapi.Write(c, 409, 2009, "账号身份不可用", nil)
-		return
-	}
+	store := database.WalletUserStore{DB: a.UserDB}
+	var openID string
 	var order orderstore.PaymentOrderRecord
 	err := a.UserDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Serialize all wallet requests for one owner, including simultaneous retries.
-		var owner struct{ ID uint64 }
-		if err := tx.Table("user").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", user).Take(&owner).Error; err != nil {
+		openid, err := store.FindUserOpenID(tx, user)
+		if err != nil || openid == "" {
+			return errWalletIdentity
+		}
+		openID = openid
+		if _, err := store.LockUser(tx, user); err != nil {
 			return err
 		}
-		var wallet struct {
-			ID     uint64
-			Status string
-		}
-		err := tx.Table("wallet_account").Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id=? AND deleted_at IS NULL", user).Take(&wallet).Error
+		wallet, err := store.LockWalletAccount(tx, user)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if err = tx.Table("wallet_account").Create(map[string]any{"user_id": user, "balance_cents": 0, "frozen_cents": 0, "status": "active"}).Error; err != nil {
+			if err = store.OpenWalletAccount(tx, user); err != nil {
 				return err
 			}
 		} else if err != nil {
@@ -155,12 +124,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		} else if wallet.Status != "active" {
 			return errWalletFrozen
 		}
-		var prior struct {
-			UserID         uint64
-			AmountCents    int64
-			PaymentOrderID uint64
-		}
-		err = tx.Table("wallet_recharge_request").Where("request_id=?", in.RequestID).Take(&prior).Error
+		prior, err := store.FindRechargeRequest(tx, in.RequestID)
 		if err == nil {
 			if prior.UserID != user || prior.AmountCents != in.AmountCents {
 				return money.ErrPaymentIntentConflict
@@ -179,9 +143,9 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
-		return tx.Table("wallet_recharge_request").Create(map[string]any{"request_id": in.RequestID, "user_id": user, "amount_cents": in.AmountCents, "payment_order_id": order.ID, "request_json": mustJSON(in)}).Error
+		return store.InsertRechargeRequest(tx, database.WalletRechargeRequest{RequestID: in.RequestID, UserID: user, AmountCents: in.AmountCents, PaymentOrderID: order.ID, RequestJSON: mustJSON(in)})
 	})
-	if errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, errWalletFrozen) {
+	if errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, errWalletFrozen) || errors.Is(err, errWalletIdentity) {
 		httpapi.Write(c, 409, 2009, "请求号冲突或钱包已冻结", nil)
 		return
 	}
@@ -202,7 +166,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 				httpapi.Write(c, 503, 5003, "支付渠道未配置", nil)
 				return
 			}
-			params, err = a.Prepay.Prepay(ctx, orderstore.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openid, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
+			params, err = a.Prepay.Prepay(ctx, orderstore.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openID, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
 			if err == nil {
 				encoded, _ := json.Marshal(params)
 				stored = orderstore.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
@@ -244,22 +208,13 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
 	var response map[string]any
+	store := database.WalletUserStore{DB: a.UserDB}
 	err := a.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var wallet struct {
-			ID                        uint64
-			BalanceCents, FrozenCents int64
-			Status                    string
-		}
-		if err := tx.Table("wallet_account").Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id=? AND deleted_at IS NULL", user).Take(&wallet).Error; err != nil {
+		wallet, err := store.LockWalletAccount(tx, user)
+		if err != nil {
 			return err
 		}
-		var prior struct {
-			UserID       uint64
-			AmountCents  int64
-			Reason       *string
-			ResponseJSON string
-		}
-		err := tx.Table("wallet_refund_request").Where("request_id=?", in.RequestID).Take(&prior).Error
+		prior, err := store.FindRefundRequest(tx, in.RequestID)
 		if err == nil {
 			reason := ""
 			if prior.Reason != nil {
@@ -279,27 +234,29 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 		if wallet.BalanceCents-wallet.FrozenCents < in.AmountCents {
 			return ErrInsufficientBalance
 		}
-		if err := tx.Table("wallet_refund_request").Create(map[string]any{"request_id": in.RequestID, "user_id": user, "amount_cents": in.AmountCents, "reason": in.Reason}).Error; err != nil {
+		var reason *string
+		if in.Reason != "" {
+			value := in.Reason
+			reason = &value
+		}
+		if err := store.InsertRefundRequest(tx, in.RequestID, user, in.AmountCents, reason); err != nil {
 			return err
 		}
 		var count int64
-		if err := tx.Table("wallet_refund_request").Where("user_id=? AND created_at>=?", user, time.Now().UTC().Add(-5*time.Minute)).Count(&count).Error; err != nil {
+		if count, err = store.CountRecentRefundRequests(tx, user, time.Now().UTC().Add(-5*time.Minute)); err != nil {
 			return err
 		}
 		status := "accepted"
 		if count >= 3 {
 			status = "manual_review"
-			if err := tx.Table("risk_freeze_log").Create(map[string]any{"user_id": user, "trigger_rule": "wallet_refund_frequency", "frozen_action": "wallet"}).Error; err != nil {
+			freezeID, err := store.InsertRiskFreeze(tx, user, "wallet_refund_frequency", "wallet", "wallet refund frequency")
+			if err != nil {
 				return err
 			}
-			var id uint64
-			if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
+			if err := store.LinkFreezeToRefund(tx, in.RequestID, freezeID); err != nil {
 				return err
 			}
-			if err := tx.Table("wallet_risk_freeze_link").Create(map[string]any{"request_id": in.RequestID, "freeze_id": id}).Error; err != nil {
-				return err
-			}
-			if err := tx.Table("wallet_account").Where("id=?", wallet.ID).Updates(map[string]any{"status": "frozen", "version": gorm.Expr("version+1")}).Error; err != nil {
+			if err := store.FreezeWallet(tx, wallet.ID); err != nil {
 				return err
 			}
 		} else if err := walletrefund.ReserveRefund(tx, walletrefund.WalletRefundReservation{RequestID: in.RequestID, UserID: user, AmountCents: in.AmountCents, Reason: in.Reason}); err != nil {
@@ -307,7 +264,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 		}
 		response = map[string]any{"request_id": in.RequestID, "status": status, "refund_cents": in.AmountCents}
 		b, _ := json.Marshal(response)
-		return tx.Table("wallet_refund_request").Where("request_id=?", in.RequestID).Update("response_json", string(b)).Error
+		return store.SetRefundResponse(tx, in.RequestID, string(b))
 	})
 	switch {
 	case errors.Is(err, ErrInsufficientBalance):
@@ -332,32 +289,18 @@ func (a UserAccountAPI) walletRefunds(c *gin.Context) {
 	if !ok {
 		return
 	}
-	q := a.UserDB.WithContext(c.Request.Context()).Table("wallet_refund_request").Where("user_id=?", user)
-	var total int64
-	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	out, err := (database.WalletUserStore{DB: a.UserDB}).ListWalletRefundRequests(c.Request.Context(), user, page, size)
+	if err != nil {
 		resourceWriteFailure(c, err)
 		return
 	}
-	rows := []struct {
-		RequestID   string
-		AmountCents int64
-		Reason      *string
-		CreatedAt   time.Time
-	}{}
-	if err := q.Order("created_at DESC,request_id").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
-		resourceWriteFailure(c, err)
-		return
-	}
+	rows := out.Items
 	items := []gin.H{}
+	store := database.WalletUserStore{DB: a.UserDB}
 	for _, row := range rows {
-		parts := []struct {
-			RefundNo      string     `json:"refund_no"`
-			RefundCents   int64      `json:"refund_cents"`
-			Status        string     `json:"status"`
-			FailureReason *string    `json:"failure_reason"`
-			CompletedAt   *time.Time `json:"completed_at"`
-		}{}
-		if err := a.UserDB.WithContext(c.Request.Context()).Table("wallet_refund_part p").Select("r.refund_no,r.refund_cents,r.status,r.failure_reason,r.completed_at").Joins("JOIN refund_record r ON r.id=p.refund_record_id").Where("p.request_id=?", row.RequestID).Order("r.id").Find(&parts).Error; err != nil {
+		var parts []database.WalletRefundPartRow
+		var err error
+		if parts, err = store.ListWalletRefundParts(c.Request.Context(), a.UserDB, row.RequestID); err != nil {
 			resourceWriteFailure(c, err)
 			return
 		}
@@ -383,13 +326,13 @@ func (a UserAccountAPI) walletRefunds(c *gin.Context) {
 			Comment  string `json:"comment"`
 			ActorID  uint64 `json:"actor_id"`
 		}
-		reviewErr := a.UserDB.WithContext(c.Request.Context()).Table("wallet_risk_review").Where("request_id=?", row.RequestID).Take(&review).Error
+		_, reviewErr := store.RiskReviewForRefund(c.Request.Context(), a.UserDB, row.RequestID)
 		if reviewErr != nil && !errors.Is(reviewErr, gorm.ErrRecordNotFound) {
 			resourceWriteFailure(c, reviewErr)
 			return
 		}
 		var linked int64
-		if err := a.UserDB.WithContext(c.Request.Context()).Table("wallet_risk_freeze_link").Where("request_id=?", row.RequestID).Count(&linked).Error; err != nil {
+		if linked, err = store.CountRefundFreezeLinks(c.Request.Context(), a.UserDB, row.RequestID); err != nil {
 			resourceWriteFailure(c, err)
 			return
 		}
@@ -404,7 +347,7 @@ func (a UserAccountAPI) walletRefunds(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
-	httpapi.OK(c, gin.H{"user_id": strconv.FormatUint(user, 10), "items": items, "total": total, "page": page, "page_size": size})
+	httpapi.OK(c, gin.H{"user_id": strconv.FormatUint(user, 10), "items": items, "total": out.Total, "page": page, "page_size": size})
 }
 
 // ---- 优惠券 ----
