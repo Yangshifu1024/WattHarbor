@@ -394,21 +394,20 @@ node scripts/dev/prepare.mjs
 ```powershell
 ./scripts/git/install-hooks.ps1
 make check
-./scripts/test/integration.ps1
 ```
 
 ```bash
 sh scripts/git/install-hooks.sh
 make check
-bash scripts/test/integration.sh
-bash scripts/test/integration.sh -race
 ```
 
 `make fmt/lint/test/layers` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`、`scripts/check/layers.sh`，`make check` 顺序执行四项；`layers` 校验包内分层的文件后缀约定，详见「架构与目录」。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
 
 编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部六个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
 
-普通测试未配置数据库时会跳过集成测试。隔离脚本创建临时 MySQL/Redis、初始化三库、运行全量 Go 测试并清理容器；PowerShell 版本需要已有 `chargepilot-dev_default` 网络，Bash 版本使用随机 loopback 端口。事务、资金、唯一性和消息状态变更须运行隔离测试；并发变更按需启用 race。
+本仓库只保留单元测试，不设需要真实数据库的集成测试。`make check` 全部为秒级本地检查，可在每次改动后运行。
+
+代价须明示：事务原子性、行锁并发、唯一键冲突、幂等重放这些依赖真实数据库的行为**没有自动化覆盖**，只能靠联调与人工核对。改动资金、并发或唯一性路径时，除了 `make check`，还须在开发栈上实际走一遍对应流程；涉及并发时可用 `make test` 之外的 `go test -race ./...` 补充竞态检测（该检查不需要数据库）。
 
 | 目录 | 安装与开发 | 检查与构建 |
 | --- | --- | --- |
@@ -417,7 +416,7 @@ bash scripts/test/integration.sh -race
 
 用户端 `.npmrc` 已设置依赖兼容选项。后台 build 包含 TypeScript 检查，lint 只做 TypeScript 检查。产物为 `admin-web/dist`、`miniprogram/dist/h5` 和 `miniprogram/dist/weapp`，不提交。微信开发工具导入 `dist/weapp` 并配置真实 AppID；构建本身不需要 AppID。H5 使用 hash 路由。
 
-CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、四个服务命令构建及后台构建；没有运行隔离集成测试、后台测试和用户端检查。验证结论须注明实际覆盖范围。
+CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、四个服务命令构建及后台构建；不检查用户端。验证结论须注明实际覆盖范围。
 
 ## 配置
 
