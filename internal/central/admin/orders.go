@@ -67,8 +67,8 @@ func (a ResourceAPI) order(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	var row orderstore.OrderView
-	if err := orderstore.OrderBaseQuery(ctx, a.Store.UserDB).Select(orderstore.OrderColumns).Where("c.id = ?", id).Take(&row).Error; err != nil {
+	row, err := orderstore.FindOrderView(ctx, a.Store.UserDB, id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -87,27 +87,19 @@ func (a ResourceAPI) order(c *gin.Context) {
 	}
 	row.SelectedPackage = selectedPackage
 	row.SelectedSchemeName, row.SelectedPackageName = charging.SelectedSchemeName(selectedPackage), charging.SelectedPackageName(selectedPackage)
-	// 匿名结构只为承载这一张事件表的五个可读列，避免为一个查询单独定义类型。
-	billing := orderstore.OrderBilling{Settlements: []orderstore.SettlementView{}}
-	// calculation_no 可空：计费完成前还没有计费单。
-	var fee struct{ CalculationNo *string }
-	if err := a.Store.BillingDB.WithContext(ctx).Table("fee_receipt").Select("calculation_no").Where("charge_order_id = ?", id).Limit(1).Scan(&fee).Error; err != nil {
+	view := orderstore.OrderDetailStore{UserDB: a.Store.UserDB, BillingDB: a.Store.BillingDB}
+	// 计费单号可空：计费完成前还没有计费单。
+	calculationNo, err := view.FirstCalculationNo(ctx, id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	billing.CalculationNo = fee.CalculationNo
-	if err := a.Store.BillingDB.WithContext(ctx).Table("settlement").Where("order_no = ?", row.OrderNo).Order("id").Find(&billing.Settlements).Error; err != nil {
+	settlements, err := view.SettlementsOfOrder(ctx, row.OrderNo)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	for i := range billing.Settlements {
-		billing.Settlements[i].Parties = []orderstore.PartyView{}
-		if err := a.Store.BillingDB.WithContext(ctx).Table("settlement_party_amount").Where("settlement_id = ?", billing.Settlements[i].SettlementID).Order("id").Find(&billing.Settlements[i].Parties).Error; err != nil {
-			chargehttp.AdminResourceFailure(c, err)
-			return
-		}
-	}
-	row.Billing = &billing
+	row.Billing = &orderstore.OrderBilling{CalculationNo: calculationNo, Settlements: settlements}
 	for _, p := range c.MustGet("admin_profile").(operations.Profile).Permissions {
 		if p == "order.refund.create" {
 			actor := strconv.FormatUint(c.MustGet("admin_profile").(operations.Profile).ID, 10)
@@ -126,13 +118,12 @@ func (a ResourceAPI) timeline(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	var order struct{ ID uint64 }
-	if err := a.Store.UserDB.WithContext(ctx).Table("charge_order").Select("id").Where("id = ? AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
+	if err := orderstore.OrderExists(ctx, a.Store.UserDB, id); err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	rows := []orderstore.OrderTimelineRow{}
-	if err := a.Store.UserDB.WithContext(ctx).Table("charge_event_log").Where("charge_order_id = ?", id).Order("occurred_at,id").Find(&rows).Error; err != nil {
+	rows, err := orderstore.ListOrderEvents(ctx, a.Store.UserDB, id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}

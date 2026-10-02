@@ -8813,7 +8813,8 @@
           },
           "reason": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 500,
+            "description": "人工核验依据，1–500 字"
           }
         }
       },

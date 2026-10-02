@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"net/url"
 	"time"
 )
@@ -32,17 +32,6 @@ type deviceFaultReport struct {
 	EventKey   string    `json:"event_key"`
 	ReceivedAt time.Time `json:"received_at"`
 	Payload    string    `json:"payload"`
-}
-
-type deviceAlert struct {
-	ID           uint64
-	DeviceID     string
-	Metric       string
-	EventID      string
-	Status       string
-	CreatedAt    time.Time
-	CreatedMonth time.Time
-	ResolvedAt   *time.Time
 }
 
 // Run 拉取一批未处理故障，逐条幂等写入告警后批量推进处理标记，
@@ -118,29 +107,26 @@ func (s DeviceAlertSync) recordFault(ctx context.Context, key string, event prot
 	metric, severity, note := dc589.FaultMetric(event)
 	raised := false
 	err := s.AdminDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing deviceAlert
-		found := tx.Table("alert_event").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("device_id = ? AND metric = ? AND rule_id IS NULL", event.DeviceID, metric).
-			Order("created_at DESC, id DESC").Take(&existing)
-		if found.Error != nil && !errors.Is(found.Error, gorm.ErrRecordNotFound) {
-			return found.Error
+		store := database.AlertSyncStore{DB: s.AdminDB}
+		existing, found, err := store.LockLatestDeviceAlert(tx, event.DeviceID, metric)
+		if err != nil {
+			return err
 		}
-		if found.RowsAffected > 0 {
+		if found {
 			if existing.EventID == key || event.ReceivedAt.Before(existing.CreatedAt) || existing.ResolvedAt != nil && !event.ReceivedAt.After(*existing.ResolvedAt) {
 				return nil
 			}
 			if existing.Status == "active" || existing.Status == "acknowledged" {
 				// 保存最近一次报告作为恢复判定的起点；持续故障只保留一条告警。
-				return tx.Table("alert_event").Where("id = ? AND created_month = ?", existing.ID, existing.CreatedMonth).
-					Updates(map[string]any{"event_id": key, "value": event.FaultCode}).Error
+				return store.MarkAlertOccurrence(tx, existing, key, int(event.FaultCode))
 			}
 		}
 		at := event.ReceivedAt.UTC()
 		month := time.Date(at.Year(), at.Month(), 1, 0, 0, 0, 0, time.UTC)
-		if err := tx.Table("alert_event").Create(map[string]any{
+		if err := store.InsertAlert(tx, map[string]any{
 			"device_id": event.DeviceID, "metric": metric, "severity": severity, "value": event.FaultCode,
 			"status": "active", "note": note, "event_id": key, "created_at": at, "created_month": month,
-		}).Error; err != nil {
+		}); err != nil {
 			return err
 		}
 		raised = true
@@ -153,10 +139,8 @@ func (s DeviceAlertSync) recordFault(ctx context.Context, key string, event prot
 // 依 dc589 恢复语义把已消除的告警标记为 auto_resolved。
 // 没有更新心跳即无恢复证据，保持原状态。
 func (s DeviceAlertSync) resolveRecovered(ctx context.Context) error {
-	var active []deviceAlert
-	if err := s.AdminDB.WithContext(ctx).Table("alert_event").
-		Where("rule_id IS NULL AND status IN ('active','acknowledged') AND (metric IN ('smoke','high_temperature','device_fault') OR metric LIKE 'port_fault_%')").
-		Find(&active).Error; err != nil {
+	active, err := (database.AlertSyncStore{DB: s.AdminDB}).ListRecoverableAlerts(ctx)
+	if err != nil {
 		return err
 	}
 	for _, alert := range active {
@@ -183,9 +167,7 @@ func (s DeviceAlertSync) resolveRecovered(ctx context.Context) error {
 		if !dc589.FaultRecovered(alert.Metric, event) {
 			continue
 		}
-		if err := s.AdminDB.WithContext(ctx).Table("alert_event").
-			Where("id = ? AND created_month = ? AND event_id = ? AND status IN ('active','acknowledged')", alert.ID, alert.CreatedMonth, alert.EventID).
-			Updates(map[string]any{"status": "auto_resolved", "resolved_at": heartbeat.Data.ReceivedAt}).Error; err != nil {
+		if err := (database.AlertSyncStore{DB: s.AdminDB}).AutoResolveAlert(s.AdminDB.WithContext(ctx), alert, heartbeat.Data.ReceivedAt); err != nil {
 			return err
 		}
 	}

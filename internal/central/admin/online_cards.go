@@ -9,7 +9,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 )
 
@@ -42,35 +41,35 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 		return
 	}
 	var id uint64
+	store := cardstore.CardAdminStore{DB: a.Store.UserDB}
+	actor := c.MustGet("admin_profile").(operations.Profile).ID
 	err := a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var user struct{ Status string }
-		if err := tx.Table("user").Where("id=? AND status='active' AND deleted_at IS NULL", userID).Take(&user).Error; err != nil {
+		if err := store.FindActiveUser(tx, userID); err != nil {
 			return err
 		}
-		var card cardstore.OnlineCard
-		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("card_no=?", in.CardNo).Find(&card)
-		if found.Error != nil {
-			return found.Error
+		card, err := store.LockCardByNo(tx, in.CardNo)
+		if err != nil {
+			return err
 		}
-		if found.RowsAffected > 0 {
+		if card.ID == 0 {
+			// 卡号不存在则新建。并发绑定同一张卡时两个请求被行锁串行化，
+			// 后到的那个会取到已建的卡，不会重复插入。
+			if id, err = store.CreateOnlineCard(tx, in.CardNo, userID); err != nil {
+				return err
+			}
+		} else {
 			id = card.ID
 			if card.Status != "unbound" {
 				if card.UserID == userID && card.Status == "active" {
 					return nil
 				}
-				return fmt.Errorf("%w: 卡已绑定，须先由原用户解绑", errConflict)
+				return fmt.Errorf("%w: %s", errConflict, cardstore.ErrCardAlreadyBound)
 			}
-			if err := tx.Model(&card).Where("id=?", id).Updates(map[string]any{"user_id": userID, "status": "active"}).Error; err != nil {
+			if err := store.BindOnlineCard(tx, id, userID); err != nil {
 				return err
 			}
-		} else {
-			card = cardstore.OnlineCard{CardNo: in.CardNo, UserID: userID, Status: "active"}
-			if err := tx.Create(&card).Error; err != nil {
-				return err
-			}
-			id = card.ID
 		}
-		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(operations.Profile).ID, "action": "bind", "detail": in.Reason}).Error
+		return store.AppendOnlineCardAudit(tx, cardstore.OnlineCardAuditInput{CardID: id, ActorID: actor, Action: "bind", Detail: in.Reason})
 	})
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
@@ -94,18 +93,20 @@ func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
 		httpapi.BadRequest(c, "卡状态与依据无效")
 		return
 	}
+	store := cardstore.CardAdminStore{DB: a.Store.UserDB}
+	actor := c.MustGet("admin_profile").(operations.Profile).ID
 	err := a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var card cardstore.OnlineCard
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&card).Error; err != nil {
+		card, err := store.LockCardByID(tx, id)
+		if err != nil {
 			return err
 		}
 		if card.Status == "unbound" && in.Status != "unbound" {
 			return errConflict
 		}
-		if err := tx.Model(&card).Update("status", in.Status).Error; err != nil {
+		if err := store.SetOnlineCardStatus(tx, card, in.Status); err != nil {
 			return err
 		}
-		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(operations.Profile).ID, "action": in.Status, "detail": in.Reason}).Error
+		return store.AppendOnlineCardAudit(tx, cardstore.OnlineCardAuditInput{CardID: id, ActorID: actor, Action: in.Status, Detail: in.Reason})
 	})
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
