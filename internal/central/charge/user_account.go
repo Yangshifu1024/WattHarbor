@@ -170,8 +170,13 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		RequestID   string `json:"request_id"`
 		AmountCents int64  `json:"amount_cents"`
 	}
-	if c.ShouldBindJSON(&in) != nil || uuid.Validate(in.RequestID) != nil || in.AmountCents < 100 || in.AmountCents > 5000000 {
-		httpapi.BadRequest(c, "充值金额须在 1 元至 50000 元之间，并提供有效请求号")
+	if c.ShouldBindJSON(&in) != nil {
+		httpapi.BadRequest(c, "请求体无效")
+		return
+	}
+	// 逐项列出违规字段，前端可据此定位到具体输入框而不是只得到一句笼统提示。
+	if errs := rechargeFieldErrors(in.RequestID, in.AmountCents); len(errs) > 0 {
+		httpapi.BadRequest(c, "充值参数不合法", errs...)
 		return
 	}
 	ctx := c.Request.Context()
@@ -280,8 +285,12 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 		AmountCents int64  `json:"amount_cents"`
 		Reason      string `json:"reason"`
 	}
-	if c.ShouldBindJSON(&in) != nil || uuid.Validate(in.RequestID) != nil || in.AmountCents <= 0 || in.AmountCents > 5000000 || len([]rune(in.Reason)) > 255 {
-		httpapi.BadRequest(c, "退款金额、原因或请求号无效")
+	if c.ShouldBindJSON(&in) != nil {
+		httpapi.BadRequest(c, "请求体无效")
+		return
+	}
+	if errs := walletRefundFieldErrors(in.RequestID, in.AmountCents, in.Reason); len(errs) > 0 {
+		httpapi.BadRequest(c, "退款参数不合法", errs...)
 		return
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
@@ -1077,24 +1086,7 @@ func readPaging(c *gin.Context) (int, int, bool) {
 // readPagingDefault 在未显式传入 page_size 时使用 fallback 作为每页条数，
 // 供同一接口在不同查询模式下需要不同默认值的场景使用。
 func readPagingDefault(c *gin.Context, fallback int) (int, int, bool) {
-	page, size := 1, fallback
-	if raw := c.Query("page"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 100000 {
-			httpapi.BadRequest(c, "分页参数无效")
-			return 0, 0, false
-		}
-		page = parsed
-	}
-	if raw := c.Query("page_size"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 100 {
-			httpapi.BadRequest(c, "分页参数无效：page_size 为 1–100")
-			return 0, 0, false
-		}
-		size = parsed
-	}
-	return page, size, true
+	return httpapi.ReadPaging(c, fallback, httpapi.DefaultPageLimit)
 }
 
 // readCoordinates 解析可选经纬度。两个参数都缺省时 present 为 false，调用方据此走
@@ -1137,4 +1129,32 @@ func resourceWriteFailure(c *gin.Context, err error) {
 		return
 	}
 	httpapi.Write(c, 503, 5003, "数据暂时无法保存，请稍后重试", nil)
+}
+
+// rechargeFieldErrors 列出充值请求中不合法的字段。
+// 返回空切片表示全部合法；各条规则的取值范围与提示文案在此集中定义。
+func rechargeFieldErrors(requestID string, amountCents int64) []httpapi.FieldErr {
+	var errs []httpapi.FieldErr
+	if uuid.Validate(requestID) != nil {
+		errs = append(errs, httpapi.FieldErr{Field: "request_id", Rule: "uuid"})
+	}
+	if amountCents < 100 || amountCents > 5000000 {
+		errs = append(errs, httpapi.FieldErr{Field: "amount_cents", Rule: "100..5000000"})
+	}
+	return errs
+}
+
+// walletRefundFieldErrors 列出钱包退款请求中不合法的字段。
+func walletRefundFieldErrors(requestID string, amountCents int64, reason string) []httpapi.FieldErr {
+	var errs []httpapi.FieldErr
+	if uuid.Validate(requestID) != nil {
+		errs = append(errs, httpapi.FieldErr{Field: "request_id", Rule: "uuid"})
+	}
+	if amountCents <= 0 || amountCents > 5000000 {
+		errs = append(errs, httpapi.FieldErr{Field: "amount_cents", Rule: "1..5000000"})
+	}
+	if len([]rune(reason)) > 255 {
+		errs = append(errs, httpapi.FieldErr{Field: "reason", Rule: "max_255_runes"})
+	}
+	return errs
 }

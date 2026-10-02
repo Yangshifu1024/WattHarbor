@@ -88,17 +88,13 @@ type Page[T any] struct {
 // 关键词不超过 128 字符，状态必须在该接口传入的白名单内（留空表示不按状态过滤）。
 // 任一项不合法直接写 400 并返回 false，调用方必须立即 return。
 func parsePage(c *gin.Context, statuses string) (PageQuery, bool) {
-	q := PageQuery{Page: 1, PageSize: 20, Keyword: strings.TrimSpace(c.Query("keyword")), Status: c.Query("status")}
-	for name, target := range map[string]*int{"page": &q.Page, "page_size": &q.PageSize} {
-		if raw, exists := c.GetQuery(name); exists {
-			n, err := strconv.Atoi(raw)
-			if err != nil || n < 1 || (name == "page_size" && n > 100) || (name == "page" && n > 1000000) {
-				httpapi.BadRequest(c, "分页参数无效：page ≥ 1，page_size 为 1–100")
-				return q, false
-			}
-			*target = n
-		}
+	// 分页参数走统一解析：后台的 page 上限比 C 端高一个数量级，
+	// 导出与对账需要翻到很深的页，这是有意保留的差异。
+	page, pageSize, paged := httpapi.ReadPaging(c, 20, httpapi.MaxAdminPageLimit)
+	if !paged {
+		return PageQuery{}, false
 	}
+	q := PageQuery{Page: page, PageSize: pageSize, Keyword: strings.TrimSpace(c.Query("keyword")), Status: c.Query("status")}
 	if utf8.RuneCountInString(q.Keyword) > 128 || !oneOf(q.Status, statuses) {
 		httpapi.BadRequest(c, "关键词过长或状态无效")
 		return q, false

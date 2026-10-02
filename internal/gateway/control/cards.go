@@ -1,11 +1,10 @@
 package control
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"net/http"
@@ -18,9 +17,8 @@ type CardReplyAPI struct {
 
 func (a CardReplyAPI) Register(r *gin.Engine) { r.POST("/api/v1/internal/cards/reply", a.reply) }
 func (a CardReplyAPI) reply(c *gin.Context) {
-	p, e := sha256.Sum256([]byte(c.GetHeader("X-Service-Token"))), sha256.Sum256([]byte(a.ServiceToken))
-	if a.ServiceToken == "" || subtle.ConstantTimeCompare(p[:], e[:]) != 1 {
-		httpapi.Write(c, 401, 1001, "service token invalid", nil)
+	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
+		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
 	var in struct {

@@ -2,15 +2,15 @@ package billing
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -101,9 +101,8 @@ func (s Service) Run(ctx context.Context) (int, error) {
 }
 func (s Service) Register(r *gin.Engine) {
 	r.POST("/api/v1/internal/billing/dispatch", func(c *gin.Context) {
-		got, want := sha256.Sum256([]byte(c.GetHeader("X-Service-Token"))), sha256.Sum256([]byte(s.ServiceToken))
-		if s.ServiceToken == "" || subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
-			httpapi.Write(c, 401, 1001, "service token invalid", nil)
+		if !serviceclient.VerifyServiceToken(s.ServiceToken, c.GetHeader("X-Service-Token")) {
+			httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 			return
 		}
 		n, err := s.Run(c.Request.Context())

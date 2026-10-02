@@ -2,10 +2,10 @@ package refund
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	"net/http"
 	"time"
 )
 
@@ -16,10 +16,8 @@ type RefundAPI struct {
 
 func (a RefundAPI) Register(r *gin.Engine) {
 	r.POST("/api/v1/internal/refunds/dispatch", func(c *gin.Context) {
-		given := sha256.Sum256([]byte(c.GetHeader("X-Service-Token")))
-		wanted := sha256.Sum256([]byte(a.ServiceToken))
-		if a.ServiceToken == "" || subtle.ConstantTimeCompare(given[:], wanted[:]) != 1 {
-			httpapi.Write(c, 401, 1001, "service token invalid", nil)
+		if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
+			httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 			return
 		}
 		if a.Executor.Provider == nil {

@@ -1,8 +1,6 @@
 package provision
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -37,10 +36,8 @@ func (a API) Register(r *gin.Engine) {
 var errConflict = errors.New("device provisioning conflict")
 
 func (a API) provision(c *gin.Context) {
-	provided := sha256.Sum256([]byte(c.GetHeader("X-Service-Token")))
-	expected := sha256.Sum256([]byte(a.ServiceToken))
-	if a.ServiceToken == "" || subtle.ConstantTimeCompare(provided[:], expected[:]) != 1 {
-		httpapi.Write(c, 401, 1001, "service token invalid", nil)
+	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
+		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
 	var in struct {

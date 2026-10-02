@@ -2,8 +2,6 @@ package control
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"errors"
 	"gorm.io/gorm"
 	"net/http"
@@ -11,6 +9,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 
@@ -84,10 +83,8 @@ func (a UserStopAPI) Register(router *gin.Engine) {
 }
 
 func (a UserStopAPI) handle(c *gin.Context) {
-	provided := sha256.Sum256([]byte(c.GetHeader("X-Service-Token")))
-	expected := sha256.Sum256([]byte(a.ServiceToken))
-	if a.ServiceToken == "" || subtle.ConstantTimeCompare(provided[:], expected[:]) != 1 {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "service token invalid", nil)
+	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
+		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
 	var request struct {

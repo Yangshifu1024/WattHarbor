@@ -260,7 +260,7 @@ func (a BillHTTP) list(c *gin.Context) {
 		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
-	page, pageSize, ok := httpapi.ReadPaging(c, 20)
+	page, pageSize, ok := httpapi.ReadPaging(c, 20, httpapi.DefaultPageLimit)
 	if !ok {
 		return
 	}

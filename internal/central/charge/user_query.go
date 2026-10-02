@@ -371,18 +371,9 @@ func (a UserQueryAPI) history(c *gin.Context) {
 		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
-	page, pageSize := 1, 20
-	if raw := c.Query("page"); raw != "" {
-		if _, err := fmt.Sscan(raw, &page); err != nil || page < 1 || page > 100000 {
-			httpapi.BadRequest(c, "分页参数无效")
-			return
-		}
-	}
-	if raw := c.Query("page_size"); raw != "" {
-		if _, err := fmt.Sscan(raw, &pageSize); err != nil || pageSize < 1 || pageSize > 100 {
-			httpapi.BadRequest(c, "分页参数无效：page_size 为 1–100")
-			return
-		}
+	page, pageSize, paged := httpapi.ReadPaging(c, 20, httpapi.DefaultPageLimit)
+	if !paged {
+		return
 	}
 	status := strings.TrimSpace(c.Query("status"))
 	base := a.DB.WithContext(c.Request.Context()).Table("charge_order").Where("user_id = ? AND deleted_at IS NULL", userID)

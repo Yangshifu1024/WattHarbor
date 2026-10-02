@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -507,7 +508,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 		}
 	}
 	if row.Status == "expired" {
-		httpapi.Write(c, 410, 1005, "导出文件已过期，请重新导出", nil)
+		httpapi.Write(c, http.StatusGone, httpapi.CodeResourceExpired, "导出文件已过期，请重新导出", nil)
 		return
 	}
 	if row.Status != "completed" || row.FilePath == nil {
@@ -520,7 +521,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 			_ = t.Store.AdminDB.WithContext(c.Request.Context()).Model(&exportRow{}).
 				Where("task_no = ?", row.TaskNo).Update("status", "expired").Error
 			_ = os.Remove(*row.FilePath)
-			httpapi.Write(c, 410, 1005, "导出文件已过期，请重新导出", nil)
+			httpapi.Write(c, http.StatusGone, httpapi.CodeResourceExpired, "导出文件已过期，请重新导出", nil)
 			return
 		}
 	}

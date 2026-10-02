@@ -89,13 +89,29 @@ func randomID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// ReadPaging 解析 page / page_size 查询参数，默认每页 fallback 条（上限 100）。
+// DefaultPageLimit 是 page 参数的默认上限。C 端列表用它，后台列表用
+// MaxAdminPageLimit——两者差一个数量级是历史遗留，保留差异而不是强行统一：
+// 后台导出与对账确实要翻到很深的页。
+const (
+	DefaultPageLimit  = 100000
+	MaxAdminPageLimit = 1000000
+)
+
+// MaxPageSize 是 page_size 的统一上限。四个接口族曾各写一份解析，
+// 边界不一致会导致同一页大小在不同接口行为不同。
+const MaxPageSize = 100
+
+// ReadPaging 解析 page / page_size 查询参数，默认每页 fallback 条。
 // 参数无效时写 400 响应并返回 ok=false，调用方应直接返回。
-func ReadPaging(c *gin.Context, fallback int) (page, size int, ok bool) {
+// maxPage 指定 page 的上限，传 0 时用 DefaultPageLimit。
+func ReadPaging(c *gin.Context, fallback, maxPage int) (page, size int, ok bool) {
+	if maxPage <= 0 {
+		maxPage = DefaultPageLimit
+	}
 	page, size = 1, fallback
 	if raw := c.Query("page"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 100000 {
+		if err != nil || parsed < 1 || parsed > maxPage {
 			BadRequest(c, "分页参数无效")
 			return 0, 0, false
 		}
@@ -103,7 +119,7 @@ func ReadPaging(c *gin.Context, fallback int) (page, size int, ok bool) {
 	}
 	if raw := c.Query("page_size"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
-		if err != nil || parsed < 1 || parsed > 100 {
+		if err != nil || parsed < 1 || parsed > MaxPageSize {
 			BadRequest(c, "分页参数无效：page_size 为 1–100")
 			return 0, 0, false
 		}

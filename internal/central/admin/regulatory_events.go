@@ -3,8 +3,6 @@ package admin
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/delivery"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
@@ -74,9 +73,7 @@ func (a RegulatoryEventsAPI) Register(router *gin.Engine) {
 
 func (a RegulatoryEventsAPI) authorized() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		provided := sha256.Sum256([]byte(c.GetHeader("X-Service-Token")))
-		expected := sha256.Sum256([]byte(a.ServiceToken))
-		if a.ServiceToken == "" || subtle.ConstantTimeCompare(provided[:], expected[:]) != 1 {
+		if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 			httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 			c.Abort()
 			return

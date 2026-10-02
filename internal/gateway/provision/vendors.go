@@ -1,8 +1,6 @@
 package provision
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
@@ -61,10 +60,8 @@ func (a API) registerVendors(r *gin.Engine) {
 }
 
 func (a API) vendorAuthorized(c *gin.Context) bool {
-	provided := sha256.Sum256([]byte(c.GetHeader("X-Service-Token")))
-	expected := sha256.Sum256([]byte(a.ServiceToken))
-	if a.ServiceToken == "" || subtle.ConstantTimeCompare(provided[:], expected[:]) != 1 {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "service token invalid", nil)
+	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
+		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return false
 	}
 	return true
@@ -151,13 +148,18 @@ type vendorListQuery struct {
 }
 
 func parseVendorList(c *gin.Context) (vendorListQuery, error) {
+	// 分页边界与 httpapi.ReadPaging 共用常量；本接口返回 error 而非写响应，
+	// 故不直接调 ReadPaging，只取同样的上下限。
 	q := vendorListQuery{Page: 1, PageSize: 20, Keyword: strings.TrimSpace(c.Query("keyword")), Status: c.Query("status")}
 	for name, target := range map[string]*int{"page": &q.Page, "page_size": &q.PageSize} {
 		if c.Request.URL.Query().Has(name) {
-			raw := c.Query(name)
-			n, err := strconv.Atoi(raw)
-			if err != nil || n < 1 || (name == "page" && n > 1000000) || (name == "page_size" && n > 100) {
-				return q, errors.New("分页参数无效：page 为 1–1000000，page_size 为 1–100")
+			n, err := strconv.Atoi(c.Query(name))
+			limit := httpapi.MaxAdminPageLimit
+			if name == "page_size" {
+				limit = httpapi.MaxPageSize
+			}
+			if err != nil || n < 1 || n > limit {
+				return q, errors.New("分页参数无效：page ≥ 1，page_size 为 1–100")
 			}
 			*target = n
 		}
