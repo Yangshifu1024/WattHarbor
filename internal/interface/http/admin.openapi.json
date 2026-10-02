@@ -4899,6 +4899,481 @@
           }
         }
       }
+    },
+    "/api/v1/admin/billing/meter-reviews": {
+      "get": {
+        "summary": "分页查询计量核实兜底单",
+        "operationId": "meter_reviews_list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterReviewPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/meter-reviews/{id}/propose": {
+      "post": {
+        "summary": "提交人工计量核实申请",
+        "operationId": "meter_reviews_propose",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "billing.meter.review",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "charge_order_id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeterReviewProposeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/meter-reviews/{id}/decide": {
+      "post": {
+        "summary": "裁决计量核实申请（须与首次复核人不同）",
+        "operationId": "meter_reviews_decide",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "billing.meter.review",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "charge_order_id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeterReviewDecideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/meter-reviews/{id}/resolve-amount": {
+      "post": {
+        "summary": "确定兜底单最终收费依据并结算",
+        "operationId": "meter_reviews_resolve_amount",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "billing.meter.review",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "charge_order_id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeterReviewResolveAmountRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/reconciles": {
+      "get": {
+        "summary": "分页查询对账记录",
+        "operationId": "reconciles_list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "按对账类型过滤",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcilePageResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "触发一次对账",
+        "operationId": "reconciles_run",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResultResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/reconciles/{id}/resolve": {
+      "post": {
+        "summary": "标记对账记录是否已处理",
+        "operationId": "reconciles_resolve",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "对账记录主键"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileResolveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResolveResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/withdraws": {
+      "get": {
+        "summary": "分页查询提现单",
+        "operationId": "withdraws_list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawPageResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "发起提现申请",
+        "operationId": "withdraws_create",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.withdraw.create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/withdraws/{withdraw_no}/decide": {
+      "post": {
+        "summary": "审核提现申请",
+        "operationId": "withdraws_decide",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.withdraw.review",
+        "parameters": [
+          {
+            "name": "withdraw_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawDecideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/billing/withdraws/{withdraw_no}/pay": {
+      "post": {
+        "summary": "确认提现已打款",
+        "operationId": "withdraws_pay",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "finance.withdraw.review",
+        "parameters": [
+          {
+            "name": "withdraw_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawPayRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResult"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7166,6 +7641,500 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/AuditLog"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "MeterReview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "charge_order_id": {
+            "type": "integer"
+          },
+          "original": {
+            "type": "object",
+            "description": "设备上报的原始计量数据"
+          },
+          "corrected": {
+            "type": "object",
+            "description": "人工修正后的计量分段"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "first_reviewer_id": {
+            "type": "integer",
+            "description": "首次复核人；0 表示尚未复核"
+          },
+          "second_reviewer_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "第二复核人；null 表示尚未二审"
+          },
+          "reject_reason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MeterReviewRow": {
+        "type": "object",
+        "properties": {
+          "charge_order_id": {
+            "type": "integer",
+            "description": "计费订单主键"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "description": "兜底原因：自动计费为什么没能算出费用"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "resolved"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "description": "设备上报的原始计量数据；为空表示设备根本没上报可用数据"
+          },
+          "reviews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeterReview"
+            },
+            "description": "该订单下的核实记录，按时间倒序"
+          }
+        }
+      },
+      "MeterReviewPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MeterReviewRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "MeterReviewProposeRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "reason",
+          "segments"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "幂等键；相同请求号重放返回首次结果"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "segments": {
+            "type": "array",
+            "maxItems": 10080,
+            "items": {
+              "type": "object",
+              "required": [
+                "started_at",
+                "ended_at",
+                "charged_wh"
+              ],
+              "properties": {
+                "started_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "ended_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "charged_wh": {
+                  "type": "integer",
+                  "description": "该分段电量，单位 mWh"
+                }
+              }
+            },
+            "description": "须连续覆盖原始时段、总电量与原始一致，且各段不跨不同费率"
+          }
+        }
+      },
+      "MeterReviewDecideRequest": {
+        "type": "object",
+        "required": [
+          "review_id",
+          "approve"
+        ],
+        "properties": {
+          "review_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "待裁决的核实记录主键，必须属于本订单"
+          },
+          "approve": {
+            "type": "boolean",
+            "description": "是否通过；必须显式给出，拒绝时另填 reason"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "拒绝原因；通过时可留空"
+          }
+        }
+      },
+      "MeterReviewResolveAmountRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "reason"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "electric_cents": {
+            "type": "integer",
+            "description": "最终电费，单位分"
+          },
+          "service_cents": {
+            "type": "integer",
+            "description": "最终服务费，单位分"
+          }
+        }
+      },
+      "OkResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ReconcileAmount": {
+        "type": "object",
+        "required": [
+          "ref",
+          "amount_cents"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "渠道流水号；同一参照号出现多次会累加"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "description": "渠道金额，单位分"
+          }
+        }
+      },
+      "ReconcileRunRequest": {
+        "type": "object",
+        "required": [
+          "reconcile_type",
+          "date",
+          "channel_amounts"
+        ],
+        "properties": {
+          "reconcile_type": {
+            "type": "string",
+            "enum": [
+              "wechat_refund",
+              "wechat_pay",
+              "split",
+              "withdraw"
+            ]
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "对账日期 YYYY-MM-DD"
+          },
+          "channel_amounts": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2000,
+            "items": {
+              "$ref": "#/components/schemas/ReconcileAmount"
+            }
+          }
+        }
+      },
+      "ReconcileDiff": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "internal_cents": {
+            "type": "integer",
+            "description": "内部台账金额，单位分"
+          },
+          "channel_cents": {
+            "type": "integer",
+            "description": "渠道上报金额，单位分"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "金额不一致",
+              "内部无对应记录"
+            ]
+          }
+        }
+      },
+      "ReconcileRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "reconcile_type": {
+            "type": "string"
+          },
+          "reconcile_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "internal_count": {
+            "type": "integer"
+          },
+          "wechat_count": {
+            "type": "integer",
+            "description": "渠道上报笔数"
+          },
+          "diff_count": {
+            "type": "integer"
+          },
+          "internal_cents": {
+            "type": "integer",
+            "description": "内部台账金额合计，单位分"
+          },
+          "wechat_cents": {
+            "type": "integer",
+            "description": "渠道上报金额合计，单位分"
+          },
+          "diff_cents": {
+            "type": "integer",
+            "description": "差额合计，等于渠道减内部，单位分"
+          },
+          "resolved": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "diffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconcileDiff"
+            }
+          }
+        }
+      },
+      "ReconcileResultResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReconcileRow"
+          }
+        }
+      },
+      "ReconcilePageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ReconcileRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "ReconcileResolveRequest": {
+        "type": "object",
+        "required": [
+          "resolved"
+        ],
+        "properties": {
+          "resolved": {
+            "type": "boolean",
+            "description": "是否标记为已处理"
+          }
+        }
+      },
+      "ReconcileResolveResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "resolved": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "WithdrawCreateRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "party_id",
+          "amount_cents"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "幂等键"
+          },
+          "party_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "分账参与方 ID，其模板须为 active"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "申请金额，单位分，不得超过可提现余额"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      },
+      "WithdrawDecideRequest": {
+        "type": "object",
+        "required": [
+          "approve"
+        ],
+        "properties": {
+          "approve": {
+            "type": "boolean",
+            "description": "true 通过；false 时 reason 必填"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "审核意见；驳回时必填且不能是空白"
+          }
+        }
+      },
+      "WithdrawPayRequest": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "打款备注"
+          }
+        }
+      },
+      "WithdrawRow": {
+        "type": "object",
+        "properties": {
+          "withdraw_no": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "party_id": {
+            "type": "integer"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "description": "申请金额，单位分"
+          }
+        }
+      },
+      "WithdrawPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WithdrawRow"
                 }
               },
               "total": {
