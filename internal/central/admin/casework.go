@@ -3,11 +3,11 @@ package admin
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"time"
 	"unicode/utf8"
 )
@@ -25,27 +25,25 @@ func (a ResourceAPI) registerCasework(r *gin.Engine) {
 
 // caseList 复用反馈与报修列表查询，表名和合法状态由调用方指定。
 // 响应将 images_json 转为 images 数组，无图片时返回空数组。
-func (a ResourceAPI) caseList(c *gin.Context, table, statuses string) {
+func (a ResourceAPI) caseList(c *gin.Context, kind, statuses string) {
 	q, ok := chargehttp.ReadAdminPage(c, statuses)
 	if !ok {
 		return
 	}
-	db := a.Store.UserDB.WithContext(c.Request.Context()).Table(table).Where("deleted_at IS NULL")
-	if q.Status != "" {
-		db = db.Where("status=?", q.Status)
+	spec, known := paystore.CaseListSpecOf(kind)
+	if !known {
+		chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
+		return
 	}
-	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
-	if err := db.Count(&out.Total).Error; err != nil {
+	items, total, err := (paystore.CaseStore{DB: a.Store.UserDB}).ListCases(c.Request.Context(), spec, q.Status, q.Page, q.PageSize)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if err := db.Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	normalizeRows(out.Items)
-	httpapi.DecimalizeRowIDsAll(out.Items, "id", "user_id", "order_id", "assigned_to")
-	for _, row := range out.Items {
+	out := Page[map[string]any]{Items: items, Page: q.Page, PageSize: q.PageSize, Total: total}
+	normalizeRows(items)
+	httpapi.DecimalizeRowIDsAll(items, "id", "user_id", "order_id", "assigned_to")
+	for _, row := range items {
 		row["images"] = row["images_json"]
 		if row["images"] == nil {
 			row["images"] = []string{}
@@ -75,9 +73,10 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []chargehttp.AuditEntry
+	store := paystore.CaseStore{DB: a.Store.UserDB}
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		var row struct{ Status string } // 反馈当前状态：pending 待处理 / processed 已回复 / closed 已关闭
-		if err := tx.Table("feedback").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
+		row, err := store.LockCaseStatus(tx, "feedback", id)
+		if err != nil {
 			return err
 		}
 		if in.Action == "close" && row.Status == "closed" {
@@ -90,10 +89,10 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 		if in.Action == "reply" {
 			v = map[string]any{"status": "processed", "reply_content": in.ReplyContent, "replied_by": p.ID, "replied_at": time.Now().UTC()}
 		}
-		if err := tx.Table("feedback").Where("id=?", id).Updates(v).Error; err != nil {
+		if err := store.UpdateCase(tx, "feedback", id, v); err != nil {
 			return err
 		}
-		auditPending = []chargehttp.AuditEntry{{Action: in.Action, Target: "feedback", ID: id, Before: row, After: v, RequestID: ""}}
+		auditPending = []chargehttp.AuditEntry{{Action: in.Action, Target: "feedback", ID: id, Before: gin.H{"status": row.Status}, After: v, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
@@ -114,36 +113,24 @@ func (a ResourceAPI) faultHistory(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var n int64
-	db := a.Store.UserDB.WithContext(c.Request.Context())
-	if err := db.Table("device_fault_report").Where("id=? AND deleted_at IS NULL", id).Count(&n).Error; err != nil {
+	store := paystore.CaseStore{DB: a.Store.UserDB}
+	exists, err := store.FaultExists(c.Request.Context(), a.Store.UserDB, id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if n == 0 {
+	if !exists {
 		chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
 		return
 	}
-	query := db.Table("device_fault_report_event").Where("report_id=?", id)
-	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
-	if err := query.Count(&out.Total).Error; err != nil {
+	items, total, err := store.ListFaultEvents(c.Request.Context(), a.Store.UserDB, id, q.Page, q.PageSize)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if err := query.Select("id AS event_id,event_type,actor_id,assigned_to,from_status,to_status,note,created_at,user_visible").Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	normalizeRows(out.Items)
-	httpapi.DecimalizeRowIDsAll(out.Items, "event_id", "actor_id", "assigned_to")
-	httpapi.OK(c, out)
-}
-
-// faultRow 是报修状态流转所需的最小字段投影。
-type faultRow struct {
-	ID         uint64  // 报修单主键
-	Status     string  // 当前状态：open 待受理 / dispatched 已指派 / fixed 已修复 / closed 已关闭
-	AssignedTo *uint64 // 当前处理人 ID，nil 表示还没人接手
+	normalizeRows(items)
+	httpapi.DecimalizeRowIDsAll(items, "event_id", "actor_id", "assigned_to")
+	httpapi.OK(c, Page[map[string]any]{Items: items, Page: q.Page, PageSize: q.PageSize, Total: total})
 }
 
 // dispatchFault 校验处理人存在且持有 fault.resolve 权限，将报修置为 dispatched。
@@ -171,9 +158,10 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []chargehttp.AuditEntry
+	store := paystore.CaseStore{DB: a.Store.UserDB}
 	err = chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		var row faultRow
-		if err := tx.Table("device_fault_report").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
+		row, err := store.LockFault(tx, id)
+		if err != nil {
 			return err
 		}
 		if row.Status != "open" && row.Status != "dispatched" {
@@ -186,10 +174,13 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 		if row.AssignedTo != nil {
 			event = "reassigned"
 		}
-		if err := tx.Table("device_fault_report").Where("id=?", id).Updates(map[string]any{"status": "dispatched", "assigned_to": in.AssignedTo}).Error; err != nil {
+		if err := store.UpdateCase(tx, "device_fault_report", id, map[string]any{"status": "dispatched", "assigned_to": in.AssignedTo}); err != nil {
 			return err
 		}
-		if err := tx.Table("device_fault_report_event").Create(map[string]any{"report_id": id, "actor_id": p.ID, "event_type": event, "from_status": row.Status, "to_status": "dispatched", "assigned_to": in.AssignedTo, "note": in.Note, "user_visible": true}).Error; err != nil {
+		if err := store.AppendFaultEvent(tx, paystore.FaultEventInput{
+			ReportID: id, ActorID: p.ID, EventType: event, FromStatus: row.Status, ToStatus: "dispatched",
+			AssignedTo: in.AssignedTo, Note: in.Note, UserVisible: true,
+		}); err != nil {
 			return err
 		}
 		auditPending = []chargehttp.AuditEntry{{Action: event, Target: "device_fault_report", ID: id, Before: row, After: in, RequestID: ""}}
@@ -225,9 +216,10 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []chargehttp.AuditEntry
+	store := paystore.CaseStore{DB: a.Store.UserDB}
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
-		var row faultRow
-		if err := tx.Table("device_fault_report").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
+		row, err := store.LockFault(tx, id)
+		if err != nil {
 			return err
 		}
 		if row.AssignedTo == nil || *row.AssignedTo != p.ID {
@@ -240,10 +232,13 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 		if row.Status == in.Status {
 			return nil
 		}
-		if err := tx.Table("device_fault_report").Where("id=?", id).Updates(map[string]any{"status": in.Status, "resolved_at": time.Now().UTC()}).Error; err != nil {
+		if err := store.UpdateCase(tx, "device_fault_report", id, map[string]any{"status": in.Status, "resolved_at": time.Now().UTC()}); err != nil {
 			return err
 		}
-		if err := tx.Table("device_fault_report_event").Create(map[string]any{"report_id": id, "actor_id": p.ID, "event_type": in.Status, "from_status": row.Status, "to_status": in.Status, "assigned_to": p.ID, "note": in.Note, "user_visible": true}).Error; err != nil {
+		if err := store.AppendFaultEvent(tx, paystore.FaultEventInput{
+			ReportID: id, ActorID: p.ID, EventType: in.Status, FromStatus: row.Status, ToStatus: in.Status,
+			AssignedTo: p.ID, Note: in.Note, UserVisible: true,
+		}); err != nil {
 			return err
 		}
 		auditPending = []chargehttp.AuditEntry{{Action: in.Status, Target: "device_fault_report", ID: id, Before: row, After: in, RequestID: ""}}
