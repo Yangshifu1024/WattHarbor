@@ -45,28 +45,28 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 	replayed := false
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var walletRow orderstore.Row
-		var walletPayment struct {
-			PayMethod string
-			UserID    uint64
+		payMethod, paymentUserID, err := orderstore.FindOrderPaymentForCharge(tx, result.ChargeOrderID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 订单已回滚或压根不存在。回执落不下去是冲突而不是服务故障：
+			// 报 500 会让网关无限重试一笔永远不会成立的回执。
+			return ErrStartResultConflict
 		}
-		if err := tx.Table("payment_order p").Select("p.pay_method,p.user_id").Joins("JOIN charge_order c ON c.payment_order_id=p.id").Where("c.id=?", result.ChargeOrderID).Take(&walletPayment).Error; err != nil {
+		if err != nil {
 			return err
 		}
-		if walletPayment.PayMethod == "balance" {
-			var err error
-			walletRow, err = orderstore.Lock(tx, walletPayment.UserID)
+		if payMethod == "balance" {
+			walletRow, err = orderstore.Lock(tx, paymentUserID)
 			if err != nil {
 				return err
 			}
 		}
 		// Match the card transaction lock order: session before order.
 		// 跨家族锁：card_charge 归属 card 家族，仅取行锁参与加锁顺序，不读字段。
-		var cardLocked struct{ ID uint64 }
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("card_charge").Where("charge_order_id=?", result.ChargeOrderID).Find(&cardLocked).Error; err != nil {
+		if err := orderstore.LockCardChargeForOrder(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
 		var order orderstore.ChargeOrderRecord
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND order_no = ? AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).Take(&order).Error
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND order_no = ? AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).Take(&order).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrStartResultConflict
 		}
@@ -103,8 +103,12 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		}
 		stream, eventName := "charge_started_stream", "start_acked"
 		if result.Success {
-			if err := tx.Table("card_operation").Where("charge_order_id=? AND kind='start' AND status='confirming'", result.ChargeOrderID).Updates(map[string]any{"status": "confirmed", "confirmed_at": result.OccurredAt}).Error; err != nil {
+			confirmed, err := orderstore.ConfirmCardStartOperation(tx, result.ChargeOrderID, result.OccurredAt)
+			if err != nil {
 				return err
+			}
+			if confirmed != 1 {
+				return ErrStartResultConflict
 			}
 			if err := tx.Create(&orderstore.ActivePortChargeRecord{PortID: result.PortID, DeviceID: result.DeviceID, PortNo: result.PortNo,
 				ChargeOrderID: result.ChargeOrderID, UserID: order.UserID, StartedAt: result.OccurredAt.UTC()}).Error; err != nil {
@@ -132,36 +136,30 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 			if updated.RowsAffected != 1 {
 				return ErrStartResultConflict
 			}
-			if walletPayment.PayMethod == "balance" {
-				var payment struct {
-					PaidCents     int64
-					RefundedCents int64
-				}
-				if err := tx.Table("payment_order").Select("paid_cents,refunded_cents").Where("id=?", order.PaymentOrderID.Int64).Take(&payment).Error; err != nil {
+			if payMethod == "balance" {
+				paid, refunded, err := orderstore.ReadBalancePaymentAmounts(tx, uint64(order.PaymentOrderID.Int64))
+				if err != nil {
 					return err
 				}
-				if err := refundBalanceStartFailure(tx, order, &walletRow, payment.PaidCents-payment.RefundedCents, "CSF"+result.CommandID, failureReason); err != nil {
+				if err := refundBalanceStartFailure(tx, order, &walletRow, paid-refunded, "CSF"+result.CommandID, failureReason); err != nil {
 					return err
 				}
-				if err := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id=?", order.ID).Update("status", "refunded").Error; err != nil {
+				if err := orderstore.SetOrderStatusRefunded(tx, order.ID); err != nil {
 					return err
 				}
-				if err := tx.Table("card_operation").Where("charge_order_id=? AND kind='start'", order.ID).Updates(map[string]any{"status": "failed", "failure_reason": failureReason, "confirmed_at": result.OccurredAt}).Error; err != nil {
+				if err := orderstore.FailCardStartOperation(tx, order.ID, failureReason, result.OccurredAt); err != nil {
 					return err
 				}
-				if err := tx.Table("card_charge").Where("charge_order_id=?", order.ID).Update("active_port", nil).Error; err != nil {
+				if err := orderstore.ClearCardActivePort(tx, order.ID); err != nil {
 					return err
 				}
 			} else {
-				var payment startRefundPaymentRow
-				lookup := tx.Table("charge_order AS c").Select("p.id, p.user_id, p.total_cents, p.paid_cents, p.refunded_cents, p.wechat_transaction_id, p.status").
-					Joins("JOIN payment_order AS p ON p.id = c.payment_order_id AND p.biz_type = 'charge' AND p.pay_method = 'wechat' AND p.biz_id = c.id AND p.user_id = c.user_id").
-					Clauses(clause.Locking{Strength: "UPDATE"}).Where("c.id = ? AND p.status = 'paid' AND p.deleted_at IS NULL", result.ChargeOrderID).Take(&payment)
-				if errors.Is(lookup.Error, gorm.ErrRecordNotFound) {
+				payment, lookup := orderstore.LockWechatPaymentForRefund(tx, result.ChargeOrderID)
+				if errors.Is(lookup, gorm.ErrRecordNotFound) {
 					return ErrStartResultConflict
 				}
-				if lookup.Error != nil {
-					return lookup.Error
+				if lookup != nil {
+					return lookup
 				}
 				if payment.UserID != order.UserID || !payment.WechatTransactionID.Valid || payment.WechatTransactionID.String == "" ||
 					payment.TotalCents <= 0 || payment.PaidCents <= 0 || payment.RefundedCents < 0 || payment.PaidCents > payment.TotalCents-payment.RefundedCents {
@@ -176,11 +174,11 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 				}
 				month := dbutil.MonthStart()
 				// 跨家族写：refund_record 归属 refund 家族，经裸表名插入，避免 order 反向依赖 refund。
-				if err := tx.Table("refund_record").Create(map[string]any{
-					"execution_policy": "automatic", "refund_no": refundNo, "payment_order_id": payment.ID, "user_id": payment.UserID,
-					"biz_type": "charge", "biz_id": result.ChargeOrderID, "refund_cents": refundCents,
-					"reason": failureReason, "status": "pending", "created_month": month,
-				}).Error; err != nil {
+				if err := orderstore.InsertRefundRecord(tx, orderstore.RefundRecordInput{
+					ExecutionPolicy: "automatic", RefundNo: refundNo, PaymentOrderID: payment.ID,
+					UserID: payment.UserID, BizType: "charge", BizID: result.ChargeOrderID,
+					RefundCents: refundCents, Reason: failureReason, Status: "pending",
+				}, month); err != nil {
 					return err
 				}
 				refundEnvelope, err := json.Marshal(map[string]any{
@@ -233,32 +231,29 @@ func refundBalanceStartFailure(tx *gorm.DB, order orderstore.ChargeOrderRecord, 
 	if err := orderstore.Move(tx, order.UserID, w, cents, refundNo, reason); err != nil {
 		return err
 	}
-	var payment struct {
-		ID            uint64
-		PaidCents     int64
-		RefundedCents int64
-	}
-	if err := tx.Table("payment_order").Select("id,paid_cents,refunded_cents").Where("id=? AND pay_method='balance'", order.PaymentOrderID.Int64).Take(&payment).Error; err != nil {
+	paid, refunded, err := orderstore.ReadBalancePaymentAmounts(tx, uint64(order.PaymentOrderID.Int64))
+	if err != nil {
 		return err
 	}
-	if payment.PaidCents-payment.RefundedCents < cents {
+	if paid-refunded < cents {
 		return ErrStartResultConflict
 	}
 	status := "partial_refunded"
-	if payment.RefundedCents+cents == payment.PaidCents {
+	if refunded+cents == paid {
 		status = "refunded"
 	}
-	if err := tx.Table("payment_order").Where("id=?", payment.ID).Updates(map[string]any{"refunded_cents": gorm.Expr("refunded_cents+?", cents), "status": status}).Error; err != nil {
+	paymentID := uint64(order.PaymentOrderID.Int64)
+	if err := orderstore.AddPaymentRefunded(tx, paymentID, cents, status); err != nil {
 		return err
 	}
-	if err := orderstore.SyncOrderPaymentStatus(tx, payment.ID); err != nil {
+	if err := orderstore.SyncOrderPaymentStatus(tx, paymentID); err != nil {
 		return err
 	}
-	return tx.Table("refund_record").Create(map[string]any{
-		"refund_no": refundNo, "payment_order_id": payment.ID, "user_id": order.UserID,
-		"biz_type": "charge", "biz_id": order.ID, "refund_cents": cents, "status": "success",
-		"execution_policy": "automatic", "reason": reason, "created_month": dbutil.MonthStart(),
-	}).Error
+	return orderstore.InsertRefundRecord(tx, orderstore.RefundRecordInput{
+		RefundNo: refundNo, PaymentOrderID: paymentID, UserID: order.UserID,
+		BizType: "charge", BizID: order.ID, RefundCents: cents, Status: "success",
+		ExecutionPolicy: "automatic", Reason: reason,
+	}, dbutil.MonthStart())
 }
 
 type StartResultAPI struct {
