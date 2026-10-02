@@ -1,7 +1,7 @@
 package control
 
 import (
-	"context"
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"net/http"
 	"time"
 
@@ -46,15 +46,6 @@ type IdleSession struct {
 	LastActiveAt time.Time `json:"last_active_at"`
 }
 
-// idleQuery 查询超过静默阈值且 ended_at 为 NULL 的会话，不修改已正常关闭的记录。
-func (a SessionAPI) idleQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
-	if db == nil {
-		db = a.DB
-	}
-	return db.WithContext(ctx).Table("device_session").
-		Where("ended_at IS NULL AND last_active_at < ?", time.Now().UTC().Add(-a.threshold()))
-}
-
 func (a SessionAPI) threshold() time.Duration {
 	if a.IdleThreshold > 0 {
 		return a.IdleThreshold
@@ -76,7 +67,7 @@ func (a SessionAPI) listIdle(c *gin.Context) {
 		return
 	}
 	var sessions []IdleSession
-	if err := a.idleQuery(c.Request.Context(), nil).
+	if err := gatewaystore.IdleSessionsQuery(c.Request.Context(), a.DB, a.threshold()).
 		Select("session_id", "device_id", "protocol", "remote_addr", "started_at", "last_active_at").
 		Order("last_active_at ASC").Limit(a.limit()).Scan(&sessions).Error; err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "设备会话查询失败", nil)
@@ -103,24 +94,17 @@ func (a SessionAPI) cleanupIdle(c *gin.Context) {
 	// 在同一事务中读取并关闭候选会话；更新再次检查 ended_at IS NULL，避免覆盖并发正常关闭的记录。
 	var closed int64
 	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var candidates []deviceSessionKey
-		if err := a.idleQuery(ctx, tx).
+		var candidates []gatewaystore.SessionKey
+		if err := gatewaystore.IdleSessionsQuery(ctx, tx, a.threshold()).
 			Select("id", "created_month").Limit(a.limit()).Scan(&candidates).Error; err != nil {
 			return err
 		}
 		for _, key := range candidates {
-			// 用读取时的 ID 和分区月份寻址，并保留开放状态条件，防止覆盖已关闭会话。
-			month := time.Date(key.CreatedMonth.UTC().Year(), key.CreatedMonth.UTC().Month(), key.CreatedMonth.UTC().Day(), 0, 0, 0, 0, time.UTC)
-			result := tx.Table("device_session").
-				Where("id = ? AND created_month = ? AND ended_at IS NULL", key.ID, month).
-				Updates(map[string]any{
-					"ended_at":     now,
-					"close_reason": "abandoned",
-				})
-			if result.Error != nil {
-				return result.Error
+			affected, err := gatewaystore.CloseAbandonedSession(tx, key, now)
+			if err != nil {
+				return err
 			}
-			closed += result.RowsAffected
+			closed += affected
 		}
 		return nil
 	})
