@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
-# 校验业务包内的分层约定。目的是让"某个函数属于哪一层"成为可以机检的事实，
-# 而不是靠人记。两种形态都被承认：
+# 把几条最容易失效、也最难靠人记住的约定变成机检事实。违反即失败。
 #
-#   单层包：包内按文件后缀分层。gin.Context 只在 *_http.go / *_middleware.go；
-#          gorm 与表名只在 *_store.go / models.go；其余文件是领域层。
-#   多层包：包内再分子目录 state/（领域）、store/（持久化）、http/（接口），
-#          文件后缀不再单独承担分层职责，目录本身即层。
+# 当前有四道，各自回答一个不同的问题：
 #
-# 多层包的依赖方向恒为 http → state、http → store、store → state；
-# 反向与同层横向依赖不允许。
+#   1. 领域层不碰框架   —— domain 不出现 gorm / gin / redis，不依赖 protocol
+#                          或任何实现层。业务规则不认识框架，才谈得上复用。
+#   2. 处理器不放模型   —— internal/central 下的文件不得定义 gorm 模型或表名
+#                          映射。模型归 infrastructure/database。
+#   3. OpenAPI 契约一致 —— 两份文档里声明的端点必须真的注册，且没有悬空的
+#                          schema 引用。只锁"文档多写"这一个方向。
+#   4. 目录树与代码一致 —— AGENTS.md 的树里不能出现仓库里没有的文件。
 #
-# protocol 是独立的设备契约层，不按文件后缀分层，但参与一条检查：
-# 它不得依赖任何业务包（domain/application/infrastructure/interface），
-# 也不得依赖 gateway/worker 运行时。契约层一旦反向依赖实现层，
-# 新增协议就再也无法只加目录实现。
+# protocol 是独立的设备契约层：它不得反向依赖任何业务实现层，否则新增协议
+# 就再也无法只加目录实现。这条与第 1 道同源但方向相反，单独检查。
 #
-# 不参与分层的目录：platform 是无业务语义的通用能力，cmd 是进程装配，
-# simulator 是联调工具，gateway/store 与 gateway/control 各自整体即单一层，
-# worker/* 与 delivery 是服务间适配层。
+# 加规则前先证伪：写一个已知违规，确认它会失败并返回非零。
+# 规则不验证就等于没有——本文件曾有 53 行对已迁走目录的空转检查。
+
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
