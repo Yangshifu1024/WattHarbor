@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"net/http"
 	"regexp"
 	"strings"
@@ -17,23 +17,24 @@ import (
 	"unicode/utf8"
 )
 
-// AdminUserRow 是 PC 后台管理员账号（admin_user 表）的列表行映射。
-// 账号归属 central_db，与终端用户 central_db.user 分开存放；一个账号一个主角色，权限由 role 展开。
-type AdminUserRow struct {
-	ID            uint64  `json:"id"`                 // 账号主键
-	Username      string  `json:"username"`           // 登录用户名，全局唯一；本接口只读，不提供新建
-	DisplayName   *string `json:"display_name"`       // 显示名称；nil 表示未设置
-	RoleID        *uint64 `json:"role_id"`            // 主角色 ID；nil 表示尚未分配角色
-	RoleCode      *string `json:"role_code"`          // 主角色编码（如 customer_admin），由 role 表联查得出；角色已删时为 nil
-	RoleName      *string `json:"role_name"`          // 实际角色名称，支持自定义角色；角色已删时为空。
-	Phone         *string `json:"phone"`              // 备用手机号；nil 表示未登记
-	Email         *string `json:"email"`              // 邮箱；nil 表示未登记
-	Status        string  `json:"status"`             // 账号状态：active 正常 / disabled 停用 / locked 因连续登录失败临时锁定
-	MFAEnabled    bool    `json:"mfa_enabled"`        // 是否已启用双因素认证
-	LastLoginAt   *string `json:"last_login_at"`      // 最近一次登录时间；nil 表示从未登录
-	LockedUntil   *string `json:"locked_until"`       // 锁定到期时间；未锁定时为 nil
-	FailedLogins  uint32  `json:"failed_login_count"` // 连续登录失败次数，成功登录或被解锁后归零
-	DeletePending bool    `json:"-"`                  // 是否有待处理的下线流程，本列表不使用、不输出
+// AdminUserRow 是后台账号的列表行，定义在持久化层。
+type AdminUserRow = database.AdminUserRow
+
+// adminUserID 把行锁读回的快照列转成可空主键：列不存在时保留 nil，
+// 不能用 0 顶替——"没有角色"和"角色 ID 为 0"在响应里不是一回事。
+func adminUserID(value any) *uint64 {
+	switch v := value.(type) {
+	case int64:
+		id := uint64(v)
+		return &id
+	case uint64:
+		id := v
+		return &id
+	case float64:
+		id := uint64(v)
+		return &id
+	}
+	return nil
 }
 
 // usernamePattern 是登录用户名的格式约束：字母、数字、下划线、点、短横，3–64 位。
@@ -57,21 +58,10 @@ func (a AdminAccounts) listAdminUsers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := AdminPage[AdminUserRow]{Items: []AdminUserRow{}, Page: page.Page, PageSize: page.PageSize}
-	query := a.DB.WithContext(c.Request.Context()).Table("admin_user AS u").Where("u.deleted_at IS NULL")
-	if page.Status != "" {
-		query = query.Where("u.status = ?", page.Status)
-	}
-	if page.Keyword != "" {
-		query = query.Where("u.username LIKE ? OR u.display_name LIKE ?", AdminLikePattern(page.Keyword), AdminLikePattern(page.Keyword))
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		AdminResourceFailure(c, err)
-		return
-	}
-	if err := query.Select("u.id,u.username,u.display_name,u.role_id,r.code AS role_code,r.name AS role_name,u.phone,u.email,u.status,u.mfa_enabled,u.last_login_at,u.locked_until,u.failed_login_count").
-		Joins("LEFT JOIN role AS r ON r.id = u.role_id AND r.deleted_at IS NULL").
-		Order("u.id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
+	out, err := (database.AdminStore{DB: a.DB}).ListAdminUsers(c.Request.Context(), database.PageQuery{
+		Page: page.Page, PageSize: page.PageSize, Status: page.Status, Keyword: page.Keyword,
+	})
+	if err != nil {
 		AdminResourceFailure(c, err)
 		return
 	}
@@ -80,13 +70,10 @@ func (a AdminAccounts) listAdminUsers(c *gin.Context) {
 
 // assignableRole 要求角色存在、权限非空，且其全部权限属于操作者已持有的权限。
 func assignableRole(ctx context.Context, db *gorm.DB, p operations.Profile, roleID uint64) error {
-	var codes []string
-	if err := db.WithContext(ctx).Table("role AS r").
-		Joins("JOIN role_permission rp ON rp.role_id=r.id JOIN permission p ON p.id=rp.permission_id").
-		Where("r.id=? AND r.deleted_at IS NULL", roleID).Pluck("p.code", &codes).Error; err != nil {
+	codes, err := (database.AdminStore{DB: db}).AssignableRoleCodes(ctx, db, roleID)
+	if err != nil {
 		return err
 	}
-	codes = operations.WithoutRetiredPermissions(codes)
 	if len(codes) == 0 {
 		return ErrConflict
 	}
@@ -145,13 +132,15 @@ func (a AdminAccounts) updateAdminUser(c *gin.Context) {
 		httpapi.BadRequest(c, "没有可更新的字段")
 		return
 	}
-	var before AdminUserRow
+	var before database.AdminUserRow
 	roleChanged := false
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+		store := database.AdminStore{DB: tx}
+		snapshot, err := store.LockAdminUser(tx, id)
+		if err != nil {
 			return err
 		}
+		before.ID, before.RoleID = snapshot["id"].(uint64), adminUserID(snapshot["role_id"])
 		// 表单会回传原角色；用有类型的快照比较，避免 uint64 与驱动 int64 被误判为不同。
 		roleChanged = in.RoleID != nil && (before.RoleID == nil || *in.RoleID != *before.RoleID)
 		if id == profile.ID {
@@ -168,10 +157,9 @@ func (a AdminAccounts) updateAdminUser(c *gin.Context) {
 				return err
 			}
 			values["role_id"] = *in.RoleID
-			// 仅角色变化时递增凭证版本；普通资料更新保留现有会话。
-			values["auth_version"] = gorm.Expr("auth_version + 1")
 		}
-		if err := tx.Table("admin_user").Where("id = ?", id).Updates(values).Error; err != nil {
+		// 仅角色变化时递增凭证版本；普通资料更新保留现有会话。
+		if err := database.UpdateAdminUser(tx, id, values, roleChanged); err != nil {
 			return err
 		}
 		return AdminResourceAudit(tx, profile, "update", "admin_user", id, before, in, c.ClientIP(), c.GetHeader("X-Request-ID"))
@@ -205,11 +193,8 @@ func (a AdminAccounts) deleteAdminUser(c *gin.Context) {
 		httpapi.Write(c, http.StatusConflict, 2009, "不能删除当前登录账号", nil)
 		return
 	}
-	var remaining int64
-	if err := a.DB.WithContext(c.Request.Context()).Table("admin_user AS u").
-		Joins("JOIN role AS r ON r.id = u.role_id").
-		Where("u.deleted_at IS NULL AND u.status = 'active' AND r.code = 'customer_admin' AND r.deleted_at IS NULL").
-		Where("u.id <> ?", id).Count(&remaining).Error; err != nil {
+	remaining, err := (database.AdminStore{DB: a.DB}).CountOtherActiveAdmins(c.Request.Context(), a.DB, id)
+	if err != nil {
 		AdminResourceFailure(c, err)
 		return
 	}
@@ -217,14 +202,12 @@ func (a AdminAccounts) deleteAdminUser(c *gin.Context) {
 		httpapi.Write(c, http.StatusConflict, 2009, "必须保留至少一个有效的客户管理员账号", nil)
 		return
 	}
-	var before map[string]any
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		before, err := (database.AdminStore{DB: a.DB}).LockAdminUser(tx, id)
+		if err != nil {
 			return err
 		}
-		if err := tx.Table("admin_user").Where("id = ?", id).
-			Updates(map[string]any{"deleted_at": time.Now().UTC(), "deleted_by": profile.ID, "status": "disabled", "auth_version": gorm.Expr("auth_version + 1")}).Error; err != nil {
+		if err := database.SoftDeleteAdminUser(tx, id, profile.ID, time.Now().UTC()); err != nil {
 			return err
 		}
 		return AdminResourceAudit(tx, profile, "delete", "admin_user", id, before, nil, c.ClientIP(), c.GetHeader("X-Request-ID"))
@@ -245,13 +228,13 @@ func (a AdminAccounts) unlockAdminUser(c *gin.Context) {
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var before map[string]any
-		if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+		before, err := (database.AdminStore{DB: a.DB}).LockAdminUser(tx, id)
+		if err != nil {
 			return err
 		}
-		if err := tx.Table("admin_user").Where("id = ?", id).
-			Updates(map[string]any{"status": "active", "locked_until": nil, "failed_login_count": 0}).Error; err != nil {
+		if err := database.UpdateAdminUser(tx, id, map[string]any{
+			"status": "active", "locked_until": nil, "failed_login_count": 0,
+		}, false); err != nil {
 			return err
 		}
 		return AdminResourceAudit(tx, profile, "unlock", "admin_user", id, before, nil, c.ClientIP(), c.GetHeader("X-Request-ID"))
@@ -287,13 +270,13 @@ func (a AdminAccounts) resetAdminPassword(c *gin.Context) {
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
 	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var before map[string]any
-		if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+		before, err := (database.AdminStore{DB: a.DB}).LockAdminUser(tx, id)
+		if err != nil {
 			return err
 		}
-		if err := tx.Table("admin_user").Where("id = ?", id).
-			Updates(map[string]any{"password_hash": string(hash), "auth_version": gorm.Expr("auth_version + 1"), "failed_login_count": 0, "locked_until": nil}).Error; err != nil {
+		if err := database.UpdateAdminUser(tx, id, map[string]any{
+			"password_hash": string(hash), "failed_login_count": 0, "locked_until": nil,
+		}, true); err != nil {
 			return err
 		}
 		return AdminResourceAudit(tx, profile, "reset_password", "admin_user", id, before, nil, c.ClientIP(), c.GetHeader("X-Request-ID"))
@@ -320,11 +303,8 @@ func (a AdminAccounts) adminUserMFA(c *gin.Context) {
 		return
 	}
 	// 验证器标签使用目标账号身份，确保密钥绑定到被管理的账号。
-	var target struct {
-		Username string `gorm:"column:username"`
-	}
-	if err := a.DB.WithContext(c.Request.Context()).Table("admin_user").
-		Select("username").Where("id = ? AND deleted_at IS NULL", id).Take(&target).Error; err != nil {
+	targetName, err := (database.AdminStore{DB: a.DB}).FindAdminUsername(c.Request.Context(), a.DB, id)
+	if err != nil {
 		AdminResourceFailure(c, err)
 		return
 	}
@@ -344,7 +324,7 @@ func (a AdminAccounts) adminUserMFA(c *gin.Context) {
 			AdminResourceFailure(c, err)
 			return
 		}
-		uri, err := auth.TOTPURI("ChargePilot", target.Username, secret)
+		uri, err := auth.TOTPURI("ChargePilot", targetName, secret)
 		if err != nil {
 			AdminResourceFailure(c, err)
 			return
@@ -355,9 +335,7 @@ func (a AdminAccounts) adminUserMFA(c *gin.Context) {
 			return
 		}
 		// 登记阶段保存未启用密钥；confirm 验证成功后启用。
-		if err := a.DB.WithContext(c.Request.Context()).Table("admin_user").
-			Where("id = ? AND deleted_at IS NULL", id).
-			Updates(map[string]any{"mfa_secret": secret, "mfa_enabled": false}).Error; err != nil {
+		if err := database.UpdateAdminMFAStaged(a.DB.WithContext(c.Request.Context()), id, secret); err != nil {
 			AdminResourceFailure(c, err)
 			return
 		}
@@ -372,13 +350,11 @@ func (a AdminAccounts) adminUserMFA(c *gin.Context) {
 			return
 		}
 		err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			var before map[string]any
-			if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+			before, err := (database.AdminStore{DB: tx}).LockAdminUser(tx, id)
+			if err != nil {
 				return err
 			}
-			if err := tx.Table("admin_user").Where("id = ?", id).
-				Updates(map[string]any{"mfa_secret": in.Secret, "mfa_enabled": true, "auth_version": gorm.Expr("auth_version + 1")}).Error; err != nil {
+			if err := database.UpdateAdminMFASecret(tx, id, &in.Secret, true, true); err != nil {
 				return err
 			}
 			return AdminResourceAudit(tx, profile, "mfa_enable", "admin_user", id, before, nil, c.ClientIP(), c.GetHeader("X-Request-ID"))
@@ -390,13 +366,11 @@ func (a AdminAccounts) adminUserMFA(c *gin.Context) {
 		httpapi.OK(c, gin.H{"id": id, "mfa_enabled": true})
 	case "disable":
 		err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			var before map[string]any
-			if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+			before, err := (database.AdminStore{DB: tx}).LockAdminUser(tx, id)
+			if err != nil {
 				return err
 			}
-			if err := tx.Table("admin_user").Where("id = ?", id).
-				Updates(map[string]any{"mfa_secret": nil, "mfa_enabled": false, "auth_version": gorm.Expr("auth_version + 1")}).Error; err != nil {
+			if err := database.UpdateAdminMFASecret(tx, id, nil, false, true); err != nil {
 				return err
 			}
 			return AdminResourceAudit(tx, profile, "mfa_disable", "admin_user", id, before, nil, c.ClientIP(), c.GetHeader("X-Request-ID"))
