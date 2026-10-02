@@ -11,6 +11,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/central/application"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
@@ -107,8 +109,9 @@ func liveMeterEvidence(device string, port uint8, start time.Time, samples []pro
 		for _, p := range e.ChargingPorts {
 			if p.Port == port {
 				view := &LiveMeterView{At: e.ReceivedAt, Stale: now.Sub(e.ReceivedAt) > 30*time.Second, KWh: float64(p.ChargedMWh) / 1e6, Seconds: p.ChargedSeconds}
-				end := protocol.Event{DeviceID: device, Port: port, StartedAt: e.ReceivedAt.Add(-time.Duration(p.ChargedSeconds) * time.Second), EndedAt: e.ReceivedAt, ReceivedAt: e.ReceivedAt, ChargedSeconds: p.ChargedSeconds, EnergyMilliKWh: p.ChargedMWh / 1000}
-				meter := pricing.ActualMeter{StartedAt: start, EndedAt: e.ReceivedAt, ChargedWh: p.ChargedMWh / 1000, ChargedSeconds: p.ChargedSeconds, Segments: pricing.MeasuredSegments(start, end, samples[:i+1])}
+				// 实时估算用截至本次上报的累计量作为收口证据。
+				span := devices.SessionSpan{DeviceID: device, Port: port, StartedAt: e.ReceivedAt.Add(-time.Duration(p.ChargedSeconds) * time.Second), EndedAt: e.ReceivedAt, ChargedSeconds: p.ChargedSeconds, EnergyMilliKWh: p.ChargedMWh / 1000}
+				meter := pricing.ActualMeter{StartedAt: start, EndedAt: e.ReceivedAt, ChargedWh: p.ChargedMWh / 1000, ChargedSeconds: p.ChargedSeconds, Segments: pricing.MeasuredSegments(start, span, application.ReadingSamplesOf(samples[:i+1]))}
 				// 实时估算以首次观测负载补齐最初不超过 30 秒的心跳区间。
 				// 最终结算仍使用严格的计量证据校验。
 				if len(meter.Segments) > 0 && meter.Segments[0].PowerW == nil && meter.Segments[0].EndedAt.Sub(start) <= 30*time.Second {
@@ -138,7 +141,7 @@ func liveMeterEvidence(device string, port uint8, start time.Time, samples []pro
 						for _, sample := range samples[:i+1] {
 							for _, reading := range sample.ChargingPorts {
 								if reading.Port == port && sample.DeviceID == device {
-									at := end.StartedAt.Add(time.Duration(reading.ChargedSeconds) * time.Second)
+									at := span.StartedAt.Add(time.Duration(reading.ChargedSeconds) * time.Second)
 									if !at.After(segment.StartedAt) {
 										power = (reading.PowerDeciWatts + 5) / 10
 									}
@@ -150,7 +153,7 @@ func liveMeterEvidence(device string, port uint8, start time.Time, samples []pro
 						for _, sample := range samples[:i+1] {
 							for _, reading := range sample.ChargingPorts {
 								if reading.Port == port && sample.DeviceID == device {
-									at := end.StartedAt.Add(time.Duration(reading.ChargedSeconds) * time.Second)
+									at := span.StartedAt.Add(time.Duration(reading.ChargedSeconds) * time.Second)
 									if at.After(segment.StartedAt) && !at.After(segment.EndedAt) {
 										segment.PeakW = max(segment.PeakW, (reading.PowerDeciWatts+5)/10)
 									}

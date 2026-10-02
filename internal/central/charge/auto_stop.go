@@ -9,6 +9,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/central/application"
+	"github.com/ChargePilot2026/charge-pilot/internal/central/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
@@ -226,14 +228,14 @@ func measuredMeter(order autoStopOrder, latest meterReading, samples []protocol.
 		ChargedWh:      latest.wh,
 		ChargedSeconds: latest.seconds,
 	}
-	// 将当前读数转换为终止事件视图，供 measuredSegments 校验完整区间，不生成额外测量。
-	terminal := protocol.Event{
-		DeviceID: order.DeviceID, Port: order.PortNo, Type: protocol.ChargeEnd,
-		StartedAt: ended.Add(-time.Duration(latest.seconds) * time.Second),
-		EndedAt:   ended, ReceivedAt: ended,
+	// 把当前读数当作收口证据交给计量校验，不生成额外测量。
+	span := devices.SessionSpan{
+		DeviceID: order.DeviceID, Port: order.PortNo,
+		StartedAt:      ended.Add(-time.Duration(latest.seconds) * time.Second),
+		EndedAt:        ended,
 		ChargedSeconds: latest.seconds, EnergyMilliKWh: latest.wh,
 	}
-	meter.Segments = pricing.MeasuredSegments(order.StartedAt, terminal, samples)
+	meter.Segments = pricing.MeasuredSegments(order.StartedAt, span, application.ReadingSamplesOf(samples))
 	return meter
 }
 

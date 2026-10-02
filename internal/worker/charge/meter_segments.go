@@ -7,12 +7,19 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/central/application"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
-func measuredSegments(start time.Time, end protocol.Event, samples []protocol.Event) []pricing.MeterSegment {
-	return pricing.MeasuredSegments(start, end, samples)
+// measuredSegments 把协议事件翻译成领域读数后交给 pricing 分段。
+// 翻译在用例层完成，计费规则本身不感知协议。
+func measuredSegments(start time.Time, terminal protocol.Event, events []protocol.Event) []pricing.MeterSegment {
+	span, ok := application.SessionSpanOf(terminal)
+	if !ok {
+		return nil
+	}
+	return pricing.MeasuredSegments(start, span, application.ReadingSamplesOf(events))
 }
 
 // meterSegments 经 gateway 拉取计量证据：心跳在 [ack_at, end.ReceivedAt]
