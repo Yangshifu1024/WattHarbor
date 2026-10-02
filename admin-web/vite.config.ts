@@ -29,13 +29,11 @@ export default defineConfig({
     watch: process.env.DEV_USE_POLLING === 'true'
       ? { usePolling: true, interval: 500 }
       : undefined,
+    // 后台只调 /api/v1/admin/*。原先还代理 /api/v1/internal，但源码里没有任何
+    // 一处调用它——留着它等于把服务间前缀也暴露给浏览器，没有理由。
     proxy: {
       '/api/v1/admin': {
-        target: process.env.DEV_API_PROXY_TARGET || process.env.VITE_API_BASE || 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/api/v1/internal': {
-        target: process.env.DEV_API_PROXY_TARGET || process.env.VITE_API_BASE || 'http://localhost:8080',
+        target: process.env.DEV_API_PROXY_TARGET || process.env.VITE_API_BASE || 'http://localhost:8081',
         changeOrigin: true,
       },
     },

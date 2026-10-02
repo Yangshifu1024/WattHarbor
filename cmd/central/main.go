@@ -86,39 +86,12 @@ func run(ctx context.Context) error {
 		}
 		httpapi.OK(c, gin.H{"status": "identity_storage_ready"})
 	})
-	adminStore := identitystore.AdminStore{DB: adminORM}
-	if err := adminStore.Bootstrap(ctx, cfg.AdminBootstrapUser, cfg.AdminBootstrapPassword); err != nil {
-		return err
-	}
 	// C 端鉴权规则在 identity/user 包，此处只装配一次供全部 C 端接口复用。
 	cEndAuth := identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: cache}, identitystore.UserStore{DB: userORM})
-	adminAPI := identityhttp.AdminAuth{Store: adminStore, Sessions: sessionstore.AdminSessions{Redis: cache}, JWT: jwt}
-	adminAPI.Register(router)
 	admin.RegulatoryEventsAPI{Queue: admin.RegulatoryQueue{AdminDB: adminDB}, ServiceToken: cfg.ServiceToken}.Register(router)
 	admin.DeliveryDispatchAPI{Webhook: admin.WebhookDispatch{AdminDB: adminORM}, Regulatory: admin.RegulatoryDispatch{AdminDB: adminORM}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.Service{Store: identitystore.Store{DB: billingORM}, Orders: identitystore.BillingOrders{DB: userORM}, Splits: identitystore.SplitResolver{AdminDB: adminORM}, ServiceToken: cfg.ServiceToken,
 		Bills: identityhttp.BillStoreIssuer{Store: identityhttp.BillStore{DB: userORM}}}.Register(router)
-	admin.ResourceAPI{Store: admin.ResourceStore{AdminDB: adminORM, UserDB: userORM, BillingDB: billingORM}, Auth: adminAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, ExportDir: os.Getenv("EXPORT_DIR")}.Register(router)
-	exportCleanup := admin.ExportTask{Store: admin.ResourceStore{AdminDB: adminORM}, ExportDir: os.Getenv("EXPORT_DIR")}
-	go func() {
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for {
-			if count, err := exportCleanup.CleanupExpired(ctx); err != nil {
-				if !errors.Is(err, context.Canceled) {
-					log.Printf("export cleanup: %v", err)
-				}
-			} else if count > 0 {
-				log.Printf("expired %d export files", count)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-	admin.Dashboard{UserDB: userORM, AdminDB: adminORM}.Register(router, adminAPI)
 	var loginExchanger identityauth.CodeExchanger = identityauth.MiniProgram{SDK: wechat}
 	if cfg.LoginMode == "development" {
 		loginExchanger = identityauth.DevelopmentExchanger{}

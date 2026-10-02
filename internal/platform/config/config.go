@@ -37,6 +37,23 @@ type Central struct {
 	WechatNotifyURL        string `env:"WECHAT_NOTIFY_URL"`
 }
 
+// Admin 是运营后台进程的配置。
+//
+// 与 Central 共用同一个 central_db，但不碰微信与支付配置——后台不发起支付，
+// 也不替用户登录。分开定义而不是复用 Central，是为了让"这个进程需要什么
+// 凭据"在类型上就是清楚的：多给一份 WECHAT_SECRET 就等于多一处泄露面。
+type Admin struct {
+	DatabaseURL            string `env:"DATABASE_URL_CENTRAL,required"`
+	HTTPAddr               string `env:"ADMIN_HTTP_ADDR" envDefault:":8081"`
+	RedisCacheURL          string `env:"REDIS_CACHE_URL,required"`
+	JWTSecret              string `env:"JWT_SECRET,required"`
+	ServiceToken           string `env:"SERVICE_TOKEN,required"`
+	AdminBootstrapUser     string `env:"ADMIN_BOOTSTRAP_USER"`
+	AdminBootstrapPassword string `env:"ADMIN_BOOTSTRAP_PASSWORD"`
+	GatewayInternalURL     string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
+	ExportDir              string `env:"EXPORT_DIR"`
+}
+
 type Worker struct {
 	CentralDatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
 	HTTPAddr           string `env:"WORKER_HTTP_ADDR" envDefault:":8085"`
@@ -95,6 +112,17 @@ func LoadWorker() (Worker, error) {
 	}
 	if c.RegulatoryMode == "http" && (c.RegulatoryEndpoint == "" || len(c.RegulatorySecret) < 16) {
 		return c, fmt.Errorf("worker config: REGULATORY_ENDPOINT and REGULATORY_SIGNING_SECRET required for http mode")
+	}
+	return c, nil
+}
+
+func LoadAdmin() (Admin, error) {
+	var c Admin
+	if err := env.Parse(&c); err != nil {
+		return c, fmt.Errorf("admin config: %w", err)
+	}
+	if len(c.JWTSecret) < 32 {
+		return c, fmt.Errorf("admin config: JWT_SECRET must have at least 32 bytes")
 	}
 	return c, nil
 }

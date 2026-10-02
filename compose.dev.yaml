@@ -93,9 +93,20 @@ services:
       GATEWAY_DEBUG_HEARTBEAT: true
     ports: ["127.0.0.1:8083:8083", "127.0.0.1:9100:9100"]
 
+  # central 同时提供 C 端接口与服务间接口（/api/v1/internal/*）。
+  # 后台接口已独立到 admin 进程，C 端接口拆出 user 进程是下一步。
   central:
     <<: *go
     command: ["go", "run", "./cmd/central"]
+    environment:
+      <<: *go-env
+      DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
+    ports: ["127.0.0.1:8080:8080"]
+
+  # 运营后台。只暴露 /api/v1/admin/*，与 C 端走不同的进程与端口。
+  admin:
+    <<: *go
+    command: ["go", "run", "./cmd/admin"]
     volumes:
       - .:/workspace
       - go-modules:/go/pkg/mod
@@ -107,7 +118,7 @@ services:
       EXPORT_DIR: /var/lib/chargepilot/exports
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-admin}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-ChangeMe!Admin2026}
-    ports: ["127.0.0.1:8080:8080"]
+    ports: ["127.0.0.1:8081:8081"]
 
   worker:
     <<: *go
@@ -126,7 +137,7 @@ services:
     working_dir: /workspace/admin-web
     command: ["sh", "-c", "npm ci --no-audit --no-fund && exec npm run dev -- --host 0.0.0.0"]
     environment:
-      DEV_API_PROXY_TARGET: http://central:8080
+      DEV_API_PROXY_TARGET: http://admin:8081
       DEV_USE_POLLING: "true"
       VITE_API_BASE: ""
     ports: ["127.0.0.1:5173:5173"]
@@ -135,7 +146,7 @@ services:
       - node-modules:/workspace/admin-web/node_modules
       - npm-cache:/root/.npm
     depends_on:
-      central: { condition: service_started }
+      admin: { condition: service_started }
 
   user-h5:
     image: node:24-bookworm-slim

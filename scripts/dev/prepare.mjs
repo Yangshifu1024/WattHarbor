@@ -1,6 +1,6 @@
-// Local development fixtures use public admin APIs and preserve existing edits.
+// Local development fixtures use the admin process (127.0.0.1:8081) and preserve existing edits.
 // Run from the repository root after scripts/dev/start.ps1, with Node.js 24 or later.
-const base='http://127.0.0.1:8080/api/v1';let token;
+const base='http://127.0.0.1:8081/api/v1';let token;
 async function call(method,path,body){const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});const j=await r.json();if(!r.ok||j.code!==0)throw Error(method+' '+path+' '+JSON.stringify(j));return j.data;}
 const login=await call('POST','/admin/auth/login',{username:process.env.ADMIN_BOOTSTRAP_USER||'admin',password:process.env.ADMIN_BOOTSTRAP_PASSWORD||'ChangeMe!Admin2026'});token=login.token||login.access_token;
 const vs=await call('GET','/admin/vendors');let vendor=vs.items.find(v=>v.vendor_code==='LOCAL_DC589');
