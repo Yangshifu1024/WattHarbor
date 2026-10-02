@@ -720,6 +720,492 @@
             }
           }
         }
+      },
+      "MyCouponRow": {
+        "type": "object",
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "description": "该次发放的记录 ID"
+          },
+          "coupon_id": {
+            "type": "string",
+            "description": "券模板 ID"
+          },
+          "name": {
+            "type": "string"
+          },
+          "discount_type": {
+            "type": "string",
+            "enum": [
+              "amount",
+              "percentage",
+              "time_free"
+            ]
+          },
+          "discount_value_cents": {
+            "type": "integer",
+            "nullable": true,
+            "description": "满减金额，单位分；仅 amount 模式非空"
+          },
+          "discount_percent": {
+            "type": "number",
+            "nullable": true,
+            "description": "折扣百分比（打折数）；仅 percentage 模式非空"
+          },
+          "min_charge_cents": {
+            "type": "integer",
+            "description": "使用门槛，单位分"
+          },
+          "status": {
+            "type": "string",
+            "description": "unused 未使用 / used 已使用 / expired 已过期"
+          },
+          "usable": {
+            "type": "boolean",
+            "description": "当前是否可用于下单；状态、有效期与门槛都满足才为 true"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "MyCouponPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MyCouponRow"
+                }
+              },
+              "count": {
+                "type": "integer",
+                "description": "未使用的券张数"
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "RedeemableCouponRow": {
+        "type": "object",
+        "properties": {
+          "grant_id": {
+            "type": "string"
+          },
+          "coupon_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "discount_type": {
+            "type": "string",
+            "enum": [
+              "amount",
+              "percentage",
+              "time_free"
+            ]
+          },
+          "min_charge_cents": {
+            "type": "integer",
+            "description": "使用门槛，单位分"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "RedeemableCouponListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RedeemableCouponRow"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AnnouncementRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "AnnouncementPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AnnouncementRow"
+                }
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "InvoiceApplyRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "order_no",
+          "invoice_type",
+          "title",
+          "email"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "幂等键"
+          },
+          "order_no": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "要开票的充电订单号"
+          },
+          "invoice_type": {
+            "type": "string",
+            "description": "发票类型。库里枚举就是 normal / vat_special，小程序发过来的也是这两个名字，不是 personal / company。",
+            "enum": [
+              "normal",
+              "vat_special"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "发票抬头"
+          },
+          "tax_no": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "纳税人识别号；个人发票可空"
+          },
+          "email": {
+            "type": "string",
+            "description": "接收发票的邮箱"
+          }
+        }
+      },
+      "InvoiceRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "invoice_no": {
+            "type": "string"
+          },
+          "order_no": {
+            "type": "string"
+          },
+          "invoice_type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tax_no": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string"
+          },
+          "total_cents": {
+            "type": "integer",
+            "description": "开票金额，单位分"
+          },
+          "review_status": {
+            "type": "string"
+          },
+          "invoice_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InvoicePageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/InvoiceRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "InvoiceApplyResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "invoice_no": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ReportFaultRequest": {
+        "type": "object",
+        "required": [
+          "device_id",
+          "port_no",
+          "fault_type"
+        ],
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "设备编号"
+          },
+          "port_no": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "端口号"
+          },
+          "fault_type": {
+            "type": "string",
+            "description": "故障类型"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "补充描述"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "图片地址列表"
+          }
+        }
+      },
+      "FaultReportRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "port_no": {
+            "type": "integer"
+          },
+          "fault_type": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "dispatched",
+              "fixed",
+              "closed"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FaultReportPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FaultReportRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "FaultHistoryRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "description": "处理说明；标记为已修复时必有"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FaultHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FaultHistoryRow"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PhoneBindRequest": {
+        "type": "object",
+        "description": "线上环境用微信手机号授权拿到的 code；开发模式直接传 phone 便于联调。",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "微信手机号授权凭证；线上必填且不得同时传 phone"
+          },
+          "phone": {
+            "type": "string",
+            "description": "仅开发模式使用：直接指定要绑定的中国大陆手机号"
+          }
+        }
+      },
+      "PhoneBindResult": {
+        "type": "object",
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "description": "是否绑定成功"
+          },
+          "phone_masked": {
+            "type": "string",
+            "description": "打码后的手机号，如 138****8000。接口**不返回完整号码**，需要完整号码的流程走服务端内部查询。"
+          }
+        }
+      },
+      "PhoneUnbindRequest": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "二次确认凭证"
+          }
+        }
+      },
+      "PhoneUnbindResult": {
+        "type": "object",
+        "properties": {
+          "unbound": {
+            "type": "boolean",
+            "description": "是否已解绑"
+          },
+          "bound": {
+            "type": "boolean",
+            "description": "解绑后恒为 false"
+          }
+        }
       }
     }
   },
@@ -744,6 +1230,26 @@
     {
       "name": "scan",
       "description": "扫码与起充"
+    },
+    {
+      "name": "coupon",
+      "description": "优惠券"
+    },
+    {
+      "name": "invoice",
+      "description": "发票"
+    },
+    {
+      "name": "device",
+      "description": "报修"
+    },
+    {
+      "name": "announcement",
+      "description": "公告"
+    },
+    {
+      "name": "phone",
+      "description": "手机号绑定"
     }
   ],
   "paths": {
@@ -1328,6 +1834,400 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScanStartResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/coupons": {
+      "get": {
+        "summary": "查询当前可用于下单的券",
+        "operationId": "user_coupons",
+        "tags": [
+          "coupon"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeemableCouponListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/coupon/my": {
+      "get": {
+        "summary": "分页查询我的券",
+        "operationId": "user_coupon_my",
+        "tags": [
+          "coupon"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyCouponPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/announcement/list": {
+      "get": {
+        "summary": "查询当前生效的公告",
+        "operationId": "user_announcement_list",
+        "tags": [
+          "announcement"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/invoice/my": {
+      "get": {
+        "summary": "分页查询我的开票申请",
+        "operationId": "user_invoice_my",
+        "tags": [
+          "invoice"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicePageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/invoice/apply": {
+      "post": {
+        "summary": "申请开具发票",
+        "operationId": "user_invoice_apply",
+        "tags": [
+          "invoice"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceApplyResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/device/report-fault": {
+      "post": {
+        "summary": "提交设备报障",
+        "operationId": "user_report_fault",
+        "tags": [
+          "device"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportFaultRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FaultReportRow"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/device/fault-reports": {
+      "get": {
+        "summary": "分页查询我提交的报障",
+        "operationId": "user_fault_reports",
+        "tags": [
+          "device"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FaultReportPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/device/fault-reports/{id}/history": {
+      "get": {
+        "summary": "查询报障处理历史",
+        "operationId": "user_fault_history",
+        "tags": [
+          "device"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FaultHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/phone/bind": {
+      "post": {
+        "summary": "绑定手机号",
+        "operationId": "user_phone_bind",
+        "tags": [
+          "phone"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneBindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneBindResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/phone/unbind": {
+      "post": {
+        "summary": "解绑手机号",
+        "operationId": "user_phone_unbind",
+        "tags": [
+          "phone"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneUnbindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneUnbindResult"
                 }
               }
             }
