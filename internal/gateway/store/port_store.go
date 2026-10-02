@@ -1,0 +1,20 @@
+package store
+
+import (
+	"context"
+
+	"gorm.io/gorm"
+)
+
+// 端口号与端口编码的互查。设备侧上传的心跳与历史数据带的是端口号，
+// 但协议报文的地址是端口编码（设备号-端口），两者的映射只在这里维护。
+
+// PortCodeByNumber 返回设备某个端口的编码。端口未开通或已软删除时返回空串，
+// 调用方据此表达"未开通"，而不是当成解析失败。
+func PortCodeByNumber(ctx context.Context, db *gorm.DB, deviceID string, portNo uint8) (string, error) {
+	var code string
+	err := db.WithContext(ctx).Table("device_port").
+		Where("device_id=? AND port_no=? AND deleted_at IS NULL", deviceID, portNo).
+		Pluck("port_code", &code).Error
+	return code, err
+}

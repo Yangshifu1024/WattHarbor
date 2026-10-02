@@ -3,12 +3,12 @@ package control
 import (
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"net/http"
 	"strconv"
 	"time"
@@ -19,16 +19,7 @@ func (a TelemetryAPI) cardEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var rows []struct {
-		EventKey     string `gorm:"column:event_key"`
-		EventJSON    []byte `gorm:"column:event_json"`
-		ResponseJSON []byte `gorm:"column:response_json"`
-	}
-	err := a.DB.WithContext(c.Request.Context()).Table("card_event_delivery x").
-		Select("x.event_key,e.event_json,x.response_json").
-		Joins("JOIN device_event e ON e.event_key=x.event_key").
-		Where("x.status='pending' AND x.next_attempt_at<=UTC_TIMESTAMP(3)").
-		Order("e.id").Limit(100).Find(&rows).Error
+	rows, err := store.ListPendingCardDeliveries(c.Request.Context(), a.DB)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡事件暂不可读取", nil)
 		return
@@ -58,27 +49,22 @@ func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 	}
 	var eventJSON string
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var stored struct {
-			ResponseJSON []byte `gorm:"column:response_json"`
-		}
-		if err := tx.Table("card_event_delivery").Clauses(clause.Locking{Strength: "UPDATE"}).Where("event_key=?", in.EventKey).Take(&stored).Error; err != nil {
+		frozen, err := store.LockCardDelivery(tx, in.EventKey)
+		if err != nil {
 			return err
 		}
-		if len(stored.ResponseJSON) > 0 {
-			eventJSON = ""
-			return errResponseFrozen(string(stored.ResponseJSON))
+		if frozen != "" {
+			return errResponseFrozen(frozen)
 		}
-		var row struct {
-			EventJSON []byte `gorm:"column:event_json"`
-		}
-		if err := tx.Table("device_event").Where("event_key=?", in.EventKey).Take(&row).Error; err != nil {
+		raw, err := store.FindDeviceEvent(c.Request.Context(), tx, in.EventKey)
+		if err != nil {
 			return err
 		}
 		var e protocol.Event
-		if json.Unmarshal(row.EventJSON, &e) != nil || e.EventID != in.EventKey || uuid.Validate(e.EventID) != nil {
+		if json.Unmarshal(raw, &e) != nil || e.EventID != in.EventKey || uuid.Validate(e.EventID) != nil {
 			return errCardIdentity
 		}
-		eventJSON = string(row.EventJSON)
+		eventJSON = string(raw)
 		return nil
 	})
 	var frozen *frozenResponse
@@ -119,23 +105,21 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		httpapi.BadRequest(c, "冻结请求无效")
 		return
 	}
-	res := a.DB.WithContext(c.Request.Context()).Table("card_event_delivery").
-		Where("event_key=? AND (response_json IS NULL OR response_json='')", in.EventKey).
-		Update("response_json", in.ResponseJSON)
-	if res.Error != nil {
+	stored, err := store.FreezeCardResponse(c.Request.Context(), a.DB, in.EventKey, in.ResponseJSON)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复冻结暂不可用", nil)
 		return
 	}
-	if res.RowsAffected == 1 {
+	if stored == 1 {
 		httpapi.OK(c, gin.H{"stored": true, "response_json": in.ResponseJSON})
 		return
 	}
-	var stored string
-	if err := a.DB.WithContext(c.Request.Context()).Table("card_event_delivery").Select("response_json").Where("event_key=?", in.EventKey).Take(&stored).Error; err != nil {
+	frozen, err := store.FindFrozenCardResponse(c.Request.Context(), a.DB, in.EventKey)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复暂不可读取", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"stored": false, "response_json": stored})
+	httpapi.OK(c, gin.H{"stored": false, "response_json": frozen})
 }
 
 // cardEventAdvance 推进投递状态：retry 增加尝试次数并 5 秒后重排；done 标记完成。
@@ -152,23 +136,13 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 		httpapi.BadRequest(c, "推进请求无效")
 		return
 	}
-	var res *gorm.DB
-	if in.Outcome == "retry" {
-		res = a.DB.WithContext(c.Request.Context()).Table("card_event_delivery").Where("event_key=?", in.EventKey).
-			Updates(map[string]any{
-				"attempts":        gorm.Expr("attempts+1"),
-				"next_attempt_at": time.Now().UTC().Add(5 * time.Second),
-				"last_error":      in.Error,
-			})
-	} else {
-		res = a.DB.WithContext(c.Request.Context()).Table("card_event_delivery").Where("event_key=?", in.EventKey).
-			Updates(map[string]any{"status": "done", "last_error": nil})
-	}
-	if res.Error != nil {
+	affected, err := store.AdvanceCardDelivery(c.Request.Context(), a.DB, in.EventKey,
+		in.Outcome == "retry", in.Error, time.Now().UTC().Add(5*time.Second))
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡投递状态暂不可用", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"advanced": res.RowsAffected == 1})
+	httpapi.OK(c, gin.H{"advanced": affected == 1})
 }
 
 // resolvePort 按设备与端口序号取二维码，未开通返回 found:false。
@@ -182,11 +156,8 @@ func (a TelemetryAPI) resolvePort(c *gin.Context) {
 		httpapi.BadRequest(c, "设备或端口无效")
 		return
 	}
-	var code string
-	res := a.DB.WithContext(c.Request.Context()).Table("device_port").
-		Where("device_id=? AND port_no=? AND deleted_at IS NULL", device, uint8(port)).
-		Pluck("port_code", &code)
-	if res.Error != nil {
+	code, err := store.PortCodeByNumber(c.Request.Context(), a.DB, device, uint8(port))
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口暂不可解析", nil)
 		return
 	}
