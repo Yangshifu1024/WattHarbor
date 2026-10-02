@@ -6,9 +6,7 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/delivery"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"time"
 )
 
@@ -31,36 +29,15 @@ type WebhookSubscription struct {
 // ActiveSubscriptions 返回全部启用订阅并解码 event_types 的 JSON 列。
 // 投递方按事件类型自行匹配；无效 JSON 视为不匹配任何事件，不中止清单。
 func (w WebhookDispatch) ActiveSubscriptions(ctx context.Context) ([]WebhookSubscription, error) {
-	rows := []WebhookSubscription{}
-	if err := w.AdminDB.WithContext(ctx).Table("webhook_subscription").
-		Select("id, name, url, secret").Where("enabled = 1 AND deleted_at IS NULL").Find(&rows).Error; err != nil {
+	rows, err := (database.WebhookDispatchStore{DB: w.AdminDB}).ActiveSubscriptions(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
-		return nil, nil
-	}
-	ids := make([]uint64, 0, len(rows))
+	out := make([]WebhookSubscription, 0, len(rows))
 	for _, row := range rows {
-		ids = append(ids, row.ID)
+		out = append(out, WebhookSubscription{ID: row.ID, Name: row.Name, URL: row.URL, Secret: row.Secret, EventTypes: row.EventTypes})
 	}
-	var types []database.WebhookEventTypesRow
-	if err := w.AdminDB.WithContext(ctx).Table("webhook_subscription").
-		Select("id, CAST(event_types AS CHAR) AS event_types").
-		Where("id IN ?", ids).Find(&types).Error; err != nil {
-		return nil, err
-	}
-	byID := map[uint64][]string{}
-	for _, row := range types {
-		var decoded []string
-		if len(row.EventTypes) > 0 {
-			_ = json.Unmarshal(row.EventTypes, &decoded)
-		}
-		byID[row.ID] = decoded
-	}
-	for i := range rows {
-		rows[i].EventTypes = byID[rows[i].ID]
-	}
-	return rows, nil
+	return out, nil
 }
 
 // RecordDeliveries 在一个事务里批量 upsert 投递结果。与旧 worker 版语义一致：
@@ -71,48 +48,33 @@ func (w WebhookDispatch) RecordDeliveries(ctx context.Context, records []deliver
 		return nil
 	}
 	now := time.Now().UTC()
-	rows := make([]map[string]any, 0, len(records))
+	rows := make([]database.WebhookDeliveryRowInput, 0, len(records))
 	for _, record := range records {
-		var statusValue any
-		if record.ResponseStatus != nil {
-			statusValue = *record.ResponseStatus
-		}
-		var responseValue any
-		if record.ResponseBody != nil {
-			responseValue = *record.ResponseBody
-		}
-		var errorValue any
-		if record.Error != "" {
-			errorValue = record.Error
-		}
-		rows = append(rows, map[string]any{
-			"subscription_id": record.SubscriptionID,
-			"event_id":        record.EventID,
-			"event_type":      record.EventType,
-			"request_body":    record.RequestBody,
-			"response_status": statusValue,
-			"response_body":   responseValue,
-			"error_msg":       errorValue,
-			"attempt_count":   1,
-			"duration_ms":     record.DurationMS,
-			"delivered_at":    now,
+		rows = append(rows, database.WebhookDeliveryRowInput{
+			SubscriptionID: record.SubscriptionID, EventID: record.EventID, EventType: record.EventType,
+			RequestBody: record.RequestBody, ResponseStatus: record.ResponseStatus,
+			ResponseBody: record.ResponseBody, ErrorMsg: errorOrNil(record.Error),
+			DurationMS: durationOrNil(record.DurationMS), DeliveredAt: now,
 		})
 	}
-	return w.AdminDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Table("webhook_delivery_log").Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "subscription_id"}, {Name: "event_id"}},
-			DoUpdates: clause.Assignments(map[string]any{
-				"event_type":      gorm.Expr("VALUES(event_type)"),
-				"request_body":    gorm.Expr("VALUES(request_body)"),
-				"response_status": gorm.Expr("VALUES(response_status)"),
-				"response_body":   gorm.Expr("VALUES(response_body)"),
-				"error_msg":       gorm.Expr("VALUES(error_msg)"),
-				"attempt_count":   gorm.Expr("webhook_delivery_log.attempt_count + 1"),
-				"duration_ms":     gorm.Expr("VALUES(duration_ms)"),
-				"delivered_at":    gorm.Expr("VALUES(delivered_at)"),
-			}),
-		}).Create(&rows).Error
-	})
+	return (database.WebhookDispatchStore{DB: w.AdminDB}).RecordDeliveries(ctx, rows)
+}
+
+// durationOrNil 把"未测得耗时"表达为 nil：0 毫秒与没测到是两件事。
+func durationOrNil(ms int64) *uint64 {
+	if ms <= 0 {
+		return nil
+	}
+	v := uint64(ms)
+	return &v
+}
+
+// errorOrNil 把空错误串转成 nil，让日志里的"没有错误"是 NULL 而不是空串。
+func errorOrNil(message string) *string {
+	if message == "" {
+		return nil
+	}
+	return &message
 }
 
 // RegulatoryDispatch 承接监管报送的租约领取与状态推进，全部在 central
@@ -138,7 +100,7 @@ func (r RegulatoryDispatch) Claim(ctx context.Context, limit int) ([]ClaimedRepo
 		return nil, errors.New("claim limit must be between 1 and 20")
 	}
 	now := time.Now().UTC()
-	var pending []database.WebhookDeliveryRow
+	store := database.WebhookDispatchStore{DB: r.AdminDB}
 	tx := r.AdminDB.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -149,29 +111,19 @@ func (r RegulatoryDispatch) Claim(ctx context.Context, limit int) ([]ClaimedRepo
 			_ = tx.Rollback().Error
 		}
 	}()
-	if err := tx.Raw(`SELECT id,event_id,object_type,object_key,CAST(payload_json AS CHAR) AS payload
-		FROM regulatory_report WHERE status IN ('queued','processing') AND next_attempt_at <= ?
-		AND (lease_until IS NULL OR lease_until < ?) ORDER BY id LIMIT ? FOR UPDATE`,
-		now, now, limit).Scan(&pending).Error; err != nil {
+	claimed, err := store.ClaimRegulatoryReports(tx, now, limit)
+	if err != nil {
 		return nil, err
-	}
-	claimed := make([]ClaimedReport, 0, len(pending))
-	for _, row := range pending {
-		token := uuid.NewString()
-		if err := tx.Exec(`UPDATE regulatory_report SET status='processing',lease_token=?,lease_until=? WHERE id=?`,
-			token, now.Add(2*time.Minute), row.ID).Error; err != nil {
-			return nil, err
-		}
-		claimed = append(claimed, ClaimedReport{
-			ID: row.ID, EventID: row.EventID, ObjectType: row.ObjectType,
-			ObjectKey: row.ObjectKey, Data: json.RawMessage(row.Payload), LeaseToken: token,
-		})
 	}
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
 	committed = true
-	return claimed, nil
+	out := make([]ClaimedReport, 0, len(claimed))
+	for _, row := range claimed {
+		out = append(out, ClaimedReport{ID: row.ID, EventID: row.EventID, ObjectType: row.ObjectType, ObjectKey: row.ObjectKey, Data: row.Data, LeaseToken: row.LeaseToken})
+	}
+	return out, nil
 }
 
 // FinishItem 是一笔报送的发送结果；lease_token 不匹配的记录被跳过（租约已失效）。
@@ -193,39 +145,19 @@ type FinishResult struct {
 // Finish 在一个事务内按 lease_token 条件推进状态。成功置 delivered；
 // 失败回到 queued 并按有界指数退避（2 的 attempts 次幂秒，封顶 2^11）重排。
 func (r RegulatoryDispatch) Finish(ctx context.Context, items []FinishItem) (FinishResult, error) {
-	var result FinishResult
 	now := time.Now().UTC()
+	finishes := make([]database.RegulatoryFinish, 0, len(items))
+	for _, item := range items {
+		finishes = append(finishes, database.RegulatoryFinish{
+			ID: item.ID, LeaseToken: item.LeaseToken, Delivered: item.Delivered, Mode: item.Mode, Error: item.Error,
+		})
+	}
+	store := database.WebhookDispatchStore{DB: r.AdminDB}
+	var result FinishResult
 	err := r.AdminDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, item := range items {
-			var res *gorm.DB
-			if item.Delivered {
-				res = tx.Exec(`UPDATE regulatory_report SET status='delivered',attempts=attempts+1,
-					delivered_at=?,delivered_mode=?,last_error=NULL,lease_token=NULL,lease_until=NULL WHERE id=? AND lease_token=?`,
-					now, item.Mode, item.ID, item.LeaseToken)
-			} else {
-				// MySQL 按赋值从左到右求值：attempts 先 +1（等于旧值 +1），
-				// 退避用 2 的 attempts 次幂秒，与旧 worker 版 retryDelay(attempts+1) 一致。
-				res = tx.Exec(`UPDATE regulatory_report SET status='queued',attempts=attempts+1,
-					next_attempt_at=DATE_ADD(?, INTERVAL POW(2, LEAST(attempts,11)) SECOND),last_error=?,lease_token=NULL,lease_until=NULL WHERE id=? AND lease_token=?`,
-					now, truncateRegulatoryError(item.Error), item.ID, item.LeaseToken)
-			}
-			if res.Error != nil {
-				return res.Error
-			}
-			if affected := res.RowsAffected; affected == 1 {
-				result.Finished++
-			} else {
-				result.Lost++
-			}
-		}
-		return nil
+		var err error
+		result.Finished, result.Lost, err = store.FinishRegulatoryReports(tx, now, finishes)
+		return err
 	})
 	return result, err
-}
-
-func truncateRegulatoryError(value string) string {
-	if len(value) > 512 {
-		return value[:512]
-	}
-	return value
 }
