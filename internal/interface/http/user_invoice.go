@@ -20,20 +20,12 @@ func (a UserAccountAPI) myInvoices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	base := a.UserDB.WithContext(c.Request.Context()).Table("invoice_request").
-		Where("user_id = ? AND deleted_at IS NULL", userID)
-	var total int64
-	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	out, err := orderstore.ListUserInvoiceRequests(c.Request.Context(), a.UserDB, userID, page, pageSize)
+	if err != nil {
 		httpapi.Write(c, 503, 5003, "发票记录暂时无法读取", nil)
 		return
 	}
-	rows := []map[string]any{}
-	if err := base.Select("id, invoice_no, biz_type, biz_id, total_cents, invoice_type, title, tax_no, email, review_status, reject_reason, invoice_url, created_at").
-		Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
-		httpapi.Write(c, 503, 5003, "发票记录暂时无法读取", nil)
-		return
-	}
-	httpapi.OK(c, gin.H{"items": rows, "total": total, "page": page, "page_size": pageSize})
+	httpapi.OK(c, gin.H{"items": out.Items, "total": out.Total, "page": page, "page_size": pageSize})
 }
 
 // applyInvoice 为客户自己某一笔已结算的订单申请发票。
@@ -78,14 +70,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	var order struct {
-		ID     uint64 `gorm:"column:id"`
-		UserID uint64 `gorm:"column:user_id"`
-		Status string `gorm:"column:status"`
-	}
-	err := a.UserDB.WithContext(ctx).Table("charge_order").
-		Select("id, user_id, status").
-		Where("order_no = ? AND user_id = ? AND deleted_at IS NULL", in.OrderNo, userID).Take(&order).Error
+	order, err := orderstore.FindInvoiceableOrder(ctx, a.UserDB, in.OrderNo, userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "订单不存在", nil)
 		return
@@ -114,34 +99,18 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 	invoiceNo := "INV" + strings.ToUpper(strings.ReplaceAll(in.RequestID, "-", ""))
 	var id uint64
 	err = a.UserDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing struct {
-			ID uint64 `gorm:"column:id"`
-		}
-		if found := tx.Table("invoice_request").Where("invoice_no = ?", invoiceNo).Take(&existing); found.Error == nil {
-			id = existing.ID
-			return nil
-		} else if !errors.Is(found.Error, gorm.ErrRecordNotFound) {
-			return found.Error
-		}
-		// 一单一张发票，防止客户把同一笔充电重复申领。
-		var duplicate int64
-		if err := tx.Table("invoice_request").
-			Where("biz_type = 'charge' AND biz_id = ? AND deleted_at IS NULL", order.ID).Count(&duplicate).Error; err != nil {
+		created, err := orderstore.ApplyInvoice(tx, orderstore.InvoiceApplyInput{
+			InvoiceNo: invoiceNo, UserID: userID, OrderID: order.ID, TotalCents: totalCents,
+			InvoiceType: in.InvoiceType, Title: title,
+			TaxNo: strings.TrimSpace(in.TaxNo), Email: strings.TrimSpace(in.Email),
+		})
+		if err != nil {
 			return err
 		}
-		if duplicate > 0 {
-			return errInvoiceDuplicate
-		}
-		if err := tx.Table("invoice_request").Create(map[string]any{
-			"invoice_no": invoiceNo, "user_id": userID, "biz_type": "charge", "biz_id": order.ID,
-			"total_cents": totalCents, "invoice_type": in.InvoiceType, "title": title,
-			"tax_no": strings.TrimSpace(in.TaxNo), "email": strings.TrimSpace(in.Email), "review_status": "pending",
-		}).Error; err != nil {
-			return err
-		}
-		return tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error
+		id = created
+		return nil
 	})
-	if errors.Is(err, errInvoiceDuplicate) {
+	if errors.Is(err, orderstore.ErrInvoiceDuplicate) {
 		httpapi.Write(c, 409, 2009, "该订单已申请过发票", nil)
 		return
 	}
@@ -158,7 +127,6 @@ var (
 	ErrInsufficientBalance = errors.New("可用余额不足")
 	errWalletFrozen        = errors.New("钱包已冻结")
 	errWalletIdentity      = errors.New("账号身份不可用")
-	errInvoiceDuplicate    = errors.New("订单已申请发票")
 )
 
 func readPaging(c *gin.Context) (int, int, bool) {
