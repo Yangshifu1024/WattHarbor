@@ -119,6 +119,9 @@ charge-pilot/
 │   │   │   ├── public_api.go                   /api/v1/user/auth/* → cmd/user
 │   │   │   ├── admin_auth.go                   后台鉴权与会话入口
 │   │   ├── admin_mfa_settings.go           自助 MFA 开通与关闭
+│   │   ├── admin_resource.go               列表分页、错误映射、审计事务
+│   │   ├── admin_accounts.go               后台账号增删改与安全操作
+│   │   ├── admin_roles.go                  角色与权限字典
 │   │   ├── admin_api.go                    /api/v1/admin/*     → cmd/admin
 │   │   │   ├── internal_api.go                 /api/v1/internal/* → cmd/central
 │   │   │   ├── device_api.go                   设备端点            → cmd/gateway

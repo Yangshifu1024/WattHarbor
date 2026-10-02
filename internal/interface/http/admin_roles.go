@@ -1,10 +1,9 @@
-package admin
+package http
 
 import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -42,7 +41,7 @@ type PermissionRow struct {
 }
 
 // registerRoles 挂载角色与权限字典的接口：角色增删改查，权限字典只读。
-func (a ResourceAPI) registerRoles(r *gin.Engine) {
+func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
 	// 角色列表使用 admin_user.read，供后台账号表单和角色管理界面读取。
 	r.GET("/api/v1/admin/roles", a.Auth.Require("admin_user.read"), a.listRoles)
 	// 权限字典使用 admin_user.read，仅返回可选权限，不授予权限。
@@ -55,9 +54,9 @@ func (a ResourceAPI) registerRoles(r *gin.Engine) {
 // permissionCodesFor 取出给定
 // 的这些角色合起来持有的权限编码（去重）。被软
 // 删除的角色不参与：删掉的角色不该继续给人授权。
-func (a ResourceAPI) permissionCodesFor(ctx context.Context, codes ...string) ([]string, error) {
+func (a AdminAccounts) permissionCodesFor(ctx context.Context, codes ...string) ([]string, error) {
 	var result []string
-	err := a.Store.AdminDB.WithContext(ctx).Table("permission AS p").
+	err := a.DB.WithContext(ctx).Table("permission AS p").
 		Joins("JOIN role_permission rp ON rp.permission_id = p.id").
 		Joins("JOIN role r ON r.id = rp.role_id AND r.deleted_at IS NULL").
 		Where("r.code IN ?", codes).Distinct("p.code").Pluck("p.code", &result).Error
@@ -65,25 +64,25 @@ func (a ResourceAPI) permissionCodesFor(ctx context.Context, codes ...string) ([
 }
 
 // listRoles 按 ID 升序返回未删除角色，附带权限编码及关联账号数。
-func (a ResourceAPI) listRoles(c *gin.Context) {
+func (a AdminAccounts) listRoles(c *gin.Context) {
 	var rows []RoleRow
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("role AS r").
+	if err := a.DB.WithContext(c.Request.Context()).Table("role AS r").
 		Where("r.deleted_at IS NULL").Order("r.id").Find(&rows).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	for i := range rows {
 		var codes []string
-		if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("permission AS p").
+		if err := a.DB.WithContext(c.Request.Context()).Table("permission AS p").
 			Joins("JOIN role_permission rp ON rp.permission_id = p.id").
 			Where("rp.role_id = ?", rows[i].ID).Order("p.code").Pluck("p.code", &codes).Error; err != nil {
-			chargehttp.AdminResourceFailure(c, err)
+			AdminResourceFailure(c, err)
 			return
 		}
 		rows[i].Permissions = operations.WithoutRetiredPermissions(codes)
-		if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("admin_user").
+		if err := a.DB.WithContext(c.Request.Context()).Table("admin_user").
 			Where("role_id = ? AND deleted_at IS NULL", rows[i].ID).Count(&rows[i].UserCount).Error; err != nil {
-			chargehttp.AdminResourceFailure(c, err)
+			AdminResourceFailure(c, err)
 			return
 		}
 	}
@@ -91,12 +90,12 @@ func (a ResourceAPI) listRoles(c *gin.Context) {
 }
 
 // listPermissions 按模块、编码排序返回权限列表，分组由前端处理。
-func (a ResourceAPI) listPermissions(c *gin.Context) {
+func (a AdminAccounts) listPermissions(c *gin.Context) {
 	rows := []PermissionRow{}
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("permission").
+	if err := a.DB.WithContext(c.Request.Context()).Table("permission").
 		Select("id, code, name, CASE WHEN code LIKE 'feedback.%' THEN 'device' ELSE module END AS module, COALESCE(description, '') AS description").
 		Order("module, code").Find(&rows).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	visible := make([]PermissionRow, 0, len(rows))
@@ -148,15 +147,15 @@ var errRoleInput = errors.New("invalid role")
 
 // createRole 新建自定义角色，初始版本号固定为 1，权限按请求整体替换。
 // 权限集合在事务提交后单独写审计，避免审计写失败把角色回滚成"建了但没权限"的中间态。
-func (a ResourceAPI) createRole(c *gin.Context) {
+func (a AdminAccounts) createRole(c *gin.Context) {
 	var in roleInput
-	if !chargehttp.DecodeResource(c, &in) {
+	if !DecodeResource(c, &in) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
 	held, err := a.permissionCodesFor(c.Request.Context(), profile.Role)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	if err := in.validate(held); err != nil {
@@ -164,8 +163,8 @@ func (a ResourceAPI) createRole(c *gin.Context) {
 		return
 	}
 	var id uint64
-	var auditPending []chargehttp.AuditEntry
-	err = chargehttp.AuditedTransaction(c, a.Store.AdminDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []AuditEntry
+	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		if err := tx.Table("role").Create(map[string]any{
 			"code": in.Code, "name": in.Name, "description": in.Description, "is_builtin": false,
 		}).Error; err != nil {
@@ -177,11 +176,11 @@ func (a ResourceAPI) createRole(c *gin.Context) {
 		if err := replaceRolePermissions(tx, id, in.Permissions); err != nil {
 			return err
 		}
-		auditPending = []chargehttp.AuditEntry{{Action: "create", Target: "role", ID: id, Before: nil, After: in, RequestID: ""}}
+		auditPending = []AuditEntry{{Action: "create", Target: "role", ID: id, Before: nil, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
@@ -189,19 +188,19 @@ func (a ResourceAPI) createRole(c *gin.Context) {
 
 // updateRole 更新角色。内置角色只改名称和说明，权限集合锁定；自定义角色按请求整体替换权限。
 // 响应里的 permissions_locked 告诉前端权限这一栏这次是不是只读的。
-func (a ResourceAPI) updateRole(c *gin.Context) {
-	id, ok := chargehttp.AdminPathID(c)
+func (a AdminAccounts) updateRole(c *gin.Context) {
+	id, ok := AdminPathID(c)
 	if !ok {
 		return
 	}
 	var in roleInput
-	if !chargehttp.DecodeResource(c, &in) {
+	if !DecodeResource(c, &in) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
 	held, err := a.permissionCodesFor(c.Request.Context(), profile.Role)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	if err := in.validate(held); err != nil {
@@ -209,18 +208,18 @@ func (a ResourceAPI) updateRole(c *gin.Context) {
 		return
 	}
 	var before RoleRow
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("role").
+	if err := a.DB.WithContext(c.Request.Context()).Table("role").
 		Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.Write(c, http.StatusNotFound, 1004, "角色不存在", nil)
 			return
 		}
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	// 内置角色仅允许修改名称和说明，其权限集合固定，避免破坏基础管理权限。
-	var auditPending []chargehttp.AuditEntry
-	err = chargehttp.AuditedTransaction(c, a.Store.AdminDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []AuditEntry
+	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		if before.IsBuiltin {
 			if err := tx.Table("role").Where("id = ?", id).
 				Updates(map[string]any{"name": in.Name, "description": in.Description}).Error; err != nil {
@@ -236,11 +235,11 @@ func (a ResourceAPI) updateRole(c *gin.Context) {
 				return err
 			}
 		}
-		auditPending = []chargehttp.AuditEntry{{Action: "update", Target: "role", ID: id, Before: before, After: in, RequestID: ""}}
+		auditPending = []AuditEntry{{Action: "update", Target: "role", ID: id, Before: before, After: in, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "permissions_locked": before.IsBuiltin})
@@ -266,20 +265,20 @@ func replaceRolePermissions(tx *gorm.DB, roleID uint64, codes []string) error {
 
 // deleteRole 软删除角色，保留历史审计引用。
 // 内置角色、仍有关联账号的角色及调用者当前角色均不可删除。
-func (a ResourceAPI) deleteRole(c *gin.Context) {
-	id, ok := chargehttp.AdminPathID(c)
+func (a AdminAccounts) deleteRole(c *gin.Context) {
+	id, ok := AdminPathID(c)
 	if !ok {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
 	var role RoleRow
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("role").
+	if err := a.DB.WithContext(c.Request.Context()).Table("role").
 		Where("id = ? AND deleted_at IS NULL", id).Take(&role).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.Write(c, http.StatusNotFound, 1004, "角色不存在", nil)
 			return
 		}
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	if role.IsBuiltin {
@@ -291,9 +290,9 @@ func (a ResourceAPI) deleteRole(c *gin.Context) {
 		return
 	}
 	var held int64
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("admin_user").
+	if err := a.DB.WithContext(c.Request.Context()).Table("admin_user").
 		Where("role_id = ? AND deleted_at IS NULL", id).Count(&held).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	if held > 0 {
@@ -301,8 +300,8 @@ func (a ResourceAPI) deleteRole(c *gin.Context) {
 			"该角色下仍有账号，请先改派后再删除", nil)
 		return
 	}
-	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.AdminDB, &auditPending, func(tx *gorm.DB) error {
+	var auditPending []AuditEntry
+	err := AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		changed := tx.Table("role").Where("id = ? AND deleted_at IS NULL", id).
 			Updates(map[string]any{"deleted_at": time.Now().UTC()})
 		if changed.Error != nil {
@@ -314,11 +313,11 @@ func (a ResourceAPI) deleteRole(c *gin.Context) {
 		if err := tx.Exec("DELETE FROM role_permission WHERE role_id = ?", id).Error; err != nil {
 			return err
 		}
-		auditPending = []chargehttp.AuditEntry{{Action: "delete", Target: "role", ID: id, Before: role, After: nil, RequestID: ""}}
+		auditPending = []AuditEntry{{Action: "delete", Target: "role", ID: id, Before: role, After: nil, RequestID: ""}}
 		return nil
 	})
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		AdminResourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})

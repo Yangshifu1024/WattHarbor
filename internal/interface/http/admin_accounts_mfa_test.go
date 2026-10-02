@@ -1,4 +1,4 @@
-package admin
+package http
 
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
@@ -14,7 +14,7 @@ func TestAdministratorMFAEndpointStillRejectsSelfOperation(t *testing.T) {
 	router := httpapi.NewRouter()
 	router.POST("/admin-users/:id/mfa", func(c *gin.Context) {
 		c.Set("admin_profile", operations.Profile{ID: 7})
-		(ResourceAPI{}).adminUserMFA(c)
+		(AdminAccounts{}).adminUserMFA(c)
 	})
 	reply := httptest.NewRecorder()
 	router.ServeHTTP(reply, httptest.NewRequest(http.MethodPost, "/admin-users/7/mfa", strings.NewReader(`{"action":"enrol"}`)))

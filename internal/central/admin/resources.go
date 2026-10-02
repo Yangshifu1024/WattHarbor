@@ -28,7 +28,6 @@ func (a ResourceAPI) Register(r *gin.Engine) {
 	a.registerActivityRules(r)
 	a.registerChargeUsers(r)
 	a.registerAuditLogs(r)
-	a.registerRoles(r)
 	a.registerSplitTemplates(r)
 	a.registerCasework(r)
 	a.registerInvoices(r)
@@ -39,7 +38,8 @@ func (a ResourceAPI) Register(r *gin.Engine) {
 	a.registerVendors(r)
 	a.registerFinanceOps(r)
 	a.registerWebhookDelivery(r)
-	a.registerAdminUsers(r)
+	chargehttp.AdminAccounts{DB: a.Store.AdminDB, Auth: &a.Auth}.RegisterRoles(r)
+	chargehttp.AdminAccounts{DB: a.Store.AdminDB, Auth: &a.Auth}.Register(r)
 	ExportTask{Store: a.Store, Auth: a.Auth, ExportDir: a.ExportDir}.register(r)
 	r.GET("/api/v1/admin/stations", a.Auth.Require("station.read"), a.stations)
 	r.GET("/api/v1/admin/stations/:id", a.Auth.Require("station.read"), a.station)
@@ -62,5 +62,3 @@ type PageQuery = chargehttp.AdminPageQuery
 
 // Page 是后台列表接口的统一响应体。
 type Page[T any] = chargehttp.AdminPage[T]
-
-func normalizeBool(value bool) bool { return value }
