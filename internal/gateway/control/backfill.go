@@ -159,30 +159,24 @@ func (a TelemetryAPI) persistBackfill(ctx context.Context, deviceID string, samp
 		return 0, 0, nil
 	}
 	// 仅接受已开通设备及其有效端口的补传，防止写入无法关联硬件来源的历史读数。
-	var device struct {
-		Status string
-	}
-	if err := a.DB.WithContext(ctx).Table("device").
-		Select("status").Where("device_id = ? AND deleted_at IS NULL", deviceID).Take(&device).Error; err != nil {
+	status, err := gatewaystore.DeviceStatus(ctx, a.DB, deviceID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, 0, errUnknownDevice
 		}
 		return 0, 0, err
 	}
 	// 停用设备可补传停用前缓存的读数；退役设备不接受补传。
-	if device.Status == "retired" {
+	if status == "retired" {
 		return 0, 0, errUnknownDevice
 	}
-	var ports []struct {
-		PortNo int16 `gorm:"column:port_no"`
-	}
-	if err := a.DB.WithContext(ctx).Table("device_port").
-		Select("port_no").Where("device_id = ? AND deleted_at IS NULL", deviceID).Find(&ports).Error; err != nil {
+	ports, err := gatewaystore.DevicePortNumbers(ctx, a.DB, deviceID)
+	if err != nil {
 		return 0, 0, err
 	}
 	known := make(map[int16]struct{}, len(ports))
 	for _, p := range ports {
-		known[p.PortNo] = struct{}{}
+		known[p] = struct{}{}
 	}
 	allowed := samples[:0]
 	for _, s := range samples {
@@ -210,16 +204,7 @@ func (a TelemetryAPI) persistBackfill(ctx context.Context, deviceID string, samp
 		}
 	}
 	// 批量查询现有读数，避免对最多 6000 条补传逐行查重。
-	type existing struct {
-		PortNo sql.NullInt16 `gorm:"column:port_no"`
-		Metric string        `gorm:"column:metric"`
-		TS     time.Time     `gorm:"column:ts"`
-	}
-	var stored []existing
-	err := a.DB.WithContext(ctx).Table("telemetry").
-		Select("port_no, metric, ts").
-		Where("device_id = ? AND metric IN ? AND ts >= ? AND ts <= ?", deviceID, metrics, from, to).
-		Find(&stored).Error
+	stored, err := gatewaystore.ListExistingTelemetry(ctx, a.DB, deviceID, metrics, from, to)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -246,7 +231,7 @@ func (a TelemetryAPI) persistBackfill(ctx context.Context, deviceID string, samp
 	if len(rows) == 0 {
 		return 0, skipped, nil
 	}
-	if err := a.DB.WithContext(ctx).Table("telemetry").CreateInBatches(rows, 500).Error; err != nil {
+	if err := gatewaystore.InsertTelemetryBatch(ctx, a.DB, rows); err != nil {
 		return 0, 0, err
 	}
 	// 补传读数同步更新汇总表，保持原始遥测与聚合曲线一致。
