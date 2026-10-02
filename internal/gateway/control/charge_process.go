@@ -5,26 +5,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
-type ChargeProcessPoint struct {
-	ID               uint64    `json:"id"`
-	TS               time.Time `json:"ts"`
-	PowerW           float64   `json:"power_w"`
-	ChargedKWh       float64   `json:"charged_kwh" gorm:"column:charged_kwh"`
-	RemainingKWh     float64   `json:"remaining_kwh" gorm:"column:remaining_kwh"`
-	ChargedSeconds   uint32    `json:"charged_seconds"`
-	RemainingSeconds uint32    `json:"remaining_seconds"`
-	SignalStrength   uint8     `json:"signal_strength"`
-	PortStatus       *uint8    `json:"port_status"`
-	VoltageV         *uint16   `json:"voltage_v"`
-	TemperatureC     *int16    `json:"temperature_c"`
-	DeviceStatus     *uint8    `json:"device_status"`
-}
+// ChargeProcessPoint 是充电过程曲线上的一个点，定义在持久化层。
+type ChargeProcessPoint = gatewaystore.ChargeProcessPoint
 
 func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 	if !a.authorized(c) {

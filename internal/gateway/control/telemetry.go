@@ -134,15 +134,8 @@ func (a TelemetryAPI) read(ctx context.Context, deviceID string, from, to time.T
 }
 
 func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int, from, to time.Time, limit int, table string) ([]CurvePoint, error) {
-	// 列名和 Go 字段名对不上；没有这些 tag 的话 GORM 会扫出零值，
-	// 每个点都是空的。
-	type reading struct {
-		TS   time.Time `gorm:"column:ts"`
-		Name string    `gorm:"column:metric"`
-		Raw  []byte    `gorm:"column:value_num"`
-	}
 	// 长窗口使用汇总表，避免原始样本超过行数预算后仅返回窗口尾部。
-	rows := []reading{}
+	rows := []gatewaystore.Reading{}
 	if table == "telemetry" {
 		if err := gatewaystore.RawReadingsQuery(ctx, a.DB, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
 			return nil, err

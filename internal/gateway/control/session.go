@@ -117,9 +117,3 @@ func (a SessionAPI) cleanupIdle(c *gin.Context) {
 		"idle_threshold_sec": int(a.threshold().Seconds()),
 	})
 }
-
-// deviceSessionKey 使用 ID 与 created_month 联合主键定位会话；月份按 DATE 比较。
-type deviceSessionKey struct {
-	ID           uint64    `gorm:"column:id"`
-	CreatedMonth time.Time `gorm:"column:created_month"`
-}

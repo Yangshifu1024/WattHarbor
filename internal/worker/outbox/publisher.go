@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	workerstore "github.com/ChargePilot2026/charge-pilot/internal/worker/store"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"time"
 )
 
@@ -30,9 +30,8 @@ func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 	}
 	published := 0
 	err := p.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var rows []database.EventOutboxRecord
-		if err := tx.Table(table).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("status IN ('pending','failed') AND scheduled_at <= NOW(3)").Order("id").Limit(100).Find(&rows).Error; err != nil {
+		rows, err := workerstore.ListPublishableOutbox(tx, table)
+		if err != nil {
 			return err
 		}
 		for _, row := range rows {
@@ -43,21 +42,13 @@ func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 			cancel()
 			if pushErr != nil {
 				backoff := 1 << min(row.RetryCount, 8)
-				update := tx.Table(table).Where("id = ?", row.ID).Updates(map[string]any{
-					"status": "failed", "retry_count": gorm.Expr("retry_count + 1"),
-					"last_error":   truncate(pushErr.Error(), 255),
-					"scheduled_at": gorm.Expr("DATE_ADD(NOW(3), INTERVAL ? SECOND)", backoff),
-				})
-				if update.Error != nil {
-					return update.Error
+				if err := workerstore.MarkOutboxFailed(tx, table, row.ID, truncate(pushErr.Error(), 255), backoff); err != nil {
+					return err
 				}
 				continue
 			}
-			update := tx.Table(table).Where("id = ?", row.ID).Updates(map[string]any{
-				"status": "published", "published_at": gorm.Expr("NOW(3)"), "last_error": nil,
-			})
-			if update.Error != nil {
-				return update.Error
+			if err := workerstore.MarkOutboxPublished(tx, table, row.ID); err != nil {
+				return err
 			}
 			published++
 		}

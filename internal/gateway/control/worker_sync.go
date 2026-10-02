@@ -59,7 +59,7 @@ func (a TelemetryAPI) startResults(c *gin.Context) {
 			"charge_order_id": row.ChargeOrderID, "order_no": row.OrderNo,
 			"device_id": row.DeviceID, "port_no": row.PortNo,
 			"port_id": nullableInt(row.PortID), "status": row.Status,
-			"result_code": nullableInt16(row.ResultCode), "ack_at": nullableTime(row.AckAt),
+			"result_code": gatewaystore.NullInt16ToAny(row.ResultCode), "ack_at": gatewaystore.NullTimeToAny(row.AckAt),
 		})
 	}
 	httpapi.OK(c, gin.H{"items": items})
@@ -143,7 +143,7 @@ func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 		"charge_order_id": row.ChargeOrderID, "order_no": row.OrderNo,
 		"device_id": row.DeviceID, "port_no": row.PortNo,
 		"port_id": nullableInt(row.PortID), "status": row.Status,
-		"result_code": nullableInt16(row.ResultCode), "ack_at": nullableTime(row.AckAt),
+		"result_code": gatewaystore.NullInt16ToAny(row.ResultCode), "ack_at": gatewaystore.NullTimeToAny(row.AckAt),
 	}})
 }
 

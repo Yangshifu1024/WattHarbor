@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	workerstore "github.com/ChargePilot2026/charge-pilot/internal/worker/store"
 	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // DLQHandler 处理一条流记录。返回 nil 表示确认该记录；
@@ -165,12 +165,8 @@ func (d DLQ) moveToDeadLetter(ctx context.Context, stream string, entry Entry, c
 	if d.WorkerDB != nil {
 		now := time.Now().UTC()
 		month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-		_ = d.WorkerDB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).
-			Table("dlq_replay_cursor").Create(map[string]any{"stream": stream}).Error
-		_ = d.WorkerDB.WithContext(ctx).Table("dlq_log").Create(map[string]any{
-			"stream": stream, "entry_id": entry.ID, "reason": truncate(cause.Error(), 512),
-			"payload_json": string(entry.Payload), "status": "open", "created_month": month,
-		}).Error
+		_ = workerstore.InitDLQCursor(ctx, d.WorkerDB, stream)
+		_ = workerstore.AppendDeadLetter(ctx, d.WorkerDB, stream, entry.ID, truncate(cause.Error(), 512), string(entry.Payload), month)
 	}
 	// 先确认再从源流删除：XDEL 不清消费组的 PEL 幽灵，
 	// 不 XACK 的话 XPENDING 会一直挂着这条已删除记录。
@@ -230,12 +226,7 @@ func (d DLQ) ReplayOnce(ctx context.Context, stream string, handler DLQHandler) 
 		return 0, errors.New("dlq replay is not configured")
 	}
 	deadStream := stream + DeadLetterSuffix
-	var cursor struct {
-		LastID        *string `gorm:"column:last_id"`
-		ScannedTotal  uint64  `gorm:"column:scanned_total"`
-		ReplayedTotal uint64  `gorm:"column:replayed_total"`
-	}
-	loadErr := d.WorkerDB.WithContext(ctx).Table("dlq_replay_cursor").Where("stream = ?", stream).Take(&cursor).Error
+	cursor, loadErr := workerstore.LoadReplayCursor(ctx, d.WorkerDB, stream)
 	if loadErr != nil && !errors.Is(loadErr, gorm.ErrRecordNotFound) {
 		return 0, loadErr
 	}
@@ -273,15 +264,7 @@ func (d DLQ) ReplayOnce(ctx context.Context, stream string, handler DLQHandler) 
 		replayed++
 	}
 	if d.WorkerDB != nil && scanned > 0 {
-		updates := map[string]any{
-			"scanned_total":  gorm.Expr("scanned_total + ?", scanned),
-			"replayed_total": gorm.Expr("replayed_total + ?", replayed),
-		}
-		if lastID != nil {
-			updates["last_id"] = *lastID
-		}
-		if err := d.WorkerDB.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).
-			Table("dlq_replay_cursor").Where("stream = ?", stream).Updates(updates).Error; err != nil && firstErr == nil {
+		if err := workerstore.AdvanceReplayCursor(ctx, d.WorkerDB, stream, lastID, scanned, replayed); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

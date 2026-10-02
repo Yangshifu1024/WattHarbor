@@ -16,9 +16,9 @@ import (
 
 // Reading 是一条遥测读数。表不同、时间列名不同，统一成 ts / metric / value。
 type Reading struct {
-	TS     time.Time `gorm:"column:ts"`
-	Metric string    `gorm:"column:metric"`
-	Value  float64   `gorm:"column:value_num"`
+	TS   time.Time `gorm:"column:ts"`
+	Name string    `gorm:"column:metric"`    // 库里叫 metric，Go 侧叫 Name 是因为聚合后按指标名分组
+	Raw  []byte    `gorm:"column:value_num"` // 原始值是十进制文本，精度由文本承载，不先转 float64
 }
 
 // deviceLevelMetrics 是挂在设备上而不是端口上的指标。
@@ -102,4 +102,21 @@ func InsertFrozenEndDelivery(db *gorm.DB, deviceEventID, chargeOrderID uint64, p
 	return db.Table("charge_end_delivery").Create(map[string]any{
 		"device_event_id": deviceEventID, "charge_order_id": chargeOrderID, "payload_json": payload,
 	}).Error
+}
+
+// ChargeProcessPoint 是充电过程曲线上的一个点。
+// 电量两列的列名与 Go 字段名对不上，tag 写错会让每个点都扫成零值。
+type ChargeProcessPoint struct {
+	ID               uint64    `json:"id"`
+	TS               time.Time `json:"ts"`
+	PowerW           float64   `json:"power_w"`
+	ChargedKWh       float64   `json:"charged_kwh" gorm:"column:charged_kwh"`
+	RemainingKWh     float64   `json:"remaining_kwh" gorm:"column:remaining_kwh"`
+	ChargedSeconds   uint32    `json:"charged_seconds"`
+	RemainingSeconds uint32    `json:"remaining_seconds"`
+	SignalStrength   uint8     `json:"signal_strength"`
+	PortStatus       *uint8    `json:"port_status"`
+	VoltageV         *uint16   `json:"voltage_v"`
+	TemperatureC     *int16    `json:"temperature_c"`
+	DeviceStatus     *uint8    `json:"device_status"`
 }

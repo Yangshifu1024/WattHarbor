@@ -175,6 +175,27 @@ if [[ -s $central_tables && -s $worker_tables ]]; then
   done < <(find internal/worker -name '*.go' ! -name '*_test.go')
 fi
 
+# 编排层不得出现表名或 gorm 查询构造。允许持有 schema 的只有三处：
+# infrastructure/database（central_db）、gateway/store（gateway_db）、
+# worker/store（worker_db）。三个进程各自拥有自己的 schema，也就各自拥有
+# 自己的持久化层；把表名留在编排层只会让改表波及到不该知道库结构的地方。
+#
+# 豁免是显式列举的，不靠文件名匹配——文件名匹配会被新起的目录绕过去。
+allowed_stores=(internal/infrastructure/database internal/gateway/store internal/worker/store internal/gateway/provision)
+while IFS= read -r file; do
+  skip=0
+  for allowed in "${allowed_stores[@]}"; do
+    [[ $file == "$allowed"/* ]] && skip=1 && break
+  done
+  ((skip)) && continue
+  # clause.Locking 单独出现不算违规：行锁常配合模型推断的 Take(&row)，
+  # 表名来自 store 定义的 TableName()，编排层并没有自己写表名。
+  # 真正越界的是裸表名、gorm 列映射与查询表达式。
+  if grep -qE '\.Table\("|gorm\.Expr|gorm:"(column|primaryKey)|func \([A-Za-z]+\) TableName\(\) string' "$file"; then
+    report "$file: 编排层出现表名或 gorm 查询构造，应归所属 schema 的 store"
+  fi
+done < <(find internal/gateway internal/worker internal/interface internal/application internal/central -name '*.go' ! -name '*_test.go')
+
 # 过渡中的 central/admin 只放 HTTP 处理：不得再定义 gorm 模型或表名映射。
 # 模型留在 infrastructure/database，规则留在 domain——这条守住就不再回退。
 while IFS= read -r file; do
