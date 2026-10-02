@@ -1,4 +1,4 @@
-package billing
+package http
 
 import (
 	"net/http/httptest"

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/central/wallet"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strconv"
 	"time"
 

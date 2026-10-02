@@ -1,4 +1,4 @@
-package channel
+package database
 
 import (
 	"github.com/wechatpay-apiv3/wechatpay-go/core"

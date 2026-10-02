@@ -9,15 +9,16 @@ import (
 	cardpkg "github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/central/wallet"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"log"
 	"reflect"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -34,10 +35,10 @@ func (s BillingOrders) Due(ctx context.Context) ([]uint64, error) {
 func (s BillingOrders) Defer(ctx context.Context, id uint64, status, reason string) error {
 	return s.DB.WithContext(ctx).Table("charge_billing_job").Where("charge_order_id=? AND status<>'done'", id).Updates(map[string]any{"status": status, "last_error": reason, "attempts": gorm.Expr("attempts+1"), "next_attempt_at": time.Now().UTC().Add(time.Minute)}).Error
 }
-func (s BillingOrders) Read(ctx context.Context, id uint64) (billing.Source, error) {
+func (s BillingOrders) Read(ctx context.Context, id uint64) (dbstore.Source, error) {
 	return readBillingSource(s.DB.WithContext(ctx), id)
 }
-func readBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
+func readBillingSource(db *gorm.DB, id uint64) (dbstore.Source, error) {
 	source, err := readOriginalBillingSource(db, id)
 	if err != nil {
 		return source, err
@@ -53,38 +54,38 @@ func readBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 	if result.RowsAffected == 0 {
 		return source, nil
 	}
-	var original, corrected billing.Source
+	var original, corrected dbstore.Source
 	if json.Unmarshal(review.OriginalJSON, &original) != nil || json.Unmarshal(review.CorrectedJSON, &corrected) != nil {
-		return source, billing.ErrConflict
+		return source, dbstore.ErrBillingConflict
 	}
 	current, _ := json.Marshal(source)
 	saved, _ := json.Marshal(original)
 	if string(current) != string(saved) {
-		return source, billing.ErrConflict
+		return source, dbstore.ErrBillingConflict
 	}
 	source.Meter.Segments = corrected.Meter.Segments
 	current, _ = json.Marshal(source)
 	saved, _ = json.Marshal(corrected)
 	if string(current) != string(saved) {
-		return source, billing.ErrConflict
+		return source, dbstore.ErrBillingConflict
 	}
 	return source, nil
 }
-func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
+func readOriginalBillingSource(db *gorm.DB, id uint64) (dbstore.Source, error) {
 	var order orderpkg.ChargeOrderRecord
 	if err := db.Where("id=? AND ended_at IS NOT NULL AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
-		return billing.Source{}, err
+		return dbstore.Source{}, err
 	}
 	if !order.StartedAt.Valid || (order.Status != "completed" && order.Status != "refunding" && order.Status != "refunded") {
-		return billing.Source{}, billing.ErrConflict
+		return dbstore.Source{}, dbstore.ErrBillingConflict
 	}
 	var snapshot orderpkg.ChargePricingSnapshotRecord
 	var end orderpkg.EndReceiptRecord
 	if err := db.Where("charge_order_id=?", id).Take(&snapshot).Error; err != nil {
-		return billing.Source{}, err
+		return dbstore.Source{}, err
 	}
 	if err := db.Where("charge_order_id=?", id).Take(&end).Error; err != nil {
-		return billing.Source{}, err
+		return dbstore.Source{}, err
 	}
 	var contract struct {
 		Rule  charging.Rule   `json:"rule"`
@@ -92,9 +93,9 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 	}
 	var meter orderpkg.EndMeter
 	if json.Unmarshal(snapshot.PricingSnapshot, &contract) != nil || contract.Rule.Spec.Scheme == nil || contract.Offer == nil || json.Unmarshal(end.MeterJSON, &meter) != nil || !meter.EndedAt.Equal(order.EndedAt.Time) {
-		return billing.Source{}, billing.ErrConflict
+		return dbstore.Source{}, dbstore.ErrBillingConflict
 	}
-	source := billing.Source{ChargeOrderID: id, OrderNo: order.OrderNo, UserID: order.UserID, Rule: contract.Rule, Offer: contract.Offer, Meter: charging.ActualMeter{StartedAt: order.StartedAt.Time, EndedAt: meter.EndedAt, ChargedWh: meter.ChargedWh, ChargedSeconds: meter.ChargedSeconds, Segments: meter.Segments}}
+	source := dbstore.Source{ChargeOrderID: id, OrderNo: order.OrderNo, UserID: order.UserID, Rule: contract.Rule, Offer: contract.Offer, Meter: charging.ActualMeter{StartedAt: order.StartedAt.Time, EndedAt: meter.EndedAt, ChargedWh: meter.ChargedWh, ChargedSeconds: meter.ChargedSeconds, Segments: meter.Segments}}
 	var card money.CardCharge
 	if err := db.Where("charge_order_id=?", id).Find(&card).Error; err != nil {
 		return source, err
@@ -102,7 +103,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 	if card.ChargeOrderID != 0 && source.Offer != nil {
 		base := *source.Offer
 		if !base.Valid() || !base.ServerDuration || card.PaidCents <= 0 || card.PaidCents%base.PriceCents != 0 || card.PaidCents/base.PriceCents > 65535 || card.PurchasedMinutes > card.MaxMinutes {
-			return source, billing.ErrConflict
+			return source, dbstore.ErrBillingConflict
 		}
 		base.PurchaseCount = uint16(card.PaidCents / base.PriceCents)
 		base.PriceCents = card.PaidCents
@@ -142,7 +143,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 	if cutoff.Reason == "budget_exhausted" && cutoff.ElectricCents != nil && cutoff.ServiceCents != nil && source.Offer != nil && source.Offer.Mode == "amount" {
 		e, s := *cutoff.ElectricCents, *cutoff.ServiceCents
 		if e < 0 || s < 0 || e+s != source.Offer.PriceCents {
-			return source, billing.ErrConflict
+			return source, dbstore.ErrBillingConflict
 		}
 		source.FinalFee = &charging.Fee{ElectricCents: e, ServiceCents: s, TotalCents: e + s}
 		source.ReviewID = "budget:" + cutoff.CutoffAt.UTC().Format(time.RFC3339Nano)
@@ -161,7 +162,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 	}
 	return source, nil
 }
-func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
+func (s BillingOrders) Apply(ctx context.Context, result dbstore.Result) error {
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return err
@@ -171,7 +172,7 @@ func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
 		return err
 	}
 	if !reference.PaymentOrderID.Valid {
-		return billing.ErrConflict
+		return dbstore.ErrBillingConflict
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var wallet walletpkg.Row
@@ -195,7 +196,7 @@ func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
 			return err
 		}
 		if !order.PaymentOrderID.Valid || uint64(order.PaymentOrderID.Int64) != payment.ID || (payment.PayMethod != "wechat" && payment.PayMethod != "balance") || (payment.Status != "paid" && payment.Status != "partial_refunded" && payment.Status != "refunded") || payment.PaidCents != payment.TotalCents || payment.BizID != order.ID || payment.BizType != "charge" || payment.UserID != order.UserID || payment.PaidCents <= 0 || payment.RefundedCents < 0 || payment.RefundedCents > payment.PaidCents {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
 		source, err := readBillingSource(tx, order.ID)
 		if err != nil {
@@ -204,11 +205,11 @@ func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
 		original, _ := json.Marshal(source)
 		provided, _ := json.Marshal(result.Source)
 		if string(original) != string(provided) {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
-		fee, err := billing.PriceSource(source)
-		if err != nil || !reflect.DeepEqual(fee, result.ActualFee) || result.CalculationNo != billing.CalculationNumber(order.OrderNo, order.ID) {
-			return billing.ErrConflict
+		fee, err := dbstore.PriceSource(source)
+		if err != nil || !reflect.DeepEqual(fee, result.ActualFee) || result.CalculationNo != dbstore.CalculationNumber(order.OrderNo, order.ID) {
+			return dbstore.ErrBillingConflict
 		}
 		var existing struct{ ResultJSON []byte }
 		previous := tx.Table("charge_fee_receipt").Where("charge_order_id=?", order.ID).Find(&existing)
@@ -216,18 +217,18 @@ func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
 			return previous.Error
 		}
 		if previous.RowsAffected > 0 {
-			var old billing.Result
+			var old dbstore.Result
 			if json.Unmarshal(existing.ResultJSON, &old) != nil {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			saved, _ := json.Marshal(old)
 			if string(saved) != string(encoded) {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			return tx.Table("charge_billing_job").Where("charge_order_id=?", order.ID).Updates(map[string]any{"status": "done", "last_error": nil}).Error
 		}
 		if result.TotalCents > payment.PaidCents-payment.RefundedCents {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
 		shortfall := int64(0)
 		if err := tx.Table("charge_fee_receipt").Create(map[string]any{"charge_order_id": order.ID, "calculation_no": result.CalculationNo, "result_json": string(encoded), "shortfall_cents": shortfall}).Error; err != nil {
@@ -282,7 +283,7 @@ func (s BillingOrders) Apply(ctx context.Context, result billing.Result) error {
 	})
 }
 
-var _ billing.Orders = BillingOrders{}
+var _ identityhttp.Orders = BillingOrders{}
 
 // Notification consumers receive final amounts only after durable settlement.
 // Visibility comes from the frozen order, never the current station template.

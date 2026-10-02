@@ -6,8 +6,8 @@ import (
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -42,22 +42,22 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 			return found.Error
 		}
 		if found.RowsAffected > 0 {
-			var source billing.Source
+			var source dbstore.Source
 			if json.Unmarshal(prior.CorrectedJSON, &source) != nil || prior.ChargeOrderID != id || prior.FirstReviewerID != actor || prior.Reason != reason || !orderpkg.SameSegments(source.Meter.Segments, segments) {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			out = prior
 			return nil
 		}
 		if job.Status != "manual_review" {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
 		var count int64
 		if err := tx.Model(&MeterReview{}).Where("charge_order_id=? AND status IN ('awaiting_second','approved')", id).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
 		source, err := readOriginalBillingSource(tx, id)
 		if err != nil {
@@ -95,33 +95,33 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 		}
 		if review.Status == target && review.SecondReviewerID != nil && *review.SecondReviewerID == actor {
 			if !approve && (review.RejectReason == nil || *review.RejectReason != reason) {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			return nil
 		}
 		if job.Status != "manual_review" || review.Status != "awaiting_second" || review.FirstReviewerID == actor {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
 		if approve {
 			current, err := readOriginalBillingSource(tx, id)
 			if err != nil {
 				return err
 			}
-			var original, corrected billing.Source
+			var original, corrected dbstore.Source
 			if json.Unmarshal(review.OriginalJSON, &original) != nil || json.Unmarshal(review.CorrectedJSON, &corrected) != nil {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			a, _ := json.Marshal(current)
 			b, _ := json.Marshal(original)
 			if string(a) != string(b) {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			expected := current
 			expected.Meter.Segments = corrected.Meter.Segments
 			a, _ = json.Marshal(expected)
 			b, _ = json.Marshal(corrected)
 			if string(a) != string(b) {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			if _, err := charging.PriceActual(corrected.Rule, corrected.Meter); err != nil {
 				return err

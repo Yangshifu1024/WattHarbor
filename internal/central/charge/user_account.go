@@ -8,15 +8,15 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/refund"
-	walletrefund "github.com/ChargePilot2026/charge-pilot/internal/central/wallet"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	walletrefund "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -244,7 +244,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 	response := gin.H{"request_id": in.RequestID, "payment_order_id": order.ID, "merchant_order_no": order.OrderNo, "amount_cents": order.TotalCents, "status": order.Status, "can_pay": canPay}
 	if canPay {
 		var stored money.ChargePrepayRecord
-		var params channel.PrepayParams
+		var params database.PrepayParams
 		err := a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error
 		if err == nil {
 			err = json.Unmarshal(stored.ParamsJSON, &params)
@@ -253,7 +253,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 				httpapi.Write(c, 503, 5003, "支付渠道未配置", nil)
 				return
 			}
-			params, err = a.Prepay.Prepay(ctx, channel.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openid, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
+			params, err = a.Prepay.Prepay(ctx, database.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openid, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
 			if err == nil {
 				encoded, _ := json.Marshal(params)
 				stored = money.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
@@ -363,7 +363,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 	switch {
 	case errors.Is(err, ErrInsufficientBalance):
 		httpapi.Write(c, 409, 2009, "可用余额不足", nil)
-	case errors.Is(err, refund.ErrRefundConflict), errors.Is(err, walletrefund.ErrConflict):
+	case errors.Is(err, refund.ErrRefundConflict), errors.Is(err, database.ErrWalletRefundConflict):
 		httpapi.Write(c, 409, 2009, "申请冲突或原充值可退额度不足", nil)
 	case errors.Is(err, errWalletFrozen):
 		httpapi.Write(c, 409, 2009, "钱包已冻结，请等待审核", nil)

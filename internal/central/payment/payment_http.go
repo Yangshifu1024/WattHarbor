@@ -10,9 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -22,7 +21,7 @@ import (
 )
 
 type PrepayProvider interface {
-	Prepay(context.Context, channel.PrepayRequest) (channel.PrepayParams, error)
+	Prepay(context.Context, database.PrepayRequest) (database.PrepayParams, error)
 }
 
 type PaymentStartAPI struct {
@@ -195,7 +194,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 func (a PaymentStartAPI) finishStart(c *gin.Context, intent PaymentIntent) {
 	params, err := a.Intents.PrepayParams(c.Request.Context(), intent.PaymentOrderID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		params, err = a.Provider.Prepay(c.Request.Context(), channel.PrepayRequest{MerchantOrderNo: intent.MerchantOrderNo,
+		params, err = a.Provider.Prepay(c.Request.Context(), database.PrepayRequest{MerchantOrderNo: intent.MerchantOrderNo,
 			OpenID: intent.OpenID, AmountCents: intent.PayableCents, ExpiresAt: intent.ExpiresAt})
 		if err == nil {
 			err = a.Intents.SavePrepay(c.Request.Context(), intent.PaymentOrderID, params)
@@ -214,7 +213,7 @@ func (a PaymentStartAPI) finishStart(c *gin.Context, intent PaymentIntent) {
 }
 
 type NotificationVerifier interface {
-	VerifyNotification(context.Context, *http.Request) (channel.VerifiedTransaction, error)
+	VerifyNotification(context.Context, *http.Request) (database.VerifiedTransaction, error)
 }
 
 type WechatCallbackAPI struct {

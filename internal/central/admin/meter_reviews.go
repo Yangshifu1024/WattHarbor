@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -118,7 +118,7 @@ func publicBillingSource(raw json.RawMessage) (json.RawMessage, error) {
 // 或审核人重复归 409 并提示刷新；计量分段和价格快照的校验失败归 400；其余交给通用的
 // resourceFailure 处理。
 func meterFailure(c *gin.Context, err error) {
-	if errors.Is(err, billing.ErrConflict) {
+	if errors.Is(err, dbstore.ErrBillingConflict) {
 		httpapi.Write(c, 409, 2009, "计量核实状态已变化、原始数据不一致或审核人重复，请刷新后重试", nil)
 		return
 	}

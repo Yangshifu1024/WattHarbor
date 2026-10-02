@@ -1,7 +1,7 @@
 // 钱包账本原语：行锁读取与余额变动流水。
 // 只触及 wallet_account / wallet_txn 两表，供刷卡、结算、启动失败退款等
 // 跨家族事务复用；错误语义以本包哨兵表达，调用方按业务映射。
-package wallet
+package database
 
 import (
 	"errors"

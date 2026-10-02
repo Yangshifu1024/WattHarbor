@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/wallet"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"net/http"
@@ -45,7 +44,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 	result.OccurredAt = result.OccurredAt.UTC().Truncate(time.Millisecond)
 	replayed := false
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var walletRow wallet.Row
+		var walletRow database.Row
 		var walletPayment struct {
 			PayMethod string
 			UserID    uint64
@@ -55,7 +54,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		}
 		if walletPayment.PayMethod == "balance" {
 			var err error
-			walletRow, err = wallet.Lock(tx, walletPayment.UserID)
+			walletRow, err = database.Lock(tx, walletPayment.UserID)
 			if err != nil {
 				return err
 			}
@@ -227,11 +226,11 @@ type startRefundPaymentRow struct {
 // payment_order 改写 + 支付状态同步 + refund_record 记录）。card→order 与 refund→order
 // 依赖已单向占用，order 不得反向 import 三者，跨家族行一律经裸表名访问；
 // 支付行校验冲突返回 ErrStartResultConflict（与原 card.ErrCardOperation 同为服务端错误）。
-func refundBalanceStartFailure(tx *gorm.DB, order ChargeOrderRecord, w *wallet.Row, cents int64, refundNo, reason string) error {
+func refundBalanceStartFailure(tx *gorm.DB, order ChargeOrderRecord, w *database.Row, cents int64, refundNo, reason string) error {
 	if cents <= 0 {
 		return nil
 	}
-	if err := wallet.Move(tx, order.UserID, w, cents, refundNo, reason); err != nil {
+	if err := database.Move(tx, order.UserID, w, cents, refundNo, reason); err != nil {
 		return err
 	}
 	var payment struct {

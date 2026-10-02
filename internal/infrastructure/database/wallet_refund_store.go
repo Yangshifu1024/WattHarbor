@@ -2,7 +2,7 @@
 // 钱包表（wallet_account / wallet_txn / wallet_refund_part）的写入
 // 集中在退款事务内完成；本包不依赖 charge 的记录类型，
 // 跨表事实一律经局部行投影或裸列名传递。
-package wallet
+package database
 
 import (
 	"errors"
@@ -12,8 +12,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrConflict 表示钱包退款的身份或金额冲突（预占重复、余额不足等）。
-var ErrConflict = errors.New("wallet refund identity or amount conflict")
+// ErrWalletRefundConflict 表示钱包退款的身份或金额冲突（预占重复、余额不足等）。
+var ErrWalletRefundConflict = errors.New("wallet refund identity or amount conflict")
 
 // Settlement 是退款结算事务传给钱包侧的最小事实集合。
 type Settlement struct {
@@ -38,7 +38,7 @@ func LockRefundWallet(tx *gorm.DB, s Settlement) error {
 		return err
 	}
 	if part.AmountCents != s.RefundCents {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	var account struct{ ID uint64 }
 	return tx.Table("wallet_account").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND user_id=? AND deleted_at IS NULL", part.WalletAccountID, s.UserID).Take(&account).Error
@@ -57,14 +57,14 @@ func SettleRefundWallet(tx *gorm.DB, s Settlement) error {
 		return err
 	}
 	if part.Settled || part.AmountCents != s.RefundCents {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	var w struct{ BalanceCents, FrozenCents int64 }
 	if err := tx.Table("wallet_account").Where("id=? AND user_id=?", part.WalletAccountID, s.UserID).Take(&w).Error; err != nil {
 		return err
 	}
 	if w.BalanceCents < s.RefundCents || w.FrozenCents < s.RefundCents {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	if err := tx.Table("wallet_account").Where("id=?", part.WalletAccountID).Updates(map[string]any{"balance_cents": gorm.Expr("balance_cents-?", s.RefundCents), "frozen_cents": gorm.Expr("frozen_cents-?", s.RefundCents), "version": gorm.Expr("version+1")}).Error; err != nil {
 		return err
@@ -90,14 +90,14 @@ func ReleaseFailedRefund(tx *gorm.DB, s Settlement) error {
 		return err
 	}
 	if part.Settled || part.AmountCents != s.RefundCents {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	result := tx.Table("wallet_account").Where("id=? AND user_id=? AND frozen_cents>=?", part.WalletAccountID, s.UserID, s.RefundCents).Updates(map[string]any{"frozen_cents": gorm.Expr("frozen_cents-?", s.RefundCents), "version": gorm.Expr("version+1")})
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	return tx.Table("wallet_refund_part").Where("refund_record_id=?", s.ID).Update("settled", true).Error
 }

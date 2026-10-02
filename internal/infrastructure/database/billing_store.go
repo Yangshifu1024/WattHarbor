@@ -1,4 +1,4 @@
-package billing
+package database
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var ErrConflict = errors.New("billing source conflicts with persisted calculation")
+var ErrBillingConflict = errors.New("billing source conflicts with persisted calculation")
 
 type Source struct {
 	FinalFee      *charging.Fee        `json:"final_fee,omitempty"`
@@ -33,7 +33,7 @@ type Store struct{ DB *gorm.DB }
 
 func (s Store) Calculate(ctx context.Context, source Source) (Result, error) {
 	if source.ChargeOrderID == 0 || source.OrderNo == "" || source.UserID == 0 || source.Rule.StationID == 0 {
-		return Result{}, ErrConflict
+		return Result{}, ErrBillingConflict
 	}
 	fee, err := PriceSource(source)
 	if err != nil {
@@ -58,11 +58,11 @@ func (s Store) Calculate(ctx context.Context, source Source) (Result, error) {
 		}
 		var previous Source
 		if json.Unmarshal(receipt.SourceJSON, &previous) != nil {
-			return ErrConflict
+			return ErrBillingConflict
 		}
 		prior, _ := json.Marshal(previous)
 		if string(prior) != string(payload) {
-			return ErrConflict
+			return ErrBillingConflict
 		}
 		if receipt.CalculationID != nil {
 			var delivery struct{ PayloadJSON []byte }
@@ -95,9 +95,34 @@ func PriceSource(source Source) (charging.Fee, error) {
 	if source.FinalFee != nil {
 		f := *source.FinalFee
 		if source.ReviewID == "" || source.Offer == nil || f.ElectricCents < 0 || f.ServiceCents < 0 || f.TotalCents != f.ElectricCents+f.ServiceCents || f.TotalCents > source.Offer.PriceCents {
-			return charging.Fee{}, ErrConflict
+			return charging.Fee{}, ErrBillingConflict
 		}
 		return f, nil
 	}
 	return charging.PriceOfferActual(source.Rule, source.Offer, source.Meter)
+}
+
+// MarkDelivered 与用户提交是分开的；
+// 重试可以把任意一侧补回来。
+func (s Store) MarkDelivered(ctx context.Context, id uint64) error {
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Table("fee_delivery").Where("charge_order_id=?", id).Updates(map[string]any{"delivered": true, "delivered_at": gorm.Expr("UTC_TIMESTAMP(3)")}).Error; err != nil {
+			return err
+		}
+		return tx.Table("manual_fee_review").Where("charge_order_id=? AND status='pending'", id).Updates(map[string]any{"status": "resolved", "resolved_at": gorm.Expr("UTC_TIMESTAMP(3)")}).Error
+	})
+}
+
+// CalculationID 从计费回执读取 fee_calculation 的实际主键，供结算台账引用。
+func (s Store) CalculationID(ctx context.Context, chargeOrderID uint64) (uint64, error) {
+	var row struct {
+		CalculationID *uint64 `gorm:"column:calculation_id"`
+	}
+	if err := s.DB.WithContext(ctx).Table("fee_receipt").Select("calculation_id").Where("charge_order_id = ?", chargeOrderID).Take(&row).Error; err != nil {
+		return 0, err
+	}
+	if row.CalculationID == nil {
+		return 0, ErrBillingConflict
+	}
+	return *row.CalculationID, nil
 }

@@ -1,4 +1,4 @@
-package wallet
+package database
 
 import (
 	"crypto/sha256"
@@ -34,14 +34,14 @@ func ReserveRefund(tx *gorm.DB, req WalletRefundReservation) error {
 		return err
 	}
 	if req.AmountCents <= 0 || w.BalanceCents < w.FrozenCents || req.AmountCents > w.BalanceCents-w.FrozenCents {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	var existing int64
 	if err := tx.Table("wallet_refund_part").Where("request_id=?", req.RequestID).Count(&existing).Error; err != nil {
 		return err
 	}
 	if existing != 0 {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	var payments []struct {
 		ID                  uint64         `gorm:"column:id"`
@@ -103,7 +103,7 @@ func ReserveRefund(tx *gorm.DB, req WalletRefundReservation) error {
 		}
 	}
 	if left != 0 {
-		return ErrConflict
+		return ErrWalletRefundConflict
 	}
 	if err := tx.Table("wallet_account").Where("id=?", w.ID).Updates(map[string]any{"frozen_cents": gorm.Expr("frozen_cents+?", req.AmountCents), "version": gorm.Expr("version+1")}).Error; err != nil {
 		return err

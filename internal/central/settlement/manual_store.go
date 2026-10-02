@@ -3,8 +3,8 @@ package settlement
 import (
 	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
+	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,7 +24,7 @@ type ManualSettlement struct {
 func (ManualSettlement) TableName() string { return "charge_manual_settlement" }
 func (s BillingOrders) ResolveAmount(ctx context.Context, in ManualSettlement) error {
 	if in.ChargeOrderID == 0 || in.ActorID == 0 || uuid.Validate(in.RequestID) != nil || strings.TrimSpace(in.Reason) == "" || len([]rune(in.Reason)) > 1000 || in.ElectricCents < 0 || in.ServiceCents < 0 || in.ElectricCents > 1000000 || in.ServiceCents > 1000000 {
-		return billing.ErrConflict
+		return dbstore.ErrBillingConflict
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct{ Status string }
@@ -35,7 +35,7 @@ func (s BillingOrders) ResolveAmount(ctx context.Context, in ManualSettlement) e
 		err := tx.Where("charge_order_id=? OR request_id=?", in.ChargeOrderID, in.RequestID).Take(&previous).Error
 		if err == nil {
 			if previous != in {
-				return billing.ErrConflict
+				return dbstore.ErrBillingConflict
 			}
 			return nil
 		}
@@ -43,14 +43,14 @@ func (s BillingOrders) ResolveAmount(ctx context.Context, in ManualSettlement) e
 			return err
 		}
 		if job.Status != "manual_review" {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
 		source, err := readOriginalBillingSource(tx, in.ChargeOrderID)
 		if err != nil {
 			return err
 		}
 		if source.Offer == nil || in.ElectricCents+in.ServiceCents > source.Offer.PriceCents {
-			return billing.ErrConflict
+			return dbstore.ErrBillingConflict
 		}
 		if err := tx.Create(&in).Error; err != nil {
 			return err

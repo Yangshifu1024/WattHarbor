@@ -9,8 +9,8 @@ import (
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -253,19 +253,19 @@ func existingIntent(row money.PaymentIntentRecord, input IntentInput) (PaymentIn
 		CouponGrantID: row.CouponGrantID, DiscountCents: row.DiscountCents, PayableCents: row.TotalCents - row.DiscountCents}, nil
 }
 
-func (s PaymentIntentStore) PrepayParams(ctx context.Context, paymentOrderID uint64) (channel.PrepayParams, error) {
+func (s PaymentIntentStore) PrepayParams(ctx context.Context, paymentOrderID uint64) (database.PrepayParams, error) {
 	var record money.ChargePrepayRecord
 	if err := s.DB.WithContext(ctx).Where("payment_order_id = ?", paymentOrderID).Take(&record).Error; err != nil {
-		return channel.PrepayParams{}, err
+		return database.PrepayParams{}, err
 	}
-	var params channel.PrepayParams
+	var params database.PrepayParams
 	if err := json.Unmarshal(record.ParamsJSON, &params); err != nil || params.PrepayID == "" || params.Provider == "" {
-		return channel.PrepayParams{}, money.ErrPaymentIntentConflict
+		return database.PrepayParams{}, money.ErrPaymentIntentConflict
 	}
 	return params, nil
 }
 
-func (s PaymentIntentStore) SavePrepay(ctx context.Context, paymentOrderID uint64, params channel.PrepayParams) error {
+func (s PaymentIntentStore) SavePrepay(ctx context.Context, paymentOrderID uint64, params database.PrepayParams) error {
 	if s.DB == nil || paymentOrderID == 0 || params.PrepayID == "" || params.Provider == "" {
 		return money.ErrPaymentIntentConflict
 	}

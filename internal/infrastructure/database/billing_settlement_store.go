@@ -1,10 +1,11 @@
-package billing
+package database
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
@@ -18,7 +19,7 @@ type SplitTemplate struct {
 	ID      uint64
 	Code    string
 	Mode    string
-	Parties []Party
+	Parties []money.Party
 	Names   map[string]string
 	// IDs 把每个 party code 映射到它的 split_party 行 id，
 	// 因为结算台账把数字 party id 和 code 分开存放。
@@ -62,21 +63,21 @@ func (r SplitResolver) Resolve(ctx context.Context, stationID uint64) (SplitTemp
 	if len(parties) < 2 || len(parties) > 8 {
 		return SplitTemplate{}, fmt.Errorf("%w: template %d has %d parties", ErrNoSplitTemplate, row.ID, len(parties))
 	}
-	out := SplitTemplate{ID: row.ID, Code: row.Code, Mode: row.Mode, Parties: make([]Party, 0, len(parties)), Names: map[string]string{}, IDs: map[string]uint64{}}
+	out := SplitTemplate{ID: row.ID, Code: row.Code, Mode: row.Mode, Parties: make([]money.Party, 0, len(parties)), Names: map[string]string{}, IDs: map[string]uint64{}}
 	for _, p := range parties {
-		out.Parties = append(out.Parties, Party{ID: p.PartyCode, RatioBPS: int64(p.RatioBP)})
+		out.Parties = append(out.Parties, money.Party{ID: p.PartyCode, RatioBPS: int64(p.RatioBP)})
 		out.Names[p.PartyCode] = p.PartyName
 		out.IDs[p.PartyCode] = p.ID
 	}
 	// 在解析时就拒绝不自洽的模板，
 	// 让错误的分账比例进不了结算台账。
-	mode := SplitAll
+	mode := money.SplitAll
 	if row.Mode == "mode_b" {
-		mode = SplitServiceOnly
+		mode = money.SplitServiceOnly
 	} else if row.Mode != "mode_a" {
 		return SplitTemplate{}, fmt.Errorf("%w: template %d has unknown mode %q", ErrNoSplitTemplate, row.ID, row.Mode)
 	}
-	if _, err := Allocate(0, 0, mode, out.Parties); err != nil {
+	if _, err := money.Allocate(0, 0, mode, out.Parties); err != nil {
 		return SplitTemplate{}, fmt.Errorf("%w: template %d ratios: %v", ErrNoSplitTemplate, row.ID, err)
 	}
 	return out, nil
@@ -85,11 +86,11 @@ func (r SplitResolver) Resolve(ctx context.Context, stationID uint64) (SplitTemp
 // Settle 将已计算费用写入分账台账。
 // (fee_calculation_id, generation) 唯一键保证重复计费派发复用已有结算，不重复分账。
 func (s Store) Settle(ctx context.Context, calculationID uint64, template SplitTemplate, fee charging.ActualFee, month time.Time) (uint64, bool, error) {
-	mode := SplitAll
+	mode := money.SplitAll
 	if template.Mode == "mode_b" {
-		mode = SplitServiceOnly
+		mode = money.SplitServiceOnly
 	}
-	allocation, err := Allocate(Money(fee.ElectricCents), Money(fee.ServiceCents), mode, template.Parties)
+	allocation, err := money.Allocate(money.Money(fee.ElectricCents), money.Money(fee.ServiceCents), mode, template.Parties)
 	if err != nil {
 		return 0, false, err
 	}
@@ -97,7 +98,7 @@ func (s Store) Settle(ctx context.Context, calculationID uint64, template SplitT
 	for _, share := range allocation.Shares {
 		allocated += int64(share.ElectricCents) + int64(share.ServiceCents)
 	}
-	if mode == SplitAll {
+	if mode == money.SplitAll {
 		pool = fee.ElectricCents + fee.ServiceCents
 	} else {
 		pool = fee.ServiceCents
@@ -122,7 +123,7 @@ func (s Store) Settle(ctx context.Context, calculationID uint64, template SplitT
 			return ErrNoSplitTemplate
 		}
 		if calculation.Total != fee.TotalCents {
-			return ErrConflict
+			return ErrBillingConflict
 		}
 		var existing struct {
 			ID         uint64 `gorm:"column:id"`
@@ -137,7 +138,7 @@ func (s Store) Settle(ctx context.Context, calculationID uint64, template SplitT
 		}
 		if found.RowsAffected > 0 {
 			if existing.SplitPool != pool || existing.Electric != fee.ElectricCents || existing.Service != fee.ServiceCents || existing.TemplateID != template.ID {
-				return ErrConflict
+				return ErrBillingConflict
 			}
 			settlementID, created = existing.ID, false
 			return nil

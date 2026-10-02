@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
 	"github.com/google/uuid"
 )
@@ -89,12 +89,12 @@ func seedOrderContract(ctx context.Context, db *sql.DB, id, user int64, u demoUs
 			return nil
 		}
 		kwh, _ := strconv.ParseFloat(o.kwh, 64)
-		source := billing.Source{ChargeOrderID: uint64(id), OrderNo: orderNo, UserID: uint64(user), Rule: rule, Offer: &offer, Meter: charging.ActualMeter{StartedAt: created, EndedAt: created.Add(time.Hour), ChargedSeconds: 3600, ChargedWh: uint32(kwh * 1000)}}
-		fee, err := billing.PriceSource(source)
+		source := dbstore.Source{ChargeOrderID: uint64(id), OrderNo: orderNo, UserID: uint64(user), Rule: rule, Offer: &offer, Meter: charging.ActualMeter{StartedAt: created, EndedAt: created.Add(time.Hour), ChargedSeconds: 3600, ChargedWh: uint32(kwh * 1000)}}
+		fee, err := dbstore.PriceSource(source)
 		if err != nil {
 			return err
 		}
-		result := billing.Result{CalculationNo: billing.CalculationNumber(orderNo, uint64(id)), Source: source, ActualFee: fee}
+		result := dbstore.Result{CalculationNo: dbstore.CalculationNumber(orderNo, uint64(id)), Source: source, ActualFee: fee}
 		raw, _ := json.Marshal(result)
 		_, err = tx.ExecContext(ctx, "INSERT INTO charge_fee_receipt(charge_order_id,calculation_no,result_json,shortfall_cents) VALUES(?,?,?,0)", id, result.CalculationNo, string(raw))
 		return err
