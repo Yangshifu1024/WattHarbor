@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 )
 
@@ -63,4 +64,24 @@ func DecimalizeIDField(raw []byte, field string) ([]byte, error) {
 	}
 	object[field], _ = json.Marshal(strconv.FormatUint(id, 10))
 	return json.Marshal(object)
+}
+
+// DecimalizeRowIDs 把一行 map 中指定列的 ID 转为十进制字符串。
+//
+// 用于以 map[string]any 组装的响应（工单列表、审计行等）：这些行没有结构体字段，
+// 无法靠 DecimalID 的 MarshalJSON 生效。NULL 保持 null，不变成字符串 "0"——
+// 两者含义不同，前端据此判断"未指派"。调用方只应把确实是 ID 的列传进来。
+func DecimalizeRowIDs(row map[string]any, keys ...string) {
+	for _, key := range keys {
+		if value, ok := row[key]; ok && value != nil {
+			row[key] = fmt.Sprint(value)
+		}
+	}
+}
+
+// DecimalizeRowIDsAll 批量版本，语义与 DecimalizeRowIDs 相同。
+func DecimalizeRowIDsAll(rows []map[string]any, keys ...string) {
+	for _, row := range rows {
+		DecimalizeRowIDs(row, keys...)
+	}
 }

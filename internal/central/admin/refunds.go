@@ -124,7 +124,7 @@ func (a ResourceAPI) refunds(c *gin.Context) {
 		return
 	}
 	normalizeRows(out.Items)
-	stringIDs(out.Items, "id", "user_id", "payment_order_id", "first_signer", "second_signer")
+	httpapi.DecimalizeRowIDsAll(out.Items, "id", "user_id", "payment_order_id", "first_signer", "second_signer")
 	p := c.MustGet("admin_profile").(operations.Profile)
 	for _, row := range out.Items {
 		status := row["status"]

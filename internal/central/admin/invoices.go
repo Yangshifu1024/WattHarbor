@@ -29,7 +29,7 @@ func (a ResourceAPI) invoices(c *gin.Context) {
 		return
 	}
 	normalizeRows(rows)
-	stringIDs(rows, "user_id", "first_reviewer_id", "second_reviewer_id")
+	httpapi.DecimalizeRowIDsAll(rows, "user_id", "first_reviewer_id", "second_reviewer_id")
 	httpapi.OK(c, gin.H{"items": rows})
 }
 

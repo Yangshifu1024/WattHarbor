@@ -47,7 +47,7 @@ func (a ResourceAPI) walletRisks(c *gin.Context) {
 		return
 	}
 	normalizeRows(out.Items)
-	stringIDs(out.Items, "user_id")
+	httpapi.DecimalizeRowIDsAll(out.Items, "user_id")
 	p := c.MustGet("admin_profile").(operations.Profile)
 	for _, row := range out.Items {
 		row["can_review"] = (p.Role == "customer_finance" || p.Role == "customer_cs") && p.HasPermission("finance.wallet_risk.review")

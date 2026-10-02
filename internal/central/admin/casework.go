@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -21,17 +20,6 @@ func (a ResourceAPI) registerCasework(r *gin.Engine) {
 	r.GET("/api/v1/admin/device-fault-reports/:id/history", a.Auth.Require("fault.read"), a.faultHistory)
 	r.POST("/api/v1/admin/device-fault-reports/:id/dispatch", a.Auth.Require("fault.dispatch"), a.dispatchFault)
 	r.POST("/api/v1/admin/device-fault-reports/:id/resolve", a.Auth.Require("fault.resolve"), a.resolveFault)
-}
-
-// stringIDs 将指定 BIGINT 列转为字符串，避免前端数字精度丢失；NULL 保持不变。
-func stringIDs(rows []map[string]any, keys ...string) {
-	for _, row := range rows {
-		for _, key := range keys {
-			if v, ok := row[key]; ok && v != nil {
-				row[key] = fmt.Sprint(v)
-			}
-		}
-	}
 }
 
 // caseList 复用反馈与报修列表查询，表名和合法状态由调用方指定。
@@ -55,7 +43,7 @@ func (a ResourceAPI) caseList(c *gin.Context, table, statuses string) {
 		return
 	}
 	normalizeRows(out.Items)
-	stringIDs(out.Items, "id", "user_id", "order_id", "assigned_to")
+	httpapi.DecimalizeRowIDsAll(out.Items, "id", "user_id", "order_id", "assigned_to")
 	for _, row := range out.Items {
 		row["images"] = row["images_json"]
 		if row["images"] == nil {
@@ -146,7 +134,7 @@ func (a ResourceAPI) faultHistory(c *gin.Context) {
 		return
 	}
 	normalizeRows(out.Items)
-	stringIDs(out.Items, "event_id", "actor_id", "assigned_to")
+	httpapi.DecimalizeRowIDsAll(out.Items, "event_id", "actor_id", "assigned_to")
 	httpapi.OK(c, out)
 }
 
