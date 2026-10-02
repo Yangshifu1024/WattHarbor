@@ -201,7 +201,9 @@ charge-pilot/
   真正被约束的是**方向**：`interface` 与 `application` 都允许直接持有仓储
   （`infrastructure`），因为它们本身就是编排层，再往里包一层接口只会平移代码。
   但持有的是句柄，不是 SQL：表名与 gorm 查询构造只允许出现在持久化层，
-  由 `make layers` 机检。被禁止的是反向——`domain`、`application`、
+  由 `make layers` 机检。另外 `worker` 不得直接访问 `central` 拥有的业务表——
+  两者是独立进程，worker 取业务数据要经 central 的内部端点，而不是拿自己的
+  连接直连；`worker` 自己的 `scheduled_task` / `event_outbox` / `dlq_*` 不在其列。被禁止的是反向——`domain`、`application`、
   `infrastructure` 一律不得 import `interface`。
   `domain` 与 `protocol` 是平行层，互不 import。除 `worker/` 与 `gateway/` 外任何包不得 import `protocol`。这三条由 `make layers` 机检，违反即失败。
 

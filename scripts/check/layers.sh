@@ -30,7 +30,7 @@ domain=(
 # 表名清单从 schema 提取，不在脚本里硬编码，新增表时规则不会失真。
 # sed 而非 grep -oE '[a-z_]+$'：后者在 BSD grep 上锚定行为不一致，会漏表。
 tables=$(mktemp)
-trap 'rm -f "$tables"' EXIT
+trap 'rm -f "$tables" "$central_tables" "$worker_tables"' EXIT
 grep -ohE 'CREATE TABLE (IF NOT EXISTS )?`[a-z0-9_]+`' migrations/*/0001_init.sql |
   sed 's/.*`\(.*\)`/\1/' | sort -u >"$tables"
 if [[ ! -s $tables ]]; then
@@ -150,6 +150,29 @@ if ! ghosts=$(python3 scripts/check/doc_tree.py); then
   while IFS= read -r name; do
     [[ -n $name ]] && report "AGENTS.md 目录树里的文件不存在：$name"
   done <<<"$ghosts"
+fi
+
+# worker 不得直接访问 central 拥有的业务表。进程拆分后 worker 与 central 是
+# 两个进程：worker 读业务表要经 central 的内部端点，而不是拿自己的连接直连。
+# worker 自己的 scheduled_task / event_outbox / dlq_* 不在其列。
+#
+# 表名同样从 schema 提取，新增表时规则不会失真。
+central_tables=$(mktemp)
+worker_tables=$(mktemp)
+trap 'rm -f "$central_tables" "$worker_tables"' EXIT
+grep -ohE 'CREATE TABLE (IF NOT EXISTS )?`[a-z0-9_]+`' migrations/central_db/0001_init.sql |
+  sed 's/.*`\(.*\)`/\1/' | sort -u >"$central_tables"
+grep -ohE 'CREATE TABLE (IF NOT EXISTS )?`[a-z0-9_]+`' migrations/worker_db/0001_init.sql |
+  sed 's/.*`\(.*\)`/\1/' | sort -u >"$worker_tables"
+if [[ -s $central_tables && -s $worker_tables ]]; then
+  while IFS= read -r file; do
+    # 只查 worker_db 的表：碰了 central 的业务表才算越界。
+    bad=$(grep -ohE '\.Table\("[a-z0-9_]+"' "$file" | sed 's/.*"\(.*\)"$/\1/' |
+          grep -x -F -f "$central_tables" | sort -u | tr '\n' ' ')
+    if [[ -n $bad ]]; then
+      report "$file: worker 直接访问 central 的业务表: $bad（应经 central 内部端点）"
+    fi
+  done < <(find internal/worker -name '*.go' ! -name '*_test.go')
 fi
 
 # 过渡中的 central/admin 只放 HTTP 处理：不得再定义 gorm 模型或表名映射。

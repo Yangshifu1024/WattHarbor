@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 )
 
 // PaidStarter 重试已支付订单，直到 gateway 接受持久化 START 命令；重复调用由 gateway 保证幂等。
@@ -33,11 +35,7 @@ func (s *PaidStarter) DispatchBatch(ctx context.Context) (int, error) {
 		(base.Scheme != "http" && base.Scheme != "https") {
 		return 0, errors.New("invalid gateway URL")
 	}
-	var rows []paidChargeOrderRow
-	err = s.UserDB.WithContext(ctx).Table("charge_order AS c").Select("c.id, c.order_no").
-		Joins("JOIN charge_payment_intent AS i ON i.charge_order_id = c.id AND i.user_id = c.user_id AND i.status = 'paid'").
-		Joins("JOIN payment_order AS p ON p.id = i.payment_order_id AND p.biz_type = 'charge' AND p.biz_id = c.id AND p.user_id = c.user_id AND p.status = 'paid' AND p.total_cents > 0 AND p.paid_cents >= p.total_cents").
-		Where("c.status = 'paid' AND c.deleted_at IS NULL AND c.id > ?", s.cursor).Order("c.id").Limit(100).Find(&rows).Error
+	rows, err := database.ListPaidOrdersAfter(ctx, s.UserDB, s.cursor)
 	if err != nil {
 		return 0, err
 	}
@@ -62,11 +60,6 @@ func (s *PaidStarter) DispatchBatch(ctx context.Context) (int, error) {
 		accepted++
 	}
 	return accepted, firstError
-}
-
-type paidChargeOrderRow struct {
-	ID      uint64 `gorm:"column:id"`
-	OrderNo string `gorm:"column:order_no"`
 }
 
 func postPaidStart(ctx context.Context, client *http.Client, base url.URL, token, orderNo string) error {
