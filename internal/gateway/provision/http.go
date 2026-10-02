@@ -1,27 +1,20 @@
 package provision
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"net/http"
 	"strings"
 	"unicode/utf8"
 )
 
-type Device struct {
-	DeviceID  string  `json:"device_id"`
-	VendorID  uint64  `json:"vendor_id"`
-	StationID uint64  `json:"station_id"`
-	PortCount uint8   `json:"port_count"`
-	Model     *string `json:"model"`
-}
+// Device 是一台待开通设备的参数，定义在持久化层。
+type Device = gatewaystore.ProvisionDevice
 type API struct {
 	DB           *gorm.DB
 	ServiceToken string
@@ -31,8 +24,6 @@ func (a API) Register(r *gin.Engine) {
 	r.POST("/api/v1/internal/devices/provision", a.provision)
 	a.registerVendors(r)
 }
-
-var errConflict = errors.New("device provisioning conflict")
 
 func (a API) provision(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
@@ -58,65 +49,14 @@ func (a API) provision(c *gin.Context) {
 	}
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		for _, d := range in.Devices {
-			var vendor struct {
-				Status       string
-				AdapterClass string
-			}
-			// Serialize vendor edits with provisioning, so protocol changes cannot
-			// pass their device check while this transaction is creating a device.
-			if err := tx.Table("vendor").Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND deleted_at IS NULL", d.VendorID).Take(&vendor).Error; err != nil {
+			if err := gatewaystore.ProvisionOne(tx, d); err != nil {
 				return err
-			}
-			if vendor.Status != "enabled" {
-				return errConflict
-			}
-			if vendor.AdapterClass == "dc589" && d.PortCount > 20 {
-				return errConflict
-			}
-			b, _ := json.Marshal(d)
-			if err := tx.Exec("INSERT IGNORE INTO device_provision(device_id,request_json) VALUES (?,?)", d.DeviceID, string(b)).Error; err != nil {
-				return err
-			}
-			var identity struct{ RequestJSON string }
-			if err := tx.Table("device_provision").Clauses(clause.Locking{Strength: "UPDATE"}).Where("device_id=?", d.DeviceID).Take(&identity).Error; err != nil {
-				return err
-			}
-			var existing Device
-			if json.Unmarshal([]byte(identity.RequestJSON), &existing) != nil {
-				return errConflict
-			}
-			old, _ := json.Marshal(existing)
-			if string(old) != string(b) {
-				return errConflict
-			}
-			var device struct {
-				ID, VendorID, StationID uint64
-				PortCount               uint8
-				Model                   *string
-			}
-			e := tx.Table("device").Where("device_id=?", d.DeviceID).Take(&device).Error
-			if e == nil {
-				if device.VendorID != d.VendorID || device.StationID != d.StationID || device.PortCount != d.PortCount {
-					return errConflict
-				}
-				continue
-			}
-			if !errors.Is(e, gorm.ErrRecordNotFound) {
-				return e
-			}
-			if err := tx.Table("device").Create(map[string]any{"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID, "port_count": d.PortCount, "model": d.Model, "status": "enabled"}).Error; err != nil {
-				return err
-			}
-			for port := 1; port <= int(d.PortCount); port++ {
-				if err := tx.Table("device_port").Create(map[string]any{"device_id": d.DeviceID, "port_no": port, "port_code": fmt.Sprintf("%s-%d", d.DeviceID, port), "status": "idle"}).Error; err != nil {
-					return err
-				}
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, errConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gatewaystore.ErrProvisionConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.Write(c, 409, 2009, "设备已存在且参数不同，或厂商无效（dc589 最多 20 路）", nil)
 		} else {
 			httpapi.Write(c, 503, 5003, "设备配置暂时不可用", nil)

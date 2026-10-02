@@ -3,6 +3,7 @@ package provision
 import (
 	"encoding/json"
 	"errors"
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"io"
 	"net/http"
 	"regexp"
@@ -17,25 +18,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // Vendor is the public dictionary entry. Private adapter configuration stays in gateway_db.
-type Vendor struct {
-	ID           uint64     `json:"id"`
-	VendorCode   string     `json:"vendor_code"`
-	VendorName   string     `json:"vendor_name"`
-	AdapterClass string     `json:"adapter_class"`
-	Protocol     string     `json:"protocol"`
-	Status       string     `json:"status"`
-	EnabledAt    *time.Time `json:"enabled_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-}
+type Vendor = gatewaystore.Vendor
 
-func (Vendor) TableName() string { return "vendor" }
-
-const vendorColumns = "id,vendor_code,vendor_name,adapter_class,protocol,status,enabled_at,created_at,updated_at"
+const vendorColumns = gatewaystore.VendorColumns
 
 type vendorInput struct {
 	VendorCode   string `json:"vendor_code"`
@@ -200,24 +188,15 @@ func (a API) listVendors(c *gin.Context) {
 	if !a.vendorDBAvailable(c) {
 		return
 	}
-	query := a.DB.WithContext(c.Request.Context()).Table("vendor").Where("deleted_at IS NULL")
+	pattern := ""
 	if q.Keyword != "" {
-		pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(q.Keyword) + "%"
-		query = query.Where("(vendor_code LIKE ? ESCAPE '!' OR vendor_name LIKE ? ESCAPE '!')", pattern, pattern)
+		// 通配符转义：用户输入里的 % 与 _ 不该被当成模式，否则搜 "a%" 会列出全部厂商。
+		pattern = "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(q.Keyword) + "%"
 	}
-	if q.Status != "" {
-		query = query.Where("status = ?", q.Status)
-	}
-	if len(q.IDs) > 0 {
-		query = query.Where("id IN ?", q.IDs)
-	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		vendorFailure(c, err)
-		return
-	}
-	items := []Vendor{}
-	if err := query.Select(vendorColumns).Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&items).Error; err != nil {
+	items, total, err := gatewaystore.ListVendors(c.Request.Context(), a.DB, gatewaystore.VendorQuery{
+		Keyword: q.Keyword, Pattern: pattern, Status: q.Status, IDs: q.IDs, Page: q.Page, PageSize: q.PageSize,
+	})
+	if err != nil {
 		vendorFailure(c, err)
 		return
 	}
@@ -287,15 +266,17 @@ func (a API) updateVendor(c *gin.Context) {
 	}
 	var row Vendor
 	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Select(vendorColumns).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
+		locked, err := gatewaystore.LockVendor(tx, id)
+		if err != nil {
 			return err
 		}
+		row = locked
 		if in.VendorCode != row.VendorCode {
 			return errVendorCodeImmutable
 		}
 		if in.AdapterClass != row.AdapterClass || in.Protocol != row.Protocol {
-			var devices int64
-			if err := tx.Table("device").Where("vendor_id = ?", row.ID).Count(&devices).Error; err != nil {
+			devices, err := gatewaystore.CountVendorDevices(tx, row.ID)
+			if err != nil {
 				return err
 			}
 			if devices > 0 {
@@ -310,10 +291,12 @@ func (a API) updateVendor(c *gin.Context) {
 		if in.Status == "enabled" && row.Status != "enabled" {
 			updates["enabled_at"] = now
 		}
-		if err := tx.Model(&Vendor{}).Where("id = ? AND deleted_at IS NULL", row.ID).Updates(updates).Error; err != nil {
+		updated, err := gatewaystore.UpdateVendor(tx, row.ID, row.Status == "enabled", updates)
+		if err != nil {
 			return err
 		}
-		return tx.Select(vendorColumns).Where("id = ? AND deleted_at IS NULL", row.ID).Take(&row).Error
+		row = updated
+		return nil
 	})
 	if err != nil {
 		vendorFailure(c, err)
