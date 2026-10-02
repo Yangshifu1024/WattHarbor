@@ -37,7 +37,7 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 	}
 	userID := uint64(in.UserID)
 	in.CardNo = strings.TrimSpace(in.CardNo)
-	if !money.CanonicalCardNumber(in.CardNo) || userID == 0 || !validText(strings.TrimSpace(in.Reason), 500) {
+	if !money.CanonicalCardNumber(in.CardNo) || userID == 0 || !operations.ValidText(strings.TrimSpace(in.Reason), 500) {
 		httpapi.BadRequest(c, "请填写32位十进制卡号、用户及核验绑定依据")
 		return
 	}
@@ -90,7 +90,7 @@ func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !chargehttp.AdminOneOf(in.Status, "active lost disabled unbound") || in.Status == "" || !validText(in.Reason, 500) {
+	if !chargehttp.AdminOneOf(in.Status, "active lost disabled unbound") || in.Status == "" || !operations.ValidText(in.Reason, 500) {
 		httpapi.BadRequest(c, "卡状态与依据无效")
 		return
 	}

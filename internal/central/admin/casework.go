@@ -69,7 +69,7 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if in.Action != "close" && (in.Action != "reply" || !validText(in.ReplyContent, 2000)) {
+	if in.Action != "close" && (in.Action != "reply" || !operations.ValidText(in.ReplyContent, 2000)) {
 		httpapi.BadRequest(c, "请填写 1–2000 字回复或关闭反馈")
 		return
 	}
@@ -219,7 +219,7 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 	}
 	if (in.Status != devices.FaultFixed && in.Status != devices.FaultClosed) ||
 		(in.Note != nil && utf8.RuneCountInString(*in.Note) > devices.MaxFaultNoteLength) ||
-		(devices.FaultNoteRequired(in.Status) && (in.Note == nil || !validText(*in.Note, devices.MaxFaultNoteLength))) {
+		(devices.FaultNoteRequired(in.Status) && (in.Note == nil || !operations.ValidText(*in.Note, devices.MaxFaultNoteLength))) {
 		httpapi.BadRequest(c, "状态无效或缺少修复说明")
 		return
 	}

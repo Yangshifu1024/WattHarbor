@@ -48,7 +48,7 @@ func (a ResourceAPI) createWithdraw(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if in.RequestID == "" || !validUUID(in.RequestID) || in.PartyID == 0 || in.AmountCents <= 0 || (in.Note != nil && utf8Count(*in.Note) > 255) {
+	if in.RequestID == "" || !operations.ValidRequestID(in.RequestID) || in.PartyID == 0 || in.AmountCents <= 0 || (in.Note != nil && utf8Count(*in.Note) > 255) {
 		httpapi.BadRequest(c, "请填写 UUID 请求号、有效参与方、正数金额和备注")
 		return
 	}
@@ -161,7 +161,7 @@ func (a ResourceAPI) runReconcile(c *gin.Context) {
 	}
 	channel := map[string]int64{}
 	for _, row := range in.Channel {
-		if !validText(row.Ref, 64) {
+		if !operations.ValidText(row.Ref, 64) {
 			httpapi.BadRequest(c, "渠道流水号无效")
 			return
 		}
@@ -246,13 +246,6 @@ func (a ResourceAPI) resolveReconcile(c *gin.Context) {
 }
 
 // validUUID 判断字符串是不是合法 UUID，用于提现、导出等接口的请求号幂等校验。
-func validUUID(v string) bool {
-	if _, err := uuid.Parse(v); err != nil {
-		return false
-	}
-	return true
-}
-
 // utf8Count 按 Unicode 字符而不是字节统计长度，用于中文字段的 255 之类上限校验。
 func utf8Count(s string) int { return len([]rune(s)) }
 

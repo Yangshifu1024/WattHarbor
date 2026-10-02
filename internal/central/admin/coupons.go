@@ -3,6 +3,7 @@ package admin
 import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -60,7 +61,7 @@ func (a ResourceAPI) createCoupon(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if in.ID != 0 || !validText(in.Name, 128) || in.MinChargeCents < 0 || in.ValidHours == 0 || in.ValidHours > 87600 || in.PerUserQuota == 0 || (in.EndAt != nil && in.StartAt != nil && !in.EndAt.After(*in.StartAt)) {
+	if in.ID != 0 || !operations.ValidText(in.Name, 128) || in.MinChargeCents < 0 || in.ValidHours == 0 || in.ValidHours > 87600 || in.PerUserQuota == 0 || (in.EndAt != nil && in.StartAt != nil && !in.EndAt.After(*in.StartAt)) {
 		httpapi.BadRequest(c, "优惠券名称、有效期或额度无效")
 		return
 	}
@@ -108,7 +109,7 @@ func (a ResourceAPI) updateCoupon(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !validText(in.Name, 128) || (in.Status != "active" && in.Status != "disabled") {
+	if !operations.ValidText(in.Name, 128) || (in.Status != "active" && in.Status != "disabled") {
 		httpapi.BadRequest(c, "名称或状态无效")
 		return
 	}

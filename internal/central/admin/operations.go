@@ -13,7 +13,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -96,20 +95,6 @@ func normalizeRows(rows []map[string]any) {
 			}
 		}
 	}
-}
-
-// validText 校验自由文本字段：去掉首尾空白后不能为空，且按 rune 计数不超过 max
-// （按 rune 而不是字节，避免中文名按字节超限）。
-func validText(s string, max int) bool {
-	return strings.TrimSpace(s) != "" && utf8.RuneCountInString(s) <= max
-}
-
-// httpsURL 只接受可对外访问的 HTTPS 链接：必须能解析、scheme 为 https、有主机名、
-// 不允许夹带 user：pass 凭据，整串长度不超过 512。Webhook 地址、
-// 白标 logo 与协议链接都走这条校验。
-func httpsURL(s string) bool {
-	u, e := url.Parse(s)
-	return e == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && len(s) <= 512
 }
 
 // adminWrite 在同一事务中完成业务写入和审计。
@@ -249,7 +234,7 @@ func (a ResourceAPI) createAnnouncement(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !validText(in.Title, 128) || !validText(in.Content, 20000) || in.Scope == "" || !chargehttp.AdminOneOf(in.Scope, "global station city") || in.StartAt.IsZero() || (in.EndAt != nil && !in.EndAt.After(in.StartAt)) || (in.Scope != "global" && len(in.TargetIDs) == 0) {
+	if !operations.ValidText(in.Title, 128) || !operations.ValidText(in.Content, 20000) || in.Scope == "" || !chargehttp.AdminOneOf(in.Scope, "global station city") || in.StartAt.IsZero() || (in.EndAt != nil && !in.EndAt.After(in.StartAt)) || (in.Scope != "global" && len(in.TargetIDs) == 0) {
 		httpapi.BadRequest(c, "请填写标题、内容、有效时间和公告目标")
 		return
 	}
@@ -258,7 +243,7 @@ func (a ResourceAPI) createAnnouncement(c *gin.Context) {
 		return
 	}
 	for _, t := range in.TargetIDs {
-		if !validText(t, 64) {
+		if !operations.ValidText(t, 64) {
 			httpapi.BadRequest(c, "公告目标无效")
 			return
 		}
@@ -282,7 +267,7 @@ func (a ResourceAPI) createWebhook(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !validText(in.Name, 64) || !httpsURL(in.URL) || len(in.EventTypes) == 0 || len(in.EventTypes) > 3 {
+	if !operations.ValidText(in.Name, 64) || !operations.ValidPublicURL(in.URL) || len(in.EventTypes) == 0 || len(in.EventTypes) > 3 {
 		httpapi.BadRequest(c, "请填写名称、HTTPS URL 和订阅事件")
 		return
 	}
@@ -373,12 +358,12 @@ func (a ResourceAPI) saveWhitelabel(c *gin.Context) {
 	}
 	for k, v := range in {
 		max, ok := whiteKeys[k]
-		if !ok || utf8.RuneCountInString(v) > max || (strings.HasSuffix(k, "_url") && v != "" && !httpsURL(v)) {
+		if !ok || utf8.RuneCountInString(v) > max || (strings.HasSuffix(k, "_url") && v != "" && !operations.ValidPublicURL(v)) {
 			httpapi.BadRequest(c, "配置字段、长度或 HTTPS 链接无效")
 			return
 		}
 	}
-	if !validText(in["miniprogram_name"], 64) || !regexp.MustCompile(`^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`).MatchString(in["theme_color"]) {
+	if !operations.ValidText(in["miniprogram_name"], 64) || !regexp.MustCompile(`^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$`).MatchString(in["theme_color"]) {
 		httpapi.BadRequest(c, "请填写小程序名称和有效主题色")
 		return
 	}

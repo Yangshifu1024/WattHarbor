@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -131,7 +132,7 @@ func (a ResourceAPI) proposeMeter(c *gin.Context) {
 		return
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
-	if _, err := uuid.Parse(in.RequestID); err != nil || !validText(in.Reason, 500) || len(in.Segments) == 0 || len(in.Segments) > 10080 {
+	if _, err := uuid.Parse(in.RequestID); err != nil || !operations.ValidText(in.Reason, 500) || len(in.Segments) == 0 || len(in.Segments) > 10080 {
 		httpapi.BadRequest(c, "请填写 UUID、核实依据及有效计量分段")
 		return
 	}
@@ -164,7 +165,7 @@ func (a ResourceAPI) decideMeter(c *gin.Context) {
 		return
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
-	if in.ReviewID == 0 || in.Approve == nil || (!*in.Approve && !validText(in.Reason, 500)) {
+	if in.ReviewID == 0 || in.Approve == nil || (!*in.Approve && !operations.ValidText(in.Reason, 500)) {
 		httpapi.BadRequest(c, "请提供审核记录、决定和拒绝依据")
 		return
 	}

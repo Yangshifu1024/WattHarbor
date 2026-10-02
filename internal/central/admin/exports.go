@@ -254,7 +254,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !validUUID(in.RequestID) {
+	if !operations.ValidRequestID(in.RequestID) {
 		httpapi.BadRequest(c, "请提供 UUID 格式的请求号")
 		return
 	}

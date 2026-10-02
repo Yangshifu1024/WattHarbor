@@ -79,7 +79,7 @@ func (a ResourceAPI) reviewInvoice(c *gin.Context) {
 		return
 	}
 	approve := c.FullPath() == "/api/v1/admin/billing/invoices/:id/approve"
-	if (approve && !httpsURL(in.InvoiceURL)) || (!approve && !validText(in.Reason, 255)) {
+	if (approve && !operations.ValidPublicURL(in.InvoiceURL)) || (!approve && !operations.ValidText(in.Reason, 255)) {
 		httpapi.BadRequest(c, "请填写 HTTPS 发票链接或拒绝原因")
 		return
 	}

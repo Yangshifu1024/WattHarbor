@@ -67,7 +67,7 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !requestIDPattern.MatchString(in.RequestID) || in.AmountCents <= 0 || !validText(in.Reason, 255) {
+	if !requestIDPattern.MatchString(in.RequestID) || in.AmountCents <= 0 || !operations.ValidText(in.Reason, 255) {
 		httpapi.BadRequest(c, "请填写有效请求编号、正整数退款分值和退款原因")
 		return
 	}
@@ -174,7 +174,7 @@ func (a ResourceAPI) reviewRefund(c *gin.Context) {
 		return
 	}
 	approve := strings.HasSuffix(c.FullPath(), "/approve")
-	if approve && !validText(in.ApproveComment, 255) || !approve && !validText(in.Reason, 255) {
+	if approve && !operations.ValidText(in.ApproveComment, 255) || !approve && !operations.ValidText(in.Reason, 255) {
 		httpapi.BadRequest(c, "请填写 1–255 字审核意见")
 		return
 	}
@@ -208,7 +208,7 @@ func (a ResourceAPI) retryRefund(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !validText(in.Reason, 255) {
+	if !operations.ValidText(in.Reason, 255) {
 		httpapi.BadRequest(c, "请填写重试原因")
 		return
 	}
