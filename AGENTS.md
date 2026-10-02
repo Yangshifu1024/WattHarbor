@@ -158,6 +158,8 @@ charge-pilot/
 │   │   │   ├── cards.go  paid_start.go
 │   │   │   ├── meter_segments.go  auto_stop.go
 │   │   ├── outbox/                             publisher.go  dlq.go
+│   │   ├── store/                              worker_db 持久化
+│   │   │   └── schedule_store.go
 │   │   ├── schedule/                           scheduler.go  http.go
 │   │   ├── internaljob/                        ops.go  http.go
 │   │   ├── alerts/sync.go                      设备告警同步

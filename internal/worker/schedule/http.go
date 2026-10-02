@@ -2,9 +2,9 @@ package schedule
 
 import (
 	"errors"
+	workerstore "github.com/ChargePilot2026/charge-pilot/internal/worker/store"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -43,8 +43,7 @@ func (a API) task(c *gin.Context) (Task, bool) {
 		httpapi.Write(c, http.StatusNotFound, httpapi.CodeNotFound, "定时任务不存在", nil)
 		return Task{}, false
 	}
-	var task Task
-	err := a.Scheduler.DB.WithContext(c.Request.Context()).Table("scheduled_task").Where("task_code = ?", code).Take(&task).Error
+	task, err := workerstore.FindTaskByCode(c.Request.Context(), a.Scheduler.DB, code)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusNotFound, httpapi.CodeNotFound, "定时任务不存在", nil)
 		return Task{}, false
@@ -61,14 +60,7 @@ func (a API) lastRun(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var row struct {
-		StartedAt  time.Time  `gorm:"column:started_at"`
-		FinishedAt *time.Time `gorm:"column:finished_at"`
-		Status     string     `gorm:"column:status"`
-		ErrorMsg   *string    `gorm:"column:error_msg"`
-	}
-	err := a.Scheduler.DB.WithContext(c.Request.Context()).Table("task_execution_log").
-		Where("task_code = ?", task.Code).Order("started_at DESC").Take(&row).Error
+	row, err := workerstore.LastExecution(c.Request.Context(), a.Scheduler.DB, task.Code)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusServiceUnavailable, httpapi.CodeServiceUnavailable, "执行记录暂时无法读取", nil)
 		return

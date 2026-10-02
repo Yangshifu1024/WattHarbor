@@ -2,6 +2,7 @@ package internaljob
 
 import (
 	"context"
+	workerstore "github.com/ChargePilot2026/charge-pilot/internal/worker/store"
 	"net/http"
 	"time"
 
@@ -59,26 +60,17 @@ func (a OpsAPI) deadLetters(c *gin.Context) {
 		httpapi.BadRequest(c, "请指定 stream")
 		return
 	}
-	rows := []map[string]any{}
-	query := a.WorkerDB.WithContext(c.Request.Context()).Table("dlq_log").Where("stream = ?", stream)
-	if raw := c.Query("status"); raw != "" {
-		if raw != "open" && raw != "replayed" && raw != "closed" {
-			httpapi.BadRequest(c, "状态无效")
-			return
-		}
-		query = query.Where("status = ?", raw)
+	status := c.Query("status")
+	if status != "" && status != "open" && status != "replayed" && status != "closed" {
+		httpapi.BadRequest(c, "状态无效")
+		return
 	}
-	if err := query.Order("id DESC").Limit(100).Find(&rows).Error; err != nil {
+	rows, err := workerstore.ListDLQEntries(c.Request.Context(), a.WorkerDB, stream, status)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "死信记录暂时无法读取", nil)
 		return
 	}
-	var cursors []struct {
-		Stream        string  `json:"stream"`
-		LastID        *string `json:"last_id"`
-		ScannedTotal  uint64  `json:"scanned_total"`
-		ReplayedTotal uint64  `json:"replayed_total"`
-	}
-	_ = a.WorkerDB.WithContext(c.Request.Context()).Table("dlq_replay_cursor").Where("stream = ?", stream).Find(&cursors).Error
+	cursors, _ := workerstore.FindDLQCursor(c.Request.Context(), a.WorkerDB, stream)
 	httpapi.OK(c, gin.H{"items": rows, "cursors": cursors})
 }
 

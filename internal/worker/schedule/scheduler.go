@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	workerstore "github.com/ChargePilot2026/charge-pilot/internal/worker/store"
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
@@ -20,27 +22,8 @@ type Scheduler struct {
 	Handlers map[string]Handler
 }
 
-type Task struct {
-	ID                   uint64     `gorm:"column:id"`
-	Code                 string     `gorm:"column:task_code"`
-	CronExpr             string     `gorm:"column:cron_expr"`
-	Enabled              bool       `gorm:"column:enabled"`
-	NextRunAt            *time.Time `gorm:"column:next_run_at"`
-	LastRunAt            *time.Time `gorm:"column:last_run_at"`
-	ConsecutiveFailCount uint32     `gorm:"column:consecutive_fail_count"`
-}
-
-type executionLog struct {
-	ID            uint64    `gorm:"column:id;primaryKey"`
-	TaskCode      string    `gorm:"column:task_code"`
-	StartedAt     time.Time `gorm:"column:started_at"`
-	CreatedMonth  time.Time `gorm:"column:created_month;primaryKey"`
-	Status        string    `gorm:"column:status"`
-	TriggeredBy   string    `gorm:"column:triggered_by"`
-	TriggerReason string    `gorm:"column:trigger_reason"`
-}
-
-func (executionLog) TableName() string { return "task_execution_log" }
+// Task 与 executionLog 是调度记录的行类型，定义在持久化层。
+type Task = workerstore.Task
 
 // CleanupHistory retains empty successful polls for one day and other finished
 // executions for 30 days. Running executions are recovered by execute, not deleted.
@@ -63,13 +46,12 @@ func (s Scheduler) RunDue(ctx context.Context) error {
 	for code := range s.Handlers {
 		codes = append(codes, code)
 	}
-	if len(codes) == 0 {
-		return nil
-	}
-	if err := s.DB.WithContext(ctx).Table("scheduled_task").
-		Where("task_code IN ? AND enabled = 1 AND next_run_at <= ? AND (lease_until IS NULL OR lease_until < ?)", codes, now, now).
-		Order("next_run_at, id").Limit(10).Find(&due).Error; err != nil {
+	due, err := workerstore.ListDueTasks(ctx, s.DB, codes, now)
+	if err != nil {
 		return err
+	}
+	if len(due) == 0 {
+		return nil
 	}
 	var failures []error
 	for _, task := range due {
@@ -87,8 +69,7 @@ func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool)
 	if s.DB == nil {
 		return false, errors.New("scheduler database unavailable")
 	}
-	var task Task
-	err := s.DB.WithContext(ctx).Table("scheduled_task").Where("task_code = ?", code).Take(&task).Error
+	task, err := workerstore.FindTaskByCode(ctx, s.DB, code)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, gorm.ErrRecordNotFound
 	}
@@ -116,33 +97,21 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	}
 	now := time.Now().UTC()
 	lease := uuid.NewString()
-	claim := s.DB.WithContext(ctx).Table("scheduled_task").
-		Where("id = ? AND (lease_until IS NULL OR lease_until < ?)", task.ID, now)
-	if !force {
-		claim = claim.Where("enabled = 1")
-	}
-	if triggeredBy == "cron" {
-		claim = claim.Where("next_run_at <= ?", now)
-	}
-	result := claim.Updates(map[string]any{"lease_token": lease, "lease_until": now.Add(2 * time.Minute)})
-	if result.Error != nil || result.RowsAffected == 0 {
-		return false, result.Error
+	claimed, err := workerstore.ClaimTaskLease(ctx, s.DB, task, force, triggeredBy == "cron", lease, now)
+	if err != nil || claimed == 0 {
+		return false, err
 	}
 	// 新尝试开始前，将过期租约遗留的 running 日志标记为结束。
-	if err := s.DB.WithContext(ctx).Table("task_execution_log").
-		Where("task_code = ? AND status = 'running' AND started_at < ?", task.Code, now.Add(-2*time.Minute)).
-		Updates(map[string]any{"status": "failed", "finished_at": now, "error_msg": "worker stopped before completion"}).Error; err != nil {
-		_ = s.DB.WithContext(context.Background()).Table("scheduled_task").Where("id = ? AND lease_token = ?", task.ID, lease).
-			Updates(map[string]any{"lease_token": nil, "lease_until": nil}).Error
+	if err := workerstore.FailStaleRunningLogs(ctx, s.DB, task.Code, now.Add(-2*time.Minute), now); err != nil {
+		_ = workerstore.ReleaseLease(s.DB.WithContext(context.Background()), task.ID, lease)
 		return true, err
 	}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	log := executionLog{TaskCode: task.Code, StartedAt: now, CreatedMonth: month,
+	log := workerstore.ExecutionLog{TaskCode: task.Code, StartedAt: now, CreatedMonth: month,
 		Status: "running", TriggeredBy: triggeredBy, TriggerReason: reason}
 	insert := s.DB.WithContext(ctx).Create(&log)
 	if insert.Error != nil {
-		_ = s.DB.WithContext(context.Background()).Table("scheduled_task").Where("id = ? AND lease_token = ?", task.ID, lease).
-			Updates(map[string]any{"lease_token": nil, "lease_until": nil}).Error
+		_ = workerstore.ReleaseLease(s.DB.WithContext(context.Background()), task.ID, lease)
 		return true, insert.Error
 	}
 	runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -164,17 +133,14 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	// 使用独立的 5 秒 context 保存执行结果，避免任务取消中断日志写入；租约仍按到期时间释放。
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
-	logErr := s.DB.WithContext(finishCtx).Table("task_execution_log").
-		Where("id = ? AND created_month = ?", log.ID, month).
-		Updates(map[string]any{"finished_at": finished, "status": status, "affected_rows": rows, "error_msg": message}).Error
+	logErr := workerstore.FinishExecutionLog(finishCtx, s.DB, log.ID, month, status, rows, finished, message)
 	updates := map[string]any{"last_run_at": finished, "next_run_at": spec.Next(finished), "consecutive_fail_count": failures,
 		"lease_token": nil, "lease_until": nil}
 	if failures >= 5 {
 		updates["enabled"] = false
 	}
-	updated := s.DB.WithContext(finishCtx).Table("scheduled_task").Where("id = ? AND lease_token = ?", task.ID, lease).Updates(updates)
-	taskErr := updated.Error
-	if taskErr == nil && updated.RowsAffected == 0 {
+	advanced, taskErr := workerstore.FinishTask(s.DB.WithContext(finishCtx), task.ID, lease, updates)
+	if taskErr == nil && advanced == 0 {
 		taskErr = errors.New("scheduled task lease lost before completion")
 	}
 	return true, errors.Join(runErr, logErr, taskErr)
