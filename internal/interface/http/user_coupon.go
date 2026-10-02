@@ -22,12 +22,7 @@ func (a UserAccountAPI) myCoupons(c *gin.Context) {
 		httpapi.BadRequest(c, "优惠券状态无效")
 		return
 	}
-	rows := []orderstore.CouponGrant{}
-	err := a.UserDB.WithContext(c.Request.Context()).Table("coupon_grant AS g").
-		Joins("JOIN coupon AS c2 ON c2.id = g.coupon_id AND c2.deleted_at IS NULL AND c2.status = 'active'").
-		Where("g.user_id = ? AND g.deleted_at IS NULL", userID).
-		Select("g.id, g.coupon_id, g.id AS grant_id, g.status, g.expired_at, c2.name, c2.discount_type, c2.discount_value_cents, c2.discount_percent, c2.min_charge_cents").
-		Order("g.status ASC, g.expired_at ASC, g.id ASC").Find(&rows).Error
+	rows, err := orderstore.ListUserCoupons(c.Request.Context(), a.UserDB, userID)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "优惠券暂时无法读取", nil)
 		return

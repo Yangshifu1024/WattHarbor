@@ -5,7 +5,6 @@ import (
 	"errors"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -35,15 +34,7 @@ func (a DevelopmentPaymentAPI) confirm(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid payment request")
 		return
 	}
-	var order struct {
-		ID         uint64
-		OrderNo    string
-		BizType    string
-		TotalCents int64
-		OpenID     string `gorm:"column:openid"`
-		CreatedAt  time.Time
-	}
-	err := a.DB.WithContext(c.Request.Context()).Table("payment_order p").Select("p.id,p.order_no,p.biz_type,p.total_cents,p.created_at,u.openid").Joins("JOIN user u ON u.id=p.user_id").Where("p.order_no=? AND p.user_id=? AND p.pay_method='wechat'", in.MerchantOrderNo, user).Take(&order).Error
+	order, err := orderstore.FindDevelopmentPayment(c.Request.Context(), a.DB, in.MerchantOrderNo, user)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "payment not found", nil)
 		return

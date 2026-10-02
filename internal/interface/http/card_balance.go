@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -18,8 +19,7 @@ func (a CardAPI) balance(c *gin.Context) {
 		httpapi.BadRequest(c, "卡号须为非零32位十进制整数")
 		return
 	}
-	var row struct{ BalanceCents int64 }
-	err := a.Store.DB.WithContext(c.Request.Context()).Table("online_card c").Select("w.balance_cents-w.frozen_cents AS balance_cents").Joins("JOIN user u ON u.id=c.user_id AND u.status='active' AND u.deleted_at IS NULL").Joins("JOIN wallet_account w ON w.user_id=c.user_id AND w.status='active' AND w.deleted_at IS NULL").Where("c.card_no=? AND c.status='active'", card).Take(&row).Error
+	balance, err := orderstore.CardAvailableCents(c.Request.Context(), a.Store.DB, card)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.OK(c, gin.H{"valid": false, "balance_cents": 0})
 		return
@@ -28,8 +28,8 @@ func (a CardAPI) balance(c *gin.Context) {
 		httpapi.Write(c, 503, 5001, "卡状态及余额暂不可读取", nil)
 		return
 	}
-	if row.BalanceCents < 0 {
-		row.BalanceCents = 0
+	if balance < 0 {
+		balance = 0
 	}
-	httpapi.OK(c, gin.H{"valid": true, "balance_cents": row.BalanceCents})
+	httpapi.OK(c, gin.H{"valid": true, "balance_cents": balance})
 }

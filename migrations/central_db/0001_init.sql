@@ -749,8 +749,14 @@ CREATE TABLE `wallet_account` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '记录更新时间',
   `deleted_at` datetime(3) DEFAULT NULL COMMENT '软删除时间',
   `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人 ID',
+  -- 活钱包必须一人一个。UNIQUE(user_id, deleted_at) 达不到这个效果：
+  -- 活记录的 deleted_at 是 NULL，而 MySQL 唯一索引里 NULL 不参与冲突判定，
+  -- 于是同一用户可以插入任意多条活钱包，余额与冻结额读哪条全看查询顺序。
+  -- 用生成列把"未软删"映射成常量 1，"已软删"映射成 NULL（不参与唯一性）。
+  `live_marker` tinyint unsigned GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 1, NULL)) VIRTUAL COMMENT '活钱包标记，仅用于唯一约束',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_user` (`user_id`,`deleted_at`)
+  UNIQUE KEY `uk_user` (`user_id`,`deleted_at`),
+  UNIQUE KEY `uk_user_live` (`user_id`,`live_marker`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='钱包账户(1:1 with user)';
 
 -- wallet_recharge_request：钱包充值请求幂等键

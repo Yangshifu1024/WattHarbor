@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"log"
 	"strconv"
 	"strings"
@@ -101,7 +102,11 @@ func AdminResourceAudit(tx *gorm.DB, p operations.Profile, action, target string
 	if len(requestID) > 64 {
 		requestID = requestID[:64]
 	}
-	return tx.Table("audit_log").Create(map[string]any{"actor_id": p.ID, "actor_name": p.Username, "module": target, "action": action, "target_type": target, "target_id": strconv.FormatUint(id, 10), "before_json": string(old), "after_json": string(next), "client_ip": ip, "request_id": requestID, "created_month": time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}).Error
+	return orderstore.InsertAudit(tx, orderstore.AuditEntryInput{
+		ActorID: p.ID, ActorName: p.Username, Module: target, Action: action,
+		TargetType: target, TargetID: strconv.FormatUint(id, 10),
+		BeforeJSON: old, AfterJSON: next, ClientIP: ip, RequestID: requestID,
+	}, now)
 }
 
 // FirstNonEmpty 依次取参数中第一个非空字符串，全空则返回空串。
