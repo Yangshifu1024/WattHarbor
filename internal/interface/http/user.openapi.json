@@ -1589,6 +1589,128 @@
             }
           }
         }
+      },
+      "BillRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "账单 ID，十进制字符串"
+          },
+          "bill_no": {
+            "type": "string",
+            "description": "账单号"
+          },
+          "order_no": {
+            "type": "string",
+            "description": "来源充电订单号"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "total_cents": {
+            "type": "integer",
+            "description": "账单金额，单位分"
+          },
+          "electric_cents": {
+            "type": "integer",
+            "description": "电费，单位分"
+          },
+          "service_cents": {
+            "type": "integer",
+            "description": "服务费，单位分"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "出账时间"
+          },
+          "read_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "用户已读时间；未读为 null"
+          }
+        }
+      },
+      "BillPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BillRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "BillDetailResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BillRow"
+          }
+        }
+      },
+      "BillMarkReadResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "read_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      },
+      "DevelopmentPaymentConfirmRequest": {
+        "type": "object",
+        "required": [
+          "merchant_order_no"
+        ],
+        "properties": {
+          "merchant_order_no": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "发起支付时返回的商户单号"
+          }
+        }
+      },
+      "DevelopmentPaymentConfirmResult": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "paid": {
+                "type": "boolean"
+              },
+              "merchant_order_no": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1641,6 +1763,14 @@
     {
       "name": "card",
       "description": "在线卡"
+    },
+    {
+      "name": "bill",
+      "description": "账单"
+    },
+    {
+      "name": "payment",
+      "description": "支付"
     }
   ],
   "paths": {
@@ -2982,6 +3112,161 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CardStatusResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/bills": {
+      "get": {
+        "summary": "分页查询我的账单",
+        "operationId": "user_bill_list",
+        "tags": [
+          "bill"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/bills/{id}": {
+      "get": {
+        "summary": "查询账单详情",
+        "operationId": "user_bill_detail",
+        "tags": [
+          "bill"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/bills/{id}/read": {
+      "post": {
+        "summary": "标记账单已读",
+        "operationId": "user_bill_mark_read",
+        "tags": [
+          "bill"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillMarkReadResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/development/payments/confirm": {
+      "post": {
+        "summary": "开发模式确认支付成功",
+        "operationId": "user_dev_payment_confirm",
+        "tags": [
+          "payment"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopmentPaymentConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopmentPaymentConfirmResult"
                 }
               }
             }
