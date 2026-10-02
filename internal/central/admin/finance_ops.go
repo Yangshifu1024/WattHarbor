@@ -11,29 +11,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 	"time"
 )
 
+// financeStore 返回财务查询的读写入口，持有结算库与 central_db 两条连接。
+func (a ResourceAPI) financeStore() paystore.AdminFinanceStore {
+	return paystore.AdminFinanceStore{AdminDB: a.Store.AdminDB, BillingDB: a.Store.BillingDB}
+}
+
 // Withdraws 分页返回提现单，支持按状态与关键字（单号或参与方编码）过滤，按 ID 倒序。
 func (s ResourceStore) Withdraws(ctx context.Context, page PageQuery) (Page[paystore.WithdrawRow], error) {
-	out := Page[paystore.WithdrawRow]{Items: []paystore.WithdrawRow{}, Page: page.Page, PageSize: page.PageSize}
-	query := s.BillingDB.WithContext(ctx).Table("withdraw_request")
-	if page.Status != "" {
-		query = query.Where("status = ?", page.Status)
-	}
-	if page.Keyword != "" {
-		query = query.Where("withdraw_no LIKE ? OR party_code LIKE ?", chargehttp.AdminLikePattern(page.Keyword), chargehttp.AdminLikePattern(page.Keyword))
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		return out, err
-	}
-	if err := query.Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).
-		Find(&out.Items).Error; err != nil {
-		return out, err
-	}
-	return out, nil
+	return (paystore.AdminFinanceStore{BillingDB: s.BillingDB}).ListWithdraws(ctx, page)
 }
 
 // createWithdraw 新建提现申请：余额重算、参与方与模板有效性校验归属 settlement 家族，
@@ -207,10 +196,7 @@ func (a ResourceAPI) reconcileType(c *gin.Context, kind string, date time.Time, 
 	row.InternalCount, row.ExternalCount = result.InternalCount, result.ExternalCount
 	row.DiffCount, row.DiffCents = result.DiffCount, result.DiffCents
 	row.InternalCents, row.ExternalCents = result.InternalCents, result.ExternalCents
-	row.Diffs = make([]paystore.ReconcileDiff, 0, len(result.Diffs))
-	for _, d := range result.Diffs {
-		row.Diffs = append(row.Diffs, paystore.ReconcileDiff{Ref: d.Ref, InternalCents: d.InternalCents, ChannelCents: d.ChannelCents, Reason: d.Reason})
-	}
+	row.Diffs = paystore.ToReconcileDiffs(result.Diffs)
 	if err := paystore.SaveReconcileResult(ctx, adminDB, kind, row.ReconcileDate, result); err != nil {
 		return row, err
 	}
@@ -232,11 +218,7 @@ func (a ResourceAPI) resolveReconcile(c *gin.Context) {
 		return
 	}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var existing struct{ ID uint64 }
-		if err := tx.Table("finance_reconcile_log").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&existing).Error; err != nil {
-			return err
-		}
-		return tx.Table("finance_reconcile_log").Where("id = ?", id).Updates(map[string]any{"resolved": in.Resolved}).Error
+		return a.financeStore().SetReconcileResolved(tx, id, in.Resolved)
 	})
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
@@ -268,39 +250,10 @@ func (a ResourceAPI) settlements(c *gin.Context) {
 	if !ok {
 		return
 	}
-	type party = paystore.SettlementPartyRow
-	// 显式映射查询列名，避免字段名称不一致导致扫描结果为零值。
-	type row = paystore.SettlementListRow
-
-	// 各参与方分成明细，查询后按分账 ID 二次回填。
-	type rowWithParties struct {
-		paystore.SettlementListRow
-		Parties []party `json:"parties" gorm:"-"`
-	}
-	out := Page[rowWithParties]{Items: []rowWithParties{}, Page: page.Page, PageSize: page.PageSize}
-	query := a.Store.BillingDB.WithContext(c.Request.Context()).Table("settlement")
-	if page.Status != "" {
-		query = query.Where("status = ?", page.Status)
-	}
-	if page.Keyword != "" {
-		query = query.Where("settlement_no LIKE ? OR order_no LIKE ?", chargehttp.AdminLikePattern(page.Keyword), chargehttp.AdminLikePattern(page.Keyword))
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
+	out, err := a.financeStore().ListSettlements(c.Request.Context(), page)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
-	}
-	if err := query.Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	for i := range out.Items {
-		out.Items[i].Parties = []party{}
-		if err := a.Store.BillingDB.WithContext(c.Request.Context()).Table("settlement_party_amount").
-			Where("settlement_id = ?", out.Items[i].ID).Order("party_code").
-			Find(&out.Items[i].Parties).Error; err != nil {
-			chargehttp.AdminResourceFailure(c, err)
-			return
-		}
 	}
 	httpapi.OK(c, out)
 }
@@ -325,42 +278,16 @@ func (a ResourceAPI) reconciles(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[paystore.ReconcileRow]{Items: []paystore.ReconcileRow{}, Page: page.Page, PageSize: page.PageSize}
-	query := a.Store.AdminDB.WithContext(c.Request.Context()).Table("finance_reconcile_log")
-	if page.Status != "" {
-		query = query.Where("reconcile_type = ?", page.Status)
-	}
+	// 只有精确的 true / false 才当筛选条件，其他取值忽略，避免把乱值静默变成"全查"。
+	var resolved *bool
 	if raw := c.Query("resolved"); raw == "true" || raw == "false" {
-		query = query.Where("resolved = ?", raw == "true")
+		value := raw == "true"
+		resolved = &value
 	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
+	out, err := a.financeStore().ListReconciles(c.Request.Context(), page.Status, resolved, page)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
-	}
-	if err := query.Order("reconcile_date DESC, id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	// 将 diffs_json 转为文本后解码到 any 字段。
-	ids := make([]uint64, 0, len(out.Items))
-	for _, row := range out.Items {
-		ids = append(ids, row.ID)
-	}
-	diffs := map[uint64][]byte{}
-	if len(ids) > 0 {
-		var stored []paystore.ReconcileDiffsRow
-		if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("finance_reconcile_log").
-			Select("id, CAST(diffs_json AS CHAR) AS diffs_json").Where("id IN ?", ids).Find(&stored).Error; err == nil {
-			for _, row := range stored {
-				diffs[row.ID] = row.Diffs
-			}
-		}
-	}
-	for i := range out.Items {
-		out.Items[i].Diffs = []paystore.ReconcileDiff{}
-		if raw, present := diffs[out.Items[i].ID]; present && len(raw) > 0 {
-			_ = json.Unmarshal(raw, &out.Items[i].Diffs)
-		}
 	}
 	httpapi.OK(c, out)
 }
@@ -370,21 +297,6 @@ func (a ResourceAPI) reconciles(c *gin.Context) {
 func (a ResourceAPI) registerWebhookDelivery(r *gin.Engine) {
 	r.GET("/api/v1/admin/webhooks/:id/deliveries", a.Auth.Require("webhook.read"), a.webhookDeliveries)
 	r.POST("/api/v1/admin/webhooks/:id/deliveries/:event_id/retry", a.Auth.Require("webhook.create"), a.retryWebhookDelivery)
-}
-
-// WebhookDeliveryRow 表示 webhook_delivery_log 中单次投递结果。
-type WebhookDeliveryRow struct {
-	ID             uint64  `json:"id"`              // 投递日志主键 ID
-	SubscriptionID uint64  `json:"subscription_id"` // 所属 Webhook 订阅 ID
-	EventID        string  `json:"event_id"`        // 事件 ID,同一订阅内唯一,重发按它定位原始事件
-	EventType      string  `json:"event_type"`      // 事件类型
-	RequestBody    string  `json:"request_body"`    // 实际发出的请求体 JSON
-	ResponseStatus *int    `json:"response_status"` // 订阅方 HTTP 状态码；未收到响应时为 NULL。
-	ResponseBody   *string `json:"response_body"`   // 订阅方返回体(可空)
-	ErrorMsg       *string `json:"error_msg"`       // 投递失败原因(可空),成功时为空
-	AttemptCount   uint32  `json:"attempt_count"`   // 累计投递尝试次数
-	DurationMs     *uint64 `json:"duration_ms"`     // 单次请求耗时毫秒(可空)
-	DeliveredAt    string  `json:"delivered_at"`    // 投递时间
 }
 
 // webhookDeliveries 分页返回某个订阅的投递日志，支持按事件 ID 或事件类型关键字过滤，按 ID 倒序。
@@ -397,16 +309,8 @@ func (a ResourceAPI) webhookDeliveries(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[WebhookDeliveryRow]{Items: []WebhookDeliveryRow{}, Page: page.Page, PageSize: page.PageSize}
-	query := a.Store.AdminDB.WithContext(c.Request.Context()).Table("webhook_delivery_log").Where("subscription_id = ?", id)
-	if page.Keyword != "" {
-		query = query.Where("event_id LIKE ? OR event_type LIKE ?", chargehttp.AdminLikePattern(page.Keyword), chargehttp.AdminLikePattern(page.Keyword))
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	if err := query.Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
+	out, err := a.financeStore().ListWebhookDeliveries(c.Request.Context(), id, page)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -426,14 +330,8 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
-	var subscription struct {
-		URL        string   // 订阅方回调地址
-		EventTypes []string // 订阅的事件类型列表
-		Enabled    bool     // 订阅是否启用,停用时不允许重发
-		Secret     string   // 订阅签名密钥,投递时用它计算签名
-	}
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("webhook_subscription").
-		Where("id = ? AND deleted_at IS NULL", id).Take(&subscription).Error; err != nil {
+	subscription, err := a.financeStore().FindWebhookSubscription(c.Request.Context(), id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -441,12 +339,8 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 		httpapi.Write(c, 409, 2009, "订阅已停用，无法重发", nil)
 		return
 	}
-	var delivery struct {
-		EventType   string // 原事件类型
-		RequestBody string // 原事件体,重发时作为 data 原样带回
-	}
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("webhook_delivery_log").
-		Where("subscription_id = ? AND event_id = ?", id, eventID).Take(&delivery).Error; err != nil {
+	delivery, err := a.financeStore().FindWebhookDelivery(c.Request.Context(), id, eventID)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -462,9 +356,7 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 		return
 	}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table(paystore.AdminEventOutboxTable).Create(&paystore.EventOutboxRecord{
-			EventID: envelope["event_id"].(string), Stream: "charge_events_stream", EnvelopeJSON: payload,
-		}).Error; err != nil {
+		if err := a.financeStore().EnqueueAdminEvent(tx, "charge_events_stream", envelope["event_id"].(string), payload); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, profile, "retry", "webhook", id, nil, gin.H{"event_id": eventID, "subscription_id": id}, c.ClientIP(), c.GetHeader("X-Request-ID"))

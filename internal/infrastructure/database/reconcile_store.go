@@ -35,11 +35,24 @@ type ReconcileDiff struct {
 	Reason        string `json:"reason"`         // 差异原因:金额不一致 / 内部无对应记录
 }
 
+// ToReconcileDiffs 把领域层的差异明细转成落库与返回共用的形态。
+//
+// 领域类型刻意不带 JSON 标签：序列化形状由持久化层决定。两边字段名不同
+// （领域是 ChannelCents，库侧是 channel_cents）时，json 解码不会报错但会
+// 静默丢值——带下划线的键匹配不上，全额变成 0。所以落库前必须显式转换。
+func ToReconcileDiffs(diffs []money.ReconcileDiff) []ReconcileDiff {
+	out := make([]ReconcileDiff, 0, len(diffs))
+	for _, d := range diffs {
+		out = append(out, ReconcileDiff{Ref: d.Ref, InternalCents: d.InternalCents, ChannelCents: d.ChannelCents, Reason: d.Reason})
+	}
+	return out
+}
+
 // SaveReconcileResult 按 (对账类型, 对账日期) 唯一键写入对账结果，同日重跑覆盖原结果并
 // 把 resolved 清回 0——重跑意味着原结论作废，是否已处理需要运营重新判断。
 // 差异明细以 JSON 文本落库，返回时再解回结构，避免 JSON 列被扫描成 any。
 func SaveReconcileResult(ctx context.Context, db *gorm.DB, kind, date string, result money.ReconcileResult) error {
-	diffs, err := json.Marshal(result.Diffs)
+	diffs, err := json.Marshal(ToReconcileDiffs(result.Diffs))
 	if err != nil {
 		return err
 	}
