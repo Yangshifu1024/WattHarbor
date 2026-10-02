@@ -11,7 +11,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,13 +44,17 @@ func (t ExportTask) exportDir() string {
 	return filepath.Join(os.TempDir(), "chargepilot-exports")
 }
 
+// store 返回导出专用的读写入口，持有按表路由取数所需的三个句柄。
+func (t ExportTask) store() database.ExportStore {
+	return database.ExportStore{AdminDB: t.Store.AdminDB, UserDB: t.Store.UserDB, BillingDB: t.Store.BillingDB}
+}
+
 // CleanupExpired 每批清理最多 1000 个过期任务，删除文件并更新状态为 expired。
 // 下载窗口为 24 小时，文件路径按任务重新推导，不信任数据库中存储的路径。
 func (t ExportTask) CleanupExpired(ctx context.Context) (int, error) {
-	rows := []database.ExportTaskRow{}
-	if err := t.Store.AdminDB.WithContext(ctx).Table("export_task").
-		Where("status IN ? AND expires_at <= ?", []string{"completed", "failed"}, time.Now().UTC()).
-		Order("id").Limit(1000).Find(&rows).Error; err != nil {
+	db := t.Store.AdminDB.WithContext(ctx)
+	rows, err := t.store().ListExpirableExportTasks(db, time.Now().UTC(), 1000)
+	if err != nil {
 		return 0, err
 	}
 	removed := 0
@@ -66,91 +69,12 @@ func (t ExportTask) CleanupExpired(ctx context.Context) (int, error) {
 				return removed, err
 			}
 		}
-		if err := t.Store.AdminDB.WithContext(ctx).Table("export_task").Where("id = ? AND status IN ?", row.ID, []string{"completed", "failed"}).Update("status", "expired").Error; err != nil {
+		if err := t.store().ExpireExportTask(db, row.TaskNo); err != nil {
 			return removed, err
 		}
 		removed++
 	}
 	return removed, nil
-}
-
-// exportSpec 声明导出资源的权限、来源表、列及数据范围过滤函数。
-// 新增资源须显式登记，并明确各列的脱敏规则。
-type exportSpec struct {
-	Permission string                                                                     // 导出该资源所需的读权限,申请和下载时都会校验
-	Table      string                                                                     // 数据来源表名，位于 central_db
-	Columns    []exportColumn                                                             // 导出列清单,顺序即文件列顺序;Header 是中文表头,Column 是数据库列名
-	Builder    func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB // 在基础查询上追加数据范围等条件的钩子,为空表示不额外过滤
-}
-
-// exportColumn 是一列的表头与数据库列名映射，两者分开，表头才能用中文。
-type exportColumn struct {
-	Header string // 文件里的中文表头
-	Column string // 数据库列名,也是字段脱敏规则匹配用的字段名
-}
-
-// exportRegistry 声明允许导出的资源及其权限、表、列和过滤函数，拒绝未登记的资源。
-var exportRegistry = map[string]exportSpec{
-	"orders": {
-		Permission: "order.read",
-		Table:      "charge_order",
-		Columns: []exportColumn{
-			{"订单号", "order_no"}, {"用户", "user_id"}, {"设备", "device_id"}, {"端口", "port_no"},
-			{"状态", "status"}, {"开始时间", "started_at"}, {"结束时间", "ended_at"},
-			{"电费(分)", "electric_cents"}, {"服务费(分)", "service_cents"}, {"合计(分)", "total_cents"},
-		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB {
-			return database.ScopeStations(scope, q, "station_id")
-		},
-	},
-	"stations": {
-		Permission: "station.read",
-		Table:      "station",
-		Columns: []exportColumn{
-			{"编码", "code"}, {"名称", "name"}, {"地址", "address"}, {"状态", "status"},
-		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB {
-			return database.ScopeStations(scope, q, "id")
-		},
-	},
-	"devices": {
-		Permission: "device.read",
-		Table:      "device_meta",
-		Columns: []exportColumn{
-			{"设备号", "device_id"}, {"型号", "model"}, {"站点", "station_id"}, {"厂商", "vendor_id"}, {"状态", "status"},
-		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB {
-			return database.ScopeStations(scope, q, "station_id")
-		},
-	},
-	"settlements": {
-		Permission: "finance.read",
-		Table:      "settlement",
-		Columns: []exportColumn{
-			{"分账单号", "settlement_no"}, {"订单号", "order_no"}, {"模式", "mode"}, {"状态", "status"},
-			{"合计(分)", "total_cents"}, {"分账池(分)", "split_pool_cents"},
-		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB { return q },
-	},
-	"bills": {
-		Permission: "finance.read",
-		Table:      "charge_bill",
-		Columns: []exportColumn{
-			{"账单号", "bill_no"}, {"订单ID", "charge_order_id"}, {"用户ID", "user_id"},
-			{"设备号", "device_id"}, {"电费(分)", "electric_cents"}, {"服务费(分)", "service_cents"},
-			{"合计(分)", "total_cents"}, {"退款(分)", "refund_cents"}, {"状态", "status"}, {"开具时间", "issued_at"},
-		},
-	},
-	"reconciles": {
-		Permission: "finance.read",
-		Table:      "finance_reconcile_log",
-		Columns: []exportColumn{
-			{"对账类型", "reconcile_type"}, {"对账日期", "reconcile_date"},
-			{"内部笔数", "internal_count"}, {"渠道笔数", "wechat_count"}, {"差异笔数", "diff_count"},
-			{"内部金额(分)", "internal_cents"}, {"渠道金额(分)", "wechat_cents"}, {"差额(分)", "diff_cents"},
-			{"已解决", "resolved"},
-		},
-	},
 }
 
 // register 注册导出路由：申请与下载需要 export.create，列表与详情需要 finance.read。
@@ -168,8 +92,8 @@ func (t ExportTask) detailTask(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var row database.ExportTaskRow
-	if err := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").Where("id = ?", id).Take(&row).Error; err != nil {
+	row, err := t.store().FindExportTaskByID(t.Store.AdminDB.WithContext(c.Request.Context()), id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -187,7 +111,7 @@ func (t ExportTask) listResources(c *gin.Context) {
 		return
 	}
 	items := []string{}
-	for name, spec := range exportRegistry {
+	for name, spec := range database.ExportResources() {
 		if profile.HasPermission(spec.Permission) && (scope.Unrestricted || !exportRequiresGlobalScope(name)) {
 			items = append(items, name)
 		}
@@ -206,20 +130,12 @@ func (t ExportTask) listTasks(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[database.ExportTaskRow]{Items: []database.ExportTaskRow{}, Page: page.Page, PageSize: page.PageSize}
-	query := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task")
-	if page.Status != "" {
-		query = query.Where("status = ?", page.Status)
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
+	rows, total, err := t.store().ListExportTasks(t.Store.AdminDB.WithContext(c.Request.Context()), page.Status, page.Page, page.PageSize)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if err := query.Order("id DESC").Offset((page.Page - 1) * page.PageSize).Limit(page.PageSize).Find(&out.Items).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	httpapi.OK(c, out)
+	httpapi.OK(c, Page[database.ExportTaskRow]{Items: rows, Page: page.Page, PageSize: page.PageSize, Total: total})
 }
 
 // createTask 受理一次导出申请：校验请求号、资源、格式、权限与数据范围后落一条 pending 任务，
@@ -227,7 +143,7 @@ func (t ExportTask) listTasks(c *gin.Context) {
 func (t ExportTask) createTask(c *gin.Context) {
 	var in struct {
 		RequestID string         `json:"request_id"` // 客户端请求号,必须是 UUID,用于幂等
-		Resource  string         `json:"resource"`   // 要导出的资源名,必须已在 exportRegistry 登记
+		Resource  string         `json:"resource"`   // 要导出的资源名,必须已在 database.ExportResources 登记
 		Format    string         `json:"format"`     // 文件格式,留空按 csv;pdf 只支持 bills 与 reconciles
 		Filter    map[string]any `json:"filter"`     // 筛选条件,bills/reconciles 必填 from/to 且跨度不超过 31 天
 	}
@@ -238,7 +154,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 		httpapi.BadRequest(c, "请提供 UUID 格式的请求号")
 		return
 	}
-	spec, known := exportRegistry[in.Resource]
+	spec, known := database.ExportResource(in.Resource)
 	if !known {
 		httpapi.BadRequest(c, "不支持的导出资源")
 		return
@@ -284,9 +200,8 @@ func (t ExportTask) createTask(c *gin.Context) {
 	}
 	var replayed *database.ExportTaskRow
 	err = t.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var existing database.ExportTaskRow
-		found := tx.Table("export_task").Where("task_no = ?", taskNo).Take(&existing)
-		if found.Error == nil {
+		existing, found := t.store().FindExportTaskByNo(tx, taskNo)
+		if found == nil {
 			var savedFilter map[string]any
 			if existing.FilterJSON != nil {
 				_ = json.Unmarshal([]byte(*existing.FilterJSON), &savedFilter)
@@ -297,13 +212,13 @@ func (t ExportTask) createTask(c *gin.Context) {
 			replayed = &existing
 			return nil
 		}
-		if !errors.Is(found.Error, gorm.ErrRecordNotFound) {
-			return found.Error
+		if !errors.Is(found, gorm.ErrRecordNotFound) {
+			return found
 		}
-		if err := tx.Table("export_task").Create(map[string]any{
-			"task_no": taskNo, "resource": in.Resource, "file_format": in.Format, "status": "pending", "requested_by": profile.ID,
-			"filter_json": string(filter), "expires_at": time.Now().UTC().Add(24 * time.Hour),
-		}).Error; err != nil {
+		if err := t.store().InsertExportTask(tx, database.ExportTaskInsert{
+			TaskNo: taskNo, Resource: in.Resource, FileFormat: in.Format, RequestedBy: profile.ID,
+			FilterJSON: string(filter), ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+		}); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, profile, "create", "export_task", 0, nil, gin.H{"resource": in.Resource, "task_no": taskNo}, c.ClientIP(), c.GetHeader("X-Request-ID"))
@@ -322,19 +237,21 @@ func (t ExportTask) createTask(c *gin.Context) {
 		return
 	}
 	var finished database.ExportTaskRow
-	t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").Where("task_no = ?", taskNo).Take(&finished)
+	if r, err := t.store().FindExportTaskByNo(t.Store.AdminDB.WithContext(c.Request.Context()), taskNo); err == nil {
+		finished = r
+	}
 	httpapi.OK(c, gin.H{"task_no": taskNo, "status": finished.Status, "row_count": finished.RowCount, "expires_at": finished.ExpiresAt})
 }
 
 // run 按资源、数据范围和日期取数，脱敏后写入目标格式。
 // 先写 .partial 文件，再原子改名，避免下载未完成文件；任一步失败将任务置为 failed。
-func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, profile operations.Profile) error {
+func (t ExportTask) run(ctx context.Context, taskNo string, spec database.ExportSpec, profile operations.Profile) error {
 	dir := t.exportDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return t.fail(ctx, taskNo, err)
 	}
-	var row database.ExportTaskRow
-	if err := t.Store.AdminDB.WithContext(ctx).Table("export_task").Where("task_no = ?", taskNo).Take(&row).Error; err != nil {
+	row, err := t.store().FindExportTaskByNo(t.Store.AdminDB.WithContext(ctx), taskNo)
+	if err != nil {
 		return err
 	}
 	scope, err := database.LoadDataScope(ctx, t.Store.AdminDB, profile)
@@ -351,25 +268,9 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, pro
 	if filters == nil {
 		filters = map[string]any{}
 	}
-	query := t.Store.UserDB.WithContext(ctx).Table(spec.Table)
-	if spec.Table == "station" || spec.Table == "device_meta" || spec.Table == "finance_reconcile_log" {
-		query = t.Store.AdminDB.WithContext(ctx).Table(spec.Table)
-	} else if spec.Table == "settlement" {
-		query = t.Store.BillingDB.WithContext(ctx).Table(spec.Table)
-	}
-	if spec.Table != "charge_bill" && spec.Table != "finance_reconcile_log" && spec.Table != "settlement" {
-		query = query.Where(map[string]any{"deleted_at": nil})
-	}
-	if spec.Table == "charge_bill" {
-		query = query.Where("issued_at >= ? AND issued_at < ?", filters["from"], operations.NextExportDate(filters["to"]))
-	} else if spec.Table == "finance_reconcile_log" {
-		query = query.Where("reconcile_date >= ? AND reconcile_date <= ?", filters["from"], filters["to"])
-	}
-	if spec.Builder != nil {
-		query = spec.Builder(ctx, query, scope)
-	}
-	records := []map[string]any{}
-	if err := query.Limit(t.maxRows() + 1).Find(&records).Error; err != nil {
+	// 多取一行，用来判断是否超出单次行数上限。
+	records, err := t.store().QueryExportSource(row.Resource, scope, filters, t.maxRows()+1)
+	if err != nil {
 		return t.fail(ctx, taskNo, err)
 	}
 	if len(records) > t.maxRows() {
@@ -420,15 +321,12 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, pro
 		os.Remove(pending)
 		return t.fail(ctx, taskNo, err)
 	}
-	return t.Store.AdminDB.WithContext(ctx).Model(&database.ExportTaskRow{}).Where("task_no = ?", taskNo).
-		Updates(map[string]any{"status": "completed", "row_count": uint32(len(records)), "file_path": path,
-			"completed_at": time.Now().UTC()}).Error
+	return t.store().MarkExportCompleted(t.Store.AdminDB.WithContext(ctx), taskNo, len(records), path, time.Now().UTC())
 }
 
 // fail 把任务标记为失败并记录截断后的错误原因，同时把错误原样返回给调用方。
 func (t ExportTask) fail(ctx context.Context, taskNo string, cause error) error {
-	_ = t.Store.AdminDB.WithContext(ctx).Model(&database.ExportTaskRow{}).Where("task_no = ?", taskNo).
-		Updates(map[string]any{"status": "failed", "error_msg": truncate(cause.Error(), 255)}).Error
+	_ = t.store().MarkExportFailed(t.Store.AdminDB.WithContext(ctx), taskNo, truncate(cause.Error(), 255))
 	return cause
 }
 
@@ -462,9 +360,8 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
-	var row database.ExportTaskRow
-	if err := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").
-		Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&row).Error; err != nil {
+	row, err := t.store().LockExportTaskByID(t.Store.AdminDB.WithContext(c.Request.Context()), id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -472,7 +369,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 		httpapi.Write(c, 403, 1003, "只能下载自己创建的导出文件", nil)
 		return
 	}
-	spec, known := exportRegistry[row.Resource]
+	spec, known := database.ExportResource(row.Resource)
 	if !known || !profile.HasPermission(spec.Permission) {
 		// 下载时重新校验资源读取权限。
 		httpapi.Write(c, 403, 1003, "没有下载该导出的权限", nil)
@@ -500,8 +397,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 	if row.ExpiresAt != nil && *row.ExpiresAt != "" {
 		expiry, err := time.Parse("2006-01-02 15:04:05.999", *row.ExpiresAt)
 		if err == nil && time.Now().UTC().After(expiry) {
-			_ = t.Store.AdminDB.WithContext(c.Request.Context()).Model(&database.ExportTaskRow{}).
-				Where("task_no = ?", row.TaskNo).Update("status", "expired").Error
+			_ = t.store().ExpireExportTask(t.Store.AdminDB.WithContext(c.Request.Context()), row.TaskNo)
 			_ = os.Remove(*row.FilePath)
 			httpapi.Write(c, http.StatusGone, httpapi.CodeResourceExpired, "导出文件已过期，请重新导出", nil)
 			return
