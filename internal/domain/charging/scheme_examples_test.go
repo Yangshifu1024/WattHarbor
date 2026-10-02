@@ -1,4 +1,4 @@
-package pricing
+package charging
 
 import (
 	"encoding/json"

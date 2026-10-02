@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -88,14 +88,14 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 		return billing.Source{}, err
 	}
 	var contract struct {
-		Rule  pricing.Rule   `json:"rule"`
-		Offer *pricing.Offer `json:"offer"`
+		Rule  charging.Rule   `json:"rule"`
+		Offer *charging.Offer `json:"offer"`
 	}
 	var meter orderpkg.EndMeter
 	if json.Unmarshal(snapshot.PricingSnapshot, &contract) != nil || contract.Rule.Spec.Scheme == nil || contract.Offer == nil || json.Unmarshal(end.MeterJSON, &meter) != nil || !meter.EndedAt.Equal(order.EndedAt.Time) {
 		return billing.Source{}, billing.ErrConflict
 	}
-	source := billing.Source{ChargeOrderID: id, OrderNo: order.OrderNo, UserID: order.UserID, Rule: contract.Rule, Offer: contract.Offer, Meter: pricing.ActualMeter{StartedAt: order.StartedAt.Time, EndedAt: meter.EndedAt, ChargedWh: meter.ChargedWh, ChargedSeconds: meter.ChargedSeconds, Segments: meter.Segments}}
+	source := billing.Source{ChargeOrderID: id, OrderNo: order.OrderNo, UserID: order.UserID, Rule: contract.Rule, Offer: contract.Offer, Meter: charging.ActualMeter{StartedAt: order.StartedAt.Time, EndedAt: meter.EndedAt, ChargedWh: meter.ChargedWh, ChargedSeconds: meter.ChargedSeconds, Segments: meter.Segments}}
 	var card cardpkg.CardCharge
 	if err := db.Where("charge_order_id=?", id).Find(&card).Error; err != nil {
 		return source, err
@@ -133,7 +133,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 		}
 	}
 	if !cutoff.CutoffAt.IsZero() && cutoff.CutoffAt.Before(source.Meter.EndedAt) {
-		clipped, err := pricing.CutoffMeter(contract.Rule.Spec, source.Meter, cutoff.CutoffAt)
+		clipped, err := charging.CutoffMeter(contract.Rule.Spec, source.Meter, cutoff.CutoffAt)
 		if err != nil {
 			source.Meter.ReviewRequired = true
 		} else {
@@ -145,7 +145,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 		if e < 0 || s < 0 || e+s != source.Offer.PriceCents {
 			return source, billing.ErrConflict
 		}
-		source.FinalFee = &pricing.Fee{ElectricCents: e, ServiceCents: s, TotalCents: e + s}
+		source.FinalFee = &charging.Fee{ElectricCents: e, ServiceCents: s, TotalCents: e + s}
 		source.ReviewID = "budget:" + cutoff.CutoffAt.UTC().Format(time.RFC3339Nano)
 	}
 	var manual struct {
@@ -157,7 +157,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (billing.Source, error) {
 		return source, err
 	}
 	if manual.RequestID != "" {
-		source.FinalFee = &pricing.Fee{ElectricCents: manual.ElectricCents, ServiceCents: manual.ServiceCents, TotalCents: manual.ElectricCents + manual.ServiceCents}
+		source.FinalFee = &charging.Fee{ElectricCents: manual.ElectricCents, ServiceCents: manual.ServiceCents, TotalCents: manual.ElectricCents + manual.ServiceCents}
 		source.ReviewID = manual.RequestID
 	}
 	return source, nil
@@ -287,7 +287,7 @@ var _ billing.Orders = BillingOrders{}
 
 // Notification consumers receive final amounts only after durable settlement.
 // Visibility comes from the frozen order, never the current station template.
-func settlementNotice(eventID string, order orderpkg.ChargeOrderRecord, display pricing.Display, fee pricing.Fee, refund int64) map[string]any {
+func settlementNotice(eventID string, order orderpkg.ChargeOrderRecord, display charging.Display, fee charging.Fee, refund int64) map[string]any {
 	data := map[string]any{"event_id": eventID, "charge_order_id": order.ID, "order_no": order.OrderNo, "user_id": order.UserID, "status": "settled", "display": display}
 	if display.ShowFeeOnEnd {
 		data["total_cents"], data["refund_cents"] = fee.TotalCents, refund

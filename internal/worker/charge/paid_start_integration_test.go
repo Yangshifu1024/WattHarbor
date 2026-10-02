@@ -10,7 +10,7 @@ import (
 	"time"
 
 	centralpayment "github.com/ChargePilot2026/charge-pilot/internal/central/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/google/uuid"
 )
@@ -42,13 +42,13 @@ func TestPaidStartDispatchRequiresCallbackCreatedOrder(t *testing.T) {
 		_, _ = db.ExecContext(ctx, "DELETE FROM payment_callback_idempotent WHERE wechat_transaction_id = ?", transactionID)
 		_, _ = db.ExecContext(ctx, "DELETE FROM user WHERE id = ?", userID)
 	}()
-	scheme := pricing.Scheme{Name: "Dispatch Test", Packages: []pricing.Package{{ID: 1, Name: "60 minutes", Mode: "duration", PriceCents: 140, Minutes: 60}}}.Normalized()
+	scheme := charging.Scheme{Name: "Dispatch Test", Packages: []charging.Package{{ID: 1, Name: "60 minutes", Mode: "duration", PriceCents: 140, Minutes: 60}}}.Normalized()
 	intent, err := (centralpayment.PaymentIntentStore{DB: testGORMDB(t, db)}).Reserve(ctx, centralpayment.IntentInput{
 		UserID: uint64(userID), ClientRequestID: uuid.NewString(),
 		Port: centralpayment.ScanResult{Kind: "port", DeviceID: "dispatch-device", StationID: 9,
 			Port: &centralpayment.ScanPort{PortID: "dispatch-device:1", DeviceID: "dispatch-device", PortNo: 1, Online: true, Available: true}},
-		Rule:  pricing.Rule{ID: 3, StationID: 9, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])},
-		Offer: &pricing.Offer{ID: 301, PackageID: 1, StationID: 9, Name: "60 minutes", Mode: "duration", PriceCents: 140, DurationMinutes: 60},
+		Rule:  charging.Rule{ID: 3, StationID: 9, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])},
+		Offer: &charging.Offer{ID: 301, PackageID: 1, StationID: 9, Name: "60 minutes", Mode: "duration", PriceCents: 140, DurationMinutes: 60},
 	})
 	if err != nil {
 		t.Fatal(err)

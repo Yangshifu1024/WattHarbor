@@ -6,6 +6,7 @@ import (
 	cardpkg "github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,8 +15,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
@@ -112,9 +112,9 @@ func TestPaymentNumberSources(t *testing.T) {
 	if err := tx.Create(&cardRow).Error; err != nil {
 		t.Fatal(err)
 	}
-	scheme := pricing.Scheme{Name: "payment number card fixture", Packages: []pricing.Package{{ID: 1, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}},
-		Card: pricing.CardPolicy{PackageID: 1, MaxMinutes: 600}, Display: pricing.DefaultDisplay()}.Normalized()
-	rule := pricing.Rule{ID: 31, StationID: 9, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
+	scheme := charging.Scheme{Name: "payment number card fixture", Packages: []charging.Package{{ID: 1, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}},
+		Card: charging.CardPolicy{PackageID: 1, MaxMinutes: 600}, Display: charging.DefaultDisplay()}.Normalized()
+	rule := charging.Rule{ID: 31, StationID: 9, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
 	cards := cardpkg.CardStore{DB: tx}
 	for no := uint8(3); no <= 4; no++ {
 		event := uuid.NewString()
@@ -131,7 +131,7 @@ func TestPaymentNumberSources(t *testing.T) {
 			t.Fatalf("card payment: %+v %v", paid, err)
 		}
 		assertNewNumber(paid)
-		if replay, err := cards.Swipe(ctx, cardRow.CardNo, event, cardPort(no), pricing.Rule{}); err != nil || replay.OperationID != first.OperationID || replay.ChargeOrderID != first.ChargeOrderID {
+		if replay, err := cards.Swipe(ctx, cardRow.CardNo, event, cardPort(no), charging.Rule{}); err != nil || replay.OperationID != first.OperationID || replay.ChargeOrderID != first.ChargeOrderID {
 			t.Fatalf("card event replay changed payment: %+v %v", replay, err)
 		}
 	}
@@ -147,7 +147,7 @@ func TestPaymentNumberSources(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	UserAccountAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, scanSession{}, identitystore.UserStore{DB: tx})}, UserDB: tx, Prepay: channel.Simulator{}}.Register(router)
+	UserAccountAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, scanSession{}, database.UserStore{DB: tx})}, UserDB: tx, Prepay: channel.Simulator{}}.Register(router)
 	requests := &authenticatedRouter{Engine: router, token: token}
 	for range 2 {
 		request := map[string]any{"request_id": uuid.NewString(), "amount_cents": 1000}

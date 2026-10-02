@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"net/http/httptest"
@@ -65,7 +65,7 @@ func TestWholeSchemePublicationAndScopedInheritance(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &resp)
 		return resp.Data
 	}
-	scheme := pricing.Scheme{Name: "站点完整方案", Packages: []pricing.Package{{ID: 1, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}}}.Normalized()
+	scheme := charging.Scheme{Name: "站点完整方案", Packages: []charging.Package{{ID: 1, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}}}.Normalized()
 	request := applySchemeInput{RequestID: uuid.NewString(), StationID: site, Scheme: &scheme}
 	call("POST", "/apply", request, 200)
 	if call("POST", "/apply", request, 200)["replayed"] != true {

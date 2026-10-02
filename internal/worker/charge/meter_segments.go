@@ -8,24 +8,24 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/application"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
 // measuredSegments 把协议事件翻译成领域读数后交给 pricing 分段。
 // 翻译在用例层完成，计费规则本身不感知协议。
-func measuredSegments(start time.Time, terminal protocol.Event, events []protocol.Event) []pricing.MeterSegment {
+func measuredSegments(start time.Time, terminal protocol.Event, events []protocol.Event) []charging.MeterSegment {
 	span, ok := application.SessionSpanOf(terminal)
 	if !ok {
 		return nil
 	}
-	return pricing.MeasuredSegments(start, span, application.ReadingSamplesOf(events))
+	return charging.MeasuredSegments(start, span, application.ReadingSamplesOf(events))
 }
 
 // meterSegments 经 gateway 拉取计量证据：心跳在 [ack_at, end.ReceivedAt]
 // 内且 id 不超过结束事件的行，与旧直读实现同界。返回超过 10080 行时放弃
 // 分段（与旧实现一致，交由无分段路径处理）。
-func (s EndSynchronizer) meterSegments(ctx context.Context, gateway gatewaySyncAPI, command gatewayCommand, endID uint64, end protocol.Event) ([]pricing.MeterSegment, error) {
+func (s EndSynchronizer) meterSegments(ctx context.Context, gateway gatewaySyncAPI, command gatewayCommand, endID uint64, end protocol.Event) ([]charging.MeterSegment, error) {
 	if command.AckAt == nil || end.StartedAt.IsZero() {
 		return nil, nil
 	}

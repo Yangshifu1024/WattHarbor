@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -19,19 +19,19 @@ import (
 )
 
 type PaymentIntent struct {
-	IntentID        string           `json:"intent_id"`
-	MerchantOrderNo string           `json:"merchant_order_no"`
-	PaymentOrderID  uint64           `json:"payment_order_id"`
-	UserID          uint64           `json:"user_id,string"`
-	OpenID          string           `json:"-"`
-	DeviceID        string           `json:"device_id"`
-	PortNo          uint8            `json:"port_no"`
-	PortCode        string           `json:"port_id"`
-	StationID       uint64           `json:"station_id"`
-	Estimate        pricing.Estimate `json:"estimate"`
-	ExpiresAt       time.Time        `json:"expires_at"`
-	Status          string           `json:"status"`
-	CouponGrantID   uint64           `json:"coupon_grant_id,omitempty"`
+	IntentID        string            `json:"intent_id"`
+	MerchantOrderNo string            `json:"merchant_order_no"`
+	PaymentOrderID  uint64            `json:"payment_order_id"`
+	UserID          uint64            `json:"user_id,string"`
+	OpenID          string            `json:"-"`
+	DeviceID        string            `json:"device_id"`
+	PortNo          uint8             `json:"port_no"`
+	PortCode        string            `json:"port_id"`
+	StationID       uint64            `json:"station_id"`
+	Estimate        charging.Estimate `json:"estimate"`
+	ExpiresAt       time.Time         `json:"expires_at"`
+	Status          string            `json:"status"`
+	CouponGrantID   uint64            `json:"coupon_grant_id,omitempty"`
 	// DiscountCents 为券减免金额，PayableCents 为用户实际应付金额；单位均为分。
 	DiscountCents int64 `json:"discount_cents"`
 	PayableCents  int64 `json:"payable_cents"`
@@ -43,8 +43,8 @@ type IntentInput struct {
 	Port            ScanResult
 	Energy          string
 	Minutes         uint16
-	Rule            pricing.Rule
-	Offer           *pricing.Offer
+	Rule            charging.Rule
+	Offer           *charging.Offer
 	// CouponGrantID 可选。
 	// 填上就当场算好减免额并冻结进快照，这样之后重放不会按另一个金额扣费。
 	CouponGrantID uint64
@@ -71,8 +71,8 @@ func (s PaymentIntentStore) Replay(ctx context.Context, userID uint64, requestID
 		return nil, ErrPaymentIntentConflict
 	}
 	var snapshot struct {
-		Estimate pricing.Estimate `json:"estimate"`
-		Offer    *pricing.Offer   `json:"offer"`
+		Estimate charging.Estimate `json:"estimate"`
+		Offer    *charging.Offer   `json:"offer"`
 	}
 	if json.Unmarshal(row.PricingSnapshot, &snapshot) != nil || snapshot.Estimate.TotalCents != row.TotalCents ||
 		(row.OfferID.Valid && (snapshot.Offer == nil || snapshot.Offer.ID != offerID)) {
@@ -104,19 +104,19 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return PaymentIntent{}, err
 	}
-	var estimate pricing.Estimate
+	var estimate charging.Estimate
 	if input.Offer != nil {
 		if !input.Offer.Valid() || input.Offer.StationID != input.Port.StationID {
-			return PaymentIntent{}, pricing.ErrInvalidPricing
+			return PaymentIntent{}, charging.ErrInvalidPricing
 		}
 		// 固定时长套餐由设备倒计时停机；金额预算由平台根据计量执行计费和停机。
 		// 下发的最大时长是设备安全上限，不替代平台的消费封顶规则。
 		if input.Rule.Spec.Scheme == nil {
-			return PaymentIntent{}, pricing.ErrInvalidPricing
+			return PaymentIntent{}, charging.ErrInvalidPricing
 		}
 		p, ok := input.Rule.Spec.Scheme.Package(input.Offer.PackageID)
 		if !ok || input.Offer.ID != input.Rule.ID*100+p.ID || p.PriceCents != input.Offer.PriceCents || p.Mode != input.Offer.Mode {
-			return PaymentIntent{}, pricing.ErrInvalidPricing
+			return PaymentIntent{}, charging.ErrInvalidPricing
 		}
 		input.Rule.Spec = input.Rule.Spec.Scheme.SpecFor(p)
 		minutes, mode := input.Rule.Spec.Scheme.Normalized().Policy.MaxMinutes, uint8(4)
@@ -127,9 +127,9 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 		} else if input.Offer.Mode == "energy" {
 			minutes, mode, quantity = 0, 1, uint16(input.Offer.EnergyWh)
 		}
-		estimate = pricing.Estimate{Mode: input.Rule.Spec.Mode, EstimatedKWh: "0.000", EstimatedMinutes: minutes, PrepaidCents: input.Offer.PriceCents, TotalCents: input.Offer.PriceCents, ChargeMode: mode, ChargeQuantity: quantity}
+		estimate = charging.Estimate{Mode: input.Rule.Spec.Mode, EstimatedKWh: "0.000", EstimatedMinutes: minutes, PrepaidCents: input.Offer.PriceCents, TotalCents: input.Offer.PriceCents, ChargeMode: mode, ChargeQuantity: quantity}
 	} else {
-		return PaymentIntent{}, pricing.ErrOfferUnavailable
+		return PaymentIntent{}, charging.ErrOfferUnavailable
 	}
 	// 创建支付记录和占用端口前校验优惠券并计算减免额，失败时不留预占记录。
 	var discount int64
@@ -147,10 +147,10 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 	var merchantOrderNo string
 	expiresAt := time.Now().UTC().Add(5 * time.Minute).Truncate(time.Millisecond)
 	snapshot, err := json.Marshal(struct {
-		Rule       pricing.Rule     `json:"rule"`
-		Estimate   pricing.Estimate `json:"estimate"`
-		Offer      *pricing.Offer   `json:"offer,omitempty"`
-		ComputedAt time.Time        `json:"computed_at"`
+		Rule       charging.Rule     `json:"rule"`
+		Estimate   charging.Estimate `json:"estimate"`
+		Offer      *charging.Offer   `json:"offer,omitempty"`
+		ComputedAt time.Time         `json:"computed_at"`
 	}{Rule: input.Rule, Estimate: estimate, Offer: input.Offer, ComputedAt: time.Now().UTC()})
 	if err != nil {
 		return PaymentIntent{}, err
@@ -227,8 +227,8 @@ func existingIntent(row PaymentIntentRecord, input IntentInput) (PaymentIntent, 
 		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	var snapshot struct {
-		Estimate pricing.Estimate `json:"estimate"`
-		Offer    *pricing.Offer   `json:"offer"`
+		Estimate charging.Estimate `json:"estimate"`
+		Offer    *charging.Offer   `json:"offer"`
 	}
 	if json.Unmarshal(row.PricingSnapshot, &snapshot) != nil {
 		return PaymentIntent{}, ErrPaymentIntentConflict

@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 )
@@ -19,7 +19,7 @@ func meterless() deviceCapability {
 }
 
 func TestCapabilityAllowsOnlyWhatTheBoardCanReport(t *testing.T) {
-	for _, mode := range []pricing.ChargeMode{pricing.ModeDeviceDuration, pricing.ModeDeviceEnergy, pricing.ModeDevicePower, pricing.ModeServerEnergy, pricing.ModeServerMaxPower, pricing.ModeServerRealtimePower} {
+	for _, mode := range []charging.ChargeMode{charging.ModeDeviceDuration, charging.ModeDeviceEnergy, charging.ModeDevicePower, charging.ModeServerEnergy, charging.ModeServerMaxPower, charging.ModeServerRealtimePower} {
 		if reason := capabilityBlock(mode, deviceCapability{ProtocolAdapter: "dc589"}); reason != "" {
 			t.Fatalf("%s: %s", mode, reason)
 		}
@@ -31,10 +31,10 @@ func TestCapabilityAllowsOnlyWhatTheBoardCanReport(t *testing.T) {
 
 // 未知协议不推断计量能力；仅接受协议明确支持的电量或功率字段。
 func TestUnclassifiedDeviceIsRefusedEveryMeteredMode(t *testing.T) {
-	cap := deviceCapability{DeviceID: "DC589NEW001", ChargeMode: string(pricing.ModeDeviceDuration)}
-	for _, mode := range []pricing.ChargeMode{
-		pricing.ModeServerRealtimePower, pricing.ModeServerMaxPower, pricing.ModeServerEnergy,
-		pricing.ModeDeviceEnergy, pricing.ModeDevicePower,
+	cap := deviceCapability{DeviceID: "DC589NEW001", ChargeMode: string(charging.ModeDeviceDuration)}
+	for _, mode := range []charging.ChargeMode{
+		charging.ModeServerRealtimePower, charging.ModeServerMaxPower, charging.ModeServerEnergy,
+		charging.ModeDeviceEnergy, charging.ModeDevicePower,
 	} {
 		if reason := capabilityBlock(mode, cap); reason == "" {
 			t.Fatalf("%s was allowed on an unclassified device", mode)
@@ -46,7 +46,7 @@ func TestUnclassifiedDeviceIsRefusedEveryMeteredMode(t *testing.T) {
 
 // 新增设备也必须通过站点当前费率的能力校验。
 func TestCheckImportAgainstStationRefusesABoardThatCannotBeMetered(t *testing.T) {
-	db := dbWithStationMode(t, pricing.ModeServerEnergy)
+	db := dbWithStationMode(t, charging.ModeServerEnergy)
 	station := stationOf(t, db)
 	devices := []ImportDevice{
 		{DeviceID: "DC589OK001", StationID: station, ProtocolAdapter: "dc589"},
@@ -78,7 +78,7 @@ func TestCheckImportAgainstStationAllowsWhenNothingNeedsAMeter(t *testing.T) {
 		[]ImportDevice{{DeviceID: "DC589NEW001", StationID: station}}); err != nil {
 		t.Fatalf("a board was refused from a station with no tariff: %v", err)
 	}
-	timed := dbWithStationMode(t, pricing.ModeDeviceDuration)
+	timed := dbWithStationMode(t, charging.ModeDeviceDuration)
 	station = stationOf(t, timed)
 	if err := checkImportAgainstStation(timed,
 		[]ImportDevice{{DeviceID: "DC589NEW002", StationID: station, ProtocolAdapter: "dc589"}}); err != nil {
@@ -88,7 +88,7 @@ func TestCheckImportAgainstStationAllowsWhenNothingNeedsAMeter(t *testing.T) {
 
 // dbWithStationMode 创建指定默认计费模式的站点夹具，空模式表示无默认规则。
 // 未配置集成测试连接串时跳过。
-func dbWithStationMode(t *testing.T, mode pricing.ChargeMode) *gorm.DB {
+func dbWithStationMode(t *testing.T, mode charging.ChargeMode) *gorm.DB {
 	t.Helper()
 	raw := os.Getenv("TEST_ADMIN_DATABASE_URL")
 	if raw == "" {
@@ -118,10 +118,10 @@ func dbWithStationMode(t *testing.T, mode pricing.ChargeMode) *gorm.DB {
 	})
 	lastCapabilityStation.Store(next)
 	if mode != "" {
-		spec := pricing.Spec{Mode: mode}
+		spec := charging.Spec{Mode: mode}
 		if mode.ServerBilled() {
-			spec.Electric = &pricing.ElectricLine{Basis: mode.BasisFor(),
-				Periods: []pricing.Period{{EndMinute: 1440, ElectricCents: 100}}}
+			spec.Electric = &charging.ElectricLine{Basis: mode.BasisFor(),
+				Periods: []charging.Period{{EndMinute: 1440, ElectricCents: 100}}}
 		}
 		blob, _ := json.Marshal(spec)
 		if err := orm.Exec("INSERT INTO pricing_rule(template_id,station_id,device_id,name,spec_json,channel,version,status) VALUES(?,?,NULL,?,?,'default',1,'active')",

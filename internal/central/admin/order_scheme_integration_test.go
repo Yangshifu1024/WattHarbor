@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -47,7 +47,7 @@ func TestOrderSchemeNamesUseFrozenSnapshotsInOneBatch(t *testing.T) {
 	if err := userDB.Table("user").Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
-	spec := pricing.Spec{Mode: pricing.ModeDeviceDuration, Scheme: &pricing.Scheme{Name: "下单时方案 A"}}
+	spec := charging.Spec{Mode: charging.ModeDeviceDuration, Scheme: &charging.Scheme{Name: "下单时方案 A"}}
 	specJSON, _ := json.Marshal(spec)
 	liveRule := struct {
 		ID       uint64
@@ -77,14 +77,14 @@ func TestOrderSchemeNamesUseFrozenSnapshotsInOneBatch(t *testing.T) {
 		} else if i == 4 {
 			name = "  "
 		}
-		rule := pricing.Rule{ID: liveRule.ID, Version: 1, Spec: pricing.Spec{Mode: pricing.ModeDeviceDuration, Scheme: &pricing.Scheme{Name: name}}}
+		rule := charging.Rule{ID: liveRule.ID, Version: 1, Spec: charging.Spec{Mode: charging.ModeDeviceDuration, Scheme: &charging.Scheme{Name: name}}}
 		packageName := "价格档：60分钟"
 		if i == 1 {
 			packageName = " 价格档：120分钟 "
 		} else if i == 4 {
 			packageName = "仅套餐名称"
 		}
-		offer := pricing.Offer{ID: uint64(101 + i), StationID: 1, Name: packageName, Mode: "duration", PriceCents: 100, DurationMinutes: 60}
+		offer := charging.Offer{ID: uint64(101 + i), StationID: 1, Name: packageName, Mode: "duration", PriceCents: 100, DurationMinutes: 60}
 		raw, err := json.Marshal(map[string]any{"rule": rule, "offer": offer})
 		if err != nil {
 			t.Fatal(err)
@@ -134,7 +134,7 @@ func TestOrderSchemeNamesUseFrozenSnapshotsInOneBatch(t *testing.T) {
 		}
 	}
 	assertPage()
-	changed, _ := json.Marshal(pricing.Spec{Mode: pricing.ModeDeviceDuration, Scheme: &pricing.Scheme{Name: "现在已改为方案 C"}})
+	changed, _ := json.Marshal(charging.Spec{Mode: charging.ModeDeviceDuration, Scheme: &charging.Scheme{Name: "现在已改为方案 C"}})
 	if err := adminDB.Table("pricing_rule").Where("id=?", liveRule.ID).Updates(map[string]any{"spec_json": string(changed), "version": 2}).Error; err != nil {
 		t.Fatal(err)
 	}

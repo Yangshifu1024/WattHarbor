@@ -1,10 +1,10 @@
-// Package application 负责用例编排：跨聚合事务、用例级校验与错误翻译。
+// charging.Package application 负责用例编排：跨聚合事务、用例级校验与错误翻译。
 package application
 
 import (
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
@@ -64,10 +64,10 @@ func ReadingSamplesOf(events []protocol.Event) []devices.ReadingSample {
 // 翻译与计算的分界在此：领域层只认 devices 的读数类型，不感知协议存在；
 // 用例层承担翻译，不把协议字段渗进计费规则。证据不成立时 pricing 返回 nil，
 // 调用方据此进入计量复核而不是猜一个值。
-func MeasuredSegmentsOf(start time.Time, terminal protocol.Event, events []protocol.Event) []pricing.MeterSegment {
+func MeasuredSegmentsOf(start time.Time, terminal protocol.Event, events []protocol.Event) []charging.MeterSegment {
 	span, ok := SessionSpanOf(terminal)
 	if !ok {
 		return nil
 	}
-	return pricing.MeasuredSegments(start, span, ReadingSamplesOf(events))
+	return charging.MeasuredSegments(start, span, ReadingSamplesOf(events))
 }

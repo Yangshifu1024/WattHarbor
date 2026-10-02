@@ -1,4 +1,4 @@
-package pricing
+package charging
 
 // PriceOfferActual 将套餐实收及计量适配为 SettleSession 输入，供充电和计费流程共用。
 func PriceOfferActual(rule Rule, offer *Offer, meter ActualMeter) (ActualFee, error) {

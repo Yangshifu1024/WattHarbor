@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -15,19 +15,19 @@ import (
 var ErrConflict = errors.New("billing source conflicts with persisted calculation")
 
 type Source struct {
-	FinalFee      *pricing.Fee        `json:"final_fee,omitempty"`
-	ReviewID      string              `json:"review_id,omitempty"`
-	ChargeOrderID uint64              `json:"charge_order_id"`
-	OrderNo       string              `json:"order_no"`
-	UserID        uint64              `json:"user_id"`
-	Rule          pricing.Rule        `json:"rule"`
-	Offer         *pricing.Offer      `json:"offer,omitempty"`
-	Meter         pricing.ActualMeter `json:"meter"`
+	FinalFee      *charging.Fee        `json:"final_fee,omitempty"`
+	ReviewID      string               `json:"review_id,omitempty"`
+	ChargeOrderID uint64               `json:"charge_order_id"`
+	OrderNo       string               `json:"order_no"`
+	UserID        uint64               `json:"user_id"`
+	Rule          charging.Rule        `json:"rule"`
+	Offer         *charging.Offer      `json:"offer,omitempty"`
+	Meter         charging.ActualMeter `json:"meter"`
 }
 type Result struct {
 	CalculationNo string `json:"calculation_no"`
 	Source        Source `json:"source"`
-	pricing.ActualFee
+	charging.ActualFee
 }
 type Store struct{ DB *gorm.DB }
 
@@ -91,13 +91,13 @@ func (s Store) Calculate(ctx context.Context, source Source) (Result, error) {
 
 // Manual fees are accepted only as a persisted, audited review in the source.
 // The charge service compares that source again before applying any money.
-func PriceSource(source Source) (pricing.Fee, error) {
+func PriceSource(source Source) (charging.Fee, error) {
 	if source.FinalFee != nil {
 		f := *source.FinalFee
 		if source.ReviewID == "" || source.Offer == nil || f.ElectricCents < 0 || f.ServiceCents < 0 || f.TotalCents != f.ElectricCents+f.ServiceCents || f.TotalCents > source.Offer.PriceCents {
-			return pricing.Fee{}, ErrConflict
+			return charging.Fee{}, ErrConflict
 		}
 		return f, nil
 	}
-	return pricing.PriceOfferActual(source.Rule, source.Offer, source.Meter)
+	return charging.PriceOfferActual(source.Rule, source.Offer, source.Meter)
 }

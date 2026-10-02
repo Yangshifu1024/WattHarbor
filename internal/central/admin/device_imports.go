@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"io"
 	"net/http"
 	"regexp"
@@ -122,7 +122,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 				httpapi.BadRequest(c, "请选择已启用且支持的通信协议厂商")
 				return
 			}
-			if _, err := pricing.ProtocolCapabilities(vendor.AdapterClass); err != nil {
+			if _, err := charging.ProtocolCapabilities(vendor.AdapterClass); err != nil {
 				httpapi.BadRequest(c, err.Error())
 				return
 			}
@@ -130,7 +130,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			adapters[d.VendorID] = adapter
 		}
 		d.ProtocolAdapter = adapter
-		cap, _ := pricing.ProtocolCapabilities(adapter)
+		cap, _ := charging.ProtocolCapabilities(adapter)
 		d.ReportsEnergy, d.ReportsSegmentedPower = cap.ReportsEnergy, cap.ReportsSegmentedPower
 	}
 	body, _ := json.Marshal(in.Devices)

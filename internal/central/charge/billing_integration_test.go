@@ -15,7 +15,7 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
@@ -113,11 +113,11 @@ func TestActualBillingPersistsAndRefundsOnce(t *testing.T) {
 		var id uint64
 		userDB.Table("charge_order").Where("order_no=?", name).Pluck("id", &id)
 		exec(userDB, "UPDATE payment_order SET biz_id=? WHERE id=?", id, pid)
-		scheme := pricing.Scheme{Name: "结算方案", Amount: &pricing.AmountMode{Algorithm: pricing.ModeServerEnergy, Periods: []pricing.Period{{EndMinute: 1440, ElectricCents: 50, ServiceCents: 25}}}, Packages: []pricing.Package{{ID: 1, Name: "2.5元", Mode: "amount", PriceCents: 250}}}.Normalized()
+		scheme := charging.Scheme{Name: "结算方案", Amount: &charging.AmountMode{Algorithm: charging.ModeServerEnergy, Periods: []charging.Period{{EndMinute: 1440, ElectricCents: 50, ServiceCents: 25}}}, Packages: []charging.Package{{ID: 1, Name: "2.5元", Mode: "amount", PriceCents: 250}}}.Normalized()
 		if variable {
-			scheme.Amount.Periods = []pricing.Period{{EndMinute: 720, ElectricCents: 50, ServiceCents: 25}, {EndMinute: 1440, ElectricCents: 100, ServiceCents: 25}}
+			scheme.Amount.Periods = []charging.Period{{EndMinute: 720, ElectricCents: 50, ServiceCents: 25}, {EndMinute: 1440, ElectricCents: 100, ServiceCents: 25}}
 		}
-		rule := pricing.Rule{ID: 1, StationID: 1, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
+		rule := charging.Rule{ID: 1, StationID: 1, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
 		offer := scheme.Offers(rule)[0]
 		snap, _ := json.Marshal(map[string]any{"rule": rule, "offer": offer})
 		meter, _ := json.Marshal(orderpkg.EndMeter{ChargedWh: wh, ChargedSeconds: 3600, EndedAt: end})
@@ -218,7 +218,7 @@ func TestActualBillingPersistsAndRefundsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	split := raw.Meter.StartedAt.Add(30 * time.Minute)
-	segments := []pricing.MeterSegment{{StartedAt: raw.Meter.StartedAt, EndedAt: split, EnergyWh: 200}, {StartedAt: split, EndedAt: raw.Meter.EndedAt, EnergyWh: 800}}
+	segments := []charging.MeterSegment{{StartedAt: raw.Meter.StartedAt, EndedAt: split, EnergyWh: 200}, {StartedAt: split, EndedAt: raw.Meter.EndedAt, EnergyWh: 800}}
 	reviewStore := sourceOrders.BillingOrders
 	requestID := uuid.NewString()
 	proposal, err := reviewStore.ProposeMeter(ctx, reviewID, 101, requestID, "设备分段读数人工核实", segments)

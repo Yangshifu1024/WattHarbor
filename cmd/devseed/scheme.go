@@ -9,17 +9,17 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
 	"github.com/google/uuid"
 )
 
-func demoScheme() pricing.Scheme {
-	return pricing.Scheme{Name: demoPrefix + "完整充电方案", Remark: "开发示例，设备能力需实测核验后才能启动",
-		Amount:   &pricing.AmountMode{Algorithm: pricing.ModeServerRealtimePower, Periods: []pricing.Period{{EndMinute: 1440, Tiers: []pricing.Tier{{MaxWatts: 200, ElectricCents: 80, ServiceCents: 40}, {MaxWatts: 9990, ElectricCents: 160, ServiceCents: 80}}}}},
-		Energy:   &pricing.EnergyMode{ElectricCents: 80, ServiceCents: 20},
-		Packages: []pricing.Package{{ID: 1, Name: "3元金额", Mode: "amount", PriceCents: 300}, {ID: 2, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}, {ID: 3, Name: "3度", Mode: "energy", PriceCents: 300, KWh: 3}},
-		Card:     pricing.CardPolicy{PackageID: 2, MaxMinutes: 600}, Display: pricing.DefaultDisplay()}.Normalized()
+func demoScheme() charging.Scheme {
+	return charging.Scheme{Name: demoPrefix + "完整充电方案", Remark: "开发示例，设备能力需实测核验后才能启动",
+		Amount:   &charging.AmountMode{Algorithm: charging.ModeServerRealtimePower, Periods: []charging.Period{{EndMinute: 1440, Tiers: []charging.Tier{{MaxWatts: 200, ElectricCents: 80, ServiceCents: 40}, {MaxWatts: 9990, ElectricCents: 160, ServiceCents: 80}}}}},
+		Energy:   &charging.EnergyMode{ElectricCents: 80, ServiceCents: 20},
+		Packages: []charging.Package{{ID: 1, Name: "3元金额", Mode: "amount", PriceCents: 300}, {ID: 2, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}, {ID: 3, Name: "3度", Mode: "energy", PriceCents: 300, KWh: 3}},
+		Card:     charging.CardPolicy{PackageID: 2, MaxMinutes: 600}, Display: charging.DefaultDisplay()}.Normalized()
 }
 
 func seedStationScheme(ctx context.Context, db *sql.DB, station int64) (int64, error) {
@@ -52,8 +52,8 @@ func seedOrderContract(ctx context.Context, db *sql.DB, id, user int64, u demoUs
 		price *= 2
 		minutes = 120
 	}
-	s := pricing.Scheme{Name: demoPrefix + "历史时长方案", Packages: []pricing.Package{{ID: 1, Name: fmt.Sprintf("%d分钟", minutes), Mode: "duration", PriceCents: price, Minutes: minutes}}, Display: pricing.DefaultDisplay()}.Normalized()
-	rule := pricing.Rule{ID: uint64(ruleID), StationID: uint64(station), Version: 1, Spec: s.SpecFor(s.Packages[0])}
+	s := charging.Scheme{Name: demoPrefix + "历史时长方案", Packages: []charging.Package{{ID: 1, Name: fmt.Sprintf("%d分钟", minutes), Mode: "duration", PriceCents: price, Minutes: minutes}}, Display: charging.DefaultDisplay()}.Normalized()
+	rule := charging.Rule{ID: uint64(ruleID), StationID: uint64(station), Version: 1, Spec: s.SpecFor(s.Packages[0])}
 	offer := s.Offers(rule)[0]
 	snapshot, _ := json.Marshal(map[string]any{"rule": rule, "offer": offer})
 	intent, merchant := uuid.NewString(), ""
@@ -89,7 +89,7 @@ func seedOrderContract(ctx context.Context, db *sql.DB, id, user int64, u demoUs
 			return nil
 		}
 		kwh, _ := strconv.ParseFloat(o.kwh, 64)
-		source := billing.Source{ChargeOrderID: uint64(id), OrderNo: orderNo, UserID: uint64(user), Rule: rule, Offer: &offer, Meter: pricing.ActualMeter{StartedAt: created, EndedAt: created.Add(time.Hour), ChargedSeconds: 3600, ChargedWh: uint32(kwh * 1000)}}
+		source := billing.Source{ChargeOrderID: uint64(id), OrderNo: orderNo, UserID: uint64(user), Rule: rule, Offer: &offer, Meter: charging.ActualMeter{StartedAt: created, EndedAt: created.Add(time.Hour), ChargedSeconds: 3600, ChargedWh: uint32(kwh * 1000)}}
 		fee, err := billing.PriceSource(source)
 		if err != nil {
 			return err

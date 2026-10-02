@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -318,4 +318,4 @@ func actualFee(electric, service int64) (fee actualFeeType) {
 }
 
 // 别名供结算测试辅助函数直接接收 pricing 结果类型。
-type actualFeeType = pricing.ActualFee
+type actualFeeType = charging.ActualFee

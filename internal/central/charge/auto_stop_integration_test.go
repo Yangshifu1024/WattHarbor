@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -54,8 +54,8 @@ func TestAutoStopFreezesCutoffAndRequestsStop(t *testing.T) {
 	if err := conn.QueryRowContext(ctx, "SELECT id FROM charge_order WHERE order_no = ?", tag).Scan(&orderID); err != nil {
 		t.Fatal(err)
 	}
-	scheme := pricing.Scheme{Name: "停机方案", Packages: []pricing.Package{{ID: 1, Name: "1小时", Mode: "duration", PriceCents: 300, Minutes: 60}}}.Normalized()
-	rule := pricing.Rule{ID: 1, StationID: 1, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
+	scheme := charging.Scheme{Name: "停机方案", Packages: []charging.Package{{ID: 1, Name: "1小时", Mode: "duration", PriceCents: 300, Minutes: 60}}}.Normalized()
+	rule := charging.Rule{ID: 1, StationID: 1, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
 	offer := scheme.Offers(rule)[0]
 	snap, _ := json.Marshal(map[string]any{"rule": rule, "offer": offer})
 	if _, err := conn.ExecContext(ctx,

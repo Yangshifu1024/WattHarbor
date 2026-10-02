@@ -2,7 +2,7 @@ package charge
 
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/application"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"testing"
@@ -46,7 +46,7 @@ func TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement(t *testin
 	}
 	// The shared final-settlement evidence builder must still leave that gap missing.
 	span := devices.SessionSpan{DeviceID: "device", Port: 1, StartedAt: start, EndedAt: start.Add(110 * time.Second), ChargedSeconds: 110, EnergyMilliKWh: 4}
-	strict := pricing.MeasuredSegments(start, span, application.ReadingSamplesOf(samples))
+	strict := charging.MeasuredSegments(start, span, application.ReadingSamplesOf(samples))
 	if len(strict) != 4 || strict[2].PowerW != nil {
 		t.Fatal("live approximation leaked into final settlement", strict)
 	}

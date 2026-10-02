@@ -11,9 +11,9 @@ import (
 
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	paymentpkg "github.com/ChargePilot2026/charge-pilot/internal/central/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	refundpkg "github.com/ChargePilot2026/charge-pilot/internal/central/refund"
 	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/central/wallet"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -46,13 +46,13 @@ func mapWalletMoveError(err error) error {
 }
 
 // CanExtend checks the whole purchase, never accepts a partial addition.
-func CanExtend(card, orderCard uint64, p pricing.Package, purchased, max uint16, balance int64, pending bool) bool {
+func CanExtend(card, orderCard uint64, p charging.Package, purchased, max uint16, balance int64, pending bool) bool {
 	return card == orderCard && p.Mode == "duration" && p.PriceCents > 0 && p.Minutes > 0 && !pending && balance >= p.PriceCents && uint32(purchased)+uint32(p.Minutes) <= uint32(max)
 }
 
 // Swipe only consumes events whose hardware identity has been verified by the
 // adapter. Transport retries reuse device_id/event_id and the same operation.
-func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port PortRef, rule pricing.Rule) (CardOperation, error) {
+func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port PortRef, rule charging.Rule) (CardOperation, error) {
 	var out CardOperation
 	if n, err := strconv.ParseUint(cardNo, 10, 32); err != nil || n == 0 || strconv.FormatUint(n, 10) != cardNo {
 		return out, ErrCardOperation
@@ -100,7 +100,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port PortR
 		if active.Error != nil {
 			return active.Error
 		}
-		var p pricing.Package
+		var p charging.Package
 		out = CardOperation{OperationID: uuid.NewString(), DeviceID: port.DeviceID, EventID: eventID, CardID: card.ID, Status: "confirming"}
 		if active.RowsAffected > 0 {
 			if json.Unmarshal(session.PackageJSON, &p) != nil {
@@ -164,14 +164,14 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port PortR
 			out.Kind = "start"
 			spec := rule.Spec.Scheme.SpecFor(p)
 			rule.Spec = spec
-			var offer pricing.Offer
+			var offer charging.Offer
 			for _, o := range spec.Scheme.Offers(rule) {
 				if o.PackageID == p.ID {
 					offer = o
 					offer.ServerDuration = true
 				}
 			}
-			estimate := pricing.Estimate{Mode: pricing.ModeDeviceDuration, EstimatedKWh: "0.000", EstimatedMinutes: p.Minutes, PrepaidCents: p.PriceCents, TotalCents: p.PriceCents, ChargeMode: 4, ChargeQuantity: spec.Scheme.Normalized().Card.MaxMinutes}
+			estimate := charging.Estimate{Mode: charging.ModeDeviceDuration, EstimatedKWh: "0.000", EstimatedMinutes: p.Minutes, PrepaidCents: p.PriceCents, TotalCents: p.PriceCents, ChargeMode: 4, ChargeQuantity: spec.Scheme.Normalized().Card.MaxMinutes}
 			snapshot, _ := json.Marshal(map[string]any{"rule": rule, "offer": offer, "estimate": estimate})
 			intentID := uuid.NewString()
 			payNo, err := paymentpkg.NewOrderNumber(tx)

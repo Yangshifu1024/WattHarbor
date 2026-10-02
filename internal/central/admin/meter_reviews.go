@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -122,7 +122,7 @@ func meterFailure(c *gin.Context, err error) {
 		httpapi.Write(c, 409, 2009, "计量核实状态已变化、原始数据不一致或审核人重复，请刷新后重试", nil)
 		return
 	}
-	if errors.Is(err, pricing.ErrMeterReview) || errors.Is(err, pricing.ErrInvalidPricing) {
+	if errors.Is(err, charging.ErrMeterReview) || errors.Is(err, charging.ErrInvalidPricing) {
 		httpapi.BadRequest(c, "计量分段须连续覆盖原始时段、总电量一致，且各段不得跨不同费率；价格快照必须有效")
 		return
 	}
@@ -143,9 +143,9 @@ func (a ResourceAPI) proposeMeter(c *gin.Context) {
 	}
 	// 请求体只在此使用，不入库：核实记录由 settlement.BillingOrders 按这里的输入落库。
 	var in struct {
-		RequestID string                 `json:"request_id"` // 客户端生成的 UUID 幂等键。
-		Reason    string                 `json:"reason"`     // 核实依据，去空白后最长 500 字符。
-		Segments  []pricing.MeterSegment `json:"segments"`   // 人工修正后的计量分段，须连续覆盖原始时段且总电量与原始一致。
+		RequestID string                  `json:"request_id"` // 客户端生成的 UUID 幂等键。
+		Reason    string                  `json:"reason"`     // 核实依据，去空白后最长 500 字符。
+		Segments  []charging.MeterSegment `json:"segments"`   // 人工修正后的计量分段，须连续覆盖原始时段且总电量与原始一致。
 	}
 	if !decodeResource(c, &in) {
 		return

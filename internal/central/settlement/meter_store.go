@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -29,7 +29,7 @@ type MeterReview struct {
 
 func (MeterReview) TableName() string { return "charge_meter_review" }
 
-func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, request, reason string, segments []pricing.MeterSegment) (MeterReview, error) {
+func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, request, reason string, segments []charging.MeterSegment) (MeterReview, error) {
 	var out MeterReview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct{ Status string }
@@ -68,9 +68,9 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 		// Missing cutoff evidence must be resolved by an audited final amount;
 		// adding physical end segments alone does not prove that boundary.
 		if source.Meter.ReviewRequired {
-			return pricing.ErrMeterReview
+			return charging.ErrMeterReview
 		}
-		if _, err := pricing.PriceActual(source.Rule, source.Meter); err != nil {
+		if _, err := charging.PriceActual(source.Rule, source.Meter); err != nil {
 			return err
 		}
 		corrected, _ := json.Marshal(source)
@@ -123,7 +123,7 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 			if string(a) != string(b) {
 				return billing.ErrConflict
 			}
-			if _, err := pricing.PriceActual(corrected.Rule, corrected.Meter); err != nil {
+			if _, err := charging.PriceActual(corrected.Rule, corrected.Meter); err != nil {
 				return err
 			}
 		}

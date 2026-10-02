@@ -8,7 +8,8 @@ import (
 
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -20,7 +21,7 @@ import (
 type CardAPI struct {
 	Store        CardStore
 	Auth         identityhttp.SessionAuthenticator
-	Pricing      pricing.Store
+	Pricing      database.PricingStore
 	Scan         PortLookup
 	ServiceToken string
 }
@@ -138,12 +139,12 @@ func (a CardAPI) swipe(c *gin.Context) {
 	}
 	// An extension uses its frozen package even if the current scheme changed.
 	// The transaction rechecks the session before any debit.
-	var rule pricing.Rule
+	var rule charging.Rule
 	if active == 0 {
 		var err error
 		rule, err = a.Pricing.ActiveDeviceRule(c.Request.Context(), port.StationID, port.DeviceID)
 		if err != nil {
-			if errors.Is(err, pricing.ErrRuleUnavailable) {
+			if errors.Is(err, charging.ErrRuleUnavailable) {
 				httpapi.Write(c, 409, 2009, "当前没有可用充电方案", nil)
 			} else {
 				httpapi.Write(c, 503, 5001, "方案暂不可读取", nil)

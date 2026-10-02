@@ -5,20 +5,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 )
 
 func TestOrderPackageKeepsPurchasedOfferSeparateFromSchemePackages(t *testing.T) {
 	// Even a same-ID package in the scheme must not replace the purchased offer.
-	rule := pricing.Rule{Version: 3, Spec: pricing.Spec{Mode: pricing.ModeDeviceDuration,
-		Scheme: &pricing.Scheme{Name: "下单时方案", Packages: []pricing.Package{{ID: 2, Name: "其他价格", Mode: "duration", PriceCents: 900, Minutes: 120}}}}}
-	offer := pricing.Offer{ID: 102, PackageID: 2, StationID: 1, Name: "购买60分钟", Mode: "duration", PriceCents: 100, DurationMinutes: 60}
+	rule := charging.Rule{Version: 3, Spec: charging.Spec{Mode: charging.ModeDeviceDuration,
+		Scheme: &charging.Scheme{Name: "下单时方案", Packages: []charging.Package{{ID: 2, Name: "其他价格", Mode: "duration", PriceCents: 900, Minutes: 120}}}}}
+	offer := charging.Offer{ID: 102, PackageID: 2, StationID: 1, Name: "购买60分钟", Mode: "duration", PriceCents: 100, DurationMinutes: 60}
 	raw, err := json.Marshal(map[string]any{"rule": rule, "offer": offer})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := packageFromSnapshot(raw)
-	if got == nil || got.Offer != offer || got.RuleVersion != 3 || got.BillingMode != pricing.ModeDeviceDuration || got.Scheme.Name != "下单时方案" {
+	if got == nil || got.Offer != offer || got.RuleVersion != 3 || got.BillingMode != charging.ModeDeviceDuration || got.Scheme.Name != "下单时方案" {
 		t.Fatalf("unexpected frozen package: %+v", got)
 	}
 	if name := selectedSchemeName(got); name == nil || *name != "下单时方案" {
@@ -31,16 +31,16 @@ func TestOrderPackageKeepsPurchasedOfferSeparateFromSchemePackages(t *testing.T)
 
 func TestSelectedSchemeNameRequiresFrozenValidName(t *testing.T) {
 	for _, selected := range []*OrderPackage{
-		nil, {Offer: pricing.Offer{Name: "价格档名"}}, {Scheme: &pricing.Scheme{Name: "  "}},
+		nil, {Offer: charging.Offer{Name: "价格档名"}}, {Scheme: &charging.Scheme{Name: "  "}},
 	} {
 		if name := selectedSchemeName(selected); name != nil {
 			t.Fatalf("invented selected scheme name: %s", *name)
 		}
 	}
-	if name := selectedSchemeName(&OrderPackage{Scheme: &pricing.Scheme{Name: " 下单冻结方案 "}}); name == nil || *name != "下单冻结方案" {
+	if name := selectedSchemeName(&OrderPackage{Scheme: &charging.Scheme{Name: " 下单冻结方案 "}}); name == nil || *name != "下单冻结方案" {
 		t.Fatalf("valid frozen scheme name missing: %v", name)
 	}
-	if name := selectedSchemeName(&OrderPackage{Scheme: &pricing.Scheme{Name: strings.Repeat("历史名称", 20)}}); name == nil || *name != strings.Repeat("历史名称", 20) {
+	if name := selectedSchemeName(&OrderPackage{Scheme: &charging.Scheme{Name: strings.Repeat("历史名称", 20)}}); name == nil || *name != strings.Repeat("历史名称", 20) {
 		t.Fatalf("historical frozen scheme name was hidden: %v", name)
 	}
 	if err := (ResourceStore{}).orderSchemeNames(nil, nil); err != nil {
@@ -49,12 +49,12 @@ func TestSelectedSchemeNameRequiresFrozenValidName(t *testing.T) {
 }
 
 func TestSelectedPackageNameUsesPurchasedOfferAndTrimsBlank(t *testing.T) {
-	for _, selected := range []*OrderPackage{nil, {}, {Offer: pricing.Offer{Name: "  "}, Scheme: &pricing.Scheme{Name: "方案名"}}} {
+	for _, selected := range []*OrderPackage{nil, {}, {Offer: charging.Offer{Name: "  "}, Scheme: &charging.Scheme{Name: "方案名"}}} {
 		if name := selectedPackageName(selected); name != nil {
 			t.Fatalf("invented purchased package name: %s", *name)
 		}
 	}
-	if name := selectedPackageName(&OrderPackage{Offer: pricing.Offer{Name: " 1元 "}, Scheme: &pricing.Scheme{Name: "金额模式"}}); name == nil || *name != "1元" {
+	if name := selectedPackageName(&OrderPackage{Offer: charging.Offer{Name: " 1元 "}, Scheme: &charging.Scheme{Name: "金额模式"}}); name == nil || *name != "1元" {
 		t.Fatalf("purchased package name changed: %v", name)
 	}
 	for _, raw := range []string{"", "null", "{", `{}`, `{"rule":{"spec":{"scheme":{"name":"存在方案但无有效套餐"}}}}`} {
@@ -74,7 +74,7 @@ func TestOrderPackageMissingOrInvalidSnapshotDoesNotInventSelection(t *testing.T
 }
 
 func TestOrderPackageAllModes(t *testing.T) {
-	for _, offer := range []pricing.Offer{
+	for _, offer := range []charging.Offer{
 		{ID: 101, StationID: 1, Name: "2元预算", Mode: "amount", PriceCents: 200, MaxMinutes: 600},
 		{ID: 102, StationID: 1, Name: "60分钟", Mode: "duration", PriceCents: 100, DurationMinutes: 60},
 		{ID: 103, StationID: 1, Name: "2度", Mode: "energy", PriceCents: 220, EnergyWh: 2000},

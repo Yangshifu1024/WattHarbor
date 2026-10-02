@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
@@ -47,7 +48,7 @@ func TestSimulationHTTPPaymentCreatesChargeOnlyAfterCallback(t *testing.T) {
 	}
 	stationID, _ := station.LastInsertId()
 	defer adminDB.ExecContext(ctx, "DELETE FROM station WHERE id = ?", stationID)
-	scheme := pricing.Scheme{Name: "Payment Test", Packages: []pricing.Package{{ID: 1, Name: "60 minute package", Mode: "duration", PriceCents: 600, Minutes: 60}}}.Normalized()
+	scheme := charging.Scheme{Name: "Payment Test", Packages: []charging.Package{{ID: 1, Name: "60 minute package", Mode: "duration", PriceCents: 600, Minutes: 60}}}.Normalized()
 	specJSON, _ := json.Marshal(scheme.SpecFor(scheme.Packages[0]))
 	rule, err := adminDB.ExecContext(ctx, "INSERT INTO pricing_rule (name,station_id,spec_json) VALUES (?,?,?)", scheme.Name, stationID, string(specJSON))
 	if err != nil {
@@ -104,7 +105,7 @@ func TestSimulationHTTPPaymentCreatesChargeOnlyAfterCallback(t *testing.T) {
 	serviceToken := "test-service-token"
 	callbackStore := PaymentCallbackStore{DB: testGORMDB(t, userDB), ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}
 	PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, scanSession{}, scanUser{})},
-		Scan: ScanAPI{Operations: DeviceOperationStore{DB: adminORM}, GatewayURL: gateway.URL, ServiceToken: serviceToken}, Pricing: pricing.Store{DB: adminORM},
+		Scan: ScanAPI{Operations: DeviceOperationStore{DB: adminORM}, GatewayURL: gateway.URL, ServiceToken: serviceToken}, Pricing: database.PricingStore{DB: adminORM},
 		Intents: PaymentIntentStore{DB: testGORMDB(t, userDB)}, Provider: channel.Simulator{}}.Register(router)
 	SimulationCallbackAPI{DB: testGORMDB(t, userDB), Store: callbackStore, ServiceToken: serviceToken}.Register(router)
 	offersBody, _ := json.Marshal(map[string]any{"port_id": portCode})

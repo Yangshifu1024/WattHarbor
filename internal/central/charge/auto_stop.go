@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/application"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
@@ -73,15 +73,15 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 		}
 		for _, order := range orders {
 			var contract struct {
-				Rule  pricing.Rule   `json:"rule"`
-				Offer *pricing.Offer `json:"offer"`
+				Rule  charging.Rule   `json:"rule"`
+				Offer *charging.Offer `json:"offer"`
 			}
 			if json.Unmarshal(order.PricingSnapshot, &contract) != nil || contract.Offer == nil || !contract.Offer.Valid() {
 				continue
 			}
 			samples := evidence[order.ID]
 			stop := false
-			var frozenFee *pricing.Fee
+			var frozenFee *charging.Fee
 			cutoff, reason := now, "automatic_stop"
 			if contract.Offer.Mode == "duration" {
 				var card struct{ PurchasedMinutes uint16 }
@@ -124,7 +124,7 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 				}
 				if !stop && contract.Offer.Mode == "amount" {
 					if latest, ok := latestMeter(samples, order.PortNo, now); ok {
-						plan, capped, feeErr := pricing.BudgetStopAtMeter(contract.Rule, contract.Offer, measuredMeter(order, latest, samples))
+						plan, capped, feeErr := charging.BudgetStopAtMeter(contract.Rule, contract.Offer, measuredMeter(order, latest, samples))
 						if feeErr != nil {
 							log.Printf("charge budget unavailable order=%s device=%s port=%d sampled_at=%s error=%v", order.OrderNo, order.DeviceID, order.PortNo, latest.at.Format(time.RFC3339), feeErr)
 						} else if plan.ShouldStop {
@@ -220,9 +220,9 @@ func (s AutoStopper) evidence(ctx context.Context, orders []autoStopOrder) (map[
 // measuredMeter 用最新读数和遥测能佐证的各段数据，
 // 为运行中的会话拼出计量记录，
 // 让消费上限判定与结算对同一份测量结果定价。
-func measuredMeter(order autoStopOrder, latest meterReading, samples []protocol.Event) pricing.ActualMeter {
+func measuredMeter(order autoStopOrder, latest meterReading, samples []protocol.Event) charging.ActualMeter {
 	ended := latest.at
-	meter := pricing.ActualMeter{
+	meter := charging.ActualMeter{
 		StartedAt:      order.StartedAt,
 		EndedAt:        ended,
 		ChargedWh:      latest.wh,
@@ -235,7 +235,7 @@ func measuredMeter(order autoStopOrder, latest meterReading, samples []protocol.
 		EndedAt:        ended,
 		ChargedSeconds: latest.seconds, EnergyMilliKWh: latest.wh,
 	}
-	meter.Segments = pricing.MeasuredSegments(order.StartedAt, span, application.ReadingSamplesOf(samples))
+	meter.Segments = charging.MeasuredSegments(order.StartedAt, span, application.ReadingSamplesOf(samples))
 	return meter
 }
 

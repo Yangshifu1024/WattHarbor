@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,7 +17,6 @@ import (
 
 	identityauth "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/auth"
 	identityuser "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/user"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
@@ -53,7 +53,7 @@ func TestLoginAndRefreshIntegration(t *testing.T) {
 	}
 	cache := redis.NewClient(options)
 	defer cache.Close()
-	store := identitystore.UserStore{DB: userORM}
+	store := database.UserStore{DB: userORM}
 	openid := "go-test-login-" + uuidPart(t)
 	defer db.ExecContext(ctx, "DELETE FROM wallet_account WHERE user_id IN (SELECT id FROM user WHERE openid = ?)", openid)
 	defer db.ExecContext(ctx, "DELETE FROM user WHERE openid = ?", openid)
@@ -156,7 +156,7 @@ func TestAuthHTTPIntegration(t *testing.T) {
 	defer db.ExecContext(ctx, "DELETE FROM user WHERE openid = ?", openid)
 	defer db.ExecContext(ctx, "DELETE FROM user_login_identity WHERE openid = ?", []byte(openid))
 	router := httpapi.NewRouter()
-	API{WeChat: fakeExchange{openid}, Users: identitystore.UserStore{DB: userORM}, Sessions: sessionstore.Sessions{Redis: cache}, JWT: jwt}.Register(router)
+	API{WeChat: fakeExchange{openid}, Users: database.UserStore{DB: userORM}, Sessions: sessionstore.Sessions{Redis: cache}, JWT: jwt}.Register(router)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/public/auth/login", strings.NewReader(`{"code":"test-code"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -268,7 +268,7 @@ func TestLegacyUserKeepsIDIntegration(t *testing.T) {
 	}
 	defer db.ExecContext(ctx, "DELETE FROM user WHERE openid=?", openid)
 	defer db.ExecContext(ctx, "DELETE FROM user_login_identity WHERE openid=?", []byte(openid))
-	store := identitystore.UserStore{DB: orm}
+	store := database.UserStore{DB: orm}
 	for range 2 {
 		user, err := store.Login(ctx, openid, "")
 		if err != nil || user.ID != legacyID || user.IsNew {

@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -22,11 +22,11 @@ import (
 var ErrEndResultConflict = errors.New("charge end result conflicts with order state")
 
 type EndMeter struct {
-	Segments       []pricing.MeterSegment `json:"segments,omitempty"`
-	ChargedWh      uint32                 `json:"charged_wh"`
-	ChargedSeconds uint32                 `json:"charged_seconds"`
-	EndedAt        time.Time              `json:"ended_at"`
-	StopReason     uint8                  `json:"stop_reason"`
+	Segments       []charging.MeterSegment `json:"segments,omitempty"`
+	ChargedWh      uint32                  `json:"charged_wh"`
+	ChargedSeconds uint32                  `json:"charged_seconds"`
+	EndedAt        time.Time               `json:"ended_at"`
+	StopReason     uint8                   `json:"stop_reason"`
 }
 
 type EndResult struct {
@@ -160,7 +160,7 @@ func (a EndResultAPI) handle(c *gin.Context) {
 	httpapi.OK(c, gin.H{"accepted": true, "replayed": replayed})
 }
 
-func SameSegments(a, b []pricing.MeterSegment) bool {
+func SameSegments(a, b []charging.MeterSegment) bool {
 	if len(a) != len(b) {
 		return false
 	}

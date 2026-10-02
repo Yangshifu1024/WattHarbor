@@ -1,12 +1,12 @@
 package card
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"testing"
 )
 
 func TestDocumentExample15CardAdditionIsAtomic(t *testing.T) {
-	p := pricing.Package{ID: 1, Name: "时长", Mode: "duration", Minutes: 120, PriceCents: 200}
+	p := charging.Package{ID: 1, Name: "时长", Mode: "duration", Minutes: 120, PriceCents: 200}
 	for _, tc := range []struct {
 		name           string
 		card           uint64

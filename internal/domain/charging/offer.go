@@ -1,7 +1,6 @@
-package pricing
+package charging
 
 import (
-	"context"
 	"errors"
 )
 
@@ -31,23 +30,4 @@ func (o Offer) Valid() bool {
 	}
 	return (!o.ServerDuration || o.Mode == "duration") && o.ID > 0 && o.StationID > 0 && o.Name != "" && o.PriceCents > 0 && o.PriceCents <= maxRateCents*count &&
 		(o.Mode == "amount" && o.DurationMinutes == 0 && o.EnergyWh == 0 || o.Mode == "duration" && o.DurationMinutes > 0 && o.DurationMinutes <= 4320 && o.EnergyWh == 0 || o.Mode == "energy" && o.DurationMinutes == 0 && o.EnergyWh >= 1000 && o.EnergyWh <= 65000 && o.EnergyWh%1000 == 0)
-}
-func (s Store) ActiveOffers(ctx context.Context, station uint64, device string) ([]Offer, error) {
-	rule, err := s.ActiveDeviceRule(ctx, station, device)
-	if err != nil {
-		return nil, err
-	}
-	return rule.Spec.Scheme.Offers(rule), nil
-}
-func (s Store) ActiveOffer(ctx context.Context, station uint64, device string, id uint64) (Offer, error) {
-	rows, err := s.ActiveOffers(ctx, station, device)
-	if err != nil {
-		return Offer{}, err
-	}
-	for _, o := range rows {
-		if o.ID == id {
-			return o, nil
-		}
-	}
-	return Offer{}, ErrOfferUnavailable
 }

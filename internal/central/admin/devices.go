@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -40,7 +40,7 @@ type Device struct {
 	UpdatedAt        time.Time          `json:"updated_at"` // 资料编辑的并发校验值，使用 UTC 毫秒精度。
 	// 设备协议支持的计量能力与当前计费模式，用于展示计费兼容性。
 	ProtocolAdapter       string `json:"protocol_adapter"`
-	ChargeMode            string `json:"charge_mode"`                      // 该设备当前实际生效的计费方式，取自 pricing 引擎的 ChargeMode（server_realtime_power / server_max_power / server_energy / device_duration / device_energy / device_power）。
+	ChargeMode            string `json:"charge_mode"`                      // 该设备当前实际生效的计费方式，取自 pricing 引擎的 charging.ChargeMode（server_realtime_power / server_max_power / server_energy / device_duration / device_energy / device_power）。
 	ReportsEnergy         bool   `json:"reports_energy" gorm:"-"`          // 协议是否支持电量上报；按电量计费要求此能力。
 	ReportsSegmentedPower bool   `json:"reports_segmented_power" gorm:"-"` // 协议是否支持分段功率上报；按功率计费要求此能力。
 }
@@ -112,7 +112,7 @@ func (s ResourceStore) Devices(ctx context.Context, q PageQuery, scopes ...DataS
 		if err := out.Items[i].normalizeMetadata(); err != nil {
 			return out, err
 		}
-		cap, _ := pricing.ProtocolCapabilities(out.Items[i].ProtocolAdapter)
+		cap, _ := charging.ProtocolCapabilities(out.Items[i].ProtocolAdapter)
 		out.Items[i].ReportsEnergy = cap.ReportsEnergy
 		out.Items[i].ReportsSegmentedPower = cap.ReportsSegmentedPower
 	}
@@ -170,7 +170,7 @@ func (a ResourceAPI) device(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	cap, _ := pricing.ProtocolCapabilities(row.ProtocolAdapter)
+	cap, _ := charging.ProtocolCapabilities(row.ProtocolAdapter)
 	row.ReportsEnergy = cap.ReportsEnergy
 	row.ReportsSegmentedPower = cap.ReportsSegmentedPower
 	rows := []Device{row}
@@ -418,7 +418,7 @@ func (a ResourceAPI) updateDevice(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	cap, _ := pricing.ProtocolCapabilities(row.ProtocolAdapter)
+	cap, _ := charging.ProtocolCapabilities(row.ProtocolAdapter)
 	row.ReportsEnergy, row.ReportsSegmentedPower = cap.ReportsEnergy, cap.ReportsSegmentedPower
 	rows := []Device{row}
 	a.enrichDevices(c.Request.Context(), rows)

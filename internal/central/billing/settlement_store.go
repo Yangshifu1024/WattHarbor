@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"gorm.io/gorm"
 )
 
@@ -84,7 +84,7 @@ func (r SplitResolver) Resolve(ctx context.Context, stationID uint64) (SplitTemp
 
 // Settle 将已计算费用写入分账台账。
 // (fee_calculation_id, generation) 唯一键保证重复计费派发复用已有结算，不重复分账。
-func (s Store) Settle(ctx context.Context, calculationID uint64, template SplitTemplate, fee pricing.ActualFee, month time.Time) (uint64, bool, error) {
+func (s Store) Settle(ctx context.Context, calculationID uint64, template SplitTemplate, fee charging.ActualFee, month time.Time) (uint64, bool, error) {
 	mode := SplitAll
 	if template.Mode == "mode_b" {
 		mode = SplitServiceOnly

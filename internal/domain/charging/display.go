@@ -1,4 +1,4 @@
-package pricing
+package charging
 
 // Display 控制用户端展示，不参与计费计算。
 type Display struct {

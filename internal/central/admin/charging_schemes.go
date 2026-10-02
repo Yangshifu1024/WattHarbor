@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,8 +32,8 @@ func (a ResourceAPI) registerChargingSchemes(r *gin.Engine) {
 }
 
 type schemeInput struct {
-	Scheme          pricing.Scheme `json:"scheme"`
-	ExpectedVersion uint32         `json:"expected_version"`
+	Scheme          charging.Scheme `json:"scheme"`
+	ExpectedVersion uint32          `json:"expected_version"`
 }
 
 func (a ResourceAPI) chargingSchemes(c *gin.Context) {
@@ -43,7 +44,7 @@ func (a ResourceAPI) chargingSchemes(c *gin.Context) {
 	}
 	items := []gin.H{}
 	for _, r := range rows {
-		var spec pricing.Spec
+		var spec charging.Spec
 		if json.Unmarshal(r.SpecJSON, &spec) != nil || spec.Scheme == nil {
 			continue
 		}
@@ -148,13 +149,13 @@ func (a ResourceAPI) changeChargingScheme(c *gin.Context, remove bool) {
 }
 
 type applySchemeInput struct {
-	RequestID       string          `json:"request_id"`
-	StationID       uint64          `json:"station_id"`
-	DeviceID        string          `json:"device_id"`
-	TemplateID      uint64          `json:"template_id"`
-	TemplateVersion uint32          `json:"template_version"`
-	ExpectedVersion uint32          `json:"expected_version"`
-	Scheme          *pricing.Scheme `json:"scheme,omitempty"`
+	RequestID       string           `json:"request_id"`
+	StationID       uint64           `json:"station_id"`
+	DeviceID        string           `json:"device_id"`
+	TemplateID      uint64           `json:"template_id"`
+	TemplateVersion uint32           `json:"template_version"`
+	ExpectedVersion uint32           `json:"expected_version"`
+	Scheme          *charging.Scheme `json:"scheme,omitempty"`
 }
 
 func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
@@ -209,9 +210,9 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 			if tmpl.Version != in.TemplateVersion {
 				return errConflict
 			}
-			var spec pricing.Spec
+			var spec charging.Spec
 			if json.Unmarshal(tmpl.SpecJSON, &spec) != nil || spec.Scheme == nil {
-				return pricing.ErrInvalidPricing
+				return charging.ErrInvalidPricing
 			}
 			scheme = spec.Scheme
 		}
@@ -258,7 +259,7 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id, "version": version, "replayed": replayed})
 }
 
-func checkSchemeTargets(tx *gorm.DB, station uint64, device string, scheme pricing.Scheme) error {
+func checkSchemeTargets(tx *gorm.DB, station uint64, device string, scheme charging.Scheme) error {
 	var rows []struct {
 		DeviceID        string
 		ProtocolAdapter string
@@ -276,7 +277,7 @@ func checkSchemeTargets(tx *gorm.DB, station uint64, device string, scheme prici
 		return gorm.ErrRecordNotFound
 	}
 	for _, d := range rows {
-		cap, err := pricing.ProtocolCapabilities(d.ProtocolAdapter)
+		cap, err := charging.ProtocolCapabilities(d.ProtocolAdapter)
 		if err != nil {
 			return fmt.Errorf("设备%s：%s", d.DeviceID, err)
 		}
@@ -313,8 +314,8 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	rule, err := (pricing.Store{DB: db}).ActiveDeviceRule(c.Request.Context(), station, device)
-	if errors.Is(err, pricing.ErrRuleUnavailable) {
+	rule, err := (database.PricingStore{DB: db}).ActiveDeviceRule(c.Request.Context(), station, device)
+	if errors.Is(err, charging.ErrRuleUnavailable) {
 		httpapi.OK(c, gin.H{"scheme": nil, "version": current.Version, "inherited": false})
 		return
 	}
@@ -349,7 +350,7 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", station).Take(&s).Error; err != nil {
 			return err
 		}
-		rule, err := (pricing.Store{DB: tx}).ActiveStationRule(c.Request.Context(), station)
+		rule, err := (database.PricingStore{DB: tx}).ActiveStationRule(c.Request.Context(), station)
 		if err != nil {
 			return err
 		}
@@ -377,11 +378,11 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 
 func (a ResourceAPI) previewChargingScheme(c *gin.Context) {
 	var in struct {
-		Scheme      pricing.Scheme      `json:"scheme"`
-		PackageID   uint64              `json:"package_id"`
-		Meter       pricing.ActualMeter `json:"meter"`
-		Scenario    string              `json:"scenario"`
-		WalletCents int64               `json:"wallet_cents"`
+		Scheme      charging.Scheme      `json:"scheme"`
+		PackageID   uint64               `json:"package_id"`
+		Meter       charging.ActualMeter `json:"meter"`
+		Scenario    string               `json:"scenario"`
+		WalletCents int64                `json:"wallet_cents"`
 	}
 	if !decodeResource(c, &in) {
 		return
@@ -406,7 +407,7 @@ func (a ResourceAPI) executionCapabilities(c *gin.Context) {
 	if !a.requirePricingTargetScope(c, station, device) {
 		return
 	}
-	adapter, cap, err := (pricing.Store{DB: a.Store.AdminDB}).DeviceCapabilities(c.Request.Context(), station, device)
+	adapter, cap, err := (database.PricingStore{DB: a.Store.AdminDB}).DeviceCapabilities(c.Request.Context(), station, device)
 	if err != nil {
 		resourceFailure(c, err)
 		return

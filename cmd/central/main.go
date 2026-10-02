@@ -19,9 +19,9 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/charge"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
 	identityauth "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/auth"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -188,9 +188,9 @@ func run(ctx context.Context) error {
 	coupon.CouponAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
 		Coupons: coupon.CouponStore{DB: userORM}}.Register(router)
 	payment.PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		Scan: payment.ScanAPI{Operations: payment.DeviceOperationStore{DB: adminORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, Pricing: pricing.Store{DB: adminORM},
+		Scan: payment.ScanAPI{Operations: payment.DeviceOperationStore{DB: adminORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, Pricing: database.PricingStore{DB: adminORM},
 		Intents: payment.PaymentIntentStore{DB: userORM}, Provider: prepay}.Register(router)
-	card.CardAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Store: card.CardStore{DB: userORM}, Pricing: pricing.Store{DB: adminORM}, Scan: charge.ScanPortLookup{API: payment.ScanAPI{Operations: payment.DeviceOperationStore{DB: adminORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}}, ServiceToken: cfg.ServiceToken}.Register(router)
+	card.CardAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Store: card.CardStore{DB: userORM}, Pricing: database.PricingStore{DB: adminORM}, Scan: charge.ScanPortLookup{API: payment.ScanAPI{Operations: payment.DeviceOperationStore{DB: adminORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}}, ServiceToken: cfg.ServiceToken}.Register(router)
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
 	go func() {
 		<-ctx.Done()

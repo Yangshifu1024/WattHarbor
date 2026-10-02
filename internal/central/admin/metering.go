@@ -3,7 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"gorm.io/gorm"
 	"strings"
 )
@@ -16,21 +16,21 @@ type deviceCapability struct {
 	ReportsSegmentedPower bool   `gorm:"-"`                  // 是否上报分段功率表，决定能否按功率计费
 }
 
-func capabilityBlock(mode pricing.ChargeMode, cap deviceCapability) string {
-	abilities, err := pricing.ProtocolCapabilities(cap.ProtocolAdapter)
+func capabilityBlock(mode charging.ChargeMode, cap deviceCapability) string {
+	abilities, err := charging.ProtocolCapabilities(cap.ProtocolAdapter)
 	if err != nil {
 		return err.Error()
 	}
 	cap.ReportsEnergy, cap.ReportsSegmentedPower = abilities.ReportsEnergy, abilities.ReportsSegmentedPower
 	switch mode {
-	case pricing.ModeDeviceDuration:
+	case charging.ModeDeviceDuration:
 		// 设备端时长计费由固件倒计时并停机，不要求电量或分段功率上报。
 		return ""
-	case pricing.ModeServerEnergy, pricing.ModeDeviceEnergy:
+	case charging.ModeServerEnergy, charging.ModeDeviceEnergy:
 		if !cap.ReportsEnergy {
 			return "设备协议不支持电量上报，无法按电量计费"
 		}
-	case pricing.ModeServerRealtimePower, pricing.ModeServerMaxPower, pricing.ModeDevicePower:
+	case charging.ModeServerRealtimePower, charging.ModeServerMaxPower, charging.ModeDevicePower:
 		if !cap.ReportsSegmentedPower {
 			return "设备协议不支持分段功率上报，无法按功率计费"
 		}
@@ -39,17 +39,17 @@ func capabilityBlock(mode pricing.ChargeMode, cap deviceCapability) string {
 }
 
 func validDeviceChargeMode(mode string) bool {
-	return pricing.ChargeMode(strings.TrimSpace(mode)).Valid()
+	return charging.ChargeMode(strings.TrimSpace(mode)).Valid()
 }
 
-func unmarshalSpec(raw []byte, spec *pricing.Spec) error {
+func unmarshalSpec(raw []byte, spec *charging.Spec) error {
 	if len(raw) == 0 {
 		return errors.New("计费口径为空")
 	}
 	return json.Unmarshal(raw, spec)
 }
 
-func stationModeOf(tx *gorm.DB, stationID uint64) (pricing.ChargeMode, bool, error) {
+func stationModeOf(tx *gorm.DB, stationID uint64) (charging.ChargeMode, bool, error) {
 	// row 只取 spec_json 一列；口径为空时下面 unmarshalSpec 会返回错误。
 	row := struct{ SpecJSON []byte }{}
 	err := tx.Table("pricing_rule").
@@ -62,7 +62,7 @@ func stationModeOf(tx *gorm.DB, stationID uint64) (pricing.ChargeMode, bool, err
 	if err != nil {
 		return "", false, err
 	}
-	var spec pricing.Spec
+	var spec charging.Spec
 	if unmarshalSpec(row.SpecJSON, &spec) != nil {
 		return "", false, nil
 	}
@@ -70,7 +70,7 @@ func stationModeOf(tx *gorm.DB, stationID uint64) (pricing.ChargeMode, bool, err
 }
 
 func checkImportAgainstStation(tx *gorm.DB, devices []ImportDevice) error {
-	cache := map[uint64]pricing.ChargeMode{}
+	cache := map[uint64]charging.ChargeMode{}
 	for _, d := range devices {
 		mode, ok := cache[d.StationID]
 		if !ok {
@@ -99,10 +99,10 @@ func checkImportAgainstStation(tx *gorm.DB, devices []ImportDevice) error {
 }
 
 type errMeteringBlocked struct {
-	device  string             // 进不去的设备号
-	station uint64             // 目标站点 id
-	mode    pricing.ChargeMode // 目标站点默认的计费方式
-	reason  string             // 缺哪项能力的中文说明
+	device  string              // 进不去的设备号
+	station uint64              // 目标站点 id
+	mode    charging.ChargeMode // 目标站点默认的计费方式
+	reason  string              // 缺哪项能力的中文说明
 }
 
 func (e *errMeteringBlocked) Error() string {

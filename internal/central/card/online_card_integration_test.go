@@ -14,8 +14,8 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -84,8 +84,8 @@ func TestCardServerExtensionDebitsOnceAndRefundsUnusedMinutes(t *testing.T) {
 	if err := orm.Create(&cardRow).Error; err != nil {
 		t.Fatal(err)
 	}
-	s := pricing.Scheme{Name: "服务器刷卡测试", Packages: []pricing.Package{{ID: 1, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}}, Card: pricing.CardPolicy{PackageID: 1, MaxMinutes: 600}, Display: pricing.DefaultDisplay()}.Normalized()
-	rule := pricing.Rule{ID: 31, StationID: 9, Version: 1, Spec: s.SpecFor(s.Packages[0])}
+	s := charging.Scheme{Name: "服务器刷卡测试", Packages: []charging.Package{{ID: 1, Name: "120分钟", Mode: "duration", PriceCents: 200, Minutes: 120}}, Card: charging.CardPolicy{PackageID: 1, MaxMinutes: 600}, Display: charging.DefaultDisplay()}.Normalized()
+	rule := charging.Rule{ID: 31, StationID: 9, Version: 1, Spec: s.SpecFor(s.Packages[0])}
 	port := card.PortRef{Found: true, Kind: "port", DeviceID: device, StationID: 9, PortID: portCode, PortNo: 1, Online: true, Available: true}
 	store := card.CardStore{DB: orm}
 	event := uuid.NewString()
@@ -98,7 +98,7 @@ func TestCardServerExtensionDebitsOnceAndRefundsUnusedMinutes(t *testing.T) {
 		var group sync.WaitGroup
 		for range 5 {
 			group.Go(func() {
-				op, err := store.Swipe(ctx, cardNo, event, port, pricing.Rule{})
+				op, err := store.Swipe(ctx, cardNo, event, port, charging.Rule{})
 				if err != nil || op.OperationID != expected.OperationID {
 					t.Errorf("replay %+v %v", op, err)
 				}
@@ -122,7 +122,7 @@ func TestCardServerExtensionDebitsOnceAndRefundsUnusedMinutes(t *testing.T) {
 	}
 	port.Available = false
 	extensionEvent := uuid.NewString()
-	extension, err := store.Swipe(ctx, cardNo, extensionEvent, port, pricing.Rule{})
+	extension, err := store.Swipe(ctx, cardNo, extensionEvent, port, charging.Rule{})
 	if err != nil || extension.Status != "confirmed" || extension.Kind != "extend" {
 		t.Fatalf("%+v %v", extension, err)
 	}

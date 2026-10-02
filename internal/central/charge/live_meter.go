@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/application"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
@@ -70,8 +70,8 @@ func (s LiveMeterService) Read(ctx context.Context, id uint64, device string, po
 		return view, err
 	}
 	var contract struct {
-		Rule  pricing.Rule   `json:"rule"`
-		Offer *pricing.Offer `json:"offer"`
+		Rule  charging.Rule   `json:"rule"`
+		Offer *charging.Offer `json:"offer"`
 	}
 	if json.Unmarshal(snapshot.PricingSnapshot, &contract) != nil || contract.Offer == nil {
 		view.FeeUnavailable = "缺少订单计费快照"
@@ -91,7 +91,7 @@ func (s LiveMeterService) Read(ctx context.Context, id uint64, device string, po
 		contract.Offer.PriceCents = card.PaidCents
 		contract.Offer.DurationMinutes = card.PurchasedMinutes
 	}
-	fee, err := pricing.PriceOfferActual(contract.Rule, contract.Offer, meter)
+	fee, err := charging.PriceOfferActual(contract.Rule, contract.Offer, meter)
 	if err != nil {
 		view.FeeUnavailable = "计量不足以计算当前费用"
 		return view, nil
@@ -100,7 +100,7 @@ func (s LiveMeterService) Read(ctx context.Context, id uint64, device string, po
 	return view, nil
 }
 
-func liveMeterEvidence(device string, port uint8, start time.Time, samples []protocol.Event, now time.Time) (*LiveMeterView, pricing.ActualMeter, bool) {
+func liveMeterEvidence(device string, port uint8, start time.Time, samples []protocol.Event, now time.Time) (*LiveMeterView, charging.ActualMeter, bool) {
 	for i, e := range slices.Backward(samples) {
 
 		if e.Type != protocol.Heartbeat || e.DeviceID != device || e.ReceivedAt.Before(start) || e.ReceivedAt.After(now) {
@@ -111,7 +111,7 @@ func liveMeterEvidence(device string, port uint8, start time.Time, samples []pro
 				view := &LiveMeterView{At: e.ReceivedAt, Stale: now.Sub(e.ReceivedAt) > 30*time.Second, KWh: float64(p.ChargedMWh) / 1e6, Seconds: p.ChargedSeconds}
 				// 实时估算用截至本次上报的累计量作为收口证据。
 				span := devices.SessionSpan{DeviceID: device, Port: port, StartedAt: e.ReceivedAt.Add(-time.Duration(p.ChargedSeconds) * time.Second), EndedAt: e.ReceivedAt, ChargedSeconds: p.ChargedSeconds, EnergyMilliKWh: p.ChargedMWh / 1000}
-				meter := pricing.ActualMeter{StartedAt: start, EndedAt: e.ReceivedAt, ChargedWh: p.ChargedMWh / 1000, ChargedSeconds: p.ChargedSeconds, Segments: pricing.MeasuredSegments(start, span, application.ReadingSamplesOf(samples[:i+1]))}
+				meter := charging.ActualMeter{StartedAt: start, EndedAt: e.ReceivedAt, ChargedWh: p.ChargedMWh / 1000, ChargedSeconds: p.ChargedSeconds, Segments: charging.MeasuredSegments(start, span, application.ReadingSamplesOf(samples[:i+1]))}
 				// 实时估算以首次观测负载补齐最初不超过 30 秒的心跳区间。
 				// 最终结算仍使用严格的计量证据校验。
 				if len(meter.Segments) > 0 && meter.Segments[0].PowerW == nil && meter.Segments[0].EndedAt.Sub(start) <= 30*time.Second {
@@ -169,5 +169,5 @@ func liveMeterEvidence(device string, port uint8, start time.Time, samples []pro
 			}
 		}
 	}
-	return nil, pricing.ActualMeter{}, false
+	return nil, charging.ActualMeter{}, false
 }

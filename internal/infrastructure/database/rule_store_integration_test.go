@@ -1,7 +1,9 @@
-package pricing
+package database
 
 import (
 	"errors"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"testing"
 )
 
@@ -29,7 +31,7 @@ func TestStationRuleIsNeverADeviceRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := store.ActiveStationRule(exec, stationID); !errors.Is(err, ErrRuleUnavailable) {
+	if _, err := store.ActiveStationRule(exec, stationID); !errors.Is(err, charging.ErrRuleUnavailable) {
 		t.Fatalf("整站口径返回了设备规则，err=%v", err)
 	}
 

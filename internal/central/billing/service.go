@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -51,7 +51,7 @@ func (s Service) Run(ctx context.Context) (int, error) {
 		if err == nil {
 			var result Result
 			result, err = s.Store.Calculate(ctx, source)
-			if errors.Is(err, pricing.ErrMeterReview) || errors.Is(err, pricing.ErrInvalidPricing) {
+			if errors.Is(err, charging.ErrMeterReview) || errors.Is(err, charging.ErrInvalidPricing) {
 				payload, _ := json.Marshal(source)
 				err = s.Store.DB.WithContext(ctx).Table("manual_fee_review").Clauses(clause.OnConflict{DoUpdates: clause.Assignments(map[string]any{"charge_order_id": gorm.Expr("charge_order_id")})}).Create(map[string]any{"charge_order_id": id, "order_no": source.OrderNo, "reason": "实际计量或计费快照需核实", "energy_wh": source.Meter.ChargedWh, "created_month": time.Now().UTC().Format("2006-01"), "source_json": string(payload)}).Error
 				if err == nil {
@@ -186,7 +186,7 @@ func (s Service) settleBacklog(ctx context.Context) (int, error) {
 			}
 			continue
 		}
-		_, created, err := s.Store.Settle(ctx, row.CalculationID, template, pricing.ActualFee{
+		_, created, err := s.Store.Settle(ctx, row.CalculationID, template, charging.ActualFee{
 			ElectricCents: row.ElectricCents, ServiceCents: row.ServiceCents, TotalCents: row.TotalCents,
 		}, month)
 		if err != nil {

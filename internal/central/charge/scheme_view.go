@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/card"
 	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,8 +16,8 @@ func (a UserQueryAPI) schemeView(ctx context.Context, order orderpkg.ChargeOrder
 		return err
 	}
 	var frozen struct {
-		Rule  pricing.Rule   `json:"rule"`
-		Offer *pricing.Offer `json:"offer"`
+		Rule  charging.Rule   `json:"rule"`
+		Offer *charging.Offer `json:"offer"`
 	}
 	if len(snapshot.PricingSnapshot) > 0 && json.Unmarshal(snapshot.PricingSnapshot, &frozen) == nil && frozen.Rule.Spec.Scheme != nil {
 		payload["display"] = frozen.Rule.Spec.Scheme.Display
@@ -52,7 +52,7 @@ func (a UserQueryAPI) schemeView(ctx context.Context, order orderpkg.ChargeOrder
 	return nil
 }
 
-func tariffLines(s pricing.Scheme, offer *pricing.Offer) []string {
+func tariffLines(s charging.Scheme, offer *charging.Offer) []string {
 	lines := []string{}
 	if offer == nil {
 		return lines
@@ -70,7 +70,7 @@ func tariffLines(s pricing.Scheme, offer *pricing.Offer) []string {
 	clock := func(n int) string { return fmt.Sprintf("%02d:%02d", n/60, n%60) }
 	for _, p := range s.Amount.Periods {
 		span := clock(begin) + "～" + clock(p.EndMinute)
-		if s.Amount.Algorithm == pricing.ModeServerEnergy {
+		if s.Amount.Algorithm == charging.ModeServerEnergy {
 			lines = append(lines, fmt.Sprintf("%s · 电费 ¥%.2f / 度 · 服务费 ¥%.2f / 度", span, float64(p.ElectricCents)/100, float64(p.ServiceCents)/100))
 		} else {
 			low := 0

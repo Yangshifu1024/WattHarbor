@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -26,7 +27,7 @@ type PrepayProvider interface {
 type PaymentStartAPI struct {
 	Auth     identityhttp.SessionAuthenticator
 	Scan     ScanAPI
-	Pricing  pricing.Store
+	Pricing  database.PricingStore
 	Intents  PaymentIntentStore
 	Provider PrepayProvider
 }
@@ -130,7 +131,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 		return
 	}
 	rule, err := a.Pricing.ActiveDeviceRule(c.Request.Context(), port.StationID, port.DeviceID)
-	if errors.Is(err, pricing.ErrRuleUnavailable) || errors.Is(err, pricing.ErrInvalidPricing) {
+	if errors.Is(err, charging.ErrRuleUnavailable) || errors.Is(err, charging.ErrInvalidPricing) {
 		httpapi.Write(c, http.StatusConflict, 2004, "pricing unavailable", nil)
 		return
 	}
@@ -138,8 +139,8 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "pricing storage unavailable", nil)
 		return
 	}
-	var selected pricing.Offer
-	lookupErr := pricing.ErrOfferUnavailable
+	var selected charging.Offer
+	lookupErr := charging.ErrOfferUnavailable
 	if rule.Spec.Scheme != nil {
 		for _, offer := range rule.Spec.Scheme.Offers(rule) {
 			if offer.ID == body.OfferID {
@@ -149,7 +150,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 			}
 		}
 	}
-	if errors.Is(lookupErr, pricing.ErrOfferUnavailable) {
+	if errors.Is(lookupErr, charging.ErrOfferUnavailable) {
 		httpapi.Write(c, http.StatusConflict, 2004, "充电方案已下架", nil)
 		return
 	}
@@ -163,7 +164,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 	}
 	intent, err := a.Intents.Reserve(c.Request.Context(), IntentInput{UserID: userID, ClientRequestID: body.ClientRequestID,
 		Port: port, Rule: rule, Offer: &selected})
-	if errors.Is(err, pricing.ErrInvalidPricing) {
+	if errors.Is(err, charging.ErrInvalidPricing) {
 		httpapi.BadRequest(c, "invalid charging estimate")
 		return
 	}

@@ -3,6 +3,7 @@ package charge
 import (
 	"context"
 	"encoding/json"
+	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/channel"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
@@ -77,16 +77,16 @@ func accountRouterWithGateway(t *testing.T, userDB, adminDB *gorm.DB, userID uin
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	UserAccountAPI{
-		Auth:   identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
+		Auth:   identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, database.UserStore{DB: userDB})},
 		UserDB: userDB, AdminDB: adminDB, Gateway: serviceclient.Client{},
 		GatewayURL: gatewayURL, ServiceToken: "svc", Prepay: channel.Simulator{},
 	}.Register(router)
 	identityhttp.PhoneAPI{
-		Auth:             identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})},
-		Users:            identitystore.UserStore{DB: userDB},
+		Auth:             identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, database.UserStore{DB: userDB})},
+		Users:            database.UserStore{DB: userDB},
 		DevelopmentPhone: true,
 	}.Register(router)
-	payment.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, identitystore.UserStore{DB: userDB})}, DB: userDB, Store: payment.PaymentCallbackStore{DB: userDB, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}}.Register(router)
+	payment.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: client}, database.UserStore{DB: userDB})}, DB: userDB, Store: payment.PaymentCallbackStore{DB: userDB, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}}.Register(router)
 	// 使用请求包装器注入 Bearer 令牌，覆盖已注册路由；Gin 的 Use 只影响后续注册路由。
 	return &authenticatedRouter{Engine: router, token: token}
 }
@@ -167,7 +167,7 @@ func TestPhoneBindRejectsNumberAlreadyOwned(t *testing.T) {
 	if err := userDB.Exec("INSERT INTO wallet_account(user_id) VALUES(?)", second).Error; err != nil {
 		t.Fatal(err)
 	}
-	profile, err := (identitystore.UserStore{DB: userDB}).Profile(t.Context(), second)
+	profile, err := (database.UserStore{DB: userDB}).Profile(t.Context(), second)
 	if err != nil || !profile.PhoneBound {
 		t.Fatalf("profile binding state: %+v %v", profile, err)
 	}
@@ -178,7 +178,7 @@ func TestPhoneBindRejectsNumberAlreadyOwned(t *testing.T) {
 	if err := userDB.Table("user").Where("id = ? AND phone IS NULL", second).Count(&remaining).Error; err != nil || remaining != 1 {
 		t.Fatalf("unbind did not clear phone: %d %v", remaining, err)
 	}
-	profile, err = (identitystore.UserStore{DB: userDB}).Profile(t.Context(), second)
+	profile, err = (database.UserStore{DB: userDB}).Profile(t.Context(), second)
 	if err != nil || profile.PhoneBound {
 		t.Fatalf("profile unbinding state: %+v %v", profile, err)
 	}

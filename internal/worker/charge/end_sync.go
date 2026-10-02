@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
@@ -41,11 +41,11 @@ type endResult struct {
 	PortNo         uint8  `json:"port_no"`
 	PortID         uint64 `json:"port_id"`
 	Meter          struct {
-		ChargedWh      uint32                 `json:"charged_wh"`
-		ChargedSeconds uint32                 `json:"charged_seconds"`
-		EndedAt        time.Time              `json:"ended_at"`
-		StopReason     uint8                  `json:"stop_reason"`
-		Segments       []pricing.MeterSegment `json:"segments,omitempty"`
+		ChargedWh      uint32                  `json:"charged_wh"`
+		ChargedSeconds uint32                  `json:"charged_seconds"`
+		EndedAt        time.Time               `json:"ended_at"`
+		StopReason     uint8                   `json:"stop_reason"`
+		Segments       []charging.MeterSegment `json:"segments,omitempty"`
 	} `json:"meter"`
 }
 

@@ -6,17 +6,17 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"strings"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 )
 
 // OrderPackage uses the order's frozen contract. Editing or deleting the live
 // station scheme must never change what the customer bought on this order.
 type OrderPackage struct {
-	Offer       pricing.Offer      `json:"offer"`
-	Scheme      *pricing.Scheme    `json:"scheme,omitempty"`
-	BillingMode pricing.ChargeMode `json:"billing_mode"`
-	RuleVersion uint32             `json:"rule_version"`
-	Card        *OrderCardPurchase `json:"card,omitempty"`
+	Offer       charging.Offer      `json:"offer"`
+	Scheme      *charging.Scheme    `json:"scheme,omitempty"`
+	BillingMode charging.ChargeMode `json:"billing_mode"`
+	RuleVersion uint32              `json:"rule_version"`
+	Card        *OrderCardPurchase  `json:"card,omitempty"`
 }
 
 // Card purchases can grow after the first swipe; keep the original unit offer
@@ -29,8 +29,8 @@ type OrderCardPurchase struct {
 
 func packageFromSnapshot(raw []byte) *OrderPackage {
 	var frozen struct {
-		Rule  pricing.Rule   `json:"rule"`
-		Offer *pricing.Offer `json:"offer"`
+		Rule  charging.Rule   `json:"rule"`
+		Offer *charging.Offer `json:"offer"`
 	}
 	if json.Unmarshal(raw, &frozen) != nil || frozen.Offer == nil || !frozen.Offer.Valid() {
 		return nil

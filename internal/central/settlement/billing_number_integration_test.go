@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/central/billing"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
@@ -77,10 +77,10 @@ func TestBillingNumbersRoundTripNewAndHistoricOrders(t *testing.T) {
 				t.Fatal(err)
 			}
 			exec(userTx, "UPDATE payment_order SET biz_id=? WHERE id=?", order.ID, payment.ID)
-			scheme := pricing.Scheme{Name: "numbering fixture", Amount: &pricing.AmountMode{
-				Algorithm: pricing.ModeServerEnergy, Periods: []pricing.Period{{EndMinute: 1440, ElectricCents: 50, ServiceCents: 25}}},
-				Packages: []pricing.Package{{ID: 1, Name: "1元", Mode: "amount", PriceCents: 100}}}.Normalized()
-			rule := pricing.Rule{ID: 1, StationID: 1, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
+			scheme := charging.Scheme{Name: "numbering fixture", Amount: &charging.AmountMode{
+				Algorithm: charging.ModeServerEnergy, Periods: []charging.Period{{EndMinute: 1440, ElectricCents: 50, ServiceCents: 25}}},
+				Packages: []charging.Package{{ID: 1, Name: "1元", Mode: "amount", PriceCents: 100}}}.Normalized()
+			rule := charging.Rule{ID: 1, StationID: 1, Version: 1, Spec: scheme.SpecFor(scheme.Packages[0])}
 			offer := scheme.Offers(rule)[0]
 			snapshot, _ := json.Marshal(map[string]any{"rule": rule, "offer": offer})
 			meter, _ := json.Marshal(orderpkg.EndMeter{ChargedWh: 1000, ChargedSeconds: 3600, EndedAt: end})

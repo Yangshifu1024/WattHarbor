@@ -1,4 +1,4 @@
-package pricing
+package database
 
 import (
 	"context"
@@ -7,12 +7,13 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 )
 
 // 使用真实数据库验证规则查询与 SQL 过滤条件。
 
-func offerTestStore(t *testing.T) (Store, func()) {
+func offerTestStore(t *testing.T) (PricingStore, func()) {
 	t.Helper()
 	raw := os.Getenv("TEST_ADMIN_DATABASE_URL")
 	if raw == "" {
@@ -26,12 +27,12 @@ func offerTestStore(t *testing.T) (Store, func()) {
 	if err != nil {
 		t.Skipf("disposable MySQL required: %v", err)
 	}
-	return Store{DB: orm}, func() { _ = db.Close() }
+	return PricingStore{DB: orm}, func() { _ = db.Close() }
 }
 
 func schemeRuleJSON(t *testing.T, rate, paid int64) string {
 	t.Helper()
-	s := Scheme{Name: "方案", Amount: &AmountMode{Algorithm: ModeServerEnergy, Periods: []Period{{EndMinute: 1440, ElectricCents: rate}}}, Packages: []Package{{ID: 1, Name: "金额", Mode: "amount", PriceCents: paid}}}.Normalized()
+	s := charging.Scheme{Name: "方案", Amount: &charging.AmountMode{Algorithm: charging.ModeServerEnergy, Periods: []charging.Period{{EndMinute: 1440, ElectricCents: rate}}}, Packages: []charging.Package{{ID: 1, Name: "金额", Mode: "amount", PriceCents: paid}}}.Normalized()
 	raw, err := json.Marshal(s.SpecFor(s.Packages[0]))
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +63,7 @@ func TestOffersFollowWholeAppliedScheme(t *testing.T) {
 	if err != nil || len(independent) != 1 || independent[0].PriceCents != 200 {
 		t.Fatalf("independent=%+v err=%v", independent, err)
 	}
-	if _, err := store.ActiveOffer(ctx, site, "INDEPENDENT", inherited[0].ID); !errors.Is(err, ErrOfferUnavailable) {
+	if _, err := store.ActiveOffer(ctx, site, "INDEPENDENT", inherited[0].ID); !errors.Is(err, charging.ErrOfferUnavailable) {
 		t.Fatalf("station offer merged into independent scheme: %v", err)
 	}
 	if err := store.DB.Exec("UPDATE pricing_rule SET status='disabled' WHERE station_id=? AND device_id='INDEPENDENT'", site).Error; err != nil {

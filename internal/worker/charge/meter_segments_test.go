@@ -3,7 +3,7 @@ package charge
 import (
 	"errors"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"testing"
 	"time"
@@ -17,20 +17,20 @@ func TestMeasuredSegmentsUseElapsedCumulativeMeter(t *testing.T) {
 	if len(segments) != 2 || segments[0].EnergyWh != 200 || segments[1].EnergyWh != 800 || !segments[0].EndedAt.Equal(start.Add(30*time.Minute)) {
 		t.Fatalf("measured segments %+v", segments)
 	}
-	rule := pricing.Rule{ID: 1, Version: 1, Spec: pricing.Spec{Mode: pricing.ModeServerEnergy, Electric: &pricing.ElectricLine{Basis: pricing.BasisEnergy, Periods: []pricing.Period{{EndMinute: 720, ElectricCents: 50, ServiceCents: 25}, {EndMinute: 1440, ElectricCents: 80, ServiceCents: 25}}}}}
-	fee, err := pricing.PriceActual(rule, pricing.ActualMeter{StartedAt: start, EndedAt: end.EndedAt, ChargedWh: 1000, ChargedSeconds: 3600, Segments: segments})
+	rule := charging.Rule{ID: 1, Version: 1, Spec: charging.Spec{Mode: charging.ModeServerEnergy, Electric: &charging.ElectricLine{Basis: charging.BasisEnergy, Periods: []charging.Period{{EndMinute: 720, ElectricCents: 50, ServiceCents: 25}, {EndMinute: 1440, ElectricCents: 80, ServiceCents: 25}}}}}
+	fee, err := charging.PriceActual(rule, charging.ActualMeter{StartedAt: start, EndedAt: end.EndedAt, ChargedWh: 1000, ChargedSeconds: 3600, Segments: segments})
 	if err != nil || fee.TotalCents != 99 {
 		t.Fatalf("measured tariff %+v %v", fee, err)
 	}
 	// 验证分段边界按设备已用时长定位，不使用消息到达时间。
 	// 跨费率变化且缺少分段计量时进入人工核实，不按均摊直接结算。
-	if _, err := pricing.PriceActual(rule, pricing.ActualMeter{StartedAt: start, EndedAt: end.EndedAt, ChargedWh: 1000, ChargedSeconds: 3600}); !errors.Is(err, pricing.ErrMeterReview) {
+	if _, err := charging.PriceActual(rule, charging.ActualMeter{StartedAt: start, EndedAt: end.EndedAt, ChargedWh: 1000, ChargedSeconds: 3600}); !errors.Is(err, charging.ErrMeterReview) {
 		t.Fatalf("an unsegmented meter across a tariff change must go to review, got %v", err)
 	}
 	// 验证单一费率允许均摊未分段计量，无需人工核实。
-	flat := pricing.Rule{ID: 1, Version: 1, Spec: pricing.Spec{Mode: pricing.ModeServerEnergy,
-		Electric: &pricing.ElectricLine{Basis: pricing.BasisEnergy, Periods: []pricing.Period{{EndMinute: 1440, ElectricCents: 50}}}}}
-	if _, err := pricing.PriceActual(flat, pricing.ActualMeter{StartedAt: start, EndedAt: end.EndedAt, ChargedWh: 1000, ChargedSeconds: 3600}); err != nil {
+	flat := charging.Rule{ID: 1, Version: 1, Spec: charging.Spec{Mode: charging.ModeServerEnergy,
+		Electric: &charging.ElectricLine{Basis: charging.BasisEnergy, Periods: []charging.Period{{EndMinute: 1440, ElectricCents: 50}}}}}
+	if _, err := charging.PriceActual(flat, charging.ActualMeter{StartedAt: start, EndedAt: end.EndedAt, ChargedWh: 1000, ChargedSeconds: 3600}); err != nil {
 		t.Fatalf("a flat tariff must settle an unsegmented meter: %v", err)
 	}
 	tests := []struct {
