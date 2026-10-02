@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"net/http"
 	"time"

@@ -9,9 +9,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/application"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/devices"
+	"github.com/ChargePilot2026/charge-pilot/internal/application"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"gorm.io/gorm"

@@ -4,8 +4,8 @@ package application
 import (
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/pricing"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 

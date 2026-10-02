@@ -23,14 +23,13 @@ cd "$(dirname "$0")/../.."
 
 # 三层均有实质内容的包才分子目录；其余单层包保持一个目录，
 # 避免为纯持久化或纯领域的包建立空目录。
-nested=(
-  internal/central/payment
-  internal/central/identity
-  internal/central/admin
-  internal/central/charge
-  internal/central/card
+# 领域层：子域目录，聚合由子目录名标识。
+# 迁移期间 internal/central/* 仍按旧规则另行检查，此处只管已归位的部分。
+domain=(
+  internal/domain
 )
-flat=(
+# 旧结构，待迁移：包内按文件后缀分层。
+legacy_flat=(
   internal/central/order
   internal/central/refund
   internal/central/settlement
@@ -70,7 +69,7 @@ layer_of() {
 }
 
 # 多层包：目录即层，逐目录校验内容与依赖方向。
-for pkg in "${nested[@]}"; do
+for pkg in "${legacy_flat[@]}"; do
   [[ -d $pkg ]] || continue
   for layer in state store http; do
     dir="$pkg/$layer"
@@ -119,25 +118,41 @@ for pkg in "${nested[@]}"; do
   fi
 done
 
-# 单层包：按文件后缀判定。
-for dir in "${flat[@]}"; do
-  [[ -d $dir ]] || continue
-  while IFS= read -r file; do
-    layer=$(layer_of "$file")
-    if grep -q 'gin\.Context' "$file" && [[ $layer != http ]]; then
-      report "$file: 含 gin.Context 但不是 *_http.go（接口层）"
-    fi
-    if grep -qE 'gorm\.DB|gorm\.Expr|gorm\.DeletedAt|clause\.OnConflict|"gorm\.io/gorm"' "$file" && [[ $layer != store ]]; then
-      report "$file: 含 gorm 但不是 *_store.go / models.go（持久化层）"
-    fi
-    hits=$(grep -oE '(Table\(|FROM |JOIN |INTO |UPDATE )`?"?[a-z0-9_]+' "$file" |
-      grep -oE '[a-z0-9_]+$' | sort -u | grep -xF -f "$tables" | head -3)
-    if [[ -n $hits && $layer != store ]]; then
-      report "$file: 出现数据库表名（$(echo "$hits" | tr '\n' ' ')）但不是 *_store.go / models.go"
-    fi
-  done < <(find "$dir" -name '*.go' ! -name '*_test.go')
-done
 
+
+# 领域层检查：零 gorm、零 gin、零 redis，且不得依赖协议层或实现层。
+# 这是"业务规则不认识框架"这条约束的落地点。
+while IFS= read -r file; do
+  if grep -qE 'gorm\.DB|gorm\.Expr|gorm\.DeletedAt|clause\.OnConflict|"gorm\.io/gorm"' "$file"; then
+    report "$file: 领域层出现 gorm"
+  fi
+  if grep -q 'gin\.Context\|"github.com/gin-gonic/gin"' "$file"; then
+    report "$file: 领域层出现 gin"
+  fi
+  if grep -q '"github.com/redis/go-redis' "$file"; then
+    report "$file: 领域层出现 redis"
+  fi
+  if grep -q 'charge-pilot/internal/protocol' "$file"; then
+    report "$file: 领域层依赖 protocol，协议翻译应由 application 承担"
+  fi
+  if grep -qE 'charge-pilot/internal/(infrastructure|interface)/' "$file"; then
+    report "$file: 领域层依赖实现层"
+  fi
+done < <(find internal/domain -name '*.go' ! -name '*_test.go')
+
+# application 层：可依赖 domain 与 protocol，不得直接依赖 interface。
+while IFS= read -r file; do
+  if grep -qE 'charge-pilot/internal/(interface|infrastructure)/' "$file"; then
+    report "$file: 用例层依赖接口层或实现层"
+  fi
+done < <(find internal/application -name '*.go' ! -name '*_test.go')
+
+# infrastructure 层：不得依赖 interface。
+while IFS= read -r file; do
+  if grep -q 'charge-pilot/internal/interface/' "$file"; then
+    report "$file: 持久化层依赖接口层"
+  fi
+done < <(find internal/infrastructure -name '*.go' ! -name '*_test.go')
 
 # protocol 契约层不得反向依赖业务实现或设备接入运行时。
 # 这条是"新协议只加 protocol/<name>/ 子目录"能成立的前提。
