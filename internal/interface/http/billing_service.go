@@ -14,7 +14,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type Orders interface {
@@ -54,7 +53,11 @@ func (s Service) Run(ctx context.Context) (int, error) {
 			result, err = s.Store.Calculate(ctx, source)
 			if errors.Is(err, charging.ErrMeterReview) || errors.Is(err, charging.ErrInvalidPricing) {
 				payload, _ := json.Marshal(source)
-				err = s.Store.DB.WithContext(ctx).Table("manual_fee_review").Clauses(clause.OnConflict{DoUpdates: clause.Assignments(map[string]any{"charge_order_id": gorm.Expr("charge_order_id")})}).Create(map[string]any{"charge_order_id": id, "order_no": source.OrderNo, "reason": "实际计量或计费快照需核实", "energy_wh": source.Meter.ChargedWh, "created_month": time.Now().UTC().Format("2006-01"), "source_json": string(payload)}).Error
+				err = dbstore.EnqueueManualFeeReview(s.Store.DB.WithContext(ctx), dbstore.ManualFeeReviewInput{
+					ChargeOrderID: id, OrderNo: source.OrderNo, Reason: "实际计量或计费快照需核实",
+					EnergyWh: source.Meter.ChargedWh, CreatedMonth: time.Now().UTC().Format("2006-01"),
+					SourceJSON: string(payload),
+				})
 				if err == nil {
 					err = s.Orders.Defer(ctx, id, "manual_review", "实际计量或计费快照需核实")
 				}
@@ -190,11 +193,8 @@ func (s Service) settleBacklog(ctx context.Context) (int, error) {
 }
 
 func (s Service) deliverPending(ctx context.Context) (int, error) {
-	var rows []struct {
-		ChargeOrderID uint64
-		PayloadJSON   []byte
-	}
-	if err := s.Store.DB.WithContext(ctx).Table("fee_delivery").Where("delivered=0 AND scheduled_at<=UTC_TIMESTAMP(3)").Order("scheduled_at,charge_order_id").Limit(50).Find(&rows).Error; err != nil {
+	rows, err := dbstore.ListPendingFeeDeliveries(ctx, s.Store.DB)
+	if err != nil {
 		return 0, err
 	}
 	count := 0
@@ -215,7 +215,7 @@ func (s Service) deliverPending(ctx context.Context) (int, error) {
 			count++
 			continue
 		}
-		_ = s.Store.DB.WithContext(ctx).Table("fee_delivery").Where("charge_order_id=? AND delivered=0", row.ChargeOrderID).Updates(map[string]any{"attempts": gorm.Expr("attempts+1"), "scheduled_at": time.Now().UTC().Add(time.Minute)}).Error
+		_ = dbstore.RescheduleFeeDelivery(s.Store.DB.WithContext(ctx), row.ChargeOrderID, time.Now().UTC().Add(time.Minute))
 		if first == nil {
 			first = err
 		}

@@ -87,9 +87,15 @@ done < <(find internal/domain -name '*.go' ! -name '*_test.go')
 
 # application 层：可依赖 domain、infrastructure 与 protocol，不得依赖 interface。
 # 用例调仓储是正常编排，跨聚合事务由本层持 *gorm.DB 编排。
+#
+# 但"调仓储"限于调用 infrastructure 的方法。用例里一旦出现表名或查询构造，
+# 取数逻辑就漏到了用例层，规则与单位会跟着库结构走。
 while IFS= read -r file; do
   if grep -q 'charge-pilot/internal/interface/' "$file"; then
     report "$file: 用例层依赖接口层"
+  fi
+  if grep -qE '\.Table\(|gorm\.Expr|clause\.Locking|gorm:"(column|primaryKey)|func \([A-Za-z]+\) TableName\(\) string' "$file"; then
+    report "$file: 用例层出现表名或 gorm 查询构造，取数应归 infrastructure/database"
   fi
 done < <(find internal/application -name '*.go' ! -name '*_test.go')
 

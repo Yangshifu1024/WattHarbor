@@ -305,3 +305,52 @@ func applyOrderCampaigns(tx *gorm.DB, order ChargeOrderRecord, totalCents int64)
 		}
 	}
 }
+
+// EnqueueManualFeeReview 把一笔算不出费用的订单排进人工核实队列。
+//
+// 幂等键是 charge_order_id：同一笔订单重复入队只更新不新增。用 no-op upsert
+// 而不是"先查再插"，两个并发的入队请求会同时查到"没有"然后都去插，靠唯一键
+// 把其中一个挡下来。
+func EnqueueManualFeeReview(tx *gorm.DB, in ManualFeeReviewInput) error {
+	return tx.Table("manual_fee_review").
+		Clauses(clause.OnConflict{DoUpdates: clause.Assignments(map[string]any{"charge_order_id": gorm.Expr("charge_order_id")})}).
+		Create(map[string]any{
+			"charge_order_id": in.ChargeOrderID, "order_no": in.OrderNo, "reason": in.Reason,
+			"energy_wh": in.EnergyWh, "created_month": in.CreatedMonth, "source_json": in.SourceJSON,
+		}).Error
+}
+
+// ManualFeeReviewInput 是一次人工核实入队的内容。
+type ManualFeeReviewInput struct {
+	ChargeOrderID uint64
+	OrderNo       string
+	Reason        string
+	EnergyWh      uint32
+	CreatedMonth  string
+	SourceJSON    string
+}
+
+// FeeDeliveryRow 是一笔待送达的计费结果。送达失败会推迟重试而不是丢弃。
+type FeeDeliveryRow struct {
+	ChargeOrderID uint64 `gorm:"column:charge_order_id"`
+	PayloadJSON   []byte `gorm:"column:payload_json"`
+}
+
+// feeDeliveryBatch 一次取多少笔待送达的计费结果。
+const feeDeliveryBatch = 50
+
+// ListPendingFeeDeliveries 返回到期待送达的计费结果，按计划时间与订单排序。
+func ListPendingFeeDeliveries(ctx context.Context, db *gorm.DB) ([]FeeDeliveryRow, error) {
+	rows := []FeeDeliveryRow{}
+	err := db.WithContext(ctx).Table("fee_delivery").
+		Where("delivered=0 AND scheduled_at<=UTC_TIMESTAMP(3)").
+		Order("scheduled_at,charge_order_id").Limit(feeDeliveryBatch).Find(&rows).Error
+	return rows, err
+}
+
+// RescheduleFeeDelivery 把送达失败的计费结果推后一分钟并累加尝试次数。
+// 用"推后"而不是删掉：投递可能只是暂时失败，丢掉就等于这单永远不出账。
+func RescheduleFeeDelivery(db *gorm.DB, orderID uint64, retryAt time.Time) error {
+	return db.Table("fee_delivery").Where("charge_order_id=? AND delivered=0", orderID).
+		Updates(map[string]any{"attempts": gorm.Expr("attempts+1"), "scheduled_at": retryAt}).Error
+}
