@@ -6,10 +6,11 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/xuri/excelize/v2"
 	"io"
 	"strconv"
-	"strings"
+
 	"time"
 )
 
@@ -18,39 +19,6 @@ import (
 //
 //go:embed fonts/NotoSansSC-Subset.ttf
 var reportFont []byte
-
-// validExportPeriod 校验财务类导出的时间窗：只认 from/to 两个 YYYY-MM-DD 键，
-// 要求 to 不早于 from 且跨度不超过 31 天，防止一次导出拖垮数据库。
-func validExportPeriod(filter map[string]any) bool {
-	fromRaw, fromOK := filter["from"].(string)
-	toRaw, toOK := filter["to"].(string)
-	if !fromOK || !toOK || len(filter) != 2 {
-		return false
-	}
-	from, err1 := time.Parse("2006-01-02", fromRaw)
-	to, err2 := time.Parse("2006-01-02", toRaw)
-	return err1 == nil && err2 == nil && !to.Before(from) && to.Sub(from) <= 30*24*time.Hour
-}
-
-// nextExportDate 把 to 当天推一天，用于把 issued_at 的右开区间凑成整天的闭区间。
-func nextExportDate(raw any) string {
-	date, _ := time.Parse("2006-01-02", raw.(string))
-	return date.AddDate(0, 0, 1).Format("2006-01-02")
-}
-
-// safeSpreadsheetCell 防止表格公式注入：首字符是 = + - @ 且整串不是数字时，前面补一个单引号；
-// 纯数字（负数金额）保持原样，不影响导出的取值。
-func safeSpreadsheetCell(value string) string {
-	if value == "" {
-		return value
-	}
-	if strings.ContainsRune("=+-@", rune(value[0])) {
-		if _, err := strconv.ParseFloat(value, 64); err != nil {
-			return "'" + value
-		}
-	}
-	return value
-}
 
 // writeExport 按格式把表头和数据行写出去：csv 走标准转义，xlsx 走流式写入避免大文件占内存，
 // pdf 只支持账单与对账的汇总页，其余格式或资源一律返回错误。
@@ -64,7 +32,7 @@ func writeExport(w io.Writer, format, resource string, headers []string, lines [
 		for _, line := range lines {
 			protected := make([]string, len(line))
 			for i, value := range line {
-				protected[i] = safeSpreadsheetCell(value)
+				protected[i] = operations.SafeSpreadsheetCell(value)
 			}
 			if err := writer.Write(protected); err != nil {
 				return err
@@ -82,7 +50,7 @@ func writeExport(w io.Writer, format, resource string, headers []string, lines [
 		for row, line := range append([][]string{headers}, lines...) {
 			cells := make([]interface{}, len(line))
 			for i, value := range line {
-				cells[i] = safeSpreadsheetCell(value)
+				cells[i] = operations.SafeSpreadsheetCell(value)
 			}
 			axis, err := excelize.CoordinatesToCellName(1, row+1)
 			if err != nil {

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/xuri/excelize/v2"
 	"strings"
 	"testing"
@@ -51,7 +52,7 @@ func TestExportPeriodAndPDFScope(t *testing.T) {
 		{map[string]any{"from": "2026-09-01", "to": "2026-10-02"}, false},
 		{map[string]any{"from": "bad", "to": "2026-09-30"}, false},
 	} {
-		if validExportPeriod(tc.filter) != tc.ok {
+		if operations.ValidExportPeriod(tc.filter) != tc.ok {
 			t.Fatalf("period validation mismatch: %v", tc.filter)
 		}
 	}

@@ -274,7 +274,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 		httpapi.BadRequest(c, "PDF 仅支持账单与对账汇总")
 		return
 	}
-	if (in.Resource == "bills" || in.Resource == "reconciles") && !validExportPeriod(in.Filter) {
+	if (in.Resource == "bills" || in.Resource == "reconciles") && !operations.ValidExportPeriod(in.Filter) {
 		httpapi.BadRequest(c, "账单与对账需提供不超过 31 天的 from/to 日期")
 		return
 	}
@@ -381,7 +381,7 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, pro
 		query = query.Where(map[string]any{"deleted_at": nil})
 	}
 	if spec.Table == "charge_bill" {
-		query = query.Where("issued_at >= ? AND issued_at < ?", filters["from"], nextExportDate(filters["to"]))
+		query = query.Where("issued_at >= ? AND issued_at < ?", filters["from"], operations.NextExportDate(filters["to"]))
 	} else if spec.Table == "finance_reconcile_log" {
 		query = query.Where("reconcile_date >= ? AND reconcile_date <= ?", filters["from"], filters["to"])
 	}
