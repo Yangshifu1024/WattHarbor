@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -9,85 +8,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"math"
 	"strings"
-	"unicode/utf8"
 )
 
 // 站点统一按主键 ID 寻址，不保存业务编码 code。
-// StationInput.Code 仅用于识别旧客户端请求，提交此字段时返回明确参数错误。
-
-// Station 是站点的对外模型，映射 central_db 的 station 表。站点是整套计费配置的
-// 挂载点——分账模板、计费规则、充电套餐都挂在站点 ID 上。站点已无独立的业务编码
-// 字段，列表、详情和所有下级配置的引用一律使用主键 ID。
-type Station struct {
-	ID              uint64  `json:"id" gorm:"primaryKey"`                              // 站点主键，也是分账模板、计费规则、充电套餐引用站点的外键。
-	Name            string  `json:"name"`                                              // 站点名称，列表展示与关键词搜索都匹配它。
-	Address         *string `json:"address"`                                           // 站点地址，可空；关键词搜索会同时匹配名称和地址。
-	Longitude       float64 `json:"longitude"`                                         // 经度，有效范围 [-180,180]，站点地图定位用。
-	Latitude        float64 `json:"latitude"`                                          // 纬度，有效范围 [-90,90]。
-	Status          string  `json:"status"`                                            // 站点状态：active 营业中、disabled 停用、construction 建设中。
-	ContactPhone    *string `json:"contact_phone"`                                     // 对外联系电话，可空，最长 32 字符。
-	SplitTemplateID *uint64 `json:"split_template_id" gorm:"column:split_template_id"` // 已绑定的分账模板 ID，可空表示未绑定；只能在独立的绑定接口里改，不随站点编辑变更。
-}
-
-// TableName 指定 Station 落在 central_db 的 station 表上。
-func (Station) TableName() string { return "station" }
-
-// StationInput 是站点新建/编辑的请求体。经度、纬度用指针是为了区分"没传"和
-// "传了 0"——这两个字段是必填项，缺失按无效处理。分账模板同样用指针表示"不绑定"，
-// 但它只在新建时生效，编辑路径一旦带上就会被拒绝。
-type StationInput struct {
-	// 保留已废弃的 Code 请求字段用于兼容性校验，禁止写入站点记录。
-	Code            *string  `json:"code"`              // 兼容旧客户端的废弃字段；非 nil 时返回编码已移除的参数错误。
-	Name            string   `json:"name"`              // 站点名称，必填，去空白后最长 128 字符。
-	Address         *string  `json:"address"`           // 站点地址，可空，最长 255 字符。
-	Longitude       *float64 `json:"longitude"`         // 经度，必填指针；缺失、非数字或超出 [-180,180] 判为无效。
-	Latitude        *float64 `json:"latitude"`          // 纬度，必填指针；缺失、非数字或超出 [-90,90] 判为无效。
-	Status          string   `json:"status"`            // 站点状态，必填：active / disabled / construction 三选一。
-	ContactPhone    *string  `json:"contact_phone"`     // 联系电话，可空，最长 32 字符。
-	SplitTemplateID *uint64  `json:"split_template_id"` // 分账模板 ID，可空；指向 0 视为无效，新建时还会校验模板可用，编辑时携带该字段直接拒绝。
-}
-
-// valid 校验站点写入参数：名称必填且不超过 128 字符，经纬度必填、不能为 NaN 且落在
-// 合法区间内，状态必须是 active/disabled/construction 之一，分账模板 ID 不得为 0，
-// 地址和联系电话两个可空文本字段各有长度上限。站点全年无休，不配置营业时间。
-func (input StationInput) valid() bool {
-	if strings.TrimSpace(input.Name) == "" || utf8.RuneCountInString(input.Name) > 128 || input.Longitude == nil || input.Latitude == nil || math.IsNaN(*input.Longitude) || math.IsNaN(*input.Latitude) || math.Abs(*input.Longitude) > 180 || math.Abs(*input.Latitude) > 90 || input.Status == "" || !chargehttp.AdminOneOf(input.Status, "active disabled construction") {
-		return false
-	}
-	if input.SplitTemplateID != nil && *input.SplitTemplateID == 0 {
-		return false
-	}
-	for value, max := range map[*string]int{input.Address: 255, input.ContactPhone: 32} {
-		if value != nil && utf8.RuneCountInString(*value) > max {
-			return false
-		}
-	}
-	return true
-}
-
-// Stations 分页查询未删除的站点，支持按状态过滤和按名称/地址模糊搜索（通配符已转义），
-// 先 Count 再按 ID 倒序取当页，最后把分页信息原样带回给调用方组装响应。
-func (s ResourceStore) Stations(ctx context.Context, q PageQuery, scopes ...operations.DataScope) (Page[Station], error) {
-	out := Page[Station]{Items: []Station{}, Page: q.Page, PageSize: q.PageSize}
-	query := s.AdminDB.WithContext(ctx).Model(&Station{}).Where("deleted_at IS NULL")
-	if len(scopes) > 0 {
-		query = paystore.ScopeStations(scopes[0], query, "id")
-	}
-	if q.Status != "" {
-		query = query.Where("status = ?", q.Status)
-	}
-	if q.Keyword != "" {
-		pattern := chargehttp.AdminLikePattern(q.Keyword)
-		query = query.Where("(name LIKE ? ESCAPE '!' OR address LIKE ? ESCAPE '!')", pattern, pattern)
-	}
-	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
-		return out, err
-	}
-	err := query.Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error
-	return out, err
-}
+// paystore.StationInput.Code 仅用于识别旧客户端请求，提交此字段时返回明确参数错误。
 
 // stations 响应站点分页列表，状态入参只接受 active/disabled/construction，
 // 并把当前管理员的权限列表一并带回，供前端决定按钮的可见性。
@@ -100,7 +25,7 @@ func (a ResourceAPI) stations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := a.Store.Stations(c.Request.Context(), q, scope)
+	out, err := paystore.ListStations(c.Request.Context(), a.Store.AdminDB, q, scope)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -118,7 +43,7 @@ func (a ResourceAPI) station(c *gin.Context) {
 	if !a.requireStationScope(c, id) {
 		return
 	}
-	var row Station
+	var row paystore.Station
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -146,7 +71,7 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 			return
 		}
 	}
-	var input StationInput
+	var input paystore.StationInput
 	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
@@ -154,11 +79,11 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 		httpapi.BadRequest(c, "编码已移除：站点统一使用主键 ID，请勿提交 code 字段")
 		return
 	}
-	if !input.valid() || (!create && input.SplitTemplateID != nil) {
+	if !paystore.ValidStationInput(input) || (!create && input.SplitTemplateID != nil) {
 		httpapi.BadRequest(c, "站点参数无效：请检查名称、经纬度和状态")
 		return
 	}
-	row := Station{ID: id, Name: strings.TrimSpace(input.Name), Address: input.Address, Longitude: *input.Longitude, Latitude: *input.Latitude, Status: input.Status, ContactPhone: input.ContactPhone, SplitTemplateID: input.SplitTemplateID}
+	row := paystore.Station{ID: id, Name: strings.TrimSpace(input.Name), Address: input.Address, Longitude: *input.Longitude, Latitude: *input.Latitude, Status: input.Status, ContactPhone: input.ContactPhone, SplitTemplateID: input.SplitTemplateID}
 	p := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if create {
@@ -172,12 +97,12 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 			}
 			return chargehttp.AdminResourceAudit(tx, p, "create", "station", row.ID, nil, row, c.ClientIP(), httpapi.RequestID(c))
 		}
-		var before Station
+		var before paystore.Station
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
 			return err
 		}
 		row.SplitTemplateID = before.SplitTemplateID
-		if err := tx.Model(&Station{}).Where("id = ?", id).Updates(map[string]any{"name": row.Name, "address": row.Address, "longitude": row.Longitude, "latitude": row.Latitude, "status": row.Status, "contact_phone": row.ContactPhone}).Error; err != nil {
+		if err := tx.Model(&paystore.Station{}).Where("id = ?", id).Updates(map[string]any{"name": row.Name, "address": row.Address, "longitude": row.Longitude, "latitude": row.Latitude, "status": row.Status, "contact_phone": row.ContactPhone}).Error; err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, p, "update", "station", id, before, row, c.ClientIP(), httpapi.RequestID(c))

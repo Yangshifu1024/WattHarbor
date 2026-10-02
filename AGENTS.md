@@ -96,6 +96,8 @@ charge-pilot/
 │   │   │   ├── refund_repository.go            refund_* 家族
 │   │   │   ├── settlement_repository.go        settlement / split / withdraw
 │   │   │   ├── station_repository.go           station
+│   │   │   ├── station_store.go               站点模型、写入校验与分页查询
+│   │   │   ├── page.go                        PageQuery / Page 分页原语
 │   │   │   ├── device_repository.go            device_meta / device_import
 │   │   │   ├── admin_repository.go             role / permission / audit_log
 │   │   │   ├── admin_account.go                admin_user 账号与登录判定
@@ -240,7 +242,7 @@ charge-pilot/
 │   └── platform/                               无业务语义的通用能力
 │       ├── config/config.go                    100 行 → 移到 config/
 │       ├── dbconn/mysql.go                     83 行  连接池与 DSN
-│       ├── dbutil/dbutil.go                    34 行  UTCDate / 重复键判定
+│       ├── dbutil/dbutil.go                    UTCDate / 重复键判定 / LIKE 转义
 │       ├── httpapi/
 │       │   ├── gin.go                          113 行  引擎、信封、ReadPaging
 │       │   ├── codes.go                        36 行   错误码常量

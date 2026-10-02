@@ -10,28 +10,19 @@ import (
 	"unicode/utf8"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 )
 
-// 后台列表接口统一的分页与筛选入参，各业务接口在此基础上再拼自己的条件。
-type AdminPageQuery struct {
-	Page            int    // 页码，从 1 开始
-	PageSize        int    // 每页条数，1–100
-	Keyword, Status string // 关键词模糊查询条件；状态过滤，须落在各接口给定的白名单内
-	StationID       uint64 // 设备列表的站点过滤，由调用方解析并做范围校验
-}
+// 后台列表接口统一的分页与筛选入参，本层以别名对外暴露。
+type AdminPageQuery = database.PageQuery
 
-// AdminPage 是后台列表接口的统一响应体，额外带上权限清单供前端决定按钮可见性。
-type AdminPage[T any] struct {
-	Items       []T      `json:"items"`                 // 当页数据
-	Total       int64    `json:"total"`                 // 符合条件的总条数
-	Page        int      `json:"page"`                  // 当前页码
-	PageSize    int      `json:"page_size"`             // 每页条数
-	Permissions []string `json:"permissions,omitempty"` // 操作人权限码；为空时整个字段省略
-}
+// AdminPage 是后台列表接口的统一响应体，本层以别名对外暴露。
+type AdminPage[T any] = database.Page[T]
 
 // ReadAdminPage 解析并校验通用分页参数：page ≥ 1、page_size 1–100（page 上限 1000000），
 // 关键词不超过 128 字符，状态必须在该接口传入的白名单内（留空表示不按状态过滤）。
@@ -62,12 +53,6 @@ func AdminOneOf(value, allowed string) bool {
 		}
 	}
 	return false
-}
-
-// AdminLikePattern 把关键词转成 LIKE 模式，并转义 !、%、_ 三个通配符，
-// 否则用户输入的百分号会变成通配、搜出范围之外的数据。
-func AdminLikePattern(value string) string {
-	return "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(value) + "%"
 }
 
 // AdminPathID 读取路径参数 :id 并要求它是正整数，不合法直接写 400 并返回 false。
@@ -165,3 +150,6 @@ func AuditToAdmin(c *gin.Context, db *gorm.DB, action, target string, id uint64,
 		log.Printf("gateway audit failed action=%s target=%s id=%d: %v", action, target, id, err)
 	}
 }
+
+// AdminLikePattern 把关键词转成 LIKE 模式，转义规则与仓储层共用同一实现。
+func AdminLikePattern(value string) string { return dbutil.LikePattern(value) }

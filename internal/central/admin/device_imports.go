@@ -8,6 +8,7 @@ import (
 	"fmt"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -154,7 +155,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			return err
 		}
 		for _, d := range in.Devices {
-			var station Station
+			var station paystore.Station
 			if err := tx.Where("id=? AND deleted_at IS NULL AND status='active'", d.StationID).Take(&station).Error; err != nil {
 				return err
 			}

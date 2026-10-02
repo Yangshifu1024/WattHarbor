@@ -8,7 +8,7 @@ import (
 	"fmt"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -181,7 +181,7 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		// Lock the target before checking the receipt so concurrent identical
 		// requests serialize and both return the first published result.
-		var station Station
+		var station paystore.Station
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", in.StationID).Take(&station).Error; err != nil {
 			return err
 		}
@@ -315,7 +315,7 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	rule, err := (database.PricingStore{DB: db}).ActiveDeviceRule(c.Request.Context(), station, device)
+	rule, err := (paystore.PricingStore{DB: db}).ActiveDeviceRule(c.Request.Context(), station, device)
 	if errors.Is(err, charging.ErrRuleUnavailable) {
 		httpapi.OK(c, gin.H{"scheme": nil, "version": current.Version, "inherited": false})
 		return
@@ -347,11 +347,11 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 		return
 	}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var s Station
+		var s paystore.Station
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", station).Take(&s).Error; err != nil {
 			return err
 		}
-		rule, err := (database.PricingStore{DB: tx}).ActiveStationRule(c.Request.Context(), station)
+		rule, err := (paystore.PricingStore{DB: tx}).ActiveStationRule(c.Request.Context(), station)
 		if err != nil {
 			return err
 		}
@@ -408,7 +408,7 @@ func (a ResourceAPI) executionCapabilities(c *gin.Context) {
 	if !a.requirePricingTargetScope(c, station, device) {
 		return
 	}
-	adapter, cap, err := (database.PricingStore{DB: a.Store.AdminDB}).DeviceCapabilities(c.Request.Context(), station, device)
+	adapter, cap, err := (paystore.PricingStore{DB: a.Store.AdminDB}).DeviceCapabilities(c.Request.Context(), station, device)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

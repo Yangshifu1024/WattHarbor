@@ -5,6 +5,7 @@ package dbutil
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -31,4 +32,11 @@ func IsMySQLDuplicate(err error) bool {
 	}
 	var mysqlErr *mysql.MySQLError
 	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
+}
+
+// LikePattern 把用户输入的关键词转成安全的 LIKE 模式。
+// ！、%、_ 三个通配符必须转义，否则用户输入的百分号会变成通配，
+// 搜出筛选范围之外的数据。所有关键词模糊查询共用本函数。
+func LikePattern(value string) string {
+	return "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(value) + "%"
 }

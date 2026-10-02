@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -158,7 +159,7 @@ func (s ResourceStore) orderStations(ctx context.Context, rows []OrderView) erro
 	if len(ids) == 0 {
 		return nil
 	}
-	var stations []Station
+	var stations []paystore.Station
 	if err := s.AdminDB.WithContext(ctx).Select("id,name").Where("id IN ? AND deleted_at IS NULL", ids).Find(&stations).Error; err != nil {
 		return err
 	}
