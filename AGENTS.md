@@ -91,7 +91,14 @@ charge-pilot/
 │   │
 │   ├── interface/http/                          gin 只在这一层
 │   │   ├── user_api.go  auth.go                C 端登录与资料
-│   │   ├── charge_user_account.go              钱包、公告、发票、报修、券
+│   │   ├── charge_user_account.go              C 端账户路由装配
+│   │   ├── user_wallet.go                      余额、流水、充值与余额退款
+│   │   ├── user_station.go                     附近站点、站点详情与站内公告设备
+│   │   ├── user_invoice.go                     开票申请与我的发票
+│   │   ├── user_fault.go                       设备报障的提交与查询
+│   │   ├── user_coupon.go                      我的优惠券
+│   │   ├── user_announcement.go                公告列表
+│   │   ├── user_account_helpers.go             分页与坐标解析助手
 │   │   ├── charge_user_query.go                充电历史、进行中、曲线
 │   │   ├── charge_user_stop.go                 用户停机
 │   │   ├── charge_live_meter.go                实时表读数
