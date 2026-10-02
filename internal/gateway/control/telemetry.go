@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"net/http"
 	"strconv"
 	"time"
@@ -143,23 +144,11 @@ func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int,
 	// 长窗口使用汇总表，避免原始样本超过行数预算后仅返回窗口尾部。
 	rows := []reading{}
 	if table == "telemetry" {
-		query := a.DB.WithContext(ctx).Table("telemetry").
-			Select("ts, metric, value_num").
-			Where("device_id = ? AND ts >= ? AND ts <= ? AND value_num IS NOT NULL", deviceID, from, to)
-		if portNo > 0 {
-			query = query.Where("port_no = ? OR (port_no IS NULL AND metric IN ('voltage_v','temperature_c'))", portNo)
-		}
-		if err := query.Order("ts DESC").Limit(limit * 8).Find(&rows).Error; err != nil {
+		if err := gatewaystore.RawReadingsQuery(ctx, a.DB, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
 			return nil, err
 		}
 	} else {
-		query := a.DB.WithContext(ctx).Table(table).
-			Select("bucket_start AS ts, metric, avg_value AS value_num").
-			Where("device_id = ? AND bucket_start >= ? AND bucket_start <= ?", deviceID, from, to)
-		if portNo > 0 {
-			query = query.Where("port_no = ? OR (port_no IS NULL AND metric IN ('voltage_v','temperature_c'))", portNo)
-		}
-		if err := query.Order("bucket_start DESC").Limit(limit * 8).Find(&rows).Error; err != nil {
+		if err := gatewaystore.BucketedReadingsQuery(ctx, a.DB, table, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
 			return nil, err
 		}
 	}

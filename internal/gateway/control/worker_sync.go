@@ -3,6 +3,7 @@ package control
 import (
 	"encoding/json"
 	"errors"
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
@@ -161,12 +162,11 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 	marked := 0
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		for _, id := range in.IDs {
-			res := tx.Model(&workerSyncEventRow{}).Where("id = ? AND processed_at IS NULL", id).
-				Update("processed_at", gorm.Expr("CURRENT_TIMESTAMP(3)"))
-			if res.Error != nil {
-				return res.Error
+			affected, err := gatewaystore.MarkSyncEventProcessed(tx, id)
+			if err != nil {
+				return err
 			}
-			marked += int(res.RowsAffected)
+			marked += int(affected)
 		}
 		return nil
 	})
@@ -269,9 +269,7 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 		return
 	}
 	if stored == "" {
-		err = a.DB.WithContext(c.Request.Context()).Table("charge_end_delivery").Create(map[string]any{
-			"device_event_id": in.DeviceEventID, "charge_order_id": in.ChargeOrderID, "payload_json": in.Payload,
-		}).Error
+		err = gatewaystore.InsertFrozenEndDelivery(a.DB.WithContext(c.Request.Context()), in.DeviceEventID, in.ChargeOrderID, in.Payload)
 		if err == nil {
 			httpapi.OK(c, gin.H{"payload": in.Payload, "frozen": false})
 			return
@@ -296,17 +294,7 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 }
 
 func (a TelemetryAPI) frozenEndPayload(c *gin.Context, deviceEventID uint64) (string, error) {
-	var row struct {
-		PayloadJSON []byte `gorm:"column:payload_json"`
-	}
-	res := a.DB.WithContext(c.Request.Context()).Table("charge_end_delivery").Where("device_event_id=?", deviceEventID).Find(&row)
-	if res.Error != nil {
-		return "", res.Error
-	}
-	if res.RowsAffected == 0 {
-		return "", nil
-	}
-	return string(row.PayloadJSON), nil
+	return gatewaystore.FrozenEndPayload(c.Request.Context(), a.DB, deviceEventID)
 }
 
 // sameEndIdentity 比较两份结束回执是否同一事实：忽略 meter.segments 后

@@ -1,6 +1,7 @@
 package control
 
 import (
+	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,18 +78,7 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 			return
 		}
 	}
-	query := a.DB.WithContext(c.Request.Context()).Table("charge_process").
-		Select("id,ts,power_deciwatts/10.0 AS power_w,charged_mwh/1000000.0 AS charged_kwh,remaining_mwh/1000000.0 AS remaining_kwh,charged_seconds,remaining_seconds,signal_strength,port_status,voltage_v,temperature_c,device_status").
-		Where("order_no=? AND id>?", orderNo, afterID)
-	if chargeOrderID > 0 {
-		query = query.Where("charge_order_id=?", chargeOrderID)
-	}
-	if deviceID != "" {
-		query = query.Where("device_id=?", deviceID)
-	}
-	if portNo > 0 {
-		query = query.Where("port_no=?", portNo)
-	}
+	query := gatewaystore.ChargeProcessQuery(c.Request.Context(), a.DB, orderNo, chargeOrderID, deviceID, portNo, afterID)
 	items := []ChargeProcessPoint{}
 	if err := query.Order("id ASC").Limit(limit + 1).Scan(&items).Error; err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "充电过程暂不可读取", nil)
