@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"gorm.io/gorm"
 	"strings"
 )
@@ -69,7 +70,7 @@ func stationModeOf(tx *gorm.DB, stationID uint64) (charging.ChargeMode, bool, er
 	return spec.Mode, true, nil
 }
 
-func checkImportAgainstStation(tx *gorm.DB, devices []ImportDevice) error {
+func checkImportAgainstStation(tx *gorm.DB, devices []dbstore.ImportDevice) error {
 	cache := map[uint64]charging.ChargeMode{}
 	for _, d := range devices {
 		mode, ok := cache[d.StationID]
@@ -109,7 +110,7 @@ func (e *errMeteringBlocked) Error() string {
 	return "设备 " + e.device + " 无法执行该站点的计费方式：" + e.reason
 }
 
-func newDevicesOnly(tx *gorm.DB, devices []ImportDevice) ([]ImportDevice, error) {
+func newDevicesOnly(tx *gorm.DB, devices []dbstore.ImportDevice) ([]dbstore.ImportDevice, error) {
 	if len(devices) == 0 {
 		return nil, nil
 	}
@@ -126,7 +127,7 @@ func newDevicesOnly(tx *gorm.DB, devices []ImportDevice) ([]ImportDevice, error)
 	for _, id := range known {
 		seen[id] = true
 	}
-	arriving := make([]ImportDevice, 0, len(devices))
+	arriving := make([]dbstore.ImportDevice, 0, len(devices))
 	for _, d := range devices {
 		if !seen[d.DeviceID] {
 			arriving = append(arriving, d)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -42,7 +41,7 @@ func (a ResourceAPI) refundReviewStore() orderstore.ReviewStore {
 
 // asConflict 将家族包的冲突哨兵映射为后台统一的 409 语义。
 func asConflict(err error) error {
-	if errors.Is(err, orderstore.ErrRefundConflict) || errors.Is(err, paystore.ErrInvoiceConflict) {
+	if errors.Is(err, orderstore.ErrRefundConflict) || errors.Is(err, orderstore.ErrInvoiceConflict) {
 		return errConflict
 	}
 	return err

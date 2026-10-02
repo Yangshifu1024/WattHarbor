@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"net/http"
 	"net/http/httptest"
@@ -85,11 +86,11 @@ func TestDeviceEditingNormalizesMetadataAndMilliseconds(t *testing.T) {
 	body["tags"] = []string{"  " + strings.Repeat("标", 32) + "  ", "烟感"}
 	body["expected_updated_at"] = "2026-10-01T09:02:03.4569+08:00"
 	encoded, _ := json.Marshal(body)
-	var input DeviceInput
+	var input paystore.DeviceInput
 	if err := json.Unmarshal(encoded, &input); err != nil {
 		t.Fatal(err)
 	}
-	row, expected, err := input.metadata()
+	row, expected, err := input.Metadata()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,8 +101,8 @@ func TestDeviceEditingNormalizesMetadataAndMilliseconds(t *testing.T) {
 		t.Fatalf("timestamp normalization failed: warranty=%s expected=%s", row.WarrantyUntil, expected)
 	}
 	for _, raw := range []*string{nil, stringPointer("null"), stringPointer("[]")} {
-		device := Device{TagsJSON: raw, UpdatedAt: expected.In(time.FixedZone("UTC+8", 8*3600))}
-		if err := device.normalizeMetadata(); err != nil {
+		device := paystore.Device{TagsJSON: raw, UpdatedAt: expected.In(time.FixedZone("UTC+8", 8*3600))}
+		if err := device.NormalizeMetadata(); err != nil {
 			t.Fatal(err)
 		}
 		result, _ := json.Marshal(device)
@@ -110,7 +111,7 @@ func TestDeviceEditingNormalizesMetadataAndMilliseconds(t *testing.T) {
 		}
 	}
 	previous := time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond)
-	if next := nextDeviceUpdateTime(previous); !next.Equal(previous.Add(time.Millisecond)) {
+	if next := paystore.NextDeviceUpdateTime(previous); !next.Equal(previous.Add(time.Millisecond)) {
 		t.Fatalf("update timestamp did not advance: %s -> %s", previous, next)
 	}
 }

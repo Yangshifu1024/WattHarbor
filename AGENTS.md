@@ -99,6 +99,8 @@ charge-pilot/
 │   │   │   ├── station_store.go               站点模型、写入校验与分页查询
 │   │   │   ├── page.go                        PageQuery / Page 分页原语
 │   │   │   ├── device_repository.go            device_meta / device_import
+│   │   │   ├── device_store.go                设备模型、资料编辑与分页查询
+│   │   │   ├── device_import_store.go         批量导入任务与设备清单 DTO
 │   │   │   ├── admin_repository.go             role / permission / audit_log
 │   │   │   ├── admin_account.go                admin_user 账号与登录判定
 │   │   │   └── admin_scope.go                  admin_data_scope / admin_field_mask

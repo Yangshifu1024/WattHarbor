@@ -23,32 +23,6 @@ import (
 	"unicode/utf8"
 )
 
-// ImportDevice 描述批量导入的设备身份、厂商、站点、端口数、型号及计费模式。
-// 设备计量能力由所选协议确定。
-type ImportDevice struct {
-	ProtocolAdapter string  `json:"protocol_adapter"` // Resolved by the server from the selected vendor; never trust the client.
-	DeviceID        string  `json:"device_id"`        // 设备编号，全局唯一，8–32 位字母数字及 _ -，大小写不敏感判重
-	VendorID        uint64  `json:"vendor_id"`        // 厂商 ID，必须非 0
-	StationID       uint64  `json:"station_id"`       // 所属站点 ID，必须非 0 且该站点处于 active
-	PortCount       uint8   `json:"port_count"`       // 充电端口数，必须非 0
-	Model           *string `json:"model"`            // 型号，可空；非空时最多 128 字
-	// 兼容导入字段；实际计量能力按协议计算，不依赖客户端人工声明。
-	ChargeMode            string `json:"charge_mode"`             // 计费方式，取值为计费引擎认可的六种模式之一；留空表示不覆盖
-	ReportsEnergy         bool   `json:"reports_energy"`          // 是否上报电量，引擎据此决定该设备能否用带电表的计费方式
-	ReportsSegmentedPower bool   `json:"reports_segmented_power"` // 是否上报分段功率，同上
-}
-
-// ImportJob 是一次批量导入任务在 device_import 表中的状态投影，也是导入列表接口的返回行。
-// 原始请求体只存库不外发（json："-"），列表页因此看不到设备明细，只能看任务进展。
-type ImportJob struct {
-	ImportID    string  `json:"import_id"`  // 导入任务号，客户端生成的幂等键
-	Status      string  `json:"status"`     // 任务状态：pending 待执行 / completed 已完成 / failed 失败可重试
-	LastError   *string `json:"last_error"` // 最近一次失败原因，成功时为 nil
-	RequestJSON string  `json:"-"`          // 原始设备清单 JSON，重试时据此重放，不返回给前端
-	ActorID     uint64  `json:"actor_id"`   // 发起导入的管理员 ID
-	Attempts    uint32  `json:"attempts"`   // 已执行次数，每次调用网关后 +1
-}
-
 // registerImports 挂载设备批量导入的三个路由：任务列表、提交导入、重试。
 // 三者共用 device.import 权限——导入本身就是开通设备的动作，查看列表也一并受它约束。
 func (a ResourceAPI) registerImports(r *gin.Engine) {
@@ -59,7 +33,7 @@ func (a ResourceAPI) registerImports(r *gin.Engine) {
 
 // imports 返回最近的导入任务（最多 100 条），供运营在看板上确认某批设备到底导进去没有。
 func (a ResourceAPI) imports(c *gin.Context) {
-	rows := []ImportJob{}
+	rows := []paystore.ImportJob{}
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("device_import").Order("created_at DESC").Limit(100).Find(&rows).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -67,7 +41,7 @@ func (a ResourceAPI) imports(c *gin.Context) {
 	httpapi.OK(c, rows)
 }
 
-func requireImportScope(c *gin.Context, scope operations.DataScope, devices []ImportDevice) bool {
+func requireImportScope(c *gin.Context, scope operations.DataScope, devices []paystore.ImportDevice) bool {
 	for _, device := range devices {
 		if !scope.AllowsStation(device.StationID) || !scope.AllowsVendor(device.VendorID) {
 			httpapi.Write(c, 403, 1003, "导入设备的站点或厂商不在您的数据范围内", nil)
@@ -81,8 +55,8 @@ func requireImportScope(c *gin.Context, scope operations.DataScope, devices []Im
 // 事务内校验请求及设备身份幂等性，仅对新增设备执行能力检查；保存 pending 任务后执行导入。
 func (a ResourceAPI) createImport(c *gin.Context) {
 	var in struct {
-		ImportID string         `json:"import_id"` // 导入任务号，UUID，作为幂等键
-		Devices  []ImportDevice `json:"devices"`   // 设备清单，1–100 台，批内编号不得重复
+		ImportID string                  `json:"import_id"` // 导入任务号，UUID，作为幂等键
+		Devices  []paystore.ImportDevice `json:"devices"`   // 设备清单，1–100 台，批内编号不得重复
 	}
 	if !chargehttp.DecodeResource(c, &in) {
 		return
@@ -138,10 +112,10 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 	body, _ := json.Marshal(in.Devices)
 	p := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var prior ImportJob
+		var prior paystore.ImportJob
 		err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).Where("import_id=?", in.ImportID).Take(&prior).Error
 		if err == nil {
-			var old []ImportDevice
+			var old []paystore.ImportDevice
 			if json.Unmarshal([]byte(prior.RequestJSON), &old) != nil {
 				return errConflict
 			}
@@ -167,7 +141,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			if err := tx.Table("device_import_identity").Clauses(clause.Locking{Strength: "UPDATE"}).Where("device_id=?", d.DeviceID).Take(&identity).Error; err != nil {
 				return err
 			}
-			var old ImportDevice
+			var old paystore.ImportDevice
 			_ = json.Unmarshal([]byte(identity.RequestJSON), &old)
 			oldJSON, _ := json.Marshal(old)
 			if string(oldJSON) != string(b) {
@@ -221,14 +195,14 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 	if !ok {
 		return
 	}
-	var result ImportJob
+	var result paystore.ImportJob
 	// 在这次有界的内部请求期间一直持着任务锁。崩溃会把元数据一起回滚，
 	// 重放则能安全地看到网关那边已经持久占用的设备身份。
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).Where("import_id=?", id).Take(&result).Error; err != nil {
 			return err
 		}
-		var devices []ImportDevice
+		var devices []paystore.ImportDevice
 		if err := json.Unmarshal([]byte(result.RequestJSON), &devices); err != nil {
 			return err
 		}
