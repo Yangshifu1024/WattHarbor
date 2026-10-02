@@ -2,7 +2,7 @@
 .NOTPARALLEL: check
 
 # cmd 下的服务名，编译产物统一落到 bin/
-SERVICES := central gateway worker migrate devseed simulator-dc589
+SERVICES := user admin central gateway worker migrate devseed simulator-dc589
 
 fmt:
 	go fmt ./...

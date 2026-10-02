@@ -94,15 +94,20 @@ while IFS= read -r file; do
   fi
 done < <(find internal/infrastructure -name '*.go' ! -name '*_test.go')
 
-# protocol 契约层不得反向依赖业务实现或设备接入运行时。
-# 这条是"新协议只加 protocol/<name>/ 子目录"能成立的前提。
+# protocol 契约层不得反向依赖任何业务包或设备接入运行时。
+# 这条是"新协议只加 protocol/<name>/ 子目录"能成立的前提：
+# 契约层一旦 import 了业务实现，实现反过来又依赖协议，加新协议就会被拖住。
+#
+# 覆盖 domain / application / infrastructure / interface / central / gateway /
+# worker / delivery。platform 是无业务语义的通用能力，允许依赖。
+#
+# 原先这条只匹配了后五项，domain 与 application 漏在正则之外——它一直靠
+# "没有违规"通过，而不是靠能判别。已证伪并修正。
 while IFS= read -r file; do
-  hits=$(grep -oE '"github\.com/ChargePilot2026/charge-pilot/internal/(central|gateway|worker|delivery|platform)/[a-z0-9_/-]+"' "$file" | tr -d '"' | sort -u | head -3)
-  [[ -z $hits ]] && continue
-  # platform 是无业务语义的通用能力，契约层可以依赖；其余均不允许。
-  bad=$(printf '%s\n' "$hits" | grep -v '/platform/' | tr '\n' ' ')
+  bad=$(grep -oE '"github\.com/ChargePilot2026/charge-pilot/internal/[a-z0-9_-]+(/[a-z0-9_/-]+)?"' "$file" |
+        tr -d '"' | sed 's|.*/internal/||' | grep -v -e '^platform/' -e '^protocol' | sort -u | tr '\n' ' ')
   if [[ -n $bad ]]; then
-    report "$file: protocol 契约层不得依赖实现层: $bad"
+    report "$file: protocol 契约层不得反向依赖业务包: $bad"
   fi
 done < <(find internal/protocol -name '*.go' ! -name '*_test.go')
 

@@ -24,6 +24,10 @@ func CheckModeSupport(mode ChargeMode, adapter string) string {
 		if !abilities.ReportsSegmentedPower {
 			return "设备协议不支持分段功率上报，无法按功率计费"
 		}
+	default:
+		// 未知计费方式一律拒绝。放行只会让它在更下游以更隐晦的方式失败，
+		// 留在这里报错至少说得清是哪一种计费方式不被认识。
+		return "无法识别的计费方式：" + string(mode)
 	}
 	return ""
 }

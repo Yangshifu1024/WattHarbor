@@ -86,17 +86,3 @@ func TestParseBackfillCollapsesDuplicateSamples(t *testing.T) {
 		t.Fatalf("want 2 distinct samples, got %d", len(got))
 	}
 }
-
-func TestValidDeviceID(t *testing.T) {
-	// 允许的范围必须与开通接口保持一致。
-	for _, id := range []string{"xx_001_abc", "DEV-A123", "a12345678"} {
-		if !validDeviceID(id) {
-			t.Fatalf("%q should be accepted", id)
-		}
-	}
-	for _, id := range []string{"", "short", "DEV-A1", "xx 001 abc", "xx/001", "'; DROP TABLE telemetry;--"} {
-		if validDeviceID(id) {
-			t.Fatalf("%q should be rejected", id)
-		}
-	}
-}

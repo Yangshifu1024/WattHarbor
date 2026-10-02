@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -16,7 +17,6 @@ import (
 	"gorm.io/gorm/clause"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -72,7 +72,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 	seen := map[string]bool{}
 	for _, d := range in.Devices {
 		key := strings.ToLower(d.DeviceID)
-		if !regexp.MustCompile(`^[A-Za-z0-9_-]{8,32}$`).MatchString(d.DeviceID) || d.PortCount == 0 || d.VendorID == 0 || d.StationID == 0 || seen[key] || (d.Model != nil && utf8.RuneCountInString(*d.Model) > 128) {
+		if !devices.ValidDeviceID(d.DeviceID) || d.PortCount == 0 || d.VendorID == 0 || d.StationID == 0 || seen[key] || (d.Model != nil && utf8.RuneCountInString(*d.Model) > 128) {
 			httpapi.BadRequest(c, "设备编号、端口数、厂商或站点无效/重复")
 			return
 		}

@@ -33,7 +33,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 | `worker` | 对内 | 事件消费、定时任务、命令同步、外部投递 | 三库（仅 outbox 转发读 `event_outbox`），执行状态存 `worker_db` | HTTP `8085` |
 | `migrate` / `devseed` / `simulator-dc589` | 工具 | schema 初始化、开发数据准备、设备模拟 | 三库 / 无 | 无 |
 
-`user` 与 `admin` 对外，端口由入口网关承接；`central`、`gateway`、`worker` 不对外映射，跨服务调用凭网络隔离。五个进程共享同一套 `domain`/`application`/`infrastructure`，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
+`user` 与 `admin` 对外，端口由入口网关承接。`central` 的 8082 在两套编排里都不映射，跨服务调用只在容器网络内可达；开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地排查，生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。五个进程共享同一套 `domain`/`application`/`infrastructure`，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
 
 `AdminDB`、`UserDB`、`BillingDB` 是同一连接池的领域名称，不是三个库。跨服务操作通过持久任务、幂等回执和内部 HTTP 协作。Redis Cache 保存会话，Redis Stream 保存事件，两者独立部署。
 
@@ -403,7 +403,7 @@ make check
 
 `make fmt/lint/test/layers` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`、`scripts/check/layers.sh`，`make check` 顺序执行四项；`layers` 校验包内分层的文件后缀约定，详见「架构与目录」。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
 
-编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部六个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
+编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部八个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
 
 本仓库只保留单元测试，不设需要真实数据库的集成测试。`make check` 全部为秒级本地检查，可在每次改动后运行。
 

@@ -6,16 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // backfillMetrics 限定 telemetry 支持的指标集合；未知指标在写入前拒绝，避免形成无法解释的计量。
@@ -87,7 +87,7 @@ func (a TelemetryAPI) backfill(c *gin.Context) {
 
 // parseBackfill 在写入前校验整批数据；任一帧无效时拒绝整批，避免部分写入。
 func parseBackfill(deviceID string, frames []backfillFrame, now time.Time) ([]sample, error) {
-	if !validDeviceID(deviceID) {
+	if !devices.ValidDeviceID(deviceID) {
 		return nil, fmt.Errorf("invalid device id")
 	}
 	out := make([]sample, 0, len(frames))
@@ -147,21 +147,6 @@ func decodeBackfillValue(raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	return value.StringFixed(6), nil
-}
-
-// validDeviceID 校验 8–32 位字母、数字、下划线或短横线，与设备开通接口一致。
-func validDeviceID(id string) bool {
-	if len(id) < 8 || len(id) > 32 {
-		return false
-	}
-	for _, r := range id {
-		switch {
-		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_', r == '-':
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 var (
