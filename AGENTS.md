@@ -63,6 +63,7 @@ charge-pilot/
 │   │   ├── devices/                            协议无关
 │   │   │   ├── station.go  device.go  vendor.go
 │   │   │   ├── fault.go                        故障语义（烟雾/高温/离线）
+│   │   │   ├── fault.go                        报修单状态流转
 │   │   │   ├── telemetry.go                    遥测（功率、电量、时长）
 │   │   │   └── identity.go                     设备编号合法性
 │   │   │

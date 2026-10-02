@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -159,7 +160,7 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if in.AssignedTo == 0 || (in.Note != nil && utf8.RuneCountInString(*in.Note) > 2000) {
+	if in.AssignedTo == 0 || (in.Note != nil && utf8.RuneCountInString(*in.Note) > devices.MaxFaultNoteLength) {
 		httpapi.BadRequest(c, "请指定有效人员，备注最多 2000 字")
 		return
 	}
@@ -216,7 +217,9 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if (in.Status != "fixed" && in.Status != "closed") || (in.Note != nil && utf8.RuneCountInString(*in.Note) > 2000) || (in.Status == "fixed" && (in.Note == nil || !validText(*in.Note, 2000))) {
+	if (in.Status != devices.FaultFixed && in.Status != devices.FaultClosed) ||
+		(in.Note != nil && utf8.RuneCountInString(*in.Note) > devices.MaxFaultNoteLength) ||
+		(devices.FaultNoteRequired(in.Status) && (in.Note == nil || !validText(*in.Note, devices.MaxFaultNoteLength))) {
 		httpapi.BadRequest(c, "状态无效或缺少修复说明")
 		return
 	}
@@ -230,11 +233,12 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 		if row.AssignedTo == nil || *row.AssignedTo != p.ID {
 			return errConflict
 		}
+		// 同状态重放视为幂等，不写事件也不报错；其余只允许 open→dispatched→fixed→closed。
+		if err := devices.CanTransitionFault(row.Status, in.Status); err != nil {
+			return errConflict
+		}
 		if row.Status == in.Status {
 			return nil
-		}
-		if (in.Status == "fixed" && row.Status != "dispatched") || (in.Status == "closed" && row.Status != "fixed") {
-			return errConflict
 		}
 		if err := tx.Table("device_fault_report").Where("id=?", id).Updates(map[string]any{"status": in.Status, "resolved_at": time.Now().UTC()}).Error; err != nil {
 			return err
