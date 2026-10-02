@@ -67,46 +67,29 @@
           }
         }
       },
-      "RefreshRequest": {
-        "type": "object",
-        "required": [
-          "refresh_token"
-        ],
-        "properties": {
-          "refresh_token": {
-            "type": "string",
-            "maxLength": 256
-          }
-        }
-      },
       "RefreshResult": {
         "type": "object",
         "properties": {
           "data": {
             "type": "object",
             "properties": {
-              "token": {
-                "type": "string"
-              },
               "jwt": {
-                "type": "string"
+                "type": "string",
+                "description": "访问令牌"
+              },
+              "token": {
+                "type": "string",
+                "description": "访问令牌；与 jwt 同值，为兼容既有客户端保留"
+              },
+              "refresh_token": {
+                "type": "string",
+                "description": "轮换后的新刷新令牌；旧的立即作废"
               },
               "jwt_expires_in": {
-                "type": "integer"
+                "type": "integer",
+                "description": "访问令牌剩余秒数"
               }
             }
-          }
-        }
-      },
-      "LogoutRequest": {
-        "type": "object",
-        "required": [
-          "refresh_token"
-        ],
-        "properties": {
-          "refresh_token": {
-            "type": "string",
-            "maxLength": 256
           }
         }
       },
@@ -116,8 +99,9 @@
           "data": {
             "type": "object",
             "properties": {
-              "revoked": {
-                "type": "boolean"
+              "logged_out": {
+                "type": "boolean",
+                "description": "会话是否已作废"
               }
             }
           }
@@ -1885,21 +1869,11 @@
     },
     "/api/v1/user/auth/refresh": {
       "post": {
-        "summary": "用刷新令牌换新令牌",
+        "summary": "用刷新令牌换新令牌（刷新令牌放在 Authorization 头，不是请求体）",
         "operationId": "user_refresh",
         "tags": [
           "auth"
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "成功。",
@@ -1911,26 +1885,27 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "description": "Bearer <refresh_token>。刷新令牌只从请求头取，写进 JSON 请求体会被忽略。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/api/v1/user/auth/logout": {
       "post": {
-        "summary": "登出并作废刷新令牌",
+        "summary": "登出并作废刷新令牌（刷新令牌放在 Authorization 头，不是请求体）",
         "operationId": "user_logout",
         "tags": [
           "auth"
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LogoutRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "成功。",
@@ -1942,7 +1917,18 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "description": "Bearer <refresh_token>。刷新令牌只从请求头取，写进 JSON 请求体会被忽略。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/api/v1/user/profile": {
