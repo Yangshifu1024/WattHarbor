@@ -2,17 +2,17 @@ package admin
 
 import (
 	"context"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"sync"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/charge"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 )
 
 func (a ResourceAPI) orderLive(ctx context.Context, rows []OrderView) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	service := charge.LiveMeterService{DB: a.Store.UserDB, GatewayURL: a.GatewayURL, ServiceToken: a.ServiceToken, Client: serviceclient.Client{Timeout: 2 * time.Second}}
+	service := chargehttp.LiveMeterService{DB: a.Store.UserDB, GatewayURL: a.GatewayURL, ServiceToken: a.ServiceToken, Client: serviceclient.Client{Timeout: 2 * time.Second}}
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for n := 0; n < 4; n++ {

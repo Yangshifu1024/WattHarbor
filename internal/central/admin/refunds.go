@@ -3,8 +3,8 @@ package admin
 import (
 	"context"
 	"errors"
-	settlementpkg "github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strconv"
 	"strings"
 
@@ -41,7 +41,7 @@ func (a ResourceAPI) refundReviewStore() orderstore.ReviewStore {
 
 // asConflict 将家族包的冲突哨兵映射为后台统一的 409 语义。
 func asConflict(err error) error {
-	if errors.Is(err, orderstore.ErrRefundConflict) || errors.Is(err, settlementpkg.ErrInvoiceConflict) {
+	if errors.Is(err, orderstore.ErrRefundConflict) || errors.Is(err, paystore.ErrInvoiceConflict) {
 		return errConflict
 	}
 	return err

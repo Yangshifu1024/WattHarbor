@@ -2,7 +2,9 @@ package admin
 
 import (
 	"fmt"
-	cardpkg "github.com/ChargePilot2026/charge-pilot/internal/central/card"
+	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	cardstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -16,7 +18,7 @@ func (a ResourceAPI) registerOnlineCards(r *gin.Engine) {
 	r.POST("/api/v1/admin/online-cards/:id/status", a.Auth.Require("online_card.manage"), a.onlineCardStatus)
 }
 func (a ResourceAPI) onlineCards(c *gin.Context) {
-	rows := []cardpkg.OnlineCard{}
+	rows := []cardstore.OnlineCard{}
 	if err := a.Store.UserDB.WithContext(c.Request.Context()).Order("id DESC").Limit(500).Find(&rows).Error; err != nil {
 		resourceFailure(c, err)
 		return
@@ -34,7 +36,7 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 	}
 	userID := uint64(in.UserID)
 	in.CardNo = strings.TrimSpace(in.CardNo)
-	if !cardpkg.CanonicalCardNumber(in.CardNo) || userID == 0 || !validText(strings.TrimSpace(in.Reason), 500) {
+	if !money.CanonicalCardNumber(in.CardNo) || userID == 0 || !validText(strings.TrimSpace(in.Reason), 500) {
 		httpapi.BadRequest(c, "请填写32位十进制卡号、用户及核验绑定依据")
 		return
 	}
@@ -44,7 +46,7 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 		if err := tx.Table("user").Where("id=? AND status='active' AND deleted_at IS NULL", userID).Take(&user).Error; err != nil {
 			return err
 		}
-		var card cardpkg.OnlineCard
+		var card cardstore.OnlineCard
 		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("card_no=?", in.CardNo).Find(&card)
 		if found.Error != nil {
 			return found.Error
@@ -61,7 +63,7 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 				return err
 			}
 		} else {
-			card = cardpkg.OnlineCard{CardNo: in.CardNo, UserID: userID, Status: "active"}
+			card = cardstore.OnlineCard{CardNo: in.CardNo, UserID: userID, Status: "active"}
 			if err := tx.Create(&card).Error; err != nil {
 				return err
 			}
@@ -92,7 +94,7 @@ func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
 		return
 	}
 	err := a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var card cardpkg.OnlineCard
+		var card cardstore.OnlineCard
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&card).Error; err != nil {
 			return err
 		}

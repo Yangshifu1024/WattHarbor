@@ -3,7 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	settlementpkg "github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strings"
 	"time"
 
@@ -15,8 +15,8 @@ import (
 )
 
 // Withdraws 分页返回提现单，支持按状态与关键字（单号或参与方编码）过滤，按 ID 倒序。
-func (s ResourceStore) Withdraws(ctx context.Context, page PageQuery) (Page[settlementpkg.WithdrawRow], error) {
-	out := Page[settlementpkg.WithdrawRow]{Items: []settlementpkg.WithdrawRow{}, Page: page.Page, PageSize: page.PageSize}
+func (s ResourceStore) Withdraws(ctx context.Context, page PageQuery) (Page[paystore.WithdrawRow], error) {
+	out := Page[paystore.WithdrawRow]{Items: []paystore.WithdrawRow{}, Page: page.Page, PageSize: page.PageSize}
 	query := s.BillingDB.WithContext(ctx).Table("withdraw_request")
 	if page.Status != "" {
 		query = query.Where("status = ?", page.Status)
@@ -54,7 +54,7 @@ func (a ResourceAPI) createWithdraw(c *gin.Context) {
 	var no string
 	err := a.Store.BillingDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
-		no, err = (settlementpkg.WithdrawStore{}).Create(c.Request.Context(), tx, settlementpkg.WithdrawInput{
+		no, err = (paystore.WithdrawStore{}).Create(c.Request.Context(), tx, paystore.WithdrawInput{
 			RequestID: in.RequestID, PartyID: in.PartyID, AmountCents: in.AmountCents, Note: in.Note,
 		})
 		if err != nil {
@@ -86,7 +86,7 @@ func (a ResourceAPI) decideWithdraw(c *gin.Context) {
 	}
 	profile := c.MustGet("admin_profile").(Profile)
 	err := a.Store.BillingDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		action, rowID, err := (settlementpkg.WithdrawStore{}).Decide(c.Request.Context(), tx, no, profile.ID, settlementpkg.WithdrawDecision{Approve: in.Approve, Reason: in.Reason})
+		action, rowID, err := (paystore.WithdrawStore{}).Decide(c.Request.Context(), tx, no, profile.ID, paystore.WithdrawDecision{Approve: in.Approve, Reason: in.Reason})
 		if err != nil {
 			return err
 		}
@@ -116,7 +116,7 @@ func (a ResourceAPI) payWithdraw(c *gin.Context) {
 	profile := c.MustGet("admin_profile").(Profile)
 	alreadyPaid := false
 	err := a.Store.BillingDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		rowID, paid, err := (settlementpkg.WithdrawStore{}).Pay(c.Request.Context(), tx, no, in.Note)
+		rowID, paid, err := (paystore.WithdrawStore{}).Pay(c.Request.Context(), tx, no, in.Note)
 		if err != nil {
 			return err
 		}

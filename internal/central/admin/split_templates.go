@@ -2,7 +2,7 @@ package admin
 
 import (
 	"errors"
-	settlementpkg "github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strings"
 	"time"
 
@@ -27,7 +27,7 @@ func (a ResourceAPI) registerSplitTemplates(r *gin.Engine) {
 // splitTemplateDetail 是分账模板的读取视图：模板本体加上展开后的参与方列表。
 // 参与方在输出时已做脱敏，账号只保留后四位。
 type splitTemplateDetail struct {
-	settlementpkg.SplitTemplateRow
+	paystore.SplitTemplateRow
 	Parties []gin.H `json:"parties"` // 参与方列表，账号已截断为后四位
 }
 
@@ -37,7 +37,7 @@ func (a ResourceAPI) splitTemplates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[settlementpkg.SplitTemplateRow]{Items: []settlementpkg.SplitTemplateRow{}, Page: page.Page, PageSize: page.PageSize}
+	out := Page[paystore.SplitTemplateRow]{Items: []paystore.SplitTemplateRow{}, Page: page.Page, PageSize: page.PageSize}
 	query := a.Store.AdminDB.WithContext(c.Request.Context()).Table("split_template").Where("deleted_at IS NULL")
 	if page.Status != "" {
 		query = query.Where("status = ?", page.Status)
@@ -88,12 +88,12 @@ func (a ResourceAPI) splitTemplateParties(c *gin.Context) {
 // loadSplitTemplate 读出一份模板及其参与方，是详情、参与方列表、创建/修改回显和站点绑定回显的共同读取路径。
 // 输出时银行账号一律截断为后四位，完整账号只留在库里。
 func (a ResourceAPI) loadSplitTemplate(c *gin.Context, id uint64) (splitTemplateDetail, error) {
-	var row settlementpkg.SplitTemplateRow
+	var row paystore.SplitTemplateRow
 	db := a.Store.AdminDB.WithContext(c.Request.Context())
 	if err := db.Table("split_template").Select("id,code,name,mode,status").Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
 		return splitTemplateDetail{}, err
 	}
-	parties := []settlementpkg.SplitPartyRow{}
+	parties := []paystore.SplitPartyRow{}
 	if err := db.Table("split_party").Where("split_template_id = ?", id).Order("id").Find(&parties).Error; err != nil {
 		return splitTemplateDetail{}, err
 	}
@@ -105,7 +105,7 @@ func (a ResourceAPI) loadSplitTemplate(c *gin.Context, id uint64) (splitTemplate
 }
 
 // partyMasked 把参与方输出形态截断账号为后四位，完整账号不出接口。
-func partyMasked(party settlementpkg.SplitPartyRow) gin.H {
+func partyMasked(party paystore.SplitPartyRow) gin.H {
 	lastFour := ""
 	if party.BankAccount != nil {
 		lastFour = *party.BankAccount
@@ -121,24 +121,24 @@ func partyMasked(party settlementpkg.SplitPartyRow) gin.H {
 // 模板与参与方在同一个事务里写入。成功后直接回显完整详情。
 func (a ResourceAPI) createSplitTemplate(c *gin.Context) {
 	var input struct {
-		Code    string                          `json:"code"`
-		Name    string                          `json:"name"`
-		Mode    string                          `json:"mode"`
-		Parties []settlementpkg.SplitPartyInput `json:"parties"`
+		Code    string                     `json:"code"`
+		Name    string                     `json:"name"`
+		Mode    string                     `json:"mode"`
+		Parties []paystore.SplitPartyInput `json:"parties"`
 	}
 	if !decodeResource(c, &input) {
 		return
 	}
-	if !settlementpkg.CodePattern.MatchString(input.Code) || strings.TrimSpace(input.Name) == "" ||
-		!oneOf(input.Mode, "mode_a mode_b") || !settlementpkg.ValidParties(input.Parties) {
-		httpapi.BadRequest(c, settlementpkg.ErrSplitParties.Error())
+	if !paystore.CodePattern.MatchString(input.Code) || strings.TrimSpace(input.Name) == "" ||
+		!oneOf(input.Mode, "mode_a mode_b") || !paystore.ValidParties(input.Parties) {
+		httpapi.BadRequest(c, paystore.ErrSplitParties.Error())
 		return
 	}
 	profile := c.MustGet("admin_profile").(Profile)
 	var templateID uint64
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
-		templateID, err = (settlementpkg.SplitTemplateStore{}).Create(tx, input.Code, input.Name, input.Mode, input.Parties)
+		templateID, err = (paystore.SplitTemplateStore{}).Create(tx, input.Code, input.Name, input.Mode, input.Parties)
 		if err != nil {
 			return err
 		}
@@ -158,7 +158,7 @@ func (a ResourceAPI) createSplitTemplate(c *gin.Context) {
 }
 
 // splitPartyAudit 把参与方整理成可写审计的形态：只留编码、名称、比例和账号后四位，完整账号不进审计日志。
-func splitPartyAudit(parties []settlementpkg.SplitPartyInput) []gin.H {
+func splitPartyAudit(parties []paystore.SplitPartyInput) []gin.H {
 	out := make([]gin.H, 0, len(parties))
 	for _, party := range parties {
 		lastFour := ""
@@ -195,7 +195,7 @@ func (a ResourceAPI) updateSplitTemplate(c *gin.Context) {
 	}
 	profile := c.MustGet("admin_profile").(Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		before, after, err := (settlementpkg.SplitTemplateStore{}).Update(tx, id, input.Name, input.Mode, input.Status)
+		before, after, err := (paystore.SplitTemplateStore{}).Update(tx, id, input.Name, input.Mode, input.Status)
 		if err != nil {
 			return err
 		}
@@ -215,24 +215,24 @@ func (a ResourceAPI) replaceSplitParties(c *gin.Context) {
 		return
 	}
 	var input struct {
-		Parties []settlementpkg.SplitPartyInput `json:"parties"`
+		Parties []paystore.SplitPartyInput `json:"parties"`
 	}
 	if !decodeResource(c, &input) {
 		return
 	}
-	if !settlementpkg.ValidParties(input.Parties) {
-		httpapi.BadRequest(c, settlementpkg.ErrSplitParties.Error())
+	if !paystore.ValidParties(input.Parties) {
+		httpapi.BadRequest(c, paystore.ErrSplitParties.Error())
 		return
 	}
 	profile := c.MustGet("admin_profile").(Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		before, err := (settlementpkg.SplitTemplateStore{}).ReplaceParties(tx, id, input.Parties)
+		before, err := (paystore.SplitTemplateStore{}).ReplaceParties(tx, id, input.Parties)
 		if err != nil {
 			return err
 		}
-		old := make([]settlementpkg.SplitPartyInput, 0, len(before))
+		old := make([]paystore.SplitPartyInput, 0, len(before))
 		for _, party := range before {
-			old = append(old, settlementpkg.SplitPartyInput{PartyCode: party.PartyCode, PartyName: party.PartyName, RatioBP: party.RatioBP, BankAccount: party.BankAccount})
+			old = append(old, paystore.SplitPartyInput{PartyCode: party.PartyCode, PartyName: party.PartyName, RatioBP: party.RatioBP, BankAccount: party.BankAccount})
 		}
 		return resourceAudit(tx, profile, "replace_parties", "split_template", id,
 			splitPartyAudit(old), splitPartyAudit(input.Parties), c.ClientIP(), httpapi.RequestID(c))
@@ -247,7 +247,7 @@ func (a ResourceAPI) replaceSplitParties(c *gin.Context) {
 // splitTemplateFailure 分账侧的失败出口：模板已绑定和参与方非法都是 409 业务冲突，
 // 其余错误走通用处理。
 func splitTemplateFailure(c *gin.Context, err error) {
-	if errors.Is(err, settlementpkg.ErrSplitTemplateReferenced) || errors.Is(err, settlementpkg.ErrSplitParties) {
+	if errors.Is(err, paystore.ErrSplitTemplateReferenced) || errors.Is(err, paystore.ErrSplitParties) {
 		httpapi.Write(c, 409, 2009, err.Error(), nil)
 		return
 	}
@@ -280,7 +280,7 @@ func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
 	}
 	profile := c.MustGet("admin_profile").(Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := settlementpkg.UsableTemplate(tx, input.TemplateID); err != nil {
+		if err := paystore.UsableTemplate(tx, input.TemplateID); err != nil {
 			return err
 		}
 		var before struct {

@@ -19,7 +19,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/alerts"
-	"github.com/ChargePilot2026/charge-pilot/internal/worker/billing"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/charge"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/internaljob"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/outbox"
@@ -108,7 +107,7 @@ func run(ctx context.Context) error {
 	paidStarts := charge.PaidStarter{UserDB: orms["user"], GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
 	cardEvents := charge.CardDispatcher{Gateway: serviceclient.Client{HTTP: internalHTTP}, CentralURL: cfg.CentralInternalURL, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
 	autoStops := charge.AutoStopper{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: serviceclient.Client{HTTP: jobHTTP}}
-	billingJobs := billing.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}
+	billingJobs := refund.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}
 	refunds := refund.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}
 	// webhook/regulatory 只向进程外投递：订阅清单、投递日志与报送状态
 	// 都经 central 内部端点读写，worker 不再持有 central 的 ORM/DB 句柄。

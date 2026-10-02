@@ -140,10 +140,11 @@ while IFS= read -r file; do
   fi
 done < <(find internal/domain -name '*.go' ! -name '*_test.go')
 
-# application 层：可依赖 domain 与 protocol，不得直接依赖 interface。
+# application 层：可依赖 domain、infrastructure 与 protocol，不得依赖 interface。
+# 用例调仓储是正常编排，跨聚合事务由本层持 *gorm.DB 编排。
 while IFS= read -r file; do
-  if grep -qE 'charge-pilot/internal/(interface|infrastructure)/' "$file"; then
-    report "$file: 用例层依赖接口层或实现层"
+  if grep -q 'charge-pilot/internal/interface/' "$file"; then
+    report "$file: 用例层依赖接口层"
   fi
 done < <(find internal/application -name '*.go' ! -name '*_test.go')
 

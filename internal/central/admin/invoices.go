@@ -2,7 +2,7 @@ package admin
 
 import (
 	"context"
-	settlementpkg "github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -45,15 +45,15 @@ func (a ResourceAPI) financeActor(c *gin.Context, permission string) (Profile, b
 
 // invoiceReviewStore 装配 settlement 家族的开票双审存储；
 // 第二签的实时身份核对回读 admin 授权域的账号档案与权限。
-func (a ResourceAPI) invoiceReviewStore() settlementpkg.InvoiceReviewStore {
-	return settlementpkg.InvoiceReviewStore{
+func (a ResourceAPI) invoiceReviewStore() paystore.InvoiceReviewStore {
+	return paystore.InvoiceReviewStore{
 		DB: a.Store.UserDB,
-		LookupReviewer: func(ctx context.Context, reviewerID uint64) (settlementpkg.ReviewerStatus, error) {
+		LookupReviewer: func(ctx context.Context, reviewerID uint64) (paystore.ReviewerStatus, error) {
 			p, err := a.Auth.Store.Profile(ctx, reviewerID)
 			if err != nil {
-				return settlementpkg.ReviewerStatus{}, err
+				return paystore.ReviewerStatus{}, err
 			}
-			return settlementpkg.ReviewerStatus{Role: p.Role, Permitted: hasPermission(p, "invoice.review")}, nil
+			return paystore.ReviewerStatus{Role: p.Role, Permitted: hasPermission(p, "invoice.review")}, nil
 		},
 	}
 }
@@ -87,7 +87,7 @@ func (a ResourceAPI) reviewInvoice(c *gin.Context) {
 	var auditPending []auditEntry
 	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
-		status, before, err = a.invoiceReviewStore().Review(c.Request.Context(), tx, id, settlementpkg.InvoiceDecision{
+		status, before, err = a.invoiceReviewStore().Review(c.Request.Context(), tx, id, paystore.InvoiceDecision{
 			Approve: approve, InvoiceURL: in.InvoiceURL, Reason: in.Reason, ActorID: p.ID,
 		})
 		if err != nil {
