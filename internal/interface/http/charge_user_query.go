@@ -345,21 +345,7 @@ func (a UserQueryAPI) fee(ctx context.Context, orderID uint64) (electric, servic
 	return electric, service, total, receipt.ShortfallCents, true
 }
 
-type historyRow struct {
-	OrderID        uint64     `json:"order_id" gorm:"column:id"`
-	OrderNo        string     `json:"order_no" gorm:"column:order_no"`
-	DeviceID       string     `json:"device_id" gorm:"column:device_id"`
-	PortNo         uint8      `json:"port_no" gorm:"column:port_no"`
-	Status         string     `json:"status" gorm:"column:status"`
-	StartedAt      *time.Time `json:"started_at" gorm:"column:started_at"`
-	EndedAt        *time.Time `json:"ended_at" gorm:"column:ended_at"`
-	ChargedKWh     *string    `json:"charged_kwh" gorm:"column:charged_kwh"`
-	ChargedSeconds *uint32    `json:"charged_seconds" gorm:"column:charged_seconds"`
-	ElectricCents  *int64     `json:"electric_cents" gorm:"column:electric_cents"`
-	ServiceCents   *int64     `json:"service_cents" gorm:"column:service_cents"`
-	TotalCents     *int64     `json:"total_cents" gorm:"column:total_cents"`
-	DiscountCents  int64      `json:"discount_cents" gorm:"column:discount_cents"`
-}
+type historyRow = orderstore.UserOrderHistoryRow
 
 // history 按最新优先分页返回客户自己的订单，
 // 归属规则与其他所有订单读取完全一致。
@@ -374,26 +360,17 @@ func (a UserQueryAPI) history(c *gin.Context) {
 		return
 	}
 	status := strings.TrimSpace(c.Query("status"))
-	base := a.DB.WithContext(c.Request.Context()).Table("charge_order").Where("user_id = ? AND deleted_at IS NULL", userID)
-	if status != "" {
-		if !oneOfStatus(status, "pending_payment paid charging completed cancelled failed refunding refunded") {
-			httpapi.BadRequest(c, "订单状态无效")
-			return
-		}
-		base = base.Where("status = ?", status)
+	if status != "" && !oneOfStatus(status, "pending_payment paid charging completed cancelled failed refunding refunded") {
+		httpapi.BadRequest(c, "订单状态无效")
+		return
 	}
-	var total int64
-	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	out, err := orderstore.ListUserOrderHistory(c.Request.Context(), a.DB, userID, status, page, pageSize)
+	if err != nil {
 		httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
 		return
 	}
-	rows := []historyRow{}
 	// 费用保存在 charge_fee_receipt.result_json 中，分页读取订单后批量加载对应回执并解析金额。
-	if err := base.Select("id, order_no, device_id, port_no, status, started_at, ended_at, charged_kwh, charged_seconds, discount_cents").
-		Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
-		httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
-		return
-	}
+	rows := out.Items
 	if len(rows) > 0 {
 		ids := make([]uint64, 0, len(rows))
 		for _, r := range rows {
@@ -418,7 +395,7 @@ func (a UserQueryAPI) history(c *gin.Context) {
 			}
 		}
 	}
-	httpapi.OK(c, gin.H{"items": rows, "total": total, "page": page, "page_size": pageSize})
+	httpapi.OK(c, gin.H{"items": rows, "total": out.Total, "page": page, "page_size": pageSize})
 }
 
 // detail 返回一笔订单及其费用回执和退款汇总，
@@ -443,23 +420,12 @@ func (a UserQueryAPI) detail(c *gin.Context) {
 	}
 	if order.PaymentOrderID.Valid {
 		// 显式映射数据库列名，避免 GORM 名称推导产生零值。
-		var payment struct {
-			OrderNo       string `gorm:"column:order_no" json:"order_no"`
-			TotalCents    int64  `gorm:"column:total_cents" json:"total_cents"`
-			PaidCents     int64  `gorm:"column:paid_cents" json:"paid_cents"`
-			RefundedCents int64  `gorm:"column:refunded_cents" json:"refunded_cents"`
-			Status        string `gorm:"column:status" json:"status"`
-		}
-		if err := a.DB.WithContext(ctx).Table("payment_order").
-			Select("order_no, total_cents, paid_cents, refunded_cents, status").
-			Where("id = ? AND deleted_at IS NULL", order.PaymentOrderID.Int64).Take(&payment).Error; err == nil {
+		if payment, err := orderstore.FindOrderPaymentBrief(ctx, a.DB, uint64(order.PaymentOrderID.Int64)); err == nil {
 			payload["payment"] = payment
 		}
 	}
-	refunds := []map[string]any{}
-	if err := a.DB.WithContext(ctx).Table("refund_record").
-		Where("biz_type = 'charge' AND biz_id = ? AND deleted_at IS NULL", order.ID).
-		Select("refund_no, refund_cents, status, reason, created_at").Order("id DESC").Find(&refunds).Error; err != nil {
+	refunds, err := orderstore.ListOrderRefunds(ctx, a.DB, order.ID)
+	if err != nil {
 		httpapi.Write(c, 503, 5003, "退款记录暂时无法读取", nil)
 		return
 	}

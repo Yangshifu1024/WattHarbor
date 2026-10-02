@@ -11,6 +11,7 @@ import (
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"gorm.io/gorm"
@@ -34,15 +35,7 @@ type AutoStopper struct {
 	ServiceToken string
 }
 
-type autoStopOrder struct {
-	ID              uint64    `gorm:"column:id"`
-	OrderNo         string    `gorm:"column:order_no"`
-	UserID          uint64    `gorm:"column:user_id"`
-	DeviceID        string    `gorm:"column:device_id"`
-	PortNo          uint8     `gorm:"column:port_no"`
-	StartedAt       time.Time `gorm:"column:started_at"`
-	PricingSnapshot []byte    `gorm:"column:pricing_snapshot"`
-}
+type autoStopOrder = database.AutoStopOrder
 
 // Run 根据持久化订单和设备证据停机。
 // 断电判定要求设备心跳未过期，不能仅凭网络断开认定用户拔枪。
@@ -54,12 +47,7 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 	stopped := 0
 	var afterID uint64
 	for {
-		orders := []autoStopOrder{}
-		err := s.UserDB.WithContext(ctx).Table("charge_order c").
-			Select("c.id,c.order_no,c.user_id,c.device_id,c.port_no,c.started_at,p.pricing_snapshot").
-			Joins("JOIN charge_order_pricing p ON p.charge_order_id=c.id").
-			Where("c.status='charging' AND c.started_at IS NOT NULL AND c.deleted_at IS NULL AND c.id>?", afterID).
-			Order("c.id").Limit(100).Find(&orders).Error
+		orders, err := database.ListChargingOrdersAfter(ctx, s.UserDB, afterID)
 		if err != nil {
 			return stopped, err
 		}
@@ -83,13 +71,13 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 			var frozenFee *charging.Fee
 			cutoff, reason := now, "automatic_stop"
 			if contract.Offer.Mode == "duration" {
-				var card struct{ PurchasedMinutes uint16 }
-				if err := s.UserDB.WithContext(ctx).Table("card_charge").Where("charge_order_id=?", order.ID).Find(&card).Error; err != nil {
+				purchased, err := database.PurchasedMinutesForOrder(ctx, s.UserDB, order.ID)
+				if err != nil {
 					return stopped, err
 				}
-				if card.PurchasedMinutes > 0 {
-					contract.Offer.DurationMinutes = card.PurchasedMinutes
-					if !now.Before(order.StartedAt.Add(time.Duration(card.PurchasedMinutes) * time.Minute)) {
+				if purchased > 0 {
+					contract.Offer.DurationMinutes = purchased
+					if !now.Before(order.StartedAt.Add(time.Duration(purchased) * time.Minute)) {
 						shouldStop, err := s.freezeCardDeadline(ctx, order.ID, now)
 						if err != nil {
 							return stopped, err
@@ -144,14 +132,14 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 				}
 				// 计费截止点按订单主键首写冻结：已有记录表明此前已冻结，
 				// 视为冲突返回错误交由外层定时循环重试，不做静默空更新。
-				var frozen int64
-				if err := s.UserDB.WithContext(ctx).Table("charge_billing_cutoff").Where("charge_order_id=?", order.ID).Count(&frozen).Error; err != nil {
+				frozen, err := database.BillingCutoffFrozen(ctx, s.UserDB, order.ID)
+				if err != nil {
 					return stopped, err
 				}
 				if frozen > 0 {
 					return stopped, fmt.Errorf("charge billing cutoff already frozen for order %s", order.OrderNo)
 				}
-				if err := s.UserDB.WithContext(ctx).Table("charge_billing_cutoff").Create(row).Error; err != nil {
+				if err := database.FreezeBillingCutoff(s.UserDB.WithContext(ctx), order.ID, row); err != nil {
 					return stopped, err
 				}
 				if err := s.requestStop(ctx, order); err != nil {
