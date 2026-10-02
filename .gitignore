@@ -4,6 +4,7 @@ target/
 .env.dev
 node_modules/
 .tmp/
+bin/
 admin-web/dist/
 miniprogram/dist/
 miniprogram/.taro/

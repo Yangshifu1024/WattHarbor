@@ -430,6 +430,8 @@ bash scripts/test/integration.sh -race
 
 `make fmt/lint/test/layers` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`、`scripts/check/layers.sh`，`make check` 顺序执行四项；`layers` 校验包内分层的文件后缀约定，详见「架构与目录」。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
 
+编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部六个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
+
 普通测试未配置数据库时会跳过集成测试。隔离脚本创建临时 MySQL/Redis、初始化三库、运行全量 Go 测试并清理容器；PowerShell 版本需要已有 `chargepilot-dev_default` 网络，Bash 版本使用随机 loopback 端口。事务、资金、唯一性和消息状态变更须运行隔离测试；并发变更按需启用 race。
 
 | 目录 | 安装与开发 | 检查与构建 |

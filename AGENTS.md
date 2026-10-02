@@ -79,7 +79,7 @@
 
 ## 验证与交付
 
-- Go 业务变更运行 `make check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时构建对应 `cmd`。
+- Go 业务变更运行 `make check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `make build SERVICE=<name>` 或 `make build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
 - 数据库、事务、唯一性、资金或消息状态变更运行隔离集成测试：Windows 使用 `scripts/test/integration.ps1`，具有 Go 环境的 Bash 使用 `scripts/test/integration.sh`。并发资金和幂等改动按需要追加 `-race`；未配置测试数据库导致的跳过不算集成验证通过。
 - 集成测试只连接可丢弃的隔离 MySQL/Redis，禁止使用生产库或日常开发业务库。
 - 后台逻辑修改运行 `npm test` 与 `npm run build`；用户端逻辑修改运行 `npm run typecheck`、`npm test`，涉及平台适配或构建配置时构建受影响的 H5／微信目标。命令在对应前端目录执行。

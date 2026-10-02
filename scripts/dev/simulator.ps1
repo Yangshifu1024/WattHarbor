@@ -9,7 +9,10 @@ if (-not $DeviceID) { $DeviceID = if ($Number -eq 1) { '5348240514082652' } else
 if ($DeviceID -notmatch '^\d{16}$') { throw 'DC589 device ID must be exactly 16 decimal digits.' }
 $temporary = Join-Path $root '.tmp'
 New-Item -ItemType Directory -Path $temporary -Force | Out-Null
-$binary = Join-Path $temporary "simulator-dc589-$Number.exe"
+# 编译产物统一放 bin/，bin 已在 .gitignore 中；.tmp 只留运行期状态文件。
+$binaryDir = Join-Path $root 'bin'
+New-Item -ItemType Directory -Path $binaryDir -Force | Out-Null
+$binary = Join-Path $binaryDir "simulator-dc589-$Number.exe"
 Push-Location $root
 try {
     go build -o $binary ./cmd/simulator-dc589
