@@ -14,7 +14,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"io"
 	"net/http"
 	"strconv"
@@ -22,6 +21,14 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+// asImportConflict 把持久化层的导入冲突哨兵转成后台统一的业务冲突。
+func asImportConflict(err error) error {
+	if errors.Is(err, dbstore.ErrImportConflict) {
+		return errConflict
+	}
+	return err
+}
 
 // errAlreadyReported 表示某个 goroutine 已经写过 HTTP 响应。
 // 导入任务会异步调网关，返回错误时若响应已写出，调用方据此跳过第二次写响应。
@@ -37,8 +44,8 @@ func (a ResourceAPI) registerImports(r *gin.Engine) {
 
 // imports 返回最近的导入任务（最多 100 条），供运营在看板上确认某批设备到底导进去没有。
 func (a ResourceAPI) imports(c *gin.Context) {
-	rows := []dbstore.ImportJob{}
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("device_import").Order("created_at DESC").Limit(100).Find(&rows).Error; err != nil {
+	rows, err := (dbstore.DeviceImportStore{DB: a.Store.AdminDB}).ListImportJobs(c.Request.Context(), 100)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -115,10 +122,10 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 	}
 	body, _ := json.Marshal(in.Devices)
 	p := c.MustGet("admin_profile").(operations.Profile)
+	store := dbstore.DeviceImportStore{DB: a.Store.AdminDB}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var prior dbstore.ImportJob
-		err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).Where("import_id=?", in.ImportID).Take(&prior).Error
-		if err == nil {
+		prior, found := store.LockImportJob(tx, in.ImportID)
+		if found == nil {
 			var old []dbstore.ImportDevice
 			if json.Unmarshal([]byte(prior.RequestJSON), &old) != nil {
 				return errConflict
@@ -129,27 +136,19 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			}
 			return nil
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+		if !errors.Is(found, gorm.ErrRecordNotFound) {
+			return found
 		}
 		for _, d := range in.Devices {
-			var station dbstore.Station
-			if err := tx.Where("id=? AND deleted_at IS NULL AND status='active'", d.StationID).Take(&station).Error; err != nil {
+			if _, err := store.FindActiveStation(tx, d.StationID); err != nil {
 				return err
 			}
 			b, _ := json.Marshal(d)
-			if err := tx.Exec("INSERT IGNORE INTO device_import_identity(device_id,request_json) VALUES (?,?)", d.DeviceID, string(b)).Error; err != nil {
+			if err := store.RegisterDeviceIdentity(tx, d.DeviceID, string(b)); err != nil {
 				return err
 			}
-			var identity struct{ RequestJSON string } // 该设备编号首次登记时的内容快照，用来拒绝同一编号被改成不同内容
-			if err := tx.Table("device_import_identity").Clauses(clause.Locking{Strength: "UPDATE"}).Where("device_id=?", d.DeviceID).Take(&identity).Error; err != nil {
+			if err := store.AssertDeviceIdentity(tx, d.DeviceID, d); err != nil {
 				return err
-			}
-			var old dbstore.ImportDevice
-			_ = json.Unmarshal([]byte(identity.RequestJSON), &old)
-			oldJSON, _ := json.Marshal(old)
-			if string(oldJSON) != string(b) {
-				return errConflict
 			}
 		}
 		// 仅新增设备需要能力校验；已归属本站点的设备保持已有配置。
@@ -166,7 +165,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 			}
 			return err
 		}
-		if err := tx.Table("device_import").Create(map[string]any{"import_id": in.ImportID, "actor_id": p.ID, "request_json": string(body), "status": "pending"}).Error; err != nil {
+		if err := store.CreateImportJob(tx, in.ImportID, p.ID, string(body)); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, p, "create", "device_import", 0, nil, in, c.ClientIP(), in.ImportID)
@@ -176,7 +175,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, asImportConflict(err))
 		return
 	}
 	a.runImport(c, in.ImportID)
@@ -202,10 +201,13 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 	var result dbstore.ImportJob
 	// 在这次有界的内部请求期间一直持着任务锁。崩溃会把元数据一起回滚，
 	// 重放则能安全地看到网关那边已经持久占用的设备身份。
+	store := dbstore.DeviceImportStore{DB: a.Store.AdminDB}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).Where("import_id=?", id).Take(&result).Error; err != nil {
+		locked, err := store.LockImportJob(tx, id)
+		if err != nil {
 			return err
 		}
+		result = locked
 		var devices []dbstore.ImportDevice
 		if err := json.Unmarshal([]byte(result.RequestJSON), &devices); err != nil {
 			return err
@@ -237,14 +239,10 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 			message := "网关未确认导入，请核对厂商与设备参数后重试；dc589 最多 20 路"
 			result.Status = "failed"
 			result.LastError = &message
-			return tx.Table("device_import").Where("import_id=?", id).Updates(map[string]any{"status": "failed", "last_error": message, "attempts": gorm.Expr("attempts+1")}).Error
+			return store.MarkImportFailed(tx, id, message)
 		}
 		for _, d := range devices {
-			var existing struct {
-				ID, VendorID, StationID uint64  // 已登记设备的主键、厂商与站点；与导入内容对不上即判冲突
-				Model                   *string // 已登记的型号，重新导入时不覆盖
-			}
-			e := tx.Table("device_meta").Clauses(clause.Locking{Strength: "UPDATE"}).Where("device_id=?", d.DeviceID).Take(&existing).Error
+			existing, e := store.LockImportedDevice(tx, d.DeviceID)
 			if e == nil {
 				if existing.VendorID != d.VendorID || existing.StationID != d.StationID {
 					return errConflict
@@ -254,22 +252,13 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 			if !errors.Is(e, gorm.ErrRecordNotFound) {
 				return e
 			}
-			row := map[string]any{
-				"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID,
-				"model": d.Model, "status": "enabled",
-				"protocol_adapter": d.ProtocolAdapter,
-			}
-			// 已存在的设备保持原配置；重复导入不得以缺省字段覆盖其能力或计费设置。
-			if d.ChargeMode != "" {
-				row["charge_mode"] = d.ChargeMode
-			}
-			if err := tx.Table("device_meta").Create(row).Error; err != nil {
+			if err := store.CreateImportedDevice(tx, d); err != nil {
 				return err
 			}
 		}
 		result.Status = "completed"
 		result.LastError = nil
-		if err := tx.Table("device_import").Where("import_id=?", id).Updates(map[string]any{"status": "completed", "last_error": nil, "attempts": gorm.Expr("attempts+1"), "retryable": false}).Error; err != nil {
+		if err := store.MarkImportCompleted(tx, id); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "complete", "device_import", 0, nil, gin.H{"import_id": id, "count": len(devices)}, c.ClientIP(), id)
@@ -278,7 +267,7 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 		return
 	}
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		chargehttp.AdminResourceFailure(c, asImportConflict(err))
 		return
 	}
 	if result.Status == "failed" {
