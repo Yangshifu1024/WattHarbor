@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"net/url"
 	"slices"
 	"time"
@@ -65,7 +65,7 @@ func (s LiveMeterService) Read(ctx context.Context, id uint64, device string, po
 		view.FeeUnavailable = "计量证据超过范围，费用待结算"
 		return view, nil
 	}
-	var snapshot orderpkg.ChargePricingSnapshotRecord
+	var snapshot orderstore.ChargePricingSnapshotRecord
 	if err := s.DB.WithContext(ctx).Where("charge_order_id=?", id).Take(&snapshot).Error; err != nil {
 		return view, err
 	}

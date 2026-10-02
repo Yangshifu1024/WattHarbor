@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"io"
 	"net/http"
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -21,13 +20,13 @@ import (
 )
 
 type PrepayProvider interface {
-	Prepay(context.Context, database.PrepayRequest) (database.PrepayParams, error)
+	Prepay(context.Context, orderstore.PrepayRequest) (orderstore.PrepayParams, error)
 }
 
 type PaymentStartAPI struct {
 	Auth     identityhttp.SessionAuthenticator
 	Scan     ScanAPI
-	Pricing  database.PricingStore
+	Pricing  orderstore.PricingStore
 	Intents  PaymentIntentStore
 	Provider PrepayProvider
 }
@@ -168,15 +167,15 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid charging estimate")
 		return
 	}
-	if errors.Is(err, coupon.ErrCouponNotFound) {
+	if errors.Is(err, orderstore.ErrCouponNotFound) {
 		httpapi.BadRequest(c, "优惠券不存在或未发放给该账号")
 		return
 	}
-	if errors.Is(err, coupon.ErrCouponExhausted) {
+	if errors.Is(err, orderstore.ErrCouponExhausted) {
 		httpapi.Write(c, http.StatusConflict, 2001, "优惠券已过期或已使用", nil)
 		return
 	}
-	if errors.Is(err, coupon.ErrCouponThreshold) {
+	if errors.Is(err, orderstore.ErrCouponThreshold) {
 		httpapi.BadRequest(c, "未达到该优惠券的使用门槛")
 		return
 	}
@@ -194,7 +193,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 func (a PaymentStartAPI) finishStart(c *gin.Context, intent PaymentIntent) {
 	params, err := a.Intents.PrepayParams(c.Request.Context(), intent.PaymentOrderID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		params, err = a.Provider.Prepay(c.Request.Context(), database.PrepayRequest{MerchantOrderNo: intent.MerchantOrderNo,
+		params, err = a.Provider.Prepay(c.Request.Context(), orderstore.PrepayRequest{MerchantOrderNo: intent.MerchantOrderNo,
 			OpenID: intent.OpenID, AmountCents: intent.PayableCents, ExpiresAt: intent.ExpiresAt})
 		if err == nil {
 			err = a.Intents.SavePrepay(c.Request.Context(), intent.PaymentOrderID, params)
@@ -213,7 +212,7 @@ func (a PaymentStartAPI) finishStart(c *gin.Context, intent PaymentIntent) {
 }
 
 type NotificationVerifier interface {
-	VerifyNotification(context.Context, *http.Request) (database.VerifiedTransaction, error)
+	VerifyNotification(context.Context, *http.Request) (orderstore.VerifiedTransaction, error)
 }
 
 type WechatCallbackAPI struct {

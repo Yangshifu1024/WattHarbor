@@ -5,10 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/refund"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	walletrefund "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"net/url"
@@ -16,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -244,7 +242,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 	response := gin.H{"request_id": in.RequestID, "payment_order_id": order.ID, "merchant_order_no": order.OrderNo, "amount_cents": order.TotalCents, "status": order.Status, "can_pay": canPay}
 	if canPay {
 		var stored money.ChargePrepayRecord
-		var params database.PrepayParams
+		var params orderstore.PrepayParams
 		err := a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error
 		if err == nil {
 			err = json.Unmarshal(stored.ParamsJSON, &params)
@@ -253,7 +251,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 				httpapi.Write(c, 503, 5003, "支付渠道未配置", nil)
 				return
 			}
-			params, err = a.Prepay.Prepay(ctx, database.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openid, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
+			params, err = a.Prepay.Prepay(ctx, orderstore.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openid, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
 			if err == nil {
 				encoded, _ := json.Marshal(params)
 				stored = money.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
@@ -317,7 +315,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 				reason = *prior.Reason
 			}
 			if prior.UserID != user || prior.AmountCents != in.AmountCents || reason != in.Reason {
-				return refund.ErrRefundConflict
+				return orderstore.ErrRefundConflict
 			}
 			return json.Unmarshal([]byte(prior.ResponseJSON), &response)
 		}
@@ -363,7 +361,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 	switch {
 	case errors.Is(err, ErrInsufficientBalance):
 		httpapi.Write(c, 409, 2009, "可用余额不足", nil)
-	case errors.Is(err, refund.ErrRefundConflict), errors.Is(err, database.ErrWalletRefundConflict):
+	case errors.Is(err, orderstore.ErrRefundConflict), errors.Is(err, orderstore.ErrWalletRefundConflict):
 		httpapi.Write(c, 409, 2009, "申请冲突或原充值可退额度不足", nil)
 	case errors.Is(err, errWalletFrozen):
 		httpapi.Write(c, 409, 2009, "钱包已冻结，请等待审核", nil)
@@ -474,7 +472,7 @@ func (a UserAccountAPI) myCoupons(c *gin.Context) {
 		httpapi.BadRequest(c, "优惠券状态无效")
 		return
 	}
-	rows := []coupon.CouponGrant{}
+	rows := []orderstore.CouponGrant{}
 	err := a.UserDB.WithContext(c.Request.Context()).Table("coupon_grant AS g").
 		Joins("JOIN coupon AS c2 ON c2.id = g.coupon_id AND c2.deleted_at IS NULL AND c2.status = 'active'").
 		Where("g.user_id = ? AND g.deleted_at IS NULL", userID).

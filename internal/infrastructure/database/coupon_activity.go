@@ -1,4 +1,4 @@
-package coupon
+package database
 
 import (
 	"crypto/sha256"

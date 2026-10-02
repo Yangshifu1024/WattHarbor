@@ -1,4 +1,4 @@
-package order
+package database
 
 import "gorm.io/gorm"
 

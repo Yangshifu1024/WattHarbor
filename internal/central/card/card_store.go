@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strconv"
 	"time"
 
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	paymentpkg "github.com/ChargePilot2026/charge-pilot/internal/central/payment"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
@@ -106,7 +106,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 			if json.Unmarshal(session.PackageJSON, &p) != nil {
 				return ErrCardOperation
 			}
-			var order orderpkg.ChargeOrderRecord
+			var order orderstore.ChargeOrderRecord
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND status='charging' AND deleted_at IS NULL", session.ChargeOrderID).Take(&order).Error; err != nil {
 				return ErrCardOperation
 			}
@@ -140,7 +140,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 			if updated.RowsAffected != 1 {
 				return ErrCardOperation
 			}
-			if err := orderpkg.SyncOrderPaymentStatus(tx, uint64(order.PaymentOrderID.Int64)); err != nil {
+			if err := orderstore.SyncOrderPaymentStatus(tx, uint64(order.PaymentOrderID.Int64)); err != nil {
 				return err
 			}
 			if err := tx.Model(&money.CardCharge{}).Where("charge_order_id=?", session.ChargeOrderID).Updates(map[string]any{"paid_cents": gorm.Expr("paid_cents+?", p.PriceCents), "purchased_minutes": gorm.Expr("purchased_minutes+?", p.Minutes)}).Error; err != nil {
@@ -182,11 +182,11 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 			if err := tx.Create(&payment).Error; err != nil {
 				return err
 			}
-			chargeNo, err := orderpkg.NewChargeOrderNumber(tx, port.DeviceID, port.PortNo)
+			chargeNo, err := orderstore.NewChargeOrderNumber(tx, port.DeviceID, port.PortNo)
 			if err != nil {
 				return err
 			}
-			order := orderpkg.ChargeOrderRecord{OrderNo: chargeNo, UserID: card.UserID, DeviceID: port.DeviceID, PortNo: port.PortNo, PortCode: sql.NullString{String: port.PortID, Valid: true}, PaymentOrderID: sql.NullInt64{Int64: int64(payment.ID), Valid: true}, Status: "paid", PaymentStatus: "paid", ChargeMode: 4, ChargeQuantity: spec.Scheme.Normalized().Card.MaxMinutes, CreatedMonth: dbutil.MonthStart()}
+			order := orderstore.ChargeOrderRecord{OrderNo: chargeNo, UserID: card.UserID, DeviceID: port.DeviceID, PortNo: port.PortNo, PortCode: sql.NullString{String: port.PortID, Valid: true}, PaymentOrderID: sql.NullInt64{Int64: int64(payment.ID), Valid: true}, Status: "paid", PaymentStatus: "paid", ChargeMode: 4, ChargeQuantity: spec.Scheme.Normalized().Card.MaxMinutes, CreatedMonth: dbutil.MonthStart()}
 			if err := tx.Create(&order).Error; err != nil {
 				return err
 			}
@@ -198,7 +198,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 			if err := tx.Create(&intent).Error; err != nil {
 				return err
 			}
-			if err := tx.Create(&orderpkg.ChargePricingSnapshotRecord{ChargeOrderID: order.ID, PaymentIntentID: intentID, UserID: card.UserID, PortCode: port.PortID, PricingSnapshot: snapshot}).Error; err != nil {
+			if err := tx.Create(&orderstore.ChargePricingSnapshotRecord{ChargeOrderID: order.ID, PaymentIntentID: intentID, UserID: card.UserID, PortCode: port.PortID, PricingSnapshot: snapshot}).Error; err != nil {
 				return err
 			}
 			praw, _ := json.Marshal(p)
@@ -224,7 +224,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 				return err
 			}
 		}
-		return tx.Create(&orderpkg.ChargeEventLogRecord{ChargeOrderID: out.ChargeOrderID, EventID: out.OperationID, Event: "card_" + out.Kind + "_" + out.Status, Actor: "card", Detail: fmt.Sprintf("card=%d cents=%d minutes=%d", card.ID, p.PriceCents, p.Minutes), OccurredAt: time.Now().UTC()}).Error
+		return tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: out.ChargeOrderID, EventID: out.OperationID, Event: "card_" + out.Kind + "_" + out.Status, Actor: "card", Detail: fmt.Sprintf("card=%d cents=%d minutes=%d", card.ID, p.PriceCents, p.Minutes), OccurredAt: time.Now().UTC()}).Error
 	})
 	return out, err
 }
@@ -233,7 +233,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 // 订单支付状态同步与退款记录创建在同一事务内完成。
 // 由结算（刷卡剩余退款）与启动失败退款持有 tx 调用；钱包行须已由调用方按
 // 既有加锁顺序（先钱包后支付）锁定。
-func RefundInTx(tx *gorm.DB, order orderpkg.ChargeOrderRecord, w *walletpkg.Row, cents int64, refundNo, reason string) error {
+func RefundInTx(tx *gorm.DB, order orderstore.ChargeOrderRecord, w *walletpkg.Row, cents int64, refundNo, reason string) error {
 	if cents <= 0 {
 		return nil
 	}
@@ -254,7 +254,7 @@ func RefundInTx(tx *gorm.DB, order orderpkg.ChargeOrderRecord, w *walletpkg.Row,
 	if err := tx.Model(&money.PaymentOrderRecord{}).Where("id=?", payment.ID).Updates(map[string]any{"refunded_cents": gorm.Expr("refunded_cents+?", cents), "status": status}).Error; err != nil {
 		return err
 	}
-	if err := orderpkg.SyncOrderPaymentStatus(tx, payment.ID); err != nil {
+	if err := orderstore.SyncOrderPaymentStatus(tx, payment.ID); err != nil {
 		return err
 	}
 	return tx.Create(&money.RefundRecord{RefundNo: refundNo, PaymentOrderID: payment.ID, UserID: order.UserID, BizType: "charge", BizID: order.ID, RefundCents: cents, Status: "success", ExecutionPolicy: "automatic", Reason: sql.NullString{String: reason, Valid: true}, CreatedMonth: dbutil.MonthStart()}).Error

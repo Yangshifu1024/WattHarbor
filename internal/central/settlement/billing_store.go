@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	cardpkg "github.com/ChargePilot2026/charge-pilot/internal/central/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"log"
@@ -72,15 +70,15 @@ func readBillingSource(db *gorm.DB, id uint64) (dbstore.Source, error) {
 	return source, nil
 }
 func readOriginalBillingSource(db *gorm.DB, id uint64) (dbstore.Source, error) {
-	var order orderpkg.ChargeOrderRecord
+	var order orderstore.ChargeOrderRecord
 	if err := db.Where("id=? AND ended_at IS NOT NULL AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
 		return dbstore.Source{}, err
 	}
 	if !order.StartedAt.Valid || (order.Status != "completed" && order.Status != "refunding" && order.Status != "refunded") {
 		return dbstore.Source{}, dbstore.ErrBillingConflict
 	}
-	var snapshot orderpkg.ChargePricingSnapshotRecord
-	var end orderpkg.EndReceiptRecord
+	var snapshot orderstore.ChargePricingSnapshotRecord
+	var end orderstore.EndReceiptRecord
 	if err := db.Where("charge_order_id=?", id).Take(&snapshot).Error; err != nil {
 		return dbstore.Source{}, err
 	}
@@ -91,7 +89,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (dbstore.Source, error) {
 		Rule  charging.Rule   `json:"rule"`
 		Offer *charging.Offer `json:"offer"`
 	}
-	var meter orderpkg.EndMeter
+	var meter charging.EndMeter
 	if json.Unmarshal(snapshot.PricingSnapshot, &contract) != nil || contract.Rule.Spec.Scheme == nil || contract.Offer == nil || json.Unmarshal(end.MeterJSON, &meter) != nil || !meter.EndedAt.Equal(order.EndedAt.Time) {
 		return dbstore.Source{}, dbstore.ErrBillingConflict
 	}
@@ -167,7 +165,7 @@ func (s BillingOrders) Apply(ctx context.Context, result dbstore.Result) error {
 	if err != nil {
 		return err
 	}
-	var reference orderpkg.ChargeOrderRecord
+	var reference orderstore.ChargeOrderRecord
 	if err := s.DB.WithContext(ctx).Select("id,payment_order_id").Where("id=? AND deleted_at IS NULL", result.Source.ChargeOrderID).Take(&reference).Error; err != nil {
 		return err
 	}
@@ -191,7 +189,7 @@ func (s BillingOrders) Apply(ctx context.Context, result dbstore.Result) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", reference.PaymentOrderID.Int64).Take(&payment).Error; err != nil {
 			return err
 		}
-		var order orderpkg.ChargeOrderRecord
+		var order orderstore.ChargeOrderRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", reference.ID).Take(&order).Error; err != nil {
 			return err
 		}
@@ -234,7 +232,7 @@ func (s BillingOrders) Apply(ctx context.Context, result dbstore.Result) error {
 		if err := tx.Table("charge_fee_receipt").Create(map[string]any{"charge_order_id": order.ID, "calculation_no": result.CalculationNo, "result_json": string(encoded), "shortfall_cents": shortfall}).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&orderpkg.ChargeOrderRecord{}).Where("id=?", order.ID).Updates(map[string]any{"electric_cents": result.ElectricCents, "service_cents": result.ServiceCents, "total_cents": result.TotalCents}).Error; err != nil {
+		if err := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id=?", order.ID).Updates(map[string]any{"electric_cents": result.ElectricCents, "service_cents": result.ServiceCents, "total_cents": result.TotalCents}).Error; err != nil {
 			return err
 		}
 		// 费用计算完成并写入回执后求值订单活动，确保金额门槛准确。
@@ -250,7 +248,7 @@ func (s BillingOrders) Apply(ctx context.Context, result dbstore.Result) error {
 				if err := cardpkg.RefundInTx(tx, order, &wallet, surplus, fmt.Sprintf("CARD-R%020d", order.ID), "刷卡累计付款未使用部分退款"); err != nil {
 					return err
 				}
-				if err := tx.Model(&orderpkg.ChargeOrderRecord{}).Where("id=?", order.ID).Update("status", "refunded").Error; err != nil {
+				if err := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id=?", order.ID).Update("status", "refunded").Error; err != nil {
 					return err
 				}
 			} else {
@@ -258,25 +256,25 @@ func (s BillingOrders) Apply(ctx context.Context, result dbstore.Result) error {
 				if err := tx.Create(&refund).Error; err != nil {
 					return err
 				}
-				if err := tx.Model(&orderpkg.ChargeOrderRecord{}).Where("id=? AND status='completed'", order.ID).Update("status", "refunding").Error; err != nil {
+				if err := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id=? AND status='completed'", order.ID).Update("status", "refunding").Error; err != nil {
 					return err
 				}
 				eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("billing-refund:"+result.CalculationNo)).String()
 				payload, _ := json.Marshal(map[string]any{"event_id": eventID, "refund_no": refund.RefundNo, "charge_order_id": order.ID, "refund_cents": surplus})
-				if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: payload}).Error; err != nil {
+				if err := tx.Create(&orderstore.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: payload}).Error; err != nil {
 					return err
 				}
 			}
 		}
 		eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("billing-complete:"+result.CalculationNo)).String()
-		if err := tx.Create(&orderpkg.ChargeEventLogRecord{ChargeOrderID: order.ID, EventID: eventID, Event: "fee_calculated", Actor: "billing", Detail: fmt.Sprintf("electric=%d service=%d total=%d shortfall=%d", result.ElectricCents, result.ServiceCents, result.TotalCents, shortfall), OccurredAt: time.Now().UTC()}).Error; err != nil {
+		if err := tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: order.ID, EventID: eventID, Event: "fee_calculated", Actor: "billing", Detail: fmt.Sprintf("electric=%d service=%d total=%d shortfall=%d", result.ElectricCents, result.ServiceCents, result.TotalCents, shortfall), OccurredAt: time.Now().UTC()}).Error; err != nil {
 			return err
 		}
 		payload, err := json.Marshal(settlementNotice(eventID, order, source.Rule.Spec.Display, result.ActualFee, payment.PaidCents-result.TotalCents))
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "charge_settled_stream", EnvelopeJSON: payload}).Error; err != nil {
+		if err := tx.Create(&orderstore.EventOutboxRecord{EventID: eventID, Stream: "charge_settled_stream", EnvelopeJSON: payload}).Error; err != nil {
 			return err
 		}
 		return tx.Table("charge_billing_job").Where("charge_order_id=?", order.ID).Updates(map[string]any{"status": "done", "last_error": nil}).Error
@@ -287,7 +285,7 @@ var _ identityhttp.Orders = BillingOrders{}
 
 // Notification consumers receive final amounts only after durable settlement.
 // Visibility comes from the frozen order, never the current station template.
-func settlementNotice(eventID string, order orderpkg.ChargeOrderRecord, display charging.Display, fee charging.Fee, refund int64) map[string]any {
+func settlementNotice(eventID string, order orderstore.ChargeOrderRecord, display charging.Display, fee charging.Fee, refund int64) map[string]any {
 	data := map[string]any{"event_id": eventID, "charge_order_id": order.ID, "order_no": order.OrderNo, "user_id": order.UserID, "status": "settled", "display": display}
 	if display.ShowFeeOnEnd {
 		data["total_cents"], data["refund_cents"] = fee.TotalCents, refund
@@ -300,16 +298,16 @@ func settlementNotice(eventID string, order orderpkg.ChargeOrderRecord, display 
 
 // applyOrderCampaigns 根据已结算订单求值门槛券和节日券。
 // 规则不适用时跳过；规则错误仅记录日志，不中止资金结算。订单事件键保证重复求值不重复发券。
-func applyOrderCampaigns(tx *gorm.DB, order orderpkg.ChargeOrderRecord, totalCents int64) {
+func applyOrderCampaigns(tx *gorm.DB, order orderstore.ChargeOrderRecord, totalCents int64) {
 	now := time.Now().UTC()
 	for _, trigger := range []string{"threshold_redeem", "holiday"} {
-		if _, err := coupon.ApplyActivityRules(tx, coupon.ActivityEvent{
+		if _, err := orderstore.ApplyActivityRules(tx, orderstore.ActivityEvent{
 			TriggerType: trigger,
 			UserID:      order.UserID,
-			EventKey:    coupon.ActivityEventKeyForOrder(order.OrderNo),
+			EventKey:    orderstore.ActivityEventKeyForOrder(order.OrderNo),
 			AmountCents: totalCents,
 			Now:         now,
-		}); err != nil && !errors.Is(err, coupon.ErrActivityNotApplicable) {
+		}); err != nil && !errors.Is(err, orderstore.ErrActivityNotApplicable) {
 			log.Printf("ACTIVITY RULE FAILED trigger=%s order=%s user=%d: %v", trigger, order.OrderNo, order.UserID, err)
 		}
 	}

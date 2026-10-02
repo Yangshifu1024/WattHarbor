@@ -1,0 +1,13 @@
+package charging
+
+func SameSegments(a, b []MeterSegment) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].EnergyWh != b[i].EnergyWh || a[i].PeakW != b[i].PeakW || (a[i].PowerW == nil) != (b[i].PowerW == nil) || a[i].PowerW != nil && *a[i].PowerW != *b[i].PowerW || !a[i].StartedAt.Equal(b[i].StartedAt) || !a[i].EndedAt.Equal(b[i].EndedAt) {
+			return false
+		}
+	}
+	return true
+}

@@ -1,11 +1,11 @@
-package order
+package http
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"net/http"
 	"time"
@@ -21,23 +21,15 @@ import (
 
 var ErrEndResultConflict = errors.New("charge end result conflicts with order state")
 
-type EndMeter struct {
-	Segments       []charging.MeterSegment `json:"segments,omitempty"`
-	ChargedWh      uint32                  `json:"charged_wh"`
-	ChargedSeconds uint32                  `json:"charged_seconds"`
-	EndedAt        time.Time               `json:"ended_at"`
-	StopReason     uint8                   `json:"stop_reason"`
-}
-
 type EndResult struct {
-	OrderNo        string   `json:"order_no" binding:"required,max=64"`
-	ChargeOrderID  uint64   `json:"charge_order_id" binding:"required"`
-	StartCommandID string   `json:"start_command_id" binding:"required,uuid"`
-	StopCommandID  string   `json:"stop_command_id" binding:"required,uuid"`
-	DeviceID       string   `json:"device_id" binding:"required,max=64"`
-	PortNo         uint8    `json:"port_no" binding:"required"`
-	PortID         uint64   `json:"port_id" binding:"required"`
-	Meter          EndMeter `json:"meter" binding:"required"`
+	OrderNo        string            `json:"order_no" binding:"required,max=64"`
+	ChargeOrderID  uint64            `json:"charge_order_id" binding:"required"`
+	StartCommandID string            `json:"start_command_id" binding:"required,uuid"`
+	StopCommandID  string            `json:"stop_command_id" binding:"required,uuid"`
+	DeviceID       string            `json:"device_id" binding:"required,max=64"`
+	PortNo         uint8             `json:"port_no" binding:"required"`
+	PortID         uint64            `json:"port_id" binding:"required"`
+	Meter          charging.EndMeter `json:"meter" binding:"required"`
 }
 
 type EndResultStore struct{ DB *gorm.DB }
@@ -59,7 +51,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("card_charge").Where("charge_order_id=?", result.ChargeOrderID).Find(&cardLocked).Error; err != nil {
 			return err
 		}
-		var order ChargeOrderRecord
+		var order orderstore.ChargeOrderRecord
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND order_no = ? AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).Take(&order).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrEndResultConflict
@@ -70,11 +62,11 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if order.DeviceID != result.DeviceID || order.PortNo != result.PortNo {
 			return ErrEndResultConflict
 		}
-		var existing EndReceiptRecord
+		var existing orderstore.EndReceiptRecord
 		err = tx.Where("charge_order_id = ?", result.ChargeOrderID).Take(&existing).Error
 		if err == nil {
-			var previous EndMeter
-			if json.Unmarshal(existing.MeterJSON, &previous) != nil || existing.StopCommandID != result.StopCommandID || previous.ChargedWh != result.Meter.ChargedWh || previous.ChargedSeconds != result.Meter.ChargedSeconds || previous.StopReason != result.Meter.StopReason || !SameSegments(previous.Segments, result.Meter.Segments) || !previous.EndedAt.Equal(result.Meter.EndedAt) {
+			var previous charging.EndMeter
+			if json.Unmarshal(existing.MeterJSON, &previous) != nil || existing.StopCommandID != result.StopCommandID || previous.ChargedWh != result.Meter.ChargedWh || previous.ChargedSeconds != result.Meter.ChargedSeconds || previous.StopReason != result.Meter.StopReason || !charging.SameSegments(previous.Segments, result.Meter.Segments) || !previous.EndedAt.Equal(result.Meter.EndedAt) {
 				return ErrEndResultConflict
 			}
 			replayed = true
@@ -86,11 +78,11 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if order.Status != "charging" || !order.StartedAt.Valid || result.Meter.EndedAt.Before(order.StartedAt.Time) {
 			return ErrEndResultConflict
 		}
-		var start StartReceiptRecord
+		var start orderstore.StartReceiptRecord
 		if err := tx.Where("charge_order_id = ?", result.ChargeOrderID).Take(&start).Error; err != nil || !start.Success || start.CommandID != result.StartCommandID || !start.PortID.Valid || start.PortID.Int64 != int64(result.PortID) {
 			return ErrEndResultConflict
 		}
-		if err := tx.Create(&EndReceiptRecord{ChargeOrderID: result.ChargeOrderID, StopCommandID: result.StopCommandID, MeterJSON: meterJSON}).Error; err != nil {
+		if err := tx.Create(&orderstore.EndReceiptRecord{ChargeOrderID: result.ChargeOrderID, StopCommandID: result.StopCommandID, MeterJSON: meterJSON}).Error; err != nil {
 			return err
 		}
 		// 跨家族写：card_charge 归属 card 家族，经裸表名更新，避免 order 反向依赖 card。
@@ -98,7 +90,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 			return err
 		}
 		kwh := decimal.NewFromInt(int64(result.Meter.ChargedWh)).Shift(-3).StringFixed(4)
-		updated := tx.Model(&ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'charging' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
+		updated := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'charging' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
 			Updates(map[string]any{"status": "completed", "ended_at": result.Meter.EndedAt, "charged_kwh": kwh, "charged_seconds": result.Meter.ChargedSeconds})
 		if updated.Error != nil {
 			return updated.Error
@@ -106,14 +98,14 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if updated.RowsAffected != 1 {
 			return ErrEndResultConflict
 		}
-		port := tx.Where("port_id = ? AND device_id = ? AND port_no = ? AND charge_order_id = ?", result.PortID, result.DeviceID, result.PortNo, result.ChargeOrderID).Delete(&ActivePortChargeRecord{})
+		port := tx.Where("port_id = ? AND device_id = ? AND port_no = ? AND charge_order_id = ?", result.PortID, result.DeviceID, result.PortNo, result.ChargeOrderID).Delete(&orderstore.ActivePortChargeRecord{})
 		if port.Error != nil {
 			return port.Error
 		}
 		if port.RowsAffected != 1 {
 			return ErrEndResultConflict
 		}
-		if err := tx.Create(&ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.StopCommandID,
+		if err := tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.StopCommandID,
 			Event: "charge_ended", Actor: "gateway", Detail: "device settlement frame accepted", OccurredAt: result.Meter.EndedAt}).Error; err != nil {
 			return err
 		}
@@ -124,7 +116,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if err := tx.Table("charge_billing_job").Create(map[string]any{"charge_order_id": result.ChargeOrderID}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&database.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error
+		return tx.Create(&orderstore.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	return replayed, err
 }
@@ -158,16 +150,4 @@ func (a EndResultAPI) handle(c *gin.Context) {
 		return
 	}
 	httpapi.OK(c, gin.H{"accepted": true, "replayed": replayed})
-}
-
-func SameSegments(a, b []charging.MeterSegment) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].EnergyWh != b[i].EnergyWh || a[i].PeakW != b[i].PeakW || (a[i].PowerW == nil) != (b[i].PowerW == nil) || a[i].PowerW != nil && *a[i].PowerW != *b[i].PowerW || !a[i].StartedAt.Equal(b[i].StartedAt) || !a[i].EndedAt.Equal(b[i].EndedAt) {
-			return false
-		}
-	}
-	return true
 }

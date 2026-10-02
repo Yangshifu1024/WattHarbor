@@ -1,67 +1,54 @@
-package coupon
+package database
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/shopspring/decimal"
 	"time"
 
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
-	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-var (
-	ErrCouponNotFound   = errors.New("优惠券不存在或未发放给该账号")
-	ErrCouponExhausted  = errors.New("优惠券已过期或已使用")
-	ErrCouponThreshold  = errors.New("未达到该优惠券的使用门槛")
-	ErrCouponExceedsFee = errors.New("优惠金额不能超过订单金额")
-)
-
-type CouponGrant struct {
-	ID          uint64    `json:"id" gorm:"column:id"`
-	CouponID    uint64    `json:"coupon_id" gorm:"column:coupon_id"`
-	Name        string    `json:"name" gorm:"column:name"`
-	GrantID     uint64    `json:"grant_id" gorm:"column:grant_id"`
-	Status      string    `json:"status" gorm:"column:status"`
-	ExpiresAt   time.Time `json:"expires_at" gorm:"column:expired_at"`
-	MinCharge   int64     `json:"min_charge_cents" gorm:"column:min_charge_cents"`
-	Type        string    `json:"discount_type" gorm:"column:discount_type"`
-	Amount      *int64    `json:"discount_value_cents" gorm:"column:discount_value_cents"`
-	Percent     *float64  `json:"discount_percent" gorm:"column:discount_percent"`
-	FreeMinutes uint32    `json:"free_minutes" gorm:"-"`
+type RedeemRef struct {
+	UserID        uint64
+	CouponGrantID uint64
+	TotalCents    int64
+	DiscountCents int64
+	PaymentOrder  uint64
 }
 
-func (CouponGrant) TableName() string { return "coupon_grant" }
-
-// CouponStore 负责把客户的券解析出来并核销到一笔充电上。
-type CouponStore struct{ DB *gorm.DB }
-
-// AvailableCoupons 列出客户当前还可以用的券。
-func (s CouponStore) AvailableCoupons(ctx context.Context, userID uint64) ([]CouponGrant, error) {
-	rows := []CouponGrant{}
-	err := s.DB.WithContext(ctx).Table("coupon_grant AS g").
-		Joins("JOIN coupon AS c ON c.id = g.coupon_id AND c.deleted_at IS NULL AND c.status = 'active'").
-		Where("g.user_id = ? AND g.status = 'unused' AND g.deleted_at IS NULL AND g.expired_at > UTC_TIMESTAMP(3)", userID).
-		Select("g.id, g.coupon_id, g.id AS grant_id, g.status, g.expired_at, c.name, c.discount_type, c.discount_value_cents, c.discount_percent, c.min_charge_cents").
-		Order("g.expired_at, g.id").Find(&rows).Error
-	return rows, err
-}
-
-// Quote 只读计算优惠券减免额，不核销券，供支付前预览。
-func (s CouponStore) Quote(ctx context.Context, userID, grantID uint64, totalCents int64) (int64, error) {
-	grant, err := s.load(ctx, userID, grantID)
+// RedeemInTx 在支付事务内核销券。
+// 发放行被加锁，一张券不可能被两笔支付同时花掉。
+func RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) error {
+	grant, err := loadGrant(context.Background(), tx, ref.UserID, ref.CouponGrantID)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	return discountFor(grant, totalCents)
+	discount, err := discountFor(grant, ref.TotalCents-ref.DiscountCents)
+	if err != nil {
+		return err
+	}
+	updated := tx.Table("coupon_grant").
+		Where("id = ? AND user_id = ? AND status = 'unused'", ref.CouponGrantID, ref.UserID).
+		Updates(map[string]any{"status": "used", "used_payment_order_id": ref.PaymentOrder, "used_at": time.Now().UTC()})
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrCouponExhausted
+	}
+	return tx.Table("coupon_redemption").Create(map[string]any{
+		"coupon_id": grant.CouponID, "user_id": ref.UserID, "biz_type": "charge",
+		"biz_id": ref.PaymentOrder, "discount_cents": discount, "order_no": reference,
+	}).Error
 }
 
-// discountFor 应用优惠规则，减免额不超过本次费用，保证应付金额非负。
+// CouponAPI 提供用户优惠券的只读视图；核销由支付确认流程执行。
+
 func discountFor(grant CouponGrant, totalCents int64) (int64, error) {
 	if totalCents <= 0 || grant.MinCharge > totalCents {
 		return 0, ErrCouponThreshold
@@ -205,65 +192,3 @@ func freeMinutes(ctx context.Context, db *gorm.DB, couponID uint64) (uint32, err
 
 // RedeemRef 是支付事务传给券核销的最小事实集合，
 // 避免 coupon 包反向依赖 charge 的支付记录类型。
-type RedeemRef struct {
-	UserID        uint64
-	CouponGrantID uint64
-	TotalCents    int64
-	DiscountCents int64
-	PaymentOrder  uint64
-}
-
-// RedeemInTx 在支付事务内核销券。
-// 发放行被加锁，一张券不可能被两笔支付同时花掉。
-func RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) error {
-	grant, err := loadGrant(context.Background(), tx, ref.UserID, ref.CouponGrantID)
-	if err != nil {
-		return err
-	}
-	discount, err := discountFor(grant, ref.TotalCents-ref.DiscountCents)
-	if err != nil {
-		return err
-	}
-	updated := tx.Table("coupon_grant").
-		Where("id = ? AND user_id = ? AND status = 'unused'", ref.CouponGrantID, ref.UserID).
-		Updates(map[string]any{"status": "used", "used_payment_order_id": ref.PaymentOrder, "used_at": time.Now().UTC()})
-	if updated.Error != nil {
-		return updated.Error
-	}
-	if updated.RowsAffected == 0 {
-		return ErrCouponExhausted
-	}
-	return tx.Table("coupon_redemption").Create(map[string]any{
-		"coupon_id": grant.CouponID, "user_id": ref.UserID, "biz_type": "charge",
-		"biz_id": ref.PaymentOrder, "discount_cents": discount, "order_no": reference,
-	}).Error
-}
-
-// CouponAPI 提供用户优惠券的只读视图；核销由支付确认流程执行。
-type CouponAPI struct {
-	Auth    identityhttp.SessionAuthenticator
-	Coupons CouponStore
-}
-
-func (a CouponAPI) Register(r *gin.Engine) {
-	r.GET("/api/v1/user/coupons", a.list)
-}
-
-func (a CouponAPI) list(c *gin.Context) {
-	userID, ok := a.Auth.Authenticate(c)
-	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
-		return
-	}
-	rows, err := a.Coupons.AvailableCoupons(c.Request.Context(), userID)
-	if err != nil {
-		httpapi.Write(c, 503, 5003, "优惠券暂时无法读取", nil)
-		return
-	}
-	out := make([]gin.H, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, gin.H{"coupon_id": row.CouponID, "name": row.Name, "grant_id": row.GrantID,
-			"discount_type": row.Type, "min_charge_cents": row.MinCharge, "expires_at": row.ExpiresAt})
-	}
-	httpapi.OK(c, gin.H{"items": out})
-}

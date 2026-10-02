@@ -5,12 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -135,7 +134,7 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 	// 创建支付记录和占用端口前校验优惠券并计算减免额，失败时不留预占记录。
 	var discount int64
 	if input.CouponGrantID != 0 {
-		coupons := coupon.CouponStore{DB: s.DB}
+		coupons := orderstore.CouponStore{DB: s.DB}
 		discount, err = coupons.Quote(ctx, input.UserID, input.CouponGrantID, estimate.TotalCents)
 		if err != nil {
 			return PaymentIntent{}, err
@@ -253,19 +252,19 @@ func existingIntent(row money.PaymentIntentRecord, input IntentInput) (PaymentIn
 		CouponGrantID: row.CouponGrantID, DiscountCents: row.DiscountCents, PayableCents: row.TotalCents - row.DiscountCents}, nil
 }
 
-func (s PaymentIntentStore) PrepayParams(ctx context.Context, paymentOrderID uint64) (database.PrepayParams, error) {
+func (s PaymentIntentStore) PrepayParams(ctx context.Context, paymentOrderID uint64) (orderstore.PrepayParams, error) {
 	var record money.ChargePrepayRecord
 	if err := s.DB.WithContext(ctx).Where("payment_order_id = ?", paymentOrderID).Take(&record).Error; err != nil {
-		return database.PrepayParams{}, err
+		return orderstore.PrepayParams{}, err
 	}
-	var params database.PrepayParams
+	var params orderstore.PrepayParams
 	if err := json.Unmarshal(record.ParamsJSON, &params); err != nil || params.PrepayID == "" || params.Provider == "" {
-		return database.PrepayParams{}, money.ErrPaymentIntentConflict
+		return orderstore.PrepayParams{}, money.ErrPaymentIntentConflict
 	}
 	return params, nil
 }
 
-func (s PaymentIntentStore) SavePrepay(ctx context.Context, paymentOrderID uint64, params database.PrepayParams) error {
+func (s PaymentIntentStore) SavePrepay(ctx context.Context, paymentOrderID uint64, params orderstore.PrepayParams) error {
 	if s.DB == nil || paymentOrderID == 0 || params.PrepayID == "" || params.Provider == "" {
 		return money.ErrPaymentIntentConflict
 	}

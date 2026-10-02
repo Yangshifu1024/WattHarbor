@@ -8,10 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"strconv"
 	"strings"
@@ -117,7 +115,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 			if intent.Status != "paid" || !intent.ChargeOrderID.Valid || intent.ChargeOrderID.Int64 <= 0 || order.BizID != uint64(intent.ChargeOrderID.Int64) {
 				return ErrPaymentCallbackConflict
 			}
-			var chargeOrder orderpkg.ChargeOrderRecord
+			var chargeOrder orderstore.ChargeOrderRecord
 			if err := tx.Select("order_no").Where("id = ? AND payment_order_id = ?", order.BizID, order.ID).Take(&chargeOrder).Error; err != nil {
 				return err
 			}
@@ -153,7 +151,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 
 		// 支付确认到账后才核销优惠券。
 		if intent.CouponGrantID != 0 {
-			if err := coupon.RedeemInTx(tx, coupon.RedeemRef{
+			if err := orderstore.RedeemInTx(tx, orderstore.RedeemRef{
 				UserID:        intent.UserID,
 				CouponGrantID: intent.CouponGrantID,
 				TotalCents:    intent.TotalCents,
@@ -164,11 +162,11 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 			}
 		}
 
-		chargeNo, err := orderpkg.NewChargeOrderNumber(tx, intent.DeviceID, intent.PortNo)
+		chargeNo, err := orderstore.NewChargeOrderNumber(tx, intent.DeviceID, intent.PortNo)
 		if err != nil {
 			return err
 		}
-		chargeOrder := orderpkg.ChargeOrderRecord{OrderNo: chargeNo, UserID: intent.UserID, DeviceID: intent.DeviceID, PortNo: intent.PortNo,
+		chargeOrder := orderstore.ChargeOrderRecord{OrderNo: chargeNo, UserID: intent.UserID, DeviceID: intent.DeviceID, PortNo: intent.PortNo,
 			PortCode: sql.NullString{String: intent.PortCode, Valid: true}, PaymentOrderID: sql.NullInt64{Int64: int64(order.ID), Valid: true},
 			Status: "paid", PaymentStatus: "paid", ChargeMode: intent.ChargeMode, ChargeQuantity: intent.ChargeQuantity,
 			DiscountCents: intent.DiscountCents, CreatedMonth: dbutil.MonthStart()}
@@ -178,7 +176,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 		if chargeOrder.ID == 0 || chargeOrder.ID > math.MaxInt64 {
 			return ErrPaymentCallbackConflict
 		}
-		if err := tx.Create(&orderpkg.ChargePricingSnapshotRecord{ChargeOrderID: chargeOrder.ID, PaymentIntentID: intent.IntentID,
+		if err := tx.Create(&orderstore.ChargePricingSnapshotRecord{ChargeOrderID: chargeOrder.ID, PaymentIntentID: intent.IntentID,
 			UserID: intent.UserID, PortCode: intent.PortCode, PricingSnapshot: intent.PricingSnapshot}).Error; err != nil {
 			return err
 		}
@@ -199,7 +197,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 		}
 
 		eventID := "P" + digest[:32]
-		if err := tx.Create(&orderpkg.ChargeEventLogRecord{ChargeOrderID: chargeOrder.ID, EventID: eventID,
+		if err := tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: chargeOrder.ID, EventID: eventID,
 			Event: "payment_confirmed", Actor: "payment_callback", Detail: "verified payment callback", OccurredAt: paidAt}).Error; err != nil {
 			return err
 		}
@@ -207,7 +205,7 @@ func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "charge_payment_confirmed_stream", EnvelopeJSON: envelope}).Error; err != nil {
+		if err := tx.Create(&orderstore.EventOutboxRecord{EventID: eventID, Stream: "charge_payment_confirmed_stream", EnvelopeJSON: envelope}).Error; err != nil {
 			return err
 		}
 		callbackResult = PaymentCallbackResult{ChargeOrderID: chargeOrder.ID, ChargeOrderNo: chargeNo}
@@ -236,7 +234,7 @@ func queueLatePaymentRefund(tx *gorm.DB, intent money.PaymentIntentRecord, order
 	if err != nil {
 		return err
 	}
-	if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: envelope}).Error; err != nil {
+	if err := tx.Create(&orderstore.EventOutboxRecord{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: envelope}).Error; err != nil {
 		return err
 	}
 	return nil
@@ -336,13 +334,13 @@ func settleWalletRecharge(tx *gorm.DB, order money.PaymentOrderRecord, payment V
 		return err
 	}
 	// 在充值事务内求值首充奖励；事务回滚时奖励一并回滚。规则不适用时跳过，不阻止结算。
-	if _, err := coupon.ApplyActivityRules(tx, coupon.ActivityEvent{
+	if _, err := orderstore.ApplyActivityRules(tx, orderstore.ActivityEvent{
 		TriggerType: "first_recharge",
 		UserID:      order.UserID,
-		EventKey:    coupon.ActivityEventKeyForRecharge(request.RequestID),
+		EventKey:    orderstore.ActivityEventKeyForRecharge(request.RequestID),
 		AmountCents: payment.PaidCents,
 		Now:         paidAt,
-	}); err != nil && !errors.Is(err, coupon.ErrActivityNotApplicable) {
+	}); err != nil && !errors.Is(err, orderstore.ErrActivityNotApplicable) {
 		return err
 	}
 
@@ -352,7 +350,7 @@ func settleWalletRecharge(tx *gorm.DB, order money.PaymentOrderRecord, payment V
 	if err != nil {
 		return err
 	}
-	if err := tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "wallet_recharge_settled_stream", EnvelopeJSON: envelope}).Error; err != nil {
+	if err := tx.Create(&orderstore.EventOutboxRecord{EventID: eventID, Stream: "wallet_recharge_settled_stream", EnvelopeJSON: envelope}).Error; err != nil {
 		return err
 	}
 	*result = PaymentCallbackResult{}

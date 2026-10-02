@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/application"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/coupon"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/central/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/refund"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	orderhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"log"
 	"net/http"
 	"os"
@@ -131,9 +130,9 @@ func run(ctx context.Context) error {
 		loginExchanger = identityauth.DevelopmentExchanger{}
 	}
 	identityhttp.API{WeChat: loginExchanger, Users: identitystore.UserStore{DB: userORM}, Sessions: sessionstore.Sessions{Redis: cache}, JWT: jwt}.Register(router)
-	order.StartAuthorization{DB: userORM, ServiceToken: cfg.ServiceToken}.Register(router)
-	order.StartResultAPI{Store: order.StartResultStore{DB: userORM}, ServiceToken: cfg.ServiceToken}.Register(router)
-	order.EndResultAPI{Store: order.EndResultStore{DB: userORM}, ServiceToken: cfg.ServiceToken}.Register(router)
+	orderhttp.StartAuthorization{DB: userORM, ServiceToken: cfg.ServiceToken}.Register(router)
+	orderhttp.StartResultAPI{Store: orderhttp.StartResultStore{DB: userORM}, ServiceToken: cfg.ServiceToken}.Register(router)
+	orderhttp.EndResultAPI{Store: orderhttp.EndResultStore{DB: userORM}, ServiceToken: cfg.ServiceToken}.Register(router)
 	charge.StopAuthorization{DB: userORM, ServiceToken: cfg.ServiceToken}.Register(router)
 	charge.UserStopAPI{JWT: jwt, Sessions: sessionstore.Sessions{Redis: cache}, Users: identitystore.UserStore{DB: userORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
 	payment.ScanAPI{Operations: payment.DeviceOperationStore{DB: adminORM}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
@@ -156,7 +155,7 @@ func run(ctx context.Context) error {
 		refundProvider = direct
 		payment.WechatCallbackAPI{Verifier: direct, Store: payment.PaymentCallbackStore{DB: userORM, ExpectedProvider: "wechat_direct", ExpectedMerchantID: cfg.WechatMchID, ExpectedAppID: cfg.WeChatAppID}}.Register(router)
 	}
-	refund.RefundAPI{Executor: refund.RefundExecutor{DB: userORM, Provider: refundProvider, ProviderName: cfg.PaymentMode}, ServiceToken: cfg.ServiceToken}.Register(router)
+	orderhttp.RefundAPI{Executor: orderstore.RefundExecutor{DB: userORM, Provider: refundProvider, ProviderName: cfg.PaymentMode}, ServiceToken: cfg.ServiceToken}.Register(router)
 	application.AutoStopAPI{Stopper: application.AutoStopper{UserDB: userORM, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
 	admin.DeviceAlertSyncAPI{Sync: admin.DeviceAlertSync{AdminDB: adminORM, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
 	charge.UserAccountAPI{
@@ -183,8 +182,8 @@ func run(ctx context.Context) error {
 		Bills: settlement.BillStore{DB: userORM}}.Register(router)
 	charge.UserQueryAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
 		DB: userORM, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Gateway: serviceclient.Client{Timeout: 8 * time.Second}}.Register(router)
-	coupon.CouponAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		Coupons: coupon.CouponStore{DB: userORM}}.Register(router)
+	orderhttp.CouponAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
+		Coupons: orderstore.CouponStore{DB: userORM}}.Register(router)
 	payment.PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
 		Scan: payment.ScanAPI{Operations: payment.DeviceOperationStore{DB: adminORM}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, Pricing: identitystore.PricingStore{DB: adminORM},
 		Intents: payment.PaymentIntentStore{DB: userORM}, Provider: prepay}.Register(router)

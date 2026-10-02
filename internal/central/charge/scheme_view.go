@@ -4,14 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/gin-gonic/gin"
 )
 
-func (a UserQueryAPI) schemeView(ctx context.Context, order orderpkg.ChargeOrderRecord, payload gin.H) error {
-	var snapshot orderpkg.ChargePricingSnapshotRecord
+func (a UserQueryAPI) schemeView(ctx context.Context, order orderstore.ChargeOrderRecord, payload gin.H) error {
+	var snapshot orderstore.ChargePricingSnapshotRecord
 	if err := a.DB.WithContext(ctx).Where("charge_order_id=?", order.ID).Find(&snapshot).Error; err != nil {
 		return err
 	}

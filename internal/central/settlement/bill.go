@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strconv"
 	"time"
 
@@ -129,7 +129,7 @@ func (s BillStore) Issue(ctx context.Context, chargeOrderID uint64) (Bill, bool,
 		}
 		// 将账单事件追加到订单时间线，供用户查询结算记录。
 		eventID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("bill-issued:"+billNo)).String()
-		return tx.Create(&orderpkg.ChargeEventLogRecord{
+		return tx.Create(&orderstore.ChargeEventLogRecord{
 			ChargeOrderID: order.ID, EventID: eventID, Event: "bill_issued", Actor: "billing",
 			Detail:     fmt.Sprintf("bill=%s total=%d prepaid=%d shortfall=%d", billNo, total, prepaid, shortfall),
 			OccurredAt: time.Now().UTC(),

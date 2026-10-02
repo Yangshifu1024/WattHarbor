@@ -1,4 +1,4 @@
-package refund
+package database
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -57,7 +56,7 @@ func (s ReviewStore) ManualCreate(ctx context.Context, tx *gorm.DB, in ManualRef
 	payload, _ := json.Marshal(map[string]any{"actor_id": in.ActorID, "order_id": in.OrderID, "amount_cents": in.AmountCents, "reason": in.Reason})
 	tx = tx.WithContext(ctx)
 	err = func() error {
-		var order orderpkg.ChargeOrderRecord
+		var order ChargeOrderRecord
 		if err := tx.Where("id=? AND deleted_at IS NULL", in.OrderID).Take(&order).Error; err != nil {
 			return err
 		}

@@ -1,4 +1,4 @@
-package order
+package http
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"math"
 	"net/http"
 	"time"
@@ -44,7 +44,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 	result.OccurredAt = result.OccurredAt.UTC().Truncate(time.Millisecond)
 	replayed := false
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var walletRow database.Row
+		var walletRow orderstore.Row
 		var walletPayment struct {
 			PayMethod string
 			UserID    uint64
@@ -54,7 +54,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		}
 		if walletPayment.PayMethod == "balance" {
 			var err error
-			walletRow, err = database.Lock(tx, walletPayment.UserID)
+			walletRow, err = orderstore.Lock(tx, walletPayment.UserID)
 			if err != nil {
 				return err
 			}
@@ -65,7 +65,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("card_charge").Where("charge_order_id=?", result.ChargeOrderID).Find(&cardLocked).Error; err != nil {
 			return err
 		}
-		var order ChargeOrderRecord
+		var order orderstore.ChargeOrderRecord
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND order_no = ? AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).Take(&order).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrStartResultConflict
@@ -76,7 +76,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		if order.DeviceID != result.DeviceID || order.PortNo != result.PortNo {
 			return ErrStartResultConflict
 		}
-		var existing StartReceiptRecord
+		var existing orderstore.StartReceiptRecord
 		err = tx.Where("command_id = ?", result.CommandID).Take(&existing).Error
 		if err == nil {
 			if existing.ChargeOrderID != result.ChargeOrderID || existing.OrderNo.String != result.OrderNo || existing.DeviceID.String != result.DeviceID || existing.PortNo.Int16 != int16(result.PortNo) || existing.PortID.Int64 != int64(result.PortID) || existing.Success != result.Success || existing.ResultCode.Int16 != int16(result.ResultCode) || !existing.OccurredAt.Time.Equal(result.OccurredAt.UTC()) {
@@ -91,7 +91,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		if order.Status != "paid" {
 			return ErrStartResultConflict
 		}
-		receipt := StartReceiptRecord{CommandID: result.CommandID, ChargeOrderID: result.ChargeOrderID,
+		receipt := orderstore.StartReceiptRecord{CommandID: result.CommandID, ChargeOrderID: result.ChargeOrderID,
 			OrderNo: sql.NullString{String: result.OrderNo, Valid: true}, DeviceID: sql.NullString{String: result.DeviceID, Valid: true},
 			PortNo: sql.NullInt16{Int16: int16(result.PortNo), Valid: true}, PortID: sql.NullInt64{Int64: int64(result.PortID), Valid: true},
 			Success: result.Success, ResultCode: sql.NullInt16{Int16: int16(result.ResultCode), Valid: true}, OccurredAt: sql.NullTime{Time: result.OccurredAt.UTC(), Valid: true}}
@@ -106,14 +106,14 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 			if err := tx.Table("card_operation").Where("charge_order_id=? AND kind='start' AND status='confirming'", result.ChargeOrderID).Updates(map[string]any{"status": "confirmed", "confirmed_at": result.OccurredAt}).Error; err != nil {
 				return err
 			}
-			if err := tx.Create(&ActivePortChargeRecord{PortID: result.PortID, DeviceID: result.DeviceID, PortNo: result.PortNo,
+			if err := tx.Create(&orderstore.ActivePortChargeRecord{PortID: result.PortID, DeviceID: result.DeviceID, PortNo: result.PortNo,
 				ChargeOrderID: result.ChargeOrderID, UserID: order.UserID, StartedAt: result.OccurredAt.UTC()}).Error; err != nil {
 				if dbutil.IsMySQLDuplicate(err) {
 					return ErrStartResultConflict
 				}
 				return err
 			}
-			updated := tx.Model(&ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
+			updated := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
 				Updates(map[string]any{"status": "charging", "started_at": result.OccurredAt.UTC()})
 			if updated.Error != nil {
 				return updated.Error
@@ -124,7 +124,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		} else {
 			stream, eventName = "charge_start_rejected_stream", "start_rejected"
 			failureReason := fmt.Sprintf("device START rejected: %d", result.ResultCode)
-			updated := tx.Model(&ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
+			updated := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
 				Updates(map[string]any{"failure_reason": failureReason, "status": "refunding"})
 			if updated.Error != nil {
 				return updated.Error
@@ -143,7 +143,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 				if err := refundBalanceStartFailure(tx, order, &walletRow, payment.PaidCents-payment.RefundedCents, "CSF"+result.CommandID, failureReason); err != nil {
 					return err
 				}
-				if err := tx.Model(&ChargeOrderRecord{}).Where("id=?", order.ID).Update("status", "refunded").Error; err != nil {
+				if err := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id=?", order.ID).Update("status", "refunded").Error; err != nil {
 					return err
 				}
 				if err := tx.Table("card_operation").Where("charge_order_id=? AND kind='start'", order.ID).Updates(map[string]any{"status": "failed", "failure_reason": failureReason, "confirmed_at": result.OccurredAt}).Error; err != nil {
@@ -190,12 +190,12 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 				if err != nil {
 					return err
 				}
-				if err := tx.Create(&database.EventOutboxRecord{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}).Error; err != nil {
+				if err := tx.Create(&orderstore.EventOutboxRecord{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}).Error; err != nil {
 					return err
 				}
 			}
 		}
-		if err := tx.Create(&ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.CommandID,
+		if err := tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.CommandID,
 			Event: eventName, Actor: "gateway", Detail: fmt.Sprintf("device=%s port=%d result=%d", result.DeviceID, result.PortNo, result.ResultCode),
 			OccurredAt: result.OccurredAt.UTC()}).Error; err != nil {
 			return err
@@ -204,7 +204,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&database.EventOutboxRecord{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope}).Error; err != nil {
+		if err := tx.Create(&orderstore.EventOutboxRecord{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope}).Error; err != nil {
 			return err
 		}
 		return nil
@@ -226,11 +226,11 @@ type startRefundPaymentRow struct {
 // payment_order 改写 + 支付状态同步 + refund_record 记录）。card→order 与 refund→order
 // 依赖已单向占用，order 不得反向 import 三者，跨家族行一律经裸表名访问；
 // 支付行校验冲突返回 ErrStartResultConflict（与原 card.ErrCardOperation 同为服务端错误）。
-func refundBalanceStartFailure(tx *gorm.DB, order ChargeOrderRecord, w *database.Row, cents int64, refundNo, reason string) error {
+func refundBalanceStartFailure(tx *gorm.DB, order orderstore.ChargeOrderRecord, w *orderstore.Row, cents int64, refundNo, reason string) error {
 	if cents <= 0 {
 		return nil
 	}
-	if err := database.Move(tx, order.UserID, w, cents, refundNo, reason); err != nil {
+	if err := orderstore.Move(tx, order.UserID, w, cents, refundNo, reason); err != nil {
 		return err
 	}
 	var payment struct {
@@ -251,7 +251,7 @@ func refundBalanceStartFailure(tx *gorm.DB, order ChargeOrderRecord, w *database
 	if err := tx.Table("payment_order").Where("id=?", payment.ID).Updates(map[string]any{"refunded_cents": gorm.Expr("refunded_cents+?", cents), "status": status}).Error; err != nil {
 		return err
 	}
-	if err := SyncOrderPaymentStatus(tx, payment.ID); err != nil {
+	if err := orderstore.SyncOrderPaymentStatus(tx, payment.ID); err != nil {
 		return err
 	}
 	return tx.Table("refund_record").Create(map[string]any{

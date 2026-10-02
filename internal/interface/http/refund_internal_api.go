@@ -1,7 +1,8 @@
-package refund
+package http
 
 import (
 	"context"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,7 @@ import (
 )
 
 type RefundAPI struct {
-	Executor     RefundExecutor
+	Executor     orderstore.RefundExecutor
 	ServiceToken string
 }
 

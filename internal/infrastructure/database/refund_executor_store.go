@@ -1,4 +1,4 @@
-package refund
+package database
 
 import (
 	"context"
@@ -8,9 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strings"
 	"time"
 
@@ -21,8 +19,8 @@ import (
 var ErrRefundConflict = errors.New("refund identity or amount conflict")
 
 // walletSettlement 把退款行映射为钱包结算的最小事实集合。
-func walletSettlement(r money.RefundRecord) database.Settlement {
-	return database.Settlement{ID: r.ID, UserID: r.UserID, RefundNo: r.RefundNo, BizType: r.BizType, RefundCents: r.RefundCents}
+func walletSettlement(r money.RefundRecord) Settlement {
+	return Settlement{ID: r.ID, UserID: r.UserID, RefundNo: r.RefundNo, BizType: r.BizType, RefundCents: r.RefundCents}
 }
 
 // paymentOrderRow 是 claim/apply 在 payment_order 行锁内需要的最小投影。
@@ -45,7 +43,7 @@ type paymentOrderRow struct {
 // 结果未知的退款保持 processing 状态，每次幂等重试之前都先查询一次。
 type RefundExecutor struct {
 	DB           *gorm.DB
-	Provider     database.RefundProvider
+	Provider     RefundProvider
 	ProviderName string
 }
 
@@ -84,7 +82,7 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	result, err := e.Provider.QueryRefund(callCtx, request)
-	if errors.Is(err, database.ErrRefundNotFound) {
+	if errors.Is(err, ErrRefundNotFound) {
 		result, err = e.Provider.CreateRefund(callCtx, request)
 	}
 	if err != nil {
@@ -94,16 +92,16 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	}
 	return e.apply(ctx, r, request, result)
 }
-func (e RefundExecutor) claim(ctx context.Context, id uint64) (money.RefundRecord, database.RefundRequest, bool, error) {
+func (e RefundExecutor) claim(ctx context.Context, id uint64) (money.RefundRecord, RefundRequest, bool, error) {
 	var r money.RefundRecord
-	var request database.RefundRequest
+	var request RefundRequest
 	claimed := false
 	err := e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 先在支付行上串行化金额，再去锁单条请求。
 		if err := tx.Where("id = ? AND deleted_at IS NULL", id).Take(&r).Error; err != nil {
 			return err
 		}
-		if err := database.LockRefundWallet(tx, walletSettlement(r)); err != nil {
+		if err := LockRefundWallet(tx, walletSettlement(r)); err != nil {
 			return err
 		}
 		// 跨家族读：payment_order 归属 payment 家族，行投影 + 行锁，refund 不得反向依赖 payment。
@@ -133,7 +131,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (money.RefundRecor
 			if err := tx.Table("charge_prepay").Where("payment_order_id = ?", p.ID).Take(&prepay).Error; err != nil {
 				return err
 			}
-			var params database.PrepayParams
+			var params PrepayParams
 			if json.Unmarshal(prepay.ParamsJSON, &params) != nil || params.Provider != e.ProviderName {
 				return ErrRefundConflict
 			}
@@ -153,7 +151,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (money.RefundRecor
 		if reserved > p.PaidCents-p.RefundedCents-r.RefundCents {
 			return ErrRefundConflict
 		}
-		request = database.RefundRequest{RefundNo: r.RefundNo, MerchantOrderNo: p.OrderNo, TransactionID: p.WechatTransactionID.String, TotalCents: p.TotalCents, RefundCents: r.RefundCents}
+		request = RefundRequest{RefundNo: r.RefundNo, MerchantOrderNo: p.OrderNo, TransactionID: p.WechatTransactionID.String, TotalCents: p.TotalCents, RefundCents: r.RefundCents}
 		// 这把持久化的租约同时提供了崩溃之后的有界指数退避重试。
 		delay := time.Duration(30*(1<<min(r.RetryCount, uint32(7)))) * time.Second
 		update := tx.Model(&money.RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "processing", "retry_count": gorm.Expr("retry_count+1"), "next_attempt_at": time.Now().UTC().Add(delay)})
@@ -165,7 +163,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (money.RefundRecor
 	})
 	return r, request, claimed, err
 }
-func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request database.RefundRequest, result database.RefundResult) error {
+func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request RefundRequest, result RefundResult) error {
 	if result.RefundNo != request.RefundNo || result.MerchantOrderNo != request.MerchantOrderNo || result.TransactionID != request.TransactionID || result.TotalCents != request.TotalCents || result.RefundCents != request.RefundCents || result.RefundID == "" || len(result.RefundID) > 64 {
 		return ErrRefundConflict
 	}
@@ -174,7 +172,7 @@ func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request
 		return nil
 	case "CLOSED", "ABNORMAL":
 		return e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := database.LockRefundWallet(tx, walletSettlement(r)); err != nil {
+			if err := LockRefundWallet(tx, walletSettlement(r)); err != nil {
 				return err
 			}
 			var current money.RefundRecord
@@ -187,7 +185,7 @@ func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request
 			if current.Status != "processing" {
 				return ErrRefundConflict
 			}
-			if err := database.ReleaseFailedRefund(tx, walletSettlement(r)); err != nil {
+			if err := ReleaseFailedRefund(tx, walletSettlement(r)); err != nil {
 				return err
 			}
 			return tx.Model(&money.RefundRecord{}).Where("id=?", r.ID).Updates(map[string]any{"status": "failed", "wechat_refund_id": result.RefundID, "failure_reason": "provider refund " + result.Status}).Error
@@ -200,7 +198,7 @@ func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request
 		return ErrRefundConflict
 	}
 	return e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := database.LockRefundWallet(tx, walletSettlement(r)); err != nil {
+		if err := LockRefundWallet(tx, walletSettlement(r)); err != nil {
 			return err
 		}
 		var p paymentOrderRow
@@ -239,18 +237,18 @@ func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request
 		if err := tx.Table("payment_order").Where("id = ?", p.ID).Updates(map[string]any{"refunded_cents": total, "status": status}).Error; err != nil {
 			return err
 		}
-		if err := orderpkg.SyncOrderPaymentStatus(tx, p.ID); err != nil {
+		if err := SyncOrderPaymentStatus(tx, p.ID); err != nil {
 			return err
 		}
 		if err := tx.Model(&money.RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "success", "wechat_refund_id": result.RefundID, "completed_at": result.SuccessAt.UTC(), "failure_reason": nil}).Error; err != nil {
 			return err
 		}
-		if err := database.SettleRefundWallet(tx, walletSettlement(r)); err != nil {
+		if err := SettleRefundWallet(tx, walletSettlement(r)); err != nil {
 			return err
 		}
 		if r.BizType == "charge" && r.BizID != 0 {
 			if status == "refunded" {
-				if err := tx.Model(&orderpkg.ChargeOrderRecord{}).Where("id = ? AND payment_order_id = ? AND status='refunding'", r.BizID, p.ID).Update("status", "refunded").Error; err != nil {
+				if err := tx.Model(&ChargeOrderRecord{}).Where("id = ? AND payment_order_id = ? AND status='refunding'", r.BizID, p.ID).Update("status", "refunded").Error; err != nil {
 					return err
 				}
 			} else {
@@ -259,7 +257,7 @@ func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request
 					return err
 				}
 				if pending == 0 {
-					if err := tx.Model(&orderpkg.ChargeOrderRecord{}).Where("id=? AND payment_order_id=? AND status='refunding' AND ended_at IS NOT NULL", r.BizID, p.ID).Update("status", "completed").Error; err != nil {
+					if err := tx.Model(&ChargeOrderRecord{}).Where("id=? AND payment_order_id=? AND status='refunding' AND ended_at IS NOT NULL", r.BizID, p.ID).Update("status", "completed").Error; err != nil {
 						return err
 					}
 				}
@@ -271,6 +269,6 @@ func (e RefundExecutor) apply(ctx context.Context, r money.RefundRecord, request
 		if err != nil {
 			return err
 		}
-		return tx.Create(&database.EventOutboxRecord{EventID: eventID, Stream: "refund_succeeded_stream", EnvelopeJSON: body}).Error
+		return tx.Create(&EventOutboxRecord{EventID: eventID, Stream: "refund_succeeded_stream", EnvelopeJSON: body}).Error
 	})
 }

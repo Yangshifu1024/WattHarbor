@@ -3,7 +3,6 @@ package settlement
 import (
 	"context"
 	"encoding/json"
-	orderpkg "github.com/ChargePilot2026/charge-pilot/internal/central/order"
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
@@ -43,7 +42,7 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 		}
 		if found.RowsAffected > 0 {
 			var source dbstore.Source
-			if json.Unmarshal(prior.CorrectedJSON, &source) != nil || prior.ChargeOrderID != id || prior.FirstReviewerID != actor || prior.Reason != reason || !orderpkg.SameSegments(source.Meter.Segments, segments) {
+			if json.Unmarshal(prior.CorrectedJSON, &source) != nil || prior.ChargeOrderID != id || prior.FirstReviewerID != actor || prior.Reason != reason || !charging.SameSegments(source.Meter.Segments, segments) {
 				return dbstore.ErrBillingConflict
 			}
 			out = prior

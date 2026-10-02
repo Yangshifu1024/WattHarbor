@@ -2,7 +2,7 @@
 // 表归属决定包归属：charge_order / charge_order_pricing /
 // charge_start_receipt / charge_end_receipt / charge_event_log /
 // active_port_charge 的记录定义集中于此，供各家族逻辑包引用。
-package order
+package database
 
 import (
 	"database/sql"

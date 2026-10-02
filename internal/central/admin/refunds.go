@@ -3,8 +3,8 @@ package admin
 import (
 	"context"
 	"errors"
-	refundpkg "github.com/ChargePilot2026/charge-pilot/internal/central/refund"
 	settlementpkg "github.com/ChargePilot2026/charge-pilot/internal/central/settlement"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strconv"
 	"strings"
 
@@ -26,22 +26,22 @@ func (a ResourceAPI) registerRefunds(r *gin.Engine) {
 
 // refundReviewStore 装配 refund 家族的人工退款工作流存储；
 // 第二签的实时身份核对回读 admin 授权域的账号档案与权限。
-func (a ResourceAPI) refundReviewStore() refundpkg.ReviewStore {
-	return refundpkg.ReviewStore{
+func (a ResourceAPI) refundReviewStore() orderstore.ReviewStore {
+	return orderstore.ReviewStore{
 		DB: a.Store.UserDB,
-		LookupSigner: func(ctx context.Context, signerID uint64) (refundpkg.SignerStatus, error) {
+		LookupSigner: func(ctx context.Context, signerID uint64) (orderstore.SignerStatus, error) {
 			p, err := a.Auth.Store.Profile(ctx, signerID)
 			if err != nil {
-				return refundpkg.SignerStatus{}, err
+				return orderstore.SignerStatus{}, err
 			}
-			return refundpkg.SignerStatus{Role: p.Role, Permitted: hasPermission(p, "order.refund.review")}, nil
+			return orderstore.SignerStatus{Role: p.Role, Permitted: hasPermission(p, "order.refund.review")}, nil
 		},
 	}
 }
 
 // asConflict 将家族包的冲突哨兵映射为后台统一的 409 语义。
 func asConflict(err error) error {
-	if errors.Is(err, refundpkg.ErrRefundConflict) || errors.Is(err, settlementpkg.ErrInvoiceConflict) {
+	if errors.Is(err, orderstore.ErrRefundConflict) || errors.Is(err, settlementpkg.ErrInvoiceConflict) {
 		return errConflict
 	}
 	return err
@@ -72,7 +72,7 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 	var auditPending []auditEntry
 	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
-		created, refundNo, recordID, err = a.refundReviewStore().ManualCreate(c.Request.Context(), tx, refundpkg.ManualRefundInput{
+		created, refundNo, recordID, err = a.refundReviewStore().ManualCreate(c.Request.Context(), tx, orderstore.ManualRefundInput{
 			ActorID: p.ID, OrderID: id, RequestID: in.RequestID, AmountCents: in.AmountCents, Reason: in.Reason,
 		})
 		if err != nil {
@@ -177,7 +177,7 @@ func (a ResourceAPI) reviewRefund(c *gin.Context) {
 	var auditPending []auditEntry
 	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
-		status, recordID, err = a.refundReviewStore().Review(c.Request.Context(), tx, c.Param("refund_no"), refundpkg.ReviewDecision{
+		status, recordID, err = a.refundReviewStore().Review(c.Request.Context(), tx, c.Param("refund_no"), orderstore.ReviewDecision{
 			Approve: approve, ApproveComment: in.ApproveComment, Reason: in.Reason, ActorID: p.ID,
 		})
 		if err != nil {
