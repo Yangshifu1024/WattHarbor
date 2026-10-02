@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -12,7 +13,6 @@ import (
 	"gorm.io/gorm/clause"
 	"strconv"
 	"time"
-	"unicode"
 )
 
 // registerWalletRisks 注册风控列表、审核和解冻路由。
@@ -78,20 +78,6 @@ type riskWallet struct {
 	Status                    string // 钱包状态，如 active / frozen
 }
 
-// validComment 校验风控留言：先按 validText 限长 1–255 字，再拒绝控制字符。
-// 控制字符会污染工单展示和后续导出，因此即使长度合法也判为无效。
-func validComment(s string) bool {
-	if !validText(s, 255) {
-		return false
-	}
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return false
-		}
-	}
-	return true
-}
-
 // reviewWalletRisk 要求财务或客服角色，并验证请求恰好关联一条 wallet_refund_frequency 冻结记录。
 // 通过时按原渠道拆分充值退款并冻结等额余额；拒绝时仅保存审核结论。
 // 相同请求、审核人、结论和留言返回首次回执；内容不一致时返回冲突。
@@ -108,7 +94,7 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if in.Approved == nil || !validComment(in.Comment) {
+	if in.Approved == nil || !money.ValidReviewComment(in.Comment) {
 		httpapi.BadRequest(c, "请填写审核结论及有效依据")
 		return
 	}
@@ -127,7 +113,7 @@ func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
 		}
 		err := tx.Table("wallet_risk_review").Where("request_id=?", req.RequestID).Take(&prior).Error
 		if err == nil {
-			if prior.ActorID != p.ID || prior.Approved != *in.Approved || prior.Comment != in.Comment {
+			if err := money.ReviewReplay(money.PriorReview{ActorID: prior.ActorID, Approved: prior.Approved, Comment: prior.Comment}, p.ID, *in.Approved, in.Comment); err != nil {
 				return errConflict
 			}
 			return json.Unmarshal([]byte(prior.ResponseJSON), &response)
@@ -186,7 +172,7 @@ func (a ResourceAPI) releaseWalletRisk(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if !validComment(in.Comment) {
+	if !money.ValidReviewComment(in.Comment) {
 		httpapi.BadRequest(c, "请填写有效解冻依据")
 		return
 	}
@@ -203,7 +189,7 @@ func (a ResourceAPI) releaseWalletRisk(c *gin.Context) {
 		}
 		err := tx.Table("wallet_risk_release").Where("request_id=?", req.RequestID).Take(&prior).Error
 		if err == nil {
-			if prior.ActorID != p.ID || prior.Comment != in.Comment {
+			if err := money.ReleaseReplay(money.PriorReview{ActorID: prior.ActorID, Comment: prior.Comment}, p.ID, in.Comment); err != nil {
 				return errConflict
 			}
 			return json.Unmarshal([]byte(prior.ResponseJSON), &response)
