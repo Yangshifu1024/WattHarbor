@@ -115,6 +115,11 @@ charge-pilot/
 │   │
 │   │ ═══ 协议契约（独立层）══════════════════════════════════
 │   │
+│   ├── central/admin/                           对内服务的管理接口，只放 HTTP 处理
+│   │   ├── （各家族的 http 装配文件）          路由注册与内部端点
+│   │   ├── （各家族的测试文件）                与业务代码同目录
+│   │   └── fonts/                               PDF 汇总字体子集与 OFL 许可证
+│   │
 │   ├── protocol/                               契约自足，不依赖任何实现层
 │   │   ├── adapter.go  command.go  endpoint.go  router.go  session_audit.go
 │   │   └── dc589/
@@ -230,6 +235,10 @@ charge-pilot/
 
 - `internal/interface/http/` 按服务分文件：`user_api.go`（`/api/v1/user/*`，含 `/api/v1/user/auth/*` 登录）、`admin_auth.go` 与 `admin_*.go`（`/api/v1/admin/*`）、`internal_api.go` 等（`/api/v1/internal/*`）、`device_api.go`、`worker_api.go`。`gin.Context` 只在此处出现；`middleware.go` 管鉴权与数据范围，`error_mapper.go` 把领域错误映射为 HTTP 状态。
 
+- `internal/central/admin/` 是 central 进程的业务处理器：表名与查询构造一律不出现，
+  读写经 `infrastructure/database` 的 store。与 `interface/http` 一样只做校验、权限、
+  审计编排与响应组装；各家族的 http 装配文件负责内部端点的路由注册，`fonts/` 是 PDF 汇总用的
+  字体子集与 OFL 许可证（非代码，不参与分层）。
 - `internal/protocol/` 是 gateway 与 central 共享的设备契约层，与 `domain` 平级，既不属于 `domain` 也不属于 `infrastructure`：
   - 根包只放跨进程契约：`Adapter`（`Name` + `ServeConn`）、`Sink`、`Event`、`Command`、`Registry`、`Listener`。
   - 每个协议一个子目录实现 `Adapter`，当前为 `dc589/`。帧格式、校验、指令编解码、故障码语义（`0xBB` 烟雾）、单位换算（分 → 协议余额单位）全部封闭在该目录内。
