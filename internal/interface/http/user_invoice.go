@@ -2,7 +2,7 @@ package http
 
 import (
 	"errors"
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -101,7 +101,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 	}
 	// 开票金额取自计费回执，
 	// 与订单视图同源，绝不取自计费任务从不写入的列。
-	receipt := money.ChargeFeeRecord{}
+	receipt := orderstore.ChargeFeeRecord{}
 	if err := a.UserDB.WithContext(ctx).Where("charge_order_id = ?", order.ID).Take(&receipt).Error; err != nil {
 		httpapi.Write(c, 409, 2009, "订单尚未计费，暂不能申请发票", nil)
 		return

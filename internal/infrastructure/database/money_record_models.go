@@ -1,12 +1,43 @@
-// Package payment 承载支付订单家族的表记录类型：
-// payment_order / charge_payment_intent / charge_prepay /
-// payment_callback_idempotent。渠道适配器在 central/channel。
-package money
+package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
+
+// 这批类型原先放在 domain/money，注释写着"承载表记录类型"——但它们带
+// gorm 列映射和 TableName()，是持久化模型而不是业务概念。领域层一旦开始
+// 标注列名，规则与单位就跟着库结构走，改表要改业务代码。
+//
+// 判据不是"import 了 gorm 就算违规"：gorm:"column:" 与 TableName() 都只是
+// 字符串与普通方法，不 import gorm 也能写。只查 import 的护栏会让它们从
+// 缝里溜过去，因此 layers.sh 现在同时拦列映射与表名映射。
+
+// ChargeFeeRecord 保存订单结算回执，费用明细在计价引擎输出的 result_json 中。
+type ChargeFeeRecord struct {
+	ChargeOrderID  uint64 `gorm:"column:charge_order_id;primaryKey"`
+	CalculationNo  string `gorm:"column:calculation_no"`
+	ResultJSON     []byte `gorm:"column:result_json"`
+	ShortfallCents int64  `gorm:"column:shortfall_cents"`
+}
+
+func (ChargeFeeRecord) TableName() string { return "charge_fee_receipt" }
+
+// Fees 把存下来的费用明细解码成扁平的金额字段。
+func (r ChargeFeeRecord) Fees() (electric, service, total int64, ok bool) {
+	// 回执存的是完整的计费 Result，
+	// 其中费用字段就在顶层，与 source 块并列。
+	var flat struct {
+		ElectricCents int64 `json:"electric_cents"`
+		ServiceCents  int64 `json:"service_cents"`
+		TotalCents    int64 `json:"total_cents"`
+	}
+	if err := json.Unmarshal(r.ResultJSON, &flat); err != nil {
+		return 0, 0, 0, false
+	}
+	return flat.ElectricCents, flat.ServiceCents, flat.TotalCents, true
+}
 
 type PaymentOrderRecord struct {
 	ID                  uint64         `gorm:"column:id;primaryKey"`
@@ -73,3 +104,50 @@ type ChargePrepayRecord struct {
 }
 
 func (ChargePrepayRecord) TableName() string { return "charge_prepay" }
+
+type RefundRecord struct {
+	ExecutionPolicy string         `gorm:"column:execution_policy;default:manual_review"`
+	NextAttemptAt   time.Time      `gorm:"column:next_attempt_at;default:CURRENT_TIMESTAMP(3)"`
+	RetryCount      uint32         `gorm:"column:retry_count"`
+	ID              uint64         `gorm:"column:id;primaryKey"`
+	RefundNo        string         `gorm:"column:refund_no"`
+	PaymentOrderID  uint64         `gorm:"column:payment_order_id"`
+	UserID          uint64         `gorm:"column:user_id"`
+	BizType         string         `gorm:"column:biz_type"`
+	BizID           uint64         `gorm:"column:biz_id"`
+	RefundCents     int64          `gorm:"column:refund_cents"`
+	Reason          sql.NullString `gorm:"column:reason"`
+	Status          string         `gorm:"column:status"`
+	CreatedMonth    time.Time      `gorm:"column:created_month;primaryKey"`
+}
+
+func (RefundRecord) TableName() string { return "refund_record" }
+
+type CardCharge struct {
+	ChargeOrderID    uint64
+	CardID           uint64
+	PortCode         string
+	ActivePort       *string
+	PaidCents        int64
+	PurchasedMinutes uint16
+	MaxMinutes       uint16
+	CardNo           string
+	WalletAfterCents int64
+	PackageJSON      []byte
+}
+
+func (CardCharge) TableName() string { return "card_charge" }
+
+type CardOperation struct {
+	OperationID   string `json:"operation_id"`
+	DeviceID      string `json:"device_id"`
+	EventID       string `json:"event_id"`
+	ChargeOrderID uint64 `json:"charge_order_id"`
+	CardID        uint64 `json:"card_id"`
+	Kind          string `json:"kind"`
+	PriceCents    int64  `json:"price_cents"`
+	Minutes       uint16 `json:"minutes"`
+	Status        string `json:"status"`
+}
+
+func (CardOperation) TableName() string { return "card_operation" }

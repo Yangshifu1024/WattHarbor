@@ -107,7 +107,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		httpapi.BadRequest(c, "刷卡事件、卡号、端口无效")
 		return
 	}
-	var prior money.CardOperation
+	var prior orderstore.CardOperation
 	found := a.Store.DB.WithContext(c.Request.Context()).Table("card_operation o").Select("o.*").Joins("JOIN online_card c ON c.id=o.card_id").Joins("JOIN card_charge s ON s.charge_order_id=o.charge_order_id").Where("o.event_id=? AND c.card_no=? AND s.port_code=?", in.EventID, in.CardNo, in.PortID).Find(&prior)
 	if found.Error != nil {
 		httpapi.Write(c, 503, 5001, "刷卡事件暂不可读取", nil)
@@ -140,7 +140,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		return
 	}
 	var active int64
-	if err := a.Store.DB.WithContext(c.Request.Context()).Model(&money.CardCharge{}).Where("active_port=?", in.PortID).Count(&active).Error; err != nil {
+	if err := a.Store.DB.WithContext(c.Request.Context()).Model(&orderstore.CardCharge{}).Where("active_port=?", in.PortID).Count(&active).Error; err != nil {
 		httpapi.Write(c, 503, 5001, "当前刷卡订单暂不可读取", nil)
 		return
 	}

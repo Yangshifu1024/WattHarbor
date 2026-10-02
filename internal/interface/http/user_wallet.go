@@ -134,7 +134,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		httpapi.Write(c, 409, 2009, "账号身份不可用", nil)
 		return
 	}
-	var order money.PaymentOrderRecord
+	var order orderstore.PaymentOrderRecord
 	err := a.UserDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Serialize all wallet requests for one owner, including simultaneous retries.
 		var owner struct{ ID uint64 }
@@ -175,7 +175,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		order = money.PaymentOrderRecord{OrderNo: orderNo, BizType: "wallet_recharge", UserID: user, PayMethod: "wechat", TotalCents: in.AmountCents, Status: "initiated", ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
+		order = orderstore.PaymentOrderRecord{OrderNo: orderNo, BizType: "wallet_recharge", UserID: user, PayMethod: "wechat", TotalCents: in.AmountCents, Status: "initiated", ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
@@ -192,7 +192,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 	canPay := order.Status == "initiated" && order.ExpiredAt.Valid && order.ExpiredAt.Time.After(time.Now())
 	response := gin.H{"request_id": in.RequestID, "payment_order_id": order.ID, "merchant_order_no": order.OrderNo, "amount_cents": order.TotalCents, "status": order.Status, "can_pay": canPay}
 	if canPay {
-		var stored money.ChargePrepayRecord
+		var stored orderstore.ChargePrepayRecord
 		var params orderstore.PrepayParams
 		err := a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error
 		if err == nil {
@@ -205,7 +205,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 			params, err = a.Prepay.Prepay(ctx, orderstore.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openid, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
 			if err == nil {
 				encoded, _ := json.Marshal(params)
-				stored = money.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
+				stored = orderstore.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
 				err = a.UserDB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&stored).Error
 				if err == nil {
 					err = a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error

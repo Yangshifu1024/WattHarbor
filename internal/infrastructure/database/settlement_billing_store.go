@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"log"
 	"reflect"
 	"time"
@@ -90,7 +89,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 		return Source{}, ErrBillingConflict
 	}
 	source := Source{ChargeOrderID: id, OrderNo: order.OrderNo, UserID: order.UserID, Rule: contract.Rule, Offer: contract.Offer, Meter: charging.ActualMeter{StartedAt: order.StartedAt.Time, EndedAt: meter.EndedAt, ChargedWh: meter.ChargedWh, ChargedSeconds: meter.ChargedSeconds, Segments: meter.Segments}}
-	var card money.CardCharge
+	var card CardCharge
 	if err := db.Where("charge_order_id=?", id).Find(&card).Error; err != nil {
 		return source, err
 	}
@@ -104,7 +103,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 		base.DurationMinutes = card.PurchasedMinutes
 		source.Offer = &base
 		var pending int64
-		if err := db.Model(&money.CardOperation{}).Where("charge_order_id=? AND status='confirming'", id).Count(&pending).Error; err != nil {
+		if err := db.Model(&CardOperation{}).Where("charge_order_id=? AND status='confirming'", id).Count(&pending).Error; err != nil {
 			return source, err
 		}
 		if pending > 0 {
@@ -181,7 +180,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 				return err
 			}
 		}
-		var payment money.PaymentOrderRecord
+		var payment PaymentOrderRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", reference.PaymentOrderID.Int64).Take(&payment).Error; err != nil {
 			return err
 		}
@@ -235,7 +234,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		// 重放结算在回执检查时提前返回，不重复发券。
 		applyOrderCampaigns(tx, order, result.TotalCents)
 		var reserved int64
-		if err := tx.Model(&money.RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", payment.ID).Scan(&reserved).Error; err != nil {
+		if err := tx.Model(&RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", payment.ID).Scan(&reserved).Error; err != nil {
 			return err
 		}
 		surplus := payment.PaidCents - result.TotalCents - payment.RefundedCents - reserved
@@ -248,7 +247,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 					return err
 				}
 			} else {
-				refund := money.RefundRecord{RefundNo: fmt.Sprintf("FEE-R%020d", order.ID), PaymentOrderID: payment.ID, UserID: order.UserID, BizType: "charge", BizID: order.ID, RefundCents: surplus, Reason: sql.NullString{String: "实际计费后的预付差额", Valid: true}, Status: "pending", ExecutionPolicy: "automatic", CreatedMonth: dbutil.MonthStart()}
+				refund := RefundRecord{RefundNo: fmt.Sprintf("FEE-R%020d", order.ID), PaymentOrderID: payment.ID, UserID: order.UserID, BizType: "charge", BizID: order.ID, RefundCents: surplus, Reason: sql.NullString{String: "实际计费后的预付差额", Valid: true}, Status: "pending", ExecutionPolicy: "automatic", CreatedMonth: dbutil.MonthStart()}
 				if err := tx.Create(&refund).Error; err != nil {
 					return err
 				}

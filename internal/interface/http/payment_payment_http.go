@@ -268,7 +268,7 @@ func (a SimulationCallbackAPI) callback(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid simulation request")
 		return
 	}
-	var intent money.PaymentIntentRecord
+	var intent orderstore.PaymentIntentRecord
 	err := a.DB.WithContext(c.Request.Context()).Where("merchant_order_no = ?", body.MerchantOrderNo).Take(&intent).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusNotFound, 1004, "payment intent not found", nil)

@@ -77,6 +77,12 @@ while IFS= read -r file; do
   if grep -qE 'charge-pilot/internal/(infrastructure|interface)/' "$file"; then
     report "$file: 领域层依赖实现层"
   fi
+  # 结构体标签与表名映射同样算框架痕迹。只查 import 是不够的：
+  # gorm:"column:" 与 TableName() 都是纯字符串，不 import gorm 也能写，
+  # 于是带着列映射的领域类型会从 import 检查的缝里溜过去。
+  if grep -qE 'gorm:"(column|primaryKey)|func \([A-Za-z]+\) TableName\(\) string' "$file"; then
+    report "$file: 领域层出现 gorm 列映射或表名映射，持久化细节应归 infrastructure/database"
+  fi
 done < <(find internal/domain -name '*.go' ! -name '*_test.go')
 
 # application 层：可依赖 domain、infrastructure 与 protocol，不得依赖 interface。

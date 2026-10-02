@@ -58,11 +58,11 @@ charge-pilot/
 │   │   │   ├── device.go  actual.go  breakdown.go
 │   │   │
 │   │   ├── money/                               资金
-│   │   │   ├── payment.go  payment_errors.go     支付单与回调核验
-│   │   │   ├── refund.go  review.go             退款单与人工复核
-│   │   │   ├── settlement.go  allocation.go     分账结算与分配
+│   │   │   ├── payment_errors.go                支付渠道与回调核验
+│   │   │   ├── review.go                        退款人工复核
+│   │   │   ├── allocation.go                    分账分配
 │   │   │   ├── coupon.go  coupon_activity.go    券发放与活动规则
-│   │   │   ├── card.go  card_number.go  card_port.go  scan.go  在线卡与刷卡
+│   │   │   ├── card_number.go  card_port.go  scan.go  卡号与刷卡
 │   │   │   ├── reconcile.go                     对账差异比对
 │   │   │
 │   │   ├── devices/                             设备
@@ -209,8 +209,8 @@ charge-pilot/
   domain/
     identity/    user/（user.go auth.go）  auth/（wechat.go development.go）
     charging/    order.go  session.go  billing.go  stop.go  scheme.go
-    money/       payment.go  wallet.go  refund.go  coupon.go
-                 card.go  settlement.go  channel.go
+    money/       wallet.go  refund.go  coupon.go  channel.go
+                 card_number.go  card_port.go  scan.go  reconcile.go
     devices/     station.go  device.go  vendor.go  fault.go  telemetry.go
     operations/  account.go  scope.go  role.go  audit.go  announcement.go
                  export.go  webhook.go  alert.go  whitelabel.go

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"strings"
 	"time"
 
@@ -98,7 +97,7 @@ func (s ReviewStore) ManualCreate(ctx context.Context, tx *gorm.DB, in ManualRef
 		if pending > pay.PaidCents-pay.RefundedCents-in.AmountCents {
 			return ErrRefundConflict
 		}
-		record := money.RefundRecord{RefundNo: refundNo, PaymentOrderID: pay.ID, UserID: pay.UserID, BizType: "charge", BizID: in.OrderID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: "pending", ExecutionPolicy: "manual_review", NextAttemptAt: time.Now().UTC(), CreatedMonth: dbutil.MonthStart()}
+		record := RefundRecord{RefundNo: refundNo, PaymentOrderID: pay.ID, UserID: pay.UserID, BizType: "charge", BizID: in.OrderID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: "pending", ExecutionPolicy: "manual_review", NextAttemptAt: time.Now().UTC(), CreatedMonth: dbutil.MonthStart()}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
@@ -132,7 +131,7 @@ type reviewRow struct {
 
 // refundSnapshot 将退款的业务要素编码为规范 JSON，作为双人复核快照。
 // 状态、重试次数和时间戳在审核期间可能变化，不参与一致性比较。
-func refundSnapshot(r money.RefundRecord) string {
+func refundSnapshot(r RefundRecord) string {
 	b, _ := json.Marshal(map[string]any{"refund_no": r.RefundNo, "payment_order_id": r.PaymentOrderID, "user_id": r.UserID, "biz_type": r.BizType, "biz_id": r.BizID, "refund_cents": r.RefundCents})
 	return string(b)
 }
@@ -143,7 +142,7 @@ func refundSnapshot(r money.RefundRecord) string {
 func (s ReviewStore) Review(ctx context.Context, tx *gorm.DB, refundNo string, in ReviewDecision) (string, uint64, error) {
 	status := "rejected"
 	recordID := uint64(0)
-	var r money.RefundRecord
+	var r RefundRecord
 	if err := tx.WithContext(ctx).Where("refund_no=? AND deleted_at IS NULL", refundNo).Take(&r).Error; err != nil {
 		return status, recordID, err
 	}
@@ -201,7 +200,7 @@ func (s ReviewStore) Review(ctx context.Context, tx *gorm.DB, refundNo string, i
 // Retry 将 automatic、pending/processing 退款的 next_attempt_at 设为当前时间，
 // 不修改金额或状态，须在调用方事务内执行。人工复核退款不可通过此入口执行。
 func (s ReviewStore) Retry(ctx context.Context, tx *gorm.DB, refundNo string) (uint64, error) {
-	var r money.RefundRecord
+	var r RefundRecord
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_no=? AND deleted_at IS NULL", refundNo).Take(&r).Error; err != nil {
 		return 0, err
 	}

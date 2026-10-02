@@ -57,7 +57,7 @@ func (s PaymentIntentStore) Replay(ctx context.Context, userID uint64, requestID
 	if s.DB == nil || userID == 0 || uuid.Validate(requestID) != nil {
 		return nil, money.ErrPaymentIntentConflict
 	}
-	var row money.PaymentIntentRecord
+	var row PaymentIntentRecord
 	err := s.DB.WithContext(ctx).Where("user_id = ? AND client_request_id = ?", userID, requestID).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -96,7 +96,7 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 		// 券的分摊需要另立一份契约，才能与固定价套餐组合。
 		return PaymentIntent{}, money.ErrPaymentIntentConflict
 	}
-	var previous money.PaymentIntentRecord
+	var previous PaymentIntentRecord
 	err := s.DB.WithContext(ctx).Where("user_id = ? AND client_request_id = ?", input.UserID, input.ClientRequestID).Take(&previous).Error
 	if err == nil {
 		return existingIntent(previous, input)
@@ -139,7 +139,7 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 			return PaymentIntent{}, err
 		}
 	}
-	if err := s.DB.WithContext(ctx).Model(&money.PaymentIntentRecord{}).Where("status = 'initiated' AND expires_at < NOW(3)").Update("status", "expired").Error; err != nil {
+	if err := s.DB.WithContext(ctx).Model(&PaymentIntentRecord{}).Where("status = 'initiated' AND expires_at < NOW(3)").Update("status", "expired").Error; err != nil {
 		return PaymentIntent{}, err
 	}
 	intentID := uuid.NewString()
@@ -172,14 +172,14 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 			return err
 		}
 		payable := estimate.TotalCents - discount
-		paymentOrder := money.PaymentOrderRecord{OrderNo: merchantOrderNo, BizType: "charge", BizID: 0,
+		paymentOrder := PaymentOrderRecord{OrderNo: merchantOrderNo, BizType: "charge", BizID: 0,
 			UserID: input.UserID, PayMethod: "wechat", TotalCents: payable,
 			Status: "initiated", ExpiredAt: sql.NullTime{Time: expiresAt, Valid: true}, CreatedMonth: dbutil.MonthStart()}
 		if err := tx.Create(&paymentOrder).Error; err != nil {
 			return err
 		}
 		paymentID = paymentOrder.ID
-		intent := money.PaymentIntentRecord{IntentID: intentID, ClientRequestID: input.ClientRequestID,
+		intent := PaymentIntentRecord{IntentID: intentID, ClientRequestID: input.ClientRequestID,
 			MerchantOrderNo: merchantOrderNo, PaymentOrderID: paymentID, UserID: input.UserID, OpenID: openid,
 			DeviceID: input.Port.DeviceID, PortNo: input.Port.Port.PortNo, PortCode: input.Port.Port.PortID,
 			StationID: input.Port.StationID, PricingRuleID: input.Rule.ID, PricingRuleVersion: input.Rule.Version,
@@ -210,7 +210,7 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 		CouponGrantID: input.CouponGrantID, DiscountCents: discount, PayableCents: estimate.TotalCents - discount}, nil
 }
 
-func existingIntent(row money.PaymentIntentRecord, input IntentInput) (PaymentIntent, error) {
+func existingIntent(row PaymentIntentRecord, input IntentInput) (PaymentIntent, error) {
 	if row.PortCode != input.Port.Port.PortID || row.DeviceID != input.Port.DeviceID || row.Status != "initiated" || time.Now().After(row.ExpiresAt) {
 		return PaymentIntent{}, money.ErrPaymentIntentConflict
 	}
@@ -252,7 +252,7 @@ func existingIntent(row money.PaymentIntentRecord, input IntentInput) (PaymentIn
 }
 
 func (s PaymentIntentStore) PrepayParams(ctx context.Context, paymentOrderID uint64) (PrepayParams, error) {
-	var record money.ChargePrepayRecord
+	var record ChargePrepayRecord
 	if err := s.DB.WithContext(ctx).Where("payment_order_id = ?", paymentOrderID).Take(&record).Error; err != nil {
 		return PrepayParams{}, err
 	}
@@ -271,6 +271,6 @@ func (s PaymentIntentStore) SavePrepay(ctx context.Context, paymentOrderID uint6
 	if err != nil {
 		return err
 	}
-	record := money.ChargePrepayRecord{PaymentOrderID: paymentOrderID, ParamsJSON: data, PrepayID: sql.NullString{String: params.PrepayID, Valid: true}}
+	record := ChargePrepayRecord{PaymentOrderID: paymentOrderID, ParamsJSON: data, PrepayID: sql.NullString{String: params.PrepayID, Valid: true}}
 	return s.DB.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "payment_order_id"}}, DoNothing: true}).Create(&record).Error
 }
