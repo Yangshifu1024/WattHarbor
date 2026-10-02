@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strings"
 )
 
@@ -28,8 +29,8 @@ func (a ResourceAPI) validateScope(ctx context.Context, scopeType string, ids []
 		}
 		return nil
 	}
-	var found int64
-	if err := a.Store.AdminDB.WithContext(ctx).Table("station").Where("id IN ? AND deleted_at IS NULL", ids).Count(&found).Error; err != nil {
+	found, err := paystore.CountExistingStations(ctx, a.Store.AdminDB, ids)
+	if err != nil {
 		return err
 	}
 	if int(found) != len(ids) {

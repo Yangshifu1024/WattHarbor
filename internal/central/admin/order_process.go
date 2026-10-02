@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -39,13 +40,6 @@ type OrderProcessPage struct {
 type orderProcessQuery struct {
 	AfterID uint64
 	Limit   uint16
-}
-
-type orderProcessIdentity struct {
-	ID       uint64
-	OrderNo  string
-	DeviceID string
-	PortNo   uint8
 }
 
 var errOrderProcess = errors.New("充电过程暂时无法读取，请稍后重试")
@@ -89,9 +83,8 @@ func (a ResourceAPI) orderProcess(c *gin.Context) {
 		chargehttp.AdminResourceFailure(c, errOrderProcess)
 		return
 	}
-	var order orderProcessIdentity
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("charge_order").
-		Select("id,order_no,device_id,port_no").Where("id=? AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
+	order, err := paystore.FindOrderIdentity(c.Request.Context(), a.Store.UserDB, id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -103,7 +96,7 @@ func (a ResourceAPI) orderProcess(c *gin.Context) {
 	httpapi.OK(c, page)
 }
 
-func (a ResourceAPI) readOrderProcess(ctx context.Context, order orderProcessIdentity, q orderProcessQuery) (OrderProcessPage, error) {
+func (a ResourceAPI) readOrderProcess(ctx context.Context, order paystore.OrderProcessIdentity, q orderProcessQuery) (OrderProcessPage, error) {
 	if a.GatewayURL == "" || a.ServiceToken == "" || order.ID == 0 || order.OrderNo == "" || order.DeviceID == "" || order.PortNo == 0 {
 		return OrderProcessPage{}, errOrderProcess
 	}

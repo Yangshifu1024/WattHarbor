@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -51,13 +52,12 @@ func (a ResourceAPI) requirePricingTargetScope(c *gin.Context, stationID uint64,
 		httpapi.Write(c, 403, 1003, "厂商数据范围受限，不能修改整站默认配置", nil)
 		return false
 	}
-	var device struct{ VendorID uint64 }
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("device_meta").Select("vendor_id").
-		Where("station_id=? AND device_id=? AND deleted_at IS NULL", stationID, deviceID).Take(&device).Error; err != nil {
+	vendorID, err := paystore.DeviceVendorID(c.Request.Context(), a.Store.AdminDB, stationID, deviceID)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return false
 	}
-	if !scope.AllowsVendor(device.VendorID) {
+	if !scope.AllowsVendor(vendorID) {
 		httpapi.Write(c, 403, 1003, "该设备厂商不在您的数据范围内", nil)
 		return false
 	}

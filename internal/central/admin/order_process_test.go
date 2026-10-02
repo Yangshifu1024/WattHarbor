@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +47,7 @@ func TestOrderProcessProxyPreservesReadingsAndCursor(t *testing.T) {
 	}))
 	defer gateway.Close()
 	a := ResourceAPI{GatewayURL: gateway.URL, ServiceToken: "process-service"}
-	page, err := a.readOrderProcess(context.Background(), orderProcessIdentity{ID: 17, OrderNo: "CH-fixed", DeviceID: "board&+一", PortNo: 2}, orderProcessQuery{AfterID: 10, Limit: 2})
+	page, err := a.readOrderProcess(context.Background(), paystore.OrderProcessIdentity{ID: 17, OrderNo: "CH-fixed", DeviceID: "board&+一", PortNo: 2}, orderProcessQuery{AfterID: 10, Limit: 2})
 	if err != nil || len(page.Items) != 1 || page.NextAfterID == nil || *page.NextAfterID != 13 {
 		t.Fatalf("lost process cursor: %+v %v", page, err)
 	}
@@ -83,7 +84,7 @@ func TestOrderProcessProxyFailsClosedAndAcceptsActualEmptyPage(t *testing.T) {
 			}))
 			defer gateway.Close()
 			a := ResourceAPI{GatewayURL: gateway.URL, ServiceToken: "service"}
-			page, err := a.readOrderProcess(context.Background(), orderProcessIdentity{ID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1}, orderProcessQuery{AfterID: 10, Limit: 2})
+			page, err := a.readOrderProcess(context.Background(), paystore.OrderProcessIdentity{ID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1}, orderProcessQuery{AfterID: 10, Limit: 2})
 			if test.valid {
 				if err != nil || page.Items == nil || len(page.Items) != 0 || page.NextAfterID != nil {
 					t.Fatalf("actual empty page: %+v %v", page, err)
@@ -103,7 +104,7 @@ func TestOrderProcessProxyDoesNotRedirectServiceToken(t *testing.T) {
 		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
 	}))
 	defer gateway.Close()
-	_, err := (ResourceAPI{GatewayURL: gateway.URL, ServiceToken: "service"}).readOrderProcess(context.Background(), orderProcessIdentity{ID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1}, orderProcessQuery{Limit: 1000})
+	_, err := (ResourceAPI{GatewayURL: gateway.URL, ServiceToken: "service"}).readOrderProcess(context.Background(), paystore.OrderProcessIdentity{ID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1}, orderProcessQuery{Limit: 1000})
 	if !errors.Is(err, errOrderProcess) || forwarded {
 		t.Fatalf("redirect leaked service credentials: forwarded=%v err=%v", forwarded, err)
 	}

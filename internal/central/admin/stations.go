@@ -7,7 +7,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"strings"
 )
 
@@ -43,8 +42,8 @@ func (a ResourceAPI) station(c *gin.Context) {
 	if !a.requireStationScope(c, id) {
 		return
 	}
-	var row paystore.Station
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error; err != nil {
+	row, err := paystore.FindStation(c.Request.Context(), a.Store.AdminDB, id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -97,12 +96,12 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 			}
 			return chargehttp.AdminResourceAudit(tx, p, "create", "station", row.ID, nil, row, c.ClientIP(), httpapi.RequestID(c))
 		}
-		var before paystore.Station
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
+		before, err := paystore.LockStationForUpdate(tx, id)
+		if err != nil {
 			return err
 		}
 		row.SplitTemplateID = before.SplitTemplateID
-		if err := tx.Model(&paystore.Station{}).Where("id = ?", id).Updates(map[string]any{"name": row.Name, "address": row.Address, "longitude": row.Longitude, "latitude": row.Latitude, "status": row.Status, "contact_phone": row.ContactPhone}).Error; err != nil {
+		if err := paystore.UpdateStation(tx, id, map[string]any{"name": row.Name, "address": row.Address, "longitude": row.Longitude, "latitude": row.Latitude, "status": row.Status, "contact_phone": row.ContactPhone}); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, p, "update", "station", id, before, row, c.ClientIP(), httpapi.RequestID(c))
