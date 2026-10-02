@@ -182,6 +182,14 @@ for spec in "admin.openapi.json admin" "user.openapi.json user"; do
   fi
 done
 
+# AGENTS.md 的目录树是维护契约，树里写了而仓库里没有的文件会让读文档的人扑空。
+# 此前这棵树描述的是一个从未建成的目标结构，漂移长期没人发现。
+if ! ghosts=$(python3 scripts/check/doc_tree.py); then
+  while IFS= read -r name; do
+    [[ -n $name ]] && report "AGENTS.md 目录树里的文件不存在：$name"
+  done <<<"$ghosts"
+fi
+
 # 过渡中的 central/admin 只放 HTTP 处理：不得再定义 gorm 模型或表名映射。
 # 模型留在 infrastructure/database，规则留在 domain——这条守住就不再回退。
 while IFS= read -r file; do
