@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -128,4 +129,15 @@ func TOTPCode(secret string, now time.Time) (string, error) {
 		return "", err
 	}
 	return hotp(key, uint64(now.Unix()/int64(totpPeriod/time.Second)))
+}
+
+// RandomSecret 生成 n 字节密码学随机数并编成不带填充的 base64url 串。
+// 会话 id、刷新令牌密钥、MFA 挑战码等需要不可预测字符串的地方共用它，
+// 保证各处的随机源与编码一致。
+func RandomSecret(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

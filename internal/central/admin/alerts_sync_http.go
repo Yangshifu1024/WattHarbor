@@ -2,12 +2,11 @@ package admin
 
 import (
 	"context"
-	"net/http"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	"net/http"
+	"time"
 )
 
 // DeviceAlertSyncAPI 把设备告警同步暴露给 worker 触发；同步在 central 完成，

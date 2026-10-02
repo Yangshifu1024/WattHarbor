@@ -1,10 +1,9 @@
 package admin
 
 import (
+	"github.com/gin-gonic/gin"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
 func TestStationFilterValidation(t *testing.T) {

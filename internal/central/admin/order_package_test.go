@@ -2,10 +2,9 @@ package admin
 
 import (
 	"encoding/json"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"strings"
 	"testing"
-
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 )
 
 func TestOrderPackageKeepsPurchasedOfferSeparateFromSchemePackages(t *testing.T) {

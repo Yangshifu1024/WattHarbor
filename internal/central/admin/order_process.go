@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
-	"github.com/gin-gonic/gin"
 )
 
 // ChargeProcessPoint 是原始心跳过程读数；可空字段保留未上报状态，不补零或插值。

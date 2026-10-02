@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"strings"
 )
 
 // errScopeConflict 表示范围配置本身不合法（类型未知、ID 不存在、数量越界），统一按 409 返回。

@@ -1,4 +1,4 @@
-package admin
+package database
 
 import (
 	"context"
@@ -13,15 +13,9 @@ import (
 	"time"
 )
 
-// 后台登录相关的三类失败原因。对外只区分"凭据错误"和"被锁定"，
-// 避免通过报错文案区分"用户不存在"与"密码错误"，给暴力破解留线索。
-var ErrCredentials = errors.New("用户名或密码错误")
-var ErrLocked = errors.New("账号已锁定，请在 30 分钟后重试")
-var ErrMFA = errors.New("此账号已启用双因素认证，当前登录入口暂不支持")
-
-// Account 是一个后台账号在 admin_user 表上的行，同时承载登录判定所需的全部字段。
+// AdminAccount 是一个后台账号在 admin_user 表上的行，同时承载登录判定所需的全部字段。
 // 敏感字段一律 json："-"，不会随任何接口返回。
-type Account struct {
+type AdminAccount struct {
 	AuthVersion      uint64         `json:"-"`             // 凭证版本号：改密或强制下线时自增，用于让已签发的令牌立即失效
 	ID               uint64         `json:"admin_user_id"` // 账号主键
 	Username         string         `json:"username"`      // 登录名
@@ -35,15 +29,15 @@ type Account struct {
 	LockedUntil      sql.NullTime   `json:"-"`             // 锁定到期时间；可空，未锁定为 null
 }
 
-// TableName 指明 Account 映射到 admin_user（表名与模型名不一致，必须显式指定）。
-func (Account) TableName() string { return "admin_user" }
+// TableName 指明 AdminAccount 映射到 admin_user（表名与模型名不一致，必须显式指定）。
+func (AdminAccount) TableName() string { return "admin_user" }
 
-type Store struct{ DB *gorm.DB }
+type AdminStore struct{ DB *gorm.DB }
 
 // Bootstrap 在全新安装时创建第一个后台账号。
 // 用户名与密码都为空表示不初始化；用户名与密码只给一半、或密码不在 12–72 字节之间，一律报错。
 // 只在库里还没有任何账号时才创建，绝不覆盖已有账号的口令。
-func (s Store) Bootstrap(ctx context.Context, username, password string) error {
+func (s AdminStore) Bootstrap(ctx context.Context, username, password string) error {
 	if username == "" && password == "" {
 		return nil
 	}
@@ -60,18 +54,18 @@ func (s Store) Bootstrap(ctx context.Context, username, password string) error {
 			return err
 		}
 		var count int64
-		if err := tx.Model(&Account{}).Where("deleted_at IS NULL").Count(&count).Error; err != nil {
+		if err := tx.Model(&AdminAccount{}).Where("deleted_at IS NULL").Count(&count).Error; err != nil {
 			return err
 		}
 		// 仅在空安装中初始化管理员账号，不覆盖已有口令。
 		if count > 0 {
 			return nil
 		}
-		account := Account{Username: username, PasswordHash: string(hash), RoleID: role.ID, Status: "active"}
+		account := AdminAccount{Username: username, PasswordHash: string(hash), RoleID: role.ID, Status: "active"}
 		if err := tx.Create(&account).Error; err != nil {
 			return err
 		}
-		return audit(tx, account, "bootstrap", "")
+		return WriteAuthAudit(tx, account, "bootstrap", "")
 	})
 }
 
@@ -79,23 +73,23 @@ func (s Store) Bootstrap(ctx context.Context, username, password string) error {
 // 连续 5 次失败即锁定 30 分钟，锁定到期后失败计数自动清零。
 // 账号启用双因素认证时，口令正确也只返回账号、不写成功状态，由调用方接着走 MFA 流程。
 // 用户名不存在与口令错误返回同一个错误，不给暴力破解区分线索。
-func (s Store) Login(ctx context.Context, username, password, ip string) (Account, error) {
-	var account Account
+func (s AdminStore) Login(ctx context.Context, username, password, ip string) (AdminAccount, error) {
+	var account AdminAccount
 	var denied error
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("username = ? AND deleted_at IS NULL", username).Take(&account).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrCredentials
+			return operations.ErrCredentials
 		}
 		if err != nil {
 			return err
 		}
 		now := time.Now().UTC()
 		if account.Status == "disabled" {
-			return ErrCredentials
+			return operations.ErrCredentials
 		}
 		if account.Status == "locked" && (!account.LockedUntil.Valid || account.LockedUntil.Time.After(now)) {
-			return ErrLocked
+			return operations.ErrLocked
 		}
 		attempts := account.FailedLoginCount
 		if account.LockedUntil.Valid && !account.LockedUntil.Time.After(now) {
@@ -104,40 +98,40 @@ func (s Store) Login(ctx context.Context, username, password, ip string) (Accoun
 		if bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(password)) != nil {
 			attempts++
 			updates := map[string]any{"failed_login_count": attempts, "status": "active", "locked_until": nil}
-			denied = ErrCredentials
+			denied = operations.ErrCredentials
 			if attempts >= 5 {
 				updates["status"] = "locked"
 				updates["locked_until"] = now.Add(30 * time.Minute)
-				denied = ErrLocked
+				denied = operations.ErrLocked
 			}
-			if err := tx.Model(&Account{}).Where("id = ?", account.ID).Updates(updates).Error; err != nil {
+			if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(updates).Error; err != nil {
 				return err
 			}
-			return audit(tx, account, "login_failed", ip)
+			return WriteAuthAudit(tx, account, "login_failed", ip)
 		}
 		if account.MFAEnabled {
 			// 口令已验证；启用 MFA 的账号需完成二次验证后才记录登录成功并发放会话。
 			account.Status = "active"
 			return nil
 		}
-		if err := tx.Model(&Account{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {
+		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {
 			return err
 		}
 		account.Status = "active"
-		return audit(tx, account, "login", ip)
+		return WriteAuthAudit(tx, account, "login", ip)
 	})
 	if err != nil {
-		return Account{}, err
+		return AdminAccount{}, err
 	}
 	if denied != nil {
-		return Account{}, denied
+		return AdminAccount{}, denied
 	}
 	return account, nil
 }
 
 // CompleteMFA 校验 TOTP，成功后更新登录时间；错误验证码计入账号锁定计数。
-func (s Store) CompleteMFA(ctx context.Context, accountID uint64, code, ip string) (Account, error) {
-	var account Account
+func (s AdminStore) CompleteMFA(ctx context.Context, accountID uint64, code, ip string) (AdminAccount, error) {
+	var account AdminAccount
 	var denied error
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", accountID).Take(&account).Error; err != nil {
@@ -145,7 +139,7 @@ func (s Store) CompleteMFA(ctx context.Context, accountID uint64, code, ip strin
 		}
 		now := time.Now().UTC()
 		if account.Status == "disabled" || !account.MFAEnabled || account.MFASecret == nil || *account.MFASecret == "" {
-			return ErrCredentials
+			return operations.ErrCredentials
 		}
 		if err := auth.VerifyTOTP(*account.MFASecret, code, now); err != nil {
 			attempts := account.FailedLoginCount + 1
@@ -154,24 +148,24 @@ func (s Store) CompleteMFA(ctx context.Context, accountID uint64, code, ip strin
 			if attempts >= 5 {
 				updates["status"] = "locked"
 				updates["locked_until"] = now.Add(30 * time.Minute)
-				denied = ErrLocked
+				denied = operations.ErrLocked
 			}
-			if err := tx.Model(&Account{}).Where("id = ?", account.ID).Updates(updates).Error; err != nil {
+			if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(updates).Error; err != nil {
 				return err
 			}
-			return audit(tx, account, "mfa_failed", ip)
+			return WriteAuthAudit(tx, account, "mfa_failed", ip)
 		}
-		if err := tx.Model(&Account{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {
+		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {
 			return err
 		}
 		account.Status = "active"
-		return audit(tx, account, "login_mfa", ip)
+		return WriteAuthAudit(tx, account, "login_mfa", ip)
 	})
 	if err != nil {
-		return Account{}, err
+		return AdminAccount{}, err
 	}
 	if denied != nil {
-		return Account{}, denied
+		return AdminAccount{}, denied
 	}
 	return account, nil
 }
@@ -179,7 +173,7 @@ func (s Store) CompleteMFA(ctx context.Context, accountID uint64, code, ip strin
 // deniedMFA 将账号不存在记录为凭据错误，并正常结束事务；存储错误继续向上传递。
 func deniedMFA(tx *gorm.DB, err error, accountID uint64, denied *error, ip string) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		*denied = ErrCredentials
+		*denied = operations.ErrCredentials
 		return nil
 	}
 	return err
@@ -187,15 +181,15 @@ func deniedMFA(tx *gorm.DB, err error, accountID uint64, denied *error, ip strin
 
 // Profile 读取一个账号的登录身份与权限清单：先联表取角色编码，再按角色展开权限码。
 // 只接受 active 且未删除的账号；查不到与被停用都返回凭据错误，避免泄漏账号是否存在。
-func (s Store) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
+func (s AdminStore) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
 	var row struct {
-		Account
+		AdminAccount
 		Role     string
 		RoleName string
 	}
 	err := s.DB.WithContext(ctx).Table("admin_user AS a").Select("a.*, r.code AS role,r.name AS role_name").Joins("JOIN role AS r ON r.id=a.role_id AND r.deleted_at IS NULL").Where("a.id = ? AND a.status='active' AND a.deleted_at IS NULL", id).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return operations.Profile{}, ErrCredentials
+		return operations.Profile{}, operations.ErrCredentials
 	}
 	if err != nil {
 		return operations.Profile{}, err
@@ -208,7 +202,7 @@ func (s Store) Profile(ctx context.Context, id uint64) (operations.Profile, erro
 
 // audit 写一条认证类审计（登录成功、失败、MFA、改密、初始化），
 // 固定记在 auth 模块和 admin_user 对象上。created_month 是该表按月分区的键，必须一并写入。
-func audit(tx *gorm.DB, a Account, action, ip string) error {
+func WriteAuthAudit(tx *gorm.DB, a AdminAccount, action, ip string) error {
 	now := time.Now().UTC()
 	return tx.Table("audit_log").Create(map[string]any{"actor_id": a.ID, "actor_name": a.Username, "module": "auth", "action": action, "target_type": "admin_user", "target_id": fmt.Sprint(a.ID), "client_ip": ip, "created_month": time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}).Error
 }
@@ -216,7 +210,7 @@ func audit(tx *gorm.DB, a Account, action, ip string) error {
 // ChangePassword 校验旧口令后改新口令，并把 auth_version 自增一，
 // 使该账号已签发的令牌立即失效。旧口令错误返回凭据错误；
 // 新口令必须与旧口令不同且在 12–72 字节之间（bcrypt 的上限）。
-func (s Store) ChangePassword(ctx context.Context, id uint64, oldPassword, newPassword, ip string) error {
+func (s AdminStore) ChangePassword(ctx context.Context, id uint64, oldPassword, newPassword, ip string) error {
 	if len(newPassword) < 12 || len(newPassword) > 72 || newPassword == oldPassword {
 		return errors.New("new password must differ and contain 12–72 bytes")
 	}
@@ -225,16 +219,22 @@ func (s Store) ChangePassword(ctx context.Context, id uint64, oldPassword, newPa
 		return err
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var a Account
+		var a AdminAccount
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND status='active' AND deleted_at IS NULL", id).Take(&a).Error; err != nil {
 			return err
 		}
 		if bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(oldPassword)) != nil {
-			return ErrCredentials
+			return operations.ErrCredentials
 		}
-		if err := tx.Model(&Account{}).Where("id = ?", id).Updates(map[string]any{"password_hash": string(hash), "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
+		if err := tx.Model(&AdminAccount{}).Where("id = ?", id).Updates(map[string]any{"password_hash": string(hash), "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
 			return err
 		}
-		return audit(tx, a, "change_password", ip)
+		return WriteAuthAudit(tx, a, "change_password", ip)
 	})
+}
+
+// Identity 把账号收敛为会话需要的最小身份：ID、登录名与凭证版本。
+// 口令散列、MFA 密钥等登录判定字段不进入 Redis 会话。
+func (a AdminAccount) Identity() operations.AccountIdentity {
+	return operations.AccountIdentity{ID: a.ID, AuthVersion: a.AuthVersion, Username: a.Username}
 }

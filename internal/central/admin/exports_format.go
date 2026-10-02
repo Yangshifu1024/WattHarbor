@@ -1,17 +1,16 @@
 package admin
 
 import (
+	"codeberg.org/go-pdf/fpdf"
 	_ "embed"
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/xuri/excelize/v2"
 	"io"
 	"strconv"
 	"strings"
 	"time"
-
-	"codeberg.org/go-pdf/fpdf"
-	"github.com/xuri/excelize/v2"
 )
 
 // reportFont 是编译期内嵌的中文 PDF 字体子集，汇总 PDF 的标题与数字都用它，

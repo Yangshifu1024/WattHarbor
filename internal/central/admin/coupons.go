@@ -2,14 +2,13 @@ package admin
 
 import (
 	"errors"
-	"regexp"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"regexp"
+	"time"
 )
 
 // couponRow 表示优惠券模板，供列表、创建参数和审计快照共用，以主键 id 标识。

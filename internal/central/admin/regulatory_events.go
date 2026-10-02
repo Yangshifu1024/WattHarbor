@@ -6,15 +6,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/delivery"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
+	"net/http"
+	"time"
 )
 
 // RegulatoryQueue 把监管报送事件按 event_id 幂等写入 regulatory_report。

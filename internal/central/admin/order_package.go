@@ -3,10 +3,9 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"strings"
-
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 )
 
 // OrderPackage uses the order's frozen contract. Editing or deleting the live

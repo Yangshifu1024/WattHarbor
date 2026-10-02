@@ -3,13 +3,12 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 )
 
 func deviceEditPayload() map[string]any {

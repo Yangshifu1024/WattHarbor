@@ -2,11 +2,10 @@ package admin
 
 import (
 	"context"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"time"
 )
 
 // Dashboard 从 central_db 查询订单、用户、站点、设备和告警指标，仅持有数据库连接。

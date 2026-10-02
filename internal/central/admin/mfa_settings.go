@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -94,7 +95,7 @@ func (a API) mfaSettings(c *gin.Context) {
 	p := c.MustGet("admin_profile").(operations.Profile)
 	sid := c.GetString("admin_sid")
 	if sid == "" {
-		a.failure(c, ErrCredentials)
+		a.failure(c, operations.ErrCredentials)
 		return
 	}
 	if a.Sessions.Redis == nil || a.Store.DB == nil {
@@ -113,7 +114,7 @@ func (a API) mfaSettings(c *gin.Context) {
 		httpapi.Write(c, 429, 4291, "安全验证过于频繁，请稍后重试", nil)
 		return
 	}
-	lock, err := randomPart(16)
+	lock, err := auth.RandomSecret(16)
 	if err != nil {
 		a.failure(c, err)
 		return
@@ -154,15 +155,15 @@ func (a API) mfaSettingsFailure(c *gin.Context, err error) {
 func (a API) applyMFASettings(ctx context.Context, p operations.Profile, sid string, in mfaSettingsInput, ip string) (mfaSettingsResult, error) {
 	var result mfaSettingsResult
 	err := a.Store.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var account Account
+		var account database.AdminAccount
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND status='active' AND deleted_at IS NULL", p.ID).Take(&account).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrCredentials
+				return operations.ErrCredentials
 			}
 			return err
 		}
 		if account.AuthVersion != p.AuthVersion {
-			return ErrCredentials
+			return operations.ErrCredentials
 		}
 		switch in.Action {
 		case "enrol":
@@ -176,7 +177,7 @@ func (a API) applyMFASettings(ctx context.Context, p operations.Profile, sid str
 			if err != nil {
 				return err
 			}
-			id, err := randomPart(32)
+			id, err := auth.RandomSecret(32)
 			if err != nil {
 				return err
 			}
@@ -221,11 +222,11 @@ func (a API) applyMFASettings(ctx context.Context, p operations.Profile, sid str
 			if consumed != 1 {
 				return errMFAPending
 			}
-			if err := tx.Model(&Account{}).Where("id=?", account.ID).Updates(map[string]any{"mfa_secret": pending.Secret, "mfa_enabled": true, "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
+			if err := tx.Model(&database.AdminAccount{}).Where("id=?", account.ID).Updates(map[string]any{"mfa_secret": pending.Secret, "mfa_enabled": true, "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
 				return err
 			}
 			// audit 只记录账号和动作，永不持久化密钥、验证码或密码。
-			if err := audit(tx, account, "mfa_enable", ip); err != nil {
+			if err := database.WriteAuthAudit(tx, account, "mfa_enable", ip); err != nil {
 				return err
 			}
 			result = mfaSettingsResult{MFAEnabled: true, SessionsRevoked: true}
@@ -243,10 +244,10 @@ func (a API) applyMFASettings(ctx context.Context, p operations.Profile, sid str
 			if err := a.Sessions.Redis.Del(ctx, mfaPendingKey(account.ID)).Err(); err != nil {
 				return err
 			}
-			if err := tx.Model(&Account{}).Where("id=?", account.ID).Updates(map[string]any{"mfa_secret": nil, "mfa_enabled": false, "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
+			if err := tx.Model(&database.AdminAccount{}).Where("id=?", account.ID).Updates(map[string]any{"mfa_secret": nil, "mfa_enabled": false, "auth_version": gorm.Expr("auth_version+1")}).Error; err != nil {
 				return err
 			}
-			if err := audit(tx, account, "mfa_disable", ip); err != nil {
+			if err := database.WriteAuthAudit(tx, account, "mfa_disable", ip); err != nil {
 				return err
 			}
 			result = mfaSettingsResult{SessionsRevoked: true}

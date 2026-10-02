@@ -1,11 +1,10 @@
 package admin
 
 import (
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
 func TestChargeUserRechargesRejectInvalidPathAndPagination(t *testing.T) {

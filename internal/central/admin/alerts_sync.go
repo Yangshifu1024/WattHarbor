@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"net/url"
+	"time"
 )
 
 // DeviceAlertSync 把 gateway 未处理的 dc589 故障事件转换为 alert_event 告警，

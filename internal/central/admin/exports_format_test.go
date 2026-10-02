@@ -2,10 +2,9 @@ package admin
 
 import (
 	"bytes"
+	"github.com/xuri/excelize/v2"
 	"strings"
 	"testing"
-
-	"github.com/xuri/excelize/v2"
 )
 
 func TestExportFormats(t *testing.T) {

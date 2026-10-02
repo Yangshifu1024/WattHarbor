@@ -65,7 +65,9 @@ charge-pilot/
 │   │   │   ├── fault.go                        故障语义（烟雾/高温/离线）
 │   │   │   └── telemetry.go                    遥测（功率、电量、时长）
 │   │   │
-│   │   └── operations/
+│   │   └── operations/                         运营后台的业务概念
+│   │       ├── account.go                      后台账号身份、权限清单、退役权限
+│   │       ├── scope.go                        数据范围与字段遮蔽
 │   │       ├── role.go  audit.go  announcement.go
 │   │       ├── export.go  webhook.go  alert.go  whitelabel.go
 │   │
@@ -95,9 +97,13 @@ charge-pilot/
 │   │   │   ├── settlement_repository.go        settlement / split / withdraw
 │   │   │   ├── station_repository.go           station
 │   │   │   ├── device_repository.go            device_meta / device_import
-│   │   │   └── admin_repository.go             role / permission / audit_log
+│   │   │   ├── admin_repository.go             role / permission / audit_log
+│   │   │   ├── admin_account.go                admin_user 账号与登录判定
+│   │   │   └── admin_scope.go                  admin_data_scope / admin_field_mask
 │   │   ├── redis/
-│   │   │   ├── session_store.go                user:session: / admin:session:
+│   │   │   ├── session_store.go                user:session:
+│   │   │   ├── admin_session.go                admin:session: / admin:mfa:
+│   │   │   ├── session_token.go                刷新令牌布局与共用原语
 │   │   │   ├── stream.go                       event_outbox 消费
 │   │   │   └── idempotent.go                   幂等凭据
 │   │   ├── wechat/
@@ -236,6 +242,7 @@ charge-pilot/
 │       │   ├── decimal_id.go                   42 行   Snowflake 序列化
 │       │   └── metrics.go                      72 行   指标中间件
 │       ├── auth/jwt.go                         98 行   签发与校验
+│       ├── auth/totp.go                                TOTP 与随机密钥
 │       ├── snowflake/snowflake.go              88 行   ID 分配
 │       ├── netguard/guard.go                   92 行   出站 SSRF 防护
 │       ├── phone/phone.go                      24 行   规范化、脱敏
@@ -270,8 +277,8 @@ charge-pilot/
     money/       payment.go  wallet.go  refund.go  coupon.go
                  card.go  settlement.go  channel.go
     devices/     station.go  device.go  vendor.go  fault.go  telemetry.go
-    operations/  role.go  audit.go  announcement.go  export.go
-                 webhook.go  alert.go  whitelabel.go
+    operations/  account.go  scope.go  role.go  audit.go  announcement.go
+                 export.go  webhook.go  alert.go  whitelabel.go
   ```
 
   文件名即业务对象。`order.go` 就是订单，不按技术层命名。仓储接口定义在 domain，实现见 `infrastructure/database/`；状态机、金额与计量规则、纯计算留在 domain，不 import 任何框架，可独立测试。

@@ -3,6 +3,8 @@ package admin
 import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -16,9 +18,9 @@ import (
 // API 是管理后台的鉴权与会话入口：持有账号存储、JWT 签发器和 Redis 会话，
 // 登录、续期、改密、登出以及所有后台路由的权限校验都从这里出。
 type API struct {
-	Store    Store     // 账号与权限的持久化入口
-	Sessions Sessions  // Redis 会话管理，登录态的存在与撤销都以它为准
-	JWT      *auth.JWT // 后台访问令牌的签发与校验
+	Store    database.AdminStore        // 账号与权限的持久化入口
+	Sessions sessionstore.AdminSessions // Redis 会话管理，登录态的存在与撤销都以它为准
+	JWT      *auth.JWT                  // 后台访问令牌的签发与校验
 }
 
 const adminAccessTTL = 8 * time.Hour
@@ -76,7 +78,7 @@ func (a API) login(c *gin.Context) {
 	}
 	if account.MFAEnabled {
 		// 口令验证成功后进入 MFA 阶段，仅返回短期 challenge，不签发会话令牌。
-		challenge, err := a.Sessions.BeginMFA(c.Request.Context(), account)
+		challenge, err := a.Sessions.BeginMFA(c.Request.Context(), account.Identity())
 		if err != nil {
 			a.failure(c, err)
 			return
@@ -117,13 +119,13 @@ func (a API) verifyMFA(c *gin.Context) {
 
 // completeLogin 读取权限档案，创建会话并返回 SID、刷新令牌和访问令牌。
 // 各阶段错误由 failure 统一映射到响应。
-func (a API) completeLogin(c *gin.Context, account Account) {
+func (a API) completeLogin(c *gin.Context, account database.AdminAccount) {
 	profile, err := a.Store.Profile(c.Request.Context(), account.ID)
 	if err != nil {
 		a.failure(c, err)
 		return
 	}
-	sid, refresh, err := a.Sessions.Create(c.Request.Context(), account)
+	sid, refresh, err := a.Sessions.Create(c.Request.Context(), account.Identity())
 	if err != nil {
 		a.failure(c, err)
 		return
@@ -157,7 +159,7 @@ func (a API) refresh(c *gin.Context) {
 	}
 	if account.AuthVersion != profile.AuthVersion {
 		_ = a.Sessions.Revoke(c.Request.Context(), refresh)
-		a.failure(c, ErrCredentials)
+		a.failure(c, operations.ErrCredentials)
 		return
 	}
 	a.issue(c, profile, sid, refresh)
@@ -182,13 +184,13 @@ func (a API) Require(permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := c.GetHeader("Authorization")
 		if !strings.HasPrefix(raw, "Bearer ") {
-			a.failure(c, ErrCredentials)
+			a.failure(c, operations.ErrCredentials)
 			c.Abort()
 			return
 		}
 		claims, err := a.JWT.Verify(strings.TrimPrefix(raw, "Bearer "), "admin", time.Now())
 		if err != nil {
-			a.failure(c, ErrCredentials)
+			a.failure(c, operations.ErrCredentials)
 			c.Abort()
 			return
 		}
@@ -199,7 +201,7 @@ func (a API) Require(permission string) gin.HandlerFunc {
 			return
 		}
 		if !exists {
-			a.failure(c, ErrCredentials)
+			a.failure(c, operations.ErrCredentials)
 			c.Abort()
 			return
 		}
@@ -217,7 +219,7 @@ func (a API) Require(permission string) gin.HandlerFunc {
 			return
 		}
 		if !matches {
-			a.failure(c, ErrCredentials)
+			a.failure(c, operations.ErrCredentials)
 			c.Abort()
 			return
 		}
@@ -243,7 +245,7 @@ func (a API) Require(permission string) gin.HandlerFunc {
 
 // logout 主动登出：按上下文里的 sid 直接删掉 Redis 会话，删掉后所有用该 sid 签发的令牌立即失效。
 func (a API) logout(c *gin.Context) {
-	if err := a.Sessions.Redis.Del(c.Request.Context(), sessionKey(c.GetString("admin_sid"))).Err(); err != nil {
+	if err := a.Sessions.RevokeSession(c.Request.Context(), c.GetString("admin_sid")); err != nil {
 		a.failure(c, err)
 		return
 	}
@@ -254,13 +256,13 @@ func (a API) logout(c *gin.Context) {
 // 其余（含 Redis 故障）按 503 服务不可用处理，不向调用方泄露内部细节。
 func (a API) failure(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, ErrCredentials), errors.Is(err, ErrInvalidRefresh):
+	case errors.Is(err, operations.ErrCredentials), errors.Is(err, operations.ErrInvalidRefresh):
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "用户名或密码错误，或登录已失效", nil)
-	case errors.Is(err, ErrLocked):
+	case errors.Is(err, operations.ErrLocked):
 		httpapi.Write(c, 423, 2006, err.Error(), nil)
 	case errors.Is(err, operations.ErrInvalidTOTP):
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "验证码无效或已过期", nil)
-	case errors.Is(err, ErrInvalidMFAChallenge):
+	case errors.Is(err, operations.ErrInvalidMFAChallenge):
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "登录已失效，请重新登录", nil)
 	default:
 		httpapi.Write(c, 503, 5003, "登录服务暂不可用", nil)
