@@ -31,6 +31,16 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 
 central 中的 AdminDB、UserDB、BillingDB 是同一数据库句柄的领域名称。跨服务操作通过持久任务、幂等回执和内部 API 协作。Redis Cache 保存会话等缓存；Redis Stream 保存事件，两者独立部署。
 
+`internal/central/` 按业务能力分包（order、payment、refund、settlement、wallet、card、coupon、identity、pricing、channel、billing、charge），包内再按文件后缀分三层，依赖只允许自上而下：
+
+| 后缀 | 层 | 允许出现 | 职责 |
+| --- | --- | --- | --- |
+| `*_http.go`、`*_middleware.go` | 接口层 | `gin.Context` | 输入校验、权限、错误映射与响应组装；不持有数据库句柄 |
+| `*_store.go`、`models.go` | 持久化层 | gorm、数据库表名 | 全部 SQL 与记录类型；表名只写在这里 |
+| 其余 | 领域层 | 无 gin、无 gorm | 状态机、金额与计量规则、纯计算，可独立测试 |
+
+三条边界由 `make layers`（`scripts/check/layers.sh`）机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 是服务间适配层，均不参与该检查。
+
 ```text
 cmd/                 central、gateway、worker、migrate、devseed、simulator-dc589
 internal/central/    用户、订单、支付、计价、财务与后台领域
@@ -414,7 +424,7 @@ bash scripts/test/integration.sh
 bash scripts/test/integration.sh -race
 ```
 
-`make fmt/lint/test` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`，`make check` 顺序执行三项。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
+`make fmt/lint/test/layers` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`、`scripts/check/layers.sh`，`make check` 顺序执行四项；`layers` 校验包内分层的文件后缀约定，详见「架构与目录」。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
 
 普通测试未配置数据库时会跳过集成测试。隔离脚本创建临时 MySQL/Redis、初始化三库、运行全量 Go 测试并清理容器；PowerShell 版本需要已有 `chargepilot-dev_default` 网络，Bash 版本使用随机 loopback 端口。事务、资金、唯一性和消息状态变更须运行隔离测试；并发变更按需启用 race。
 

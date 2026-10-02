@@ -12,7 +12,12 @@
 ## 工具与代码风格
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
-- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`；`make check` 顺序执行三项。不新增包装检查器。
+- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.sh`；`make check` 顺序执行四项。
+- 包按业务能力划分（`internal/central/{order,payment,refund,settlement,wallet,card,coupon,identity,pricing,channel,billing,charge}`），包内按文件后缀分三层，依赖只允许自上而下：
+  - `*_http.go`——接口层，唯一的 `gin.Context` 出现处；只做输入校验、权限、错误映射与响应组装。
+  - `*_store.go` 与 `models.go`——持久化层，唯一的 gorm 与数据库表名出现处；表名只写在这里，不进接口层与领域层。
+  - 其余文件为领域层——状态机、金额与计量规则、纯计算；不 import gin 与 gorm，可独立测试。
+  三条约定由 `make layers` 机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 是服务间适配层，均不参与该检查。
 - 前端使用 Node.js 24、npm 和已提交的 `package-lock.json`。以 `npm ci` 安装，保留 `miniprogram/.npmrc` 的依赖配置。
 - Go 注释用严肃、精炼的语言说明行为、单位、约束、并发关系或错误条件。复杂事务和协议解释保留必要细节；删除口语、重复说明、操作过程和失效历史。保留 `go:embed` 等编译指令及 `Deprecated:` 标记。
 - 不提交构建产物、依赖目录、真实配置、凭证、数据库备份或临时脚本；临时文件置于 `.tmp/`。

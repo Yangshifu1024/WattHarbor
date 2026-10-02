@@ -81,7 +81,7 @@ func accountRouterWithGateway(t *testing.T, userDB, adminDB *gorm.DB, userID uin
 	}.Register(router)
 	identity.PhoneAPI{
 		Auth:             identity.SessionAuthenticator{JWT: jwt, Sessions: identity.Sessions{Redis: client}, Users: identity.UserStore{DB: userDB}},
-		DB:               userDB,
+		Users:            identity.UserStore{DB: userDB},
 		DevelopmentPhone: true,
 	}.Register(router)
 	payment.DevelopmentPaymentAPI{Auth: identity.SessionAuthenticator{JWT: jwt, Sessions: identity.Sessions{Redis: client}, Users: identity.UserStore{DB: userDB}}, DB: userDB, Store: payment.PaymentCallbackStore{DB: userDB, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: "wx_local_dev"}}.Register(router)

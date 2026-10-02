@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check
+.PHONY: fmt lint test layers check
 .NOTPARALLEL: check
 
 fmt:
@@ -10,4 +10,7 @@ lint:
 test:
 	go test ./...
 
-check: fmt lint test
+layers:
+	bash scripts/check/layers.sh
+
+check: fmt lint test layers

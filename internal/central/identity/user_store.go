@@ -173,3 +173,31 @@ type profileRow struct {
 	FrozenCents       int64
 	CouponUnusedCount int64
 }
+
+// ErrPhoneTaken 表示手机号已被其他账号占用。号码归属由唯一索引最终兜底，
+// 本哨兵用于把并发冲突映射成明确的业务错误而非通用 500。
+var ErrPhoneTaken = errors.New("手机号已被占用")
+
+// BindPhone 写入或清除 user 表的手机号。号码归属检查与写入在同一事务内完成：
+// 先查占用以给出明确提示，唯一索引负责并发兜底。
+// phone 传 nil 表示解绑。解绑必须显式传 nil 而不是空字符串——GORM 的 Updates
+// 会忽略字符串零值，用 nil 判断并直接写 SQL NULL 才是解绑的正确语义。
+func (s UserStore) BindPhone(ctx context.Context, userID uint64, value *string) error {
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var holder int64
+		if value != nil {
+			if err := tx.Table("user").Where("phone = ? AND id <> ? AND deleted_at IS NULL", *value, userID).Count(&holder).Error; err != nil {
+				return err
+			}
+			if holder > 0 {
+				return ErrPhoneTaken
+			}
+		}
+		var bound any
+		if value != nil {
+			bound = *value
+		}
+		return tx.Table("user").Where("id = ? AND deleted_at IS NULL", userID).
+			Updates(map[string]any{"phone": bound}).Error
+	})
+}

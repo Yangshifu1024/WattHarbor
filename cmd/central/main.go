@@ -163,7 +163,7 @@ func run(ctx context.Context) error {
 	}.Register(router)
 	identity.PhoneAPI{
 		Auth:             identity.SessionAuthenticator{JWT: jwt, Sessions: identity.Sessions{Redis: cache}, Users: identity.UserStore{DB: userORM}},
-		DB:               userORM,
+		Users:            identity.UserStore{DB: userORM},
 		DevelopmentPhone: cfg.LoginMode == "development",
 		PhoneExchange: func(ctx context.Context, code string) (string, error) {
 			result, err := wechat.GetPhoneNumber(ctx, code)
