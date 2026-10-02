@@ -3,8 +3,8 @@
 ## 依据与边界
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
-- `cmd/` 只负责配置、依赖装配与进程生命周期。业务实现位于 `internal/central`、`internal/gateway`、`internal/worker`；跨领域通用能力位于 `internal/platform`。
-- central 承载后台、用户、支付、计费与身份领域；gateway 承载设备协议、设备资料、端口、指令与遥测；worker 承载调度、消费、重试与外部投递。保持既有存储归属和服务调用边界。
+- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。业务实现按分层位于 `internal/domain`、`internal/application`、`internal/infrastructure`、`internal/interface`；进程特有编排位于 `internal/worker`、`internal/gateway`、`internal/delivery`；设备契约位于 `internal/protocol`；无业务语义的通用能力位于 `internal/platform`。
+- 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。五个进程共享同一套 `domain`/`application`/`infrastructure`，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
 - 公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
@@ -13,20 +13,55 @@
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
 - 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.sh`；`make check` 顺序执行四项。
-- 包按业务能力划分（`internal/central/{order,payment,refund,settlement,wallet,card,coupon,identity,pricing,channel,billing,charge}`），`internal/central/admin` 是后台 HTTP 编排层。层内按文件后缀分层，依赖只允许自上而下：
-  - `*_http.go` 与 `*_middleware.go`——接口层，唯一的 `gin.Context` 出现处；只做输入校验、权限、错误映射与响应组装，不持有数据库句柄。
-  - `*_store.go` 与 `models.go`——持久化层，唯一的 gorm 与数据库表名出现处；表名只写在这里，不进接口层与领域层。
-  - 其余文件为领域层——状态机、金额与计量规则、纯计算；不 import gin 与 gorm，可独立测试。
-  三条约定由 `make layers` 机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 与 `delivery` 是服务间适配层，均不参与该检查。
-- 目录深度按包的层厚度决定，不按层数一刀切。经实测三层均有实质内容的包为 `payment`、`identity`、`admin`、`charge`、`card`，这五个再按 `state/`（领域）、`store/`（持久化）、`http/`（接口）分子目录，`models.go` 随持久化层放在 `store/`。`wallet`、`coupon` 只有持久化逻辑、`pricing`、`channel` 只有领域逻辑、`order`、`refund`、`settlement` 领域与接口层文件过薄，这七个保持单层，只用文件后缀区分。为单层包建立空目录不获批准。
-  拆成子目录后子目录即独立包，跨层调用必须走导出符号；导出面只暴露该层需要被上层调用的部分，层内实现细节保持未导出。依赖方向恒为 `http → state`、`http → store`、`store → state`，反向与同层横向依赖均不允许。
+- 代码按分层组织，依赖单向、无例外：
+
+  ```
+  domain          →  无
+  protocol        →  无（契约自足）
+  application     →  domain
+  infrastructure  →  domain
+  interface       →  domain + application
+  worker/gateway  →  protocol + domain + application + infrastructure
+  cmd/*           →  interface + application + infrastructure + platform
+  ```
+
+  `domain` 与 `protocol` 是平行层，互不 import。除 `worker/` 与 `gateway/` 外任何包不得 import `protocol`。这三条由 `make layers` 机检，违反即失败。
+
+- `internal/domain/` 是业务核心，零 gorm、零 gin、零 Redis。子域目录用业务概念命名，不是表名或集群名：
+
+  ```
+  domain/
+    identity/    user.go  session.go  auth.go  phone.go
+    charging/    order.go  session.go  billing.go  stop.go  scheme.go
+    money/       payment.go  wallet.go  refund.go  coupon.go
+                 card.go  settlement.go  channel.go
+    devices/     station.go  device.go  vendor.go  fault.go  telemetry.go
+    operations/  role.go  audit.go  announcement.go  export.go
+                 webhook.go  alert.go  whitelabel.go
+  ```
+
+  文件名即业务对象。`order.go` 就是订单，不按技术层命名。仓储接口定义在 domain，实现见 `infrastructure/database/`；状态机、金额与计量规则、纯计算留在 domain，不 import 任何框架，可独立测试。
+
+- `internal/application/` 扁平单包，一个用例一个文件，跨聚合事务在此。分子目录容易生环，用例之间高度互联，扁平优于分组。
+
+- `internal/infrastructure/` 按外部系统分子包：`database/`（gorm 只在此处，数据库表名只在此处）、`redis/`、`wechat/`、`gateway_client/`。
+
+- `internal/interface/http/` 按服务分文件：`user_api.go`（`/api/v1/user/*`）、`public_api.go`（`/api/v1/user/auth/*`）、`admin_api.go`（`/api/v1/admin/*`）、`internal_api.go`（`/api/v1/internal/*`）、`device_api.go`、`worker_api.go`。`gin.Context` 只在此处出现；`middleware.go` 管鉴权与数据范围，`error_mapper.go` 把领域错误映射为 HTTP 状态。
+
+- `internal/protocol/` 是 gateway 与 central 共享的设备契约层，与 `domain` 平级，既不属于 `domain` 也不属于 `infrastructure`：
+  - 根包只放跨进程契约：`Adapter`（`Name` + `ServeConn`）、`Sink`、`Event`、`Command`、`Registry`、`Listener`。
+  - 每个协议一个子目录实现 `Adapter`，当前为 `dc589/`。帧格式、校验、指令编解码、故障码语义（`0xBB` 烟雾）、单位换算（分 → 协议余额单位）全部封闭在该目录内。
+  - **协议码值、帧结构、校验算法一律不得出现在 `domain/` 与 `application/`。** 业务代码出现 `0xBB`、`dc589.` 前缀或帧相关字样即违反本约定。
+  - **新增协议必须新开子目录实现 `Adapter`，不得修改 `protocol` 根包。** 若做不到，说明抽象有缺陷，应改抽象而不是把新协议逻辑塞进根包。
+  - 设备领域模型对所有协议保持一致；加协议不产生新的设备类型，只产生新的语义翻译。
+  - `ServeConn(context.Context, net.Conn, Sink)` 假设"一条长连接 = 一个设备会话"。若将来某协议走 HTTP 轮询，要改的是 `Adapter` 接口本身，不是各协议实现——那是接口演进，不要为想象中的协议提前过度抽象。
 - 前端使用 Node.js 24、npm 和已提交的 `package-lock.json`。以 `npm ci` 安装，保留 `miniprogram/.npmrc` 的依赖配置。
 - Go 注释用严肃、精炼的语言说明行为、单位、约束、并发关系或错误条件。复杂事务和协议解释保留必要细节；删除口语、重复说明、操作过程和失效历史。保留 `go:embed` 等编译指令及 `Deprecated:` 标记。
 - 不提交构建产物、依赖目录、真实配置、凭证、数据库备份或临时脚本；临时文件置于 `.tmp/`。
 
 ## 数据与计算
 
-- 金额以整数分传输和保存；费率及中间精度沿用 `internal/central/pricing` 的十进制计算与舍入规则。不得使用浮点金额或另建前端计费算法。
+- 金额以整数分传输和保存；费率及中间精度沿用 `internal/domain/charging/scheme.go` 的十进制计算与舍入规则。不得使用浮点金额或另建前端计费算法。
 - 电量、功率和时长必须注明单位。设备 `0.1 W`、`mWh`、`Wh`、分钟和秒按协议字段转换；`1 Wh = 1000 mWh`，`1 kWh = 1000 Wh`。
 - 用户 Snowflake ID 在数据库中保留 `BIGINT UNSIGNED`，公开 API、Redis 会话和前端采用十进制字符串。使用 `httpapi.DecimalID`；前端不得将大 ID 转为 JavaScript `Number`。
 - 编号分配与业务记录共用事务；重试复用已持久化编号。保留历史业务编号，不重新生成或批量改写。
@@ -49,7 +84,7 @@
 - 后台授权实时读取有效账号、角色和权限；JWT 及前端菜单只表示会话或展示，不代替服务端授权。
 - 站点、设备、厂商及配置操作沿用服务端数据范围检查。列表与详情、导出、写入和批量操作使用一致的授权条件；客户端筛选不能扩大范围。
 - 用户资源以当前会话校验归属；无权访问与不存在统一按既有接口返回。服务间接口使用 `X-Service-Token`，前端不得持有服务令牌。
-- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和 `internal/central/admin/openapi.json`。统一响应保留 `code/message/data/request_id/trace_id`；微信通知沿用渠道规定的 HTTP 确认响应。
+- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和 `internal/interface/http/openapi.json`。统一响应保留 `code/message/data/request_id/trace_id`；微信通知沿用渠道规定的 HTTP 确认响应。
 - 维持乐观版本检查和幂等标识。前端刷新令牌不能改变业务请求身份；账号切换后的旧请求不得覆盖新会话状态。
 
 ## 设备协议
@@ -73,7 +108,7 @@
 - 验证与联调优先用既有路径：`scripts/test/integration.sh`（隔离 MySQL/Redis，用完即弃）、`scripts/dev/start.ps1`（开发栈）、`/health/ready` 判定就绪。**不要为"多验证一点"另造旁路脚本**——自建的临时容器、临时二进制、临时灌库脚本既要自己收拾，又复现不了仓库既有的正确做法。需要新验证手段时先用仓库里已有的，或提出方案经确认后再写。
 - 不得自行在宿主机启动常驻本地服务器或 dev server，也不得为 `dist` 另建静态服务；这两类一律用容器内的地址。确需一次性临时服务时避开容器占用端口，用完立即停止并说明用途。
 - 验证前端渲染访问容器内的后台与用户端 H5 地址，并同时确认页面控制台无报错。
-- 本地地址固定：后台 `5173/admin/`、用户 H5 `5174/`、MySQL `3306`、Redis Cache `6379` 与 Stream `6380`、DC589 `9100`；central、gateway、worker 就绪状态查各自 HTTP 端口的 `/health/ready`。
+- 本地地址固定：后台 `5173/admin/`、用户 H5 `5174/`、MySQL `3306`、Redis Cache `6379` 与 Stream `6380`、DC589 `9100`；user、admin、central、gateway、worker 就绪状态查各自 HTTP 端口的 `/health/ready`。
 - Go 服务没有热重载。修改后按 README 重建受影响的服务，优先只重建该服务而非整个栈；确需重启整栈时先说明理由。
 - 设备联调的两个模拟器须在独立终端分别执行 `scripts/dev/simulator.ps1 -Number 1` 与 `-Number 2`，属前台交互进程，不得作为后台服务重复拉起。模拟器与模拟支付结果不得当作实机或真实资金验收。
 

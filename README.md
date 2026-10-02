@@ -22,47 +22,140 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 
 ## 架构与目录
 
-| 进程 | 职责 | 数据库 | 监听 |
-| --- | --- | --- | --- |
-| central | 用户身份、后台、站点、订单、支付、钱包、计价、退款、分账与审计 | `central_db` | HTTP `8080` |
-| gateway | 设备开通、TCP 会话、端口、命令、遥测、刷卡与结束报告 | `gateway_db` | HTTP `8083`、DC589/TCP `9100` |
-| worker | 持久任务、Outbox、命令与结果同步、停机、计费、退款、告警和外部投递 | 三库（仅 outbox 转发读 `event_outbox` 系列，业务访问全走 HTTP），执行状态存于 `worker_db` | HTTP `8085` |
-| migrate | Goose 初始化及版本检查 | 三库 | 无 |
+代码按分层组织，依赖单向无例外：`domain` 与 `protocol` 不依赖任何层，`application` 与 `infrastructure` 只依赖 `domain`，`interface` 依赖 `domain` 与 `application`，`cmd/*` 做装配。
 
-central 中的 AdminDB、UserDB、BillingDB 是同一数据库句柄的领域名称。跨服务操作通过持久任务、幂等回执和内部 API 协作。Redis Cache 保存会话等缓存；Redis Stream 保存事件，两者独立部署。
+| 进程 | 暴露面 | 职责 | 数据库 | 监听 |
+| --- | --- | --- | --- | --- |
+| `user` | 对外 | C 端接口：登录、会话、订单、支付、钱包、卡、券、站点 | `central_db` | HTTP `8080` |
+| `admin` | 对外 | 运营后台接口：站点、设备、订单、资金、审计、导出 | `central_db` | HTTP `8081` |
+| `central` | 对内 | 用例编排、跨聚合事务、`/api/v1/internal/*` | `central_db` | HTTP `8082` |
+| `gateway` | 对内 + 设备 | 设备接入：监听、协议适配、端口、指令、遥测、开通 | `gateway_db` | HTTP `8083`、DC589/TCP `9100` |
+| `worker` | 对内 | 事件消费、定时任务、命令同步、外部投递 | 三库（仅 outbox 转发读 `event_outbox`），执行状态存 `worker_db` | HTTP `8085` |
+| `migrate` / `devseed` / `simulator-dc589` | 工具 | schema 初始化、开发数据准备、设备模拟 | 三库 / 无 | 无 |
 
-`internal/central/` 按业务能力分包（order、payment、refund、settlement、wallet、card、coupon、identity、pricing、channel、billing、charge），`admin` 是后台 HTTP 编排层。
+`user` 与 `admin` 对外，端口由入口网关承接；`central`、`gateway`、`worker` 不对外映射，跨服务调用凭网络隔离。五个进程共享同一套 `domain`/`application`/`infrastructure`，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
 
-层内按文件后缀分层，依赖只允许自上而下：
-
-| 后缀 | 层 | 允许出现 | 职责 |
-| --- | --- | --- | --- |
-| `*_http.go`、`*_middleware.go` | 接口层 | `gin.Context` | 输入校验、权限、错误映射与响应组装；不持有数据库句柄 |
-| `*_store.go`、`models.go` | 持久化层 | gorm、数据库表名 | 全部 SQL 与记录类型；表名只写在这里 |
-| 其余 | 领域层 | 无 gin、无 gorm | 状态机、金额与计量规则、纯计算，可独立测试 |
-
-三层均有实质内容的包（`payment`、`identity`、`admin`、`charge`、`card`）再分子目录 `state/`（领域）、`store/`（持久化）、`http/`（接口），跨层共享的纯数据契约放 `model/`。依赖方向恒为 `http → state`、`http → store`、`store → state`，反向与同层横向依赖均不允许。`wallet`、`coupon` 只有持久化逻辑，`pricing`、`channel` 只有领域逻辑，`order`、`refund`、`settlement` 的领域与接口层文件过薄——这七个保持单层，不为单层包建立空目录。
-
-以上边界由 `make layers`（`scripts/check/layers.sh`）机检，违反即失败。`platform` 无业务语义、`cmd` 是进程装配、`protocol` 是设备契约、`simulator` 是联调工具、`gateway/store` 与 `gateway/control` 各自整体即单一层、`worker/*` 与 `delivery` 是服务间适配层，均不参与该检查。
+`AdminDB`、`UserDB`、`BillingDB` 是同一连接池的领域名称，不是三个库。跨服务操作通过持久任务、幂等回执和内部 HTTP 协作。Redis Cache 保存会话，Redis Stream 保存事件，两者独立部署。
 
 ```text
-cmd/                 central、gateway、worker、migrate、devseed、simulator-dc589
-internal/central/    用户、订单、支付、计价、财务与后台领域
-internal/gateway/    协议适配器、设备控制、存储与模拟器
-internal/worker/     任务、事件投递、补偿与调度
-internal/platform/   配置、数据库、鉴权与 HTTP 基础设施
-migrations/          三个 schema 的初始化 SQL
-admin-web/           React 18 / TypeScript / Ant Design 5 / Vite 5
-miniprogram/         Taro 4.3 / React 18 / TypeScript / Taro UI 3.4 / Vite 4
-protocols/           DC589 完整协议规范
-docker/              服务镜像、Caddy 和 MySQL 初始化配置
-scripts/dev/         开发启动、联调数据准备与模拟器
-scripts/db/          备份、恢复与开发数据重建
-scripts/test/        隔离 MySQL / Redis 集成测试
-scripts/git/         Git hook 安装
-scripts/ops/         生产部署配置检查
-monitoring/          Prometheus 配置、告警规则与规则测试
+charge-pilot/
+├── cmd/                              部署单元，只做装配与生命周期
+│   ├── user/main.go                  C 端接口        :8080
+│   ├── admin/main.go                 后台接口        :8081
+│   ├── central/main.go               用例编排        :8082
+│   ├── gateway/main.go               设备接入        :8083 + TCP :9100
+│   ├── worker/main.go                消费调度        :8085
+│   └── migrate/ devseed/ simulator-dc589/
+│
+├── config/                           配置装载
+│   └── user.go admin.go central.go gateway.go worker.go
+│
+├── internal/
+│   │
+│   ├── domain/                       ★ 业务核心，零 gorm / 零 gin / 零 Redis
+│   │   │                             文件名即业务对象
+│   │   ├── identity/                 user.go session.go auth.go phone.go
+│   │   ├── charging/                 order.go session.go billing.go stop.go scheme.go
+│   │   ├── money/                    payment.go wallet.go refund.go coupon.go
+│   │   │                             card.go settlement.go channel.go
+│   │   ├── devices/                  station.go device.go vendor.go
+│   │   │                             fault.go telemetry.go（协议无关）
+│   │   └── operations/               role.go audit.go announcement.go export.go
+│   │                                 webhook.go alert.go whitelabel.go
+│   │
+│   ├── application/                  ★ 用例编排，扁平单包，跨聚合事务在此
+│   │   ├── user_service.go auth_service.go recharge_service.go
+│   │   ├── charge_service.go start_service.go end_service.go
+│   │   └── refund_service.go settlement_service.go
+│   │
+│   ├── infrastructure/               ★ 外部依赖实现
+│   │   ├── database/                 gorm 与数据库表名只在此处
+│   │   │   ├── client.go             连接池
+│   │   │   ├── user_repository.go    order_repository.go
+│   │   │   ├── payment_repository.go wallet_repository.go
+│   │   │   ├── refund_repository.go  settlement_repository.go
+│   │   │   └── station_repository.go device_repository.go admin_repository.go
+│   │   ├── redis/                    session_store.go stream.go idempotent.go
+│   │   ├── wechat/                   client.go pay.go refund.go
+│   │   └── gateway_client/           内部 HTTP 客户端
+│   │
+│   ├── interface/                    ★ 协议适配，gin.Context 只在此处
+│   │   └── http/
+│   │       ├── user_api.go           /api/v1/user/*        → cmd/user
+│   │       ├── public_api.go         /api/v1/user/auth/*   → cmd/user
+│   │       ├── admin_api.go          /api/v1/admin/*       → cmd/admin
+│   │       ├── internal_api.go       /api/v1/internal/*   → cmd/central
+│   │       ├── device_api.go         设备端点              → cmd/gateway
+│   │       ├── worker_api.go         运维端点              → cmd/worker
+│   │       ├── middleware.go         鉴权、权限、数据范围
+│   │       └── error_mapper.go       领域错误 → HTTP 状态
+│   │
+│   ├── protocol/                     ★★ 设备契约层，与 domain 平级
+│   │   ├── adapter.go                Adapter / Sink / Event / Command
+│   │   ├── registry.go listener.go   会话索引与连接分派
+│   │   ├── session_audit.go          收发字节审计
+│   │   └── dc589/                    协议实现，新协议在此加目录
+│   │       ├── adapter.go            实现 protocol.Adapter
+│   │       ├── frame.go codec.go     帧编解码与校验
+│   │       ├── command.go            启动 / 停止 / 刷卡指令
+│   │       ├── measurements.go       电量、功率、时长解析
+│   │       ├── fault.go              故障码 → 领域语义
+│   │       └── units.go              分 → 协议余额单位
+│   │
+│   ├── worker/                       事件消费、定时、投递编排
+│   │   ├── consumer/                 charge_events / charge_ended / device_event
+│   │   │                             refund_required / refund_succeeded
+│   │   ├── sync/                     start_sync end_sync card_sync
+│   │   │                             paid_start meter_segments client
+│   │   ├── trigger/                  薄触发器，只发意图不做判定
+│   │   │                             auto_stop alert_sync billing_dispatch
+│   │   │                             refund_dispatch
+│   │   ├── outbox/                   publisher.go dlq.go
+│   │   ├── schedule/                 scheduler.go http.go
+│   │   └── ops/                      ops_api.go http.go
+│   │
+│   ├── delivery/                     外部投递
+│   │   └── events.go webhook.go regulatory.go senders.go
+│   │
+│   ├── gateway/                      设备接入运行时
+│   │   ├── listener/                 server.go        连接分派
+│   │   ├── session/                  session.go registry.go
+│   │   ├── command/                  start authorize scan cards
+│   │   │                             user_stop charge_process
+│   │   ├── telemetry/                telemetry charging_samples device_faults
+│   │   │                             device_summary historical_curve worker_sync
+│   │   ├── compensate/               compensate.go backfill.go
+│   │   ├── store/                    gateway_db 持久化
+│   │   │                             mysql.go gorm_models.go session.go
+│   │   │                             charge_start.go charge_process.go
+│   │   │                             user_stop.go scan.go aggregate.go
+│   │   │                             compensation.go
+│   │   ├── provision/                http.go vendors.go
+│   │   └── simulator/dc589/          联调工具，不参与生产
+│   │                                   simulator.go behavior.go tui.go
+│   │
+│   └── platform/                     无业务语义的通用能力
+│       ├── dbconn/ dbutil/           连接池、UTC 日界、重复键判定
+│       ├── httpapi/                  gin.go codes.go decimal_id.go metrics.go
+│       ├── auth/ snowflake/          JWT 签发校验、ID 分配
+│       ├── netguard/ phone/          出站防护、手机号规范化
+│       └── serviceclient/            内部 HTTP 客户端
+│
+├── migrations/{central_db,gateway_db,worker_db}/
+├── bin/                              编译产物（已忽略）
+├── admin-web/                        React 18 / TypeScript / Ant Design 5 / Vite 5
+├── miniprogram/                      Taro 4.3 / React 18 / TypeScript / Taro UI 3.4
+├── protocols/                        DC589 完整协议规范
+├── docker/                           服务镜像、Caddy 和 MySQL 初始化配置
+├── scripts/dev/                      开发启动、联调数据准备与模拟器
+├── scripts/db/                       备份、恢复与开发数据重建
+├── scripts/test/                     隔离 MySQL / Redis 集成测试
+├── scripts/check/                    分层与依赖方向机检
+├── monitoring/                       Prometheus 配置、告警规则与规则测试
+└── Makefile  go.mod  AGENTS.md  README.md
 ```
+
+分层的维护规则、聚合命名约定与机检口径见 [AGENTS.md](AGENTS.md#工具与代码风格)。以上边界由 `make layers`（`scripts/check/layers.sh`）机检，违反即失败。
 
 ## 本地运行
 
@@ -151,7 +244,7 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 | 300 分购买 120 分钟，实际 61 分 30 秒 | 收 152 分，退 148 分 |
 | 电费/服务费 80/20 分每度，购买 3 度，实际 1375 Wh | 电费 109 分、服务费 28 分，共 137 分，退 163 分 |
 
-计算实现和边界示例见 [pricing](internal/central/pricing) 与 [scheme_examples_test.go](internal/central/pricing/scheme_examples_test.go)。旧兼容计价枚举不表示新方案支持相应模式。
+计算实现和边界示例见 `internal/domain/charging/scheme.go`（迁移前位于 [pricing](internal/central/pricing)）。旧兼容计价枚举不表示新方案支持相应模式。
 
 ### 支付、启动与结束
 
@@ -217,23 +310,24 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 
 ### 接口导航
 
-后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件是 [openapi.json](internal/central/admin/openapi.json)，覆盖部分现行后台接口。完整注册路径及字段以以下入口和主程序实际装配为准。
+后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件为 `internal/interface/http/openapi.json`（迁移前位于 [openapi.json](internal/central/admin/openapi.json)），覆盖部分现行后台接口。完整注册路径及字段以各 `interface/http/*_api.go` 与 `cmd/*/main.go` 的实际装配为准。
 
-| 领域 | 路径或实现入口 |
-| --- | --- |
-| 用户身份 | [identity/http.go](internal/central/identity/http.go) |
-| 扫码与支付 | `/api/v1/user/scan/*`；[scan.go](internal/central/charge/scan.go)、[payment_http.go](internal/central/charge/payment_http.go) |
-| 充电状态、历史、停止 | `/api/v1/user/charge/*`；[user_query.go](internal/central/charge/user_query.go)、[user_stop.go](internal/central/charge/user_stop.go) |
-| 钱包、手机号、站点、发票与报修 | [user_account.go](internal/central/charge/user_account.go) |
-| 在线卡、优惠券、账单与欠费 | [charge](internal/central/charge) 的 `card_http.go/coupon.go/bill.go/debt_http.go` |
-| 后台身份、账号、角色与数据范围 | [admin](internal/central/admin) 的 `http.go/admin_users.go/roles.go/data_scope.go` |
-| 站点、设备、订单、支付与厂商 | `resources.go/device_imports.go/vendors.go` |
-| 方案模板与在线卡 | `charging_schemes.go/online_cards.go` |
-| 财务 | `finance_ops.go/refunds.go/wallet_risks.go/meter_reviews.go/invoices.go/split_templates.go/exports.go` |
-| 用户运营、报修与审计 | `charge_users.go/coupons.go/coupon_activity.go/casework.go/audit_log.go/dashboard.go/operations.go` |
-| central 内部 | [charge](internal/central/charge)、[billing/service.go](internal/central/billing/service.go)、[regulatory/http.go](internal/regulatory/http.go) |
-| gateway 内部 | [provision](internal/gateway/provision)、[control](internal/gateway/control) |
-| worker 内部 | [internaljob/ops.go](internal/worker/internaljob/ops.go)、[schedule/http.go](internal/worker/schedule/http.go) |
+下表为分层结构的目标归属。迁移期间以 `cmd/*/main.go` 的实际装配为准，括号内为迁移前路径。
+
+| 领域 | 路径前缀 | 接口层 | 领域层 |
+| --- | --- | --- | --- |
+| 用户身份与会话 | `/api/v1/user/auth/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/identity` |
+| 扫码与支付 | `/api/v1/user/scan/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/money/payment.go` |
+| 充电状态、历史、停止 | `/api/v1/user/charge/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/charging` |
+| 钱包、卡、券、站点、发票、报修 | `/api/v1/user/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/money`、`domain/devices` |
+| 后台身份、账号、角色、数据范围 | `/api/v1/admin/auth/*`、`/admin-users`、`/roles` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/operations` |
+| 站点、设备、厂商、方案 | `/api/v1/admin/stations`、`/devices`、`/vendors` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/devices` |
+| 订单、支付单、计量复核、发票 | `/api/v1/admin/orders`、`/payment-orders`、`/billing/*` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/charging`、`domain/money` |
+| 财务：退款、结算、提现、导出 | `/api/v1/admin/billing/*`、`/exports` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/money` |
+| 告警、故障、反馈、公告、审计 | `/api/v1/admin/alerts`、`/device-fault-reports`、`/feedback` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/operations` |
+| 服务间内部端点 | `/api/v1/internal/*` | [internal_api.go](internal/interface/http/internal_api.go) | `application` |
+| 设备接入端点 | `/api/v1/internal/devices/*`、`/charging-evidence` | [device_api.go](internal/interface/http/device_api.go) | [gateway](internal/gateway) |
+| worker 运维端点 | `/api/v1/internal/worker/ops/*`、`/scheduled-tasks/*` | [worker_api.go](internal/interface/http/worker_api.go) | [worker](internal/worker) |
 
 后台用户档案的余额记录通过 `GET /api/v1/admin/charge-users/:id/recharges` 分页读取，要求 `charge_user.read`。数据来自该用户未删除的余额充值支付单，保留待支付、已支付和退款状态；实付与成功退款金额分别展示。仅接受 `page/page_size`，按创建时间及支付单 ID 倒序排列。
 
