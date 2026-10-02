@@ -2,6 +2,7 @@ package admin
 
 import (
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -13,10 +14,6 @@ import (
 
 // 本文件提供优惠券活动规则的运营接口；发放逻辑由 charge 包实现。
 // 金额单位为分，活动时间使用绝对起止时间，是否生效由状态及时间窗口共同判断。
-var activityTriggers = map[string]bool{
-	"first_recharge": true, "invite_reward": true, "threshold_redeem": true, "holiday": true,
-}
-
 // activityRuleRow 是活动列表投影，包含规则、券名称和累计发放数量。
 type activityRuleRow struct {
 	ID              uint64    `json:"id"`                // 活动规则主键
@@ -126,54 +123,8 @@ type activityRuleInput struct {
 	EndAt           string  `json:"end_at"`            // 活动结束时间，RFC3339 字符串，须晚于开始时间且不超过一年后
 }
 
-// validate 检查活动参数及触发类型约束：满减必须有门槛，邀请活动必须配置邀请人奖励券。
-// 首充和节日活动不接受门槛；缺省状态设为 active，起止时间转换为 UTC。
-func (in *activityRuleInput) validate() (time.Time, time.Time, error) {
-	if in.Name == "" || len([]rune(in.Name)) > 128 {
-		return time.Time{}, time.Time{}, errActivityInput
-	}
-	if !activityTriggers[in.TriggerType] || in.CouponID == 0 {
-		return time.Time{}, time.Time{}, errActivityInput
-	}
-	start, err := time.Parse(time.RFC3339, in.StartAt)
-	if err != nil {
-		return time.Time{}, time.Time{}, errActivityInput
-	}
-	end, err := time.Parse(time.RFC3339, in.EndAt)
-	if err != nil || !start.Before(end) {
-		return time.Time{}, time.Time{}, errActivityInput
-	}
-	if end.After(time.Now().Add(365 * 24 * time.Hour)) {
-		return time.Time{}, time.Time{}, errActivityInput
-	}
-	if in.ThresholdCents < 0 || in.MaxGrants < 0 || in.PerUserLimit < 0 {
-		return time.Time{}, time.Time{}, errActivityInput
-	}
-	switch in.TriggerType {
-	case "threshold_redeem":
-		if in.ThresholdCents <= 0 {
-			return time.Time{}, time.Time{}, errActivityInput
-		}
-	case "invite_reward":
-		if in.InviterCouponID == nil || *in.InviterCouponID == 0 {
-			return time.Time{}, time.Time{}, errActivityInput
-		}
-	default:
-		if in.ThresholdCents != 0 {
-			return time.Time{}, time.Time{}, errActivityInput
-		}
-	}
-	if in.Status == "" {
-		in.Status = "active"
-	}
-	if in.Status != "active" && in.Status != "disabled" {
-		return time.Time{}, time.Time{}, errActivityInput
-	}
-	return start.UTC(), end.UTC(), nil
-}
-
 // errActivityInput 是券活动各类校验失败的统一哨兵错误，只在事务内传播，由外层翻译成给运营看的中文提示。
-var errActivityInput = errors.New("invalid activity rule")
+var errActivityInput = money.ErrActivityRule
 
 // createActivityRule 新建一个券活动。校验通过且所引用的券都可用后写入 coupon_activity_rule。
 func (a ResourceAPI) createActivityRule(c *gin.Context) {
@@ -181,7 +132,10 @@ func (a ResourceAPI) createActivityRule(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	start, end, err := in.validate()
+	start, end, status, err := money.NormalizeActivity(in.asActivity(), time.Now().UTC())
+	if err == nil {
+		in.Status = status
+	}
 	if err != nil {
 		httpapi.BadRequest(c, "活动规则无效：名称不能为空，门槛为非负分，窗口须为 RFC3339 且结束晚于开始，满减须设门槛，邀请有奖须设邀请人券")
 		return
@@ -231,7 +185,10 @@ func (a ResourceAPI) updateActivityRule(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	start, end, err := in.validate()
+	start, end, status, err := money.NormalizeActivity(in.asActivity(), time.Now().UTC())
+	if err == nil {
+		in.Status = status
+	}
 	if err != nil {
 		httpapi.BadRequest(c, "活动规则无效")
 		return
@@ -285,4 +242,15 @@ func (a ResourceAPI) couponUsable(c *gin.Context, couponID uint64) error {
 		return errActivityInput
 	}
 	return nil
+}
+
+// asActivity 把请求体转成领域层的活动参数。
+// 两层的字段名一致，但分层是硬要求：校验规则不在接口层再实现一份。
+func (in *activityRuleInput) asActivity() money.ActivityRule {
+	return money.ActivityRule{
+		Name: in.Name, TriggerType: in.TriggerType, CouponID: in.CouponID,
+		InviterCouponID: in.InviterCouponID, ThresholdCents: in.ThresholdCents,
+		MaxGrants: in.MaxGrants, PerUserLimit: in.PerUserLimit,
+		Status: in.Status, StartAt: in.StartAt, EndAt: in.EndAt,
+	}
 }
