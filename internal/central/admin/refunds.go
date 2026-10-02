@@ -40,8 +40,14 @@ func (a ResourceAPI) refundReviewStore() orderstore.ReviewStore {
 }
 
 // asConflict 将家族包的冲突哨兵映射为后台统一的 409 语义。
+//
+// 这里列的是"业务上不能这么做"的拒绝，不是故障：余额不足、状态已变、重复提交。
+// 漏掉任何一个，它就会掉进默认分支被报成 503，运营看到的是"服务暂不可用，
+// 稍后重试"——重试并不会成功，只会把一个明确的拒绝变成无从下手的等待。
 func asConflict(err error) error {
-	if errors.Is(err, orderstore.ErrRefundConflict) || errors.Is(err, orderstore.ErrInvoiceConflict) {
+	if errors.Is(err, orderstore.ErrRefundConflict) ||
+		errors.Is(err, orderstore.ErrInvoiceConflict) ||
+		errors.Is(err, orderstore.ErrWithdrawConflict) {
 		return errConflict
 	}
 	return err

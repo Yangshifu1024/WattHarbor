@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -134,31 +135,6 @@ func (a ResourceAPI) payWithdraw(c *gin.Context) {
 	httpapi.OK(c, gin.H{"withdraw_no": no, "status": "paid", "already_paid": alreadyPaid})
 }
 
-// ReconcileRow 表示 finance_reconcile_log 中单日对账结果。
-type ReconcileRow struct {
-	ID            uint64 `gorm:"column:id" json:"id"`                         // 对账记录主键 ID
-	ReconcileType string `gorm:"column:reconcile_type" json:"reconcile_type"` // 对账类型:wechat_refund 微信退款 / wechat_pay 微信支付 / split 分账 / withdraw 提现
-	ReconcileDate string `gorm:"column:reconcile_date" json:"reconcile_date"` // 对账日期,格式 YYYY-MM-DD;同一天同类型只保留一条,重跑覆盖
-	InternalCount int    `gorm:"column:internal_count" json:"internal_count"` // 内部台账笔数
-	ExternalCount int    `gorm:"column:wechat_count" json:"wechat_count"`     // 渠道上报笔数(库字段 wechat_count)
-	DiffCount     int    `gorm:"column:diff_count" json:"diff_count"`         // 对不上的笔数
-	InternalCents int64  `gorm:"column:internal_cents" json:"internal_cents"` // 内部台账金额合计,单位分
-	ExternalCents int64  `gorm:"column:wechat_cents" json:"wechat_cents"`     // 渠道上报金额合计,单位分(库字段 wechat_cents)
-	DiffCents     int64  `gorm:"column:diff_cents" json:"diff_cents"`         // 差额合计,单位分,等于渠道减内部
-	Resolved      bool   `gorm:"column:resolved" json:"resolved"`             // 运营是否已标记为处理完毕
-	CreatedAt     string `gorm:"column:created_at" json:"created_at"`         // 记录写入时间,UTC
-	// Diffs 在查询后由 JSON 文本解码，避免直接将 JSON 列扫描到 any 字段。
-	Diffs []ReconcileDiff `json:"diffs" gorm:"-"` // 逐条差异明细,查询后从 diffs_json 解析回填
-}
-
-// ReconcileDiff 是一条对不上的流水：同一个参照号在内部台账和渠道侧的金额以及差异原因。
-type ReconcileDiff struct {
-	Ref           string `json:"ref"`            // 对账参照号(内部单号或渠道流水号),按它逐笔比对
-	InternalCents int64  `json:"internal_cents"` // 内部台账金额,单位分
-	ChannelCents  int64  `json:"channel_cents"`  // 渠道上报金额,单位分
-	Reason        string `json:"reason"`         // 差异原因:金额不一致 / 内部无对应记录
-}
-
 // runReconcile 触发一次对账：校验对账类型、日期和上报条数，把渠道数据按参照号聚合，
 // 再与内部台账逐笔比对，差异原样落库交给运营判断，不做自动抹平。
 func (a ResourceAPI) runReconcile(c *gin.Context) {
@@ -205,126 +181,40 @@ type ReconcileAmount struct {
 	AmountCents int64  `json:"amount_cents"` // 渠道金额,单位分;同一流水号出现多次会累加
 }
 
-// reconcileType 比对内部台账与渠道数据，计算笔数、金额及差异。
-// 按类型和日期更新 finance_reconcile_log，同日重跑覆盖原结果。
-func (a ResourceAPI) reconcileType(c *gin.Context, kind string, date time.Time, channel map[string]int64) (ReconcileRow, error) {
-	out := ReconcileRow{ReconcileType: kind, ReconcileDate: date.Format("2006-01-02"), Diffs: []ReconcileDiff{}}
-	var internal map[string]int64
-	var err error
+// reconcileType 取对应台账、调用领域层的逐笔比对规则，再把结果落库。
+// 编排而已：怎么算差异是 money.DiffReconcile 的事，台账怎么取是 database 的事。
+func (a ResourceAPI) reconcileType(c *gin.Context, kind string, date time.Time, channel map[string]int64) (paystore.ReconcileRow, error) {
+	row := paystore.ReconcileRow{ReconcileType: kind, ReconcileDate: date.Format("2006-01-02"), Diffs: []paystore.ReconcileDiff{}}
+	ctx, userDB, billingDB, adminDB := c.Request.Context(), a.Store.UserDB, a.Store.BillingDB, a.Store.AdminDB
+	var (
+		internal map[string]int64
+		err      error
+	)
 	switch kind {
 	case "wechat_refund":
-		internal, err = a.internalRefunds(c, date)
+		internal, err = paystore.InternalRefunds(ctx, userDB, date)
 	case "wechat_pay":
-		internal, err = a.internalPayments(c, date)
+		internal, err = paystore.InternalPayments(ctx, userDB, date)
 	case "split":
-		internal, err = a.internalSplits(c, date)
+		internal, err = paystore.InternalSplits(ctx, billingDB, date)
 	default:
-		internal, err = a.internalWithdraws(c, date)
+		internal, err = paystore.InternalWithdraws(ctx, billingDB, date)
 	}
 	if err != nil {
-		return out, err
+		return row, err
 	}
-	seen := map[string]bool{}
-	for ref, cents := range internal {
-		seen[ref] = true
-		if channel[ref] != cents {
-			out.Diffs = append(out.Diffs, ReconcileDiff{Ref: ref, InternalCents: cents, ChannelCents: channel[ref], Reason: "金额不一致"})
-			out.DiffCents += channel[ref] - cents
-			out.DiffCount++
-		}
+	result := money.DiffReconcile(internal, channel)
+	row.InternalCount, row.ExternalCount = result.InternalCount, result.ExternalCount
+	row.DiffCount, row.DiffCents = result.DiffCount, result.DiffCents
+	row.InternalCents, row.ExternalCents = result.InternalCents, result.ExternalCents
+	row.Diffs = make([]paystore.ReconcileDiff, 0, len(result.Diffs))
+	for _, d := range result.Diffs {
+		row.Diffs = append(row.Diffs, paystore.ReconcileDiff{Ref: d.Ref, InternalCents: d.InternalCents, ChannelCents: d.ChannelCents, Reason: d.Reason})
 	}
-	for ref, cents := range channel {
-		if !seen[ref] {
-			out.Diffs = append(out.Diffs, ReconcileDiff{Ref: ref, InternalCents: 0, ChannelCents: cents, Reason: "内部无对应记录"})
-			out.DiffCents += cents
-			out.DiffCount++
-		}
+	if err := paystore.SaveReconcileResult(ctx, adminDB, kind, row.ReconcileDate, result); err != nil {
+		return row, err
 	}
-	out.InternalCount, out.ExternalCount = len(internal), len(channel)
-	for _, cents := range internal {
-		out.InternalCents += cents
-	}
-	for _, cents := range channel {
-		out.ExternalCents += cents
-	}
-	diffs, _ := json.Marshal(out.Diffs)
-	// 按 type 和 date 唯一键更新对账结果，重复执行不新增记录。
-	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Exec(
-		`INSERT INTO finance_reconcile_log(reconcile_type,reconcile_date,internal_count,wechat_count,diff_count,internal_cents,wechat_cents,diff_cents,diffs_json,resolved)
-		 VALUES(?,?,?,?,?,?,?,?,?,0)
-		 ON DUPLICATE KEY UPDATE internal_count=VALUES(internal_count),wechat_count=VALUES(wechat_count),diff_count=VALUES(diff_count),
-		   internal_cents=VALUES(internal_cents),wechat_cents=VALUES(wechat_cents),diff_cents=VALUES(diff_cents),diffs_json=VALUES(diffs_json),resolved=0`,
-		kind, date, out.InternalCount, out.ExternalCount, out.DiffCount, out.InternalCents, out.ExternalCents, out.DiffCents, string(diffs)).Error; err != nil {
-		return out, err
-	}
-	return out, nil
-}
-
-// internalRefunds 取当天支付成功、且退款已完成的退款记录，按退款单号聚合金额，供微信退款对账。
-func (a ResourceAPI) internalRefunds(c *gin.Context, date time.Time) (map[string]int64, error) {
-	rows := []struct {
-		RefundNo    string
-		RefundCents int64
-	}{}
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("refund_record AS r").
-		Joins("JOIN payment_order AS p ON p.id = r.payment_order_id").
-		Where("DATE(p.paid_at) = ? AND r.status = 'succeeded' AND r.deleted_at IS NULL", date.Format("2006-01-02")).
-		Select("r.refund_no, r.refund_cents").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	return indexAmounts(rows, func(i int) (string, int64) { return rows[i].RefundNo, rows[i].RefundCents }), nil
-}
-
-// internalPayments 取当天已收款以及之后发生退款的支付单，按支付单号聚合金额，供微信支付对账。
-func (a ResourceAPI) internalPayments(c *gin.Context, date time.Time) (map[string]int64, error) {
-	rows := []struct {
-		OrderNo   string
-		PaidCents int64
-	}{}
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).Table("payment_order").
-		Where("DATE(paid_at) = ? AND status IN ('paid','partial_refunded','refunded') AND deleted_at IS NULL", date.Format("2006-01-02")).
-		Select("order_no, paid_cents").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	return indexAmounts(rows, func(i int) (string, int64) { return rows[i].OrderNo, rows[i].PaidCents }), nil
-}
-
-// internalSplits 取当天生成的分账汇总，按分账单号聚合金额，供分账对账。
-func (a ResourceAPI) internalSplits(c *gin.Context, date time.Time) (map[string]int64, error) {
-	rows := []struct {
-		SettlementNo string
-		TotalCents   int64
-	}{}
-	if err := a.Store.BillingDB.WithContext(c.Request.Context()).Table("settlement").
-		Where("DATE(created_at) = ?", date.Format("2006-01-02")).Select("settlement_no, total_cents").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	return indexAmounts(rows, func(i int) (string, int64) { return rows[i].SettlementNo, rows[i].TotalCents }), nil
-}
-
-// internalWithdraws 取当天创建的提现单，按提现单号聚合金额，供提现对账。
-func (a ResourceAPI) internalWithdraws(c *gin.Context, date time.Time) (map[string]int64, error) {
-	rows := []struct {
-		WithdrawNo  string
-		AmountCents int64
-	}{}
-	if err := a.Store.BillingDB.WithContext(c.Request.Context()).Table("withdraw_request").
-		Where("DATE(created_at) = ?", date.Format("2006-01-02")).Select("withdraw_no, amount_cents").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	return indexAmounts(rows, func(i int) (string, int64) { return rows[i].WithdrawNo, rows[i].AmountCents }), nil
-}
-
-// indexAmounts 把任意行切片按 pick 取出的“参照号 → 金额”汇总成 map，跳过空参照号，重复参照号累加。
-func indexAmounts[T any](rows []T, pick func(int) (string, int64)) map[string]int64 {
-	out := map[string]int64{}
-	for i := range rows {
-		ref, cents := pick(i)
-		if ref != "" {
-			out[ref] += cents
-		}
-	}
-	return out
+	return row, nil
 }
 
 // resolveReconcile 标记一条对账记录是否已处理，行锁下按 ID 更新，重复调用结果一致。
@@ -333,15 +223,12 @@ func (a ResourceAPI) resolveReconcile(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// finance_reconcile_log 没有备注列，早先这里声明的 note 字段只会被静默丢弃，
+	// 让调用方以为处理说明已保存。已移除：需要备注时应先加列。
 	var in struct {
-		Resolved bool   `json:"resolved"` // 是否标记为已处理
-		Note     string `json:"note"`     // 处理备注,最长 255 字符
+		Resolved bool `json:"resolved"` // 是否标记为已处理
 	}
 	if !chargehttp.DecodeResource(c, &in) {
-		return
-	}
-	if utf8Count(in.Note) > 255 {
-		httpapi.BadRequest(c, "备注过长")
 		return
 	}
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
@@ -462,7 +349,7 @@ func (a ResourceAPI) reconciles(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := Page[ReconcileRow]{Items: []ReconcileRow{}, Page: page.Page, PageSize: page.PageSize}
+	out := Page[paystore.ReconcileRow]{Items: []paystore.ReconcileRow{}, Page: page.Page, PageSize: page.PageSize}
 	query := a.Store.AdminDB.WithContext(c.Request.Context()).Table("finance_reconcile_log")
 	if page.Status != "" {
 		query = query.Where("reconcile_type = ?", page.Status)
@@ -497,7 +384,7 @@ func (a ResourceAPI) reconciles(c *gin.Context) {
 		}
 	}
 	for i := range out.Items {
-		out.Items[i].Diffs = []ReconcileDiff{}
+		out.Items[i].Diffs = []paystore.ReconcileDiff{}
 		if raw, present := diffs[out.Items[i].ID]; present && len(raw) > 0 {
 			_ = json.Unmarshal(raw, &out.Items[i].Diffs)
 		}
