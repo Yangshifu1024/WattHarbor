@@ -602,22 +602,13 @@
       "ScanOffersRequest": {
         "type": "object",
         "required": [
-          "client_request_id",
-          "port_id",
-          "offer_id"
+          "port_id"
         ],
         "properties": {
-          "client_request_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "幂等键"
-          },
           "port_id": {
-            "type": "string"
-          },
-          "offer_id": {
-            "type": "integer",
-            "minimum": 1
+            "type": "string",
+            "maxLength": 128,
+            "description": "形如 <设备号>:<端口号>"
           }
         }
       },
@@ -640,10 +631,6 @@
           "offer_id": {
             "type": "integer",
             "minimum": 1
-          },
-          "payment_order_no": {
-            "type": "string",
-            "description": "选用的支付方式，如 wallet / wechat"
           }
         }
       },
@@ -680,18 +667,29 @@
         "properties": {
           "data": {
             "type": "object",
+            "description": "价格档由服务器按该端口当前生效的方案算出，客户端不传也不得自带价格。",
             "properties": {
+              "station_id": {
+                "type": "integer",
+                "description": "站点 ID，十进制字符串"
+              },
               "port_id": {
                 "type": "string"
               },
-              "station": {
-                "$ref": "#/components/schemas/StationRow"
-              },
-              "offers": {
+              "items": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/ScanOfferRow"
-                }
+                  "type": "object"
+                },
+                "description": "该端口的可选价格档"
+              },
+              "display": {
+                "type": "object",
+                "description": "用户端展示开关"
+              },
+              "stop_when_full": {
+                "type": "boolean",
+                "description": "充满是否自动停机"
               }
             }
           }
