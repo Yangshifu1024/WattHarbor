@@ -170,3 +170,14 @@ type LastExecutionRow struct {
 	Status     string     `gorm:"column:status"`
 	ErrorMsg   *string    `gorm:"column:error_msg"`
 }
+
+// CleanupExecutionHistory 清理历史执行日志：空轮询（跑过但没有处理任何行）
+// 保留一天，其余已结束的保留 30 天。仍在 running 的不删——那不是"历史"，
+// 是进程崩在执行中途留下的痕迹，由 FailStaleRunningLogs 收尾。
+// 分批删除，单次 1000 行，避免一条 DELETE 锁住整张表。
+func CleanupExecutionHistory(ctx context.Context, db *gorm.DB) error {
+	return db.WithContext(ctx).Exec(`DELETE FROM task_execution_log
+		WHERE (status='success' AND affected_rows=0 AND finished_at<DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 DAY))
+		OR (status IN ('success','failed','partial') AND finished_at<DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 30 DAY))
+		LIMIT 1000`).Error
+}

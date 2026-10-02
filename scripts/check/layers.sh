@@ -196,6 +196,38 @@ while IFS= read -r file; do
   fi
 done < <(find internal/gateway internal/worker internal/interface internal/application internal/central -name '*.go' ! -name '*_test.go')
 
+# 编排层不得出现裸 SQL。此前这条规则用逐行匹配 .Table(" 找表名，
+# 结果编排层里躺着四处 Raw/Exec/QueryRow 写的 SQL 而规则一路绿灯——
+# 规则覆盖不到 Raw(` 跨多行的 SQL，和 gorm 的 ExecContext/QueryRowContext。
+#
+# 判据刻意做粗：文件里有数据库调用入口（Raw/Exec/Query*），且有 SQL 动词。
+# 接收者后面隔着 .WithContext(ctx) 之类的调用链会跨不过括号，所以只匹配
+# 入口方法名，不解析参数。
+#
+# gin 的 c.Query("from") 会被两个判据同时命中（Query + from），所以额外要求
+# 出现 Raw 或 Exec——那是 gorm 专有的、gin 没有的入口。QueryRow 单独算。
+allowed_stores=(internal/infrastructure/database internal/gateway/store internal/worker/store internal/gateway/provision)
+while IFS= read -r file; do
+  skip=0
+  for allowed in "${allowed_stores[@]}"; do
+    [[ $file == "$allowed"/* ]] && skip=1 && break
+  done
+  ((skip)) && continue
+  # 压平换行：跨行的 Raw(`...`) 语句逐行看不见。
+  flat=$(tr '\n' ' ' <"$file")
+  if grep -qE '\.(Raw|Exec)[A-Za-z]*\(' <<<"$flat" &&
+     grep -qiE '\b(FROM|DELETE[[:space:]]+FROM|INSERT[[:space:]]+INTO|UPDATE)[[:space:]]+[a-z_]+' <<<"$flat"; then
+    report "$file: 编排层出现裸 SQL（Raw/Exec），应归所属 schema 的 store"
+  fi
+  if grep -qE '\.QueryRow[A-Za-z]*\(' <<<"$flat" &&
+     grep -qiE '\bSELECT\b' <<<"$flat"; then
+    report "$file: 编排层出现裸 SQL（QueryRow），应归所属 schema 的 store"
+  fi
+  if grep -qE '\.Table\("|gorm\.Expr|gorm:"(column|primaryKey)|func \([A-Za-z]+\) TableName\(\) string' <<<"$flat"; then
+    report "$file: 编排层出现表名或 gorm 查询构造，应归所属 schema 的 store"
+  fi
+done < <(find internal/gateway internal/worker internal/interface internal/application internal/central -name '*.go' ! -name '*_test.go')
+
 # 过渡中的 central/admin 只放 HTTP 处理：不得再定义 gorm 模型或表名映射。
 # 模型留在 infrastructure/database，规则留在 domain——这条守住就不再回退。
 while IFS= read -r file; do

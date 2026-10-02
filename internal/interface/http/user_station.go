@@ -67,18 +67,7 @@ func (a UserAccountAPI) nearbyStations(c *gin.Context) {
 	}
 	// 距离由 SQL 直接基于库里的 DECIMAL 坐标算出，
 	// 这样排序和分页都发生在结果被截断之前。
-	rows := []stationRow{}
-	err := a.AdminDB.WithContext(ctx).Raw(`
-		SELECT * FROM (SELECT id, name, address,
-		       CAST(longitude AS CHAR) AS longitude, CAST(latitude AS CHAR) AS latitude,
-		       status, contact_phone,
-		       ROUND(6371 * ACOS(LEAST(1, COS(RADIANS(?)) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(?))
-		         + SIN(RADIANS(?)) * SIN(RADIANS(latitude)))), 3) AS distance_km
-		FROM station
-		WHERE deleted_at IS NULL AND status = 'active') nearby WHERE distance_km <= ?
-		ORDER BY distance_km ASC, id ASC
-		LIMIT ? OFFSET ?`,
-		latitude, longitude, latitude, radius, pageSize, (page-1)*pageSize).Scan(&rows).Error
+	rows, err := orderstore.ListStationsNearBy(ctx, a.AdminDB, latitude, longitude, radius, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "站点暂时无法读取", nil)
 		return

@@ -1,19 +1,16 @@
 package admin
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/delivery"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
-	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"net/http"
-	"time"
 )
 
 // RegulatoryQueue 把监管报送事件按 event_id 幂等写入 regulatory_report。
@@ -30,32 +27,11 @@ func (q RegulatoryQueue) Enqueue(ctx context.Context, event delivery.Event) (boo
 	if err != nil {
 		return false, err
 	}
-	_, err = q.AdminDB.ExecContext(ctx, `INSERT INTO regulatory_report(event_id,object_type,object_key,payload_json) VALUES(?,?,?,?)`,
-		event.EventID, event.ObjectType, event.ObjectKey, string(data))
-	if err == nil {
-		return true, nil
-	}
-	var mysqlErr *mysql.MySQLError
-	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {
-		return false, err
-	}
-	var existingType, existingKey, existingData string
-	if err := q.AdminDB.QueryRowContext(ctx, `SELECT object_type,object_key,CAST(payload_json AS CHAR) FROM regulatory_report WHERE event_id = ?`, event.EventID).
-		Scan(&existingType, &existingKey, &existingData); err != nil {
-		return false, err
-	}
-	var normalized any
-	if err := json.Unmarshal([]byte(existingData), &normalized); err != nil {
-		return false, err
-	}
-	canonical, err := json.Marshal(normalized)
-	if err != nil {
-		return false, err
-	}
-	if existingType != event.ObjectType || existingKey != event.ObjectKey || !bytes.Equal(canonical, data) {
+	_, err = database.InsertRegulatoryReport(ctx, q.AdminDB, event.EventID, event.ObjectType, event.ObjectKey, string(data))
+	if errors.Is(err, database.ErrRegulatoryConflict) {
 		return false, errRegulatoryConflict
 	}
-	return false, nil
+	return err == nil, err
 }
 
 // RegulatoryEventsAPI 暴露监管报送的入队与状态查询；表在 central_db，
@@ -110,14 +86,7 @@ func (a RegulatoryEventsAPI) status(c *gin.Context) {
 		httpapi.BadRequest(c, "event_id 无效")
 		return
 	}
-	var objectType, objectKey, state string
-	var attempts int
-	var next time.Time
-	var delivered sql.NullTime
-	var deliveredMode sql.NullString
-	var lastError sql.NullString
-	err := a.Queue.AdminDB.QueryRowContext(c.Request.Context(), `SELECT object_type,object_key,status,attempts,next_attempt_at,delivered_at,delivered_mode,last_error FROM regulatory_report WHERE event_id = ?`, eventID).
-		Scan(&objectType, &objectKey, &state, &attempts, &next, &delivered, &deliveredMode, &lastError)
+	row, err := database.FindRegulatoryReportStatus(c.Request.Context(), a.Queue.AdminDB, eventID)
 	if err == sql.ErrNoRows {
 		httpapi.Write(c, http.StatusNotFound, httpapi.CodeNotFound, "监管报送事件不存在", nil)
 		return
@@ -126,6 +95,9 @@ func (a RegulatoryEventsAPI) status(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, httpapi.CodeServiceUnavailable, "监管报送状态暂时无法读取", nil)
 		return
 	}
+	objectType, objectKey, state := row.ObjectType, row.ObjectKey, row.Status
+	attempts, next := row.Attempts, row.NextAttempt
+	delivered, deliveredMode, lastError := row.DeliveredAt, row.DeliveredMode, row.LastError
 	var deliveredAt any
 	var mode any
 	var message any

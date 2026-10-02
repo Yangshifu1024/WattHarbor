@@ -183,3 +183,27 @@ func ListStationDevices(ctx context.Context, db *gorm.DB, stationID uint64) ([]S
 		Order("device_id ASC").Find(&rows).Error
 	return rows, err
 }
+
+// ListStationsNearBy 返回距给定坐标 radius 公里内的启用站点，按距离升序。
+//
+// 距离必须由数据库算：库里坐标是 DECIMAL，在 Go 里算就得先把全部候选站点
+// 取回来再排序分页——而"附近"这个筛选条件只有在 SQL 里才能参与分页，
+// 否则会先截断再算距离，结果是错的。
+//
+// 球面余弦公式，6371 是地球半径（公里）。LEAST(1, ...) 夹住浮点误差，
+// 否则 ACOS 的参数偶尔会略大于 1 而报 NaN。
+func ListStationsNearBy(ctx context.Context, db *gorm.DB, latitude, longitude, radius float64, page, pageSize int) ([]UserStationRow, error) {
+	rows := []UserStationRow{}
+	err := db.WithContext(ctx).Raw(`
+		SELECT * FROM (SELECT id, name, address,
+		       CAST(longitude AS CHAR) AS longitude, CAST(latitude AS CHAR) AS latitude,
+		       status, contact_phone,
+		       ROUND(6371 * ACOS(LEAST(1, COS(RADIANS(?)) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(?))
+		         + SIN(RADIANS(?)) * SIN(RADIANS(latitude)))), 3) AS distance_km
+		FROM station
+		WHERE deleted_at IS NULL AND status = 'active') nearby WHERE distance_km <= ?
+		ORDER BY distance_km ASC, id ASC
+		LIMIT ? OFFSET ?`,
+		latitude, longitude, latitude, radius, pageSize, (page-1)*pageSize).Scan(&rows).Error
+	return rows, err
+}

@@ -247,10 +247,7 @@ func (a AdminAccounts) deleteRole(c *gin.Context) {
 	}
 	var auditPending []AuditEntry
 	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		if _, err := store.SoftDeleteRole(tx, id); err != nil {
-			return err
-		}
-		if err := tx.Exec("DELETE FROM role_permission WHERE role_id = ?", id).Error; err != nil {
+		if err := store.SoftDeleteRoleAndPermissions(tx, id); err != nil {
 			return err
 		}
 		auditPending = []AuditEntry{{Action: "delete", Target: "role", ID: id, Before: role, After: nil, RequestID: ""}}

@@ -1,10 +1,14 @@
 package database
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -212,4 +216,74 @@ func TruncateRegulatoryError(value string) string {
 		return value[:512]
 	}
 	return value
+}
+
+// 监管报送的入队与状态读取。这两张表的另一面（租约领取与状态推进）在同文件上方，
+// 两条路径此前分别落在 database 的 gorm 方法和 central/admin 的 *sql.DB 查询里，
+// 同一张表两套访问方式。现在并到一处。
+//
+// 入队靠 event_id 上的唯一键做幂等：重复且内容一致视为已入队，内容不同则冲突。
+// 比较前先把 JSON 归一化再逐字节比——键序不同但语义相同的载荷不该判成冲突。
+
+// ErrRegulatoryConflict 表示同一 event_id 已存在但内容不同。
+var ErrRegulatoryConflict = errors.New("event_id already exists with different content")
+
+// InsertRegulatoryReport 入队一条监管报送，返回是否为新创建。
+// 撞唯一键时读回既有记录做内容比对：一致返回 (false, nil)，不同返回冲突。
+func InsertRegulatoryReport(ctx context.Context, db *sql.DB, eventID, objectType, objectKey, payload string) (bool, error) {
+	_, err := db.ExecContext(ctx, `INSERT INTO regulatory_report(event_id,object_type,object_key,payload_json) VALUES(?,?,?,?)`,
+		eventID, objectType, objectKey, payload)
+	if err == nil {
+		return true, nil
+	}
+	var mysqlErr *mysql.MySQLError
+	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {
+		return false, err
+	}
+	var existingType, existingKey, existingData string
+	if err := db.QueryRowContext(ctx,
+		`SELECT object_type,object_key,CAST(payload_json AS CHAR) FROM regulatory_report WHERE event_id = ?`, eventID).
+		Scan(&existingType, &existingKey, &existingData); err != nil {
+		return false, err
+	}
+	canonical, err := canonicalJSON([]byte(existingData))
+	if err != nil {
+		return false, err
+	}
+	if existingType != objectType || existingKey != objectKey || !bytes.Equal(canonical, []byte(payload)) {
+		return false, ErrRegulatoryConflict
+	}
+	return false, nil
+}
+
+// RegulatoryReportStatus 是一条监管报送的当前状态。
+type RegulatoryReportStatus struct {
+	ObjectType    string
+	ObjectKey     string
+	Status        string
+	Attempts      int
+	NextAttempt   time.Time
+	DeliveredAt   sql.NullTime
+	DeliveredMode sql.NullString
+	LastError     sql.NullString
+}
+
+// FindRegulatoryReportStatus 按 event_id 取一条报送的状态。取不到返回 sql.ErrNoRows。
+func FindRegulatoryReportStatus(ctx context.Context, db *sql.DB, eventID string) (RegulatoryReportStatus, error) {
+	var row RegulatoryReportStatus
+	err := db.QueryRowContext(ctx,
+		`SELECT object_type,object_key,status,attempts,next_attempt_at,delivered_at,delivered_mode,last_error
+		 FROM regulatory_report WHERE event_id = ?`, eventID).
+		Scan(&row.ObjectType, &row.ObjectKey, &row.Status, &row.Attempts, &row.NextAttempt,
+			&row.DeliveredAt, &row.DeliveredMode, &row.LastError)
+	return row, err
+}
+
+// canonicalJSON 把 JSON 归一化成"键有序、无多余空白"的形式再交给调用方比较。
+func canonicalJSON(raw []byte) ([]byte, error) {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+	return json.Marshal(v)
 }

@@ -161,3 +161,17 @@ func (s RoleStore) SoftDeleteRole(tx *gorm.DB, id uint64) (int64, error) {
 		Updates(map[string]any{"deleted_at": gorm.Expr("UTC_TIMESTAMP(3)")})
 	return res.RowsAffected, res.Error
 }
+
+// SoftDeleteRoleAndPermissions 停用角色并清空它的权限关联，两步必须同事务。
+// 分开调用的话，角色已停用但权限还在的空窗期里，某个请求可能按旧权限通过。
+func (s RoleStore) SoftDeleteRoleAndPermissions(tx *gorm.DB, id uint64) error {
+	if _, err := s.SoftDeleteRole(tx, id); err != nil {
+		return err
+	}
+	return DeleteRolePermissions(tx, id)
+}
+
+// DeleteRolePermissions 清空一个角色的全部权限关联。
+func DeleteRolePermissions(tx *gorm.DB, roleID uint64) error {
+	return tx.Exec("DELETE FROM role_permission WHERE role_id = ?", roleID).Error
+}
