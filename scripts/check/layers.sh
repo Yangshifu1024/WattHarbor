@@ -103,6 +103,12 @@ done < <(find internal/infrastructure -name '*.go' ! -name '*_test.go')
 #
 # 原先这条只匹配了后五项，domain 与 application 漏在正则之外——它一直靠
 # "没有违规"通过，而不是靠能判别。已证伪并修正。
+#
+# 2026-10-02 复证：internal/protocol 确实不 import 任何内部包，所以从仓库现状
+# 看不出这条规则有没有判别力。逐个方向注入后确认八个全部被抓、退出码 1、
+# 还原后 0：domain/charging、application、infrastructure/database、
+# interface/http、central/admin、gateway/store、worker/charge、delivery。
+# 现状干净不代表规则有效，这一步不能省。
 while IFS= read -r file; do
   bad=$(grep -oE '"github\.com/ChargePilot2026/charge-pilot/internal/[a-z0-9_-]+(/[a-z0-9_/-]+)?"' "$file" |
         tr -d '"' | sed 's|.*/internal/||' | grep -v -e '^platform/' -e '^protocol' | sort -u | tr '\n' ' ')
