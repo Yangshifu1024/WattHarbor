@@ -11,21 +11,15 @@ import (
 // OrderPackage uses the order's frozen contract. Editing or deleting the live
 // station scheme must never change what the customer bought on this order.
 type OrderPackage struct {
-	Offer       charging.Offer      `json:"offer"`
-	Scheme      *charging.Scheme    `json:"scheme,omitempty"`
-	BillingMode charging.ChargeMode `json:"billing_mode"`
-	RuleVersion uint32              `json:"rule_version"`
-	Card        *OrderCardPurchase  `json:"card,omitempty"`
+	Offer       charging.Offer                `json:"offer"`
+	Scheme      *charging.Scheme              `json:"scheme,omitempty"`
+	BillingMode charging.ChargeMode           `json:"billing_mode"`
+	RuleVersion uint32                        `json:"rule_version"`
+	Card        *orderstore.OrderCardPurchase `json:"card,omitempty"`
 }
 
 // Card purchases can grow after the first swipe; keep the original unit offer
 // intact and expose the accumulated entitlement separately.
-type OrderCardPurchase struct {
-	PaidCents        int64  `json:"paid_cents"`
-	PurchasedMinutes uint16 `json:"purchased_minutes"`
-	MaxMinutes       uint16 `json:"max_minutes"`
-}
-
 func packageFromSnapshot(raw []byte) *OrderPackage {
 	var frozen struct {
 		Rule  charging.Rule   `json:"rule"`
@@ -72,8 +66,8 @@ func (s ResourceStore) orderSchemeNames(ctx context.Context, rows []orderstore.O
 	if len(ids) == 0 {
 		return nil
 	}
-	var snapshots []orderstore.ChargePricingSnapshotRecord
-	if err := s.UserDB.WithContext(ctx).Select("charge_order_id,pricing_snapshot").Where("charge_order_id IN ?", ids).Find(&snapshots).Error; err != nil {
+	snapshots, err := orderstore.ListPricingSnapshots(ctx, s.UserDB, ids)
+	if err != nil {
 		return err
 	}
 	type selectionNames struct{ scheme, packageName *string }
@@ -90,21 +84,16 @@ func (s ResourceStore) orderSchemeNames(ctx context.Context, rows []orderstore.O
 }
 
 func (s ResourceStore) orderPackage(ctx context.Context, id uint64) (*OrderPackage, error) {
-	var snapshot orderstore.ChargePricingSnapshotRecord
-	if err := s.UserDB.WithContext(ctx).Select("pricing_snapshot").Where("charge_order_id = ?", id).Find(&snapshot).Error; err != nil {
+	snapshot, err := orderstore.FindPricingSnapshot(ctx, s.UserDB, id)
+	if err != nil {
 		return nil, err
 	}
 	out := packageFromSnapshot(snapshot.PricingSnapshot)
 	if out == nil {
 		return nil, nil
 	}
-	var card struct {
-		ChargeOrderID uint64
-		OrderCardPurchase
-	}
-	if err := s.UserDB.WithContext(ctx).Table("card_charge").
-		Select("charge_order_id,paid_cents,purchased_minutes,max_minutes").
-		Where("charge_order_id = ?", id).Find(&card).Error; err != nil {
+	card, err := orderstore.FindOrderCardCharge(ctx, s.UserDB, id)
+	if err != nil {
 		return nil, err
 	}
 	if card.ChargeOrderID != 0 {

@@ -22,8 +22,7 @@ func (a ResourceAPI) registerInvoices(r *gin.Engine) {
 // 的三个字段是汇总后的当前值（优先取审核表，没有再回退到申请单本身），因为审核进度
 // 可能只记在审核表里。审核人 ID 统一转成字符串输出，避免 JS 大整数精度丢失。
 func (a ResourceAPI) invoices(c *gin.Context) {
-	rows := []map[string]any{}
-	err := a.Store.UserDB.WithContext(c.Request.Context()).Table("invoice_request i").Select("i.id AS invoice_request_id,i.invoice_no,i.user_id,i.biz_type,i.biz_id,i.total_cents,i.invoice_type,i.title,i.tax_no,i.email,i.review_status,COALESCE(r.review_status,i.review_status) AS queue_review_status,r.reject_reason AS queue_reject_reason,r.first_reviewer_id,r.second_reviewer_id,i.reject_reason,COALESCE(r.invoice_url,i.invoice_url) AS invoice_url,i.created_at").Joins("LEFT JOIN invoice_admin_review r ON r.invoice_request_id=i.id").Where("i.deleted_at IS NULL").Order("i.id DESC").Find(&rows).Error
+	rows, err := paystore.ListInvoiceRequests(c.Request.Context(), a.Store.UserDB)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

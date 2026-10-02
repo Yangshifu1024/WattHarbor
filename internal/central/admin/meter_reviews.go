@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"errors"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
@@ -51,46 +50,27 @@ func (a ResourceAPI) meterReviews(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// entry 合并人工定价工单与计量核实记录，供列表一次返回。
-	type entry struct {
-		ChargeOrderID uint64                `json:"charge_order_id"`  // 计费订单主键（central_db），核实记录靠它关联。
-		OrderNo       string                `json:"order_no"`         // 订单号，列表关键词搜索的就是它。
-		Reason        string                `json:"reason"`           // 兜底原因：自动计费为什么没能算出费用，供人工核实参考。
-		Status        string                `json:"status"`           // 兜底单状态：pending 待核实、resolved 已处置。
-		SourceJSON    json.RawMessage       `json:"source"`           // 设备上报的原始计量数据（source_json），为空表示设备根本没上报可用数据。
-		Reviews       []dbstore.MeterReview `json:"reviews" gorm:"-"` // 该订单下的核实记录，按时间倒序；gorm:"-" 表示不由本行查询直接装载。
-	}
-	rows := []entry{}
-	db := a.Store.BillingDB.WithContext(c.Request.Context()).Table("manual_fee_review")
-	if q.Status != "" {
-		db = db.Where("status=?", q.Status)
-	}
-	if q.Keyword != "" {
-		db = db.Where("order_no LIKE ? ESCAPE '!'", chargehttp.AdminLikePattern(q.Keyword))
-	}
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	out, err := dbstore.ListManualFeeReviews(c.Request.Context(), a.Store.BillingDB, q)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if err := db.Order("id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&rows).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	for i := range rows {
-		publicSource, err := httpapi.DecimalizeIDField(rows[i].SourceJSON, "user_id")
+	for i := range out.Items {
+		publicSource, err := httpapi.DecimalizeIDField(out.Items[i].SourceJSON, "user_id")
 		if err != nil {
 			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
-		rows[i].SourceJSON = publicSource
-		rows[i].Reviews = []dbstore.MeterReview{}
-		if err := a.Store.UserDB.WithContext(c.Request.Context()).Where("charge_order_id=?", rows[i].ChargeOrderID).Order("id DESC").Find(&rows[i].Reviews).Error; err != nil {
+		out.Items[i].SourceJSON = publicSource
+		reviews, err := dbstore.ListOrderMeterReviews(c.Request.Context(), a.Store.UserDB, out.Items[i].ChargeOrderID)
+		if err != nil {
 			chargehttp.AdminResourceFailure(c, err)
 			return
 		}
+		out.Items[i].Reviews = reviews
 	}
-	httpapi.OK(c, Page[entry]{Items: rows, Total: total, Page: q.Page, PageSize: q.PageSize})
+	httpapi.OK(c, out)
+
 }
 
 // Preserve the exact persisted billing payload; only its public copy uses a
@@ -169,8 +149,8 @@ func (a ResourceAPI) decideMeter(c *gin.Context) {
 		httpapi.BadRequest(c, "请提供审核记录、决定和拒绝依据")
 		return
 	}
-	var review dbstore.MeterReview
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).Where("id=? AND charge_order_id=?", in.ReviewID, id).Take(&review).Error; err != nil {
+	review, err := dbstore.FindMeterReview(c.Request.Context(), a.Store.UserDB, in.ReviewID, id)
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}

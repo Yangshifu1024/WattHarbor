@@ -149,11 +149,11 @@ func (a ResourceAPI) setDeviceStatus(c *gin.Context) {
 	}
 	var row paystore.Device
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		store := ResourceStore{AdminDB: tx}
-		query := paystore.ScopeVendors(scope, paystore.ScopeStations(scope, paystore.DeviceQuery(c.Request.Context(), store.AdminDB), "d.station_id"), "d.vendor_id")
-		if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).Select(paystore.DeviceColumns).Where("d.device_id=?", id).Take(&row).Error; err != nil {
+		locked, err := paystore.LockDeviceByID(c.Request.Context(), tx, scope, id)
+		if err != nil {
 			return err
 		}
+		row = locked
 		if row.Status != "enabled" && row.Status != "disabled" {
 			return errConflict
 		}
@@ -163,7 +163,7 @@ func (a ResourceAPI) setDeviceStatus(c *gin.Context) {
 		before := row
 		row.Status = in.Status
 		row.UpdatedAt = paystore.NextDeviceUpdateTime(row.UpdatedAt)
-		if err := tx.Table("device_meta").Where("id=?", row.ID).Updates(map[string]any{"status": in.Status, "updated_at": row.UpdatedAt}).Error; err != nil {
+		if err := paystore.SaveDeviceStatus(tx, row.ID, in.Status, row.UpdatedAt); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.status", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
@@ -214,10 +214,10 @@ func (a ResourceAPI) updateDevice(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if err := tx.Table("device_meta").Where("id=?", row.ID).Updates(map[string]any{
+		if err := paystore.SaveDeviceMetadata(tx, row.ID, map[string]any{
 			"model": row.Model, "serial_no": row.SerialNo,
 			"warranty_until": row.WarrantyUntil, "tags_json": string(tags), "updated_at": row.UpdatedAt,
-		}).Error; err != nil {
+		}); err != nil {
 			return err
 		}
 		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.update", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))

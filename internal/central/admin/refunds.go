@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"strconv"
 	"strings"
 )
 
@@ -26,15 +25,15 @@ func (a ResourceAPI) registerRefunds(r *gin.Engine) {
 
 // refundReviewStore 装配 refund 家族的人工退款工作流存储；
 // 第二签的实时身份核对回读 admin 授权域的账号档案与权限。
-func (a ResourceAPI) refundReviewStore() orderstore.ReviewStore {
-	return orderstore.ReviewStore{
+func (a ResourceAPI) refundReviewStore() paystore.ReviewStore {
+	return paystore.ReviewStore{
 		DB: a.Store.UserDB,
-		LookupSigner: func(ctx context.Context, signerID uint64) (orderstore.SignerStatus, error) {
+		LookupSigner: func(ctx context.Context, signerID uint64) (paystore.SignerStatus, error) {
 			p, err := a.Auth.Store.Profile(ctx, signerID)
 			if err != nil {
-				return orderstore.SignerStatus{}, err
+				return paystore.SignerStatus{}, err
 			}
-			return orderstore.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, nil
+			return paystore.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, nil
 		},
 	}
 }
@@ -45,9 +44,9 @@ func (a ResourceAPI) refundReviewStore() orderstore.ReviewStore {
 // 漏掉任何一个，它就会掉进默认分支被报成 503，运营看到的是"服务暂不可用，
 // 稍后重试"——重试并不会成功，只会把一个明确的拒绝变成无从下手的等待。
 func asConflict(err error) error {
-	if errors.Is(err, orderstore.ErrRefundConflict) ||
-		errors.Is(err, orderstore.ErrInvoiceConflict) ||
-		errors.Is(err, orderstore.ErrWithdrawConflict) {
+	if errors.Is(err, paystore.ErrRefundConflict) ||
+		errors.Is(err, paystore.ErrInvoiceConflict) ||
+		errors.Is(err, paystore.ErrWithdrawConflict) {
 		return errConflict
 	}
 	return err
@@ -78,7 +77,7 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 	var auditPending []chargehttp.AuditEntry
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
-		created, refundNo, recordID, err = a.refundReviewStore().ManualCreate(c.Request.Context(), tx, orderstore.ManualRefundInput{
+		created, refundNo, recordID, err = a.refundReviewStore().ManualCreate(c.Request.Context(), tx, paystore.ManualRefundInput{
 			ActorID: p.ID, OrderID: id, RequestID: in.RequestID, AmountCents: in.AmountCents, Reason: in.Reason,
 		})
 		if err != nil {
@@ -107,53 +106,12 @@ func (a ResourceAPI) refunds(c *gin.Context) {
 		httpapi.BadRequest(c, "退款单号过长")
 		return
 	}
-	db := a.Store.UserDB.WithContext(c.Request.Context()).Table("refund_record r").Joins("LEFT JOIN refund_review v ON v.refund_record_id=r.id").Where("r.deleted_at IS NULL")
-	if q.Status != "" {
-		db = db.Where("r.status=?", q.Status)
-	}
-	if c.Query("refund_no") != "" {
-		db = db.Where("r.refund_no=?", c.Query("refund_no"))
-	}
-	out := Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
-	if err := db.Count(&out.Total).Error; err != nil {
+	out, err := paystore.ListRefunds(c.Request.Context(), a.Store.UserDB, paystore.RefundListQuery{
+		Status: q.Status, RefundNo: c.Query("refund_no"), Page: q.Page, PageSize: q.PageSize,
+	})
+	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
-	}
-	if err := db.Select("r.id,r.refund_no,r.user_id,r.payment_order_id,r.refund_cents,r.status,r.reason,r.failure_reason,r.created_at,r.completed_at,r.execution_policy,r.retry_count,r.next_attempt_at,v.first_signer,v.second_signer,v.first_comment,v.second_comment").Order("r.id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&out.Items).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	normalizeRows(out.Items)
-	httpapi.DecimalizeRowIDsAll(out.Items, "id", "user_id", "payment_order_id", "first_signer", "second_signer")
-	p := c.MustGet("admin_profile").(operations.Profile)
-	for _, row := range out.Items {
-		status := row["status"]
-		manual := row["execution_policy"] == "manual_review"
-		reviewable := status == "pending" && manual && p.Role == "customer_finance" && p.HasPermission("order.refund.review")
-		row["can_approve"] = reviewable && row["first_signer"] != strconv.FormatUint(p.ID, 10)
-		row["can_reject"] = reviewable
-		row["can_retry"] = row["execution_policy"] == "automatic" && (status == "pending" || status == "processing") && p.HasPermission("finance.refund.retry")
-		row["task"] = nil
-		if !manual {
-			row["task"] = gin.H{"stage": status, "attempts": row["retry_count"], "last_error": row["failure_reason"], "scheduled_at": row["next_attempt_at"]}
-		}
-		row["review"] = nil
-		if status == "rejected" {
-			row["review"] = gin.H{"status": "rejected", "first_signer": "", "second_signer": nil, "first_comment": "", "second_comment": nil}
-		}
-		if row["first_signer"] != nil {
-			state := "awaiting_second"
-			if row["second_signer"] != nil {
-				state = "approved"
-			}
-			if status == "rejected" {
-				state = "rejected"
-			}
-			row["review"] = gin.H{"status": state, "first_signer": row["first_signer"], "second_signer": row["second_signer"], "first_comment": row["first_comment"], "second_comment": row["second_comment"]}
-		}
-		for _, key := range []string{"first_signer", "second_signer", "first_comment", "second_comment", "execution_policy", "retry_count", "next_attempt_at"} {
-			delete(row, key)
-		}
 	}
 	httpapi.OK(c, out)
 }
@@ -183,7 +141,7 @@ func (a ResourceAPI) reviewRefund(c *gin.Context) {
 	var auditPending []chargehttp.AuditEntry
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
-		status, recordID, err = a.refundReviewStore().Review(c.Request.Context(), tx, c.Param("refund_no"), orderstore.ReviewDecision{
+		status, recordID, err = a.refundReviewStore().Review(c.Request.Context(), tx, c.Param("refund_no"), paystore.ReviewDecision{
 			Approve: approve, ApproveComment: in.ApproveComment, Reason: in.Reason, ActorID: p.ID,
 		})
 		if err != nil {
