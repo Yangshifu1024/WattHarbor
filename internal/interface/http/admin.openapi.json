@@ -5374,6 +5374,529 @@
           }
         }
       }
+    },
+    "/api/v1/admin/coupon-activities": {
+      "get": {
+        "summary": "分页查询券活动规则",
+        "operationId": "coupon_activities_list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "coupon.activity.read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityRulePageResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "新建券活动规则",
+        "operationId": "coupon_activities_create",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "coupon.activity.manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityRuleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/coupon-activities/{id}": {
+      "put": {
+        "summary": "更新券活动规则",
+        "operationId": "coupon_activities_update",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "coupon.activity.manage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityRuleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/online-cards": {
+      "get": {
+        "summary": "分页查询在线卡",
+        "operationId": "online_cards_list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "user.read",
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnlineCardPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/online-cards/bind": {
+      "post": {
+        "summary": "把在线卡绑定到用户",
+        "operationId": "online_cards_bind",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "online_card.manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnlineCardBindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/online-cards/{id}/status": {
+      "post": {
+        "summary": "变更在线卡状态",
+        "operationId": "online_cards_status",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "online_card.manage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnlineCardStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/devices/{id}/status": {
+      "put": {
+        "summary": "启用、停用或退役设备",
+        "operationId": "devices_status",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "device.operate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "device_id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/device-capabilities": {
+      "get": {
+        "summary": "查询目标设备协议的计量与执行能力",
+        "operationId": "pricing_device_capabilities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "pricing.read",
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCapabilitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/charging-schemes": {
+      "get": {
+        "summary": "分页查询计费方案",
+        "operationId": "charging_schemes_list",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "pricing.read",
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargingSchemeListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "保存计费方案",
+        "operationId": "charging_schemes_save",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "pricing.rule.create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChargingSchemeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargingSchemeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/stations/{id}/charging-scheme": {
+      "get": {
+        "summary": "查询站点当前生效的计费方案",
+        "operationId": "stations_effective_scheme",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "pricing.read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargingSchemeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/stations/{id}/charging-scheme/inherit": {
+      "post": {
+        "summary": "把站点方案继承到设备",
+        "operationId": "stations_inherit_scheme",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "pricing.rule.update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChargingSchemeInheritRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargingSchemeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/webhooks/{id}/deliveries": {
+      "get": {
+        "summary": "分页查询某订阅的投递记录",
+        "operationId": "webhooks_deliveries",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "webhook.read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "订阅 ID"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryPageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/webhooks/{id}/deliveries/{event_id}/retry": {
+      "post": {
+        "summary": "手动重发一次 webhook 投递",
+        "operationId": "webhooks_deliveries_retry",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-permission": "webhook.create",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "订阅 ID"
+          },
+          {
+            "name": "event_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookRetryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8145,6 +8668,427 @@
               },
               "page_size": {
                 "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "ActivityRuleRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "trigger_type",
+          "coupon_id",
+          "start_at",
+          "end_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "trigger_type": {
+            "type": "string",
+            "enum": [
+              "first_recharge",
+              "invite_reward",
+              "threshold_redeem",
+              "holiday"
+            ]
+          },
+          "coupon_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "活动发放的券，须存在且为 active"
+          },
+          "inviter_coupon_id": {
+            "type": "integer",
+            "description": "邀请人奖励券；邀请有奖必填且不得为 0"
+          },
+          "threshold_cents": {
+            "type": "integer",
+            "description": "触发门槛，单位分；满减须大于 0，其余类型须为 0"
+          },
+          "max_grants": {
+            "type": "integer",
+            "description": "活动总发放上限，0 表示不限"
+          },
+          "per_user_limit": {
+            "type": "integer",
+            "description": "单用户可领份数，0 表示不限"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "description": "留空按 active 处理"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "须晚于开始时间且不超过一年后"
+          }
+        }
+      },
+      "ActivityRule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "trigger_type": {
+            "type": "string"
+          },
+          "coupon_id": {
+            "type": "integer"
+          },
+          "threshold_cents": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "granted": {
+            "type": "integer",
+            "description": "累计发放份数"
+          }
+        }
+      },
+      "ActivityRulePageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ActivityRule"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "ActivityRuleResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ActivityRule"
+          }
+        }
+      },
+      "OnlineCardBindRequest": {
+        "type": "object",
+        "required": [
+          "card_no",
+          "user_id"
+        ],
+        "properties": {
+          "card_no": {
+            "type": "string",
+            "description": "卡号"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "十进制字符串形式的用户 ID，避免大 ID 精度丢失"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      },
+      "OnlineCardStatusRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "lost",
+              "disabled",
+              "unbound"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      },
+      "OnlineCardRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "card_no": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "bound_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "OnlineCardPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OnlineCardRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "IdResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "DeviceStatusRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled",
+              "retired",
+              "fault"
+            ]
+          }
+        }
+      },
+      "DeviceStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "DeviceCapabilitiesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "protocol_adapter": {
+                "type": "string",
+                "description": "设备协议标识，如 dc589"
+              },
+              "capabilities": {
+                "type": "object",
+                "description": "该协议声明的执行能力"
+              },
+              "reports_energy": {
+                "type": "boolean",
+                "description": "是否上报电量；按电量计费要求此能力"
+              },
+              "reports_segmented_power": {
+                "type": "boolean",
+                "description": "是否上报分段功率；按功率计费要求此能力"
+              }
+            }
+          }
+        }
+      },
+      "ChargingSchemeRequest": {
+        "type": "object",
+        "required": [
+          "scheme"
+        ],
+        "properties": {
+          "scheme": {
+            "type": "object",
+            "description": "计费方案定义"
+          }
+        }
+      },
+      "ChargingSchemeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "该目标当前生效的计费方案"
+          }
+        }
+      },
+      "ChargingSchemeListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChargingScheme"
+                }
+              },
+              "permissions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ChargingSchemeInheritRequest": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "要从站点继承到哪台设备；留空表示继承到整站"
+          }
+        }
+      },
+      "WebhookDeliveryRow": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "WebhookDeliveryPageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WebhookDeliveryRow"
+                }
+              },
+              "total": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer"
+              },
+              "page_size": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "WebhookRetryResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "event_id": {
+                "type": "string"
+              },
+              "requeued": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "OnlineCardListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OnlineCardRow"
+                }
+              },
+              "permissions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             }
           }
