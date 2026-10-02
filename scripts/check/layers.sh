@@ -10,9 +10,14 @@
 # 多层包的依赖方向恒为 http → state、http → store、store → state；
 # 反向与同层横向依赖不允许。
 #
+# protocol 是独立的设备契约层，不按文件后缀分层，但参与一条检查：
+# 它不得依赖任何业务包（domain/application/infrastructure/interface），
+# 也不得依赖 gateway/worker 运行时。契约层一旦反向依赖实现层，
+# 新增协议就再也无法只加目录实现。
+#
 # 不参与分层的目录：platform 是无业务语义的通用能力，cmd 是进程装配，
-# protocol 是设备契约，simulator 是联调工具，gateway/store 与 gateway/control
-# 各自整体即单一层，worker/* 与 delivery 是服务间适配层。
+# simulator 是联调工具，gateway/store 与 gateway/control 各自整体即单一层，
+# worker/* 与 delivery 是服务间适配层。
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -132,6 +137,19 @@ for dir in "${flat[@]}"; do
     fi
   done < <(find "$dir" -name '*.go' ! -name '*_test.go')
 done
+
+
+# protocol 契约层不得反向依赖业务实现或设备接入运行时。
+# 这条是"新协议只加 protocol/<name>/ 子目录"能成立的前提。
+while IFS= read -r file; do
+  hits=$(grep -oE '"github\.com/ChargePilot2026/charge-pilot/internal/(central|gateway|worker|delivery|platform)/[a-z0-9_/-]+"' "$file" | tr -d '"' | sort -u | head -3)
+  [[ -z $hits ]] && continue
+  # platform 是无业务语义的通用能力，契约层可以依赖；其余均不允许。
+  bad=$(printf '%s\n' "$hits" | grep -v '/platform/' | tr '\n' ' ')
+  if [[ -n $bad ]]; then
+    report "$file: protocol 契约层不得依赖实现层: $bad"
+  fi
+done < <(find internal/protocol -name '*.go' ! -name '*_test.go')
 
 if ((violations > 0)); then
   printf '\n分层约定未满足：%d 处。修完再提交。\n' "$violations" >&2
