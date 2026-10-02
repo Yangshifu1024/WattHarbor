@@ -47,8 +47,8 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Match the card transaction lock order: session before order.
 		// 跨家族锁：card_charge 归属 card 家族，仅取行锁参与加锁顺序，不读字段。
-		var cardLocked struct{ ID uint64 }
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("card_charge").Where("charge_order_id=?", result.ChargeOrderID).Find(&cardLocked).Error; err != nil {
+		// 与起充回执同一条加锁顺序：card_charge 归属 card 家族，只取行锁不读字段。
+		if err := orderstore.LockCardChargeForOrder(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
 		var order orderstore.ChargeOrderRecord
@@ -86,7 +86,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 			return err
 		}
 		// 跨家族写：card_charge 归属 card 家族，经裸表名更新，避免 order 反向依赖 card。
-		if err := tx.Table("card_charge").Where("charge_order_id=?", result.ChargeOrderID).Update("active_port", nil).Error; err != nil {
+		if err := orderstore.ClearCardActivePort(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
 		kwh := decimal.NewFromInt(int64(result.Meter.ChargedWh)).Shift(-3).StringFixed(4)
@@ -113,7 +113,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if err != nil {
 			return err
 		}
-		if err := tx.Table("charge_billing_job").Create(map[string]any{"charge_order_id": result.ChargeOrderID}).Error; err != nil {
+		if err := orderstore.EnqueueChargeBilling(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
 		return tx.Create(&orderstore.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error

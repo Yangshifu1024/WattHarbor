@@ -2229,6 +2229,17 @@
               "maximum": 100,
               "default": 10
             }
+          },
+          {
+            "name": "radius_km",
+            "in": "query",
+            "required": false,
+            "description": "搜索半径，单位公里，1–50；不传则按默认半径。只在同时给出经纬度时生效。",
+            "schema": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 50
+            }
           }
         ],
         "responses": {

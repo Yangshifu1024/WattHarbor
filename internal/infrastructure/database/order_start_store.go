@@ -131,3 +131,9 @@ func InsertRefundRecord(tx *gorm.DB, in RefundRecordInput, month time.Time) erro
 func SetOrderStatusRefunded(tx *gorm.DB, orderID uint64) error {
 	return tx.Model(&ChargeOrderRecord{}).Where("id=?", orderID).Update("status", "refunded").Error
 }
+
+// EnqueueChargeBilling 把结束计量排队。计费是异步的：结束回执只负责确认
+// 事实并排队，费用由 worker 算完再落账单。
+func EnqueueChargeBilling(tx *gorm.DB, chargeOrderID uint64) error {
+	return tx.Table("charge_billing_job").Create(map[string]any{"charge_order_id": chargeOrderID}).Error
+}

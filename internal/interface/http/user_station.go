@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -17,17 +18,8 @@ import (
 
 // 站点查询：附近站点、站点详情及其下的公告与设备。
 // stationRow 是站点列表的查询投影，坐标统一转为字符串以保留库中 DECIMAL 的原始精度。
-// DistanceKM 只在按距离查询时填充；未定位分支下保持 nil。
-type stationRow struct {
-	ID         uint64   `gorm:"column:id"`
-	Name       string   `gorm:"column:name"`
-	Address    *string  `gorm:"column:address"`
-	Longitude  string   `gorm:"column:longitude"`
-	Latitude   string   `gorm:"column:latitude"`
-	Status     string   `gorm:"column:status"`
-	Phone      *string  `gorm:"column:contact_phone"`
-	DistanceKM *float64 `gorm:"column:distance_km"`
-}
+// stationRow 是地图上展示的站点行，定义在持久化层。
+type stationRow = orderstore.UserStationRow
 
 func (a UserAccountAPI) nearbyStations(c *gin.Context) {
 	longitude, latitude, hasCoordinates, ok := readCoordinates(c)
@@ -57,12 +49,7 @@ func (a UserAccountAPI) nearbyStations(c *gin.Context) {
 	if !hasCoordinates {
 		// 未开启定位时无法计算距离，distance_km 固定为 null，
 		// 调用方须按“距离未知”展示，不得按 0 公里处理。
-		rows := []stationRow{}
-		err := a.AdminDB.WithContext(ctx).Table("station").
-			Select("id, name, address, CAST(longitude AS CHAR) AS longitude, CAST(latitude AS CHAR) AS latitude, status, contact_phone").
-			Where("deleted_at IS NULL AND status = 'active'").
-			Order("created_at DESC, id DESC").
-			Limit(pageSize).Offset((page - 1) * pageSize).Find(&rows).Error
+		rows, err := orderstore.ListActiveStations(ctx, a.AdminDB, page, pageSize)
 		if err != nil {
 			httpapi.Write(c, 503, 5003, "站点暂时无法读取", nil)
 			return
@@ -116,18 +103,8 @@ func (a UserAccountAPI) stationDetail(c *gin.Context) {
 		httpapi.BadRequest(c, "站点 ID 无效")
 		return
 	}
-	var row struct {
-		ID        uint64  `gorm:"column:id"`
-		Name      string  `gorm:"column:name"`
-		Address   *string `gorm:"column:address"`
-		Longitude string  `gorm:"column:longitude"`
-		Latitude  string  `gorm:"column:latitude"`
-		Status    string  `gorm:"column:status"`
-		Phone     *string `gorm:"column:contact_phone"`
-	}
-	err = a.AdminDB.WithContext(c.Request.Context()).Table("station").
-		Select("id, name, address, CAST(longitude AS CHAR) AS longitude, CAST(latitude AS CHAR) AS latitude, status, contact_phone").
-		Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error
+	var row stationRow
+	row, err = orderstore.FindStationForUser(c.Request.Context(), a.AdminDB, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "站点不存在", nil)
 		return
@@ -167,18 +144,8 @@ const deviceOnlineWindow = time.Hour
 // 在站点详情这一无位置上下文中不做猜测，故不返回。
 func (a UserAccountAPI) stationAnnouncements(ctx context.Context, stationID uint64) ([]gin.H, error) {
 	now := time.Now().UTC()
-	var rows []struct {
-		ID      uint64     `gorm:"column:id"`
-		Title   string     `gorm:"column:title"`
-		Content string     `gorm:"column:content"`
-		Scope   string     `gorm:"column:scope"`
-		RawIDs  *string    `gorm:"column:target_ids"`
-		StartAt time.Time  `gorm:"column:start_at"`
-		EndAt   *time.Time `gorm:"column:end_at"`
-	}
-	if err := a.AdminDB.WithContext(ctx).Table("announcement").
-		Where("deleted_at IS NULL AND status = 'published' AND scope IN ('global','station') AND start_at <= ? AND (end_at IS NULL OR end_at >= ?)", now, now).
-		Order("start_at DESC, id DESC").Limit(50).Find(&rows).Error; err != nil {
+	rows, err := orderstore.ListStationScopedAnnouncements(ctx, a.AdminDB, now, 50)
+	if err != nil {
 		return nil, err
 	}
 	items := []gin.H{}
@@ -214,14 +181,8 @@ func announcementTargets(raw *string) map[string]bool {
 // 网关不可用或设备从未上报时分别用 runtime_available 和 last_heartbeat_at
 // 表达，不把未知状态当作离线。
 func (a UserAccountAPI) stationDevices(ctx context.Context, stationID uint64) ([]gin.H, error) {
-	var rows []struct {
-		DeviceID string `gorm:"column:device_id"`
-		Status   string `gorm:"column:status"`
-	}
-	if err := a.AdminDB.WithContext(ctx).Table("device_meta").
-		Select("device_id, status").
-		Where("station_id = ? AND deleted_at IS NULL AND status <> 'retired'", stationID).
-		Order("device_id ASC").Find(&rows).Error; err != nil {
+	rows, err := orderstore.ListStationDevices(ctx, a.AdminDB, stationID)
+	if err != nil {
 		return nil, err
 	}
 	items := make([]gin.H, 0, len(rows))
@@ -241,10 +202,7 @@ func (a UserAccountAPI) stationDevices(ctx context.Context, stationID uint64) ([
 
 // deviceHeartbeats 批量取回设备最后心跳。网关未配置或调用失败时返回空集合，
 // 调用方据此把设备标为状态未知，而不是离线。
-func (a UserAccountAPI) deviceHeartbeats(ctx context.Context, rows []struct {
-	DeviceID string `gorm:"column:device_id"`
-	Status   string `gorm:"column:status"`
-}) map[string]struct {
+func (a UserAccountAPI) deviceHeartbeats(ctx context.Context, rows []orderstore.StationDeviceRow) map[string]struct {
 	DeviceID        string     `json:"device_id"`
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at"`
 } {
