@@ -2,6 +2,7 @@ package admin
 
 import (
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -196,19 +197,18 @@ func (a ResourceAPI) grantCoupon(c *gin.Context) {
 		var receipt struct{ CouponID, UserID, CouponGrantID uint64 }
 		err := tx.Table("coupon_grant_request").Where("request_id=?", in.RequestID).Take(&receipt).Error
 		if err == nil {
-			if receipt.CouponID != id || receipt.UserID != userID {
+			prior, replayErr := money.ReplayGrant(money.CouponGrantReceipt{RequestID: in.RequestID, CouponID: receipt.CouponID,
+				UserID: receipt.UserID, CouponGrantID: receipt.CouponGrantID}, in.RequestID, id, userID)
+			if replayErr != nil {
 				return errConflict
 			}
-			grantID = receipt.CouponGrantID
+			grantID = prior
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		now := time.Now().UTC()
-		if coupon.Status != "active" || (coupon.StartAt != nil && now.Before(*coupon.StartAt)) || (coupon.EndAt != nil && !now.Before(*coupon.EndAt)) {
-			return errConflict
-		}
 		var user struct{ Status string }
 		if err := tx.Table("user").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", userID).Take(&user).Error; err != nil {
 			return err
@@ -223,13 +223,12 @@ func (a ResourceAPI) grantCoupon(c *gin.Context) {
 		if err := tx.Table("coupon_grant").Where("coupon_id=? AND user_id=?", id, userID).Count(&perUser).Error; err != nil {
 			return err
 		}
-		if (coupon.TotalQuota > 0 && total >= int64(coupon.TotalQuota)) || perUser >= int64(coupon.PerUserQuota) {
+		template := money.CouponTemplate{TemplateID: coupon.ID, Status: coupon.Status, TotalQuota: coupon.TotalQuota,
+			PerUserQuota: coupon.PerUserQuota, ValidHours: coupon.ValidHours, StartAt: coupon.StartAt, EndAt: coupon.EndAt}
+		if err := money.CheckGrantable(now, template, money.CouponUsage{TotalGranted: total, UserGranted: perUser}); err != nil {
 			return errConflict
 		}
-		expires := now.Add(time.Duration(coupon.ValidHours) * time.Hour)
-		if coupon.EndAt != nil && coupon.EndAt.Before(expires) {
-			expires = *coupon.EndAt
-		}
+		expires := money.GrantExpiry(now, template)
 		if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": id, "user_id": userID, "grant_source": "manual", "status": "unused", "expired_at": expires, "source_event_id": in.RequestID}).Error; err != nil {
 			return err
 		}
