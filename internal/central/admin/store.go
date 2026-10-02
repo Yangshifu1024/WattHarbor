@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"time"
 )
 
 // 后台登录相关的三类失败原因。对外只区分"凭据错误"和"被锁定"，
@@ -36,19 +37,6 @@ type Account struct {
 
 // TableName 指明 Account 映射到 admin_user（表名与模型名不一致，必须显式指定）。
 func (Account) TableName() string { return "admin_user" }
-
-// Profile 保存鉴权后的管理员身份、权限及审计信息，存于 gin 上下文 admin_profile，不包含口令散列。
-type Profile struct {
-	AuthVersion uint64   `json:"-"`             // 凭证版本号，与账号一致，用于校验令牌是否已失效
-	ID          uint64   `json:"admin_user_id"` // 账号主键
-	Username    string   `json:"username"`      // 登录名
-	DisplayName string   `json:"display_name"`  // 显示名
-	Role        string   `json:"role"`          // 角色编码，如 customer_admin
-	RoleName    string   `json:"role_name"`     // 当前角色名称，从 role 表读取，支持自定义角色。
-	RoleID      uint64   `json:"role_id"`       // 角色主键
-	MFAEnabled  bool     `json:"mfa_enabled"`   // 当前登录账号是否已启用双因素认证。
-	Permissions []string `json:"permissions"`   // 权限码列表，按 code 排序；前端用它决定按钮可见性
-}
 
 type Store struct{ DB *gorm.DB }
 
@@ -159,10 +147,10 @@ func (s Store) CompleteMFA(ctx context.Context, accountID uint64, code, ip strin
 		if account.Status == "disabled" || !account.MFAEnabled || account.MFASecret == nil || *account.MFASecret == "" {
 			return ErrCredentials
 		}
-		if err := VerifyTOTP(*account.MFASecret, code, now); err != nil {
+		if err := auth.VerifyTOTP(*account.MFASecret, code, now); err != nil {
 			attempts := account.FailedLoginCount + 1
 			updates := map[string]any{"failed_login_count": attempts, "status": "active", "locked_until": nil}
-			denied = ErrInvalidTOTP
+			denied = operations.ErrInvalidTOTP
 			if attempts >= 5 {
 				updates["status"] = "locked"
 				updates["locked_until"] = now.Add(30 * time.Minute)
@@ -199,7 +187,7 @@ func deniedMFA(tx *gorm.DB, err error, accountID uint64, denied *error, ip strin
 
 // Profile 读取一个账号的登录身份与权限清单：先联表取角色编码，再按角色展开权限码。
 // 只接受 active 且未删除的账号；查不到与被停用都返回凭据错误，避免泄漏账号是否存在。
-func (s Store) Profile(ctx context.Context, id uint64) (Profile, error) {
+func (s Store) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
 	var row struct {
 		Account
 		Role     string
@@ -207,14 +195,14 @@ func (s Store) Profile(ctx context.Context, id uint64) (Profile, error) {
 	}
 	err := s.DB.WithContext(ctx).Table("admin_user AS a").Select("a.*, r.code AS role,r.name AS role_name").Joins("JOIN role AS r ON r.id=a.role_id AND r.deleted_at IS NULL").Where("a.id = ? AND a.status='active' AND a.deleted_at IS NULL", id).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return Profile{}, ErrCredentials
+		return operations.Profile{}, ErrCredentials
 	}
 	if err != nil {
-		return Profile{}, err
+		return operations.Profile{}, err
 	}
-	p := Profile{AuthVersion: row.AuthVersion, ID: row.ID, Username: row.Username, DisplayName: row.DisplayName.String, RoleID: row.RoleID, Role: row.Role, RoleName: row.RoleName, MFAEnabled: row.MFAEnabled, Permissions: []string{}}
+	p := operations.Profile{AuthVersion: row.AuthVersion, ID: row.ID, Username: row.Username, DisplayName: row.DisplayName.String, RoleID: row.RoleID, Role: row.Role, RoleName: row.RoleName, MFAEnabled: row.MFAEnabled, Permissions: []string{}}
 	err = s.DB.WithContext(ctx).Table("permission AS p").Joins("JOIN role_permission AS rp ON rp.permission_id=p.id").Where("rp.role_id = ?", p.RoleID).Order("p.code").Pluck("p.code", &p.Permissions).Error
-	p.Permissions = withoutRetiredPermissions(p.Permissions)
+	p.Permissions = operations.WithoutRetiredPermissions(p.Permissions)
 	return p, err
 }
 

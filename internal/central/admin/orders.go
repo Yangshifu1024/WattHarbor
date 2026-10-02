@@ -2,13 +2,13 @@ package admin
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	"strconv"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"strconv"
+	"time"
 )
 
 // OrderView 是后台订单列表与详情共用的行模型。
@@ -273,9 +273,9 @@ func (a ResourceAPI) order(c *gin.Context) {
 		}
 	}
 	row.Billing = &billing
-	for _, p := range c.MustGet("admin_profile").(Profile).Permissions {
+	for _, p := range c.MustGet("admin_profile").(operations.Profile).Permissions {
 		if p == "order.refund.create" {
-			actor := strconv.FormatUint(c.MustGet("admin_profile").(Profile).ID, 10)
+			actor := strconv.FormatUint(c.MustGet("admin_profile").(operations.Profile).ID, 10)
 			row.RefundApplicantID = &actor
 		}
 	}

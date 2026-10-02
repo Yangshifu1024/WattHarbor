@@ -2,12 +2,12 @@ package admin
 
 import (
 	"errors"
-	"net/http"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"net/http"
+	"time"
 )
 
 // 本文件提供优惠券活动规则的运营接口；发放逻辑由 charge 包实现。
@@ -210,7 +210,7 @@ func (a ResourceAPI) createActivityRule(c *gin.Context) {
 		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "create", "coupon_activity", id, nil, in, c.ClientIP(), httpapi.RequestID(c))
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "coupon_activity", id, nil, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		resourceFailure(c, err)
@@ -263,7 +263,7 @@ func (a ResourceAPI) updateActivityRule(c *gin.Context) {
 		if changed.RowsAffected != 1 {
 			return gorm.ErrRecordNotFound
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "update", "coupon_activity", id, before, in, c.ClientIP(), httpapi.RequestID(c))
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "coupon_activity", id, before, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		resourceFailure(c, err)

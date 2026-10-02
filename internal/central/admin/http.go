@@ -2,15 +2,15 @@ package admin
 
 import (
 	"errors"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // API 是管理后台的鉴权与会话入口：持有账号存储、JWT 签发器和 Redis 会话，
@@ -165,7 +165,7 @@ func (a API) refresh(c *gin.Context) {
 
 // issue 签发 8 小时有效的访问令牌，返回令牌、有效期、身份及权限。
 // 令牌里带 kind="admin"、会话 sid 和角色 ID，后台与用户侧的令牌因此不能互相通用。
-func (a API) issue(c *gin.Context, p Profile, sid, refresh string) {
+func (a API) issue(c *gin.Context, p operations.Profile, sid, refresh string) {
 	now := time.Now()
 	token, err := a.JWT.Sign(auth.Claims{Subject: strconv.FormatUint(p.ID, 10), Kind: "admin", SessionID: sid, RoleIDs: []uint64{p.RoleID}, IssuedAt: now.Unix(), ExpiresAt: now.Add(adminAccessTTL).Unix()})
 	if err != nil {
@@ -258,7 +258,7 @@ func (a API) failure(c *gin.Context, err error) {
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "用户名或密码错误，或登录已失效", nil)
 	case errors.Is(err, ErrLocked):
 		httpapi.Write(c, 423, 2006, err.Error(), nil)
-	case errors.Is(err, ErrInvalidTOTP):
+	case errors.Is(err, operations.ErrInvalidTOTP):
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "验证码无效或已过期", nil)
 	case errors.Is(err, ErrInvalidMFAChallenge):
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "登录已失效，请重新登录", nil)
@@ -278,7 +278,7 @@ func (a API) changePassword(c *gin.Context) {
 		httpapi.BadRequest(c, "新密码须与旧密码不同且长度为 12–72 字节")
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	if err := a.Store.ChangePassword(c.Request.Context(), p.ID, request.OldPassword, request.NewPassword, c.ClientIP()); err != nil {
 		a.failure(c, err)
 		return

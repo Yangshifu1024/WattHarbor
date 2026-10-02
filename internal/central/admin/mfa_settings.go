@@ -6,16 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"net/http"
+	"strings"
+	"time"
 )
 
 const mfaEnrollmentTTL = 5 * time.Minute
@@ -90,7 +91,7 @@ func (a API) mfaSettings(c *gin.Context) {
 		httpapi.BadRequest(c, "请按操作提供当前密码、绑定标识和六位验证码")
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	sid := c.GetString("admin_sid")
 	if sid == "" {
 		a.failure(c, ErrCredentials)
@@ -141,7 +142,7 @@ func (a API) mfaSettings(c *gin.Context) {
 
 func (a API) mfaSettingsFailure(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, errMFAProof), errors.Is(err, ErrInvalidTOTP):
+	case errors.Is(err, errMFAProof), errors.Is(err, operations.ErrInvalidTOTP):
 		httpapi.Write(c, http.StatusBadRequest, 1002, errMFAProof.Error(), nil)
 	case errors.Is(err, errMFAPending), errors.Is(err, errMFAState), errors.Is(err, errMFABusy):
 		httpapi.Write(c, http.StatusConflict, 2009, err.Error(), nil)
@@ -150,7 +151,7 @@ func (a API) mfaSettingsFailure(c *gin.Context, err error) {
 	}
 }
 
-func (a API) applyMFASettings(ctx context.Context, p Profile, sid string, in mfaSettingsInput, ip string) (mfaSettingsResult, error) {
+func (a API) applyMFASettings(ctx context.Context, p operations.Profile, sid string, in mfaSettingsInput, ip string) (mfaSettingsResult, error) {
 	var result mfaSettingsResult
 	err := a.Store.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var account Account
@@ -171,7 +172,7 @@ func (a API) applyMFASettings(ctx context.Context, p Profile, sid string, in mfa
 			if account.MFAEnabled {
 				return errMFAState
 			}
-			secret, err := NewTOTPSecret()
+			secret, err := auth.NewTOTPSecret()
 			if err != nil {
 				return err
 			}
@@ -179,7 +180,7 @@ func (a API) applyMFASettings(ctx context.Context, p Profile, sid string, in mfa
 			if err != nil {
 				return err
 			}
-			uri, err := TOTPURI("ChargePilot", account.Username, secret)
+			uri, err := auth.TOTPURI("ChargePilot", account.Username, secret)
 			if err != nil {
 				return err
 			}
@@ -209,7 +210,7 @@ func (a API) applyMFASettings(ctx context.Context, p Profile, sid string, in mfa
 			if err := json.Unmarshal(raw, &pending); err != nil || pending.AdminID != account.ID || pending.AuthVersion != account.AuthVersion || pending.SessionID != sid || !time.Now().UTC().Before(pending.ExpiresAt) || subtle.ConstantTimeCompare([]byte(pending.ID), []byte(in.EnrollmentID)) != 1 {
 				return errMFAPending
 			}
-			if err := VerifyTOTP(pending.Secret, in.Code, time.Now().UTC()); err != nil {
+			if err := auth.VerifyTOTP(pending.Secret, in.Code, time.Now().UTC()); err != nil {
 				return errMFAProof
 			}
 			// 在更新前原子消费相同缓存。坏码不消费，过期或并发替换不启用。
@@ -236,7 +237,7 @@ func (a API) applyMFASettings(ctx context.Context, p Profile, sid string, in mfa
 			if !account.MFAEnabled || account.MFASecret == nil {
 				return errMFAState
 			}
-			if err := VerifyTOTP(*account.MFASecret, in.Code, time.Now().UTC()); err != nil {
+			if err := auth.VerifyTOTP(*account.MFASecret, in.Code, time.Now().UTC()); err != nil {
 				return errMFAProof
 			}
 			if err := a.Sessions.Redis.Del(ctx, mfaPendingKey(account.ID)).Err(); err != nil {

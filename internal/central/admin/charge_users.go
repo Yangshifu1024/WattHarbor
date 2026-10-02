@@ -2,13 +2,13 @@ package admin
 
 import (
 	"context"
-	"net/url"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/phone"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"net/url"
+	"time"
 )
 
 // 本文件提供 central_db.user 的充电用户查询，不操作后台管理员账号。
@@ -103,7 +103,7 @@ func (a ResourceAPI) chargeUsers(c *gin.Context) {
 		return
 	}
 	httpapi.OK(c, Page[ChargeUserRow]{Items: rows, Total: total, Page: q.Page, PageSize: q.PageSize,
-		Permissions: c.MustGet("admin_profile").(Profile).Permissions})
+		Permissions: c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 
 // chargeUser 返回单个充电用户的完整档案：钱包、累计消费、最近订单、券与报障计数。

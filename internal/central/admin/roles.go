@@ -3,14 +3,14 @@ package admin
 import (
 	"context"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // 本文件实现角色管理与权限字典查询。
@@ -60,24 +60,7 @@ func (a ResourceAPI) permissionCodesFor(ctx context.Context, codes ...string) ([
 		Joins("JOIN role_permission rp ON rp.permission_id = p.id").
 		Joins("JOIN role r ON r.id = rp.role_id AND r.deleted_at IS NULL").
 		Where("r.code IN ?", codes).Distinct("p.code").Pluck("p.code", &result).Error
-	return withoutRetiredPermissions(result), err
-}
-
-// withoutRetiredPermissions 让未重建开发库中的已移除功能权限不再参与展示或授权。
-// 角色及其余权限保持原样，不修改已有权限绑定数据。
-func withoutRetiredPermissions(codes []string) []string {
-	result := make([]string, 0, len(codes))
-	for _, code := range codes {
-		if !retiredPermission(code) {
-			result = append(result, code)
-		}
-	}
-	return result
-}
-
-func retiredPermission(code string) bool {
-	return strings.HasPrefix(code, "customer_service.") || strings.HasPrefix(code, "ota.") ||
-		strings.HasPrefix(code, "alert.rule.") || strings.HasPrefix(code, "alert.subscription.") || code == "settings.ota.update" || code == "membership.create" || code == "alert.risk_config.update" || code == "pricing.template.create"
+	return operations.WithoutRetiredPermissions(result), err
 }
 
 // listRoles 按 ID 升序返回未删除角色，附带权限编码及关联账号数。
@@ -96,7 +79,7 @@ func (a ResourceAPI) listRoles(c *gin.Context) {
 			resourceFailure(c, err)
 			return
 		}
-		rows[i].Permissions = withoutRetiredPermissions(codes)
+		rows[i].Permissions = operations.WithoutRetiredPermissions(codes)
 		if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("admin_user").
 			Where("role_id = ? AND deleted_at IS NULL", rows[i].ID).Count(&rows[i].UserCount).Error; err != nil {
 			resourceFailure(c, err)
@@ -117,7 +100,7 @@ func (a ResourceAPI) listPermissions(c *gin.Context) {
 	}
 	visible := make([]PermissionRow, 0, len(rows))
 	for _, row := range rows {
-		if !retiredPermission(row.Code) {
+		if !operations.RetiredPermission(row.Code) {
 			visible = append(visible, row)
 		}
 	}
@@ -169,7 +152,7 @@ func (a ResourceAPI) createRole(c *gin.Context) {
 	if !decodeResource(c, &in) {
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	held, err := a.permissionCodesFor(c.Request.Context(), profile.Role)
 	if err != nil {
 		resourceFailure(c, err)
@@ -214,7 +197,7 @@ func (a ResourceAPI) updateRole(c *gin.Context) {
 	if !decodeResource(c, &in) {
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	held, err := a.permissionCodesFor(c.Request.Context(), profile.Role)
 	if err != nil {
 		resourceFailure(c, err)
@@ -287,7 +270,7 @@ func (a ResourceAPI) deleteRole(c *gin.Context) {
 	if !ok {
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	var role RoleRow
 	if err := a.Store.AdminDB.WithContext(c.Request.Context()).Table("role").
 		Where("id = ? AND deleted_at IS NULL", id).Take(&role).Error; err != nil {

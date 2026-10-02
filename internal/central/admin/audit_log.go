@@ -1,18 +1,18 @@
 package admin
 
 import (
-	"log"
-	"time"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"log"
+	"time"
 )
 
 // 网关变更由远端提交，收到响应后记录运营审计。
 // central 内的业务变更与审计通过 auditedTransaction 在同一事务提交。
 func (a ResourceAPI) auditToAdmin(c *gin.Context, action, target string, id uint64, before, after any, requestID string) {
-	if err := resourceAudit(a.Store.AdminDB.WithContext(c.Request.Context()), c.MustGet("admin_profile").(Profile), action, target, id, before, after, c.ClientIP(), firstNonEmpty(requestID, httpapi.RequestID(c))); err != nil {
+	if err := resourceAudit(a.Store.AdminDB.WithContext(c.Request.Context()), c.MustGet("admin_profile").(operations.Profile), action, target, id, before, after, c.ClientIP(), firstNonEmpty(requestID, httpapi.RequestID(c))); err != nil {
 		log.Printf("gateway audit failed action=%s target=%s id=%d: %v", action, target, id, err)
 	}
 }
@@ -142,7 +142,7 @@ func (a ResourceAPI) auditedTransaction(c *gin.Context, db *gorm.DB, entries *[]
 		if err := apply(tx); err != nil {
 			return err
 		}
-		p := c.MustGet("admin_profile").(Profile)
+		p := c.MustGet("admin_profile").(operations.Profile)
 		for _, entry := range *entries {
 			if err := resourceAudit(tx, p, entry.action, entry.target, entry.id, entry.before, entry.after, c.ClientIP(), firstNonEmpty(entry.requestID, httpapi.RequestID(c))); err != nil {
 				return err

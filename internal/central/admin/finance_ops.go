@@ -3,15 +3,15 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	"strings"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strings"
+	"time"
 )
 
 // Withdraws 分页返回提现单，支持按状态与关键字（单号或参与方编码）过滤，按 ID 倒序。
@@ -50,7 +50,7 @@ func (a ResourceAPI) createWithdraw(c *gin.Context) {
 		httpapi.BadRequest(c, "请填写 UUID 请求号、有效参与方、正数金额和备注")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	var no string
 	err := a.Store.BillingDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -84,7 +84,7 @@ func (a ResourceAPI) decideWithdraw(c *gin.Context) {
 		httpapi.BadRequest(c, "请提供提现单号和审核决定")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.BillingDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		action, rowID, err := (paystore.WithdrawStore{}).Decide(c.Request.Context(), tx, no, profile.ID, paystore.WithdrawDecision{Approve: in.Approve, Reason: in.Reason})
 		if err != nil {
@@ -113,7 +113,7 @@ func (a ResourceAPI) payWithdraw(c *gin.Context) {
 		httpapi.BadRequest(c, "提现单号无效")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	alreadyPaid := false
 	err := a.Store.BillingDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		rowID, paid, err := (paystore.WithdrawStore{}).Pay(c.Request.Context(), tx, no, in.Note)
@@ -564,7 +564,7 @@ func (a ResourceAPI) retryWebhookDelivery(c *gin.Context) {
 		httpapi.BadRequest(c, "事件 ID 无效")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	var subscription struct {
 		URL        string   // 订阅方回调地址
 		EventTypes []string // 订阅的事件类型列表

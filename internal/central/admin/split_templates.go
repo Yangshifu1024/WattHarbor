@@ -2,14 +2,14 @@ package admin
 
 import (
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	"strings"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strings"
+	"time"
 )
 
 // registerSplitTemplates 注册分账模板的五个后台接口：
@@ -134,7 +134,7 @@ func (a ResourceAPI) createSplitTemplate(c *gin.Context) {
 		httpapi.BadRequest(c, paystore.ErrSplitParties.Error())
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	var templateID uint64
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -193,7 +193,7 @@ func (a ResourceAPI) updateSplitTemplate(c *gin.Context) {
 		httpapi.BadRequest(c, "分账模板参数无效")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		before, after, err := (paystore.SplitTemplateStore{}).Update(tx, id, input.Name, input.Mode, input.Status)
 		if err != nil {
@@ -224,7 +224,7 @@ func (a ResourceAPI) replaceSplitParties(c *gin.Context) {
 		httpapi.BadRequest(c, paystore.ErrSplitParties.Error())
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		before, err := (paystore.SplitTemplateStore{}).ReplaceParties(tx, id, input.Parties)
 		if err != nil {
@@ -278,7 +278,7 @@ func (a ResourceAPI) bindStationSplitTemplate(c *gin.Context) {
 		httpapi.BadRequest(c, "请提供模板 ID 和当前模板 ID；未绑定时当前模板 ID 为 0")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := paystore.UsableTemplate(tx, input.TemplateID); err != nil {
 			return err

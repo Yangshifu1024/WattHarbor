@@ -3,8 +3,8 @@ package admin
 import (
 	"fmt"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	cardstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -23,7 +23,7 @@ func (a ResourceAPI) onlineCards(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	httpapi.OK(c, gin.H{"items": rows, "permissions": c.MustGet("admin_profile").(Profile).Permissions})
+	httpapi.OK(c, gin.H{"items": rows, "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 	var in struct {
@@ -69,7 +69,7 @@ func (a ResourceAPI) bindOnlineCard(c *gin.Context) {
 			}
 			id = card.ID
 		}
-		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(Profile).ID, "action": "bind", "detail": in.Reason}).Error
+		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(operations.Profile).ID, "action": "bind", "detail": in.Reason}).Error
 	})
 	if err != nil {
 		resourceFailure(c, err)
@@ -104,7 +104,7 @@ func (a ResourceAPI) onlineCardStatus(c *gin.Context) {
 		if err := tx.Model(&card).Update("status", in.Status).Error; err != nil {
 			return err
 		}
-		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(Profile).ID, "action": in.Status, "detail": in.Reason}).Error
+		return tx.Table("online_card_audit").Create(map[string]any{"card_id": id, "actor_id": c.MustGet("admin_profile").(operations.Profile).ID, "action": in.Status, "detail": in.Reason}).Error
 	})
 	if err != nil {
 		resourceFailure(c, err)

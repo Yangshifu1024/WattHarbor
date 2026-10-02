@@ -4,17 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
-	"strings"
-	"time"
-	"unicode/utf8"
-
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"net/url"
+	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 // Device 是充电桩（设备）的列表/详情模型，取自 central_db.device_meta 并左连站点带出
@@ -84,15 +85,15 @@ func (d *Device) normalizeMetadata() error {
 
 // Devices 分页查询设备，支持按状态过滤和按设备编号/型号/站点名模糊搜索（通配符已转义）。
 // 先 Count 再按内部主键倒序取当页。注意关键词不再匹配站点编码。
-func (s ResourceStore) Devices(ctx context.Context, q PageQuery, scopes ...DataScope) (Page[Device], error) {
+func (s ResourceStore) Devices(ctx context.Context, q PageQuery, scopes ...operations.DataScope) (Page[Device], error) {
 	out := Page[Device]{Items: []Device{}, Page: q.Page, PageSize: q.PageSize}
 	query := s.deviceQuery(ctx)
 	if q.StationID > 0 {
 		query = query.Where("d.station_id=?", q.StationID)
 	}
 	if len(scopes) > 0 {
-		query = scopes[0].ApplyStations(query, "d.station_id")
-		query = scopes[0].ApplyVendors(query, "d.vendor_id")
+		query = database.ScopeStations(scopes[0], query, "d.station_id")
+		query = database.ScopeVendors(scopes[0], query, "d.vendor_id")
 	}
 	if q.Status != "" {
 		query = query.Where("d.status = ?", q.Status)
@@ -143,7 +144,7 @@ func (a ResourceAPI) devices(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	out.Permissions = c.MustGet("admin_profile").(Profile).Permissions
+	out.Permissions = c.MustGet("admin_profile").(operations.Profile).Permissions
 	a.enrichDevices(c.Request.Context(), out.Items)
 	httpapi.OK(c, out)
 }
@@ -161,7 +162,7 @@ func (a ResourceAPI) device(c *gin.Context) {
 	if !ok {
 		return
 	}
-	query := scope.ApplyVendors(scope.ApplyStations(a.Store.deviceQuery(c.Request.Context()), "d.station_id"), "d.vendor_id")
+	query := database.ScopeVendors(scope, database.ScopeStations(scope, a.Store.deviceQuery(c.Request.Context()), "d.station_id"), "d.vendor_id")
 	if err := query.Select(deviceColumns).Where("d.device_id = ?", id).Take(&row).Error; err != nil {
 		resourceFailure(c, err)
 		return
@@ -251,7 +252,7 @@ func (a ResourceAPI) setDeviceStatus(c *gin.Context) {
 	var row Device
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		store := ResourceStore{AdminDB: tx}
-		query := scope.ApplyVendors(scope.ApplyStations(store.deviceQuery(c.Request.Context()), "d.station_id"), "d.vendor_id")
+		query := database.ScopeVendors(scope, database.ScopeStations(scope, store.deviceQuery(c.Request.Context()), "d.station_id"), "d.vendor_id")
 		if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).Select(deviceColumns).Where("d.device_id=?", id).Take(&row).Error; err != nil {
 			return err
 		}
@@ -267,7 +268,7 @@ func (a ResourceAPI) setDeviceStatus(c *gin.Context) {
 		if err := tx.Table("device_meta").Where("id=?", row.ID).Updates(map[string]any{"status": in.Status, "updated_at": row.UpdatedAt}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "device.status", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.status", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		resourceFailure(c, err)
@@ -388,7 +389,7 @@ func (a ResourceAPI) updateDevice(c *gin.Context) {
 	}
 	var row Device
 	err = a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		query := scope.ApplyVendors(scope.ApplyStations((ResourceStore{AdminDB: tx}).deviceQuery(c.Request.Context()), "d.station_id"), "d.vendor_id")
+		query := database.ScopeVendors(scope, database.ScopeStations(scope, (ResourceStore{AdminDB: tx}).deviceQuery(c.Request.Context()), "d.station_id"), "d.vendor_id")
 		if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).Select(deviceColumns).Where("d.device_id=?", id).Take(&row).Error; err != nil {
 			return err
 		}
@@ -412,7 +413,7 @@ func (a ResourceAPI) updateDevice(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "device.update", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.update", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		resourceFailure(c, err)

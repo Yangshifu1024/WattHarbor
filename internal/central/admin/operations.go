@@ -5,18 +5,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net/url"
-	"regexp"
-	"strings"
-	"time"
-	"unicode/utf8"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/netguard"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 // errConflict 表示这条记录当前的状态不接受这次写入（例如期望版本号已被别人改过），
@@ -114,7 +114,7 @@ func httpsURL(s string) bool {
 // adminWrite 在同一事务中完成业务写入和审计。
 // id=0 时新增并回填主键；否则锁定原记录，读取更新前快照后执行更新。
 func (a ResourceAPI) adminWrite(c *gin.Context, table, action string, id uint64, values map[string]any) (uint64, bool) {
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var before map[string]any
 		if id != 0 {
@@ -160,19 +160,19 @@ func (a ResourceAPI) createUser(c *gin.Context) {
 		httpapi.BadRequest(c, "用户名须为 3–64 位英文/数字，密码须为 12–72 字节，并选择有效角色")
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	var codes []string
 	if err := a.Store.AdminDB.Table("role AS r").Joins("JOIN role_permission rp ON rp.role_id=r.id JOIN permission p ON p.id=rp.permission_id").Where("r.id=? AND r.deleted_at IS NULL", in.RoleID).Pluck("p.code", &codes).Error; err != nil {
 		resourceFailure(c, err)
 		return
 	}
-	codes = withoutRetiredPermissions(codes)
+	codes = operations.WithoutRetiredPermissions(codes)
 	if len(codes) == 0 {
 		httpapi.BadRequest(c, "角色不存在或没有任何权限")
 		return
 	}
 	for _, code := range codes {
-		if !hasPermission(p, code) {
+		if !p.HasPermission(code) {
 			httpapi.Write(c, 403, 1003, "不能授予自己未拥有的权限", nil)
 			return
 		}
@@ -207,7 +207,7 @@ func (a ResourceAPI) ackAlert(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		// row 只取状态列：active 表示未认领，acknowledged 表示已被认领。
 		var row struct{ Status string }
@@ -263,7 +263,7 @@ func (a ResourceAPI) createAnnouncement(c *gin.Context) {
 		}
 	}
 	targets, _ := json.Marshal(in.TargetIDs)
-	id, ok := a.adminWrite(c, "announcement", "create", 0, map[string]any{"title": in.Title, "content": in.Content, "scope": in.Scope, "target_ids": string(targets), "start_at": in.StartAt, "end_at": in.EndAt, "status": "published", "created_by": c.MustGet("admin_profile").(Profile).ID})
+	id, ok := a.adminWrite(c, "announcement", "create", 0, map[string]any{"title": in.Title, "content": in.Content, "scope": in.Scope, "target_ids": string(targets), "start_at": in.StartAt, "end_at": in.EndAt, "status": "published", "created_by": c.MustGet("admin_profile").(operations.Profile).ID})
 	if ok {
 		httpapi.OK(c, gin.H{"id": id, "status": "published"})
 	}
@@ -313,7 +313,7 @@ func (a ResourceAPI) createWebhook(c *gin.Context) {
 		if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&id).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "create", "webhook", id, nil, in, c.ClientIP(), "")
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "create", "webhook", id, nil, in, c.ClientIP(), "")
 	})
 	if err != nil {
 		resourceFailure(c, err)
@@ -390,21 +390,11 @@ func (a ResourceAPI) saveWhitelabel(c *gin.Context) {
 		if err := tx.Exec("INSERT INTO whitelabel_config (id,name,mini_program_name,theme_color,config_json) VALUES (1,?,?,?,?) ON DUPLICATE KEY UPDATE mini_program_name=VALUES(mini_program_name),theme_color=VALUES(theme_color),config_json=VALUES(config_json)", "default", in["miniprogram_name"], in["theme_color"], string(b)).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "update", "whitelabel", 1, nil, in, c.ClientIP(), "")
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "update", "whitelabel", 1, nil, in, c.ClientIP(), "")
 	})
 	if err != nil {
 		resourceFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"config": in})
-}
-
-// hasPermission 判断当前操作者是否已持有某项权限编码，服务于"不能授予自己没有的权限"这类检查。
-func hasPermission(p Profile, code string) bool {
-	for _, v := range p.Permissions {
-		if v == code {
-			return true
-		}
-	}
-	return false
 }

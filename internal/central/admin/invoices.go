@@ -2,8 +2,8 @@ package admin
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -34,9 +34,9 @@ func (a ResourceAPI) invoices(c *gin.Context) {
 
 // financeActor 校验当前管理员为 customer_finance 且持有指定审核权限，失败返回 403。
 // 发票审核和计量核实共用此校验。
-func (a ResourceAPI) financeActor(c *gin.Context, permission string) (Profile, bool) {
-	p := c.MustGet("admin_profile").(Profile)
-	if p.Role != "customer_finance" || !hasPermission(p, permission) {
+func (a ResourceAPI) financeActor(c *gin.Context, permission string) (operations.Profile, bool) {
+	p := c.MustGet("admin_profile").(operations.Profile)
+	if p.Role != "customer_finance" || !p.HasPermission(permission) {
 		httpapi.Write(c, 403, 1003, "须由拥有审核权限的客户财务人员执行", nil)
 		return p, false
 	}
@@ -53,7 +53,7 @@ func (a ResourceAPI) invoiceReviewStore() paystore.InvoiceReviewStore {
 			if err != nil {
 				return paystore.ReviewerStatus{}, err
 			}
-			return paystore.ReviewerStatus{Role: p.Role, Permitted: hasPermission(p, "invoice.review")}, nil
+			return paystore.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, nil
 		},
 	}
 }

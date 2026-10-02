@@ -5,17 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // ExportTask 提供 CSV、XLSX 和汇总 PDF 导出，限制单次行数。
@@ -95,10 +96,10 @@ func (t ExportTask) CleanupExpired(ctx context.Context) (int, error) {
 // exportSpec 声明导出资源的权限、来源表、列及数据范围过滤函数。
 // 新增资源须显式登记，并明确各列的脱敏规则。
 type exportSpec struct {
-	Permission string                                                          // 导出该资源所需的读权限,申请和下载时都会校验
-	Table      string                                                          // 数据来源表名，位于 central_db
-	Columns    []exportColumn                                                  // 导出列清单,顺序即文件列顺序;Header 是中文表头,Column 是数据库列名
-	Builder    func(ctx context.Context, q *gorm.DB, scope DataScope) *gorm.DB // 在基础查询上追加数据范围等条件的钩子,为空表示不额外过滤
+	Permission string                                                                     // 导出该资源所需的读权限,申请和下载时都会校验
+	Table      string                                                                     // 数据来源表名，位于 central_db
+	Columns    []exportColumn                                                             // 导出列清单,顺序即文件列顺序;Header 是中文表头,Column 是数据库列名
+	Builder    func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB // 在基础查询上追加数据范围等条件的钩子,为空表示不额外过滤
 }
 
 // exportColumn 是一列的表头与数据库列名映射，两者分开，表头才能用中文。
@@ -117,8 +118,8 @@ var exportRegistry = map[string]exportSpec{
 			{"状态", "status"}, {"开始时间", "started_at"}, {"结束时间", "ended_at"},
 			{"电费(分)", "electric_cents"}, {"服务费(分)", "service_cents"}, {"合计(分)", "total_cents"},
 		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope DataScope) *gorm.DB {
-			return scope.ApplyStations(q, "station_id")
+		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB {
+			return database.ScopeStations(scope, q, "station_id")
 		},
 	},
 	"stations": {
@@ -127,8 +128,8 @@ var exportRegistry = map[string]exportSpec{
 		Columns: []exportColumn{
 			{"编码", "code"}, {"名称", "name"}, {"地址", "address"}, {"状态", "status"},
 		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope DataScope) *gorm.DB {
-			return scope.ApplyStations(q, "id")
+		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB {
+			return database.ScopeStations(scope, q, "id")
 		},
 	},
 	"devices": {
@@ -137,8 +138,8 @@ var exportRegistry = map[string]exportSpec{
 		Columns: []exportColumn{
 			{"设备号", "device_id"}, {"型号", "model"}, {"站点", "station_id"}, {"厂商", "vendor_id"}, {"状态", "status"},
 		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope DataScope) *gorm.DB {
-			return scope.ApplyStations(q, "station_id")
+		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB {
+			return database.ScopeStations(scope, q, "station_id")
 		},
 	},
 	"settlements": {
@@ -148,7 +149,7 @@ var exportRegistry = map[string]exportSpec{
 			{"分账单号", "settlement_no"}, {"订单号", "order_no"}, {"模式", "mode"}, {"状态", "status"},
 			{"合计(分)", "total_cents"}, {"分账池(分)", "split_pool_cents"},
 		},
-		Builder: func(ctx context.Context, q *gorm.DB, scope DataScope) *gorm.DB { return q },
+		Builder: func(ctx context.Context, q *gorm.DB, scope operations.DataScope) *gorm.DB { return q },
 	},
 	"bills": {
 		Permission: "finance.read",
@@ -198,15 +199,15 @@ func (t ExportTask) detailTask(c *gin.Context) {
 // listResources 返回当前管理员可导出的资源与格式清单，并带上行数上限，
 // 前端据此渲染导出选项，避免给出点了必然 403 的组合。
 func (t ExportTask) listResources(c *gin.Context) {
-	profile := c.MustGet("admin_profile").(Profile)
-	scope, err := LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
+	scope, err := database.LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
 	if err != nil {
 		resourceFailure(c, err)
 		return
 	}
 	items := []string{}
 	for name, spec := range exportRegistry {
-		if hasPermission(profile, spec.Permission) && (scope.Unrestricted || !exportRequiresGlobalScope(name)) {
+		if profile.HasPermission(spec.Permission) && (scope.Unrestricted || !exportRequiresGlobalScope(name)) {
 			items = append(items, name)
 		}
 	}
@@ -276,13 +277,13 @@ func (t ExportTask) createTask(c *gin.Context) {
 		httpapi.BadRequest(c, "账单与对账需提供不超过 31 天的 from/to 日期")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
-	if !hasPermission(profile, spec.Permission) {
+	profile := c.MustGet("admin_profile").(operations.Profile)
+	if !profile.HasPermission(spec.Permission) {
 		httpapi.Write(c, 403, 1003, "没有导出该资源的权限", nil)
 		return
 	}
 	if exportRequiresGlobalScope(in.Resource) {
-		scope, err := LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
+		scope, err := database.LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
 		if err != nil {
 			resourceFailure(c, err)
 			return
@@ -346,7 +347,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 
 // run 按资源、数据范围和日期取数，脱敏后写入目标格式。
 // 先写 .partial 文件，再原子改名，避免下载未完成文件；任一步失败将任务置为 failed。
-func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, profile Profile) error {
+func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, profile operations.Profile) error {
 	dir := t.exportDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return t.fail(ctx, taskNo, err)
@@ -355,7 +356,7 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, pro
 	if err := t.Store.AdminDB.WithContext(ctx).Table("export_task").Where("task_no = ?", taskNo).Take(&row).Error; err != nil {
 		return err
 	}
-	scope, err := LoadDataScope(ctx, t.Store.AdminDB, profile)
+	scope, err := database.LoadDataScope(ctx, t.Store.AdminDB, profile)
 	if err != nil {
 		return t.fail(ctx, taskNo, err)
 	}
@@ -393,7 +394,7 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportSpec, pro
 	if len(records) > t.maxRows() {
 		return t.fail(ctx, taskNo, fmt.Errorf("导出超过 %d 行，请缩小范围", t.maxRows()))
 	}
-	mask, err := LoadFieldMask(ctx, t.Store.AdminDB, profile.RoleID)
+	mask, err := database.LoadFieldMask(ctx, t.Store.AdminDB, profile.RoleID)
 	if err != nil {
 		return t.fail(ctx, taskNo, err)
 	}
@@ -479,25 +480,25 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 	if !ok {
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	var row exportRow
 	if err := t.Store.AdminDB.WithContext(c.Request.Context()).Table("export_task").
 		Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&row).Error; err != nil {
 		resourceFailure(c, err)
 		return
 	}
-	if row.RequestedBy != profile.ID && !hasPermission(profile, "admin_user.read") {
+	if row.RequestedBy != profile.ID && !profile.HasPermission("admin_user.read") {
 		httpapi.Write(c, 403, 1003, "只能下载自己创建的导出文件", nil)
 		return
 	}
 	spec, known := exportRegistry[row.Resource]
-	if !known || !hasPermission(profile, spec.Permission) {
+	if !known || !profile.HasPermission(spec.Permission) {
 		// 下载时重新校验资源读取权限。
 		httpapi.Write(c, 403, 1003, "没有下载该导出的权限", nil)
 		return
 	}
 	if exportRequiresGlobalScope(row.Resource) {
-		scope, err := LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
+		scope, err := database.LoadDataScope(c.Request.Context(), t.Store.AdminDB, profile)
 		if err != nil {
 			resourceFailure(c, err)
 			return

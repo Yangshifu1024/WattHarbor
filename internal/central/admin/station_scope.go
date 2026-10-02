@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"math"
@@ -9,8 +11,8 @@ import (
 
 const effectiveRuleSQL = "status='active' AND deleted_at IS NULL AND (effective_from IS NULL OR effective_from<=NOW(3)) AND (effective_to IS NULL OR effective_to>NOW(3))"
 
-func (a ResourceAPI) stationScope(c *gin.Context) (DataScope, bool) {
-	scope, err := LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(Profile))
+func (a ResourceAPI) stationScope(c *gin.Context) (operations.DataScope, bool) {
+	scope, err := database.LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
 		resourceFailure(c, err)
 		return scope, false
@@ -30,7 +32,7 @@ func (a ResourceAPI) requireStationScope(c *gin.Context, id uint64) bool {
 	return true
 }
 
-func canManageStationDefault(scope DataScope) bool {
+func canManageStationDefault(scope operations.DataScope) bool {
 	return scope.Unrestricted || len(scope.VendorIDs) == 0
 }
 

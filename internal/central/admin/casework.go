@@ -2,13 +2,13 @@ package admin
 
 import (
 	"fmt"
-	"time"
-	"unicode/utf8"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"time"
+	"unicode/utf8"
 )
 
 // registerCasework 注册反馈和设备报修路由，分别校验读取与操作权限。
@@ -83,7 +83,7 @@ func (a ResourceAPI) replyFeedback(c *gin.Context) {
 		httpapi.BadRequest(c, "请填写 1–2000 字回复或关闭反馈")
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []auditEntry
 	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var row struct{ Status string } // 反馈当前状态：pending 待处理 / processed 已回复 / closed 已关闭
@@ -175,11 +175,11 @@ func (a ResourceAPI) dispatchFault(c *gin.Context) {
 		return
 	}
 	assignee, err := a.Auth.Store.Profile(c.Request.Context(), in.AssignedTo)
-	if err != nil || !hasPermission(assignee, "fault.resolve") {
+	if err != nil || !assignee.HasPermission("fault.resolve") {
 		httpapi.BadRequest(c, "指派账号不存在、未启用或无故障处理权限")
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []auditEntry
 	err = a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var row faultRow
@@ -231,7 +231,7 @@ func (a ResourceAPI) resolveFault(c *gin.Context) {
 		httpapi.BadRequest(c, "状态无效或缺少修复说明")
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []auditEntry
 	err := a.auditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var row faultRow

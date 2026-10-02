@@ -5,15 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
 )
 
 // 厂商归网关所有；后台通过服务接口管理，不能另建一份厂商表或跨库写入。
@@ -46,19 +47,7 @@ func (a ResourceAPI) registerVendors(r *gin.Engine) {
 	r.GET("/api/v1/admin/vendor-options", a.Auth.Require("device.import"), a.vendorOptions)
 }
 
-func (s DataScope) AllowsVendor(id uint64) bool {
-	if s.Unrestricted || len(s.VendorIDs) == 0 {
-		return true
-	}
-	for _, allowed := range s.VendorIDs {
-		if allowed == id {
-			return true
-		}
-	}
-	return false
-}
-
-func vendorQuery(page PageQuery, scope DataScope) url.Values {
+func vendorQuery(page PageQuery, scope operations.DataScope) url.Values {
 	query := url.Values{
 		"page": {strconv.Itoa(page.Page)}, "page_size": {strconv.Itoa(page.PageSize)},
 		"keyword": {page.Keyword}, "status": {page.Status},
@@ -78,8 +67,8 @@ func vendorIDs(ids []uint64) string {
 	return strings.Join(parts, ",")
 }
 
-func (a ResourceAPI) vendorScope(c *gin.Context) (DataScope, bool) {
-	scope, err := LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(Profile))
+func (a ResourceAPI) vendorScope(c *gin.Context) (operations.DataScope, bool) {
+	scope, err := database.LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
 		resourceFailure(c, err)
 		return scope, false
@@ -118,7 +107,7 @@ func (a ResourceAPI) listVendorPage(c *gin.Context, optionsOnly bool) {
 	}
 	// 只有后台鉴权档案可以授予权限，不能信任上游同名响应字段。
 	out.Permissions = nil
-	permissions := c.MustGet("admin_profile").(Profile).Permissions
+	permissions := c.MustGet("admin_profile").(operations.Profile).Permissions
 	for _, permission := range permissions {
 		// 有厂商范围的账号不能创建一个范围之外的新厂商。
 		if permission == "vendor.create" && !scope.Unrestricted && len(scope.VendorIDs) > 0 {

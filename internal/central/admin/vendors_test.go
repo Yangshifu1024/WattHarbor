@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -98,7 +99,7 @@ func TestVendorProxyHonorsCancellation(t *testing.T) {
 }
 
 func TestVendorQueryUsesAccountScope(t *testing.T) {
-	for _, scope := range []DataScope{{Unrestricted: true, VendorIDs: []uint64{3}}, {StationIDs: []uint64{5}}, {VendorIDs: []uint64{3, 7}}} {
+	for _, scope := range []operations.DataScope{{Unrestricted: true, VendorIDs: []uint64{3}}, {StationIDs: []uint64{5}}, {VendorIDs: []uint64{3, 7}}} {
 		q := vendorQuery(PageQuery{Page: 2, PageSize: 20, Keyword: "厂商", Status: "enabled"}, scope)
 		want := ""
 		if !scope.Unrestricted && len(scope.VendorIDs) > 0 {

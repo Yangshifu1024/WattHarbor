@@ -2,13 +2,13 @@ package admin
 
 import (
 	"encoding/json"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
 func TestRetiredAdminRoutesAreRemoved(t *testing.T) {
@@ -83,7 +83,7 @@ func TestRetiredPermissionsPreserveFeedbackWalletAndDeviceAlerts(t *testing.T) {
 		"membership.create", "pricing.template.create",
 	}
 	want := []string{"feedback.read", "feedback.reply", "wallet.read", "alert.read", "alert.ack"}
-	if got := withoutRetiredPermissions(codes); !reflect.DeepEqual(got, want) {
+	if got := operations.WithoutRetiredPermissions(codes); !reflect.DeepEqual(got, want) {
 		t.Fatalf("visible permissions = %v, want %v", got, want)
 	}
 }

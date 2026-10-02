@@ -3,17 +3,18 @@ package admin
 import (
 	"context"
 	"errors"
-	"net/http"
-	"regexp"
-	"strings"
-	"time"
-	"unicode/utf8"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 // AdminUserRow 是 PC 后台管理员账号（admin_user 表）的列表行映射。
@@ -81,19 +82,19 @@ func (a ResourceAPI) listAdminUsers(c *gin.Context) {
 }
 
 // assignableRole 要求角色存在、权限非空，且其全部权限属于操作者已持有的权限。
-func assignableRole(ctx context.Context, db *gorm.DB, p Profile, roleID uint64) error {
+func assignableRole(ctx context.Context, db *gorm.DB, p operations.Profile, roleID uint64) error {
 	var codes []string
 	if err := db.WithContext(ctx).Table("role AS r").
 		Joins("JOIN role_permission rp ON rp.role_id=r.id JOIN permission p ON p.id=rp.permission_id").
 		Where("r.id=? AND r.deleted_at IS NULL", roleID).Pluck("p.code", &codes).Error; err != nil {
 		return err
 	}
-	codes = withoutRetiredPermissions(codes)
+	codes = operations.WithoutRetiredPermissions(codes)
 	if len(codes) == 0 {
 		return errConflict
 	}
 	for _, code := range codes {
-		if !hasPermission(p, code) {
+		if !p.HasPermission(code) {
 			return errInsufficient
 		}
 	}
@@ -136,7 +137,7 @@ func (a ResourceAPI) updateAdminUser(c *gin.Context) {
 		httpapi.BadRequest(c, "账号状态无效")
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	values := map[string]any{}
 	for key, value := range map[string]*string{"display_name": in.DisplayName, "phone": in.Phone, "email": in.Email, "status": in.Status} {
 		if value != nil {
@@ -202,7 +203,7 @@ func (a ResourceAPI) deleteAdminUser(c *gin.Context) {
 	if !ok {
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	if id == profile.ID {
 		httpapi.Write(c, http.StatusConflict, 2009, "不能删除当前登录账号", nil)
 		return
@@ -245,7 +246,7 @@ func (a ResourceAPI) unlockAdminUser(c *gin.Context) {
 	if !ok {
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var before map[string]any
 		if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -287,7 +288,7 @@ func (a ResourceAPI) resetAdminPassword(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	err = a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var before map[string]any
 		if err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -316,7 +317,7 @@ func (a ResourceAPI) adminUserMFA(c *gin.Context) {
 	if !ok {
 		return
 	}
-	profile := c.MustGet("admin_profile").(Profile)
+	profile := c.MustGet("admin_profile").(operations.Profile)
 	if id == profile.ID {
 		httpapi.Write(c, http.StatusConflict, 2009, "请使用本人账号的安全设置修改双因素认证", nil)
 		return
@@ -341,17 +342,17 @@ func (a ResourceAPI) adminUserMFA(c *gin.Context) {
 	now := time.Now().UTC()
 	switch in.Action {
 	case "enrol":
-		secret, err := NewTOTPSecret()
+		secret, err := auth.NewTOTPSecret()
 		if err != nil {
 			resourceFailure(c, err)
 			return
 		}
-		uri, err := TOTPURI("ChargePilot", target.Username, secret)
+		uri, err := auth.TOTPURI("ChargePilot", target.Username, secret)
 		if err != nil {
 			resourceFailure(c, err)
 			return
 		}
-		code, err := TOTPCode(secret, now)
+		code, err := auth.TOTPCode(secret, now)
 		if err != nil {
 			resourceFailure(c, err)
 			return
@@ -369,7 +370,7 @@ func (a ResourceAPI) adminUserMFA(c *gin.Context) {
 			httpapi.BadRequest(c, "请提供密钥和验证码")
 			return
 		}
-		if err := VerifyTOTP(in.Secret, in.Code, now); err != nil {
+		if err := auth.VerifyTOTP(in.Secret, in.Code, now); err != nil {
 			httpapi.Write(c, http.StatusBadRequest, 1002, "验证码校验失败", nil)
 			return
 		}

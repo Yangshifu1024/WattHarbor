@@ -2,14 +2,14 @@ package admin
 
 import (
 	"encoding/json"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
 )
 
 func TestSelfMFASettingsRejectsClientSecretsAndInvalidProofs(t *testing.T) {
@@ -42,7 +42,7 @@ func TestSelfMFASettingsRequiresSession(t *testing.T) {
 func TestAdministratorMFAEndpointStillRejectsSelfOperation(t *testing.T) {
 	router := httpapi.NewRouter()
 	router.POST("/admin-users/:id/mfa", func(c *gin.Context) {
-		c.Set("admin_profile", Profile{ID: 7})
+		c.Set("admin_profile", operations.Profile{ID: 7})
 		(ResourceAPI{}).adminUserMFA(c)
 	})
 	reply := httptest.NewRecorder()
@@ -60,12 +60,12 @@ func TestIssuedIdentityIncludesDisplayNameActualRoleAndMFAState(t *testing.T) {
 	a := API{JWT: jwt}
 	router := httpapi.NewRouter()
 	router.GET("/identity", func(c *gin.Context) {
-		a.issue(c, Profile{ID: 7, Username: "fixture", DisplayName: "管理员显示名", Role: "custom", RoleName: "自定义中文角色", RoleID: 8, MFAEnabled: true}, "fixture-session", "fixture-refresh")
+		a.issue(c, operations.Profile{ID: 7, Username: "fixture", DisplayName: "管理员显示名", Role: "custom", RoleName: "自定义中文角色", RoleID: 8, MFAEnabled: true}, "fixture-session", "fixture-refresh")
 	})
 	reply := httptest.NewRecorder()
 	router.ServeHTTP(reply, httptest.NewRequest(http.MethodGet, "/identity", nil))
 	var envelope struct {
-		Data Profile `json:"data"`
+		Data operations.Profile `json:"data"`
 	}
 	if err := json.Unmarshal(reply.Body.Bytes(), &envelope); err != nil || reply.Code != 200 || envelope.Data.DisplayName != "管理员显示名" || envelope.Data.RoleName != "自定义中文角色" || envelope.Data.RoleID != 8 || !envelope.Data.MFAEnabled {
 		t.Fatalf("issued identity omitted live account metadata: status=%d err=%v", reply.Code, err)

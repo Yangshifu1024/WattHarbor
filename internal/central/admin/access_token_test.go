@@ -3,15 +3,15 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
 )
 
 func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
@@ -21,7 +21,7 @@ func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 	}
 	router := httpapi.NewRouter()
 	router.GET("/issue", func(c *gin.Context) {
-		(API{JWT: jwt}).issue(c, Profile{ID: 7, RoleID: 8}, "fixture-session", "fixture-refresh")
+		(API{JWT: jwt}).issue(c, operations.Profile{ID: 7, RoleID: 8}, "fixture-session", "fixture-refresh")
 	})
 	reply := httptest.NewRecorder()
 	router.ServeHTTP(reply, httptest.NewRequest(http.MethodGet, "/issue", nil))

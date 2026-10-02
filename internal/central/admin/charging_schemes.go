@@ -6,15 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
-
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strings"
 )
 
 func (a ResourceAPI) registerChargingSchemes(r *gin.Engine) {
@@ -50,7 +50,7 @@ func (a ResourceAPI) chargingSchemes(c *gin.Context) {
 		}
 		items = append(items, gin.H{"id": r.ID, "scheme": spec.Scheme, "version": r.Version, "status": r.Status})
 	}
-	httpapi.OK(c, gin.H{"items": items, "permissions": c.MustGet("admin_profile").(Profile).Permissions})
+	httpapi.OK(c, gin.H{"items": items, "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 	var in schemeInput
@@ -97,7 +97,7 @@ func (a ResourceAPI) saveChargingScheme(c *gin.Context) {
 		} else if err := tx.Table("pricing_template").Where("id=?", id).Updates(row).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "charging_scheme.save", "pricing_template", id, before, in.Scheme, c.ClientIP(), httpapi.RequestID(c))
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.save", "pricing_template", id, before, in.Scheme, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		resourceFailure(c, err)
@@ -139,7 +139,7 @@ func (a ResourceAPI) changeChargingScheme(c *gin.Context, remove bool) {
 		if err := tx.Table("pricing_template").Where("id=?", id).Updates(row).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "charging_scheme.status", "pricing_template", id, before, in, c.ClientIP(), httpapi.RequestID(c))
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.status", "pricing_template", id, before, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		resourceFailure(c, err)
@@ -170,7 +170,7 @@ func (a ResourceAPI) applyChargingScheme(c *gin.Context) {
 	if !a.requirePricingTargetScope(c, in.StationID, in.DeviceID) {
 		return
 	}
-	actor := c.MustGet("admin_profile").(Profile)
+	actor := c.MustGet("admin_profile").(operations.Profile)
 	raw, _ := json.Marshal(in)
 	digest := sha256.Sum256(raw)
 	hash := hex.EncodeToString(digest[:])
@@ -323,7 +323,7 @@ func (a ResourceAPI) effectiveChargingScheme(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	httpapi.OK(c, gin.H{"scheme": rule.Spec.Scheme, "version": current.Version, "rule_id": rule.ID, "inherited": device != "" && rule.DeviceID == "", "permissions": c.MustGet("admin_profile").(Profile).Permissions})
+	httpapi.OK(c, gin.H{"scheme": rule.Spec.Scheme, "version": current.Version, "rule_id": rule.ID, "inherited": device != "" && rule.DeviceID == "", "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 
 func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
@@ -367,7 +367,7 @@ func (a ResourceAPI) inheritChargingScheme(c *gin.Context) {
 		if err := ruleScope(station, in.DeviceID)(tx.Table("pricing_rule")).Where("status='active'").Update("status", "disabled").Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "charging_scheme.inherit", "station", station, nil, in, c.ClientIP(), httpapi.RequestID(c))
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "charging_scheme.inherit", "station", station, nil, in, c.ClientIP(), httpapi.RequestID(c))
 	})
 	if err != nil {
 		resourceFailure(c, err)

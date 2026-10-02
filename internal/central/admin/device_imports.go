@@ -7,6 +7,11 @@ import (
 	"errors"
 	"fmt"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"io"
 	"net/http"
 	"regexp"
@@ -14,11 +19,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // ImportDevice 描述批量导入的设备身份、厂商、站点、端口数、型号及计费模式。
@@ -65,7 +65,7 @@ func (a ResourceAPI) imports(c *gin.Context) {
 	httpapi.OK(c, rows)
 }
 
-func requireImportScope(c *gin.Context, scope DataScope, devices []ImportDevice) bool {
+func requireImportScope(c *gin.Context, scope operations.DataScope, devices []ImportDevice) bool {
 	for _, device := range devices {
 		if !scope.AllowsStation(device.StationID) || !scope.AllowsVendor(device.VendorID) {
 			httpapi.Write(c, 403, 1003, "导入设备的站点或厂商不在您的数据范围内", nil)
@@ -134,7 +134,7 @@ func (a ResourceAPI) createImport(c *gin.Context) {
 		d.ReportsEnergy, d.ReportsSegmentedPower = cap.ReportsEnergy, cap.ReportsSegmentedPower
 	}
 	body, _ := json.Marshal(in.Devices)
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var prior ImportJob
 		err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).Where("import_id=?", in.ImportID).Take(&prior).Error
@@ -292,7 +292,7 @@ func (a ResourceAPI) runImport(c *gin.Context, id string) {
 		if err := tx.Table("device_import").Where("import_id=?", id).Updates(map[string]any{"status": "completed", "last_error": nil, "attempts": gorm.Expr("attempts+1"), "retryable": false}).Error; err != nil {
 			return err
 		}
-		return resourceAudit(tx, c.MustGet("admin_profile").(Profile), "complete", "device_import", 0, nil, gin.H{"import_id": id, "count": len(devices)}, c.ClientIP(), id)
+		return resourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "complete", "device_import", 0, nil, gin.H{"import_id": id, "count": len(devices)}, c.ClientIP(), id)
 	})
 	if errors.Is(err, errAlreadyReported) {
 		return

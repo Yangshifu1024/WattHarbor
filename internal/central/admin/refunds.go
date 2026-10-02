@@ -3,14 +3,14 @@ package admin
 import (
 	"context"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	"strconv"
-	"strings"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"strconv"
+	"strings"
 )
 
 // registerRefunds 注册人工退款、列表、复核和重试路由。
@@ -34,7 +34,7 @@ func (a ResourceAPI) refundReviewStore() orderstore.ReviewStore {
 			if err != nil {
 				return orderstore.SignerStatus{}, err
 			}
-			return orderstore.SignerStatus{Role: p.Role, Permitted: hasPermission(p, "order.refund.review")}, nil
+			return orderstore.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, nil
 		},
 	}
 }
@@ -65,7 +65,7 @@ func (a ResourceAPI) manualRefund(c *gin.Context) {
 		httpapi.BadRequest(c, "请填写有效请求编号、正整数退款分值和退款原因")
 		return
 	}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	created := false
 	refundNo := ""
 	var recordID uint64
@@ -119,14 +119,14 @@ func (a ResourceAPI) refunds(c *gin.Context) {
 	}
 	normalizeRows(out.Items)
 	stringIDs(out.Items, "id", "user_id", "payment_order_id", "first_signer", "second_signer")
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	for _, row := range out.Items {
 		status := row["status"]
 		manual := row["execution_policy"] == "manual_review"
-		reviewable := status == "pending" && manual && p.Role == "customer_finance" && hasPermission(p, "order.refund.review")
+		reviewable := status == "pending" && manual && p.Role == "customer_finance" && p.HasPermission("order.refund.review")
 		row["can_approve"] = reviewable && row["first_signer"] != strconv.FormatUint(p.ID, 10)
 		row["can_reject"] = reviewable
-		row["can_retry"] = row["execution_policy"] == "automatic" && (status == "pending" || status == "processing") && hasPermission(p, "finance.refund.retry")
+		row["can_retry"] = row["execution_policy"] == "automatic" && (status == "pending" || status == "processing") && p.HasPermission("finance.refund.retry")
 		row["task"] = nil
 		if !manual {
 			row["task"] = gin.H{"stage": status, "attempts": row["retry_count"], "last_error": row["failure_reason"], "scheduled_at": row["next_attempt_at"]}

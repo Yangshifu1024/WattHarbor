@@ -2,15 +2,15 @@ package admin
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	"math"
-	"strings"
-	"unicode/utf8"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"math"
+	"strings"
+	"unicode/utf8"
 )
 
 // 站点统一按主键 ID 寻址，不保存业务编码 code。
@@ -68,11 +68,11 @@ func (input StationInput) valid() bool {
 
 // Stations 分页查询未删除的站点，支持按状态过滤和按名称/地址模糊搜索（通配符已转义），
 // 先 Count 再按 ID 倒序取当页，最后把分页信息原样带回给调用方组装响应。
-func (s ResourceStore) Stations(ctx context.Context, q PageQuery, scopes ...DataScope) (Page[Station], error) {
+func (s ResourceStore) Stations(ctx context.Context, q PageQuery, scopes ...operations.DataScope) (Page[Station], error) {
 	out := Page[Station]{Items: []Station{}, Page: q.Page, PageSize: q.PageSize}
 	query := s.AdminDB.WithContext(ctx).Model(&Station{}).Where("deleted_at IS NULL")
 	if len(scopes) > 0 {
-		query = scopes[0].ApplyStations(query, "id")
+		query = paystore.ScopeStations(scopes[0], query, "id")
 	}
 	if q.Status != "" {
 		query = query.Where("status = ?", q.Status)
@@ -104,7 +104,7 @@ func (a ResourceAPI) stations(c *gin.Context) {
 		resourceFailure(c, err)
 		return
 	}
-	out.Permissions = c.MustGet("admin_profile").(Profile).Permissions
+	out.Permissions = c.MustGet("admin_profile").(operations.Profile).Permissions
 	httpapi.OK(c, out)
 }
 
@@ -158,7 +158,7 @@ func (a ResourceAPI) saveStation(c *gin.Context, create bool) {
 		return
 	}
 	row := Station{ID: id, Name: strings.TrimSpace(input.Name), Address: input.Address, Longitude: *input.Longitude, Latitude: *input.Latitude, Status: input.Status, ContactPhone: input.ContactPhone, SplitTemplateID: input.SplitTemplateID}
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if create {
 			if input.SplitTemplateID != nil {

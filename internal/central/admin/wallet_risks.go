@@ -3,15 +3,15 @@ package admin
 import (
 	"encoding/json"
 	"errors"
-	"strconv"
-	"time"
-	"unicode"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strconv"
+	"time"
+	"unicode"
 )
 
 // registerWalletRisks 注册风控列表、审核和解冻路由。
@@ -47,13 +47,13 @@ func (a ResourceAPI) walletRisks(c *gin.Context) {
 	}
 	normalizeRows(out.Items)
 	stringIDs(out.Items, "user_id")
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	for _, row := range out.Items {
-		row["can_review"] = (p.Role == "customer_finance" || p.Role == "customer_cs") && hasPermission(p, "finance.wallet_risk.review")
+		row["can_review"] = (p.Role == "customer_finance" || p.Role == "customer_cs") && p.HasPermission("finance.wallet_risk.review")
 		row["review"] = row["review_json"]
 		row["release"] = row["release_json"]
 		row["freeze_linked"] = row["freeze_id"] != nil
-		row["can_release"] = p.Role == "customer_finance" && hasPermission(p, "finance.wallet_risk.release") && row["review"] != nil && row["release"] == nil && row["freeze_status"] == "frozen" && row["trigger_rule"] == "wallet_refund_frequency"
+		row["can_release"] = p.Role == "customer_finance" && p.HasPermission("finance.wallet_risk.release") && row["review"] != nil && row["release"] == nil && row["freeze_status"] == "frozen" && row["trigger_rule"] == "wallet_refund_frequency"
 		delete(row, "review_json")
 		delete(row, "release_json")
 		delete(row, "trigger_rule")
@@ -95,7 +95,7 @@ func validComment(s string) bool {
 // 通过时按原渠道拆分充值退款并冻结等额余额；拒绝时仅保存审核结论。
 // 相同请求、审核人、结论和留言返回首次回执；内容不一致时返回冲突。
 func (a ResourceAPI) reviewWalletRisk(c *gin.Context) {
-	p := c.MustGet("admin_profile").(Profile)
+	p := c.MustGet("admin_profile").(operations.Profile)
 	if p.Role != "customer_finance" && p.Role != "customer_cs" {
 		httpapi.Write(c, 403, 1003, "须由财务或客服风控审核人员操作", nil)
 		return

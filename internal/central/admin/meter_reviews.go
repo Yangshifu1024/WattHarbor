@@ -195,7 +195,7 @@ func (a ResourceAPI) decideMeter(c *gin.Context) {
 	}
 	if *in.Approve {
 		first, err := a.Auth.Store.Profile(c.Request.Context(), review.FirstReviewerID)
-		if err != nil || first.Role != "customer_finance" || !hasPermission(first, "billing.meter.review") {
+		if err != nil || first.Role != "customer_finance" || !first.HasPermission("billing.meter.review") {
 			httpapi.Write(c, 409, 2009, "首次核实人的账号或权限已失效，请拒绝后重新提交", nil)
 			return
 		}

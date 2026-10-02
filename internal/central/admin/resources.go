@@ -3,17 +3,17 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/gin-gonic/gin"
+	"github.com/go-sql-driver/mysql"
+	"gorm.io/gorm"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/gin-gonic/gin"
-	"github.com/go-sql-driver/mysql"
-	"gorm.io/gorm"
 )
 
 // ResourceStore contains domain views of the same central database handle.
@@ -167,7 +167,7 @@ func decodeResource(c *gin.Context, dst any) bool {
 }
 
 // resourceAudit 在业务事务内保存变更快照、操作人、对象、客户端 IP 和请求号。
-func resourceAudit(tx *gorm.DB, p Profile, action, target string, id uint64, before, after any, ip, requestID string) error {
+func resourceAudit(tx *gorm.DB, p operations.Profile, action, target string, id uint64, before, after any, ip, requestID string) error {
 	old, err := json.Marshal(before)
 	if err != nil {
 		return err

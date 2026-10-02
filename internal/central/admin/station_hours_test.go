@@ -1,12 +1,11 @@
 package admin
 
 import (
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
 func TestCreateStationRejectsRetiredOpeningHours(t *testing.T) {
