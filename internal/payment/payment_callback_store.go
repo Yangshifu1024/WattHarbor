@@ -52,12 +52,23 @@ type PaymentCallbackStore struct {
 	ExpectedAppID      string
 }
 
+// entryRejected 判定一笔已验签的支付回调能否被接受。任何一项不符都在开事务
+// 之前拒绝——回调一旦进入事务就有写库动作，误放行等于把别人的订单结清。
+//
+// 抽成命名函数有两个理由：这段内联条件原本横跨四行、无法单独测试；
+// 而它是资金主干上最需要被盯住的一段判断。time.Now 在参数里传入，
+// 让"支付时间超前"这条不依赖真实时钟。
+func (s PaymentCallbackStore) entryRejected(payment VerifiedPayment, paidAt, now time.Time) bool {
+	return s.DB == nil || s.ExpectedProvider == "" || s.ExpectedMerchantID == "" || s.ExpectedAppID == "" ||
+		payment.Provider != s.ExpectedProvider || payment.MerchantID != s.ExpectedMerchantID || payment.AppID != s.ExpectedAppID ||
+		payment.MerchantOrderNo == "" || len(payment.MerchantOrderNo) > 64 ||
+		payment.TransactionID == "" || len(payment.TransactionID) > 64 || payment.OpenID == "" ||
+		payment.PaidCents <= 0 || paidAt.IsZero() || paidAt.After(now.Add(5*time.Minute))
+}
+
 func (s PaymentCallbackStore) Apply(ctx context.Context, payment VerifiedPayment) (PaymentCallbackResult, error) {
 	paidAt := payment.PaidAt.UTC().Truncate(time.Millisecond)
-	if s.DB == nil || s.ExpectedProvider == "" || s.ExpectedMerchantID == "" || s.ExpectedAppID == "" ||
-		payment.Provider != s.ExpectedProvider || payment.MerchantID != s.ExpectedMerchantID || payment.AppID != s.ExpectedAppID ||
-		payment.MerchantOrderNo == "" || len(payment.MerchantOrderNo) > 64 || payment.TransactionID == "" || len(payment.TransactionID) > 64 || payment.OpenID == "" ||
-		payment.PaidCents <= 0 || paidAt.IsZero() || paidAt.After(time.Now().Add(5*time.Minute)) {
+	if s.entryRejected(payment, paidAt, time.Now()) {
 		return PaymentCallbackResult{}, ErrPaymentCallbackConflict
 	}
 
