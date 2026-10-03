@@ -166,10 +166,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (pay.RefundRecord,
 				return ErrRefundConflict
 			}
 		} else {
-			// 模拟器的交易绝不能发到真实商户，
-			// 真实渠道的交易也绝不能让模拟器去结算。
-			simulated := strings.HasPrefix(p.WechatTransactionID.String, "SIM")
-			if (e.ProviderName == "simulation") != simulated {
+			if !providerMatchesChannel(e.ProviderName, p.WechatTransactionID.String) {
 				return ErrRefundConflict
 			}
 		}
@@ -193,8 +190,32 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (pay.RefundRecord,
 	})
 	return r, request, claimed, err
 }
+
+// receiptMatches 核对渠道回执与本次退款请求是否逐字对应。
+//
+// 任何一项对不上都不能入账：渠道把 A 单的退款回执返回给 B 单，就会按 B 单的
+// 金额退钱给用户，钱就出去了而账没对上。渠道返回值是外部输入，必须逐项核对
+// 而不是"看着差不多"。
+func receiptMatches(request pay.RefundRequest, result pay.RefundResult) bool {
+	return result.RefundNo == request.RefundNo &&
+		result.MerchantOrderNo == request.MerchantOrderNo &&
+		result.TransactionID == request.TransactionID &&
+		result.TotalCents == request.TotalCents &&
+		result.RefundCents == request.RefundCents &&
+		result.RefundID != "" && len(result.RefundID) <= 64
+}
+
+// providerMatchesChannel 保证交易与结算它的渠道同属真实或模拟一侧。
+//
+// 模拟器产生的交易号（SIM 前缀）绝不能发到真实商户，真实渠道的交易也绝不能
+// 让模拟器去"结算"——后者会在测试环境里凭空减掉真实用户的余额。
+func providerMatchesChannel(providerName, transactionID string) bool {
+	simulated := strings.HasPrefix(transactionID, "SIM")
+	return (providerName == "simulation") == simulated
+}
+
 func (e RefundExecutor) apply(ctx context.Context, r pay.RefundRecord, request pay.RefundRequest, result pay.RefundResult) error {
-	if result.RefundNo != request.RefundNo || result.MerchantOrderNo != request.MerchantOrderNo || result.TransactionID != request.TransactionID || result.TotalCents != request.TotalCents || result.RefundCents != request.RefundCents || result.RefundID == "" || len(result.RefundID) > 64 {
+	if !receiptMatches(request, result) {
 		return ErrRefundConflict
 	}
 	switch result.Status {
