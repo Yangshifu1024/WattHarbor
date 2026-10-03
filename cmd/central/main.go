@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"log"
 	"net/http"
 	"os"
@@ -16,13 +17,15 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/application"
-	"github.com/ChargePilot2026/charge-pilot/internal/central/admin"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/card"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	adminalertsync "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/alertsync"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
@@ -59,7 +62,7 @@ func run(ctx context.Context) error {
 	if err := cache.Ping(ctx).Err(); err != nil {
 		return err
 	}
-	channel, err := identitystore.NewPaymentChannel(ctx, cfg.PaymentMode, identitystore.WechatCredentials{
+	channel, err := payment.NewPaymentChannel(ctx, cfg.PaymentMode, payment.WechatCredentials{
 		AppID: cfg.WeChatAppID, MerchantID: cfg.WechatMchID,
 		CertificateSerial: cfg.WechatCertSerial, APIv3Key: cfg.WechatAPIv3Key,
 		PrivateKeyPath: cfg.WechatPrivateKey, NotifyURL: cfg.WechatNotifyURL,
@@ -88,24 +91,23 @@ func run(ctx context.Context) error {
 	identityhttp.StartResultAPI{Store: identityhttp.StartResultStore{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.EndResultAPI{Store: identityhttp.EndResultStore{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.StopAuthorization{DB: orm, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.CardAPI{Store: identitystore.CardStore{DB: orm}, Pricing: identitystore.PricingStore{DB: orm},
+	identityhttp.CardAPI{Store: card.CardStore{DB: orm}, Pricing: pricing.PricingStore{DB: orm},
 		ServiceToken: cfg.ServiceToken}.RegisterInternal(router)
 	application.AutoStopAPI{Stopper: application.AutoStopper{UserDB: orm, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
 
 	// 资金与账单：开票、结算、退款派发。
-	identityhttp.Service{Store: identitystore.Store{DB: orm}, Orders: identitystore.BillingOrders{DB: orm},
-		Splits: identitystore.SplitResolver{AdminDB: orm}, ServiceToken: cfg.ServiceToken,
+	identityhttp.Service{Store: settlement.Store{DB: orm}, Orders: settlement.BillingOrders{DB: orm}, ServiceToken: cfg.ServiceToken,
 		Bills: identityhttp.BillStoreIssuer{Store: identityhttp.BillStore{DB: orm}}}.Register(router)
-	identityhttp.RefundAPI{Executor: identitystore.RefundExecutor{DB: orm, Provider: channel.Refund, ProviderName: channel.Name}, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.RefundAPI{Executor: settlement.RefundExecutor{DB: orm, Provider: channel.Refund, ProviderName: channel.Name}, ServiceToken: cfg.ServiceToken}.Register(router)
 	if cfg.PaymentMode == "simulation" {
-		identityhttp.SimulationCallbackAPI{DB: orm, Store: identitystore.PaymentCallbackStore{
+		identityhttp.SimulationCallbackAPI{DB: orm, Store: payment.PaymentCallbackStore{
 			DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}, ServiceToken: cfg.ServiceToken}.Register(router)
 	}
 
 	// 事件投递与告警同步：webhook 订阅、监管报送、设备告警。
-	admin.RegulatoryEventsAPI{Queue: admin.RegulatoryQueue{AdminDB: db}, ServiceToken: cfg.ServiceToken}.Register(router)
-	admin.DeliveryDispatchAPI{Webhook: admin.WebhookDispatch{AdminDB: orm}, Regulatory: admin.RegulatoryDispatch{AdminDB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	admin.DeviceAlertSyncAPI{Sync: admin.DeviceAlertSync{AdminDB: orm, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
+	adminalertsync.DeviceAlertSyncAPI{Sync: adminalertsync.DeviceAlertSync{AdminDB: orm, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
+	log.Printf("central: http=%s payment=%s gateway=%s",
+		cfg.HTTPAddr, cfg.PaymentMode, cfg.GatewayInternalURL)
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
 	go func() {
 		<-ctx.Done()

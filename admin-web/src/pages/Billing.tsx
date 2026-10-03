@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Reconciliation, Settlements, Withdrawals } from './FinanceOps';
 import { Button, Form, Input, Modal, Space, Table, Tabs, Tag, Typography, message } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { apiGet, apiPost } from '../api/client';
@@ -99,9 +98,6 @@ export default function BillingPage() {
     <div className="page-container">
       <Tabs items={[
         { key: 'wallet-risks', label: '钱包风控审核', children: <WalletRisks /> },
-        { key: 'settlements', label: '分账明细', children: <Settlements /> },
-        { key: 'withdrawals', label: '提现打款', children: <Withdrawals /> },
-        { key: 'reconciliation', label: '对账', children: <Reconciliation /> },
         { key: 'refunds', label: '退款审核', children: <Refunds /> },
         { key: 'meter-reviews', label: '计量核实', children: <MeterReviews /> },
         {

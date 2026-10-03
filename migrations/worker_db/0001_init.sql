@@ -10,21 +10,6 @@
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 SET sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO,NO_ZERO_DATE,NO_ZERO_IN_DATE';
 
--- dlq_log：死信队列日志
-CREATE TABLE `dlq_log` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
-  `stream` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Redis Stream 名称',
-  `entry_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Redis Stream 消息 ID',
-  `reason` varchar(512) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '业务处理或异常原因',
-  `payload_json` json DEFAULT NULL COMMENT '任务执行或投递载荷 JSON',
-  `status` enum('open','replayed','closed') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open' COMMENT '当前业务状态；取值 open / replayed / closed',
-  `resolved_by` bigint unsigned DEFAULT NULL COMMENT '处理人 ID',
-  `resolved_at` datetime(3) DEFAULT NULL COMMENT '异常恢复或处理完成时间',
-  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
-  `created_month` date NOT NULL COMMENT '月分区归属日期，取对应月份第一天',
-  PRIMARY KEY (`id`,`created_month`),
-  KEY `idx_stream_status` (`stream`,`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='死信队列日志'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
  PARTITION p_2026m10 VALUES LESS THAN (740286) ENGINE = InnoDB,
@@ -32,16 +17,6 @@ CREATE TABLE `dlq_log` (
  PARTITION p_2026m12 VALUES LESS THAN (740347) ENGINE = InnoDB,
  PARTITION p_max VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */;
 
--- dlq_replay_cursor：DLQ 重放滑动游标(D21)
-CREATE TABLE `dlq_replay_cursor` (
-  `stream` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '业务流名(不含 .dlq 后缀)',
-  `last_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '已扫描到的最后一个 DLQ entry id;NULL = 尚未开始',
-  `scanned_total` bigint unsigned NOT NULL DEFAULT '0' COMMENT '累计扫描条目数(运维观测用)',
-  `replayed_total` bigint unsigned NOT NULL DEFAULT '0' COMMENT '累计成功重放条目数',
-  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '记录更新时间',
-  PRIMARY KEY (`stream`),
-  KEY `idx_updated` (`updated_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='DLQ 重放滑动游标(D21)';
 
 
 -- scheduled_task：定时任务定义
@@ -95,5 +70,3 @@ INSERT INTO `scheduled_task` (`id`,`task_code`,`name`,`cron_expr`,`enabled`,`las
 -- 仅供一次性开发/测试库回退；删除当前库全部业务表。
 DROP TABLE IF EXISTS `task_execution_log`;
 DROP TABLE IF EXISTS `scheduled_task`;
-DROP TABLE IF EXISTS `dlq_replay_cursor`;
-DROP TABLE IF EXISTS `dlq_log`;

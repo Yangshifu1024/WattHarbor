@@ -2,7 +2,8 @@ package http
 
 import (
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/card"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"net/http"
 	"strconv"
@@ -35,7 +36,7 @@ func (a StartAuthorization) handle(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid order number")
 		return
 	}
-	order, err := orderstore.FindPaidStartAuthorization(c.Request.Context(), a.DB, orderNo)
+	order, err := payment.FindPaidStartAuthorization(c.Request.Context(), a.DB, orderNo)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusConflict, 2000, "order is not fully paid", nil)
 		return
@@ -45,7 +46,7 @@ func (a StartAuthorization) handle(c *gin.Context) {
 		return
 	}
 	consumer, cardNumber, balanceUnits := uint8(2), uint32(0), uint16(0)
-	cardSession, err := orderstore.FindCardChargeSession(c.Request.Context(), a.DB, order.ChargeOrderID)
+	cardSession, err := card.FindCardChargeSession(c.Request.Context(), a.DB, order.ChargeOrderID)
 	if err != nil {
 		httpapi.Write(c, 503, 5001, "刷卡执行快照暂不可读取", nil)
 		return
@@ -72,4 +73,4 @@ func (a StartAuthorization) handle(c *gin.Context) {
 	})
 }
 
-type paidStartAuthorizationRow = orderstore.PaidStartAuthorization
+type paidStartAuthorizationRow = payment.PaidStartAuthorization

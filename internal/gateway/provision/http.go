@@ -2,7 +2,7 @@ package provision
 
 import (
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -41,7 +41,7 @@ func (a API) provision(c *gin.Context) {
 	seen := map[string]bool{}
 	for _, d := range in.Devices {
 		k := strings.ToLower(d.DeviceID)
-		if !devices.ValidDeviceID(d.DeviceID) || d.StationID == 0 || d.VendorID == 0 || d.PortCount == 0 || seen[k] || (d.Model != nil && utf8.RuneCountInString(*d.Model) > 128) {
+		if !device.ValidDeviceID(d.DeviceID) || d.StationID == 0 || d.VendorID == 0 || d.PortCount == 0 || seen[k] || (d.Model != nil && utf8.RuneCountInString(*d.Model) > 128) {
 			httpapi.BadRequest(c, "invalid device parameters")
 			return
 		}

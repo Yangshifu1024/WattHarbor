@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -87,7 +87,7 @@ func (a TelemetryAPI) backfill(c *gin.Context) {
 
 // parseBackfill 在写入前校验整批数据；任一帧无效时拒绝整批，避免部分写入。
 func parseBackfill(deviceID string, frames []backfillFrame, now time.Time) ([]sample, error) {
-	if !devices.ValidDeviceID(deviceID) {
+	if !device.ValidDeviceID(deviceID) {
 		return nil, fmt.Errorf("invalid device id")
 	}
 	out := make([]sample, 0, len(frames))

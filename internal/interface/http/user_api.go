@@ -8,8 +8,7 @@ import (
 	"strings"
 	"time"
 
-	identityauth "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/auth"
-	identityuser "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/user"
+	idstore "github.com/ChargePilot2026/charge-pilot/internal/identity"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -19,18 +18,18 @@ import (
 const accessTTL = 15 * time.Minute
 
 type UserRepository interface {
-	Login(context.Context, string, string) (identityuser.User, error)
+	Login(context.Context, string, string) (idstore.User, error)
 	Active(context.Context, uint64) (bool, error)
-	Profile(context.Context, uint64) (identityuser.Profile, error)
+	Profile(context.Context, uint64) (idstore.Profile, error)
 }
 type SessionRepository interface {
-	Create(context.Context, identityuser.User) (string, string, error)
-	Rotate(context.Context, string) (identityuser.User, string, string, error)
+	Create(context.Context, idstore.User) (string, string, error)
+	Rotate(context.Context, string) (idstore.User, string, string, error)
 	Revoke(context.Context, string) error
 	Exists(context.Context, string) (bool, error)
 }
 type API struct {
-	WeChat   identityauth.CodeExchanger
+	WeChat   idstore.CodeExchanger
 	Users    UserRepository
 	Sessions SessionRepository
 	JWT      *auth.JWT
@@ -57,7 +56,7 @@ func (a API) login(c *gin.Context) {
 		return
 	}
 	user, err := a.Users.Login(c.Request.Context(), identity.OpenID, identity.UnionID)
-	if errors.Is(err, identityuser.ErrUserFrozen) {
+	if errors.Is(err, idstore.ErrUserFrozen) {
 		httpapi.Write(c, http.StatusForbidden, 1003, "account frozen", nil)
 		return
 	}
@@ -152,7 +151,7 @@ func (a API) profile(c *gin.Context) {
 	httpapi.OK(c, profile)
 }
 
-func (a API) sign(user identityuser.User, sid string) (string, error) {
+func (a API) sign(user idstore.User, sid string) (string, error) {
 	now := time.Now().Unix()
 	return a.JWT.Sign(auth.Claims{Subject: strconv.FormatUint(user.ID, 10), Kind: "user", OpenID: user.OpenID, SessionID: sid, IssuedAt: now, ExpiresAt: now + int64(accessTTL.Seconds())})
 }

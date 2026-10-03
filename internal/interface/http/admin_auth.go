@@ -3,8 +3,8 @@ package http
 import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -18,7 +18,7 @@ import (
 // AdminAuth 是管理后台的鉴权与会话入口：持有账号存储、JWT 签发器和 Redis 会话，
 // 登录、续期、改密、登出以及所有后台路由的权限校验都从这里出。
 type AdminAuth struct {
-	Store    database.AdminStore        // 账号与权限的持久化入口
+	Store    ops.AdminStore             // 账号与权限的持久化入口
 	Sessions sessionstore.AdminSessions // Redis 会话管理，登录态的存在与撤销都以它为准
 	JWT      *auth.JWT                  // 后台访问令牌的签发与校验
 }
@@ -119,7 +119,7 @@ func (a AdminAuth) verifyMFA(c *gin.Context) {
 
 // completeLogin 读取权限档案，创建会话并返回 SID、刷新令牌和访问令牌。
 // 各阶段错误由 failure 统一映射到响应。
-func (a AdminAuth) completeLogin(c *gin.Context, account database.AdminAccount) {
+func (a AdminAuth) completeLogin(c *gin.Context, account ops.AdminAccount) {
 	profile, err := a.Store.Profile(c.Request.Context(), account.ID)
 	if err != nil {
 		a.failure(c, err)

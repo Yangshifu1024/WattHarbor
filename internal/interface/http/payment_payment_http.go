@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"io"
 	"net/http"
 	"time"
@@ -19,13 +21,13 @@ import (
 )
 
 // PrepayProvider 是预下单渠道契约，定义在持久化层以便 user 与 central 共用渠道构造。
-type PrepayProvider = orderstore.PrepayProvider
+type PrepayProvider = payment.PrepayProvider
 
 type PaymentStartAPI struct {
 	Auth     SessionAuthenticator
 	Scan     ScanAPI
-	Pricing  orderstore.PricingStore
-	Intents  orderstore.PaymentIntentStore
+	Pricing  pricing.PricingStore
+	Intents  payment.PaymentIntentStore
 	Provider PrepayProvider
 }
 
@@ -159,21 +161,21 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 		httpapi.Write(c, 409, 2009, err.Error(), nil)
 		return
 	}
-	intent, err := a.Intents.Reserve(c.Request.Context(), orderstore.IntentInput{UserID: userID, ClientRequestID: body.ClientRequestID,
+	intent, err := a.Intents.Reserve(c.Request.Context(), payment.IntentInput{UserID: userID, ClientRequestID: body.ClientRequestID,
 		Port: port, Rule: rule, Offer: &selected})
 	if errors.Is(err, charging.ErrInvalidPricing) {
 		httpapi.BadRequest(c, "invalid charging estimate")
 		return
 	}
-	if errors.Is(err, orderstore.ErrCouponNotFound) {
+	if errors.Is(err, marketing.ErrCouponNotFound) {
 		httpapi.BadRequest(c, "优惠券不存在或未发放给该账号")
 		return
 	}
-	if errors.Is(err, orderstore.ErrCouponExhausted) {
+	if errors.Is(err, marketing.ErrCouponExhausted) {
 		httpapi.Write(c, http.StatusConflict, 2001, "优惠券已过期或已使用", nil)
 		return
 	}
-	if errors.Is(err, orderstore.ErrCouponThreshold) {
+	if errors.Is(err, marketing.ErrCouponThreshold) {
 		httpapi.BadRequest(c, "未达到该优惠券的使用门槛")
 		return
 	}
@@ -188,10 +190,10 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 	a.finishStart(c, intent)
 }
 
-func (a PaymentStartAPI) finishStart(c *gin.Context, intent orderstore.PaymentIntent) {
+func (a PaymentStartAPI) finishStart(c *gin.Context, intent payment.PaymentIntent) {
 	params, err := a.Intents.PrepayParams(c.Request.Context(), intent.PaymentOrderID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		params, err = a.Provider.Prepay(c.Request.Context(), orderstore.PrepayRequest{MerchantOrderNo: intent.MerchantOrderNo,
+		params, err = a.Provider.Prepay(c.Request.Context(), payment.PrepayRequest{MerchantOrderNo: intent.MerchantOrderNo,
 			OpenID: intent.OpenID, AmountCents: intent.PayableCents, ExpiresAt: intent.ExpiresAt})
 		if err == nil {
 			err = a.Intents.SavePrepay(c.Request.Context(), intent.PaymentOrderID, params)
@@ -210,12 +212,12 @@ func (a PaymentStartAPI) finishStart(c *gin.Context, intent orderstore.PaymentIn
 }
 
 type NotificationVerifier interface {
-	VerifyNotification(context.Context, *http.Request) (orderstore.VerifiedTransaction, error)
+	VerifyNotification(context.Context, *http.Request) (payment.VerifiedTransaction, error)
 }
 
 type WechatCallbackAPI struct {
 	Verifier NotificationVerifier
-	Store    orderstore.PaymentCallbackStore
+	Store    payment.PaymentCallbackStore
 }
 
 func (a WechatCallbackAPI) Register(router *gin.Engine) {
@@ -232,10 +234,10 @@ func (a WechatCallbackAPI) callback(c *gin.Context) {
 		httpapi.Write(c, http.StatusBadRequest, 3001, "invalid payment notification", nil)
 		return
 	}
-	_, err = a.Store.Apply(c.Request.Context(), orderstore.VerifiedPayment{Provider: transaction.Provider, MerchantID: transaction.MerchantID,
+	_, err = a.Store.Apply(c.Request.Context(), payment.VerifiedPayment{Provider: transaction.Provider, MerchantID: transaction.MerchantID,
 		AppID: transaction.AppID, MerchantOrderNo: transaction.MerchantOrderNo, TransactionID: transaction.TransactionID,
 		OpenID: transaction.OpenID, PaidCents: transaction.PaidCents, PaidAt: transaction.PaidAt})
-	if errors.Is(err, orderstore.ErrPaymentCallbackConflict) {
+	if errors.Is(err, payment.ErrPaymentCallbackConflict) {
 		httpapi.Write(c, http.StatusConflict, 3001, "payment does not match intent", nil)
 		return
 	}
@@ -248,7 +250,7 @@ func (a WechatCallbackAPI) callback(c *gin.Context) {
 
 type SimulationCallbackAPI struct {
 	DB           *gorm.DB
-	Store        orderstore.PaymentCallbackStore
+	Store        payment.PaymentCallbackStore
 	ServiceToken string
 }
 
@@ -268,7 +270,7 @@ func (a SimulationCallbackAPI) callback(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid simulation request")
 		return
 	}
-	var intent orderstore.PaymentIntentRecord
+	var intent payment.PaymentIntentRecord
 	err := a.DB.WithContext(c.Request.Context()).Where("merchant_order_no = ?", body.MerchantOrderNo).Take(&intent).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusNotFound, 1004, "payment intent not found", nil)
@@ -278,11 +280,11 @@ func (a SimulationCallbackAPI) callback(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "payment intent unavailable", nil)
 		return
 	}
-	result, err := a.Store.Apply(c.Request.Context(), orderstore.VerifiedPayment{Provider: "simulation", MerchantID: "local-simulation",
+	result, err := a.Store.Apply(c.Request.Context(), payment.VerifiedPayment{Provider: "simulation", MerchantID: "local-simulation",
 		AppID: a.Store.ExpectedAppID, MerchantOrderNo: intent.MerchantOrderNo,
 		TransactionID: "SIMTX" + intent.IntentID, OpenID: intent.OpenID,
 		PaidCents: intent.TotalCents, PaidAt: time.Now().UTC()})
-	if errors.Is(err, orderstore.ErrPaymentCallbackConflict) {
+	if errors.Is(err, payment.ErrPaymentCallbackConflict) {
 		httpapi.Write(c, http.StatusConflict, 3001, "simulation payment conflict", nil)
 		return
 	}

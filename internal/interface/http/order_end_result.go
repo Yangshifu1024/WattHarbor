@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"math"
 	"net/http"
 	"time"
@@ -48,7 +50,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		// Match the card transaction lock order: session before order.
 		// 跨家族锁：card_charge 归属 card 家族，仅取行锁参与加锁顺序，不读字段。
 		// 与起充回执同一条加锁顺序：card_charge 归属 card 家族，只取行锁不读字段。
-		if err := orderstore.LockCardChargeForOrder(tx, result.ChargeOrderID); err != nil {
+		if err := payment.LockCardChargeForOrder(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
 		var order orderstore.ChargeOrderRecord
@@ -86,7 +88,7 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 			return err
 		}
 		// 跨家族写：card_charge 归属 card 家族，经裸表名更新，避免 order 反向依赖 card。
-		if err := orderstore.ClearCardActivePort(tx, result.ChargeOrderID); err != nil {
+		if err := payment.ClearCardActivePort(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
 		kwh := decimal.NewFromInt(int64(result.Meter.ChargedWh)).Shift(-3).StringFixed(4)
@@ -113,10 +115,10 @@ func (s EndResultStore) Apply(ctx context.Context, result EndResult) (bool, erro
 		if err != nil {
 			return err
 		}
-		if err := orderstore.EnqueueChargeBilling(tx, result.ChargeOrderID); err != nil {
+		if err := payment.EnqueueChargeBilling(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
-		return tx.Create(&orderstore.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error
+		return tx.Create(&ops.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	return replayed, err
 }

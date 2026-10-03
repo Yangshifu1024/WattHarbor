@@ -2,7 +2,7 @@ package http
 
 import (
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,7 +32,7 @@ func (a StopAuthorization) handle(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid stop authorization request")
 		return
 	}
-	order, err := orderstore.FindActiveStopAuthorization(c.Request.Context(), a.DB, c.Param("order_no"), userID)
+	order, err := payment.FindActiveStopAuthorization(c.Request.Context(), a.DB, c.Param("order_no"), userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusConflict, 2000, "order is not charging for this user", nil)
 		return
@@ -45,7 +45,7 @@ func (a StopAuthorization) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusConflict, 2000, "port identity unavailable", nil)
 		return
 	}
-	if err := orderstore.RecordBillingCutoff(c.Request.Context(), a.DB, order.ChargeOrderID, "stop_request", time.Now().UTC()); err != nil {
+	if err := payment.RecordBillingCutoff(c.Request.Context(), a.DB, order.ChargeOrderID, "stop_request", time.Now().UTC()); err != nil {
 		httpapi.Write(c, 503, 5001, "计费截止暂时无法保存", nil)
 		return
 	}
@@ -54,4 +54,4 @@ func (a StopAuthorization) handle(c *gin.Context) {
 		"port_id": order.PortID.Int64, "start_command_id": order.StartCommandID})
 }
 
-type activeStopAuthorizationRow = orderstore.ActiveStopAuthorization
+type activeStopAuthorizationRow = payment.ActiveStopAuthorization

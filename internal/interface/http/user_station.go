@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -19,7 +19,7 @@ import (
 // 站点查询：附近站点、站点详情及其下的公告与设备。
 // stationRow 是站点列表的查询投影，坐标统一转为字符串以保留库中 DECIMAL 的原始精度。
 // stationRow 是地图上展示的站点行，定义在持久化层。
-type stationRow = orderstore.UserStationRow
+type stationRow = device.UserStationRow
 
 func (a UserAccountAPI) nearbyStations(c *gin.Context) {
 	longitude, latitude, hasCoordinates, ok := readCoordinates(c)
@@ -49,7 +49,7 @@ func (a UserAccountAPI) nearbyStations(c *gin.Context) {
 	if !hasCoordinates {
 		// 未开启定位时无法计算距离，distance_km 固定为 null，
 		// 调用方须按“距离未知”展示，不得按 0 公里处理。
-		rows, err := orderstore.ListActiveStations(ctx, a.AdminDB, page, pageSize)
+		rows, err := device.ListActiveStations(ctx, a.AdminDB, page, pageSize)
 		if err != nil {
 			httpapi.Write(c, 503, 5003, "站点暂时无法读取", nil)
 			return
@@ -67,7 +67,7 @@ func (a UserAccountAPI) nearbyStations(c *gin.Context) {
 	}
 	// 距离由 SQL 直接基于库里的 DECIMAL 坐标算出，
 	// 这样排序和分页都发生在结果被截断之前。
-	rows, err := orderstore.ListStationsNearBy(ctx, a.AdminDB, latitude, longitude, radius, page, pageSize)
+	rows, err := device.ListStationsNearBy(ctx, a.AdminDB, latitude, longitude, radius, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "站点暂时无法读取", nil)
 		return
@@ -93,7 +93,7 @@ func (a UserAccountAPI) stationDetail(c *gin.Context) {
 		return
 	}
 	var row stationRow
-	row, err = orderstore.FindStationForUser(c.Request.Context(), a.AdminDB, id)
+	row, err = device.FindStationForUser(c.Request.Context(), a.AdminDB, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "站点不存在", nil)
 		return
@@ -133,7 +133,7 @@ const deviceOnlineWindow = time.Hour
 // 在站点详情这一无位置上下文中不做猜测，故不返回。
 func (a UserAccountAPI) stationAnnouncements(ctx context.Context, stationID uint64) ([]gin.H, error) {
 	now := time.Now().UTC()
-	rows, err := orderstore.ListStationScopedAnnouncements(ctx, a.AdminDB, now, 50)
+	rows, err := device.ListStationScopedAnnouncements(ctx, a.AdminDB, now, 50)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func announcementTargets(raw *string) map[string]bool {
 // 网关不可用或设备从未上报时分别用 runtime_available 和 last_heartbeat_at
 // 表达，不把未知状态当作离线。
 func (a UserAccountAPI) stationDevices(ctx context.Context, stationID uint64) ([]gin.H, error) {
-	rows, err := orderstore.ListStationDevices(ctx, a.AdminDB, stationID)
+	rows, err := device.ListStationDevices(ctx, a.AdminDB, stationID)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +191,7 @@ func (a UserAccountAPI) stationDevices(ctx context.Context, stationID uint64) ([
 
 // deviceHeartbeats 批量取回设备最后心跳。网关未配置或调用失败时返回空集合，
 // 调用方据此把设备标为状态未知，而不是离线。
-func (a UserAccountAPI) deviceHeartbeats(ctx context.Context, rows []orderstore.StationDeviceRow) map[string]struct {
+func (a UserAccountAPI) deviceHeartbeats(ctx context.Context, rows []device.StationDeviceRow) map[string]struct {
 	DeviceID        string     `json:"device_id"`
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at"`
 } {

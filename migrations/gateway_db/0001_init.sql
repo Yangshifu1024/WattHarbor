@@ -175,7 +175,7 @@ CREATE TABLE `device_port` (
   `port_no` tinyint unsigned NOT NULL COMMENT '设备充电端口号，从 1 开始',
   `port_code` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '端口二维码字符串',
   `status` enum('idle','charging','full','fault','disabled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'idle' COMMENT '当前业务状态；取值 idle / charging / full / fault / disabled',
-  `current_order_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '正在充电订单 ID(冗余自 user_db.charge_order)',
+  `current_order_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '正在充电订单 ID(冗余自 central_db.charge_order)',
   `last_telemetry_at` datetime(3) DEFAULT NULL COMMENT '最近遥测时间',
   `reported_status` tinyint unsigned DEFAULT NULL COMMENT '最近心跳上报的端口状态码，与业务预约状态独立',
   `reported_status_at` datetime(3) DEFAULT NULL COMMENT '最近端口状态心跳的 UTC 接收时间，只按事件时间前进',

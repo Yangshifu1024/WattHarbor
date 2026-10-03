@@ -73,8 +73,8 @@ export default function AuditLogsPage() {
           onPressEnter={() => { setPage(1); void load(); }} allowClear />
         <Select aria-label="模块" placeholder="全部模块" style={{ width: 160 }} value={module || undefined}
           onChange={v => { setModule(v || ''); setPage(1); }}
-          options={['auth', 'coupon', 'coupon_activity', 'station', 'device', 'admin_user', 'refund', 'withdraw',
-            'invoice', 'wallet_risk', 'export_task', 'alert_rule', 'ota', 'pricing', 'webhook']
+          options={['auth', 'coupon', 'coupon_activity', 'station', 'device', 'admin_user', 'refund',
+            'invoice', 'wallet_risk', 'export_task', 'alert_rule', 'ota', 'pricing']
             .map(v => ({ value: v, label: v }))} allowClear />
         <DatePicker.RangePicker onChange={v => { setRange(v as any); setPage(1); }} />
       </Space>

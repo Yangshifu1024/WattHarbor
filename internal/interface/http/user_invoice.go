@@ -2,8 +2,9 @@ package http
 
 import (
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	payment "github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -20,7 +21,7 @@ func (a UserAccountAPI) myInvoices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := orderstore.ListUserInvoiceRequests(c.Request.Context(), a.UserDB, userID, page, pageSize)
+	out, err := settlement.ListUserInvoiceRequests(c.Request.Context(), a.UserDB, userID, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "发票记录暂时无法读取", nil)
 		return
@@ -70,7 +71,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	order, err := orderstore.FindInvoiceableOrder(ctx, a.UserDB, in.OrderNo, userID)
+	order, err := settlement.FindInvoiceableOrder(ctx, a.UserDB, in.OrderNo, userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "订单不存在", nil)
 		return
@@ -86,7 +87,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 	}
 	// 开票金额取自计费回执，
 	// 与订单视图同源，绝不取自计费任务从不写入的列。
-	receipt := orderstore.ChargeFeeRecord{}
+	receipt := payment.ChargeFeeRecord{}
 	if err := a.UserDB.WithContext(ctx).Where("charge_order_id = ?", order.ID).Take(&receipt).Error; err != nil {
 		httpapi.Write(c, 409, 2009, "订单尚未计费，暂不能申请发票", nil)
 		return
@@ -99,7 +100,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 	invoiceNo := "INV" + strings.ToUpper(strings.ReplaceAll(in.RequestID, "-", ""))
 	var id uint64
 	err = a.UserDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		created, err := orderstore.ApplyInvoice(tx, orderstore.InvoiceApplyInput{
+		created, err := settlement.ApplyInvoice(tx, settlement.InvoiceApplyInput{
 			InvoiceNo: invoiceNo, UserID: userID, OrderID: order.ID, TotalCents: totalCents,
 			InvoiceType: in.InvoiceType, Title: title,
 			TaxNo: strings.TrimSpace(in.TaxNo), Email: strings.TrimSpace(in.Email),
@@ -110,7 +111,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 		id = created
 		return nil
 	})
-	if errors.Is(err, orderstore.ErrInvoiceDuplicate) {
+	if errors.Is(err, settlement.ErrInvoiceDuplicate) {
 		httpapi.Write(c, 409, 2009, "该订单已申请过发票", nil)
 		return
 	}

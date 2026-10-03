@@ -3,7 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"log"
 	"strconv"
 	"strings"
@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -20,10 +20,10 @@ import (
 )
 
 // 后台列表接口统一的分页与筛选入参，本层以别名对外暴露。
-type AdminPageQuery = database.PageQuery
+type AdminPageQuery = persist.PageQuery
 
 // AdminPage 是后台列表接口的统一响应体，本层以别名对外暴露。
-type AdminPage[T any] = database.Page[T]
+type AdminPage[T any] = persist.Page[T]
 
 // ReadAdminPage 解析并校验通用分页参数：page ≥ 1、page_size 1–100（page 上限 1000000），
 // 关键词不超过 128 字符，状态必须在该接口传入的白名单内（留空表示不按状态过滤）。
@@ -102,7 +102,7 @@ func AdminResourceAudit(tx *gorm.DB, p operations.Profile, action, target string
 	if len(requestID) > 64 {
 		requestID = requestID[:64]
 	}
-	return orderstore.InsertAudit(tx, orderstore.AuditEntryInput{
+	return ops.InsertAudit(tx, ops.AuditEntryInput{
 		ActorID: p.ID, ActorName: p.Username, Module: target, Action: action,
 		TargetType: target, TargetID: strconv.FormatUint(id, 10),
 		BeforeJSON: old, AfterJSON: next, ClientIP: ip, RequestID: requestID,

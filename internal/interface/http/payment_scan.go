@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"io"
 	"net/http"
 	"net/url"
@@ -24,7 +24,7 @@ type ScanAPI struct {
 	GatewayURL   string
 	ServiceToken string
 	Client       *http.Client
-	Operations   paystore.DeviceOperationReader
+	Operations   payment.DeviceOperationReader
 }
 
 func (a ScanAPI) Register(router *gin.Engine) {
@@ -143,6 +143,6 @@ func (a ScanAPI) Lookup(ctx context.Context, code string) (money.ScanResult, int
 	if err != nil {
 		return money.ScanResult{}, http.StatusServiceUnavailable
 	}
-	paystore.ApplyDeviceStatus(&envelope.Data, status)
+	payment.ApplyDeviceStatus(&envelope.Data, status)
 	return envelope.Data, http.StatusOK
 }

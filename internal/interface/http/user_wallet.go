@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	walletrefund "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -23,7 +23,7 @@ func (a UserAccountAPI) walletBalance(c *gin.Context) {
 	if !ok {
 		return
 	}
-	wallet, err := (database.WalletUserStore{DB: a.UserDB}).FindWalletBalance(c.Request.Context(), userID)
+	wallet, err := (walletpkg.WalletUserStore{DB: a.UserDB}).FindWalletBalance(c.Request.Context(), userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.OK(c, gin.H{"balance_cents": 0, "frozen_cents": 0, "available_cents": 0, "status": "active"})
 		return
@@ -53,7 +53,7 @@ func (a UserAccountAPI) walletTxns(c *gin.Context) {
 		httpapi.BadRequest(c, "收支方向无效")
 		return
 	}
-	out, err := (database.WalletUserStore{DB: a.UserDB}).ListWalletTxns(c.Request.Context(), userID, direction, page, pageSize)
+	out, err := (walletpkg.WalletUserStore{DB: a.UserDB}).ListWalletTxns(c.Request.Context(), userID, direction, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "资金流水暂时无法读取", nil)
 		return
@@ -72,7 +72,7 @@ func (a UserAccountAPI) walletRecharges(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := (database.WalletUserStore{DB: a.UserDB}).ListWalletRecharges(c.Request.Context(), user, page, size)
+	out, err := (walletpkg.WalletUserStore{DB: a.UserDB}).ListWalletRecharges(c.Request.Context(), user, page, size)
 	if err != nil {
 		resourceWriteFailure(c, err)
 		return
@@ -101,9 +101,9 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	store := database.WalletUserStore{DB: a.UserDB}
+	store := walletpkg.WalletUserStore{DB: a.UserDB}
 	var openID string
-	var order orderstore.PaymentOrderRecord
+	var order payment.PaymentOrderRecord
 	err := a.UserDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Serialize all wallet requests for one owner, including simultaneous retries.
 		openid, err := store.FindUserOpenID(tx, user)
@@ -135,15 +135,15 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 			return err
 		}
 		now := time.Now().UTC()
-		orderNo, err := orderstore.NewOrderNumber(tx)
+		orderNo, err := payment.NewOrderNumber(tx)
 		if err != nil {
 			return err
 		}
-		order = orderstore.PaymentOrderRecord{OrderNo: orderNo, BizType: "wallet_recharge", UserID: user, PayMethod: "wechat", TotalCents: in.AmountCents, Status: "initiated", ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
+		order = payment.PaymentOrderRecord{OrderNo: orderNo, BizType: "wallet_recharge", UserID: user, PayMethod: "wechat", TotalCents: in.AmountCents, Status: "initiated", ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
 		if err := tx.Create(&order).Error; err != nil {
 			return err
 		}
-		return store.InsertRechargeRequest(tx, database.WalletRechargeRequest{RequestID: in.RequestID, UserID: user, AmountCents: in.AmountCents, PaymentOrderID: order.ID, RequestJSON: mustJSON(in)})
+		return store.InsertRechargeRequest(tx, walletpkg.WalletRechargeRequest{RequestID: in.RequestID, UserID: user, AmountCents: in.AmountCents, PaymentOrderID: order.ID, RequestJSON: mustJSON(in)})
 	})
 	if errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, errWalletFrozen) || errors.Is(err, errWalletIdentity) {
 		httpapi.Write(c, 409, 2009, "请求号冲突或钱包已冻结", nil)
@@ -156,8 +156,8 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 	canPay := order.Status == "initiated" && order.ExpiredAt.Valid && order.ExpiredAt.Time.After(time.Now())
 	response := gin.H{"request_id": in.RequestID, "payment_order_id": order.ID, "merchant_order_no": order.OrderNo, "amount_cents": order.TotalCents, "status": order.Status, "can_pay": canPay}
 	if canPay {
-		var stored orderstore.ChargePrepayRecord
-		var params orderstore.PrepayParams
+		var stored payment.ChargePrepayRecord
+		var params payment.PrepayParams
 		err := a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error
 		if err == nil {
 			err = json.Unmarshal(stored.ParamsJSON, &params)
@@ -166,10 +166,10 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 				httpapi.Write(c, 503, 5003, "支付渠道未配置", nil)
 				return
 			}
-			params, err = a.Prepay.Prepay(ctx, orderstore.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openID, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
+			params, err = a.Prepay.Prepay(ctx, payment.PrepayRequest{MerchantOrderNo: order.OrderNo, OpenID: openID, AmountCents: order.TotalCents, ExpiresAt: order.ExpiredAt.Time})
 			if err == nil {
 				encoded, _ := json.Marshal(params)
-				stored = orderstore.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
+				stored = payment.ChargePrepayRecord{PaymentOrderID: order.ID, ParamsJSON: encoded, PrepayID: sql.NullString{String: params.PrepayID, Valid: params.PrepayID != ""}}
 				err = a.UserDB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&stored).Error
 				if err == nil {
 					err = a.UserDB.WithContext(ctx).Where("payment_order_id=?", order.ID).Take(&stored).Error
@@ -208,7 +208,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 	}
 	in.Reason = strings.TrimSpace(in.Reason)
 	var response map[string]any
-	store := database.WalletUserStore{DB: a.UserDB}
+	store := walletpkg.WalletUserStore{DB: a.UserDB}
 	err := a.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		wallet, err := store.LockWalletAccount(tx, user)
 		if err != nil {
@@ -221,7 +221,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 				reason = *prior.Reason
 			}
 			if prior.UserID != user || prior.AmountCents != in.AmountCents || reason != in.Reason {
-				return orderstore.ErrRefundConflict
+				return settlement.ErrRefundConflict
 			}
 			return json.Unmarshal([]byte(prior.ResponseJSON), &response)
 		}
@@ -259,7 +259,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 			if err := store.FreezeWallet(tx, wallet.ID); err != nil {
 				return err
 			}
-		} else if err := walletrefund.ReserveRefund(tx, walletrefund.WalletRefundReservation{RequestID: in.RequestID, UserID: user, AmountCents: in.AmountCents, Reason: in.Reason}); err != nil {
+		} else if err := walletpkg.ReserveRefund(tx, walletpkg.WalletRefundReservation{RequestID: in.RequestID, UserID: user, AmountCents: in.AmountCents, Reason: in.Reason}); err != nil {
 			return err
 		}
 		response = map[string]any{"request_id": in.RequestID, "status": status, "refund_cents": in.AmountCents}
@@ -269,7 +269,7 @@ func (a UserAccountAPI) walletRefund(c *gin.Context) {
 	switch {
 	case errors.Is(err, ErrInsufficientBalance):
 		httpapi.Write(c, 409, 2009, "可用余额不足", nil)
-	case errors.Is(err, orderstore.ErrRefundConflict), errors.Is(err, orderstore.ErrWalletRefundConflict):
+	case errors.Is(err, settlement.ErrRefundConflict), errors.Is(err, walletpkg.ErrWalletRefundConflict):
 		httpapi.Write(c, 409, 2009, "申请冲突或原充值可退额度不足", nil)
 	case errors.Is(err, errWalletFrozen):
 		httpapi.Write(c, 409, 2009, "钱包已冻结，请等待审核", nil)
@@ -289,16 +289,16 @@ func (a UserAccountAPI) walletRefunds(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := (database.WalletUserStore{DB: a.UserDB}).ListWalletRefundRequests(c.Request.Context(), user, page, size)
+	out, err := (walletpkg.WalletUserStore{DB: a.UserDB}).ListWalletRefundRequests(c.Request.Context(), user, page, size)
 	if err != nil {
 		resourceWriteFailure(c, err)
 		return
 	}
 	rows := out.Items
 	items := []gin.H{}
-	store := database.WalletUserStore{DB: a.UserDB}
+	store := walletpkg.WalletUserStore{DB: a.UserDB}
 	for _, row := range rows {
-		var parts []database.WalletRefundPartRow
+		var parts []walletpkg.WalletRefundPartRow
 		var err error
 		if parts, err = store.ListWalletRefundParts(c.Request.Context(), a.UserDB, row.RequestID); err != nil {
 			resourceWriteFailure(c, err)

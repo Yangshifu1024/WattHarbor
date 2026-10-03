@@ -8,6 +8,8 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/identity"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"log"
 	"net/http"
 	"os"
@@ -15,15 +17,16 @@ import (
 	"syscall"
 	"time"
 
-	identityauth "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/auth"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/card"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/gin-gonic/gin"
 	"github.com/go-pay/wechat-sdk/mini"
 	"github.com/go-pay/xhttp"
@@ -71,7 +74,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	wechat.SetHttpClient(xhttp.NewClient().SetTimeout(5 * time.Second))
-	channel, err := identitystore.NewPaymentChannel(ctx, cfg.PaymentMode, identitystore.WechatCredentials{
+	channel, err := payment.NewPaymentChannel(ctx, cfg.PaymentMode, payment.WechatCredentials{
 		AppID: cfg.WeChatAppID, MerchantID: cfg.WechatMchID,
 		CertificateSerial: cfg.WechatCertSerial, APIv3Key: cfg.WechatAPIv3Key,
 		PrivateKeyPath: cfg.WechatPrivateKey, NotifyURL: cfg.WechatNotifyURL,
@@ -94,21 +97,21 @@ func run(ctx context.Context) error {
 		httpapi.OK(c, gin.H{"status": "user_storage_ready"})
 	})
 
-	cEndAuth := identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: cache}, identitystore.UserStore{DB: orm})
-	var loginExchanger identityauth.CodeExchanger = identityauth.MiniProgram{SDK: wechat}
+	cEndAuth := identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: cache}, identity.UserStore{DB: orm})
+	var loginExchanger identity.CodeExchanger = identity.MiniProgram{SDK: wechat}
 	if cfg.LoginMode == "development" {
-		loginExchanger = identityauth.DevelopmentExchanger{}
+		loginExchanger = identity.DevelopmentExchanger{}
 	}
-	identityhttp.API{WeChat: loginExchanger, Users: identitystore.UserStore{DB: orm}, Sessions: sessionstore.Sessions{Redis: cache}, JWT: jwt}.Register(router)
-	identityhttp.ScanAPI{Operations: identitystore.DeviceOperationStore{DB: orm}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.UserStopAPI{JWT: jwt, Sessions: sessionstore.Sessions{Redis: cache}, Users: identitystore.UserStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.API{WeChat: loginExchanger, Users: identity.UserStore{DB: orm}, Sessions: sessionstore.Sessions{Redis: cache}, JWT: jwt}.Register(router)
+	identityhttp.ScanAPI{Operations: payment.DeviceOperationStore{DB: orm}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.UserStopAPI{JWT: jwt, Sessions: sessionstore.Sessions{Redis: cache}, Users: identity.UserStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
 	// 支付回调由渠道服务器经对外入口打进来，属于本进程。
 	if cfg.PaymentMode == "simulation" {
 		identityhttp.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, DB: orm,
-			Store: identitystore.PaymentCallbackStore{DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}.Register(router)
+			Store: payment.PaymentCallbackStore{DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}.Register(router)
 	}
 	if cfg.PaymentMode == "wechat_direct" {
-		identityhttp.WechatCallbackAPI{Verifier: channel.Prepay.(identityhttp.NotificationVerifier), Store: identitystore.PaymentCallbackStore{
+		identityhttp.WechatCallbackAPI{Verifier: channel.Prepay.(identityhttp.NotificationVerifier), Store: payment.PaymentCallbackStore{
 			DB: orm, ExpectedProvider: "wechat_direct", ExpectedMerchantID: cfg.WechatMchID, ExpectedAppID: cfg.WeChatAppID}}.Register(router)
 	}
 	identityhttp.UserAccountAPI{
@@ -120,7 +123,7 @@ func run(ctx context.Context) error {
 		DB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Gateway: serviceclient.Client{Timeout: 8 * time.Second}}.Register(router)
 	identityhttp.PhoneAPI{
 		Auth:             identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		Users:            identitystore.UserStore{DB: orm},
+		Users:            identity.UserStore{DB: orm},
 		DevelopmentPhone: cfg.LoginMode == "development",
 		PhoneExchange: func(ctx context.Context, code string) (string, error) {
 			result, err := wechat.GetPhoneNumber(ctx, code)
@@ -134,16 +137,18 @@ func run(ctx context.Context) error {
 		},
 	}.Register(router)
 	identityhttp.BillHTTP{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Bills: identityhttp.BillStore{DB: orm}}.Register(router)
-	identityhttp.CouponAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Coupons: identitystore.CouponStore{DB: orm}}.Register(router)
+	identityhttp.CouponAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Coupons: marketing.CouponStore{DB: orm}}.Register(router)
 	identityhttp.PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		Scan:     identityhttp.ScanAPI{Operations: identitystore.DeviceOperationStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken},
-		Pricing:  identitystore.PricingStore{DB: orm},
-		Intents:  identitystore.PaymentIntentStore{DB: orm},
+		Scan:     identityhttp.ScanAPI{Operations: payment.DeviceOperationStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken},
+		Pricing:  pricing.PricingStore{DB: orm},
+		Intents:  payment.PaymentIntentStore{DB: orm},
 		Provider: channel.Prepay}.Register(router)
-	identityhttp.CardAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Store: identitystore.CardStore{DB: orm}, Pricing: identitystore.PricingStore{DB: orm},
-		Scan:         identityhttp.ScanPortLookup{API: identityhttp.ScanAPI{Operations: identitystore.DeviceOperationStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}},
+	identityhttp.CardAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Store: card.CardStore{DB: orm}, Pricing: pricing.PricingStore{DB: orm},
+		Scan:         identityhttp.ScanPortLookup{API: identityhttp.ScanAPI{Operations: payment.DeviceOperationStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}},
 		ServiceToken: cfg.ServiceToken}.RegisterUser(router)
 
+	log.Printf("user: http=%s login=%s payment=%s gateway=%s",
+		cfg.HTTPAddr, cfg.LoginMode, cfg.PaymentMode, cfg.GatewayInternalURL)
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
 	go func() {
 		<-ctx.Done()

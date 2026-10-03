@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
+	pays "github.com/ChargePilot2026/charge-pilot/internal/payment"
+	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"math"
 	"net/http"
 	"time"
@@ -44,8 +47,8 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 	result.OccurredAt = result.OccurredAt.UTC().Truncate(time.Millisecond)
 	replayed := false
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var walletRow orderstore.Row
-		payMethod, paymentUserID, err := orderstore.FindOrderPaymentForCharge(tx, result.ChargeOrderID)
+		var walletRow walletpkg.Row
+		payMethod, paymentUserID, err := pays.FindOrderPaymentForCharge(tx, result.ChargeOrderID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// 订单已回滚或压根不存在。回执落不下去是冲突而不是服务故障：
 			// 报 500 会让网关无限重试一笔永远不会成立的回执。
@@ -55,14 +58,14 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 			return err
 		}
 		if payMethod == "balance" {
-			walletRow, err = orderstore.Lock(tx, paymentUserID)
+			walletRow, err = walletpkg.Lock(tx, paymentUserID)
 			if err != nil {
 				return err
 			}
 		}
 		// Match the card transaction lock order: session before order.
 		// 跨家族锁：card_charge 归属 card 家族，仅取行锁参与加锁顺序，不读字段。
-		if err := orderstore.LockCardChargeForOrder(tx, result.ChargeOrderID); err != nil {
+		if err := pays.LockCardChargeForOrder(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
 		var order orderstore.ChargeOrderRecord
@@ -103,12 +106,11 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		}
 		stream, eventName := "charge_started_stream", "start_acked"
 		if result.Success {
-			confirmed, err := orderstore.ConfirmCardStartOperation(tx, result.ChargeOrderID, result.OccurredAt)
-			if err != nil {
+			// 刷卡起充才有 card_operation 行；扫码/余额起充没有，影响 0 行是常态而非冲突。
+			// 这里只把数据库错误上抛——把 RowsAffected 当冲突判据会让所有非刷卡订单
+			// 的启动回执被拒，worker 随即下发补偿停止，把已经在充电的枪拔掉。
+			if _, err := pays.ConfirmCardStartOperation(tx, result.ChargeOrderID, result.OccurredAt); err != nil {
 				return err
-			}
-			if confirmed != 1 {
-				return ErrStartResultConflict
 			}
 			if err := tx.Create(&orderstore.ActivePortChargeRecord{PortID: result.PortID, DeviceID: result.DeviceID, PortNo: result.PortNo,
 				ChargeOrderID: result.ChargeOrderID, UserID: order.UserID, StartedAt: result.OccurredAt.UTC()}).Error; err != nil {
@@ -137,24 +139,24 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 				return ErrStartResultConflict
 			}
 			if payMethod == "balance" {
-				paid, refunded, err := orderstore.ReadBalancePaymentAmounts(tx, uint64(order.PaymentOrderID.Int64))
+				paid, refunded, err := pays.ReadBalancePaymentAmounts(tx, uint64(order.PaymentOrderID.Int64))
 				if err != nil {
 					return err
 				}
 				if err := refundBalanceStartFailure(tx, order, &walletRow, paid-refunded, "CSF"+result.CommandID, failureReason); err != nil {
 					return err
 				}
-				if err := orderstore.SetOrderStatusRefunded(tx, order.ID); err != nil {
+				if err := pays.SetOrderStatusRefunded(tx, order.ID); err != nil {
 					return err
 				}
-				if err := orderstore.FailCardStartOperation(tx, order.ID, failureReason, result.OccurredAt); err != nil {
+				if err := pays.FailCardStartOperation(tx, order.ID, failureReason, result.OccurredAt); err != nil {
 					return err
 				}
-				if err := orderstore.ClearCardActivePort(tx, order.ID); err != nil {
+				if err := pays.ClearCardActivePort(tx, order.ID); err != nil {
 					return err
 				}
 			} else {
-				payment, lookup := orderstore.LockWechatPaymentForRefund(tx, result.ChargeOrderID)
+				payment, lookup := pays.LockWechatPaymentForRefund(tx, result.ChargeOrderID)
 				if errors.Is(lookup, gorm.ErrRecordNotFound) {
 					return ErrStartResultConflict
 				}
@@ -174,7 +176,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 				}
 				month := dbutil.MonthStart()
 				// 跨家族写：refund_record 归属 refund 家族，经裸表名插入，避免 order 反向依赖 refund。
-				if err := orderstore.InsertRefundRecord(tx, orderstore.RefundRecordInput{
+				if err := pays.InsertRefundRecord(tx, pays.RefundRecordInput{
 					ExecutionPolicy: "automatic", RefundNo: refundNo, PaymentOrderID: payment.ID,
 					UserID: payment.UserID, BizType: "charge", BizID: result.ChargeOrderID,
 					RefundCents: refundCents, Reason: failureReason, Status: "pending",
@@ -188,7 +190,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 				if err != nil {
 					return err
 				}
-				if err := tx.Create(&orderstore.EventOutboxRecord{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}).Error; err != nil {
+				if err := tx.Create(&ops.EventOutboxRecord{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}).Error; err != nil {
 					return err
 				}
 			}
@@ -202,7 +204,7 @@ func (s StartResultStore) Apply(ctx context.Context, result StartResult) (bool, 
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&orderstore.EventOutboxRecord{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope}).Error; err != nil {
+		if err := tx.Create(&ops.EventOutboxRecord{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope}).Error; err != nil {
 			return err
 		}
 		return nil
@@ -224,14 +226,14 @@ type startRefundPaymentRow struct {
 // payment_order 改写 + 支付状态同步 + refund_record 记录）。card→order 与 refund→order
 // 依赖已单向占用，order 不得反向 import 三者，跨家族行一律经裸表名访问；
 // 支付行校验冲突返回 ErrStartResultConflict（与原 card.ErrCardOperation 同为服务端错误）。
-func refundBalanceStartFailure(tx *gorm.DB, order orderstore.ChargeOrderRecord, w *orderstore.Row, cents int64, refundNo, reason string) error {
+func refundBalanceStartFailure(tx *gorm.DB, order orderstore.ChargeOrderRecord, w *walletpkg.Row, cents int64, refundNo, reason string) error {
 	if cents <= 0 {
 		return nil
 	}
-	if err := orderstore.Move(tx, order.UserID, w, cents, refundNo, reason); err != nil {
+	if err := walletpkg.Move(tx, order.UserID, w, cents, refundNo, reason); err != nil {
 		return err
 	}
-	paid, refunded, err := orderstore.ReadBalancePaymentAmounts(tx, uint64(order.PaymentOrderID.Int64))
+	paid, refunded, err := pays.ReadBalancePaymentAmounts(tx, uint64(order.PaymentOrderID.Int64))
 	if err != nil {
 		return err
 	}
@@ -243,13 +245,13 @@ func refundBalanceStartFailure(tx *gorm.DB, order orderstore.ChargeOrderRecord, 
 		status = "refunded"
 	}
 	paymentID := uint64(order.PaymentOrderID.Int64)
-	if err := orderstore.AddPaymentRefunded(tx, paymentID, cents, status); err != nil {
+	if err := pays.AddPaymentRefunded(tx, paymentID, cents, status); err != nil {
 		return err
 	}
 	if err := orderstore.SyncOrderPaymentStatus(tx, paymentID); err != nil {
 		return err
 	}
-	return orderstore.InsertRefundRecord(tx, orderstore.RefundRecordInput{
+	return pays.InsertRefundRecord(tx, pays.RefundRecordInput{
 		RefundNo: refundNo, PaymentOrderID: paymentID, UserID: order.UserID,
 		BizType: "charge", BizID: order.ID, RefundCents: cents, Status: "success",
 		ExecutionPolicy: "automatic", Reason: reason,

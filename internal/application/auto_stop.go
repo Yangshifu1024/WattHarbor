@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"log"
 	"slices"
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"gorm.io/gorm"
@@ -35,7 +35,7 @@ type AutoStopper struct {
 	ServiceToken string
 }
 
-type autoStopOrder = database.AutoStopOrder
+type autoStopOrder = payment.AutoStopOrder
 
 // Run 根据持久化订单和设备证据停机。
 // 断电判定要求设备心跳未过期，不能仅凭网络断开认定用户拔枪。
@@ -47,7 +47,7 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 	stopped := 0
 	var afterID uint64
 	for {
-		orders, err := database.ListChargingOrdersAfter(ctx, s.UserDB, afterID)
+		orders, err := payment.ListChargingOrdersAfter(ctx, s.UserDB, afterID)
 		if err != nil {
 			return stopped, err
 		}
@@ -71,7 +71,7 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 			var frozenFee *charging.Fee
 			cutoff, reason := now, "automatic_stop"
 			if contract.Offer.Mode == "duration" {
-				purchased, err := database.PurchasedMinutesForOrder(ctx, s.UserDB, order.ID)
+				purchased, err := payment.PurchasedMinutesForOrder(ctx, s.UserDB, order.ID)
 				if err != nil {
 					return stopped, err
 				}
@@ -132,14 +132,14 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 				}
 				// 计费截止点按订单主键首写冻结：已有记录表明此前已冻结，
 				// 视为冲突返回错误交由外层定时循环重试，不做静默空更新。
-				frozen, err := database.BillingCutoffFrozen(ctx, s.UserDB, order.ID)
+				frozen, err := payment.BillingCutoffFrozen(ctx, s.UserDB, order.ID)
 				if err != nil {
 					return stopped, err
 				}
 				if frozen > 0 {
 					return stopped, fmt.Errorf("charge billing cutoff already frozen for order %s", order.OrderNo)
 				}
-				if err := database.FreezeBillingCutoff(s.UserDB.WithContext(ctx), order.ID, row); err != nil {
+				if err := payment.FreezeBillingCutoff(s.UserDB.WithContext(ctx), order.ID, row); err != nil {
 					return stopped, err
 				}
 				if err := s.requestStop(ctx, order); err != nil {

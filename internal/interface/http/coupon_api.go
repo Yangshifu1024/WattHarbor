@@ -1,14 +1,14 @@
 package http
 
 import (
-	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
 type CouponAPI struct {
 	Auth    SessionAuthenticator
-	Coupons dbstore.CouponStore
+	Coupons marketing.CouponStore
 }
 
 func (a CouponAPI) Register(r *gin.Engine) {

@@ -2,16 +2,16 @@ package http
 
 import (
 	"errors"
+	cardstore "github.com/ChargePilot2026/charge-pilot/internal/card"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
-	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
+	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	database "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -19,9 +19,9 @@ import (
 )
 
 type CardAPI struct {
-	Store        paystore.CardStore
+	Store        cardstore.CardStore
 	Auth         SessionAuthenticator
-	Pricing      database.PricingStore
+	Pricing      pricing.PricingStore
 	Scan         money.PortLookup
 	ServiceToken string
 }
@@ -50,7 +50,7 @@ func (a CardAPI) cards(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rows := []paystore.OnlineCard{}
+	rows := []cardstore.OnlineCard{}
 	if err := a.Store.DB.WithContext(c.Request.Context()).Where("user_id=? AND status<>'unbound'", user).Find(&rows).Error; err != nil {
 		httpapi.Write(c, 503, 5001, "卡信息暂不可用", nil)
 		return
@@ -73,11 +73,11 @@ func (a CardAPI) cardStatus(c *gin.Context) {
 		return
 	}
 	err := a.Store.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		card, err := (paystore.UserCardStore{DB: a.Store.DB}).LockUserCard(tx, c.Param("card_no"), user)
+		card, err := (cardstore.UserCardStore{DB: a.Store.DB}).LockUserCard(tx, c.Param("card_no"), user)
 		if err != nil {
 			return err
 		}
-		return (paystore.UserCardStore{DB: a.Store.DB}).SetUserCardStatus(tx, card, user, in.Status)
+		return (cardstore.UserCardStore{DB: a.Store.DB}).SetUserCardStatus(tx, card, user, in.Status)
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "卡不存在", nil)
@@ -103,7 +103,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		httpapi.BadRequest(c, "刷卡事件、卡号、端口无效")
 		return
 	}
-	prior, replayed, err := (orderstore.UserCardStore{DB: a.Store.DB}).FindCardOperationByEvent(
+	prior, replayed, err := (cardstore.UserCardStore{DB: a.Store.DB}).FindCardOperationByEvent(
 		c.Request.Context(), a.Store.DB, in.EventID, in.CardNo, in.PortID)
 	if err != nil {
 		httpapi.Write(c, 503, 5001, "刷卡事件暂不可读取", nil)
@@ -136,7 +136,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		return
 	}
 	var active int64
-	if err := a.Store.DB.WithContext(c.Request.Context()).Model(&orderstore.CardCharge{}).Where("active_port=?", in.PortID).Count(&active).Error; err != nil {
+	if err := a.Store.DB.WithContext(c.Request.Context()).Model(&cardstore.CardCharge{}).Where("active_port=?", in.PortID).Count(&active).Error; err != nil {
 		httpapi.Write(c, 503, 5001, "当前刷卡订单暂不可读取", nil)
 		return
 	}
@@ -163,8 +163,8 @@ func (a CardAPI) swipe(c *gin.Context) {
 	}
 	op, err := a.Store.Swipe(c.Request.Context(), in.CardNo, in.EventID, port, rule)
 	if err != nil {
-		if errors.Is(err, paystore.ErrCardOperation) || errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, orderstore.ErrChargeNumberConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
-			httpapi.Write(c, 409, 2009, paystore.ErrCardOperation.Error(), gin.H{"insufficient_balance": errors.Is(err, paystore.ErrCardBalance)})
+		if errors.Is(err, cardstore.ErrCardOperation) || errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, orderstore.ErrChargeNumberConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
+			httpapi.Write(c, 409, 2009, cardstore.ErrCardOperation.Error(), gin.H{"insufficient_balance": errors.Is(err, cardstore.ErrCardBalance)})
 		} else {
 			httpapi.Write(c, 503, 5001, "刷卡操作结果暂不可读取，请按同一事件编号查询", nil)
 		}

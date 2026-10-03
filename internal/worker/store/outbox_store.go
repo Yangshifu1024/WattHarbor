@@ -1,10 +1,7 @@
 package store
 
 import (
-	"context"
-	"time"
-
-	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -22,8 +19,8 @@ const outboxBatch = 100
 
 // ListPublishableOutbox 返回到期且未发布的事件，按 ID 升序。
 // SKIP LOCKED 让并发的发布者各取各的，而不是排队等同一批。
-func ListPublishableOutbox(tx *gorm.DB, table string) ([]dbstore.EventOutboxRecord, error) {
-	rows := []dbstore.EventOutboxRecord{}
+func ListPublishableOutbox(tx *gorm.DB, table string) ([]ops.EventOutboxRecord, error) {
+	rows := []ops.EventOutboxRecord{}
 	err := tx.Table(table).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("status IN ('pending','failed') AND scheduled_at <= NOW(3)").
 		Order("id").Limit(outboxBatch).Find(&rows).Error
@@ -49,46 +46,10 @@ func MarkOutboxFailed(tx *gorm.DB, table string, id uint64, lastError string, ba
 	}).Error
 }
 
-// InitDLQCursor 确保某条流的重放游标存在。已存在时不做任何写入——
-// 用 OnConflict DoNothing 是为了让"首次死信"这件事幂等。
-func InitDLQCursor(ctx context.Context, db *gorm.DB, stream string) error {
-	return db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).
-		Table("dlq_replay_cursor").Create(map[string]any{"stream": stream}).Error
-}
-
-// AppendDeadLetter 落一条死信。dlq_log 按 created_month 分区，月份由调用方给出。
-func AppendDeadLetter(ctx context.Context, db *gorm.DB, stream, entryID, reason, payload string, month time.Time) error {
-	return db.WithContext(ctx).Table("dlq_log").Create(map[string]any{
-		"stream": stream, "entry_id": entryID, "reason": reason,
-		"payload_json": payload, "status": "open", "created_month": month,
-	}).Error
-}
-
 // ReplayCursor 是某条流的重放进度。滑动游标保证每一轮都从上次停下的地方继续，
 // 不会重复扫同一批。
 type ReplayCursor struct {
 	LastID        *string `gorm:"column:last_id"`
 	ScannedTotal  uint64  `gorm:"column:scanned_total"`
 	ReplayedTotal uint64  `gorm:"column:replayed_total"`
-}
-
-// LoadReplayCursor 读回重放游标。取不到时返回零值，调用方按"从头重放"处理。
-func LoadReplayCursor(ctx context.Context, db *gorm.DB, stream string) (ReplayCursor, error) {
-	var cursor ReplayCursor
-	err := db.WithContext(ctx).Table("dlq_replay_cursor").Where("stream = ?", stream).Take(&cursor).Error
-	return cursor, err
-}
-
-// AdvanceReplayCursor 推进重放游标。lastID 为 nil 表示这一轮没扫到记录，
-// 游标不前移，下一轮重扫同一位置。
-func AdvanceReplayCursor(ctx context.Context, db *gorm.DB, stream string, lastID *string, scanned, replayed int) error {
-	updates := map[string]any{
-		"scanned_total":  gorm.Expr("scanned_total + ?", scanned),
-		"replayed_total": gorm.Expr("replayed_total + ?", replayed),
-	}
-	if lastID != nil {
-		updates["last_id"] = *lastID
-	}
-	return db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).
-		Table("dlq_replay_cursor").Where("stream = ?", stream).Updates(updates).Error
 }

@@ -7,7 +7,7 @@ import (
 
 func TestSessionAuditCountsFramesAndBytes(t *testing.T) {
 	start := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
-	audit := NewSessionAudit(TransportTCP, "abcdef", "10.0.0.7:51000", start)
+	audit := NewSessionAudit(TransportTCP, "abcdef", "10.0.7:51000", start)
 
 	audit.Inbound(10, start.Add(time.Second))
 	audit.Inbound(20, start.Add(2*time.Second))
@@ -29,7 +29,7 @@ func TestSessionAuditCountsFramesAndBytes(t *testing.T) {
 	if record.SessionID != "abcdef" || record.DeviceID != "QA-DEV-A001" {
 		t.Fatalf("identity lost: session=%q device=%q", record.SessionID, record.DeviceID)
 	}
-	if record.RemoteAddr != "10.0.0.7:51000" {
+	if record.RemoteAddr != "10.0.7:51000" {
 		t.Fatalf("remote addr = %q, want the peer address", record.RemoteAddr)
 	}
 }
@@ -37,7 +37,7 @@ func TestSessionAuditCountsFramesAndBytes(t *testing.T) {
 // 未收到任何帧的连接也应生成完整会话记录。
 func TestSessionAuditWithNoFramesReportsStartAsLastActive(t *testing.T) {
 	start := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
-	record := NewSessionAudit(TransportTCP, "s1", "10.0.0.7:51000", start).
+	record := NewSessionAudit(TransportTCP, "s1", "10.0.7:51000", start).
 		Snapshot("board", "read_timeout", start.Add(time.Minute))
 	if !record.LastActive.Equal(start) {
 		t.Fatalf("last active = %s, want the start time %s", record.LastActive, start)

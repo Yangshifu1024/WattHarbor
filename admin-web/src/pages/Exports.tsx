@@ -23,7 +23,7 @@ interface ExportTask {
 }
 
 const resourceLabel: Record<string, string> = {
-  orders: '充电订单', stations: '站点', devices: '设备', settlements: '分账明细',
+  orders: '充电订单', stations: '站点', devices: '设备', bills: '账单',
 };
 const statusMeta: Record<string, { color: string; label: string }> = {
   pending: { color: 'default', label: '排队中' },

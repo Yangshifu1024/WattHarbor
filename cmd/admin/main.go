@@ -15,10 +15,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/central/admin"
-	identitystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
+	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/dashboard"
+	admindevice "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/device"
+	adminexport "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/export"
+	adminfinance "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/finance"
+	adminmarketing "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/marketing"
+	adminops "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/ops"
+	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
+	adminpricing "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/pricing"
+	adminstation "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/station"
+	adminuser "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/user"
+	adminvendor "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/vendor"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
@@ -79,23 +91,36 @@ func run(ctx context.Context) error {
 		httpapi.OK(c, gin.H{"status": "admin_storage_ready"})
 	})
 
-	adminStore := identitystore.AdminStore{DB: orm}
+	adminStore := ops.AdminStore{DB: orm}
 	if err := adminStore.Bootstrap(ctx, cfg.AdminBootstrapUser, cfg.AdminBootstrapPassword); err != nil {
 		return err
 	}
 	authAPI := identityhttp.AdminAuth{Store: adminStore, Sessions: sessionstore.AdminSessions{Redis: cache}, JWT: jwt}
 	authAPI.Register(router)
-	admin.ResourceAPI{
-		Store:        admin.ResourceStore{AdminDB: orm, UserDB: orm, BillingDB: orm},
+	// 后台业务按族注册：每个族是一个独立包，进程只挂自己提供的那些。
+	deps := admin.Deps{
+		Store:        admin.Store{AdminDB: orm, UserDB: orm, BillingDB: orm},
 		Auth:         authAPI,
 		GatewayURL:   cfg.GatewayInternalURL,
 		ServiceToken: cfg.ServiceToken,
 		ExportDir:    cfg.ExportDir,
-	}.Register(router)
-	admin.Dashboard{UserDB: orm, AdminDB: orm}.Register(router, authAPI)
+	}
+	adminops.API{Deps: deps}.Register(router)
+	adminpricing.API{Deps: deps}.Register(router)
+	adminstation.API{Deps: deps}.Register(router)
+	admindevice.API{Deps: deps}.Register(router)
+	adminorder.API{Deps: deps}.Register(router)
+	adminfinance.API{Deps: deps}.Register(router)
+	adminmarketing.API{Deps: deps}.Register(router)
+	adminuser.API{Deps: deps}.Register(router)
+	adminvendor.API{Deps: deps}.Register(router)
+	admindashboard.Dashboard{UserDB: orm, AdminDB: orm}.Register(router, authAPI)
+	chargehttp.AdminAccounts{DB: orm, Auth: &authAPI}.RegisterRoles(router)
+	chargehttp.AdminAccounts{DB: orm, Auth: &authAPI}.Register(router)
+	adminexport.ExportTask{Store: admin.Store{AdminDB: orm}, Auth: authAPI, ExportDir: cfg.ExportDir}.Register(router)
 
 	// 导出文件有过期时间，过期件定时清理，避免目录无限增长。
-	cleanup := admin.ExportTask{Store: admin.ResourceStore{AdminDB: orm}, ExportDir: cfg.ExportDir}
+	cleanup := adminexport.ExportTask{Store: admin.Store{AdminDB: orm}, ExportDir: cfg.ExportDir}
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
@@ -115,6 +140,8 @@ func run(ctx context.Context) error {
 		}
 	}()
 
+	log.Printf("admin: http=%s gateway=%s export_dir=%s",
+		cfg.HTTPAddr, cfg.GatewayInternalURL, cfg.ExportDir)
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
 	go func() {
 		<-ctx.Done()

@@ -2,7 +2,7 @@ package http
 
 import (
 	"encoding/json"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -41,7 +41,7 @@ func (a UserAccountAPI) reportFault(c *gin.Context) {
 	images, _ := json.Marshal(in.Images)
 	var id uint64
 	err := a.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		created, err := orderstore.InsertFaultReport(tx, orderstore.FaultReportInput{
+		created, err := device.InsertFaultReport(tx, device.FaultReportInput{
 			DeviceID: in.DeviceID, UserID: userID, FaultType: in.FaultType,
 			Description: in.Description, ImagesJSON: string(images),
 		})
@@ -67,7 +67,7 @@ func (a UserAccountAPI) myFaultReports(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := orderstore.ListUserFaultReports(c.Request.Context(), a.UserDB, userID, page, pageSize)
+	out, err := device.ListUserFaultReports(c.Request.Context(), a.UserDB, userID, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "报修记录暂时无法读取", nil)
 		return
@@ -85,13 +85,13 @@ func (a UserAccountAPI) myFaultHistory(c *gin.Context) {
 		httpapi.BadRequest(c, "报修编号无效")
 		return
 	}
-	owned, err := orderstore.OwnsFaultReport(c.Request.Context(), a.UserDB, id, userID)
+	owned, err := device.OwnsFaultReport(c.Request.Context(), a.UserDB, id, userID)
 	if err != nil || !owned {
 		// 别人的报障单与不存在的报障单返回完全一样。
 		httpapi.Write(c, 404, 1004, "报修记录不存在", nil)
 		return
 	}
-	rows, err := orderstore.ListUserVisibleFaultEvents(c.Request.Context(), a.UserDB, id)
+	rows, err := device.ListUserVisibleFaultEvents(c.Request.Context(), a.UserDB, id)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "处理进度暂时无法读取", nil)
 		return

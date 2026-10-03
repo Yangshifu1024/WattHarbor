@@ -4,16 +4,16 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
 // BillStore 与 Bill 是账单生成与查询的读写入口，定义在持久化层。
-type BillStore = database.BillStore
+type BillStore = settlement.BillStore
 
-type Bill = database.Bill
+type Bill = settlement.Bill
 
 // BillHTTP 把账单视图暴露给客户。
 type BillHTTP struct {

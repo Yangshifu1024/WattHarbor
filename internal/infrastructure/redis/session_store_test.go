@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	identityuser "github.com/ChargePilot2026/charge-pilot/internal/domain/identity/user"
+	identity "github.com/ChargePilot2026/charge-pilot/internal/identity"
 )
 
 func TestSessionUserIDJSONPreservesPrecisionAndLegacyRecords(t *testing.T) {
@@ -35,7 +35,7 @@ func TestSessionUserIDJSONPreservesPrecisionAndLegacyRecords(t *testing.T) {
 
 func TestProfileSerializesUserIDAsDecimalString(t *testing.T) {
 	const userID = uint64(923456789012345678)
-	raw, err := json.Marshal(identityuser.Profile{UserID: userID})
+	raw, err := json.Marshal(identity.Profile{UserID: userID})
 	if err != nil {
 		t.Fatal(err)
 	}

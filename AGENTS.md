@@ -3,10 +3,11 @@
 ## 依据与边界
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
-- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。业务实现按分层位于 `internal/domain`、`internal/application`、`internal/infrastructure`、`internal/interface`；进程特有编排位于 `internal/worker`、`internal/gateway`、`internal/delivery`；设备契约位于 `internal/protocol`；无业务语义的通用能力位于 `internal/platform`。
+- 重构的完成证据与核验方法见 [docs/REFACTOR-EVIDENCE.md](docs/REFACTOR-EVIDENCE.md)，目标结构与实施记录见 [docs/target-structure.md](docs/target-structure.md)。
+- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十一个用例包，纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_store.go` 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。**`central` 的 8082 在两套编排里都不映射端口**，宿主机打不开，内部调用只在容器网络内可达。开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。
 
-五个进程共享同一套 `domain`/`application`/`infrastructure`，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
+五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
 - 后台进程不取微信与支付凭据：它不替用户登录，也不发起支付。`config.Admin` 与 `config.Central` 分开定义，让"这个进程需要什么凭据"在类型上就是清楚的——多给一份 `WECHAT_SECRET` 就等于多一处泄露面。
 - C 端充电中的遥测、历史曲线、充电采样与设备摘要，经 `GATEWAY_INTERNAL_URL` 回调 **gateway**（`:8083`）的 `/api/v1/internal/devices/*`，携服务令牌。这些端点由 `internal/gateway/control` 提供，不在 central 进程里——判断回调对象要看代码用的 base URL 字段，不能只看路径里有 `/internal`。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
@@ -16,229 +17,417 @@
 ## 工具与代码风格
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
-- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.sh`；`make check` 顺序执行四项。
+- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.py`；另有 `make layers-selftest` 注入已知违规确认每条规则真的会失败；`make check` 顺序执行四项。
 - 目录结构定稿如下。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
 ```text
 charge-pilot/
 │
 ├── cmd/                                        部署单元，每个子目录一个进程
-│   ├── user/main.go                             C 端接口进程      :8080
-│   ├── admin/main.go                            后台接口进程      :8081
-│   ├── central/main.go                          对内服务间接口     :8082
-│   ├── gateway/main.go                          设备接入进程      :8083 + DC589/TCP :9100
-│   ├── worker/main.go                           消费调度进程      :8085
-│   └── migrate/main.go  devseed/  simulator-dc589/
+│   ├── cmd/admin/main.go
+│   ├── cmd/central/main.go
+│   ├── cmd/devseed/main.go
+│   ├── cmd/devseed/scheme.go
+│   ├── cmd/gateway/main.go
+│   ├── cmd/migrate/main.go
+│   ├── cmd/simulator-dc589/main.go
+│   ├── cmd/user/main.go
+│   ├── cmd/worker/main.go
 │
-├── internal/
-│   │
-│   │ ═══ 业务核心 ═══════════════════════════════════════════
-│   │
-│   ├── domain/                                 零 gorm、零 gin、零 Redis
-│   │   ├── identity/
-│   │   │   ├── user/                            用户聚合
-│   │   │   │   ├── user.go                      User / Profile / 账号状态哨兵
-│   │   │   │   └── auth.go                      访问令牌校验
-│   │   │   └── auth/                            登录身份来源
-│   │   │       ├── wechat.go                    微信小程序 code 换取
-│   │   │       └── development.go               开发模式身份
-│   │   │
-│   │   ├── charging/                            充电与计费
-│   │   │   ├── offer.go  offer_actual.go         价格档与按实际计量计价
-│   │   │   ├── scheme.go  scheme_cost.go        计费方案与成本
-│   │   │   ├── spec.go  rule.go                 规则口径与规则
-│   │   │   ├── mode.go  cost.go                 计费方式与费用计算
-│   │   │   ├── segments.go  measured_segments.go 计量分段
-│   │   │   ├── end_meter.go  estimate.go        结束计量与预估
-│   │   │   ├── budget_stop.go                   预算停机
-│   │   │   ├── order_package.go                 订单冻结计费口径与展示名
-│   │   │   ├── metering.go                      计费方式与协议能力的匹配
-│   │   │   ├── live_meter_view.go               实时表读数投影
-│   │   │   ├── capabilities.go  display.go       协议能力与展示开关
-│   │   │   ├── device.go  actual.go  breakdown.go
-│   │   │
-│   │   ├── money/                               资金
-│   │   │   ├── payment_errors.go                支付渠道与回调核验
-│   │   │   ├── review.go                        退款人工复核
-│   │   │   ├── allocation.go                    分账分配
-│   │   │   ├── coupon.go  coupon_activity.go    券发放与活动规则
-│   │   │   ├── card_number.go  card_port.go  scan.go  卡号与刷卡
-│   │   │   ├── reconcile.go                     对账差异比对
-│   │   │
-│   │   ├── devices/                             设备
-│   │   │   ├── fault.go                         故障语义与报修单状态流转
-│   │   │   ├── telemetry.go                     遥测（功率、电量、时长）
-│   │   │   └── identity.go                      设备编号合法性
-│   │   │
-│   │   └── operations/                          运营后台
-│   │       ├── account.go                       后台账号身份、权限、退役权限
-│   │       ├── scope.go                         数据范围与字段遮蔽
-│   │       ├── export.go                        导出时间窗与公式注入防护
-│   │       └── validate.go                      自由文本、公开链接与请求号校验
-│   │
-│   ├── application/                             跨聚合事务编排
-│   │   ├── auto_stop.go                        停机扫描
-│   │   └── *_test.go
-│   │
-│   │ ═══ 外部依赖实现 ═══════════════════════════════════════
-│   │
-│   ├── infrastructure/
-│   │   ├── database/                           gorm 只在这里，表名只在这里
-│   │   └── redis/
-│   │       ├── session_store.go                 user:session:
-│   │       ├── admin_session.go                 admin:session: / admin:mfa:
-│   │       └── session_token.go                 刷新令牌布局与共用原语
-│   │
-│   │ ═══ 接口层 ═══════════════════════════════════════════
-│   │
-│   ├── interface/http/                          gin 只在这一层
-│   │   ├── user_api.go  auth.go                C 端登录与资料
-│   │   ├── charge_user_account.go              C 端账户路由装配
-│   │   ├── user_wallet.go                      余额、流水、充值与余额退款
-│   │   ├── user_station.go                     附近站点、站点详情与站内公告设备
-│   │   ├── user_invoice.go                     开票申请与我的发票
-│   │   ├── user_fault.go                       设备报障的提交与查询
-│   │   ├── user_coupon.go                      我的优惠券
-│   │   ├── user_announcement.go                公告列表
-│   │   ├── user_account_helpers.go             分页与坐标解析助手
-│   │   ├── charge_user_query.go                充电历史、进行中、曲线
-│   │   ├── charge_user_stop.go                 用户停机
-│   │   ├── charge_live_meter.go                实时表读数
-│   │   ├── charge_feedback.go                  充电评价
-│   │   ├── payment_scan.go  payment_*.go       扫码、起充、支付回调
-│   │   ├── order_*.go                          启动授权、结果回传、结束计量
-│   │   ├── card_*.go  phone_api.go  coupon_api.go  settlement_bill.go
-│   │   ├── billing_service.go  refund_internal_api.go   对内资金端点
-│   │   ├── admin_*.go                          后台：鉴权、账号角色、管道、MFA
-│   │   ├── admin.openapi.json  user.openapi.json  两份接口契约
-│   │   └── middleware.go
-│   │
-│   │ ═══ 协议契约（独立层）══════════════════════════════════
-│   │
-│   ├── central/admin/                           对内服务的管理接口，只放 HTTP 处理
-│   │   ├── （各家族的 http 装配文件）          路由注册与内部端点
-│   │   ├── （各家族的测试文件）                与业务代码同目录
-│   │   └── fonts/                               PDF 汇总字体子集与 OFL 许可证
-│   │
-│   ├── protocol/                               契约自足，不依赖任何实现层
-│   │   ├── adapter.go  command.go  endpoint.go  router.go  session_audit.go
-│   │   └── dc589/
-│   │       ├── adapter.go  device.go  config.go
-│   │       ├── frame.go  log_data.go
-│   │       ├── commands.go  power_control.go  cards.go
-│   │       ├── measurements.go  fault.go
-│   │       └── session_audit.go
-│   │
-│   │ ═══ 进程特有编排 ═══════════════════════════════════════
-│   │
-│   ├── gateway/                                设备接入运行时
-│   │   ├── listener/server.go                   监听 endpoint、连接分派
-│   │   ├── session/registry.go                  会话注册表
-│   │   ├── control/                            设备侧 internal 端点与充电过程
-│   │   │   ├── http.go                          路由注册
-│   │   │   ├── authorize.go  start.go           启动授权与启动
-│   │   │   ├── charge_process.go                充电进程
-│   │   │   ├── telemetry.go  charging_samples.go
-│   │   │   ├── historical_curve.go  device_summary.go
-│   │   │   ├── device_faults.go  scan.go  user_stop.go
-│   │   │   ├── worker_sync.go                   启动/结束回执同步端点
-│   │   │   ├── card_delivery.go                 刷卡事件投递与回复冻结
-│   │   │   ├── worker_sync_models.go            同步端点的记录类型
-│   │   │   ├── backfill.go  compensate.go       历史回填与迟到补偿
-│   │   │   └── session.go
-│   │   ├── store/                              gateway_db 持久化
-│   │   │   ├── mysql.go  gorm_models.go
-│   │   │   ├── session.go  charge_start.go
-│   │   │   ├── charge_process.go  user_stop.go
-│   │   │   ├── scan.go  aggregate.go
-│   │   │   └── compensation.go
-│   │   ├── provision/                          设备开通与厂商
-│   │   │   ├── http.go  vendors.go
-│   │   └── simulator/dc589/                    联调模拟器，不参与生产
-│   │       └── simulator.go  behavior.go  tui.go
-│   │
-│   ├── worker/                                 事件消费、定时、投递编排
-│   │   ├── charge/                             命令与结果同步、刷卡决策
-│   │   │   ├── sync.go  sync_client.go  end_sync.go
-│   │   │   ├── cards.go  paid_start.go
-│   │   │   ├── meter_segments.go  auto_stop.go
-│   │   ├── outbox/                             publisher.go  dlq.go
-│   │   ├── store/                              worker_db 持久化
-│   │   │   └── schedule_store.go
-│   │   ├── schedule/                           scheduler.go  http.go
-│   │   ├── internaljob/                        ops.go  http.go
-│   │   ├── alerts/sync.go                      设备告警同步
-│   │   ├── billing/dispatch.go                 账单下发
-│   │   └── refund/dispatch.go                  退款派发
-│   │
-│   ├── delivery/                               外部投递实现
-│   │   ├── events.go  senders.go  webhook.go  regulatory.go
-│   │
-│   │ ═══ 无业务语义的通用能力 ═══════════════════════════════
-│   │
-│   └── platform/
-│       ├── auth/                              jwt.go  totp.go
-│       ├── config/config.go                   各进程配置
-│       ├── dbconn/mysql.go                    连接池与 DSN
-│       ├── dbutil/dbutil.go                    月分区、重复键、LIKE 转义
-│       ├── httpapi/                           gin.go  codes.go  decimal_id.go  metrics.go
-│       ├── netguard/guard.go                  出站 SSRF 防护
-│       ├── phone/phone.go                     手机号规范化与脱敏
-│       ├── serviceclient/                     内部 HTTP 客户端
-│       └── snowflake/snowflake.go             ID 分配
+├── internal/application                                  跨聚合事务编排
+│   ├── internal/application/auto_stop.go
+│   ├── internal/application/auto_stop_http.go
+│   ├── internal/application/card_deadline.go
+│   ├── internal/application/telemetry.go
+├── internal/card                                         刷卡：在线卡、扣款、累计时长与退款
+│   ├── internal/card/card_admin_store.go
+│   ├── internal/card/card_refund_store.go
+│   ├── internal/card/card_schema.go
+│   ├── internal/card/charge_store.go
+│   ├── internal/card/card_store.go
+│   ├── internal/card/interface_query_store.go
+│   ├── internal/card/user_card_store.go
+├── internal/charging                                     
+│   │   （本目录无 .go）
+├── internal/delivery                                     对外事件契约与签名投递器
+│   ├── internal/delivery/events.go
+│   ├── internal/delivery/senders.go
+├── internal/device                                       设备接入、遥测、会话、故障
+│   ├── internal/device/alert_sync_store.go
+│   ├── internal/device/device_admin_store.go
+│   ├── internal/device/device_import.go
+│   ├── internal/device/device_import_job_store.go
+│   ├── internal/device/device_store.go
+│   ├── internal/device/fault.go
+│   ├── internal/device/identity.go
+│   ├── internal/device/interface_query_store.go
+│   ├── internal/device/scope.go
+│   ├── internal/device/station_store.go
+│   ├── internal/device/user_fault_store.go
+├── internal/domain                                       纯业务规则（零框架依赖）
+│   ├── internal/domain/charging/actual.go
+│   ├── internal/domain/charging/breakdown.go
+│   ├── internal/domain/charging/budget_stop.go
+│   ├── internal/domain/charging/capabilities.go
+│   ├── internal/domain/charging/cost.go
+│   ├── internal/domain/charging/device.go
+│   ├── internal/domain/charging/display.go
+│   ├── internal/domain/charging/end_meter.go
+│   ├── internal/domain/charging/estimate.go
+│   ├── internal/domain/charging/live_meter_view.go
+│   ├── internal/domain/charging/measured_segments.go
+│   ├── internal/domain/charging/metering.go
+│   ├── internal/domain/charging/mode.go
+│   ├── internal/domain/charging/offer.go
+│   ├── internal/domain/charging/offer_actual.go
+│   ├── internal/domain/charging/order_package.go
+│   ├── internal/domain/charging/rule.go
+│   ├── internal/domain/charging/scheme.go
+│   ├── internal/domain/charging/scheme_cost.go
+│   ├── internal/domain/charging/segments.go
+│   ├── internal/domain/charging/spec.go
+│   ├── internal/domain/devices/telemetry.go
+│   ├── internal/domain/money/allocation.go
+│   ├── internal/domain/money/card_number.go
+│   ├── internal/domain/money/card_port.go
+│   ├── internal/domain/money/coupon.go
+│   ├── internal/domain/money/coupon_activity.go
+│   ├── internal/domain/money/payment_errors.go
+│   ├── internal/domain/money/reconcile.go
+│   ├── internal/domain/money/review.go
+│   ├── internal/domain/money/scan.go
+│   ├── internal/domain/operations/account.go
+│   ├── internal/domain/operations/export.go
+│   ├── internal/domain/operations/scope.go
+│   ├── internal/domain/operations/validate.go
+├── internal/export                                       后台批量导出
+│   ├── internal/export/export_task_store.go
+├── internal/gateway                                      设备接入运行时
+│   ├── internal/gateway/control/authorize.go
+│   ├── internal/gateway/control/backfill.go
+│   ├── internal/gateway/control/card_delivery.go
+│   ├── internal/gateway/control/cards.go
+│   ├── internal/gateway/control/charge_process.go
+│   ├── internal/gateway/control/charging_samples.go
+│   ├── internal/gateway/control/compensate.go
+│   ├── internal/gateway/control/device_faults.go
+│   ├── internal/gateway/control/device_summary.go
+│   ├── internal/gateway/control/historical_curve.go
+│   ├── internal/gateway/control/http.go
+│   ├── internal/gateway/control/scan.go
+│   ├── internal/gateway/control/session.go
+│   ├── internal/gateway/control/start.go
+│   ├── internal/gateway/control/telemetry.go
+│   ├── internal/gateway/control/user_stop.go
+│   ├── internal/gateway/control/worker_sync.go
+│   ├── internal/gateway/control/worker_sync_models.go
+│   ├── internal/gateway/listener/server.go
+│   ├── internal/gateway/provision/http.go
+│   ├── internal/gateway/provision/vendors.go
+│   ├── internal/gateway/session/registry.go
+│   ├── internal/gateway/simulator/dc589/behavior.go
+│   ├── internal/gateway/simulator/dc589/simulator.go
+│   ├── internal/gateway/simulator/dc589/tui.go
+│   ├── internal/gateway/store/aggregate_store.go
+│   ├── internal/gateway/store/backfill_store.go
+│   ├── internal/gateway/store/card_delivery_store.go
+│   ├── internal/gateway/store/charge_process_store.go
+│   ├── internal/gateway/store/charge_start_store.go
+│   ├── internal/gateway/store/compensation_store.go
+│   ├── internal/gateway/store/device_event_store.go
+│   ├── internal/gateway/store/gorm_models.go
+│   ├── internal/gateway/store/mysql.go
+│   ├── internal/gateway/store/port_store.go
+│   ├── internal/gateway/store/provision_store.go
+│   ├── internal/gateway/store/scan_store.go
+│   ├── internal/gateway/store/session.go
+│   ├── internal/gateway/store/session_store.go
+│   ├── internal/gateway/store/sync_models.go
+│   ├── internal/gateway/store/telemetry_curve_store.go
+│   ├── internal/gateway/store/telemetry_read_store.go
+│   ├── internal/gateway/store/user_stop_store.go
+├── internal/identity                                     用户、会话、登录与手机号
+│   ├── internal/identity/auth.go
+│   ├── internal/identity/charge_user_store.go
+│   ├── internal/identity/development.go
+│   ├── internal/identity/user.go
+│   ├── internal/identity/user_repository_store.go
+│   ├── internal/identity/wechat.go
+├── internal/infrastructure                               
+│   ├── internal/infrastructure/database/admin_case_store.go
+│   ├── internal/infrastructure/database/admin_dashboard_store.go
+│   ├── internal/infrastructure/database/card_deadline_store.go
+│   ├── internal/infrastructure/redis/admin_session.go
+│   ├── internal/infrastructure/redis/session_store.go
+│   ├── internal/infrastructure/redis/session_token.go
+├── internal/interface                                    
+│   ├── internal/interface/http/admin/admin_actor.go
+│   ├── internal/interface/http/admin/alertsync/http.go
+│   ├── internal/interface/http/admin/alertsync/sync.go
+│   ├── internal/interface/http/admin/dashboard/dashboard.go
+│   ├── internal/interface/http/admin/deps.go
+│   ├── internal/interface/http/admin/device/api.go
+│   ├── internal/interface/http/admin/device/device_imports.go
+│   ├── internal/interface/http/admin/device/devices.go
+│   ├── internal/interface/http/admin/device/meter_reviews.go
+│   ├── internal/interface/http/admin/export/exports.go
+│   ├── internal/interface/http/admin/export/exports_format.go
+│   ├── internal/interface/http/admin/finance/api.go
+│   ├── internal/interface/http/admin/finance/invoices.go
+│   ├── internal/interface/http/admin/finance/refunds.go
+│   ├── internal/interface/http/admin/finance/wallet_risks.go
+│   ├── internal/interface/http/admin/marketing/api.go
+│   ├── internal/interface/http/admin/marketing/coupon_activity.go
+│   ├── internal/interface/http/admin/marketing/coupons.go
+│   ├── internal/interface/http/admin/normalize.go
+│   ├── internal/interface/http/admin/ops/api.go
+│   ├── internal/interface/http/admin/ops/audit_log.go
+│   ├── internal/interface/http/admin/ops/operations.go
+│   ├── internal/interface/http/admin/order/api.go
+│   ├── internal/interface/http/admin/order/casework.go
+│   ├── internal/interface/http/admin/order/order_live.go
+│   ├── internal/interface/http/admin/order/order_package.go
+│   ├── internal/interface/http/admin/order/order_process.go
+│   ├── internal/interface/http/admin/order/orders.go
+│   ├── internal/interface/http/admin/order/payment_orders.go
+│   ├── internal/interface/http/admin/pricing/api.go
+│   ├── internal/interface/http/admin/pricing/charging_schemes.go
+│   ├── internal/interface/http/admin/scope.go
+│   ├── internal/interface/http/admin/scope_validate.go
+│   ├── internal/interface/http/admin/service_token.go
+│   ├── internal/interface/http/admin/station/api.go
+│   ├── internal/interface/http/admin/station/stations.go
+│   ├── internal/interface/http/admin/user/api.go
+│   ├── internal/interface/http/admin/user/charge_users.go
+│   ├── internal/interface/http/admin/user/online_cards.go
+│   ├── internal/interface/http/admin/vendor/api.go
+│   ├── internal/interface/http/admin/vendor/scope.go
+│   ├── internal/interface/http/admin/vendor/vendors.go
+│   ├── internal/interface/http/admin_accounts.go
+│   ├── internal/interface/http/admin_accounts_store.go
+│   ├── internal/interface/http/admin_auth.go
+│   ├── internal/interface/http/admin_decode.go
+│   ├── internal/interface/http/admin_mfa_settings.go
+│   ├── internal/interface/http/admin_openapi.go
+│   ├── internal/interface/http/admin_resource.go
+│   ├── internal/interface/http/admin_roles.go
+│   ├── internal/interface/http/auth.go
+│   ├── internal/interface/http/billing_service.go
+│   ├── internal/interface/http/card_api.go
+│   ├── internal/interface/http/card_balance.go
+│   ├── internal/interface/http/charge_card_lookup.go
+│   ├── internal/interface/http/charge_feedback.go
+│   ├── internal/interface/http/charge_live_meter.go
+│   ├── internal/interface/http/charge_scheme_view.go
+│   ├── internal/interface/http/charge_status.go
+│   ├── internal/interface/http/charge_stop_authorization.go
+│   ├── internal/interface/http/charge_user_account.go
+│   ├── internal/interface/http/charge_user_query.go
+│   ├── internal/interface/http/charge_user_stop.go
+│   ├── internal/interface/http/coupon_api.go
+│   ├── internal/interface/http/middleware.go
+│   ├── internal/interface/http/order_authorization.go
+│   ├── internal/interface/http/order_end_result.go
+│   ├── internal/interface/http/order_start_result.go
+│   ├── internal/interface/http/payment_development_payment.go
+│   ├── internal/interface/http/payment_payment_http.go
+│   ├── internal/interface/http/payment_scan.go
+│   ├── internal/interface/http/phone_api.go
+│   ├── internal/interface/http/refund_internal_api.go
+│   ├── internal/interface/http/settlement_bill.go
+│   ├── internal/interface/http/user_account_helpers.go
+│   ├── internal/interface/http/user_announcement.go
+│   ├── internal/interface/http/user_api.go
+│   ├── internal/interface/http/user_coupon.go
+│   ├── internal/interface/http/user_fault.go
+│   ├── internal/interface/http/user_invoice.go
+│   ├── internal/interface/http/user_station.go
+│   ├── internal/interface/http/user_wallet.go
+├── internal/marketing                                    优惠券、活动规则与核销
+│   ├── internal/marketing/admin_activity_store.go
+│   ├── internal/marketing/admin_coupon_store.go
+│   ├── internal/marketing/coupon_activity_store.go
+│   ├── internal/marketing/coupon_redeem_store.go
+│   ├── internal/marketing/coupon_store.go
+│   ├── internal/marketing/interface_query_store.go
+├── internal/ops                                          后台账号、角色、审计与事件发件箱
+│   ├── internal/ops/admin_account_store.go
+│   ├── internal/ops/admin_audit_store.go
+│   ├── internal/ops/admin_ops_store.go
+│   ├── internal/ops/admin_projection_store.go
+│   ├── internal/ops/admin_role_store.go
+│   ├── internal/ops/admin_scope_store.go
+│   ├── internal/ops/admin_user_store.go
+│   ├── internal/ops/event_outbox_store.go
+│   ├── internal/ops/interface_query_store.go
+├── internal/order                                        订单表模型、编号分配与读模型
+│   ├── internal/order/order_number.go
+│   ├── internal/order/pricing_snapshot_store.go
+│   ├── internal/order/order_package_store.go
+│   ├── internal/order/order_schema.go
+│   ├── internal/order/order_state_store.go
+│   ├── internal/order/order_view_store.go
+├── internal/payment                                      支付意图、渠道、回调与启动授权
+│   ├── internal/payment/auto_stop_store.go
+│   ├── internal/payment/channel_factory.go
+│   ├── internal/payment/channel_refund.go
+│   ├── internal/payment/channel_simulation.go
+│   ├── internal/payment/channel_wechat.go
+│   ├── internal/payment/interface_query_store.go
+│   ├── internal/payment/money_schema.go
+│   ├── internal/payment/order_authorization_store.go
+│   ├── internal/payment/order_paid_start_store.go
+│   ├── internal/payment/order_start_store.go
+│   ├── internal/payment/payment_callback_store.go
+│   ├── internal/payment/payment_checkout_store.go
+│   ├── internal/payment/payment_device_store.go
+│   ├── internal/payment/payment_intent_store.go
+│   ├── internal/payment/payment_view_store.go
+│   ├── internal/payment/user_recharge_store.go
+├── internal/persist                                      与业务无关的持久化原语
+│   ├── internal/persist/insert_id.go
+│   ├── internal/persist/page.go
+├── internal/platform                                     无业务语义的通用能力
+│   ├── internal/platform/auth/jwt.go
+│   ├── internal/platform/auth/totp.go
+│   ├── internal/platform/config/config.go
+│   ├── internal/platform/dbconn/mysql.go
+│   ├── internal/platform/dbutil/dbutil.go
+│   ├── internal/platform/httpapi/codes.go
+│   ├── internal/platform/httpapi/decimal_id.go
+│   ├── internal/platform/httpapi/gin.go
+│   ├── internal/platform/httpapi/metrics.go
+│   ├── internal/platform/netguard/guard.go
+│   ├── internal/platform/phone/phone.go
+│   ├── internal/platform/serviceclient/client.go
+│   ├── internal/platform/serviceclient/token.go
+│   ├── internal/platform/snowflake/snowflake.go
+├── internal/pricing                                      计费方案、规则、发布与计量匹配
+│   ├── internal/pricing/metering_store.go
+│   ├── internal/pricing/pricing_admin_store.go
+│   ├── internal/pricing/pricing_scope_store.go
+│   ├── internal/pricing/pricing_store.go
+│   ├── internal/pricing/scheme_target_store.go
+├── internal/protocol                                     设备契约层
+│   ├── internal/protocol/adapter.go
+│   ├── internal/protocol/command.go
+│   ├── internal/protocol/dc589/adapter.go
+│   ├── internal/protocol/dc589/cards.go
+│   ├── internal/protocol/dc589/commands.go
+│   ├── internal/protocol/dc589/config.go
+│   ├── internal/protocol/dc589/device.go
+│   ├── internal/protocol/dc589/fault.go
+│   ├── internal/protocol/dc589/frame.go
+│   ├── internal/protocol/dc589/log_data.go
+│   ├── internal/protocol/dc589/measurements.go
+│   ├── internal/protocol/dc589/power_control.go
+│   ├── internal/protocol/dc589/session_audit.go
+│   ├── internal/protocol/endpoint.go
+│   ├── internal/protocol/router.go
+│   ├── internal/protocol/session_audit.go
+├── internal/settlement                                   结算：计价、账单、发票与退款
+│   ├── internal/settlement/admin_finance_store.go
+│   ├── internal/settlement/bill_store.go
+│   ├── internal/settlement/billing_job_store.go
+│   ├── internal/settlement/calculation_number.go
+│   ├── internal/settlement/fee_calculation_store.go
+│   ├── internal/settlement/invoice_store.go
+│   ├── internal/settlement/manual_store.go
+│   ├── internal/settlement/meter_review_store.go
+│   ├── internal/settlement/order_view_store.go
+│   ├── internal/settlement/refund_executor_store.go
+│   ├── internal/settlement/refund_review_list_store.go
+│   ├── internal/settlement/refund_review_store.go
+│   ├── internal/settlement/user_invoice_store.go
+├── internal/wallet                                       钱包：余额、充值、流水、退款预占、频次风控
+│   ├── internal/wallet/admin_wallet_risk_store.go
+│   ├── internal/wallet/wallet_account_store.go
+│   ├── internal/wallet/wallet_ledger_store.go
+│   ├── internal/wallet/wallet_model.go
+│   ├── internal/wallet/wallet_refund_store.go
+│   ├── internal/wallet/wallet_reservation_store.go
+├── internal/worker                                       事件消费、定时与投递编排
+│   ├── internal/worker/alerts/sync.go
+│   ├── internal/worker/billing/dispatch.go
+│   ├── internal/worker/charge/auto_stop.go
+│   ├── internal/worker/charge/cards.go
+│   ├── internal/worker/charge/end_sync.go
+│   ├── internal/worker/charge/meter_segments.go
+│   ├── internal/worker/charge/paid_start.go
+│   ├── internal/worker/charge/sync.go
+│   ├── internal/worker/charge/sync_client.go
+│   ├── internal/worker/internaljob/http.go
+│   ├── internal/worker/internaljob/ops.go
+│   ├── internal/worker/outbox/publisher.go
+│   ├── internal/worker/refund/dispatch.go
+│   ├── internal/worker/schedule/http.go
+│   ├── internal/worker/schedule/scheduler.go
+│   ├── internal/worker/store/outbox_store.go
+│   ├── internal/worker/store/schedule_store.go
 │
-├── migrations/{central_db,gateway_db,worker_db}/
-├── scripts/{check,db,dev}/
-├── admin-web/  miniprogram/
+├── migrations/central_db/0001_init.sql
+├── migrations/gateway_db/0001_init.sql
+├── migrations/worker_db/0001_init.sql
+│
+├── scripts/check/  scripts/db/  scripts/dev/
+│
 ├── AGENTS.md  README.md  REFACTOR-PLAN.md  Makefile  go.mod
+└── admin-web/  miniprogram/
 ```
 
-- 代码按分层组织，依赖单向、无例外：
+- **代码按 use case 组织**，主轴是业务用例不是技术层。每个 use case 目录自己
+  回答"这个用例怎么读写自己的数据"：
 
   ```
-  domain          →  无
-  protocol        →  无（契约自足）
-  application     →  domain + infrastructure + protocol
-  infrastructure  →  domain
-  interface       →  domain + application + infrastructure
-  worker/gateway  →  protocol + domain + application + infrastructure
-  cmd/*           →  interface + application + infrastructure + platform
+  internal/
+    order/       settlement/   wallet/      pricing/    card/
+    device/      identity/     marketing/   payment/    ops/
+    export/                        —— 11 个 use case
+    domain/                       纯规则与跨用例契约（零框架依赖）
+    platform/  persist/  protocol/  delivery/  interface/  application/
+    gateway/  worker/               —— 进程特有编排
+    infrastructure/database/  redis/    —— 表访问
   ```
 
-  真正被约束的是**方向**：`interface` 与 `application` 都允许直接持有仓储
-  （`infrastructure`），因为它们本身就是编排层，再往里包一层接口只会平移代码。
-  但持有的是句柄，不是 SQL：表名与 gorm 查询构造只允许出现在持久化层，
-  由 `make layers` 机检。另外 `worker` 不得直接访问 `central` 拥有的业务表——
-  两者是独立进程，worker 取业务数据要经 central 的内部端点，而不是拿自己的
-  连接直连；`worker` 自己的 `scheduled_task` / `event_outbox` / `dlq_*` 不在其列。被禁止的是反向——`domain`、`application`、
-  `infrastructure` 一律不得 import `interface`。
-  `domain` 与 `protocol` 是平行层，互不 import。除 `worker/` 与 `gateway/` 外任何包不得 import `protocol`。这三条由 `make layers` 机检，违反即失败。
-
-- `internal/domain/` 是业务核心，零 gorm、零 gin、零 Redis。子域目录用业务概念命名，不是表名或集群名：
+  依赖方向：
 
   ```
-  domain/
-    identity/    user/（user.go auth.go）  auth/（wechat.go development.go）
-    charging/    order.go  session.go  billing.go  stop.go  scheme.go
-    money/       wallet.go  refund.go  coupon.go  channel.go
-                 card_number.go  card_port.go  scan.go  reconcile.go
-    devices/     station.go  device.go  vendor.go  fault.go  telemetry.go
-    operations/  account.go  scope.go  role.go  audit.go  announcement.go
-                 export.go  webhook.go  alert.go  whitelabel.go
+  domain       →  无（不碰 gorm/gin/redis，不依赖任何实现层）
+  protocol     →  无（契约自足）
+  persist      →  无（分页、自增主键等原语）
+  platform     →  无（无业务语义的通用能力）
+  use case     →  domain + platform + persist + 其它 use case（须登记理由）
+  use case     →  infrastructure/database（表名只允许出现在 *_store.go / *_schema.go）
   ```
 
-  文件名即业务对象。`order.go` 就是订单，不按技术层命名。仓储接口定义在 domain，实现见 `infrastructure/database/`；状态机、金额与计量规则、纯计算留在 domain，不 import 任何框架，可独立测试。
+  真正被约束的是三条，`make layers` 全部机检：
 
-- `internal/application/` 扁平单包，一个用例一个文件，跨聚合事务在此。分子目录容易生环，用例之间高度互联，扁平优于分组。
+  1. **domain 零框架**：不出现 gorm / gin / redis，不出现列映射与表名映射，
+     不 import 任何实现层。
+  2. **表名只归 store**：`.Table("...")`、`gorm.Expr`、`gorm:"column:"`、
+     `TableName()` 与裸 SQL 只允许出现在 `*_store.go` / `*_schema.go` /
+     `*_model*.go`。函数签名收 `*gorm.DB` 把事务传下去是正常用法，不算越界。
+  3. **use case 之间单向**：跨用例引用必须在 `scripts/check/layers.py` 的
+     `ALLOWED_CROSS` 里逐条登记理由。**没有登记的一律失败**——登记是让人
+     解释耦合，不是给耦合开后门。
 
-- `internal/infrastructure/` 按外部系统分子包：`database/`（gorm 只在此处，数据库表名只在此处）、`redis/`、`wechat/`、`gateway_client/`。
+  `worker` 与 `gateway` 是进程特有编排，可 import use case；但 `worker`
+  不得直接访问 `central` 拥有的业务表，取数据要经 central 的内部端点。
+  `domain` 与 `protocol` 是平行层，互不 import。
 
-- `internal/interface/http/` 按服务分文件：`user_api.go`（`/api/v1/user/*`，含 `/api/v1/user/auth/*` 登录）、`admin_auth.go` 与 `admin_*.go`（`/api/v1/admin/*`）、`internal_api.go` 等（`/api/v1/internal/*`）、`device_api.go`、`worker_api.go`。`gin.Context` 只在此处出现；`middleware.go` 管鉴权与数据范围，`error_mapper.go` 把领域错误映射为 HTTP 状态。
+- `internal/domain/` 装**纯规则与跨用例契约**，零 gorm、零 gin、零 Redis。
+  它的判据是"有没有 IO"，不是"属不属于某个用例"——`DataScope` 被 45 处
+  引用、`ChargeMode` 29 处，它们是共享契约，搬进任一 use case 都会让
+  其他用例反过来引它。当前子包见上方目录树：charging / money / devices /
+  operations。
 
-- `internal/central/admin/` 是 central 进程的业务处理器：表名与查询构造一律不出现，
-  读写经 `infrastructure/database` 的 store。与 `interface/http` 一样只做校验、权限、
-  审计编排与响应组装；各家族的 http 装配文件负责内部端点的路由注册，`fonts/` 是 PDF 汇总用的
-  字体子集与 OFL 许可证（非代码，不参与分层）。
+- `internal/application/` 跨聚合事务编排，扁平单包。
+
+- `internal/interface/http/` 是唯一的 HTTP 层：`user_api.go` 与 `charge_*` 系列
+  服务 `/api/v1/user/*`，`admin_*` 与 `admin/` 下的 12 个业务族服务
+  `/api/v1/admin/*`，`internal_*` 服务 `/api/v1/internal/*`。`gin.Context`
+  只在此处出现；`middleware.go` 管鉴权，`admin/scope*.go` 管数据范围。
+
 - `internal/protocol/` 是 gateway 与 central 共享的设备契约层，与 `domain` 平级，既不属于 `domain` 也不属于 `infrastructure`：
   - 根包只放跨进程契约：`Adapter`（`Name` + `ServeConn`）、`Sink`、`Event`、`Command`、`Registry`、`Listener`。
   - 每个协议一个子目录实现 `Adapter`，当前为 `dc589/`。帧格式、校验、指令编解码、故障码语义（`0xBB` 烟雾）、单位换算（分 → 协议余额单位）全部封闭在该目录内。

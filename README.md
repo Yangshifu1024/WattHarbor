@@ -2,7 +2,7 @@
 
 ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使用 Go，运营后台使用 React，用户端使用 Taro，同一份用户端源码构建 H5 与微信小程序。设备通过 DC589/TCP 接入。
 
-每个客户独立运行应用、数据库和配置。当前功能包括扫码充电、钱包与在线卡、方案发布、计费与退款、分账台账、运营后台、报修、告警、导出、审计及外部投递。正式使用前须完成商户、实机和外部平台验收，见[功能边界](#功能边界)。
+每个客户独立运行应用、数据库和配置。当前功能包括扫码充电、钱包与在线卡、方案发布、计费与退款、运营后台、报修、告警、导出、审计及外部投递。正式使用前须完成商户、实机和外部平台验收，见[功能边界](#功能边界)。
 
 - [架构与目录](#架构与目录)
 - [本地运行](#本地运行)
@@ -22,7 +22,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 
 ## 架构与目录
 
-代码按分层组织，依赖单向无例外：`domain` 与 `protocol` 不依赖任何层，`application` 与 `infrastructure` 只依赖 `domain`，`interface` 依赖 `domain` 与 `application`，`cmd/*` 做装配。
+代码按 **use case** 组织，依赖单向无例外：`domain`（纯规则与共享契约）、`protocol`（设备契约）、`platform`、`persist` 不依赖任何实现层；每个 use case 包只依赖 `domain` 与 `platform`，跨用例引用必须在 `scripts/check/layers.py` 的 `ALLOWED_CROSS` 逐条登记理由；表名与 gorm 查询构造只允许出现在 `*_store.go` / `*_schema.go`；`cmd/*` 做装配。
 
 | 进程 | 暴露面 | 职责 | 数据库 | 监听 |
 | --- | --- | --- | --- | --- |
@@ -37,7 +37,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 
 `AdminDB`、`UserDB`、`BillingDB` 是同一连接池的领域名称，不是三个库。跨服务操作通过持久任务、幂等回执和内部 HTTP 协作。Redis Cache 保存会话，Redis Stream 保存事件，两者独立部署。
 
-完整目录结构、文件职责与分层维护规则见 [AGENTS.md](AGENTS.md#工具与代码风格)。以上分层边界由 `make layers`（`scripts/check/layers.sh`）机检，违反即失败。
+完整目录结构、文件职责与分层维护规则见 [AGENTS.md](AGENTS.md#工具与代码风格)。以上边界由 `make layers`（`scripts/check/layers.py`）机检，`make layers-selftest` 注入已知违规确认每条规则真的会失败，违反即失败。
 
 ## 本地运行
 
@@ -170,9 +170,8 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 
 人工订单退款限已结束、微信付款且有可退额度的订单。人工退款、计量分段修订和发票通过采用不同人员复核；首签冻结业务内容，第二签核对首签人的实时资格及快照。驳回保存理由，重试权限不能绕过人工审核。分段修订保留原总量及冻结来源；缺失计费截止证据不能用物理结束片段替代。人工最终金额结算由有效财务人员按现有权限执行，受实付上限、原因及审计约束。
 
-分账模板为 2～8 方，比例合计 10000 基点。`mode_a` 分配电费和服务费，`mode_b` 只分配服务费；各方合计必须等于分账池。已绑定模板不能修改比例，有交易历史的站点不能改绑。提现额度扣除待审及已审占用；当前提供申请、审核和人工打款登记。
 
-普通账单由权威计费回执生成；发票申请金额取该回执，同一订单仅允许一份有效申请。对账比较外部输入记录与内部台账；导出使用固定资源白名单生成 CSV、XLSX、PDF，限制查询范围、行数和有效期，下载时重新鉴权。
+普通账单由权威计费回执生成；发票申请金额取该回执，同一订单仅允许一份有效申请。导出不提供对账资源；导出使用固定资源白名单生成 CSV、XLSX、PDF，限制查询范围、行数和有效期，下载时重新鉴权。
 
 ## 接口与权限
 
@@ -205,7 +204,7 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 | 后台身份、账号、角色、数据范围 | `/api/v1/admin/auth/*`、`/admin-users`、`/roles` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/operations` |
 | 站点、设备、厂商、方案 | `/api/v1/admin/stations`、`/devices`、`/vendors` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/devices` |
 | 订单、支付单、计量复核、发票 | `/api/v1/admin/orders`、`/payment-orders`、`/billing/*` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/charging`、`domain/money` |
-| 财务：退款、结算、提现、导出 | `/api/v1/admin/billing/*`、`/exports` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/money` |
+| 财务：退款、结算、导出 | `/api/v1/admin/billing/*`、`/exports` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/money` |
 | 告警、故障、反馈、公告、审计 | `/api/v1/admin/alerts`、`/device-fault-reports`、`/feedback` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/operations` |
 | 服务间内部端点 | `/api/v1/internal/*` | [internal_api.go](internal/interface/http/internal_api.go) | `application` |
 | 设备接入端点 | `/api/v1/internal/devices/*`、`/charging-evidence` | [device_api.go](internal/interface/http/device_api.go) | [gateway](internal/gateway) |
@@ -318,27 +317,17 @@ node scripts/dev/prepare.mjs
 | central_db | `device_meta` | 设备元数据(冗余自 gateway_db) |
 | central_db | `admin_event_outbox` | 事件 outbox(可靠发布) |
 | central_db | `export_task` | 导出任务 |
-| central_db | `finance_reconcile_log` | 财务对账日志 |
 | central_db | `permission` | 权限码 |
 | central_db | `pricing_publication` | 计费规则发布版本和请求幂等摘要 |
 | central_db | `pricing_rule` | 计费规则 |
 | central_db | `pricing_template` | 计费模板 |
-| central_db | `regulatory_report` | 监管报送持久队列 |
 | central_db | `role` | 角色 |
 | central_db | `role_permission` | 角色-权限映射 |
-| central_db | `split_party` | 分账参与方 |
-| central_db | `split_template` | 分账模板 |
 | central_db | `station` | 充电站点 |
-| central_db | `webhook_delivery_log` | Webhook 投递日志 |
-| central_db | `webhook_subscription` | Webhook 订阅 |
-| central_db | `whitelabel_config` | 白标配置 |
 | central_db | `fee_calculation` | 计费明细 |
 | central_db | `fee_delivery` | 计费结果投递任务 |
 | central_db | `fee_receipt` | 计费事件幂等回执 |
 | central_db | `manual_fee_review` | 人工定价兜底单 |
-| central_db | `settlement` | 分账汇总 |
-| central_db | `settlement_party_amount` | 分账参与方金额 |
-| central_db | `withdraw_request` | 提现申请 |
 | gateway_db | `card_event_delivery` | 原生刷卡事件投递与重试 |
 | gateway_db | `charge_command` | 设备启动命令和确认状态 |
 | gateway_db | `charge_end_delivery` | 设备结束事件投递与重试 |
@@ -354,8 +343,6 @@ node scripts/dev/prepare.mjs
 | gateway_db | `telemetry_aggregate_15min` | 遥测 15 分钟聚合 |
 | gateway_db | `telemetry_aggregate_hourly` | 遥测小时聚合 |
 | gateway_db | `vendor` | 硬件厂适配器注册表 |
-| worker_db | `dlq_log` | 死信队列日志 |
-| worker_db | `dlq_replay_cursor` | DLQ 重放滑动游标 |
 | worker_db | `scheduled_task` | 定时任务定义 |
 | worker_db | `task_execution_log` | 定时任务执行日志 |
 
@@ -401,7 +388,7 @@ sh scripts/git/install-hooks.sh
 make check
 ```
 
-`make fmt/lint/test/layers` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`、`scripts/check/layers.sh`，`make check` 顺序执行四项；`layers` 校验包内分层的文件后缀约定，详见「架构与目录」。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
+`make fmt/lint/test/layers` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`、`scripts/check/layers.py`，`make check` 顺序执行四项；另有 `make layers-selftest` 做护栏自检。目录树与仓库的一致性由 `scripts/check/doc_tree.py` 双向核对。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
 
 编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部八个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
 
@@ -540,9 +527,10 @@ docker compose -f compose.dev.yaml -f compose.monitoring.yaml up -d prometheus
 - H5 支持开发登录及模拟支付；正式微信支付和手机号授权通过微信小程序。H5 扫码使用手动输入，定位失败可填写坐标。
 - 微信直连 SDK 已接入，真实商户和实机仍需验收；汇付天下通道未实现。
 - 微信订阅消息、电子发票签发、自动银行出款和自动渠道账单下载未接入。
-- Webhook 连续消费、退款结果 pending 回收及通用 DLQ 运行恢复仍受上述接线限制。
+- 退款结果 pending 回收仍受上述接线限制。Webhook 订阅机制、通用 DLQ 与监管上报已移除：站点自有、无加盟商，也没有任何业务代码在产生对外事件，留着只会让人误以为有死信或待投递要处理。事件信封（`internal/delivery/events.go`）与 HMAC 签名投递器保留，将来接入方对接时直接用。
 - MQTT、OTA、月卡/年卡、邀请奖励、混合支付、在线客服和可配置告警订阅不在当前功能范围。已有烟雾、高温和设备故障告警、确认及恢复保留。
 - 用户公告当前只返回全局公告，站点和城市定向未接线。
-- 指定监管平台适配、合规认证和外部验收均不能由数据库表或本地测试推定完成。
+- 多主体分账、提现与对账已移除：站点全部自有，不存在把钱按比例拆给不同主体再走提现打款的业务对象。计价与开账单不经分账。
+- 合规认证与外部验收均不能由数据库表或本地测试推定完成。
 
 开源许可见 [LICENSE](LICENSE)，商业授权模板见 [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)，实际授权以签订合同为准。

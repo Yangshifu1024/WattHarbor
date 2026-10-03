@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	workerstore "github.com/ChargePilot2026/charge-pilot/internal/worker/store"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -26,7 +26,7 @@ func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 	}
 	table := "event_outbox"
 	if p.Source == "admin" {
-		table = database.AdminEventOutboxTable
+		table = ops.AdminEventOutboxTable
 	}
 	published := 0
 	err := p.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -65,4 +65,15 @@ func truncate(value string, max int) string {
 		return value[:max]
 	}
 	return value
+}
+
+// DefaultBusinessStreams 是 worker 消费的业务流清单。原先定义在同包的
+// dlq.go 里，但 DLQ 整套已删除（从未启用），清单本身却还在被 publisher
+// 装配使用——它属于在跑的代码，跟着走。
+var DefaultBusinessStreams = []string{
+	"charge_events_stream",
+	"charge_ended_stream",
+	"refund_required_stream",
+	"refund_succeeded_stream",
+	"device_event_stream",
 }

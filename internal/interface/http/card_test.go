@@ -1,8 +1,8 @@
 package http
 
 import (
+	cardstore "github.com/ChargePilot2026/charge-pilot/internal/card"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"testing"
 )
 
@@ -18,7 +18,7 @@ func TestDocumentExample15CardAdditionIsAtomic(t *testing.T) {
 		{"480 to 600", 1, 480, 600, 200, false, true}, {"reject 720", 1, 600, 600, 1000, false, false}, {"insufficient wallet", 1, 120, 600, 100, false, false}, {"different card", 2, 120, 600, 1000, false, false}, {"unknown result prevents another debit", 1, 120, 600, 1000, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := paystore.CanExtend(tc.card, 1, p, tc.purchased, tc.max, tc.balance, tc.pending); got != tc.want {
+			if got := cardstore.CanExtend(tc.card, 1, p, tc.purchased, tc.max, tc.balance, tc.pending); got != tc.want {
 				t.Fatalf("got %v", got)
 			}
 		})

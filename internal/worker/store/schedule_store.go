@@ -125,35 +125,6 @@ func ListExecutionLogs(ctx context.Context, db *gorm.DB, taskCode string, page, 
 	return rows, total, err
 }
 
-// DLQCursor 是一条死信流的重放进度。滑动游标保证每一轮都能向前推进。
-type DLQCursor struct {
-	Stream        string  `json:"stream" gorm:"column:stream"`
-	LastID        *string `json:"last_id" gorm:"column:last_id"`
-	ScannedTotal  uint64  `json:"scanned_total" gorm:"column:scanned_total"`
-	ReplayedTotal uint64  `json:"replayed_total" gorm:"column:replayed_total"`
-}
-
-// dlqListLimit 一次列出多少条死信，够运维排查又不至于把响应撑爆。
-const dlqListLimit = 100
-
-// ListDLQEntries 列出某条流的死信记录，可按状态过滤。
-func ListDLQEntries(ctx context.Context, db *gorm.DB, stream, status string) ([]map[string]any, error) {
-	query := db.WithContext(ctx).Table("dlq_log").Where("stream = ?", stream)
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-	rows := []map[string]any{}
-	err := query.Order("id DESC").Limit(dlqListLimit).Find(&rows).Error
-	return rows, err
-}
-
-// FindDLQCursor 读回某条流的重放游标。
-func FindDLQCursor(ctx context.Context, db *gorm.DB, stream string) ([]DLQCursor, error) {
-	rows := []DLQCursor{}
-	err := db.WithContext(ctx).Table("dlq_replay_cursor").Where("stream = ?", stream).Find(&rows).Error
-	return rows, err
-}
-
 // LastExecution 是某任务最近一次执行的可读投影。
 // 没跑过时返回 gorm.ErrRecordNotFound，调用方按"尚无执行记录"展示而不是报错。
 func LastExecution(ctx context.Context, db *gorm.DB, taskCode string) (LastExecutionRow, error) {

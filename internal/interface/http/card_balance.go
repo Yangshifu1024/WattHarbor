@@ -2,8 +2,8 @@ package http
 
 import (
 	"errors"
+	cardstore "github.com/ChargePilot2026/charge-pilot/internal/card"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,7 +19,7 @@ func (a CardAPI) balance(c *gin.Context) {
 		httpapi.BadRequest(c, "卡号须为非零32位十进制整数")
 		return
 	}
-	balance, err := orderstore.CardAvailableCents(c.Request.Context(), a.Store.DB, card)
+	balance, err := cardstore.CardAvailableCents(c.Request.Context(), a.Store.DB, card)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.OK(c, gin.H{"valid": false, "balance_cents": 0})
 		return

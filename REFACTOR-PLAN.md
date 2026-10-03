@@ -1,8 +1,12 @@
 # charge-pilot 分层重构方案
 
-> 状态：提案，2026-10-02 起执行。采纳后的结构、依赖规则与维护口径已并入
-> [AGENTS.md](AGENTS.md)；本文件只记录**为什么这样改**、**分几步改**、**还欠什么**。
-> 执行过程中每完成一个阶段即更新本文件的进度段。
+> 状态：**已被 2026-10-03 的 use case 重构取代**。本文件记录的是上一次
+> （按 domain/application/infrastructure/interface 四层）的方案，
+> 当时的结构与依赖规则已不再成立。
+>
+> 当前结构的权威描述在 [AGENTS.md](AGENTS.md)，本次重构的诊断、实施记录、
+> 判断修正与遗留缺口在 [docs/target-structure.md](docs/target-structure.md)。
+> 本文件保留作为历史记录，不再更新。
 
 ---
 

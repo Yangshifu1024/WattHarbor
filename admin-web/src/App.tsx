@@ -13,8 +13,6 @@ import UsersPage from './pages/Users';
 import AlertsPage from './pages/Alerts';
 import CouponsPage from './pages/Coupons';
 import BillingPage from './pages/Billing';
-import SettingsPage from './pages/Settings';
-import WebhooksPage from './pages/Webhooks';
 import AnnouncementsPage from './pages/Announcements';
 import CaseworkPage from './pages/Casework';
 import ExportsPage from './pages/Exports';
@@ -53,8 +51,6 @@ export default function App() {
         <Route path="audit-logs" element={<AuditLogsPage />} />
         <Route path="coupons" element={<CouponsPage />} />
         <Route path="billing" element={<BillingPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="webhooks" element={<WebhooksPage />} />
         <Route path="announcements" element={<AnnouncementsPage />} />
         <Route path="casework" element={<CaseworkPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

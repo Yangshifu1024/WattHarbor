@@ -39,9 +39,7 @@ const sections: NavSection[] = [
     { key: '/casework', label: '反馈报修', permission: 'feedback.read' },
   ] },
   { key: 'system', icon: <SettingOutlined />, label: '系统管理', children: [
-    { key: '/settings', label: '平台设置', permission: 'whitelabel.read' },
     { key: '/admin-users', label: '管理员', permission: 'admin_user.read' },
-    { key: '/webhooks', label: 'Webhook', permission: 'webhook.read' },
     { key: '/audit-logs', label: '审计日志', permission: 'audit.read' },
   ] },
 ];

@@ -88,9 +88,6 @@ type Worker struct {
 	ServiceToken       string `env:"SERVICE_TOKEN,required"`
 	CentralInternalURL string `env:"CENTRAL_INTERNAL_URL" envDefault:"http://central:8082"`
 	GatewayInternalURL string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
-	RegulatoryMode     string `env:"REGULATORY_MODE" envDefault:"disabled"`
-	RegulatoryEndpoint string `env:"REGULATORY_ENDPOINT"`
-	RegulatorySecret   string `env:"REGULATORY_SIGNING_SECRET"`
 }
 
 func LoadGateway() (Gateway, error) {
@@ -128,12 +125,6 @@ func LoadWorker() (Worker, error) {
 	var c Worker
 	if err := env.Parse(&c); err != nil {
 		return c, fmt.Errorf("worker config: %w", err)
-	}
-	if c.RegulatoryMode != "disabled" && c.RegulatoryMode != "simulation" && c.RegulatoryMode != "http" {
-		return c, fmt.Errorf("worker config: invalid REGULATORY_MODE")
-	}
-	if c.RegulatoryMode == "http" && (c.RegulatoryEndpoint == "" || len(c.RegulatorySecret) < 16) {
-		return c, fmt.Errorf("worker config: REGULATORY_ENDPOINT and REGULATORY_SIGNING_SECRET required for http mode")
 	}
 	return c, nil
 }

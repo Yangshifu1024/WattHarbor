@@ -9,8 +9,8 @@ import (
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/google/uuid"
 )
 
@@ -79,7 +79,10 @@ func seedOrderContract(ctx context.Context, db *sql.DB, id, user int64, u demoUs
 		if _, err := tx.ExecContext(ctx, "UPDATE charge_order SET payment_order_id=?,charge_mode=0,charge_quantity=?,port_code=? WHERE id=?", pid, minutes, port, id); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO charge_payment_intent(intent_id,client_request_id,merchant_order_no,payment_order_id,user_id,openid,device_id,port_no,port_code,station_id,pricing_rule_id,pricing_rule_version,pricing_snapshot,estimated_kwh,estimated_minutes,total_cents,charge_mode,charge_quantity,status,expires_at,paid_at,created_at,charge_order_id,offer_id) VALUES(?,?,?,?,?,?,?,1,?,?,?,1,?,'0.000',?,?,0,?,?,?,?,?,?,?)`, intent, uuid.NewString(), merchant, pid, user, u.openid, device, port, station, ruleID, string(snapshot), minutes, price, minutes, intentStatus(o.status), created.Add(15*time.Minute), created, created, id, offer.ID); err != nil {
+		// charge_payment_intent 的 electric/service/total 三列都是 NOT NULL 且无默认值，
+		// 支付意图必须自带完整金额拆分。示例订单用时长方案，包费全部计入服务费，
+		// 与上面 charge_order 的拆分口径一致：电费 0、服务费即包价。
+		if _, err := tx.ExecContext(ctx, `INSERT INTO charge_payment_intent(intent_id,client_request_id,merchant_order_no,payment_order_id,user_id,openid,device_id,port_no,port_code,station_id,pricing_rule_id,pricing_rule_version,pricing_snapshot,estimated_kwh,estimated_minutes,electric_cents,service_cents,total_cents,charge_mode,charge_quantity,status,expires_at,paid_at,created_at,charge_order_id,offer_id) VALUES(?,?,?,?,?,?,?,1,?,?,?,1,?,'0.000',?,?,?,?,0,?,?,?,?,?,?,?)`, intent, uuid.NewString(), merchant, pid, user, u.openid, device, port, station, ruleID, string(snapshot), minutes, 0, price, price, minutes, intentStatus(o.status), created.Add(15*time.Minute), created, created, id, offer.ID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "INSERT INTO charge_order_pricing(charge_order_id,payment_intent_id,user_id,port_code,pricing_snapshot) VALUES(?,?,?,?,?)", id, intent, user, port, string(snapshot)); err != nil {
@@ -89,12 +92,12 @@ func seedOrderContract(ctx context.Context, db *sql.DB, id, user int64, u demoUs
 			return nil
 		}
 		kwh, _ := strconv.ParseFloat(o.kwh, 64)
-		source := dbstore.Source{ChargeOrderID: uint64(id), OrderNo: orderNo, UserID: uint64(user), Rule: rule, Offer: &offer, Meter: charging.ActualMeter{StartedAt: created, EndedAt: created.Add(time.Hour), ChargedSeconds: 3600, ChargedWh: uint32(kwh * 1000)}}
-		fee, err := dbstore.PriceSource(source)
+		source := settlement.Source{ChargeOrderID: uint64(id), OrderNo: orderNo, UserID: uint64(user), Rule: rule, Offer: &offer, Meter: charging.ActualMeter{StartedAt: created, EndedAt: created.Add(time.Hour), ChargedSeconds: 3600, ChargedWh: uint32(kwh * 1000)}}
+		fee, err := settlement.PriceSource(source)
 		if err != nil {
 			return err
 		}
-		result := dbstore.Result{CalculationNo: dbstore.CalculationNumber(orderNo, uint64(id)), Source: source, ActualFee: fee}
+		result := settlement.Result{CalculationNo: settlement.CalculationNumber(orderNo, uint64(id)), Source: source, ActualFee: fee}
 		raw, _ := json.Marshal(result)
 		_, err = tx.ExecContext(ctx, "INSERT INTO charge_fee_receipt(charge_order_id,calculation_no,result_json,shortfall_cents) VALUES(?,?,?,0)", id, result.CalculationNo, string(raw))
 		return err

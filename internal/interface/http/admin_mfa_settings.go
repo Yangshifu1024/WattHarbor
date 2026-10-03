@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -154,7 +154,7 @@ func (a AdminAuth) mfaSettingsFailure(c *gin.Context, err error) {
 func (a AdminAuth) applyMFASettings(ctx context.Context, p operations.Profile, sid string, in mfaSettingsInput, ip string) (mfaSettingsResult, error) {
 	var result mfaSettingsResult
 	err := a.Store.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		account, err := (database.AdminStore{DB: tx}).LockActiveAdmin(tx, p.ID)
+		account, err := (ops.AdminStore{DB: tx}).LockActiveAdmin(tx, p.ID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return operations.ErrCredentials
@@ -221,11 +221,11 @@ func (a AdminAuth) applyMFASettings(ctx context.Context, p operations.Profile, s
 			if consumed != 1 {
 				return errMFAPending
 			}
-			if err := database.UpdateAdminMFASecret(tx, account.ID, &pending.Secret, true, true); err != nil {
+			if err := ops.UpdateAdminMFASecret(tx, account.ID, &pending.Secret, true, true); err != nil {
 				return err
 			}
 			// audit 只记录账号和动作，永不持久化密钥、验证码或密码。
-			if err := database.WriteAuthAudit(tx, account, "mfa_enable", ip); err != nil {
+			if err := ops.WriteAuthAudit(tx, account, "mfa_enable", ip); err != nil {
 				return err
 			}
 			result = mfaSettingsResult{MFAEnabled: true, SessionsRevoked: true}
@@ -243,10 +243,10 @@ func (a AdminAuth) applyMFASettings(ctx context.Context, p operations.Profile, s
 			if err := a.Sessions.Redis.Del(ctx, mfaPendingKey(account.ID)).Err(); err != nil {
 				return err
 			}
-			if err := database.UpdateAdminMFASecret(tx, account.ID, nil, false, true); err != nil {
+			if err := ops.UpdateAdminMFASecret(tx, account.ID, nil, false, true); err != nil {
 				return err
 			}
-			if err := database.WriteAuthAudit(tx, account, "mfa_disable", ip); err != nil {
+			if err := ops.WriteAuthAudit(tx, account, "mfa_disable", ip); err != nil {
 				return err
 			}
 			result = mfaSettingsResult{SessionsRevoked: true}

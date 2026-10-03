@@ -1,7 +1,7 @@
 package http
 
 import (
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"time"
@@ -22,7 +22,7 @@ func (a UserAccountAPI) myCoupons(c *gin.Context) {
 		httpapi.BadRequest(c, "优惠券状态无效")
 		return
 	}
-	rows, err := orderstore.ListUserCoupons(c.Request.Context(), a.UserDB, userID)
+	rows, err := marketing.ListUserCoupons(c.Request.Context(), a.UserDB, userID)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "优惠券暂时无法读取", nil)
 		return

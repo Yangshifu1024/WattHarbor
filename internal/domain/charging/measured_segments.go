@@ -1,9 +1,8 @@
 package charging
 
 import (
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
+	"time"
 )
 
 // maxSamples 是一次充电允许的最大心跳条数。上限防止异常设备用海量

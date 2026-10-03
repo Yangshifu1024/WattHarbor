@@ -9,23 +9,21 @@ import (
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	dbstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type Orders interface {
 	Due(context.Context) ([]uint64, error)
-	Read(context.Context, uint64) (dbstore.Source, error)
-	Apply(context.Context, dbstore.Result) error
+	Read(context.Context, uint64) (settlement.Source, error)
+	Apply(context.Context, settlement.Result) error
 	Defer(context.Context, uint64, string, string) error
 }
 type Service struct {
-	Store        dbstore.Store
+	Store        settlement.Store
 	Orders       Orders
-	Splits       dbstore.SplitResolver
 	ServiceToken string
 	// Bills 在费用确定后开具用户可见的账单。它是可选的，
 	// 这样在还没迁移账单表的部署里，计费任务照样能跑。
@@ -49,11 +47,11 @@ func (s Service) Run(ctx context.Context) (int, error) {
 	for _, id := range ids {
 		source, err := s.Orders.Read(ctx, id)
 		if err == nil {
-			var result dbstore.Result
+			var result settlement.Result
 			result, err = s.Store.Calculate(ctx, source)
 			if errors.Is(err, charging.ErrMeterReview) || errors.Is(err, charging.ErrInvalidPricing) {
 				payload, _ := json.Marshal(source)
-				err = dbstore.EnqueueManualFeeReview(s.Store.DB.WithContext(ctx), dbstore.ManualFeeReviewInput{
+				err = settlement.EnqueueManualFeeReview(s.Store.DB.WithContext(ctx), settlement.ManualFeeReviewInput{
 					ChargeOrderID: id, OrderNo: source.OrderNo, Reason: "实际计量或计费快照需核实",
 					EnergyWh: source.Meter.ChargedWh, CreatedMonth: time.Now().UTC().Format("2006-01"),
 					SourceJSON: string(payload),
@@ -76,11 +74,6 @@ func (s Service) Run(ctx context.Context) (int, error) {
 							first = billErr
 						}
 					}
-					// 分账在 fee 持久化确定之后才记录，
-					// 这样每次结算都有一份已落库的 calculation 可以挂靠。
-					if splitErr := s.settleCalculation(ctx, source, result); splitErr != nil && first == nil {
-						first = splitErr
-					}
 					count++
 					continue
 				}
@@ -93,13 +86,6 @@ func (s Service) Run(ctx context.Context) (int, error) {
 				first = fmt.Errorf("bill order %d: %w", id, err)
 			}
 		}
-	}
-	if settled, splitErr := s.settleBacklog(ctx); splitErr != nil {
-		if first == nil {
-			first = splitErr
-		}
-	} else {
-		count += settled
 	}
 	return count, first
 }
@@ -118,92 +104,20 @@ func (s Service) Register(r *gin.Engine) {
 	})
 }
 
-// settleCalculation 为已计算费用生成分账记录；settlement_no 与 calculation_no 使用同一订单派生标识。
-func (s Service) settleCalculation(ctx context.Context, source dbstore.Source, result dbstore.Result) error {
-	// 分账基于有效费用结果追加台账；未配置 resolver 时跳过分账，不使已完成计费失败。
-	if source.Rule.StationID == 0 || s.Splits.AdminDB == nil {
-		return nil
-	}
-	calculationID, err := s.Store.CalculationID(ctx, source.ChargeOrderID)
-	if err != nil {
-		return err
-	}
-	template, err := s.Splits.Resolve(ctx, source.Rule.StationID)
-	if err != nil {
-		if errors.Is(err, dbstore.ErrNoSplitTemplate) || errors.Is(err, gorm.ErrRecordNotFound) {
-			// 缺少生效分账模板时保留已计算费用，等待后续结算重试。
-			return nil
-		}
-		return err
-	}
-	month, err := s.Store.CalculationMonth(ctx, calculationID)
-	if err != nil {
-		return err
-	}
-	_, _, err = s.Store.Settle(ctx, calculationID, template, result.ActualFee, month)
-	return err
-}
-
 // settleBacklog 覆盖结算功能上线前就已算出的 fee，
-// 或后来才配上分账模板的站点。它绝不改写已存在的结算。
-func (s Service) settleBacklog(ctx context.Context) (int, error) {
-	if s.Splits.AdminDB == nil {
-		return 0, nil
-	}
-	pending, err := s.Store.SettlementsDue(ctx, 50)
-	if err != nil {
-		return 0, err
-	}
-	count, first := 0, error(nil)
-	for _, row := range pending {
-		if row.StationID == nil {
-			continue
-		}
-		template, err := s.Splits.Resolve(ctx, *row.StationID)
-		if err != nil {
-			if errors.Is(err, dbstore.ErrNoSplitTemplate) || errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			if first == nil {
-				first = err
-			}
-			continue
-		}
-		month, err := s.Store.CalculationMonth(ctx, row.CalculationID)
-		if err != nil {
-			if first == nil {
-				first = err
-			}
-			continue
-		}
-		_, created, err := s.Store.Settle(ctx, row.CalculationID, template, charging.ActualFee{
-			ElectricCents: row.ElectricCents, ServiceCents: row.ServiceCents, TotalCents: row.TotalCents,
-		}, month)
-		if err != nil {
-			if first == nil {
-				first = err
-			}
-			continue
-		}
-		if created {
-			count++
-		}
-	}
-	return count, first
-}
 
 func (s Service) deliverPending(ctx context.Context) (int, error) {
-	rows, err := dbstore.ListPendingFeeDeliveries(ctx, s.Store.DB)
+	rows, err := settlement.ListPendingFeeDeliveries(ctx, s.Store.DB)
 	if err != nil {
 		return 0, err
 	}
 	count := 0
 	var first error
 	for _, row := range rows {
-		var result dbstore.Result
+		var result settlement.Result
 		err := json.Unmarshal(row.PayloadJSON, &result)
 		if err == nil && result.Source.ChargeOrderID != row.ChargeOrderID {
-			err = dbstore.ErrBillingConflict
+			err = settlement.ErrBillingConflict
 		}
 		if err == nil {
 			err = s.Orders.Apply(ctx, result)
@@ -215,7 +129,7 @@ func (s Service) deliverPending(ctx context.Context) (int, error) {
 			count++
 			continue
 		}
-		_ = dbstore.RescheduleFeeDelivery(s.Store.DB.WithContext(ctx), row.ChargeOrderID, time.Now().UTC().Add(time.Minute))
+		_ = settlement.RescheduleFeeDelivery(s.Store.DB.WithContext(ctx), row.ChargeOrderID, time.Now().UTC().Add(time.Minute))
 		if first == nil {
 			first = err
 		}

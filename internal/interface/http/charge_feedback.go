@@ -3,7 +3,8 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"net/url"
 	"strconv"
 	"strings"
@@ -82,7 +83,7 @@ func (a UserAccountAPI) submitFeedback(c *gin.Context) {
 			Status   string
 		}
 		// 订单表按 created_month 分区，此处按订单主键定位需要加锁的记录。
-		order, err := orderstore.LockFeedbackOrder(tx, orderID)
+		order, err := device.LockFeedbackOrder(tx, orderID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errOrderNotReady
@@ -92,14 +93,14 @@ func (a UserAccountAPI) submitFeedback(c *gin.Context) {
 		if order.UserID != userID || !oneOfStatus(order.Status, "completed refunding refunded") {
 			return errOrderNotReady
 		}
-		existing, err := orderstore.CountOrderFeedback(tx, orderID)
+		existing, err := device.CountOrderFeedback(tx, orderID)
 		if err != nil {
 			return err
 		}
 		if existing > 0 {
 			return errFeedbackExists
 		}
-		feedbackID, err = orderstore.InsertFeedback(tx, userID, orderID, order.DeviceID, in.Rating, in.Category, in.Content, string(images))
+		feedbackID, err = device.InsertFeedback(tx, userID, orderID, order.DeviceID, in.Rating, in.Category, in.Content, string(images))
 		return err
 	})
 	switch {

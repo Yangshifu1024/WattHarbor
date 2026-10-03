@@ -47,15 +47,11 @@ interface OrderTimeline { order_id: number; timeline: { event_id: string; at: st
 interface OrderDetail extends Order {
   selected_package: SelectedPackage | null;
   refund_applicant_id: string | null;
-  billing: { calculation_no: string | null; settlements: Settlement[] } | null;
+  billing: { calculation_no: string | null } | null;
   payment_order_id: number | null;
   payment_order_no: string | null;
   paid_cents: number | null;
   failure_reason: string | null;
-}
-interface Settlement {
-  settlement_id: number; settlement_no: string; mode: string; status: string; split_pool_cents: number;
-  parties: { party_id: number; party_code: string; party_name: string; ratio_bp: number; amount_cents: number; status: string }[];
 }
 const refunds: Record<string, string> = { none: '无退款', processing: '退款中', refunded: '已全额退款', partial_refunded: '部分退款' };
 const businessStatusColors: Record<string, string> = { pending_start: '#ffa940', charging: '#4096ff' };
@@ -250,18 +246,6 @@ function OrderDetailsContent({ orderID, onClose, onChanged, onUserSelect, childr
           { key: 'refunded', label: '退款金额', children: refundedAmount(detail.refunded_cents) },
         ]} />
         {detail.refund_applicant_id && <ManualRefund key={detail.order_id} orderId={detail.order_id} orderNo={detail.order_no} actorId={detail.refund_applicant_id} onCreated={changed} />}
-          </Space> },
-          { key: 'billing', label: '分账明细', children: <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        {!detail.billing?.settlements.length && <Typography.Text type="secondary">暂无分账记录</Typography.Text>}
-        {detail.billing?.settlements.map(settlement => <div key={settlement.settlement_id}>
-          <Typography.Paragraph>{settlement.settlement_no} · {settlement.mode === 'mode_a' ? '全额分账' : '服务费分账'} · 分账池 {money(settlement.split_pool_cents)} · {settlement.status}</Typography.Paragraph>
-          <Table rowKey="party_code" size="middle" pagination={TABLE_PAGINATION} dataSource={settlement.parties} columns={[
-            { title: '参与方', key: 'party', render: (_, party) => party.party_name || party.party_code },
-            { title: '比例', dataIndex: 'ratio_bp', render: value => `${(value / 100).toFixed(2)}%` },
-            { title: '金额', dataIndex: 'amount_cents', render: money },
-            { title: '状态', dataIndex: 'status', render: value => ({ pending: '待支付', paid: '已支付', failed: '失败' }[value as string] || value) },
-          ]} />
-        </div>)}
           </Space> },
           { key: 'timeline', label: '事件时间线', children: <>
         {!timeline?.timeline.length && <Typography.Text type="secondary">暂无已记录的事件</Typography.Text>}

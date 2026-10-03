@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"io"
 	"net/http"
 	"net/url"
@@ -13,8 +14,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
 )
 
 // PaidStarter 重试已支付订单，直到 gateway 接受持久化 START 命令；重复调用由 gateway 保证幂等。
@@ -35,7 +34,7 @@ func (s *PaidStarter) DispatchBatch(ctx context.Context) (int, error) {
 		(base.Scheme != "http" && base.Scheme != "https") {
 		return 0, errors.New("invalid gateway URL")
 	}
-	rows, err := database.ListPaidOrdersAfter(ctx, s.UserDB, s.cursor)
+	rows, err := payment.ListPaidOrdersAfter(ctx, s.UserDB, s.cursor)
 	if err != nil {
 		return 0, err
 	}

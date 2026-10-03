@@ -2,14 +2,14 @@ package http
 
 import (
 	"context"
-	paystore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 )
 
 // Test fixtures freeze the complete scheme and exactly one configured package.
-// paystore.IntentInput 已随迁 payment 包，本夹具留在 charge 供跨家族集成测试复用。
-func chargeCompleteIntent(in paystore.IntentInput, cents int64) paystore.IntentInput {
+// payment.IntentInput 已随迁 payment 包，本夹具留在 charge 供跨家族集成测试复用。
+func chargeCompleteIntent(in payment.IntentInput, cents int64) payment.IntentInput {
 	s := charging.Scheme{Name: "集成方案", Amount: &charging.AmountMode{Algorithm: charging.ModeServerEnergy, Periods: []charging.Period{{EndMinute: 1440, ElectricCents: 100, ServiceCents: 40}}}, Packages: []charging.Package{{ID: 1, Name: "金额", Mode: "amount", PriceCents: cents}}}.Normalized()
 	in.Rule = charging.Rule{ID: 3, StationID: in.Port.StationID, Version: 1, Spec: s.SpecFor(s.Packages[0])}
 	offer := s.Offers(in.Rule)[0]

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/infrastructure/database"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -32,7 +32,7 @@ type RoleRow struct {
 }
 
 // PermissionRow 是权限字典的一行，定义在持久化层。
-type PermissionRow = database.PermissionRow
+type PermissionRow = ops.PermissionRow
 
 // registerRoles 挂载角色与权限字典的接口：角色增删改查，权限字典只读。
 func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
@@ -49,12 +49,12 @@ func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
 // 的这些角色合起来持有的权限编码（去重）。被软
 // 删除的角色不参与：删掉的角色不该继续给人授权。
 func (a AdminAccounts) permissionCodesFor(ctx context.Context, codes ...string) ([]string, error) {
-	return (database.RoleStore{DB: a.DB}).PermissionCodesForRoles(ctx, codes...)
+	return (ops.RoleStore{DB: a.DB}).PermissionCodesForRoles(ctx, codes...)
 }
 
 // listRoles 按 ID 升序返回未删除角色，附带权限编码及关联账号数。
 func (a AdminAccounts) listRoles(c *gin.Context) {
-	rows, err := (database.RoleStore{DB: a.DB}).ListRoles(c.Request.Context())
+	rows, err := (ops.RoleStore{DB: a.DB}).ListRoles(c.Request.Context())
 	if err != nil {
 		AdminResourceFailure(c, err)
 		return
@@ -64,7 +64,7 @@ func (a AdminAccounts) listRoles(c *gin.Context) {
 
 // listPermissions 按模块、编码排序返回权限列表，分组由前端处理。
 func (a AdminAccounts) listPermissions(c *gin.Context) {
-	rows, err := (database.RoleStore{DB: a.DB}).ListPermissions(c.Request.Context())
+	rows, err := (ops.RoleStore{DB: a.DB}).ListPermissions(c.Request.Context())
 	if err != nil {
 		AdminResourceFailure(c, err)
 		return
@@ -136,12 +136,12 @@ func (a AdminAccounts) createRole(c *gin.Context) {
 	var id uint64
 	var auditPending []AuditEntry
 	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		created, err := (database.RoleStore{DB: tx}).InsertRole(tx, in.Code, in.Name, in.Description)
+		created, err := (ops.RoleStore{DB: tx}).InsertRole(tx, in.Code, in.Name, in.Description)
 		if err != nil {
 			return err
 		}
 		id = created
-		if err := database.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
+		if err := ops.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
 			return err
 		}
 		auditPending = []AuditEntry{{Action: "create", Target: "role", ID: id, Before: nil, After: in, RequestID: ""}}
@@ -175,7 +175,7 @@ func (a AdminAccounts) updateRole(c *gin.Context) {
 		httpapi.BadRequest(c, "角色无效：只能从自己已持有的权限中选择")
 		return
 	}
-	store := database.RoleStore{DB: a.DB}
+	store := ops.RoleStore{DB: a.DB}
 	before, err := store.FindRole(c.Request.Context(), a.DB, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -193,7 +193,7 @@ func (a AdminAccounts) updateRole(c *gin.Context) {
 			return err
 		}
 		if !before.IsBuiltin {
-			if err := database.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
+			if err := ops.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
 				return err
 			}
 		}
@@ -217,7 +217,7 @@ func (a AdminAccounts) deleteRole(c *gin.Context) {
 		return
 	}
 	profile := c.MustGet("admin_profile").(operations.Profile)
-	store := database.RoleStore{DB: a.DB}
+	store := ops.RoleStore{DB: a.DB}
 	role, err := store.FindRole(c.Request.Context(), a.DB, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
