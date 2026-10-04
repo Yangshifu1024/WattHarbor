@@ -1,4 +1,4 @@
-.PHONY: fmt lint test layers layers-selftest table-refs current-state evidence build build-all check clean
+.PHONY: fmt lint test layers layers-selftest table-refs tree current-state evidence build build-all check clean
 .NOTPARALLEL: check
 
 # cmd 下的服务名，编译产物统一落到 bin/
@@ -26,6 +26,13 @@ layers-selftest:
 # db.Table("x") 这类字符串形式的引用——编译器不报错，只有运行时才炸。
 table-refs:
 	python3 scripts/check/table_refs.py
+
+# AGENTS.md 顶部的目录树是从实际目录生成的，不靠人手维护——
+# 一次 domain/money 归位，为了手改这棵树对了五轮（漏目录漏了 262→77→18→2→0 次）。
+# 迁移完 use case 目录直接跑 `make tree` 重生成，不要手工编辑那一段。
+tree:
+	python3 scripts/check/gen_tree.py
+	python3 scripts/check/doc_tree.py
 
 # 重生成 docs/target-structure.md 的「当前状态」小节。
 # 那份文档同时是目标方案与实施记录，两种角色的数字会互相矛盾；
@@ -58,4 +65,4 @@ build-all:
 clean:
 	node -e "require('fs').rmSync('bin',{recursive:true,force:true})"
 
-check: fmt lint test layers table-refs current-state evidence
+check: fmt lint test layers table-refs tree current-state evidence
