@@ -129,8 +129,9 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent) (Activit
 		}
 	}
 	perUser := PerUserAllowance(locked.PerUserLimit)
+	// 同样用加锁读：单人额度判断若读的是快照，并发下同一个用户可能被发多张。
 	var used int64
-	if err := tx.Table("coupon_grant").
+	if err := tx.Table("coupon_grant").Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("coupon_id = ? AND user_id = ? AND deleted_at IS NULL", rule.CouponID, event.UserID).
 		Count(&used).Error; err != nil {
 		return result, err
@@ -191,7 +192,7 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent) (Activit
 func grantToInviter(tx *gorm.DB, rule activityRule, event ActivityEvent, eventID string) (bool, error) {
 	couponID := uint64(rule.InviterCouponID.Int64)
 	var used int64
-	if err := tx.Table("coupon_grant").
+	if err := tx.Table("coupon_grant").Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("coupon_id = ? AND user_id = ? AND deleted_at IS NULL", couponID, event.InviterID).
 		Count(&used).Error; err != nil {
 		return false, err
@@ -253,10 +254,20 @@ func grantExpiry(tx *gorm.DB, rule activityRule, now time.Time) time.Time {
 	return ActivityGrantExpiry(now, coupon.ValidHours, couponEnd, rule.EndAt)
 }
 
+// countRuleGrants 数这条规则已经发出的券，必须用加锁读。
+//
+// 只锁 coupon_activity_rule 行是不够的：MySQL 的 REPEATABLE READ 下，
+// 普通 SELECT 走的是事务快照，而快照在 activeRules 第一次读时就已建立。
+// 并发事务即使被行锁挡住、等前者提交后再进来，数到的仍是快照里的旧值
+// （0 份），于是照样发券——活动预算 1 份会发出 2 张。
+//
+// FOR UPDATE 是「当前读」，读最新已提交版本，顺带把已发放的那些行也锁住，
+// 使并发发放真正串行化。
 func countRuleGrants(tx *gorm.DB, rule activityRule) (int64, error) {
 	var granted int64
-	err := tx.Table("coupon_grant").Where("coupon_id = ? AND grant_source = ? AND deleted_at IS NULL",
-		rule.CouponID, grantSourceFor(rule.TriggerType)).Count(&granted).Error
+	err := tx.Table("coupon_grant").Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("coupon_id = ? AND grant_source = ? AND deleted_at IS NULL",
+			rule.CouponID, grantSourceFor(rule.TriggerType)).Count(&granted).Error
 	return granted, err
 }
 
