@@ -1,6 +1,25 @@
 package order
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	"time"
+)
+
+// ChargingState 是停机决策需要的订单当前状态，不携带支付或卡会话模型。
+type ChargingState struct {
+	StartedAt time.Time // 实际开始充电的 UTC 时刻；未开始时为零值
+	Status    string    // 订单持久化状态，只有 charging 可继续请求自动停机
+}
+
+// LockChargingState 在调用方 tx 中锁定 id 对应的未删除订单并返回当前状态。
+// 无订单返回 gorm.ErrRecordNotFound，其他错误表示读取失败；调用方负责提交或回滚。
+// 刷卡路径必须先锁卡会话，再调用本函数；本函数不修改订单状态。
+func LockChargingState(tx *gorm.DB, id uint64) (ChargingState, error) {
+	var row ChargingState
+	err := tx.Table("charge_order").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error
+	return row, err
+}
 
 // PaymentStatusSQL 只供采用固定支付表别名 p 的内部查询使用。
 // 金额是到账与已成功退款的凭据；原退款状态但退款金额为零不提前宣称已退款。

@@ -8,18 +8,19 @@ import (
 
 // PaidStartAuthorization 是一笔可授权起充的订单。
 type PaidStartAuthorization struct {
-	ChargeOrderID  uint64
-	OrderNo        string
-	UserID         uint64
-	DeviceID       string
-	PortNo         uint8
-	PaymentOrderID uint64
-	ChargeMode     uint8
-	ChargeQuantity uint16
+	ChargeOrderID  uint64 // 已付清订单主键
+	OrderNo        string // 原业务订单号，用于启动幂等身份
+	UserID         uint64 // 订单与支付共同所属用户
+	DeviceID       string // 目标设备身份
+	PortNo         uint8  // 设备端口序号，从 1 开始
+	PaymentOrderID uint64 // 已确认到账的原支付身份
+	ChargeMode     uint8  // 订单冻结的设备执行模式，0/4 为时长、1 为电量
+	ChargeQuantity uint16 // 模式对应执行量；时长单位分钟，电量按原协议缩放值
 }
 
 // FindPaidStartAuthorization 取一笔已付清且满足计量区间约束的订单。
 // 取不到返回 gorm.ErrRecordNotFound，调用方据此拒绝下发。
+// ctx 取消读取；db 为 central 连接，orderNo 为原业务单号；数据库错误不构成启动授权。
 func FindPaidStartAuthorization(ctx context.Context, db *gorm.DB, orderNo string) (PaidStartAuthorization, error) {
 	var row PaidStartAuthorization
 	err := db.WithContext(ctx).Table("charge_order AS c").

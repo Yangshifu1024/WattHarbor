@@ -13,17 +13,20 @@ import (
 
 // PaidChargeOrder 是待下发起充指令的一笔订单。
 type PaidChargeOrder struct {
-	ID      uint64 `gorm:"column:id" json:"id"`
-	OrderNo string `gorm:"column:order_no" json:"order_no"`
+	ID      uint64 `gorm:"column:id" json:"id"`             // 原订单主键，作为递增游标
+	OrderNo string `gorm:"column:order_no" json:"order_no"` // 原订单号，用于具名启动请求
 }
 
 // paidStartBatchSize 一次扫多少笔。游标按订单主键递增，重复调用会从上次位置继续。
 const paidStartBatchSize = 100
 
 // PendingOrders 查询已付清但尚未启动的订单，供 worker 有界扫描。
-type PendingOrders struct{ DB *gorm.DB }
+type PendingOrders struct {
+	DB *gorm.DB /* central 订单只读连接，生命周期由进程管理 */
+}
 
 // PaidStarts 返回主键大于 afterID 的待起充订单，按主键递增。
+// ctx 取消读取，afterID=0 从头扫描；空集合、nil 表示当前无下一页，错误表示未完成扫描。
 func (s PendingOrders) PaidStarts(ctx context.Context, afterID uint64) ([]PaidChargeOrder, error) {
 	rows := []PaidChargeOrder{}
 	err := s.DB.WithContext(ctx).Table("charge_order AS c").

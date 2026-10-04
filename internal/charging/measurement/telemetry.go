@@ -9,7 +9,8 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
-// SessionSpanOf 把一条结束事件翻译为计量收口证据。
+// SessionSpanOf 将 e 的起止时刻、设备、端口、秒数及 milli-kWh 电量转换为收口证据。
+// 返回 false 表示零时刻或结束早于开始；不修改输入，不执行 IO。
 //
 // 不校验事件类型：调用方手上已是收口事件（来自结算回调或实时估算），
 // 在此重复判断类型只会让"构造方式不同"被误判成"证据缺失"。
@@ -28,7 +29,8 @@ func SessionSpanOf(e protocol.Event) (devices.SessionSpan, bool) {
 	}, true
 }
 
-// ReadingSamplesOf 挑出心跳并翻译为读数样本。非心跳事件直接跳过，
+// ReadingSamplesOf 将 events 的心跳按原序转换为领域读数；不修改输入，不执行 IO。
+// 非心跳事件直接跳过，
 // 返回的切片只含可用于计量的样本。
 //
 // 功率以 0.1 W 为单位上报，此处换算成 W 并四舍五入。换算结果为 0
@@ -58,7 +60,9 @@ func ReadingSamplesOf(events []protocol.Event) []devices.ReadingSample {
 	return out
 }
 
-// MeasuredSegmentsOf 是计费用的分段入口：把协议事件翻译成领域读数后交给
+// MeasuredSegmentsOf 使用 UTC 开始时刻 start、收口 terminal 和原序 events 生成计量分段。
+// 返回 nil 表示起止或分段证据不成立；不执行 IO，也不生成补偿读数。
+// 把协议事件翻译成领域读数后交给
 // 领域计量规则计算。
 //
 // 翻译与计算的分界在此：领域层只认 devices 的读数类型，不感知协议存在；

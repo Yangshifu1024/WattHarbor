@@ -3,8 +3,8 @@
 ## 依据与边界
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
-- 重构的完成证据与核验方法见 [docs/REFACTOR-EVIDENCE.md](docs/REFACTOR-EVIDENCE.md)，目标结构与实施记录见 [docs/target-structure.md](docs/target-structure.md)。
-- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 按生命周期分为四个子包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_store.go` 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
+- 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
+- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 按生命周期分为四个子包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`（未迁移模块暂保留 `*_store.go`） 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。**`central` 的 8082 在两套编排里都不映射端口**，宿主机打不开，内部调用只在容器网络内可达。开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。
 
 五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
@@ -54,20 +54,20 @@ charge-pilot/
 ├── internal/charging                                     充电生命周期：按业务步骤组织子包
 │   ├── internal/charging/start                           启动授权、待启动查询与启动回执
 │   │   ├── internal/charging/start/authorization.go（迁移前：internal/charging/authorization.go[启动部分]）
-│   │   ├── internal/charging/start/authorization_store.go（迁移前：internal/charging/authorization_store.go[启动查询]）
-│   │   ├── internal/charging/start/pending_store.go（迁移前：internal/charging/paid_start_store.go）
-│   │   └── internal/charging/start/result_store.go（迁移前：internal/charging/start_result_store.go）
+│   │   ├── internal/charging/start/authorization_repo.go（迁移前：internal/charging/authorization_store.go[启动查询]）
+│   │   ├── internal/charging/start/pending_repo.go（迁移前：internal/charging/paid_start_store.go）
+│   │   └── internal/charging/start/result_repo.go（迁移前：internal/charging/start_result_store.go）
 │   ├── internal/charging/stop                            停止授权、自动停机与计费截止冻结
 │   │   ├── internal/charging/stop/authorization.go（迁移前：internal/charging/authorization.go[停止部分]）
-│   │   ├── internal/charging/stop/authorization_store.go（迁移前：internal/charging/authorization_store.go[停止查询]）
+│   │   ├── internal/charging/stop/authorization_repo.go（迁移前：internal/charging/authorization_store.go[停止查询]）
 │   │   ├── internal/charging/stop/auto_stop.go（迁移前：internal/charging/auto_stop.go[编排]、card_deadline.go[调用]）
-│   │   ├── internal/charging/stop/auto_stop_store.go（迁移前：internal/charging/auto_stop_store.go[订单查询]）
-│   │   ├── internal/charging/stop/cutoff_store.go（迁移前：internal/charging/authorization_store.go、auto_stop_store.go[截止记录]）
-│   │   ├── internal/charging/stop/deadline_store.go（迁移前：internal/charging/card_deadline_store.go）
+│   │   ├── internal/charging/stop/auto_stop_repo.go（迁移前：internal/charging/auto_stop_store.go[订单查询]）
+│   │   ├── internal/charging/stop/cutoff_repo.go（迁移前：internal/charging/authorization_store.go、auto_stop_store.go[截止记录]）
+│   │   ├── internal/charging/stop/deadline_repo.go（迁移前：internal/charging/card_deadline_store.go）
 │   │   ├── internal/charging/stop/gateway.go（迁移前：internal/charging/auto_stop.go[网关调用]）
 │   │   └── internal/charging/stop/meter.go（迁移前：internal/charging/auto_stop.go[计量判断]）
 │   ├── internal/charging/finish                           结束回执、端口释放与结算任务提交
-│   │   └── internal/charging/finish/result_store.go（迁移前：internal/charging/finish/result_store.go）
+│   │   └── internal/charging/finish/result_repo.go（迁移前：internal/charging/finish/result_repo.go）
 │   └── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
 │       └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
 ├── internal/order                                        订单表模型、编号分配与读模型
@@ -416,7 +416,7 @@ charge-pilot/
 │
 ├── scripts/db/  scripts/dev/
 │
-├── AGENTS.md  README.md  REFACTOR-PLAN.md  Makefile  go.mod
+├── AGENTS.md  README.md  docs/  Makefile  go.mod
 └── admin-web/  miniprogram/
 ```
 
@@ -449,10 +449,10 @@ charge-pilot/
 
   1. **domain 零框架**：不出现 gorm / gin / redis，不出现列映射与表名映射，
      不 import 任何实现层。
-  2. **表访问集中**：SQL、列映射和数据库写入位于所属用例的 `*_store.go` /
+  2. **表访问集中**：SQL、列映射和数据库写入位于所属用例的 `*_repo.go`（未迁移模块暂保留 `*_store.go`） /
      `*_schema.go` / `*_model*.go`。函数签名收 `*gorm.DB` 传递事务是正常用法。
      同一回执的状态、幂等凭据、资金和 Outbox 保持完整事务边界。
-  3. **use case 之间单向**：新增跨用例引用须在 `docs/target-structure.md`
+  3. **use case 之间单向**：新增跨用例引用须在 `docs/architecture-boundaries.md`
      说明业务理由、数据归属与事务边界；评审核对是否反向依赖或形成循环。
 
   `worker` 与 `gateway` 是进程特有编排，可 import use case；但 `worker`
@@ -590,7 +590,7 @@ charge-pilot/
 2. **靠 `sql.LevelReadCommitted` 撑起来的幂等，要写测试钉住隔离级别。**
    重复投递的判定如果靠普通读读「这单处理过没有」，在 RR 下会读到快照旧值、
    于是判成冲突而不是重放，调用方会永远等不到成功响应。
-   已知承重处：`internal/charging/finish/result_store.go`。
+   已知承重处：`internal/charging/finish/result_repo.go`。
 
 **改完注入变异证伪**（护栏靠放行通过是最常见的失效），至少覆盖：
 去掉行锁、去掉唯一键、去���加锁读、去掉隔离级别声明、去掉幂等凭据比对。

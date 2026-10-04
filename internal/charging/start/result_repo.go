@@ -25,19 +25,25 @@ import (
 var ErrStartResultConflict = errors.New("charge start result conflicts with order state")
 
 type StartResult struct {
-	CommandID     string    `json:"command_id"`
-	ChargeOrderID uint64    `json:"charge_order_id"`
-	OrderNo       string    `json:"order_no"`
-	DeviceID      string    `json:"device_id"`
-	PortNo        uint8     `json:"port_no"`
-	PortID        uint64    `json:"port_id"`
-	Success       bool      `json:"success"`
-	ResultCode    uint8     `json:"result_code"`
-	OccurredAt    time.Time `json:"occurred_at"`
+	CommandID     string    `json:"command_id"`      // 原启动命令幂等身份
+	ChargeOrderID uint64    `json:"charge_order_id"` // 原已付订单主键
+	OrderNo       string    `json:"order_no"`        // 与主键共同核对的业务单号
+	DeviceID      string    `json:"device_id"`       // 实际响应的设备身份
+	PortNo        uint8     `json:"port_no"`         // 设备端口序号，从 1 开始
+	PortID        uint64    `json:"port_id"`         // gateway 持久端口身份，非零且不得超过 int64
+	Success       bool      `json:"success"`         // 必须与 ResultCode==0 一致
+	ResultCode    uint8     `json:"result_code"`     // 原设备结果码，0 成功、1–3 拒绝
+	OccurredAt    time.Time `json:"occurred_at"`     // 回执发生时刻，入库规范为 UTC 毫秒
 }
 
-type StartResultService struct{ DB *gorm.DB }
+type StartResultService struct {
+	DB *gorm.DB /* central 回执事务连接，生命周期由进程管理 */
+}
 
+// Apply 在 ctx 管理的 READ COMMITTED 事务中应用 result 的启动回执。
+// 返回 bool 为同内容重放标志，首次成功为 false；冲突或存储错误时不应确认投递。
+// 余额路径先锁钱包，再锁卡会话和订单；回执、状态、退款、日志及 Outbox 原子提交。
+// 拒绝回执仅登记渠道退款或完成余额退款，不能把待渠道退款当作到账。
 func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool, error) {
 	if s.DB == nil || result.CommandID == "" || result.ChargeOrderID == 0 || result.OrderNo == "" || result.DeviceID == "" || result.PortNo == 0 || result.PortID == 0 || result.PortID > math.MaxInt64 || result.OccurredAt.IsZero() || result.Success != (result.ResultCode == 0) || result.ResultCode > 3 {
 		return false, ErrStartResultConflict

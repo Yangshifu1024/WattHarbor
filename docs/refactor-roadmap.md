@@ -1,8 +1,8 @@
 # 模块重构实施路线图
 
-状态：计划待执行。源码核对日期：2026-10-05。本次只细化文档，没有实施下面的代码迁移或重跑业务测试。当前源码路径用于定位，目标路径和类型表示待实现设计。
+状态：实施中。源码及验收日期：2026-10-05。批次 P／0 已实施；其余批次按第 9 节记录。未完成任务中的目标路径和类型仍表示设计。
 
-本文件负责任务、顺序和验收；[架构边界与组织约束](architecture-boundaries.md) 负责长期规则；[charging 检查结果](charging-review.md) 记录当前两个 P1 问题。完成任务后原位更新状态与证据，不追加多套“当前状态”或重复的历史结论。
+本文件负责任务、顺序和验收；[架构边界与组织约束](architecture-boundaries.md) 负责长期规则；[charging 检查结果](charging-review.md) 记录两个 P1 的修复及验证。完成任务后原位更新状态与证据，不追加多套“当前状态”或重复的历史结论。
 
 ## 1. 目标、范围与执行约定
 
@@ -20,7 +20,7 @@
 - 保留 12 个业务模块、domain 的纯规则、protocol、持久化回执、Outbox 与当前三个 schema。业务模块共享代码，cmd 决定各进程装配和路由。
 - 本轮不调整公开 URL、金额与计量单位、大整数身份、JSON 形状、数据库表名、分区、枚举或支付渠道协议。确需变化时单独列行为任务，核对全部调用方后实施。
 - 每次修改一个可核验的业务入口；名称迁移、职责搬迁、正确性修复分别记录。不得在一次批量替换中同时改 SQL、路由和部署。
-- 接管当前工作区前先读 git status／diff，保留已有未提交修改；不得自行提交、暂存、切分支、重置或改写历史。
+- 接管当前工作区前先读 git status／diff，保留已有未提交修改；按用户后续授权在每批验收通过后暂存并提交，不推送；不得切分支、重置或改写历史。
 - 以开始任务时的源码、注册路由、初始化 SQL 和测试为准。发现本计划引用失效时先刷新该任务描述，不能按旧名称创建第二份实现。
 - 已删除的旧重构文档不恢复。现存 AGENTS、README 与协议文档中的失效引用纳入 P-01 修正，不再次清空维护文件。
 - 详细中文注释是所有重构任务的必交付项，规则见 [中文注释规范](architecture-boundaries.md#中文注释规范)。覆盖字段级释义、函数／方法的全部入参与出参，以及核心逻辑的业务依据、约束和恢复；语言严肃简练，不使用口语化表述。新增、修改和迁移代码均适用，随模块完成，不留到最后统一补写。
@@ -198,7 +198,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.1 charging：C-01／C-02／C-03／N-charging
 
-来源：[自动停机](../internal/charging/stop/auto_stop.go)、[截止存储](../internal/charging/stop/cutoff_store.go)、[刷卡到期冻结](../internal/charging/stop/deadline_store.go)、[零功率判断](../internal/charging/stop/meter.go)、[gateway 取证](../internal/gateway/control/charging_samples.go)。
+来源：[自动停机](../internal/charging/stop/auto_stop.go)、[截止存储](../internal/charging/stop/cutoff_repo.go)、[刷卡到期冻结](../internal/charging/stop/deadline_repo.go)、[零功率判断](../internal/charging/stop/meter.go)、[gateway 取证](../internal/gateway/control/charging_samples.go)。
 
 目标：stop 拥有停机判定与恢复；cutoff_repo.go／deadline_repo.go 持有数据库操作；证据契约由 contracts/gateway 与 integration/gateway 共同维护。
 
@@ -513,11 +513,11 @@ make test-integration TEST_MYSQL_URL=...
 
 | 任务 | 状态 | 完成证据／剩余边界 |
 |---|---|---|
-| P-01／P-02 | 待实施 | 先同步失效维护引用与真实契约／锁基线 |
-| C-01／C-02／C-03／N-charging | 待实施 | 现有生命周期拆分已完成，两个 P1 仍待修复 |
-| S-01／S-02／N-settlement | 待实施 | 保留统一余额退款基础；补出账恢复待实现 |
-| F-01／PAY-01／PAY-02／N-payment | 待实施 | 回调主事务已存在，跨模块直接写入待收敛 |
-| W-01／N-wallet | 待实施 | 账户／流水／冻结基础已有，HTTP 与退款记录归属待迁移 |
+| P-01／P-02 | 完成 | AGENTS 失效文档引用已修正；依当前 SQL、路由、锁顺序核对基线。管理员真库测试隔离自身账号，保留 bootstrap 管理员及真实角色锁 |
+| C-01／C-02／C-03／N-charging | 完成 | cutoff 恢复、首写保留及卡→订单锁归属已实现；gateway 实际取证到判定覆盖 10080 行分页边界；charging 持久化文件改为 repo。详细验证见 charging-review |
+| S-01／S-02／N-settlement | 进行中 | 计费调度及补账单恢复已移入 settlement，尚待资金批次整体验收及审核迁移 |
+| F-01／PAY-01／PAY-02／N-payment | 进行中 | 退款创建已通过注入能力归 settlement，充值到账归 wallet；checkout 及完整回调迁移待收尾 |
+| W-01／N-wallet | 进行中 | 充值和退款申请已移入 wallet，支付来源及退款记录经注入能力协作；风险审核与批次验收待完成 |
 | D-01／D-02／N-device | 待实施 | 准入、导入、站点／故障／告警入口待收拢 |
 | PR-01／N-pricing | 待实施 | domain 计价规则保留，管理发布事务待迁移 |
 | CA-01／N-card | 待实施 | Swipe 原事务保留，前置检查及管理入口待迁移 |
@@ -545,4 +545,4 @@ make test-integration TEST_MYSQL_URL=...
 
 ### 下一项工作的直接入口
 
-先执行 P-01／P-02，再执行 C-01。C-01 首先写出“cutoff 已提交但 STOP 未持久受理”的故障测试，再实现读取原截止点继续请求同一订单的恢复；验证其不改首次冻结内容、不阻挡后续订单。该项完成后推进 C-02 的证据连续性修复，再进入资金模块批次。
+批次 P／0 已完成。继续资金批次：完成支付 checkout、钱包风险及结算审核的用例迁移，核对跨模块锁图、充值／退款重放和提交后恢复；每批验收后提交，不推送。

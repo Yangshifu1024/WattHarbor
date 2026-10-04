@@ -46,12 +46,16 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 		if e.DeviceID != device || e.Type != protocol.Heartbeat {
 			continue
 		}
+		// 即使本次心跳缺失目标端口也保留事件，使消费者能中断连续证据。
+		// 只输出目标端口，不泄露其他端口遥测、卡号或原始载荷。
+		sample := gatewaycontract.EvidenceSample{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: e.ReceivedAt, ChargingPorts: []protocol.PortTelemetry{}}
 		for _, p := range e.ChargingPorts {
 			if p.Port == port {
-				samples = append(samples, gatewaycontract.EvidenceSample{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: e.ReceivedAt, ChargingPorts: []protocol.PortTelemetry{p}})
+				sample.ChargingPorts = append(sample.ChargingPorts, p)
 				break
 			}
 		}
+		samples = append(samples, sample)
 	}
 	var nextAfterID uint64
 	if !complete {

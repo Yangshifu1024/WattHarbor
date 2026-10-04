@@ -1,27 +1,29 @@
 # charging 检查结果
 
-检查日期：2026-10-05。以下结论依据当时的源码核对；所列问题仍待修复。本次文档迁移没有修改业务实现，也没有重新执行业务测试。
+修复与核验日期：2026-10-05。批次 0 的两个 P1 已修复，生命周期职责及原业务契约保持一致。
 
 配套文档：[架构边界与组织约束](architecture-boundaries.md)、[模块重构计划](refactor-roadmap.md)。
 
-## charging 已完成的边界与待修问题
+## 生命周期与数据边界
 
-当前拆分方向合理，后续模块应复用其职责划分原则，不机械复制四个子包：
+- start 拥有启动授权、待启动查询和回执事务；stop 拥有停止授权、截止冻结和恢复；finish 拥有结束回执、端口释放和结算任务提交。三个子包互不 import，measurement 无 IO。
+- 启动拒绝的余额退款调用 settlement，刷卡状态调用 card；结束回执同事务提交结算任务，回执、状态、资金、日志及 Outbox 没有拆成多次提交。
+- stop 调用 card.PurchasedMinutesForOrder／LockPurchaseForOrder 及 order.LockChargingState。卡到期路径保持 card 会话→order 锁顺序；所属模块提供当前读取，不引入网络调用或反向依赖。
+- charging 下八个持久化文件已由 *_store.go 改为 *_repo.go；原目录不留别名或转发。迁移及新增字段、方法、接口和核心恢复逻辑补齐中文注释。
 
-- `start` 拥有启动授权、待启动查询和启动回执事务；`stop` 拥有停止授权、自动停机和计费截止冻结；`finish` 拥有结束回执、端口释放和结算任务提交。三个子包没有相互 import。
-- `measurement` 只转换协议事件与计量证据，没有 IO；协议实现 `dc589` 没有进入充电用例。HTTP 启动／结束处理器已经改为绑定、调用和错误映射。
-- 启动失败的余额退还调用 `settlement.RefundBalanceInTx`，刷卡写入调用 card 的事务内函数；结束回执在同一事务中提交 `settlement.EnqueueChargeBilling`。没有为了目录归属把回执事务拆成多次提交。
-- gateway、worker 使用共享契约和具名客户端；`AutoStopper` 只依赖所需的 Gateway 接口。URL、令牌与 HTTP 连接池由 cmd 装配。worker 待启动查询经 central，不直接读取业务表。
+## 问题与关闭证据
 
-结构迁移已经落地，但以下运行问题仍需修复。它们是当前代码中的问题，本次检查不判定由哪次重构引入。
+| 任务 | 实际行为 | 验证 |
+|---|---|---|
+| C-01／P1 | [auto_stop.go](../internal/charging/stop/auto_stop.go) 优先对已冻结且仍在充电的订单重试原 STOP。恢复不重新取证或依赖计价快照；单笔失败汇总后继续后单。首次 cutoff 的时刻、原因与费用经原子 no-op upsert 保留 | 真库故障注入覆盖普通时长／刷卡两分支：提交冻结后受理未知、下一轮恢复、删除计价快照仍恢复、后单继续、已结束不再请求；两连接并发首写保留原记录且清理为零 |
+| C-02／P1 | [charging_samples.go](../internal/gateway/control/charging_samples.go) 保留目标端口缺失事实。心跳必须严格递增，相邻间隔及末条年龄不超过 30 秒；缺失和长间隔重建窗口，以最后观测时刻而非 now 计算一分钟 | 真 gateway MySQL 事件→实际路由→具名客户端→stop 判定覆盖连续、重连、缺失、乱序及 10080 行分页边界；默认测试另覆盖未来、重复时间及静默尾段 |
+| C-03 | [deadline_repo.go](../internal/charging/stop/deadline_repo.go) 不再自己映射 card_charge 或 charge_order，使用所属模块的锁定能力。已有 cutoff 返回可恢复停机状态 | 刷卡到期恢复及回执 integration 回归保持原锁顺序和幂等事务 |
 
-| 优先级 | 当前证据与触发条件 | 影响 | 修复与验收要求 |
-|---|---|---|---|
-| P1 | [auto_stop.go](../internal/charging/stop/auto_stop.go) 先提交截止点再请求 STOP；下一轮遇到已有截止点直接返回错误。[deadline_store.go](../internal/charging/stop/deadline_store.go) 的刷卡时长分支也这样处理 | 截止点提交后，STOP 请求网络失败且 gateway 未持久受理时，后续循环无法再次提交 STOP；已冻结的早期订单还会中断整轮扫描，阻挡后续订单处理 | 把「截止点已冻结」作为可恢复状态。读取并沿用首次冻结内容，为仍在充电的订单继续请求同一订单的 STOP；区分冻结、网关持久受理和设备结束。单笔恢复失败不能长期阻挡其它订单。用真库验证截止点提交后模拟请求失败、下一轮恢复、并发首写及原截止点不变；用派发测试验证后续订单继续执行 |
-| P1 | [meter.go](../internal/charging/stop/meter.go) 的 `noPowerForMinute` 只检查最后一条新鲜度，未检查相邻心跳缺口；[charging_samples.go](../internal/gateway/control/charging_samples.go) 丢弃不含目标端口的心跳 | 旧零功率样本与重连后的新样本会被拼成连续一分钟；遗漏目标端口的心跳也无法触发用例中已有的证据中断分支，可能错误停机 | 证据契约保留目标端口缺失事实或明确连续性信息；用例按可证明的采样间隔、时间顺序和新鲜度判断连续窗口，缺失或离线不能当零功率。覆盖长间隔重连、端口缺失、分页边界、乱序／未来时间以及正常连续零功率；必须有实际 gateway 取证路径到判定的测试 |
+30 秒上限基于当前充电心跳 15 秒周期，允许一个周期的抖动，定义在共享证据契约；协议周期变化须重新核对。停止受理只证明 gateway 持久命令，设备停止与订单结束由异步回执确认。
 
-现有 `auto_stop_test.go` 甚至把间隔 68 秒的两条零功率心跳作为成功样例；其「缺失端口」测试直接构造事件，不能证明经过网关筛选后仍保留该事实。修复时要改进断言与输入路径，不能只保持原单测绿色。
+## 实际验证范围
 
-另一个维护点：`deadline_store.go` 自己映射并锁定 card 的 `card_charge`。归属收敛时应调用 card 提供的事务内会话读取／加锁函数，再调用 order 的读取／加锁函数；保持 card 会话 → order 的原锁顺序，完整冻结事务仍由 stop 执行。这是表访问接口的补齐，不需要增加服务间请求。
-
-2026-10-05 的 charging 检查中实际运行 `make test`、`make lint` 均通过。默认 Go 缓存目录不可读，改用仓库已忽略的 `.tmp/go-cache`、`.tmp/go-tmp` 后执行成功。该次检查未运行带 integration tag 的真库测试，也未做设备联调；此前批次的真库结果不作为这次检查的验证结论。
+- make fmt、make lint、make test 通过；go mod tidy -diff 无依赖差异；go build -trimpath -o bin/ ./cmd/... 通过。
+- go test -tags=integration -count=1 ./... 通过，连接已有开发栈三库，不自动建表或跳过。用户授权备份后重建开发数据，使用仓库 reset-dev 脚本；备份保存在已忽略的 .tmp。
+- 针对性变异已检测：移除心跳缺口重建使 reconnect 测试失败；允许 cutoff 冲突覆盖使两连接首写测试失败。变异代码已恢复。
+- 故障网络为 stub；取证 HTTP 为 loopback；设备流程使用现有 DC589 模拟器。上述证据不等于实机联调或真实渠道资金验收。

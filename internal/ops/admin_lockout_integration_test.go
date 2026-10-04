@@ -42,6 +42,14 @@ func testConn(t *testing.T) (*gorm.DB, func()) {
 	if err != nil {
 		t.Fatalf("包装 GORM 失败：%v", err)
 	}
+	// 现有开发库可有 bootstrap 管理员；本测试只统计自己创建的两名账号。
+	// 作用域仅约束管理员计数投影，仍使用真实共享角色行及独立连接验证串行锁。
+	orm = orm.Scopes(func(q *gorm.DB) *gorm.DB {
+		if q.Statement.TableExpr != nil && q.Statement.TableExpr.SQL == "admin_user AS u" {
+			return q.Where("u.id IN ?", []uint64{99001, 99002})
+		}
+		return q
+	}).Session(&gorm.Session{})
 	return orm, func() { _ = sqlDB.Close() }
 }
 
