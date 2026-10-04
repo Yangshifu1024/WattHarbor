@@ -32,6 +32,50 @@ jobs:
           go build -o /tmp/chargepilot-worker ./cmd/worker
           go build -o /tmp/chargepilot-migrate ./cmd/migrate
 
+  # 真库集成测试：SQL 里的判定（活动窗口、门槛、唯一键、并发累加）
+  # 只在真库的行锁与事务语义下才存在，单测覆盖不到。
+  # 2026-10 这一类问题一次挖出 6 个真缺陷，全部靠这里兜住。
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-pw
+          MYSQL_USER: chargepilot
+          MYSQL_PASSWORD: ci-app-pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-pw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      # 集成测试不提供跳过路径：连不上就是失败，不是「没有测试可跑」。
+      TEST_MYSQL_URL: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/central_db
+      DATABASE_URL_GATEWAY: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/gateway_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/central_db
+      DATABASE_URL_WORKER: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/worker_db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      # 复用仓库自己的建库 SQL，不在这里复制一份。
+      # runner 上未必装了 mysql 客户端，用 mysql 镜像自带的那个连过去执行。
+      - name: Create schemas and grant
+        run: |
+          docker run --rm --network host \
+            -e MYSQL_PWD=ci-root-pw \
+            -i mysql:8.4 \
+            mysql -h 127.0.0.1 -uroot --protocol=TCP < docker/mysql/init-databases.sql
+      - name: Apply migrations
+        run: go run ./cmd/migrate --schema all
+      - name: Real-database integration tests
+        run: make test-integration TEST_MYSQL_URL="$TEST_MYSQL_URL"
+
   admin-web:
     runs-on: ubuntu-latest
     defaults:

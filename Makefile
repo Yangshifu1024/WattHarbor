@@ -1,4 +1,4 @@
-.PHONY: fmt lint test test-integration layers layers-selftest table-refs tree integration-tag current-state evidence build build-all check clean
+.PHONY: fmt lint test test-integration layers layers-selftest table-refs tree integration-tag migration-sql current-state evidence build build-all check clean
 .NOTPARALLEL: check
 
 # cmd 下的服务名，编译产物统一落到 bin/
@@ -54,6 +54,14 @@ tree:
 	python3 scripts/check/gen_tree.py
 	python3 scripts/check/doc_tree.py
 
+# 初始化 SQL 的静态兜底：分区子句不许悬空。
+# worker_db 曾有一段孤儿 PARTITION 块，在任何 MySQL 上都报 1064，
+# 却因为开发库是重构前迁移过的旧卷、goose 跳过重跑而一直没显形。
+# 真正把关的是 CI 里的真库迁移（make test-integration），
+# 这条只是让问题在 make check 阶段就冒出来。
+migration-sql:
+	python3 scripts/check/migration_sql.py
+
 # 重生成 docs/target-structure.md 的「当前状态」小节。
 # 那份文档同时是目标方案与实施记录，两种角色的数字会互相矛盾；
 # 把它无法自己更新的部分（当前值）交给脚本，文档与代码就不会脱节。
@@ -85,4 +93,4 @@ build-all:
 clean:
 	node -e "require('fs').rmSync('bin',{recursive:true,force:true})"
 
-check: fmt lint test layers table-refs tree integration-tag current-state evidence
+check: fmt lint test layers table-refs tree integration-tag migration-sql current-state evidence

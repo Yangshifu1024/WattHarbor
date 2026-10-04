@@ -17,7 +17,8 @@
 ## 工具与代码风格
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
-- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.py`；另有 `make layers-selftest` 注入已知违规确认每条规则真的会失败；`make check` 顺序执行四项。
+- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.py`；另有 `make layers-selftest` 注入已知违规确认每条规则真的会失败。
+- **真库集成测试单列一层**：`make test-integration TEST_MYSQL_URL=...` 带 `//go:build integration` 跑真实 MySQL。`make check` 不含它（不依赖 Docker），但 **CI 的 `integration` job 跑它**。行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 这些只��真库语义下存在的东西，单测一律覆盖不到，详见「并发与幂等」。
 - 目录结构定稿如下。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
 ```text
@@ -486,6 +487,53 @@ charge-pilot/
 - 本地地址固定：后台 `5173/admin/`、用户 H5 `5174/`、MySQL `3306`、Redis Cache `6379` 与 Stream `6380`、DC589 `9100`；user、admin、central、gateway、worker 就绪状态查各自 HTTP 端口的 `/health/ready`。
 - Go 服务没有热重载。修改后按 README 重建受影响的服务，优先只重建该服务而非整个栈；确需重启整栈时先说明理由。
 - 设备联调的两个模拟器须在独立终端分别执行 `scripts/dev/simulator.ps1 -Number 1` 与 `-Number 2`，属前台交互进程，不得作为后台服务重复拉起。模拟器与模拟支付结果不得当作实机或真实资金验收。
+
+## 并发与幂等
+
+这一层的判断有一半是读代码看不出来的，必须对真库验证。
+
+### 集成测试怎么组织
+
+- 集成测试文件一律带 `//go:build integration`，由 `scripts/check/integration_tag.py` 机检。
+  漏了 tag 的文件**永远不会被编译**，看起来有测试，实际一次都没跑过。
+- **不提供跳过路径**：`TEST_MYSQL_URL` 缺失直接 `t.Fatal`，`make test-integration`
+  不给变量时退出码 2。跳过的测试在 `go test` 输出里和通过的一模一样，
+  CI 没配库就会一路绿灯——护栏最常见的失效正是靠放行通过。
+- 测试写入用事务回滚；确实需要提交的场景（如两个独立事务要看到同一行）
+  由收尾显式清理，跑完开发库必须 0 残留。
+- 共享骨架（独立连接、并发闸门、按表名挂载的加锁回调）提取到各包的
+  `gorm_integration_test.go`，不要每个文件复制一份。
+
+### 并发测试怎么写才算数
+
+**不许靠起 N 个 goroutine 碰运气。** 那种测试要么抓不到竞态，
+要么换台机器就偶发失败，两头都不合格。做法是：用 gorm `After("gorm:query")`
+回调在 SQL 命中特定表时把事务一挂起，主控用 channel 控制放行，
+再从**另一条独立连接**起事务二，断言它在放行前必须返回不了。每一步的先后都是确定的。
+
+两个事务必须用两条独立连接——复用同一条会让「并发」退化成串行，测出来的是假象。
+
+**按 `FROM` 子句匹配表名，不要按裸子串。** `card_charge` 那条查询的 WHERE 列名是
+`charge_order_id`，含子串 `charge_order`；而且该表无行时 `FOR UPDATE` 只取间隙锁，
+挡不住第二个事务，测试会误判成「没有串行化」。
+
+### 两条判据
+
+1. **「锁一行 → 聚合读一个集合 → 按聚合值做准入决策」里的计数必须自己是当前读。**
+   MySQL REPEATABLE READ 下普通 `SELECT` 走事务快照，而快照在事务第一次读时已建立。
+   行锁让事务串行化了，聚合读仍按自己的快照算，串行化帮不上忙——
+   被挡住等锁的那个事务照样读到旧值。配额、额度、余额、限流都适用。
+   （本仓库出现过三次：活动发券预算计数、人工退款累计占用、支付到账。）
+   反过来，只用于决定「要不要翻个状态」而不涉及金额的计数，**不要**加锁——
+   那只会白白串行化。
+
+2. **靠 `sql.LevelReadCommitted` 撑起来的幂等，要写测试钉住隔离级别。**
+   重复投递的判定如果靠普通读读「这单处理过没有」，在 RR 下会读到快照旧值、
+   于是判成冲突而不是重放，调用方会永远等不到成功响应。
+   已知承重处：`internal/interface/http/order_end_result.go:122`。
+
+**改完注入变异证伪**（护栏靠放行通过是最常见的失效），至少覆盖：
+去掉行锁、去掉唯一键、去���加锁读、去掉隔离级别声明、去掉幂等凭据比对。
 
 ## 验证与交付
 

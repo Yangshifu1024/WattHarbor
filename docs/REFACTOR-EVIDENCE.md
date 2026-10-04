@@ -428,3 +428,57 @@ worker 在「central 已确认、gateway 端口释放失败」时会整条重放
 `charge_order_id`，含这个子串。而 card_charge 没有行时 `FOR UPDATE` 只取间隙锁，
 挡不住第二个事务，测试误判成「结算没有串行化」。**按 `FROM` 子句匹配表名**，
 不要按列名或裸子串。
+
+---
+
+## 第十一轮：把真库测试接进 CI，顺带挖出一个从未显形的坏迁移
+
+### 写 CI job 本身就是一次核验
+
+新增 `.github/workflows/ci.yml` 的 `integration` job：起 MySQL 8.4 service、
+建库、跑迁移、`make test-integration`。写完不验证等于没写，
+所以在一台**全新的 MySQL 容器**上把三个步骤原样跑了一遍。
+
+第一步就红了。
+
+### migrations/worker_db/0001_init.sql 在干净库上跑不通
+
+文件开头有一段孤儿分区子句：
+
+    /*!50100 PARTITION BY RANGE (to_days(`created_month`))
+    (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB, ...) */;
+
+它不属于任何 `CREATE TABLE`（`task_execution_log` 有自己的一份），
+单独执行是无效 SQL，任何 MySQL 都报 1064。在两个实例上分别执行，错误完全一致。
+
+**它为什么藏了这么久**：开发库那个数据卷是重构之前就迁移过的，
+里面还留着已裁剪的 `dlq_log`、`dlq_replay_cursor` 两张表；
+goose 看到版本已是 1，重跑就是空操作，那段坏 SQL 根本没机会执行。
+`make check` 不跑迁移，于是它一路绿灯。
+
+已删除该孤儿片段。现在全新库上三个 schema 都能迁移成功。
+加了 `scripts/check/migration_sql.py` 做静态兜底（分区子句前一句
+若已以分号结尾即判为悬空），并接入 `make check`；真库迁移才是最终那道关。
+
+顺带把 `docker/mysql/init-databases.sh` 换成 `.sql`：
+CI 的 runner 上未必装了 mysql 客户端，而 SQL 本身可以由 mysql 镜像自带的客户端执行。
+一份 SQL 两个调用方共用，少 GRANT 会在迁移第一步报 Access denied，
+而那条报错完全指不到授权这一层。
+
+### 并发测试的做法写进了 AGENTS.md
+
+新增「并发与幂等」一节：集成测试怎么组织（含 build tag 机检、不提供跳过路径）、
+并发测试怎么写才算数（闸门控制先后、不许靠 goroutine 碰运气、按 FROM 子句匹配表名），
+以及那两条判据。写进契约是因为这些判据不是读一次代码就能内化的——
+本轮我自己就在其中两条上踩了坑。
+
+### 三处被证伪的判断
+
+1. 「结束回执的幂等靠加锁读不建立快照，所以快照在行锁之后才建立」——
+   把锁前的加锁读改成普通读，测试**没变红**。真正承重的是那行 `LevelReadCommitted`。
+2. 并发闸门按裸子串 `charge_order` 匹配，挂到了 `card_charge` 的查询上，
+   误判成「结算没有串行化」。
+3. `migration_sql.py` 第一版判据写反：合法形态里 `COMMENT='…'` 后**没有**分号
+   （分号在 `*/;` 上），导致 12 处合法分区全被报成孤儿。
+
+三条都是靠"跑一遍看报什么"发现的，没有一条是自己想明白的。
