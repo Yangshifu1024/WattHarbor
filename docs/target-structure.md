@@ -12,7 +12,7 @@
 | 指标 | 当前值 | 取证方式 |
 |---|---|---|
 | 表（去重） | **87** | 三个 `migrations/*/0001_init.sql` 的 `CREATE TABLE` 并集（各 schema 合计 88，`event_outbox` 跨 central/gateway 同名） |
-| 非测试 Go 行数 | **37190** | `internal/` + `cmd/` 下非 `_test.go` 文件 |
+| 非测试 Go 行数 | **37198** | `internal/` + `cmd/` 下非 `_test.go` 文件 |
 | use case 包 | **11** | order / settlement / wallet / pricing / card / device / identity / marketing / payment / ops / export |
 | `infrastructure/database` | **3 文件** | 表访问已下沉到各 use case 的 `*_store.go` |
 | `database` 对 use case 的依赖 | **0** | `go list -deps ./internal/infrastructure/database` 中出现的 use case 包数；**0 才算达成** |

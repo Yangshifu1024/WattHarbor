@@ -239,8 +239,16 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		// 费用计算完成并写入回执后求值订单活动，确保金额门槛准确。
 		// 重放结算在回执检查时提前返回，不重复发券。
 		applyOrderCampaigns(tx, order, result.TotalCents)
+		// 聚合读必须用加锁读。上面那把 payment_order 行锁只串行化同样走
+		// Apply 的事务，挡不住并发的 ManualCreate 刚落库的退款单：
+		// 本事务的快照在第 178 行那��普通读（Pluck pay_method）时就已建立，
+		// 早于第 190 行拿到行锁，于是这里的 SUM 少算占用额，
+		// surplus 被高估，多退钱进用户钱包。FOR UPDATE 是当前读，看得到最新已提交版本。
 		var reserved int64
-		if err := tx.Model(&pay.RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", payment.ID).Scan(&reserved).Error; err != nil {
+		if err := tx.Model(&pay.RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("COALESCE(SUM(refund_cents),0)").
+			Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", payment.ID).
+			Scan(&reserved).Error; err != nil {
 			return err
 		}
 		surplus := payment.PaidCents - result.TotalCents - payment.RefundedCents - reserved
