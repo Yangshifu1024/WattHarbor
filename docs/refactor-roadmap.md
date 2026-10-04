@@ -23,13 +23,14 @@
 - 接管当前工作区前先读 git status／diff，保留已有未提交修改；不得自行提交、暂存、切分支、重置或改写历史。
 - 以开始任务时的源码、注册路由、初始化 SQL 和测试为准。发现本计划引用失效时先刷新该任务描述，不能按旧名称创建第二份实现。
 - 已删除的旧重构文档不恢复。现存 AGENTS、README 与协议文档中的失效引用纳入 P-01 修正，不再次清空维护文件。
+- 详细中文注释是所有重构任务的必交付项，规则见 [中文注释规范](architecture-boundaries.md#中文注释规范)。覆盖字段级释义、函数／方法的全部入参与出参，以及核心逻辑的业务依据、约束和恢复；语言严肃简练，不使用口语化表述。新增、修改和迁移代码均适用，随模块完成，不留到最后统一补写。
 
 ### 1.3 一个任务的标准操作顺序
 
 1. 读当前入口、消费者、事务体及测试，列出输入、结果、状态、表、锁、幂等键和外部调用先后关系。
 2. 写出目标业务方法与最小依赖；先核对反向引用及同库事务，确定错误如何由 HTTP 映射。
 3. 补足会被迁移影响的故障／并发证据；优先迁移已有测试，缺口才增加测试。
-4. 迁移用例、所属 repo 和模型，更新 cmd 装配及消费者；同一步删除原业务实现，不留转发层或旧类型别名。
+4. 迁移用例、所属 repo 和模型，更新 cmd 装配及消费者；同一步删除原业务实现，不留转发层或旧类型别名。逐字段补齐中文注释，逐函数／方法核对入参、出参与错误，在核心决策处说明事务、并发和恢复依据。
 5. 运行适用的默认、真库、构建及接口检查，核对状态和资金没有提前确认。
 6. 原位更新任务状态、迁移路径、接口与验证记录；检查失效 import、源码链接、go:embed、OpenAPI 和目录说明。
 
@@ -53,11 +54,11 @@ internal/
 ├── pricing/                       scheme、publication、目标范围与 repo
 ├── marketing/                     coupon、activity、权益发放及 repo
 ├── device/                        import、station、准入、fault、alert 与 repo
-├── identity/                      auth、session、phone、用户管理与 repo
-├── ops/                           account、role、mfa、audit、announcement、dashboard
+├── identity/                      auth、session、phone、用户管理及用户会话 Redis repo
+├── ops/                           account、role、mfa、audit、announcement、dashboard 及后台会话 repo
 ├── export/                        任务、格式生成、下载准入、文件清理与 repo
 ├── domain/                        charging／money／devices／operations 纯规则
-├── interface/http/
+├── http/                          HTTP 入站适配，直接按调用方组织
 │   ├── user/                      用户接口按业务族组织
 │   ├── admin/                     保留现有业务族，移出业务编排
 │   ├── central/                   内部用例 HTTP 适配
@@ -68,12 +69,15 @@ internal/
 ├── worker/                        charge、billing、refund、alerts、outbox、schedule、internaljob、runtime、repo
 ├── protocol/                      根契约与 dc589 实现
 ├── delivery/                      对外事件与签名投递
-├── infrastructure/redis/          Redis 会话等实现
 ├── persist/                       分页、自增 ID 等原语
 └── platform/                      配置、数据库连接、HTTP、认证工具等
 ```
 
-`charging/query` 不成为生命周期根包的汇总服务；start／stop／finish 继续互不引用。`infrastructure/database` 的 dashboard 与 case 业务代码迁出后，如无通用实现剩余则删除目录；数据库连接继续由 platform/dbconn 提供。
+`charging/query` 不成为生命周期根包的汇总服务；start／stop／finish 继续互不引用。目标结构不保留 `infrastructure`：现有 database 的 dashboard 归 ops，case 分归 order／device，Redis 用户会话归 identity、后台会话归 ops。数据库连接继续由 platform/dbconn 提供；先完成职责迁移，再删除空目录。
+
+HTTP 目标路径采用 `internal/http`，移除只有一个子目录且没有独立职责的 `interface` 层。user／admin／central 表示接口面与注册归属，auth 提供共享 HTTP 鉴权适配；通用响应与服务器工具仍在 platform/httpapi，服务间出站客户端仍在 integration。以后出现独立的入站协议再按实际职责增加目录，不预建 interface／transport 包。下文源码链接仍指向迁移前的真实路径。
+
+Redis 是 repo 的实现方式，不单独形成顶层业务模块。用户／后台记录、键前缀、刷新寿命与轮换策略归各自模块；无 IO 的通用令牌生成、解析、摘要能力归 platform/auth。已有共用注销脚本若继续抽取，只按客户端、key 与摘要提供原子操作，可放 platform/redis；不得引用 identity／ops 的业务模型或固定业务键，不把整个会话包直接搬进 platform。
 
 ### 2.1 repo 命名迁移 N-模块
 
@@ -169,7 +173,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 | 2 | D-01 准入与导入；PR-01 发布；CA-01 刷卡／卡管理；对应 N 任务 | F-01；CA-01 依赖设备与计价读取能力 | 元数据／发布／刷卡入口可独立调用，重放、并发与范围契约不变 |
 | 3 | O-01 订单与反馈；CQ-01 充电查询；M-01 营销；I-01 身份；对应 N 任务 | 资金查询与设备读取能力稳定 | 订单基础包不反向依赖；读视图、发券预算、会话与手机号正确 |
 | 4 | OP-01 账号权限／审计；D-02 故障告警；E-01 导出；对应 N 任务 | 业务入口及只读数据源具备；审计能力提前提供 | 实时授权、双人复核、工单与导出可恢复；HTTP 不持有这些事务 |
-| 5 | H-01 HTTP 目录；X-01 剩余客户端；G-01 gateway；WK-01 worker；残留 N 任务 | 前述入口已迁出 HTTP | 路由／嵌入资源一致，通用 sync_client 无业务调用，全部项目持久化命名归 repo |
+| 5 | H-01 HTTP 目录；INF-01 基础设施目录收尾；X-01 剩余客户端；G-01 gateway；WK-01 worker；残留 N 任务 | 前述入口已迁出 HTTP；I-01／OP-01／O-01／D-02 的基础设施职责已归位 | 路由／嵌入资源一致，interface／infrastructure 已移除，通用 sync_client 无业务调用，全部项目持久化命名归 repo |
 | 6 | DEP-01 central 部署评估 | 批次 0–5 完成且流程回归有证据 | 交付保留／合并比较结论及依据；是否实施合并单独决定 |
 
 审计值和 InTx 能力在需要它们的最早批次提取；OP-01 的完整账号迁移仍在批次 4。具名客户端与所属任务一起交付，批次 5 仅收尾。不同批次可提前完成稳定的只读能力，但不得跳过资金／恢复前置条件。
@@ -322,17 +326,18 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 验收：预算边界的两独立事务确定性测试；重复事件／领取／核销只生效一次；过期／冻结／不适用拒绝；优惠与实付一致，事务回滚不留下发券或核销结果。
 
-### 5.10 identity：I-01／N-identity／N-redis
+### 5.10 identity：I-01／N-identity
 
 来源：[认证适配](../internal/interface/http/auth.go)、[登录接口](../internal/interface/http/user_api.go)、phone_api.go、admin/user/charge_users.go、identity 的用户与微信能力、infrastructure/redis 的会话实现。
 
-目标：SessionService.Login／Refresh／Logout／Authenticate、PhoneService.Bind、UserQueryService；用户／会话 repo。HTTP auth 子包只提取凭据、调用身份能力及写入请求上下文。
+目标：SessionService.Login／Refresh／Logout／Authenticate、PhoneService.Bind、UserQueryService；用户 repo 与 session_repo.go 的 Redis 实现。HTTP auth 子包只提取凭据、调用身份能力及写入请求上下文。
 
 - [ ] I-01：登录交换 → 用户准入／创建 → 会话创建 → 签发，以及签发失败撤销会话的顺序迁入用例。
 - [ ] I-01：刷新、注销、冻结用户和会话归属核对进入服务；Redis／JWT 实现通过所需能力注入。
+- [ ] I-01：将 infrastructure/redis/session_store.go 及用户会话测试迁到 identity/session_repo.go；保持用户 ID 十进制字符串、旧数值记录兼容、Lua 原子轮换、previous 摘要与 KEEPTTL。通用令牌机制与 OP-01 共用，RT_ 和 user:session: 前缀留在 identity。
 - [ ] I-01：手机号正式绑定继续使用微信验证结果；开发模式单独注入，不能与正式绑定共享绕过分支。
 - [ ] I-01：后台用户列表／详情／状态业务归 identity，充值历史通过钱包读取能力提供；后台账号、角色和 MFA 留 ops。
-- [ ] N-identity／N-redis：用户与 Redis 自定义 Store 命名归 repo，保留既有稳定的 Repository 接口名和会话键格式。
+- [ ] N-identity：用户与用户会话的持久化类型／文件命名归 repo，保留既有稳定的 Repository 接口名和会话键格式；cmd 注入新实现，删除旧用户会话实现。
 
 验收：会话过期／撤销／刷新竞争、冻结用户、跨用户凭据、签发失败清理；号码唯一性与归属、重复绑定、微信缺失结果；公开身份仍为十进制字符串，开发能力不能进入生产路径。
 
@@ -340,12 +345,13 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 来源：[账号管理](../internal/interface/http/admin_accounts.go)、[角色管理](../internal/interface/http/admin_roles.go)、[MFA](../internal/interface/http/admin_mfa_settings.go)、[审计辅助](../internal/interface/http/admin_resource.go)、[dashboard](../internal/infrastructure/database/admin_dashboard_store.go)、HTTP admin/ops/operations.go。
 
-目标：AccountService、RoleService、MFAService、AnnouncementService、DashboardQueryService；account／role／audit／projection repo。审核人实时状态能力供 settlement 使用。
+目标：AccountService、RoleService、MFAService、AnnouncementService、DashboardQueryService；account／role／audit／projection repo、session_repo.go 的后台会话实现及 mfa_repo.go。审核人实时状态能力供 settlement 使用。
 
 - [ ] OP-01：先提取 Actor／AuditContext 值与 AppendAuditInTx，供前面批次复用；HTTP 不持有 AuditedTransaction 的业务提交责任。
 - [ ] OP-01：账号创建／修改／删除／解锁／密码重置、角色和数据范围变更、MFA 设置迁入服务；保留最后管理员保护及角色集合的原串行化边界。
 - [ ] OP-01：权限实时读取，不信任 JWT／前端菜单；首签人实时权限查询通过注入回调或窄接口提供，ops 不 import settlement。
 - [ ] OP-01：Redis MFA pending／锁／频次 IO 由实现层提供，规则归 ops；审计和用户返回不得包含密码、token、密钥、验证码。
+- [ ] OP-01：将 infrastructure/redis/admin_session.go 迁入 ops/session_repo.go，后台刷新、撤销与挑战记录由 ops 持有；保留 AuthVersion、ART_／admin:session:、绝对 TTL、轮换／撤销脚本和令牌格式。共用技术能力按第 2 节提取，不让 ops 与 identity 为复用会话实现互相引用。
 - [ ] OP-01：公告业务归 ops；dashboard 移成有明确来源的跨模块只读投影，保留北京时间日界。admin/ops 中告警确认转 D-02。
 - [ ] N-ops：业务 repo 统一命名；不要通过泛化“表名 + values”写入接口绕过所属业务模块。
 
@@ -373,6 +379,8 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 业务迁出后再移动处理器，不在文件仍拥有事务时仅改目录。来源与目标按下表核对全部注册入口：
 
+目录迁移：`internal/interface/http` → `internal/http`。同步更新 cmd、消费者 import／别名、测试中的相对源码路径和文档；全部迁出后删除空的 `internal/interface`，不保留兼容转发包。目标中的 http/user、http/admin、http/central、http/auth 均相对于 internal。
+
 | 现有接口族 | 目标业务归属／HTTP 位置 |
 |---|---|
 | user_api、auth、phone、用户档案 | identity／http/user/identity 与 http/auth |
@@ -389,7 +397,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 迁移公共 Page／Actor／错误适配时拆除 admin/contracts 对巨大 HTTP 父包的业务依赖；纯分页用 persist，通用响应用 httpapi。HTTP 子包不得再经父包获得 DB、URL 或万能依赖容器。
 
-保持 user.openapi.json、admin.openapi.json 的承载进程与地址；移动 go:embed 时一并移动资源和更新 cmd 的读取测试。实际 newRouter 的路由、认证、schema 引用与文档逐项一致。旧根包的业务实现和转发符号最终删除，是否保留纯路由汇总函数由 cmd 的实际复用决定。
+保持 user.openapi.json、admin.openapi.json 的承载进程与地址；资源随目录迁至 `internal/http`，移动 go:embed 时核对相对路径并更新 cmd 的读取测试。实际 newRouter 的路由、认证、schema 引用与文档逐项一致。旧根包的业务实现和转发符号最终删除，是否保留纯路由汇总函数由 cmd 的实际复用决定。
 
 ### 6.2 X-01 具名客户端清单
 
@@ -419,6 +427,21 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 验收：绑定失败取消其它服务、任务失败保留恢复入口且后续独立任务执行、取消不进入下一任务、结束 central 确认后才释放端口、迟到回执不释放新订单、停机超时后仍等待处理器退出；已有 runtime 和服务装配测试继续通过。
 
+### 6.4 INF-01 infrastructure 目录收尾
+
+本任务依赖职责迁移完成，不把删除目录当作独立业务重构。核对以下归属：
+
+| 当前文件 | 目标职责／路径 | 所属任务 |
+|---|---|---|
+| infrastructure/database/admin_dashboard_store.go | ops 的 dashboard_repo.go，只读运营投影 | OP-01 |
+| infrastructure/database/admin_case_store.go | order/feedback_repo.go、device/fault_repo.go，按用途拆分 | O-01／D-02 |
+| infrastructure/redis/session_store.go | identity/session_repo.go，用户会话 | I-01 |
+| infrastructure/redis/admin_session.go | ops/session_repo.go，后台会话与挑战记录 | OP-01 |
+| infrastructure/redis/session_token.go | 通用令牌机制归 platform/auth；业务前缀归所属模块，共用原子 IO 按需独立提取 | I-01／OP-01 |
+| infrastructure/redis/session_store_test.go | 用户会话测试随 identity 迁移，共用机制测试随提取能力迁移 | I-01／OP-01 |
+
+验收：旧包没有消费者或遗留文件；cmd、HTTP 适配、测试与源码链接引用真实新路径；identity／ops 无反向依赖；用户与后台会话原契约测试、相关装配和全仓默认检查通过。最后删除空的 infrastructure 并更新 AGENTS 的实际目录图，不添加占位包、旧路径别名或兼容转发。
+
 ## 7. 部署评估 DEP-01
 
 前置：批次 0–5 完成；支付、起充、停机、结束、计费、退款和重启恢复已有流程证据。评估依据见 [central 的后续评估](architecture-boundaries.md#central-的后续评估)。
@@ -434,6 +457,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 | 改动 | 必须取得的证据 |
 |---|---|
 | 纯文档 | 链接、引用、事实、目标与现状区分、任务 ID／前置关系、Markdown 格式 |
+| 注释补齐与迁移核对 | 逐字段及逐函数／方法评审；核心逻辑说明与实际分支、锁、事务和恢复一致；字段含义与 SQL／DTO／OpenAPI 一致。纯注释修改不额外重复业务测试 |
 | Go 命名／职责迁移 | make check；包路径／外部依赖变化核对 go mod tidy -diff；装配变化构建受影响 cmd |
 | 资金／状态／唯一键／锁／隔离／幂等／任务 claim | 默认测试 + 相关真库测试；批次退出最终全仓 integration 回归，不能用默认绿代替 |
 | HTTP／DTO／客户端 | 实际注册路由测试、鉴权与输入约束、JSON／错误、OpenAPI／调用方一致；fixture 只证明客户端契约 |
@@ -480,6 +504,7 @@ make test-integration TEST_MYSQL_URL=...
 - [ ] 自己的表由自己的 repo 写入；跨模块调用／投影已登记理由，没有反向循环。
 - [ ] 事务、锁、隔离、幂等、审计与 Outbox 保持完整；外部调用与恢复有持久依据。
 - [ ] repo 名称、消费者、测试、cmd、嵌入资源、文档与 OpenAPI 同步；无失效别名／链接。
+- [ ] 重构范围内字段均有中文释义；函数、方法及接口方法逐项解释全部入参、出参、错误和副作用；核心逻辑详细说明业务依据、顺序、约束与恢复。注释严肃简练，与实现一致，无口语、失效说明或仅翻译名称的占位内容。
 - [ ] 适用测试与构建实际通过，资金／并发真库证据完整；未验收项没有被称为完成。
 
 ## 9. 进度与交付记录
@@ -498,10 +523,11 @@ make test-integration TEST_MYSQL_URL=...
 | CA-01／N-card | 待实施 | Swipe 原事务保留，前置检查及管理入口待迁移 |
 | O-01／CQ-01／N-order | 待实施 | 基础订单 repo 保留，组合查询及 case 待迁移 |
 | M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
-| I-01／N-identity／N-redis | 待实施 | 认证／用户能力已有，会话与手机号入口待收拢 |
-| OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，HTTP 事务待迁移 |
+| I-01／N-identity | 待实施 | 认证／用户能力已有，Redis 用户会话与手机号入口待收拢 |
+| OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，后台会话与 HTTP 事务待迁移 |
 | E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
+| INF-01 | 待实施 | dashboard、case、用户与后台会话归位后，删除 infrastructure 及残留引用 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
 状态只用：待实施、进行中、待验收、完成、待评估。每个任务按下面格式填写短记录；检查失败或未执行如实写明。
@@ -512,6 +538,7 @@ make test-integration TEST_MYSQL_URL=...
 契约与归属：输入输出、错误、表、跨模块理由
 事务与恢复：锁顺序、隔离级别、幂等键、提交点、重试入口
 装配与文档：受影响 cmd、客户端、OpenAPI、配置、资源
+中文注释：字段覆盖、函数／方法入参与出参、核心逻辑及契约一致性核对结果
 验证：实际命令与结果、真实 DB / fixture / stub / 模拟器范围、清理结果
 剩余边界：未执行的验收、待定决策、当前工作区改动
 ```
