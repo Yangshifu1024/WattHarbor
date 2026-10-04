@@ -13,6 +13,7 @@
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
 - 公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
 - 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。
+- 五个服务进程的入口按职责拆分：`main.go` 处理信号与退出错误，`app.go` 加载配置、装配依赖与等待退出，`resources.go` 打开和释放资源，`routes.go` 注册路由与健康检查。worker/gateway 的定时循环在各自 `runtime` 子包，导出清理在 `internal/export`。资源初始化失败须释放已打开的资源；所有受管理请求和后台任务退出后才能关闭数据库、Redis 与客户端连接池。HTTP 停机使用 `httpapi.Serve`，超时取消请求后仍等待处理器退出；处理器必须响应请求 context，不启动未受管理的后台任务。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
 
 ## 工具与代码风格
@@ -27,14 +28,29 @@ charge-pilot/
 │
 ├── cmd                                                   部署单元，每个子目录一个进程
 │   ├── cmd/admin/main.go
+│   ├── cmd/admin/app.go（迁移前：cmd/admin/main.go[装配与生命周期]）
+│   ├── cmd/admin/resources.go（迁移前：cmd/admin/main.go[资源]）
+│   ├── cmd/admin/routes.go（迁移前：cmd/admin/main.go[路由]）
 │   ├── cmd/central/main.go
+│   ├── cmd/central/app.go（迁移前：cmd/central/main.go[装配与生命周期]）
+│   ├── cmd/central/resources.go（迁移前：cmd/central/main.go[资源]）
+│   ├── cmd/central/routes.go（迁移前：cmd/central/main.go[路由]）
 │   ├── cmd/devseed/main.go
 │   ├── cmd/devseed/scheme.go
 │   ├── cmd/gateway/main.go
+│   ├── cmd/gateway/app.go（迁移前：cmd/gateway/main.go[装配与生命周期]）
+│   ├── cmd/gateway/resources.go（迁移前：cmd/gateway/main.go[资源]）
+│   ├── cmd/gateway/routes.go（迁移前：cmd/gateway/main.go[路由]）
 │   ├── cmd/migrate/main.go
 │   ├── cmd/simulator-dc589/main.go
 │   ├── cmd/user/main.go
-│   └── cmd/worker/main.go
+│   ├── cmd/user/app.go（迁移前：cmd/user/main.go[装配与生命周期]）
+│   ├── cmd/user/resources.go（迁移前：cmd/user/main.go[资源]）
+│   ├── cmd/user/routes.go（迁移前：cmd/user/main.go[路由]）
+│   ├── cmd/worker/main.go
+│   ├── cmd/worker/app.go（迁移前：cmd/worker/main.go[装配与生命周期]）
+│   ├── cmd/worker/resources.go（迁移前：cmd/worker/main.go[资源]）
+│   └── cmd/worker/routes.go（迁移前：cmd/worker/main.go[路由]）
 ├── internal/charging                                     充电生命周期：按业务步骤组织子包
 │   ├── internal/charging/start                           启动授权、待启动查询与启动回执
 │   │   ├── internal/charging/start/authorization.go（迁移前：internal/charging/authorization.go[启动部分]）
@@ -153,11 +169,21 @@ charge-pilot/
 │   ├── internal/ops/event_outbox_store.go
 │   └── internal/ops/interface_query_store.go
 ├── internal/export                                       后台批量导出
+│   ├── internal/export/cleanup.go（迁移前：cmd/admin/main.go[过期文件清理循环]）
 │   └── internal/export/export_task_store.go
-├── internal/contracts                                    服务间 HTTP 的端点与共享 DTO
-│   └── internal/contracts/gateway/charging.go
+├── internal/contracts                                    服务间 HTTP 的端点、共享 DTO 与错误契约
+│   ├── internal/contracts/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP 授权响应]）
+│   ├── internal/contracts/central/charging.go（迁移前：internal/worker/charge/paid_start.go[待启动响应]）
+│   ├── internal/contracts/central/errors.go
+│   ├── internal/contracts/central/results.go（迁移前：internal/interface/http/order_*_result.go、internal/worker/charge/*sync.go[回执 DTO]）
+│   ├── internal/contracts/gateway/charging.go（START、STOP 与计量证据契约）
+│   └── internal/contracts/gateway/sync.go（迁移前：internal/worker/charge/*sync.go、meter_segments.go[同步 DTO]）
 ├── internal/integration                                  服务间 HTTP 的专用客户端
-│   └── internal/integration/gateway/client.go
+│   ├── internal/integration/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP]）
+│   ├── internal/integration/central/client.go（迁移前：internal/worker/charge/paid_start.go[待启动 HTTP 查询]）
+│   ├── internal/integration/central/results.go（迁移前：internal/worker/charge/*sync.go[回执 HTTP]）
+│   ├── internal/integration/gateway/client.go
+│   └── internal/integration/gateway/sync.go（迁移前：internal/worker/charge/sync_client.go[启动/结束同步]）
 ├── internal/delivery                                     对外事件契约与签名投递器
 │   ├── internal/delivery/events.go
 │   └── internal/delivery/senders.go
@@ -183,6 +209,7 @@ charge-pilot/
 │   ├── internal/gateway/listener/server.go
 │   ├── internal/gateway/provision/http.go
 │   ├── internal/gateway/provision/vendors.go
+│   ├── internal/gateway/runtime/runtime.go（迁移前：cmd/gateway/main.go[设备接入与停止重试]）
 │   ├── internal/gateway/session/registry.go
 │   ├── internal/gateway/simulator/dc589/behavior.go
 │   ├── internal/gateway/simulator/dc589/simulator.go
@@ -219,6 +246,7 @@ charge-pilot/
 │   ├── internal/worker/internaljob/ops.go
 │   ├── internal/worker/outbox/publisher.go
 │   ├── internal/worker/refund/dispatch.go
+│   ├── internal/worker/runtime/runtime.go（迁移前：cmd/worker/main.go[三个定时循环]）
 │   ├── internal/worker/schedule/http.go
 │   ├── internal/worker/schedule/scheduler.go
 │   ├── internal/worker/store/outbox_store.go
@@ -375,6 +403,7 @@ charge-pilot/
 │   ├── internal/platform/httpapi/decimal_id.go
 │   ├── internal/platform/httpapi/gin.go
 │   ├── internal/platform/httpapi/metrics.go
+│   ├── internal/platform/httpapi/server.go（迁移前：cmd/*/main.go[HTTP 运行与停机]）
 │   ├── internal/platform/netguard/guard.go
 │   ├── internal/platform/phone/phone.go
 │   ├── internal/platform/serviceclient/client.go

@@ -1,21 +1,26 @@
 package control
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 
 type StartAPI struct {
-	Service      StartService
+	Service interface {
+		Start(context.Context, string) (store.StartReservation, error)
+	}
 	ServiceToken string
 }
 
 func (a StartAPI) Register(router *gin.Engine) {
-	router.POST("/api/v1/internal/charge-orders/start", a.start)
+	router.POST(gatewaycontract.StartPath, a.start)
 }
 
 func (a StartAPI) start(c *gin.Context) {
@@ -23,9 +28,7 @@ func (a StartAPI) start(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
-	var request struct {
-		OrderNo string `json:"order_no" binding:"required,min=1,max=64"`
-	}
+	var request gatewaycontract.StartRequest
 	if err := c.ShouldBindJSON(&request); err != nil || strings.TrimSpace(request.OrderNo) != request.OrderNo {
 		httpapi.BadRequest(c, "invalid order number")
 		return
@@ -35,10 +38,8 @@ func (a StartAPI) start(c *gin.Context) {
 		httpapi.Write(c, startStatusCode(err), 2000, "charge start unavailable", nil)
 		return
 	}
-	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gin.H{
-		"order_no":            command.OrderNo,
-		"command_id":          command.CommandID,
-		"status":              command.Status,
-		"device_acknowledged": command.Status == "acked",
+	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StartAcceptance{
+		OrderNo: command.OrderNo, CommandID: command.CommandID, Status: command.Status,
+		DeviceAcknowledged: command.Status == "acked",
 	})
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -56,12 +57,14 @@ func (c Compensation) RetryStopping(ctx context.Context) error {
 }
 
 type CompensationAPI struct {
-	Service      Compensation
+	Service interface {
+		Request(context.Context, string, string) error
+	}
 	ServiceToken string
 }
 
 func (a CompensationAPI) Register(router *gin.Engine) {
-	router.POST("/api/v1/internal/charge-orders/:order_no/compensate", a.handle)
+	router.POST(gatewaycontract.CompensateStartRoute, a.handle)
 }
 
 func (a CompensationAPI) handle(c *gin.Context) {
@@ -69,9 +72,7 @@ func (a CompensationAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
-	var body struct {
-		CommandID string `json:"command_id" binding:"required,uuid"`
-	}
+	var body gatewaycontract.CompensateStartRequest
 	if c.Param("order_no") == "" || len(c.Param("order_no")) > 64 || c.ShouldBindJSON(&body) != nil {
 		httpapi.BadRequest(c, "invalid compensation request")
 		return
@@ -84,5 +85,5 @@ func (a CompensationAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "compensation send failed", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"accepted": true})
+	httpapi.OK(c, gatewaycontract.CompensationAcceptance{Accepted: true})
 }

@@ -12,7 +12,7 @@ make test-integration TEST_MYSQL_URL=...  # 真实 MySQL，需先执行迁移
 
 ## 当前结构
 
-charging 按 start、stop、finish、measurement 四个子包组织，测试随业务步骤放置。FindBillingJob 位于 settlement；计费截止读取与冻结位于 charging/stop。完整结构及依赖理由见 target-structure.md 第 20–21 节。停止用例定义 Gateway 窄接口，contracts/gateway 与 integration/gateway 分别维护共享 wire DTO 与客户端实现。
+charging 按 start、stop、finish、measurement 四个子包组织，测试随业务步骤放置。FindBillingJob 位于 settlement；计费截止读取与冻结位于 charging/stop。完整结构及依赖理由见 target-structure.md 第 20–24 节。contracts/central、contracts/gateway 与对应 integration 子包维护共享 wire DTO 与客户端实现；主动停止、自动停止、待启动派发、gateway 授权与启动／结束同步通过各自窄接口使用客户端。五个服务 cmd 拆为 main/app/resources/routes，worker 与 gateway 定时编排归各自 runtime 子包，资源释放在请求与后台任务退出之后。
 
 ## 人工核验重点
 
@@ -42,6 +42,37 @@ charging 按 start、stop、finish、measurement 四个子包组织，测试随�
 - 新增真实路由契约测试经实际注册的 TelemetryAPI 和真实 gateway_db 调用客户端。该测试查询随机设备的空证据，不写数据库。
 - 配置 TEST_MYSQL_URL 与 DATABASE_URL_GATEWAY 后执行 `go test -tags=integration -count=1 ./internal/gateway/control ./internal/charging/...` 全部通过，同时回归启动失败退款、结束回执并发、重放和内容冲突。
 - 本轮未修改业务 SQL、资金或回执事务；未重跑全仓真库测试。现有 MySQL 数据卷保留，迁移工具核对三库版本仍为 1。
+
+## 主动停止与待启动派发调整的验证结果
+
+- Windows 本机 Go 1.27.1 下 `make check` 通过，包括全量默认测试与 go vet。
+- `go build -trimpath -o bin/ ./cmd/...` 通过，验证全部部署单元及工具的依赖装配。`make build-all` 的 shell 循环在 Windows 默认 shell 下报错，本轮使用本文开头已有的 Go 构建命令；产物仅写入已忽略的 bin/。
+- 新增客户端与注册路由契约测试，核对 central 的待启动清单和 gateway 的 START 绑定、鉴权及响应；路由测试替换用例依赖，不验证真实数据库或设备通信。
+- 用户停止测试核对 JWT 中的大整数身份、来源、HTTP 409/502/503 映射及受理后 stopped=false；派发测试核对查询失败保留游标、空页重扫、原订单号重试和单笔失败继续。
+- 共享 transport 的 HTTPError 保留状态与 errors.Is 哨兵识别；测试确认配置的拒绝重定向策略不会向跳转目标发送服务令牌。
+- `git diff --check` 通过。公开用户接口的请求、响应字段与 user.openapi.json 核对一致。
+- 本轮未修改业务 SQL、资金或回执事务，未运行真库集成测试；没有启动容器，没有提交或暂存改动。
+
+## 授权与启动／结束同步调整的验证结果
+
+- Windows Go 1.27.1 下 `make check` 与 `go build -trimpath -o bin/ ./cmd/...` 通过；构建产物仅在 bin/。
+- central 四个端点和 gateway 补偿端点使用实际注册路由验证绑定、身份、单位与持久化确认，依赖替换为用例 stub，不将其称为真库验证。
+- 消费者测试验证成功启动冲突后只请求补偿、失败启动不补偿、无效回执不投递，以及结束链路的取证／冻结／central／释放／标记顺序和各步失败边界。
+- 设置开发库 TEST_MYSQL_URL、DATABASE_URL_GATEWAY 后执行 `go test -tags=integration -count=1 ./internal/gateway/control ./internal/charging/start ./internal/charging/finish` 全部通过。包含真实同步路由、冻结首写／重放、大整数身份冲突、错误归属释放、重复释放／标记，并回归启动失败退款一次、结束回执并发重放和内容冲突。
+- 网关路由测试写入在外层事务中回滚，并核对 charge_command、device_event、device_port、charge_end_delivery 零残留。现有开发数据和卷保留。
+- 冻结身份比较改用 UseNumber，默认测试验证相邻大整数订单／端口 ID 不会归并，尾随 JSON 仍拒绝，候选分段差异仍允许。
+- 未修改业务 SQL、回执／资金事务或数据库结构；未跑全仓真库测试，不将此前测试库结构问题视为已解决。未提交，本批没有调整用户已存在的暂存区。
+
+## 进程入口拆分与生命周期的验证结果
+
+- 按 worker → gateway → user → central/admin 拆分，五个 cmd 的 run 仅保留配置、资源、装配与运行步骤。worker 使用具名数据库资源，保留原 Outbox 来源标识、定时周期和任务顺序。
+- Windows Go 1.27.1 下 `make check` 与 `go build -trimpath -o bin/ ./cmd/...` 通过；后者覆盖全部八个进程及工具入口，产物位于已忽略的 bin/。
+- HTTP 测试使用真实 loopback 监听与并发请求，验证停止信号期间请求不提前取消、响应能完成，以及超时取消请求后仍等待处理器退出。测试中的阻塞与释放由通道控制，不依赖真实业务数据库。
+- 应用测试验证 worker HTTP 绑定失败后所有循环退出、gateway TCP 绑定失败后 HTTP 与重试循环退出、admin 清理取消后的等待与 HTTP 失败处理。
+- worker 资源测试使用可记录关闭的标准 SQL 测试驱动，验证第二／第三库失败及 Redis URL 无效时所有已打开连接关闭；运行时测试验证任务顺序、单项失败继续和取消后不执行下一项。
+- user/admin 的实际 newRouter 装配与各自 OpenAPI 声明逐端点比对通过，未挂载其它进程的业务路由。未修改 API 输入、输出、权限或环境变量。
+- 本批没有业务 SQL、资金事务或数据库结构变更，没有启动容器，没有运行真库、微信或设备联调。当前 Windows CGO_ENABLED=0，未执行 race 模式；并发行为以所列默认测试为验证范围。
+- 未提交或改变已有暂存区。处理器与后台任务必须响应 context；停机超时后仍等待退出，不能把 10 秒宽限期解释为无条件的进程退出上限。
 
 ## 前端验证与其边界
 

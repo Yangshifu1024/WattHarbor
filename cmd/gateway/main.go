@@ -3,26 +3,10 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/listener"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/provision"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
-	"github.com/gin-gonic/gin"
-	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -32,97 +16,4 @@ func main() {
 		log.Print(err)
 		os.Exit(1)
 	}
-}
-
-func run(ctx context.Context) error {
-	cfg, err := config.LoadGateway()
-	if err != nil {
-		return err
-	}
-	db, err := dbconn.Open(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	orm, err := dbconn.WrapGORM(db)
-	if err != nil {
-		return err
-	}
-	sink := store.MySQLSink{DB: orm}
-	gin.SetMode(gin.ReleaseMode)
-	// 在注册路由前安装指标中间件，覆盖全部 HTTP 请求。
-	// 指标端点无需运营会话，仅暴露路由模板、状态码与耗时。
-	metrics := httpapi.NewMetrics("gateway")
-	zone, offset := time.Now().Zone()
-	log.Printf("gateway starting http=%s dc589=%s max_connections=%d idle_heartbeat_seconds=%d charging_heartbeat_seconds=%d debug_heartbeat=%t timezone=%s offset_seconds=%d", cfg.HTTPAddr, cfg.DC589Addr, cfg.MaxConnections, dc589.DefaultHeartbeatSeconds, dc589.ChargingHeartbeatSeconds, cfg.DebugHeartbeat, zone, offset)
-	router := httpapi.NewRouter(metrics)
-	metrics.Register(router)
-	provision.API{DB: orm, ServiceToken: cfg.ServiceToken}.Register(router)
-	deviceConnections := &session.Registry{}
-	control.CardReplyAPI{Devices: deviceConnections, ServiceToken: cfg.ServiceToken}.Register(router)
-	control.StartAPI{Service: control.StartService{
-		Orders: control.CentralAuthorizer{BaseURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken},
-		Store:  sink, Devices: deviceConnections,
-	}, ServiceToken: cfg.ServiceToken}.Register(router)
-	compensation := control.Compensation{Store: sink, Devices: deviceConnections}
-	control.CompensationAPI{Service: compensation, ServiceToken: cfg.ServiceToken}.Register(router)
-	userStops := control.UserStopService{Orders: control.CentralAuthorizer{BaseURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken}, Store: sink, Devices: deviceConnections}
-	control.UserStopAPI{Service: userStops, ServiceToken: cfg.ServiceToken}.Register(router)
-	control.ScanAPI{Store: sink, ServiceToken: cfg.ServiceToken}.Register(router)
-	control.DeviceSummaryAPI{DB: orm, ServiceToken: cfg.ServiceToken}.Register(router)
-	control.TelemetryAPI{DB: orm, ServiceToken: cfg.ServiceToken, MaxWindow: 24 * time.Hour, MaxPoints: 2000}.Register(router)
-	control.SessionAPI{DB: orm, ServiceToken: cfg.ServiceToken, IdleThreshold: 15 * time.Minute, MaxRows: 500}.Register(router)
-	router.GET("/health/live", func(c *gin.Context) { httpapi.OK(c, gin.H{"status": "live"}) })
-	router.GET("/health/ready", func(c *gin.Context) {
-		checkCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-		defer cancel()
-		if err := db.PingContext(checkCtx); err != nil {
-			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "database unavailable", nil)
-			return
-		}
-		httpapi.OK(c, gin.H{"status": "device_ingress_ready"})
-	})
-	server := &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.Go(func() error {
-		err := server.ListenAndServe()
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	})
-	group.Go(func() error {
-		err := listener.Serve(groupCtx, []protocol.Endpoint{{Address: cfg.DC589Addr, Adapter: dc589.TCPAdapter{Registry: deviceConnections, DebugHeartbeat: cfg.DebugHeartbeat}}}, sink, cfg.MaxConnections)
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return err
-	})
-	group.Go(func() error {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-groupCtx.Done():
-				return nil
-			case <-ticker.C:
-				if err := compensation.RetryStopping(groupCtx); err != nil && !errors.Is(err, context.Canceled) {
-					log.Printf("STOP compensation: %v", err)
-				}
-				if err := userStops.RetryPending(groupCtx); err != nil && !errors.Is(err, context.Canceled) {
-					log.Printf("user STOP retry: %v", err)
-				}
-			}
-		}
-	})
-	group.Go(func() error {
-		<-groupCtx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return server.Shutdown(shutdownCtx)
-	})
-	if err := group.Wait(); err != nil {
-		return fmt.Errorf("gateway: %w", err)
-	}
-	return nil
 }

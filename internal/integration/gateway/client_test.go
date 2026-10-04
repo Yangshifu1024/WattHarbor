@@ -155,3 +155,51 @@ func TestClientRejectsInvalidConfigurationAndBatchWithoutCallingServer(t *testin
 		}
 	}
 }
+
+func TestRequestStartChecksOrderAndReceiptFact(t *testing.T) {
+	for _, status := range []string{"pending", "sent", "stopping", "acked"} {
+		t.Run(status, func(t *testing.T) {
+			client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]json.RawMessage
+				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/internal/charge-orders/start" || r.Header.Get("X-Service-Token") != "test-service-token" || json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 1 || string(body["order_no"]) != `"C-1"` {
+					t.Error("start request differs from contract")
+				}
+				w.WriteHeader(http.StatusAccepted)
+				_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"order_no": "C-1", "command_id": "cmd-1", "status": status, "device_acknowledged": status == "acked"}})
+			})
+			data, err := client.RequestStart(context.Background(), gatewaycontract.StartRequest{OrderNo: "C-1"})
+			if err != nil || data.OrderNo != "C-1" || data.CommandID != "cmd-1" || data.Status != status || data.DeviceAcknowledged != (status == "acked") {
+				t.Fatalf("acceptance=%+v err=%v", data, err)
+			}
+		})
+	}
+}
+
+func TestRequestStartRejectsIncompleteAcceptance(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"200 is not acceptance", 200, `{"code":0,"data":{"order_no":"C-1","command_id":"cmd","status":"pending"}}`},
+		{"missing code", 202, `{"data":{"order_no":"C-1","command_id":"cmd","status":"pending"}}`},
+		{"wrong order", 202, `{"code":0,"data":{"order_no":"C-2","command_id":"cmd","status":"pending"}}`},
+		{"missing command", 202, `{"code":0,"data":{"order_no":"C-1","status":"pending"}}`},
+		{"missing status", 202, `{"code":0,"data":{"order_no":"C-1","command_id":"cmd"}}`},
+		{"false device success", 202, `{"code":0,"data":{"order_no":"C-1","command_id":"cmd","status":"pending","device_acknowledged":true}}`},
+		{"missing acknowledgment", 202, `{"code":0,"data":{"order_no":"C-1","command_id":"cmd","status":"acked"}}`},
+		{"missing data", 202, `{"code":0}`},
+		{"malformed JSON", 202, `{`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+			_, err := client.RequestStart(context.Background(), gatewaycontract.StartRequest{OrderNo: "C-1"})
+			if !errors.Is(err, ErrInvalidResponse) {
+				t.Fatalf("invalid acceptance passed: %v", err)
+			}
+		})
+	}
+}

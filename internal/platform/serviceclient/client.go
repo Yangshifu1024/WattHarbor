@@ -18,6 +18,21 @@ var ErrUnauthorized = errors.New("service token rejected")
 // ErrNotFound 表示被调用方有应答，但资源不存在。
 var ErrNotFound = errors.New("resource not found")
 
+// HTTPError 保留已收到的非成功 HTTP 状态；不包含响应正文或服务凭据。
+type HTTPError struct {
+	StatusCode int
+	Path       string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("service call %s returned %d", e.Path, e.StatusCode)
+}
+
+func (e *HTTPError) Is(target error) bool {
+	return (target == ErrUnauthorized && (e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden)) ||
+		(target == ErrNotFound && e.StatusCode == http.StatusNotFound)
+}
+
 // Client 执行无需签名、仅以 service token 鉴权的内部调用。
 type Client struct {
 	HTTP    *http.Client
@@ -37,31 +52,33 @@ func (c Client) httpClient() *http.Client {
 
 // Get 发送带服务令牌的 GET 并返回响应体；404 映射为 ErrNotFound，其他失败独立返回。
 func (c Client) Get(ctx context.Context, baseURL, serviceToken, path string) ([]byte, error) {
+	_, body, err := c.GetStatus(ctx, baseURL, serviceToken, path)
+	return body, err
+}
+
+// GetStatus 返回 HTTP 状态供专用客户端核对；未收到响应时状态为 0。
+func (c Client) GetStatus(ctx context.Context, baseURL, serviceToken, path string) (int, []byte, error) {
 	target := strings.TrimRight(baseURL, "/") + path
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	request.Header.Set("X-Service-Token", serviceToken)
 	response, err := c.httpClient().Do(request)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		// 消耗有界错误正文以复用连接；正文读取失败不覆盖已收到的 HTTP 状态。
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<20))
+		return response.StatusCode, nil, &HTTPError{StatusCode: response.StatusCode, Path: path}
+	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if err != nil {
-		return nil, err
+		return response.StatusCode, nil, err
 	}
-	switch {
-	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
-		return nil, ErrUnauthorized
-	case response.StatusCode == http.StatusNotFound:
-		return nil, ErrNotFound
-	case response.StatusCode >= 200 && response.StatusCode < 300:
-		return body, nil
-	default:
-		return nil, fmt.Errorf("service call %s returned %d", path, response.StatusCode)
-	}
+	return response.StatusCode, body, nil
 }
 
 // GetJSON 把一次成功的 GET 解码进 out。
@@ -104,19 +121,16 @@ func (c Client) PostStatus(ctx context.Context, baseURL, serviceToken, path stri
 		return 0, err
 	}
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<20))
+		return response.StatusCode, &HTTPError{StatusCode: response.StatusCode, Path: path}
+	}
 	reply, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if err != nil {
 		return response.StatusCode, err
 	}
-	switch {
-	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
-		return response.StatusCode, ErrUnauthorized
-	case response.StatusCode >= 200 && response.StatusCode < 300:
-		if out == nil || len(reply) == 0 {
-			return response.StatusCode, nil
-		}
-		return response.StatusCode, json.Unmarshal(reply, out)
-	default:
-		return response.StatusCode, fmt.Errorf("service call %s returned %d", path, response.StatusCode)
+	if out == nil || len(reply) == 0 {
+		return response.StatusCode, nil
 	}
+	return response.StatusCode, json.Unmarshal(reply, out)
 }

@@ -1,18 +1,17 @@
 package http
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
+	"errors"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,9 +23,9 @@ type UserStopAPI struct {
 	Users interface {
 		Active(context.Context, uint64) (bool, error)
 	}
-	GatewayURL   string
-	ServiceToken string
-	Client       *http.Client
+	Gateway interface {
+		RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error)
+	}
 }
 
 func (a UserStopAPI) Register(router *gin.Engine) { router.POST("/api/v1/user/charge/stop", a.handle) }
@@ -72,50 +71,28 @@ func (a UserStopAPI) handle(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid order number")
 		return
 	}
-	base, err := url.Parse(a.GatewayURL)
-	if err != nil || base.Host == "" || base.User != nil || base.Scheme != "http" && base.Scheme != "https" {
+	if a.Gateway == nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "gateway configuration invalid", nil)
 		return
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/api/v1/internal/charge-orders/stop"
-	requestBody, _ := json.Marshal(map[string]any{"order_no": body.OrderNo, "user_id": userID, "source": "user_app"})
-	request, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, base.String(), bytes.NewReader(requestBody))
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "gateway request failed", nil)
+	acceptance, err := a.Gateway.RequestStop(c.Request.Context(), gatewaycontract.StopRequest{OrderNo: body.OrderNo, UserID: userID, Source: gatewaycontract.StopSourceUser})
+	var rejection *serviceclient.HTTPError
+	if errors.As(err, &rejection) && rejection.StatusCode == http.StatusConflict {
+		httpapi.Write(c, http.StatusConflict, 2000, "order is not stoppable", nil)
 		return
 	}
-	request.Header.Set("X-Service-Token", a.ServiceToken)
-	request.Header.Set("Content-Type", "application/json")
-	client := a.Client
-	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if errors.Is(err, gatewaycontract.ErrInvalidResponse) {
+		httpapi.Write(c, http.StatusBadGateway, 5003, "invalid gateway response", nil)
+		return
 	}
-	response, err := client.Do(request)
+	var businessError gatewaycontract.BusinessError
+	if rejection != nil || errors.As(err, &businessError) {
+		httpapi.Write(c, http.StatusBadGateway, 5003, "gateway stop not accepted", nil)
+		return
+	}
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "gateway unavailable", nil)
 		return
 	}
-	defer response.Body.Close()
-	var envelope struct {
-		Code int `json:"code"`
-		Data struct {
-			Accepted  bool   `json:"accepted"`
-			Stopped   bool   `json:"stopped"`
-			CommandID string `json:"command_id"`
-			Status    string `json:"status"`
-		} `json:"data"`
-	}
-	if json.NewDecoder(io.LimitReader(response.Body, 16<<10)).Decode(&envelope) != nil {
-		httpapi.Write(c, http.StatusBadGateway, 5003, "invalid gateway response", nil)
-		return
-	}
-	if response.StatusCode == http.StatusConflict {
-		httpapi.Write(c, http.StatusConflict, 2000, "order is not stoppable", nil)
-		return
-	}
-	if response.StatusCode != http.StatusAccepted || envelope.Code != 0 || !envelope.Data.Accepted {
-		httpapi.Write(c, http.StatusBadGateway, 5003, "gateway stop not accepted", nil)
-		return
-	}
-	httpapi.OK(c, gin.H{"accepted": true, "stopped": false, "command_id": envelope.Data.CommandID, "status": envelope.Data.Status})
+	httpapi.OK(c, acceptance)
 }

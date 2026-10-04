@@ -2,12 +2,34 @@ package charge
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
+	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 )
+
+func starterForServer(t *testing.T, server *httptest.Server) PaidStarter {
+	t.Helper()
+	transport := serviceclient.Client{HTTP: server.Client()}
+	central, err := centralclient.NewClient(transport, server.URL, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := gatewayclient.NewClient(transport, server.URL, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return PaidStarter{Orders: central, Gateway: gateway}
+}
 
 func TestPaidStarterRetriesAfterFullScanAndKeepsCursorOnListFailure(t *testing.T) {
 	var cursors []string
@@ -35,20 +57,26 @@ func TestPaidStarterRetriesAfterFullScanAndKeepsCursorOnListFailure(t *testing.T
 			if r.Method != "POST" {
 				t.Error("start must use POST")
 			}
+			var body struct {
+				OrderNo string `json:"order_no"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.OrderNo != "C-7" {
+				t.Errorf("retry changed original order: %+v %v", body, err)
+			}
 			startCalls++
 			if startCalls == 1 {
 				w.WriteHeader(503)
 				return
 			}
 			w.WriteHeader(202)
-			fmt.Fprint(w, `{"code":0,"data":{"order_no":"C-7","status":"accepted"}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"order_no":"C-7","command_id":"cmd-7","status":"pending","device_acknowledged":false}}`)
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 			w.WriteHeader(404)
 		}
 	}))
 	defer server.Close()
-	s := PaidStarter{CentralURL: server.URL, GatewayURL: server.URL, ServiceToken: "secret"}
+	s := starterForServer(t, server)
 	for i, want := range []struct {
 		count int
 		fail  bool
@@ -80,11 +108,43 @@ func TestPaidStarterRejectsMalformedListBeforeDispatch(t *testing.T) {
 			}
 			fmt.Fprint(w, reply)
 		}))
-		s := PaidStarter{CentralURL: server.URL, GatewayURL: server.URL, ServiceToken: "secret", cursor: 5}
+		s := starterForServer(t, server)
+		s.cursor = 5
 		n, err := s.DispatchBatch(context.Background())
 		server.Close()
 		if err == nil || n != 0 || starts != 0 || s.cursor != 5 {
 			t.Fatalf("reply=%s count=%d starts=%d cursor=%d err=%v", reply, n, starts, s.cursor, err)
 		}
+	}
+}
+
+type pendingStub struct {
+	items []centralcontract.PaidStartOrder
+}
+
+func (s pendingStub) PaidStarts(context.Context, uint64) ([]centralcontract.PaidStartOrder, error) {
+	return s.items, nil
+}
+
+type dispatchStub struct {
+	orders    []string
+	rejection error
+}
+
+func (s *dispatchStub) RequestStart(_ context.Context, request gatewaycontract.StartRequest) (gatewaycontract.StartAcceptance, error) {
+	s.orders = append(s.orders, request.OrderNo)
+	if request.OrderNo == "C-7" {
+		return gatewaycontract.StartAcceptance{}, s.rejection
+	}
+	return gatewaycontract.StartAcceptance{OrderNo: request.OrderNo, CommandID: "cmd-8", Status: "pending"}, nil
+}
+
+func TestPaidStarterContinuesBatchAfterFailedOrder(t *testing.T) {
+	rejection := errors.New("gateway unavailable")
+	gateway := &dispatchStub{rejection: rejection}
+	s := PaidStarter{Orders: pendingStub{items: []centralcontract.PaidStartOrder{{ID: 7, OrderNo: "C-7"}, {ID: 8, OrderNo: "C-8"}}}, Gateway: gateway}
+	n, err := s.DispatchBatch(context.Background())
+	if n != 1 || !errors.Is(err, rejection) || s.cursor != 8 || !reflect.DeepEqual(gateway.orders, []string{"C-7", "C-8"}) {
+		t.Fatalf("accepted=%d cursor=%d orders=%v err=%v", n, s.cursor, gateway.orders, err)
 	}
 }

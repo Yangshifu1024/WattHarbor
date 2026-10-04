@@ -4,23 +4,14 @@ import (
 	"context"
 	"errors"
 	chargefinish "github.com/ChargePilot2026/charge-pilot/internal/charging/finish"
-	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
 
-type EndResult struct {
-	OrderNo        string         `json:"order_no" binding:"required,max=64"`
-	ChargeOrderID  uint64         `json:"charge_order_id" binding:"required"`
-	StartCommandID string         `json:"start_command_id" binding:"required,uuid"`
-	StopCommandID  string         `json:"stop_command_id" binding:"required,uuid"`
-	DeviceID       string         `json:"device_id" binding:"required,max=64"`
-	PortNo         uint8          `json:"port_no" binding:"required"`
-	PortID         uint64         `json:"port_id" binding:"required"`
-	Meter          rules.EndMeter `json:"meter" binding:"required"`
-}
+type EndResult = centralcontract.EndResult
 
 type EndResultAPI struct {
 	Service interface {
@@ -30,7 +21,7 @@ type EndResultAPI struct {
 }
 
 func (a EndResultAPI) Register(router *gin.Engine) {
-	router.POST("/api/v1/internal/charge-orders/:order_no/end-result", a.handle)
+	router.POST(centralcontract.EndResultRoute, a.handle)
 }
 
 func (a EndResultAPI) handle(c *gin.Context) {
@@ -52,5 +43,5 @@ func (a EndResultAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "end result persistence failed", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"accepted": true, "replayed": replayed})
+	httpapi.OK(c, centralcontract.ResultAcceptance{Accepted: true, Replayed: replayed})
 }

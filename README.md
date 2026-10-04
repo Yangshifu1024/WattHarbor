@@ -69,6 +69,8 @@ docker compose -f compose.dev.yaml up -d --no-deps --force-recreate central gate
 
 联调顺序：启动开发栈、准备数据、启动两个模拟器，后台确认设备在线；用户端选择端口和套餐并完成模拟支付，再调整模拟器功率、停止充电，核对订单、计量、费用、退款及钱包流水。`cmd/devseed` 可生成后台演示数据，`-clean` 只清理其 `demo_` 数据；它不能替代真实 TCP 联调。
 
+模拟器只连接已开通的设备，不负责创建设备；启动前通过准备脚本或后台完成开通。
+
 ## 模拟器
 
 在两个终端分别执行：
@@ -86,6 +88,8 @@ docker compose -f compose.dev.yaml up -d --no-deps --force-recreate central gate
 编号为 16 位十进制数字，须与后台 DC589 设备一致。默认两端口，`-Ports` 支持 1～20，须与后台端口数一致。各实例使用独立编号、控制端口和状态文件。
 
 TUI 支持调功率、插拔、刷卡与移卡、余额查询、设备参数、故障、温度、电压、烟雾、校时、断线重连和重启。`Tab` 切页，`m` 打开操作菜单，方向键选择，`Enter` 提交，`Esc` 返回，`q` 退出。卡持续贴住只触发一次刷卡事件，再次刷卡前需移卡。状态文件保存进行中的充电和待确认报告，支持进程重启恢复。
+
+TUI 的启动信息、控制服务日志与设备通信日志统一显示在“日志”页；无界面模式继续写入 stdout。退出前恢复终端并等待设备循环停止，异常退出原因由命令输出到 stderr。
 
 无界面运行及控制示例：
 
@@ -191,7 +195,9 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 
 ### 接口导航
 
-后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件是 `internal/interface/http/admin.openapi.json`；C 端文档是同目录的 `user.openapi.json`。实际路由装配见 `cmd/user/main.go`、`cmd/admin/main.go` 与 `cmd/central/main.go`。
+后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件是 `internal/interface/http/admin.openapi.json`；C 端文档是同目录的 `user.openapi.json`。实际路由装配见 `cmd/user/routes.go`、`cmd/admin/routes.go` 与 `cmd/central/routes.go`。
+
+五个服务进程的 `main.go` 处理信号与退出错误，`app.go` 管配置、装配与生命周期，`resources.go` 管资源，`routes.go` 管路由与健康检查。worker 的三个任务循环和 gateway 的设备接入／停止重试在各自 `runtime` 子包，保留现有周期与任务顺序。收到停止信号或任一入口失败后，取消后台循环并等待退出；HTTP 请求有 10 秒排空期，超时后取消请求、关闭连接并等待处理器退出，再释放存储。该等待依赖处理器与任务响应 context。
 
 | 业务 | HTTP 入口 | 用例实现 |
 | --- | --- | --- |
@@ -204,6 +210,14 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 | worker 运维与调度 | [worker/internaljob](internal/worker/internaljob)、[worker/schedule](internal/worker/schedule) | worker 编排，业务写入委托 central |
 
 `GET /api/v1/internal/charge-orders/paid-starts?after_id=0` 由 central 提供，使用 `X-Service-Token`。成功响应的 `data.items` 是数组，每项包含整数 `id` 与字符串 `order_no`，按 ID 升序最多 100 项；空结果返回 `[]`。缺省游标为 0，非法游标返回 400，服务令牌错误返回 401，查询失败返回 503。worker 扫描完后从 0 重扫，使用原订单号重试 gateway 的 START 接口。
+
+worker 的待启动查询与 START 派发分别通过 `integration/central.PaidStarts`、`integration/gateway.RequestStart` 执行，客户端由 worker 进程装配。START 必须返回 HTTP 202、code=0、匹配的订单号及非空命令 ID/状态；`device_acknowledged` 仅在状态为 `acked` 时为 true。单笔派发失败仍继续后续订单，游标随扫描推进；查询失败保留游标，空页后从 0 重扫。客户端不自动重试，订单状态仍由 central 接收持久化回执后推进。
+
+用户主动停止复用 `integration/gateway.RequestStop`，身份取自当前 JWT，并保留会话与账号状态检查。网关 409 映射为用户接口 409；其他 HTTP 拒绝、业务失败或无效响应返回 502，网络失败返回 503。成功只返回 `accepted=true`、`stopped=false` 和命令信息。两个入口的 HTTP 客户端均由进程装配，超时为 5 秒并拒绝重定向。
+
+gateway 的启动／停止授权通过 `integration/central` 查询，共享 DTO 不引用网关存储模型；404/409 保持业务拒绝，传输故障与无效响应保留错误。worker 通过具名客户端同步启动／结束回执：central 必须返回 HTTP 200、code=0、accepted=true 后，才能标记启动回执或释放结束端口。成功启动回执被 central 以 409 拒绝时请求补偿停止，不标记已上报，也不据此退款。
+
+结束同步按“固定窗口取证 → 冻结回执 → central 确认 → 释放端口 → 标记事件”执行。重放使用存量冻结内容，释放失败保留结束事件；重复释放和标记仍可成功。冻结身份比较保留大整数的精确值，仅允许候选计量分段差异，不允许订单或端口身份变化。
 
 充电生命周期按 `internal/charging/start`、`stop`、`finish` 和 `measurement` 组织；事务、幂等回执与 Outbox 在对应生命周期子包，回执与授权的 HTTP 处理器只做认证、绑定和错误映射。启动失败与结算共用 `settlement.RefundBalanceInTx`，钱包入账复用 `wallet.Move`；设备协议单位转换留在边缘适配器。
 

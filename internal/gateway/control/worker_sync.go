@@ -3,6 +3,7 @@ package control
 import (
 	"encoding/json"
 	"errors"
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -10,6 +11,7 @@ import (
 	"gorm.io/gorm"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,14 +20,14 @@ import (
 // 刷卡事件投递。语义逐项对齐原 worker 直读实现（第 5 批⑤），
 // worker 侧不再持有 gateway 库句柄。
 func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
-	r.GET("/api/v1/internal/start-results", a.startResults)
-	r.POST("/api/v1/internal/start-results/mark-reported", a.markStartResultsReported)
-	r.GET("/api/v1/internal/end-events", a.endEvents)
-	r.GET("/api/v1/internal/charge-commands/by-order/:order_id", a.chargeCommandByOrder)
-	r.POST("/api/v1/internal/device-events/mark-processed", a.markDeviceEventsProcessed)
-	r.POST("/api/v1/internal/ports/release", a.releasePort)
-	r.GET("/api/v1/internal/devices/:device_id/meter-samples", a.meterSamples)
-	r.POST("/api/v1/internal/charge-end-deliveries/freeze", a.freezeEndDelivery)
+	r.GET(gatewaycontract.StartResultsPath, a.startResults)
+	r.POST(gatewaycontract.MarkStartResultsPath, a.markStartResultsReported)
+	r.GET(gatewaycontract.EndEventsPath, a.endEvents)
+	r.GET(gatewaycontract.ChargeCommandRoute, a.chargeCommandByOrder)
+	r.POST(gatewaycontract.MarkDeviceEventsPath, a.markDeviceEventsProcessed)
+	r.POST(gatewaycontract.ReleasePortPath, a.releasePort)
+	r.GET(gatewaycontract.MeterSamplesRoute, a.meterSamples)
+	r.POST(gatewaycontract.FreezeEndDeliveryPath, a.freezeEndDelivery)
 	r.GET("/api/v1/internal/card-events", a.cardEvents)
 	r.POST("/api/v1/internal/card-events/decide-begin", a.cardDecideBegin)
 	r.POST("/api/v1/internal/card-events/decide-finish", a.cardDecideFinish)
@@ -52,17 +54,11 @@ func (a TelemetryAPI) startResults(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "启动回执暂不可读取", nil)
 		return
 	}
-	items := make([]gin.H, 0, len(rows))
+	items := make([]gatewaycontract.SyncCommand, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, gin.H{
-			"command_id": row.CommandID, "stop_command_id": row.StopCommandID,
-			"charge_order_id": row.ChargeOrderID, "order_no": row.OrderNo,
-			"device_id": row.DeviceID, "port_no": row.PortNo,
-			"port_id": nullableInt(row.PortID), "status": row.Status,
-			"result_code": gatewaystore.NullInt16ToAny(row.ResultCode), "ack_at": gatewaystore.NullTimeToAny(row.AckAt),
-		})
+		items = append(items, syncCommandDTO(row))
 	}
-	httpapi.OK(c, gin.H{"items": items})
+	httpapi.OK(c, gatewaycontract.StartResultsData{Items: items})
 }
 
 // markStartResultsReported 只推进仍处于未上报状态的行，重放安全。
@@ -70,9 +66,7 @@ func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in struct {
-		CommandIDs []string `json:"command_ids" binding:"required,min=1,max=50"`
-	}
+	var in gatewaycontract.MarkStartResultsRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpapi.BadRequest(c, "上报标记请求无效")
 		return
@@ -94,7 +88,7 @@ func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "上报标记暂不可用", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"marked": marked})
+	httpapi.OK(c, gatewaycontract.MarkResult{Marked: marked})
 }
 
 // endEvents 返回未处理的刷卡/扫码结束事件（ConsumerType 2/3），按 id 升序，最多 50 条。
@@ -111,11 +105,11 @@ func (a TelemetryAPI) endEvents(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束事件暂不可读取", nil)
 		return
 	}
-	items := make([]gin.H, 0, len(rows))
+	items := make([]gatewaycontract.SyncEvent, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, gin.H{"id": row.ID, "payload": string(row.EventJSON)})
+		items = append(items, gatewaycontract.SyncEvent{ID: row.ID, Payload: string(row.EventJSON)})
 	}
-	httpapi.OK(c, gin.H{"items": items})
+	httpapi.OK(c, gatewaycontract.EventsData{Items: items})
 }
 
 // chargeCommandByOrder 按订单取一条启动命令（原 Take 语义：不保证多行时的选择），不存在返回 found:false。
@@ -135,16 +129,11 @@ func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 		return
 	}
 	if res.RowsAffected == 0 {
-		httpapi.OK(c, gin.H{"found": false})
+		httpapi.OK(c, gatewaycontract.CommandData{Found: false})
 		return
 	}
-	httpapi.OK(c, gin.H{"found": true, "command": gin.H{
-		"command_id": row.CommandID, "stop_command_id": row.StopCommandID,
-		"charge_order_id": row.ChargeOrderID, "order_no": row.OrderNo,
-		"device_id": row.DeviceID, "port_no": row.PortNo,
-		"port_id": nullableInt(row.PortID), "status": row.Status,
-		"result_code": gatewaystore.NullInt16ToAny(row.ResultCode), "ack_at": gatewaystore.NullTimeToAny(row.AckAt),
-	}})
+	command := syncCommandDTO(row)
+	httpapi.OK(c, gatewaycontract.CommandData{Found: true, Command: &command})
 }
 
 // markDeviceEventsProcessed 只推进未处理的行，返回推进条数。
@@ -152,9 +141,7 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in struct {
-		IDs []uint64 `json:"ids" binding:"required,min=1,max=100"`
-	}
+	var in gatewaycontract.MarkDeviceEventsRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpapi.BadRequest(c, "处理标记请求无效")
 		return
@@ -174,7 +161,7 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "处理标记暂不可用", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"marked": marked})
+	httpapi.OK(c, gatewaycontract.MarkResult{Marked: marked})
 }
 
 // releasePort 在 central 确认结算后释放端口：条件更新占用中的端口；
@@ -183,10 +170,7 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in struct {
-		PortID  uint64 `json:"port_id" binding:"required"`
-		OrderNo string `json:"order_no" binding:"required,max=64"`
-	}
+	var in gatewaycontract.ReleasePortRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpapi.BadRequest(c, "端口释放请求无效")
 		return
@@ -199,7 +183,7 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 		return
 	}
 	if res.RowsAffected == 1 {
-		httpapi.OK(c, gin.H{"released": true, "already": false})
+		httpapi.OK(c, gatewaycontract.ReleasePortResult{Released: true, Already: false})
 		return
 	}
 	var port workerSyncPortRow
@@ -208,7 +192,7 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 		return
 	}
 	if port.Status == "idle" && !port.CurrentOrderID.Valid {
-		httpapi.OK(c, gin.H{"released": true, "already": true})
+		httpapi.OK(c, gatewaycontract.ReleasePortResult{Released: true, Already: true})
 		return
 	}
 	httpapi.Write(c, http.StatusConflict, 2009, "端口在结算后无法释放", nil)
@@ -240,11 +224,11 @@ func (a TelemetryAPI) meterSamples(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "计量证据暂不可读取", nil)
 		return
 	}
-	items := make([]gin.H, 0, len(rows))
+	items := make([]gatewaycontract.SyncEvent, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, gin.H{"id": row.ID, "payload": string(row.EventJSON)})
+		items = append(items, gatewaycontract.SyncEvent{ID: row.ID, Payload: string(row.EventJSON)})
 	}
-	httpapi.OK(c, gin.H{"items": items})
+	httpapi.OK(c, gatewaycontract.EventsData{Items: items})
 }
 
 // freezeEndDelivery 冻结结束回执：已有冻结时校验身份（忽略 segments 后
@@ -254,11 +238,7 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in struct {
-		DeviceEventID uint64 `json:"device_event_id" binding:"required"`
-		ChargeOrderID uint64 `json:"charge_order_id" binding:"required"`
-		Payload       string `json:"payload" binding:"required,max=65535"`
-	}
+	var in gatewaycontract.FreezeEndDeliveryRequest
 	if err := c.ShouldBindJSON(&in); err != nil {
 		httpapi.BadRequest(c, "冻结请求无效")
 		return
@@ -271,7 +251,7 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 	if stored == "" {
 		err = gatewaystore.InsertFrozenEndDelivery(a.DB.WithContext(c.Request.Context()), in.DeviceEventID, in.ChargeOrderID, in.Payload)
 		if err == nil {
-			httpapi.OK(c, gin.H{"payload": in.Payload, "frozen": false})
+			httpapi.OK(c, gatewaycontract.FreezeEndDeliveryResult{Payload: in.Payload, Frozen: false})
 			return
 		}
 		var mysqlErr *mysql.MySQLError
@@ -290,7 +270,7 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 		httpapi.Write(c, http.StatusConflict, 2009, "frozen end result identity conflict", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"payload": stored, "frozen": true})
+	httpapi.OK(c, gatewaycontract.FreezeEndDeliveryResult{Payload: stored, Frozen: true})
 }
 
 func (a TelemetryAPI) frozenEndPayload(c *gin.Context, deviceEventID uint64) (string, error) {
@@ -302,7 +282,9 @@ func (a TelemetryAPI) frozenEndPayload(c *gin.Context, deviceEventID uint64) (st
 func sameEndIdentity(stored, candidate string) bool {
 	strip := func(raw string) string {
 		var value map[string]any
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		decoder := json.NewDecoder(strings.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil || !json.Valid([]byte(raw)) {
 			return raw
 		}
 		if meter, ok := value["meter"].(map[string]any); ok {

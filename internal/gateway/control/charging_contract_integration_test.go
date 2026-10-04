@@ -16,10 +16,11 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"gorm.io/gorm"
 )
 
-// 通过实际网关路由和真实数据库验证客户端契约；随机设备无记录，不写测试数据。
-func TestChargingEvidenceClientMatchesRegisteredGateway(t *testing.T) {
+func gatewayContractDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	raw := os.Getenv("DATABASE_URL_GATEWAY")
 	if raw == "" {
 		raw = os.Getenv("TEST_MYSQL_URL")
@@ -39,11 +40,19 @@ func TestChargingEvidenceClientMatchesRegisteredGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	orm, err := dbconn.WrapGORM(db)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return orm
+}
+
+// 通过实际网关路由和真实数据库验证客户端契约；随机设备无记录，不写测试数据。
+func TestChargingEvidenceClientMatchesRegisteredGateway(t *testing.T) {
+	orm := gatewayContractDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	router := httpapi.NewRouter()
 	(TelemetryAPI{DB: orm, ServiceToken: "contract-test-token"}).Register(router)
 	server := httptest.NewServer(router)

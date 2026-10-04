@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,7 @@ type PaidStartsAPI struct {
 }
 
 func (a PaidStartsAPI) Register(r *gin.Engine) {
-	r.GET("/api/v1/internal/charge-orders/paid-starts", a.list)
+	r.GET(centralcontract.PaidStartsPath, a.list)
 }
 
 func (a PaidStartsAPI) list(c *gin.Context) {
@@ -37,8 +38,9 @@ func (a PaidStartsAPI) list(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "paid orders unavailable", nil)
 		return
 	}
-	if items == nil {
-		items = []chargestart.PaidChargeOrder{}
+	rows := make([]centralcontract.PaidStartOrder, len(items))
+	for i, item := range items {
+		rows[i] = centralcontract.PaidStartOrder{ID: item.ID, OrderNo: item.OrderNo}
 	}
-	httpapi.OK(c, gin.H{"items": items})
+	httpapi.OK(c, centralcontract.PaidStartsData{Items: rows})
 }

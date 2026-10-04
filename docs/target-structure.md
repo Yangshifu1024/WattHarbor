@@ -934,3 +934,70 @@ DTO 保留当前 wire 形状：外层 device_id、port_no、next_after_id 使用
 测试使用真实 HTTP 服务模拟既有 wire 响应，覆盖字段解码、请求令牌、整数身份、HTTP 与业务错误、取消、受理语义及原处理器输入约束；停止用例注入 fake Gateway，覆盖混合完成状态、批量上限、游标停滞和页数上限。
 
 验证结果：Go 1.27 容器内 make check、全部 cmd 构建通过；真实 MySQL 下 gateway/control 与 charging 各子包的 integration 测试通过。真实路由测试读取随机设备的空证据，未写测试数据；其他回执测试沿用既有回滚及清理。全仓真库测试未在本轮重跑。
+
+## 22. 主动停止与待启动派发客户端归位
+
+用户主动停止、worker 待启动查询及 START 派发原来在调用处构造路径与匿名响应。现在消费者只持有具名操作接口，地址、令牌、5 秒超时与拒绝重定向策略由各自 cmd 装配。
+
+| 位置 | 职责与依赖 |
+|---|---|
+| contracts/central/charging.go | 待启动端点、整数 ID 游标与具名清单 DTO，不引用订单存储模型 |
+| integration/central/client.go | PaidStarts 单页查询；验证 HTTP 200、code/data/items、严格递增游标与订单号；失败不返回部分清单 |
+| contracts/gateway/charging.go | 补充 START 请求、受理响应、用户停止来源与供消费者识别的错误契约 |
+| integration/gateway/client.go | RequestStart 验证 HTTP 202、订单号、命令 ID/状态及设备回执事实；RequestStop 由主动停止与自动停止共同复用 |
+| worker/charge/paid_start.go | 依赖 contracts 的窄接口；负责游标推进、单笔失败继续和空页整轮重扫，不持有 URL、令牌或 HTTP 客户端 |
+| interface/http/charge_user_stop.go | 保持用户鉴权与账号检查，注入 RequestStop 接口；识别网关 409、无效响应、业务失败与网络错误 |
+| interface/http/charge_paid_starts.go、gateway/control/http.go | 注册共享端点并输出共享 DTO；存储模型在处理器内显式映射，不进入共享 HTTP 契约 |
+| platform/serviceclient/client.go | 新增 GetStatus 与 HTTPError；通过 errors.As 读取非成功状态，errors.Is 保留 ErrUnauthorized、ErrNotFound 识别能力 |
+
+START 的 202 只确认命令持久受理；device_acknowledged 表示 gateway 已持有设备回执，central 订单状态仍由结果同步推进。STOP 的成功响应继续明确 stopped=false。客户端不自行重试、更换订单号或处理资金事务。
+
+用户接口保留网关 409 到用户 409/code 2000 的映射；其他 HTTP 拒绝、业务拒绝和无效响应返回 502/code 5003，网络失败返回 503/code 5001。HTTP 状态在读取错误正文前识别，错误正文不参与冲突判定，也不写入外部错误消息。
+
+验证采用 HTTP fixture、注册实际路由并替换用例依赖的契约测试，以及注入窄接口的派发测试。覆盖整数身份与游标、错误映射、命令与设备回执的区别、失败后整轮重试及单笔失败继续。真实路由测试验证绑定、鉴权与 JSON 形状，不代替数据库持久化或设备通信验收；本轮没有修改业务 SQL、资金或回执事务。
+
+## 23. 授权与启动／结束回执的具名客户端
+
+gateway/control.CentralAuthorizer 现在只依赖 StartAuthorization、StopAuthorization 两个操作，并在本地把共享授权 DTO 转为 PaidOrder/ActiveOrder。worker 的 Synchronizer 与 EndSynchronizer 只持有所需的具名接口；URL、令牌、5 秒超时和拒绝重定向策略统一由 gateway、worker 的 cmd 装配。
+
+| 位置 | 职责与依赖 |
+|---|---|
+| contracts/central/authorization.go、results.go、errors.go | 四个端点的路由、授权 DTO、回执请求、持久化确认与拒绝契约；只依赖标准库及纯领域 EndMeter |
+| integration/central/authorization.go、results.go | 构造路径和查询，校验 HTTP 200、code/data、身份与 accepted；404/409 授权拒绝与 409 回执冲突独立表达 |
+| contracts/gateway/sync.go | 回执清单、nullable 命令列、事件 JSON 字符串、取证窗口、冻结、释放、标记和补偿契约 |
+| integration/gateway/sync.go | 九个具名同步操作；校验空数组、命令归属、冻结内容、释放与补偿确认、标记数量，标记为 0 允许幂等重放 |
+| gateway/control/authorize.go | 用例接口到网关本地模型的适配；保留 ErrUnpaid/ErrNotCharging 业务映射，不持有 HTTP 配置 |
+| worker/charge/sync.go、end_sync.go、meter_segments.go | 确认、补偿、冻结与重放顺序；保留计量转换与 10080 行证据上限，不拼接请求 |
+| interface/http 与 gateway/control | 注册共享路由、绑定共享请求、显式映射响应；业务 SQL、事务、锁顺序和支付／退款规则保持原有边界 |
+
+启动同步只标记 central 确认的回执。成功 START 被 central 409 拒绝时用原订单号和命令 ID 请求补偿 STOP；补偿不证明从未起充，也不授权退款。结束同步先按 ack_at/end_at/end_id 固定证据窗口，再冻结整份回执；central 确认后释放端口，释放成功才允许标记事件。失败时保留重放入口，既有冻结优先于新计算的候选分段。
+
+共享 DTO 保留整数身份、nullable 字段、UTC 时间和原协议事件 JSON。发现冻结身份比较的 map 解码使用 float64，可能把相邻大整数误判为同一 ID；改为 UseNumber，并保留完整 JSON 校验。订单／端口身份不同仍拒绝，候选 segments 差异继续允许并返回原冻结内容。
+
+验证：Windows Go 1.27.1 下 make check、全部 cmd 的 Go 构建通过；真实 MySQL 下 gateway/control、charging/start、charging/finish 的 integration 测试通过。新增实际网关同步路由测试覆盖 nullable 回执、窗口证据、冻结首写／重放与大 ID 冲突、错误归属释放、重复释放／标记；写入置于外层事务回滚，逐表核对零残留。中央四个端点与补偿端点另有实际注册路由的默认契约测试；消费者测试覆盖失败边界和重放顺序。全仓真库测试未在本批运行。
+
+剩余边界：worker/charge/sync_client.go 的通用调用仍供刷卡同步使用；用户充电读接口与后台调用尚待逐条迁入具名客户端。本批不声称全部服务调用已归位。
+
+## 24. 进程入口、资源与退出顺序
+
+按 worker、gateway、user、central/admin 的顺序拆分五个服务 cmd。每个进程仍独立装配自己的配置和依赖，不引入通用业务容器或依赖注入框架。
+
+| 位置 | 职责 |
+|---|---|
+| cmd/*/main.go | 捕获退出信号，调用 run，报告退出错误 |
+| cmd/*/app.go | run 加载配置、打开资源、装配应用、等待应用退出后释放资源；assemble 创建客户端、用例与 HTTP 服务 |
+| cmd/*/resources.go | 拥有数据库、Redis 与 HTTP 客户端；初始化失败逆序释放已打开的资源 |
+| cmd/*/routes.go | 注册业务接口、指标与进程自己的存储健康检查 |
+| worker/runtime | 调度循环、一秒同步循环、十秒资金派发循环；通过窄接口调用任务，记录单轮错误并保留重试 |
+| gateway/runtime | TCP 设备接入与五秒停止重试；共享 cmd 注入的会话、补偿与用户停止服务 |
+| export/cleanup.go | 启动时及每小时清理过期导出文件；通过 Cleaner 接口复用原清理实现 |
+| platform/httpapi/server.go | HTTP 监听、排空、超时请求取消、连接关闭与处理器退出等待，无业务路由依赖 |
+| identity/wechat.go | 手机号授权结果提取与缺失结果校验，替代 cmd/user 中的内嵌业务闭包 |
+
+worker 数据库明确命名为 GatewayDB、CentralDB、WorkerDB，删除 user 数据库别名。Outbox 的 gateway/user/admin 历史来源标识与实际两库归属保持原样。PaidStarter 使用同一指针实例持有分页游标；一秒任务仍按告警、刷卡、待启动、启动回执、结束回执、Outbox 顺序执行，十秒任务仍按自动停止、计费、退款执行。取消后不再进入下一项任务。
+
+gateway、worker 与 admin 的 HTTP 和后台服务由 errgroup 统一管理。监听失败会取消其它任务并等待退出；收到信号也等待所有受管理任务退出，之后 run 才释放资源。user 与 central 同样等待 HTTP 完整停机，避免 ListenAndServe 先返回导致存储在请求尚未结束时被关闭。
+
+HTTP 请求 context 在 10 秒排空期内不随进程取消，允许正在执行的事务正常完成；超时后取消请求并强制关闭连接，仍等待处理器退出，再返回停机错误。处理器必须响应请求 context；不支持接管连接或在处理器外启动未受管理的任务。忽略 context 的任务不能保证在宽限期内退出，等待其退出是保留存储生命周期正确性的必要条件。
+
+默认测试覆盖请求排空与超时取消后等待、HTTP/TCP 绑定失败取消其它服务、导出清理退出等待、worker 初始化中途失败释放已开连接、任务顺序与取消边界，以及 user/admin 实际装配与 OpenAPI 声明的一致性。业务 SQL、锁、资金事务、环境变量、公开 API 与部署进程数量不变；本批不以默认测试声称真实资金或设备联调已验证。

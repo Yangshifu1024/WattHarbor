@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"net/http"
 	"strconv"
 
@@ -21,7 +22,7 @@ type StopAuthorization struct {
 }
 
 func (a StopAuthorization) Register(router *gin.Engine) {
-	router.GET("/api/v1/internal/charge-orders/:order_no/stop-authorization", a.handle)
+	router.GET(centralcontract.StopAuthorizationRoute, a.handle)
 }
 
 func (a StopAuthorization) handle(c *gin.Context) {
@@ -51,7 +52,7 @@ func (a StopAuthorization) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "order storage unavailable", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"charge_order_id": order.ChargeOrderID, "order_no": order.OrderNo,
-		"user_id": order.UserID, "device_id": order.DeviceID, "port_no": order.PortNo,
-		"port_id": order.PortID.Int64, "start_command_id": order.StartCommandID})
+	httpapi.OK(c, centralcontract.StopAuthorization{ChargeOrderID: order.ChargeOrderID, OrderNo: order.OrderNo,
+		UserID: order.UserID, DeviceID: order.DeviceID, PortNo: order.PortNo,
+		PortID: uint64(order.PortID.Int64), StartCommandID: order.StartCommandID})
 }

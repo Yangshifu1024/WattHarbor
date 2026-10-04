@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
+	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,6 +17,26 @@ type paidStartsStub struct {
 	after uint64
 	calls int
 	err   error
+}
+
+func TestPaidStartsClientMatchesRegisteredCentralRoute(t *testing.T) {
+	service := &paidStartsStub{}
+	router := gin.New()
+	PaidStartsAPI{Service: service, ServiceToken: "secret"}.Register(router)
+	server := httptest.NewServer(router)
+	defer server.Close()
+	client, err := centralclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := client.PaidStarts(context.Background(), 9)
+	if err != nil || len(rows) != 1 || rows[0].ID != 10 || rows[0].OrderNo != "C-10" || service.after != 9 {
+		t.Fatalf("rows=%v cursor=%d err=%v", rows, service.after, err)
+	}
+	rows, err = client.PaidStarts(context.Background(), 10)
+	if err != nil || rows == nil || len(rows) != 0 {
+		t.Fatalf("empty scan: rows=%v err=%v", rows, err)
+	}
 }
 
 func (s *paidStartsStub) PaidStarts(_ context.Context, after uint64) ([]chargestart.PaidChargeOrder, error) {

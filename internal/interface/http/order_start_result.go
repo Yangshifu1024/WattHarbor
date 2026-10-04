@@ -4,24 +4,14 @@ import (
 	"context"
 	"errors"
 	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"net/http"
-	"time"
 )
 
-type StartResult struct {
-	CommandID     string    `json:"command_id" binding:"required,uuid"`
-	ChargeOrderID uint64    `json:"charge_order_id" binding:"required"`
-	OrderNo       string    `json:"order_no" binding:"required,max=64"`
-	DeviceID      string    `json:"device_id" binding:"required,max=64"`
-	PortNo        uint8     `json:"port_no" binding:"required"`
-	PortID        uint64    `json:"port_id" binding:"required"`
-	Success       bool      `json:"success"`
-	ResultCode    uint8     `json:"result_code"`
-	OccurredAt    time.Time `json:"occurred_at" binding:"required"`
-}
+type StartResult = centralcontract.StartResult
 
 type StartResultAPI struct {
 	Service interface {
@@ -31,7 +21,7 @@ type StartResultAPI struct {
 }
 
 func (a StartResultAPI) Register(router *gin.Engine) {
-	router.POST("/api/v1/internal/charge-orders/:order_no/start-result", a.handle)
+	router.POST(centralcontract.StartResultRoute, a.handle)
 }
 
 func (a StartResultAPI) handle(c *gin.Context) {
@@ -53,5 +43,5 @@ func (a StartResultAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "start result persistence failed", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"accepted": true, "replayed": replayed})
+	httpapi.OK(c, centralcontract.ResultAcceptance{Accepted: true, Replayed: replayed})
 }

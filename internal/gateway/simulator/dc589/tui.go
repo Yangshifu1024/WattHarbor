@@ -16,22 +16,49 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// RunTUI owns only presentation. Every operation enters the same serialized
-// board event loop as HTTP controls and real gateway commands.
+// NewTUILogger 创建界面日志缓冲；应在输出启动信息和启动控制服务前创建并共享。
+func NewTUILogger() *log.Logger {
+	return log.New(&terminalLog{}, "", log.Ltime)
+}
+
+// RunTUI 展示设备状态与日志，所有操作仍进入同一设备事件循环。
+// 返回前恢复终端、取消并等待设备循环；设备退出错误交由调用方输出。
 func RunTUI(ctx context.Context, config Config, inputs chan Input, cancel context.CancelFunc) error {
-	logs := &terminalLog{}
-	config.Log = log.New(logs, "", log.Ltime)
-	done := make(chan error, 1)
-	go func() { done <- Run(ctx, config) }()
-	defer cancel()
-	m := terminalModel{ctx: ctx, inputs: inputs, logs: logs, port: 1, width: 100, height: 35, notice: "等待网关注册；设备须先在后台创建", state: Snapshot{Identity: config.Identity, Ports: map[byte]*PhysicalPort{}}}
-	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
-	go func() { err := <-done; program.Send(boardDone{err}) }()
-	_, err := program.Run()
-	if errors.Is(err, tea.ErrProgramKilled) && ctx.Err() != nil {
-		return nil
+	return runTUI(ctx, config, inputs, cancel, tea.WithAltScreen())
+}
+
+func runTUI(ctx context.Context, config Config, inputs chan Input, cancel context.CancelFunc, options ...tea.ProgramOption) error {
+	var logs *terminalLog
+	if config.Log != nil {
+		logs, _ = config.Log.Writer().(*terminalLog)
 	}
-	return err
+	if logs == nil {
+		config.Log = NewTUILogger()
+		logs = config.Log.Writer().(*terminalLog)
+	}
+	boardCtx, stopBoard := context.WithCancel(ctx)
+	defer stopBoard()
+	defer cancel()
+	m := terminalModel{ctx: boardCtx, inputs: inputs, logs: logs, port: 1, width: 100, height: 35, notice: "等待网关注册；设备须先在后台创建", state: Snapshot{Identity: config.Identity, Ports: map[byte]*PhysicalPort{}}}
+	options = append(options, tea.WithContext(boardCtx), tea.WithoutSignalHandler())
+	program := tea.NewProgram(m, options...)
+	done := make(chan error, 1)
+	forwarded := make(chan struct{})
+	go func() {
+		err := Run(boardCtx, config)
+		done <- err
+		program.Send(boardDone{err})
+		close(forwarded)
+	}()
+	_, err := program.Run()
+	if ctx.Err() != nil && errors.Is(err, tea.ErrProgramKilled) && errors.Is(err, ctx.Err()) {
+		err = nil
+	}
+	stopBoard()
+	cancel()
+	boardErr := <-done
+	<-forwarded
+	return errors.Join(err, boardErr)
 }
 
 type terminalLog struct {

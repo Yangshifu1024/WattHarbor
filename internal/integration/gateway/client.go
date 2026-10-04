@@ -13,13 +13,9 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 )
 
-var ErrInvalidResponse = errors.New("invalid gateway response")
+var ErrInvalidResponse = gatewaycontract.ErrInvalidResponse
 
-type BusinessError struct{ Code int }
-
-func (e BusinessError) Error() string {
-	return fmt.Sprintf("gateway rejected request: code %d", e.Code)
-}
+type BusinessError = gatewaycontract.BusinessError
 
 type Client struct {
 	transport serviceclient.Client
@@ -72,11 +68,30 @@ type response[T any] struct {
 	Data *T   `json:"data"`
 }
 
+// RequestStart 确认 gateway 以 202 受理原订单号，不推进 central 的订单状态。
+func (c *Client) RequestStart(ctx context.Context, request gatewaycontract.StartRequest) (gatewaycontract.StartAcceptance, error) {
+	if request.OrderNo == "" || len(request.OrderNo) > 64 || strings.TrimSpace(request.OrderNo) != request.OrderNo {
+		return gatewaycontract.StartAcceptance{}, errors.New("invalid paid charge order number")
+	}
+	data, err := post[gatewaycontract.StartAcceptance](ctx, c, gatewaycontract.StartPath, request, http.StatusAccepted)
+	if err != nil {
+		return data, err
+	}
+	if data.OrderNo != request.OrderNo || data.CommandID == "" || data.Status == "" || data.DeviceAcknowledged != (data.Status == "acked") {
+		return gatewaycontract.StartAcceptance{}, fmt.Errorf("%w: start acceptance missing or inconsistent", ErrInvalidResponse)
+	}
+	return data, nil
+}
+
 func post[T any](ctx context.Context, c *Client, path string, payload any, expectedStatus int) (T, error) {
 	var empty T
 	var reply response[T]
 	status, err := c.transport.PostStatus(ctx, c.baseURL, c.token, path, payload, &reply)
 	if err != nil {
+		var rejection *serviceclient.HTTPError
+		if status != 0 && !errors.As(err, &rejection) {
+			return empty, fmt.Errorf("%w: %w", ErrInvalidResponse, err)
+		}
 		return empty, err
 	}
 	if status != expectedStatus {

@@ -2,16 +2,30 @@
 package gateway
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
+// ErrInvalidResponse 表示响应不满足端点的状态码、字段或受理约束。
+var ErrInvalidResponse = errors.New("invalid gateway response")
+
+// BusinessError 保留 gateway 返回的非零业务 code。
+type BusinessError struct{ Code int }
+
+func (e BusinessError) Error() string {
+	return fmt.Sprintf("gateway rejected request: code %d", e.Code)
+}
+
 const (
 	ChargingEvidencePath = "/api/v1/internal/charging-evidence"
 	StopPath             = "/api/v1/internal/charge-orders/stop"
+	StartPath            = "/api/v1/internal/charge-orders/start"
 	MaxEvidenceBatch     = 20
 	StopSourceAuto       = "auto"
+	StopSourceUser       = "user_app"
 )
 
 type EvidenceQuery struct {
@@ -59,4 +73,17 @@ type StopAcceptance struct {
 	Stopped   bool   `json:"stopped"`
 	CommandID string `json:"command_id"`
 	Status    string `json:"status"`
+}
+
+type StartRequest struct {
+	OrderNo string `json:"order_no" binding:"required,min=1,max=64"`
+}
+
+// StartAcceptance 是持久化 START 命令的受理结果。
+// DeviceAcknowledged 只表达 gateway 已持有设备回执，不代替 central 的订单状态推进。
+type StartAcceptance struct {
+	OrderNo            string `json:"order_no"`
+	CommandID          string `json:"command_id"`
+	Status             string `json:"status"`
+	DeviceAcknowledged bool   `json:"device_acknowledged"`
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"net/http"
 	"strings"
@@ -24,7 +25,7 @@ type StartAuthorization struct {
 }
 
 func (a StartAuthorization) Register(router *gin.Engine) {
-	router.GET("/api/v1/internal/charge-orders/:order_no/start-authorization", a.handle)
+	router.GET(centralcontract.StartAuthorizationRoute, a.handle)
 }
 
 func (a StartAuthorization) handle(c *gin.Context) {
@@ -58,14 +59,9 @@ func (a StartAuthorization) handle(c *gin.Context) {
 	if order.ConsumerType == 3 {
 		balanceUnits = dc589.CardBalanceUnits(order.WalletAfterCents)
 	}
-	httpapi.OK(c, gin.H{"consumer_type": order.ConsumerType, "card_number": order.CardNumber, "card_balance_units": balanceUnits,
-		"charge_order_id":  order.ChargeOrderID,
-		"order_no":         order.OrderNo,
-		"user_id":          order.UserID,
-		"device_id":        order.DeviceID,
-		"port_no":          order.PortNo,
-		"payment_order_id": order.PaymentOrderID,
-		"charge_mode":      order.ChargeMode,
-		"charge_quantity":  order.ChargeQuantity,
+	httpapi.OK(c, centralcontract.StartAuthorization{ConsumerType: order.ConsumerType, CardNumber: order.CardNumber, CardBalanceUnits: balanceUnits,
+		ChargeOrderID: order.ChargeOrderID, OrderNo: order.OrderNo, UserID: order.UserID,
+		DeviceID: order.DeviceID, PortNo: order.PortNo, PaymentOrderID: order.PaymentOrderID,
+		ChargeMode: order.ChargeMode, ChargeQuantity: order.ChargeQuantity,
 	})
 }
