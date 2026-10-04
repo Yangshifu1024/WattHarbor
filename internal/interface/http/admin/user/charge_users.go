@@ -30,12 +30,12 @@ func (a API) chargeUsers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rows, total, err := identity.ChargeUsers(c.Request.Context(), a.Store.UserDB, q)
+	rows, total, err := identity.ChargeUsers(c.Request.Context(), a.DB, q)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if err := identity.DecorateChargeUsers(c.Request.Context(), a.Store.UserDB, rows); err != nil {
+	if err := identity.DecorateChargeUsers(c.Request.Context(), a.DB, rows); err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -49,13 +49,13 @@ func (a API) chargeUser(c *gin.Context) {
 	if !ok {
 		return
 	}
-	detail, err := identity.LoadChargeUserDetail(c.Request.Context(), a.Store.UserDB, id, identity.ChargeUserDetailOrderLimit)
+	detail, err := identity.LoadChargeUserDetail(c.Request.Context(), a.DB, id, identity.ChargeUserDetailOrderLimit)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	row := []identity.ChargeUserRow{detail.ChargeUserRow}
-	if err := identity.DecorateChargeUsers(c.Request.Context(), a.Store.UserDB, row); err != nil {
+	if err := identity.DecorateChargeUsers(c.Request.Context(), a.DB, row); err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -84,7 +84,7 @@ func (a API) chargeUserRecharges(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := payment.ChargeUserRecharges(c.Request.Context(), a.Store.UserDB, id, page)
+	out, err := payment.ChargeUserRecharges(c.Request.Context(), a.DB, id, page)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

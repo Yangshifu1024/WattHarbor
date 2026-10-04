@@ -25,8 +25,7 @@ import (
 //         go test -tags=integration ./internal/marketing/
 //
 // build tag 同样是刻意的：`make check` 不依赖 Docker，日常单测不碰真库；
-// 但 tag 的有无由护栏守着（见 scripts/check/integration_tag.py），
-// 写了却永远不会被编译的集成测试会被当场拦下。
+// 真库测试由 CI 的 integration job 显式带 tag 执行；评审需核对 tag 与命令。
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 

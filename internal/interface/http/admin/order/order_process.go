@@ -79,11 +79,11 @@ func (a API) orderProcess(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if a.Store.UserDB == nil {
+	if a.DB == nil {
 		chargehttp.AdminResourceFailure(c, errOrderProcess)
 		return
 	}
-	order, err := ops.FindOrderIdentity(c.Request.Context(), a.Store.UserDB, id)
+	order, err := ops.FindOrderIdentity(c.Request.Context(), a.DB, id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

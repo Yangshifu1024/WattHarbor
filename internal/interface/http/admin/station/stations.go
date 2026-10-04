@@ -1,6 +1,7 @@
 package station
 
 import (
+	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
 	"strings"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
@@ -18,11 +19,11 @@ func (a API) stations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := a.StationScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
-	out, err := device.ListStations(c.Request.Context(), a.Store.AdminDB, q, scope)
+	out, err := device.ListStations(c.Request.Context(), a.DB, q, scope)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -37,7 +38,7 @@ func (a API) station(c *gin.Context) {
 	if !ok {
 		return
 	}
-	row, err := device.FindStation(c.Request.Context(), a.Store.AdminDB, id)
+	row, err := device.FindStation(c.Request.Context(), a.DB, id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -63,7 +64,7 @@ func (a API) createStation(c *gin.Context) {
 		Longitude: *input.Longitude, Latitude: *input.Latitude, Status: input.Status,
 		ContactPhone: input.ContactPhone}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
@@ -98,7 +99,7 @@ func (a API) updateStation(c *gin.Context) {
 		Longitude: *input.Longitude, Latitude: *input.Latitude, Status: input.Status,
 		ContactPhone: input.ContactPhone}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		before, err := device.LockStationForUpdate(tx, id)
 		if err != nil {
 			return err

@@ -67,7 +67,7 @@ func (a API) orderSchemeNames(ctx context.Context, rows []orderstore.OrderView) 
 	if len(ids) == 0 {
 		return nil
 	}
-	snapshots, err := orderstore.ListPricingSnapshots(ctx, a.Store.UserDB, ids)
+	snapshots, err := orderstore.ListPricingSnapshots(ctx, a.DB, ids)
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (a API) orderSchemeNames(ctx context.Context, rows []orderstore.OrderView) 
 }
 
 func (a API) orderPackage(ctx context.Context, id uint64) (*OrderPackage, error) {
-	snapshot, err := orderstore.FindPricingSnapshot(ctx, a.Store.UserDB, id)
+	snapshot, err := orderstore.FindPricingSnapshot(ctx, a.DB, id)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (a API) orderPackage(ctx context.Context, id uint64) (*OrderPackage, error)
 	if out == nil {
 		return nil, nil
 	}
-	card, err := cardstore.FindOrderCardCharge(ctx, a.Store.UserDB, id)
+	card, err := cardstore.FindOrderCardCharge(ctx, a.DB, id)
 	if err != nil {
 		return nil, err
 	}

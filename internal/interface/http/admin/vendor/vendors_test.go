@@ -60,7 +60,7 @@ func TestVendorProxyFailsClosed(t *testing.T) {
 				_, _ = w.Write([]byte(test.raw))
 			}))
 			defer server.Close()
-			api := API{Deps: admin.Deps{GatewayURL: server.URL, ServiceToken: "test"}}
+			api := API{GatewayURL: server.URL, ServiceToken: "test"}
 			var out VendorRow
 			err := api.RequestVendor(context.Background(), "GET", "/1", nil, nil, &out, "")
 			var failure *vendorServiceError
@@ -80,7 +80,7 @@ func TestVendorProxyDoesNotFollowRedirects(t *testing.T) {
 	defer target.Close()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 307) }))
 	defer server.Close()
-	api := API{Deps: admin.Deps{GatewayURL: server.URL, ServiceToken: "test"}}
+	api := API{GatewayURL: server.URL, ServiceToken: "test"}
 	var out VendorRow
 	if err := api.RequestVendor(context.Background(), "GET", "", nil, nil, &out, ""); !errors.Is(err, errVendorService) || forwarded {
 		t.Fatalf("服务令牌不应被转发到重定向目标：forwarded=%v err=%v", forwarded, err)
@@ -92,7 +92,7 @@ func TestVendorProxyHonorsCancellation(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	api := API{Deps: admin.Deps{GatewayURL: server.URL, ServiceToken: "test"}}
+	api := API{GatewayURL: server.URL, ServiceToken: "test"}
 	var out VendorRow
 	if err := api.RequestVendor(ctx, "GET", "", nil, nil, &out, ""); !errors.Is(err, errVendorService) {
 		t.Fatalf("取消请求应安全失败：%v", err)
@@ -123,7 +123,7 @@ func TestVendorScopeValidationUsesGateway(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"items":[],"total":2,"page":1,"page_size":1}}`))
 	}))
 	defer server.Close()
-	api := API{Deps: admin.Deps{GatewayURL: server.URL, ServiceToken: "test"}}
+	api := API{GatewayURL: server.URL, ServiceToken: "test"}
 	if err := api.ValidateScope(context.Background(), "vendor", []uint64{3, 7}); err != nil {
 		t.Fatal(err)
 	}

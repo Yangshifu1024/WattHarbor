@@ -27,7 +27,7 @@ func (a API) registerCoupons(r *gin.Engine) {
 
 // coupons 返回全部未删除的券模板，按 ID 倒序，一次性返回不分页。
 func (a API) coupons(c *gin.Context) {
-	rows, err := (marketing.AdminCouponStore{DB: a.Store.UserDB}).ListCoupons(c.Request.Context())
+	rows, err := (marketing.AdminCouponStore{DB: a.DB}).ListCoupons(c.Request.Context())
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -53,7 +53,7 @@ func (a API) createCoupon(c *gin.Context) {
 	}
 	in.Status = "active"
 	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		if err := (marketing.AdminCouponStore{DB: tx}).CreateCoupon(c.Request.Context(), &in); err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func (a API) updateCoupon(c *gin.Context) {
 	}
 	var before marketing.AdminCouponRow
 	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		before, err = (marketing.AdminCouponStore{DB: tx}).UpdateCoupon(c.Request.Context(), id, in.Name, in.Status)
 		if err != nil {
@@ -128,7 +128,7 @@ func (a API) couponStats(c *gin.Context) {
 	if !ok {
 		return
 	}
-	stats, err := (marketing.AdminCouponStore{DB: a.Store.UserDB}).Stats(c.Request.Context(), id)
+	stats, err := (marketing.AdminCouponStore{DB: a.DB}).Stats(c.Request.Context(), id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -157,7 +157,7 @@ func (a API) grantCoupon(c *gin.Context) {
 	}
 	var grantID uint64
 	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		grantID, err = marketing.GrantCouponInTx(tx, id, userID, in.RequestID)
 		if errors.Is(err, marketing.ErrCouponGrant) {

@@ -254,7 +254,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		surplus := payment.PaidCents - result.TotalCents - payment.RefundedCents - reserved
 		if surplus > 0 {
 			if payment.PayMethod == "balance" {
-				if err := chargingstore.RefundInTx(tx, order, &wallet, surplus, fmt.Sprintf("CARD-R%020d", order.ID), "刷卡累计付款未使用部分退款"); err != nil {
+				if err := RefundBalanceInTx(tx, order, &wallet, surplus, fmt.Sprintf("CARD-R%020d", order.ID), "刷卡累计付款未使用部分退款"); err != nil {
 					return err
 				}
 				if err := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id=?", order.ID).Update("status", "refunded").Error; err != nil {
@@ -367,4 +367,24 @@ func ListPendingFeeDeliveries(ctx context.Context, db *gorm.DB) ([]FeeDeliveryRo
 func RescheduleFeeDelivery(db *gorm.DB, orderID uint64, retryAt time.Time) error {
 	return db.Table("fee_delivery").Where("charge_order_id=? AND delivered=0", orderID).
 		Updates(map[string]any{"attempts": gorm.Expr("attempts+1"), "scheduled_at": retryAt}).Error
+}
+
+// EnqueueChargeBilling 把结束计量排队。计费是异步的：结束回执只负责确认
+// 事实并排队，费用由 central 的结算用例算完再落账单。
+func EnqueueChargeBilling(tx *gorm.DB, chargeOrderID uint64) error {
+	return tx.Table("charge_billing_job").Create(map[string]any{"charge_order_id": chargeOrderID}).Error
+}
+
+// BillingJobState 是计费任务的排队状态。取不到表示尚未排队。
+type BillingJobState struct {
+	ChargeOrderID uint64 `gorm:"column:charge_order_id"`
+	Status        string `json:"status" gorm:"column:status"`
+}
+
+// FindBillingJob 返回订单的计费排队状态。
+func FindBillingJob(ctx context.Context, db *gorm.DB, chargeOrderID uint64) (BillingJobState, error) {
+	var row BillingJobState
+	err := db.WithContext(ctx).Table("charge_billing_job").
+		Where("charge_order_id=?", chargeOrderID).Find(&row).Error
+	return row, err
 }

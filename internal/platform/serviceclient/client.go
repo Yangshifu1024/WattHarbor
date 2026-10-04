@@ -81,35 +81,42 @@ func (c Client) GetJSON(ctx context.Context, baseURL, serviceToken, path string,
 
 // Post 发出一个带鉴权的 JSON POST，并把应答解码进 out。
 func (c Client) Post(ctx context.Context, baseURL, serviceToken, path string, payload any, out any) error {
+	_, err := c.PostStatus(ctx, baseURL, serviceToken, path, payload, out)
+	return err
+}
+
+// PostStatus 与 Post 共用传输行为，并返回 HTTP 状态码供专用客户端校验受理语义。
+// 请求未收到响应时状态码为 0；收到响应后的读取、解码或服务错误保留状态码。
+func (c Client) PostStatus(ctx context.Context, baseURL, serviceToken, path string, payload any, out any) (int, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	target := strings.TrimRight(baseURL, "/") + path
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(string(body)))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-Service-Token", serviceToken)
 	response, err := c.httpClient().Do(request)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer response.Body.Close()
 	reply, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if err != nil {
-		return err
+		return response.StatusCode, err
 	}
 	switch {
 	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
-		return ErrUnauthorized
+		return response.StatusCode, ErrUnauthorized
 	case response.StatusCode >= 200 && response.StatusCode < 300:
 		if out == nil || len(reply) == 0 {
-			return nil
+			return response.StatusCode, nil
 		}
-		return json.Unmarshal(reply, out)
+		return response.StatusCode, json.Unmarshal(reply, out)
 	default:
-		return fmt.Errorf("service call %s returned %d", path, response.StatusCode)
+		return response.StatusCode, fmt.Errorf("service call %s returned %d", path, response.StatusCode)
 	}
 }

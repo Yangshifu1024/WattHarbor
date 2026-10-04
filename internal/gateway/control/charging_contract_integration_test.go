@@ -1,0 +1,64 @@
+//go:build integration
+
+package control
+
+import (
+	"context"
+	"crypto/rand"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"testing"
+	"time"
+
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+)
+
+// 通过实际网关路由和真实数据库验证客户端契约；随机设备无记录，不写测试数据。
+func TestChargingEvidenceClientMatchesRegisteredGateway(t *testing.T) {
+	raw := os.Getenv("DATABASE_URL_GATEWAY")
+	if raw == "" {
+		raw = os.Getenv("TEST_MYSQL_URL")
+		if raw == "" {
+			t.Fatal("DATABASE_URL_GATEWAY 或 TEST_MYSQL_URL 未设置")
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal("测试数据库 URL 无效")
+		}
+		parsed.Path = "/gateway_db"
+		raw = parsed.String()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	db, err := dbconn.Open(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	orm, err := dbconn.WrapGORM(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := httpapi.NewRouter()
+	(TelemetryAPI{DB: orm, ServiceToken: "contract-test-token"}).Register(router)
+	server := httptest.NewServer(router)
+	defer server.Close()
+	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "contract-test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := "CONTRACT-" + rand.Text()
+	pages, err := client.ChargingEvidence(ctx, []gatewaycontract.EvidenceQuery{{DeviceID: device, PortNo: 1, StartedAt: time.Now().UTC().Add(-time.Minute)}})
+	if err != nil || len(pages) != 1 {
+		t.Fatalf("pages=%+v err=%v", pages, err)
+	}
+	page := pages[0]
+	if page.DeviceID != device || page.PortNo != 1 || !page.Complete || page.NextAfterID != 0 || page.Samples == nil || len(page.Samples) != 0 {
+		t.Fatalf("unexpected gateway response: %+v", page)
+	}
+}

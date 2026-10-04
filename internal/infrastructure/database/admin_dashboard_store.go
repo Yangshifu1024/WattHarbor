@@ -10,8 +10,7 @@ import (
 // 首页看板的指标汇总。业务日界按北京时间切：库里的时间统一存 UTC，
 // 跨时区的换算集中在 Read 里的 local，不散落到各个查询。
 //
-// 订单与用户在 central_db，站点、设备与告警也在 central_db，但走不同的连接
-// 句柄，与订单侧保持一致，避免同一次快照跨库读到不同时刻。
+// 全部指标通过同一个 central_db 连接池读取。
 
 // DashboardTrendDay 是趋势图的一格，按东八区自然日聚合已结束的充电订单。
 type DashboardTrendDay struct {
@@ -40,7 +39,7 @@ type DashboardMetrics struct {
 
 // DashboardStore 汇总首页看板指标。
 type DashboardStore struct {
-	UserDB, AdminDB *gorm.DB
+	DB *gorm.DB
 }
 
 // beijing 是业务日界使用的固定时区。库里的时间存 UTC，"今天"按北京时间切。
@@ -54,7 +53,7 @@ func (s DashboardStore) Read(ctx context.Context, now time.Time) (DashboardMetri
 	start, end := today.UTC(), today.AddDate(0, 0, 1).UTC()
 	m := DashboardMetrics{UpdatedAt: now.UTC(), DailyTrend: make([]DashboardTrendDay, 0, 7)}
 
-	orders := s.UserDB.WithContext(ctx).Table("charge_order").Where("deleted_at IS NULL")
+	orders := s.DB.WithContext(ctx).Table("charge_order").Where("deleted_at IS NULL")
 	if err := applyCount(orders, &m.ChargingOrders, "status = 'charging'"); err != nil {
 		return m, err
 	}
@@ -68,7 +67,7 @@ func (s DashboardStore) Read(ctx context.Context, now time.Time) (DashboardMetri
 		return m, err
 	}
 
-	users := s.UserDB.WithContext(ctx).Table("user").Where("deleted_at IS NULL")
+	users := s.DB.WithContext(ctx).Table("user").Where("deleted_at IS NULL")
 	if err := applyCount(users, &m.TotalUsers, ""); err != nil {
 		return m, err
 	}
@@ -76,7 +75,7 @@ func (s DashboardStore) Read(ctx context.Context, now time.Time) (DashboardMetri
 		return m, err
 	}
 
-	admin := s.AdminDB.WithContext(ctx)
+	admin := s.DB.WithContext(ctx)
 	for _, c := range []struct {
 		table string
 		into  *int64

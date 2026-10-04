@@ -7,6 +7,7 @@ import (
 	"fmt"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"net/url"
 	"strings"
 	"time"
@@ -346,7 +347,7 @@ func (a UserQueryAPI) fee(ctx context.Context, orderID uint64) (electric, servic
 	return electric, service, total, receipt.ShortfallCents, true
 }
 
-type historyRow = payment.UserOrderHistoryRow
+type historyRow = orderstore.UserOrderHistoryRow
 
 // history 按最新优先分页返回客户自己的订单，
 // 归属规则与其他所有订单读取完全一致。
@@ -365,7 +366,7 @@ func (a UserQueryAPI) history(c *gin.Context) {
 		httpapi.BadRequest(c, "订单状态无效")
 		return
 	}
-	out, err := payment.ListUserOrderHistory(c.Request.Context(), a.DB, userID, status, page, pageSize)
+	out, err := orderstore.ListUserOrderHistory(c.Request.Context(), a.DB, userID, status, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
 		return
@@ -425,7 +426,7 @@ func (a UserQueryAPI) detail(c *gin.Context) {
 			payload["payment"] = payment
 		}
 	}
-	refunds, err := payment.ListOrderRefunds(ctx, a.DB, order.ID)
+	refunds, err := settlement.ListOrderRefunds(ctx, a.DB, order.ID)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "退款记录暂时无法读取", nil)
 		return

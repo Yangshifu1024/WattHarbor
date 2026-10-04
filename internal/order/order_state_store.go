@@ -39,3 +39,8 @@ func SyncOrderPaymentStatus(tx *gorm.DB, paymentID uint64) error {
 	}
 	return tx.Table("charge_order").Where("payment_order_id=? AND user_id=?", payment.ID, payment.UserID).Update("payment_status", payment.PaymentStatus).Error
 }
+
+// SetStatusRefunded 把订单标记为已退款。起充失败且钱已退回时使用。
+func SetStatusRefunded(tx *gorm.DB, orderID uint64) error {
+	return tx.Model(&ChargeOrderRecord{}).Where("id=?", orderID).Update("status", "refunded").Error
+}

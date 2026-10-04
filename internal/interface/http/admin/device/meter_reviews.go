@@ -5,6 +5,7 @@ import (
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
@@ -26,7 +27,7 @@ func (a API) resolveMeterAmount(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, ok := a.RequireFinanceActor(c, "billing.meter.review")
+	p, ok := admin.RequireFinanceActor(c, "billing.meter.review")
 	if !ok {
 		return
 	}
@@ -37,7 +38,7 @@ func (a API) resolveMeterAmount(c *gin.Context) {
 	in.ChargeOrderID = id
 	in.ActorID = p.ID
 	in.Reason = strings.TrimSpace(in.Reason)
-	if err := (settlement.BillingOrders{DB: a.Store.UserDB}).ResolveAmount(c.Request.Context(), in); err != nil {
+	if err := (settlement.BillingOrders{DB: a.DB}).ResolveAmount(c.Request.Context(), in); err != nil {
 		meterFailure(c, err)
 		return
 	}
@@ -50,7 +51,7 @@ func (a API) meterReviews(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := settlement.ListManualFeeReviews(c.Request.Context(), a.Store.BillingDB, q)
+	out, err := settlement.ListManualFeeReviews(c.Request.Context(), a.DB, q)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -62,7 +63,7 @@ func (a API) meterReviews(c *gin.Context) {
 			return
 		}
 		out.Items[i].SourceJSON = publicSource
-		reviews, err := settlement.ListOrderMeterReviews(c.Request.Context(), a.Store.UserDB, out.Items[i].ChargeOrderID)
+		reviews, err := settlement.ListOrderMeterReviews(c.Request.Context(), a.DB, out.Items[i].ChargeOrderID)
 		if err != nil {
 			chargehttp.AdminResourceFailure(c, err)
 			return
@@ -98,7 +99,7 @@ func (a API) proposeMeter(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, ok := a.RequireFinanceActor(c, "billing.meter.review")
+	p, ok := admin.RequireFinanceActor(c, "billing.meter.review")
 	if !ok {
 		return
 	}
@@ -116,7 +117,7 @@ func (a API) proposeMeter(c *gin.Context) {
 		httpapi.BadRequest(c, "请填写 UUID、核实依据及有效计量分段")
 		return
 	}
-	row, err := (settlement.BillingOrders{DB: a.Store.UserDB}).ProposeMeter(c.Request.Context(), id, p.ID, in.RequestID, in.Reason, in.Segments)
+	row, err := (settlement.BillingOrders{DB: a.DB}).ProposeMeter(c.Request.Context(), id, p.ID, in.RequestID, in.Reason, in.Segments)
 	if err != nil {
 		meterFailure(c, err)
 		return
@@ -131,7 +132,7 @@ func (a API) decideMeter(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, ok := a.RequireFinanceActor(c, "billing.meter.review")
+	p, ok := admin.RequireFinanceActor(c, "billing.meter.review")
 	if !ok {
 		return
 	}
@@ -149,7 +150,7 @@ func (a API) decideMeter(c *gin.Context) {
 		httpapi.BadRequest(c, "请提供审核记录、决定和拒绝依据")
 		return
 	}
-	review, err := settlement.FindMeterReview(c.Request.Context(), a.Store.UserDB, in.ReviewID, id)
+	review, err := settlement.FindMeterReview(c.Request.Context(), a.DB, in.ReviewID, id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -161,7 +162,7 @@ func (a API) decideMeter(c *gin.Context) {
 			return
 		}
 	}
-	if err := (settlement.BillingOrders{DB: a.Store.UserDB}).ReviewMeter(c.Request.Context(), id, in.ReviewID, p.ID, *in.Approve, in.Reason); err != nil {
+	if err := (settlement.BillingOrders{DB: a.DB}).ReviewMeter(c.Request.Context(), id, in.ReviewID, p.ID, *in.Approve, in.Reason); err != nil {
 		meterFailure(c, err)
 		return
 	}

@@ -12,7 +12,7 @@ import (
 func (a API) orderLive(ctx context.Context, rows []orderstore.OrderView) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	service := chargehttp.LiveMeterService{DB: a.Store.UserDB, GatewayURL: a.GatewayURL, ServiceToken: a.ServiceToken, Client: serviceclient.Client{Timeout: 2 * time.Second}}
+	service := chargehttp.LiveMeterService{DB: a.DB, GatewayURL: a.GatewayURL, ServiceToken: a.ServiceToken, Client: serviceclient.Client{Timeout: 2 * time.Second}}
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for n := 0; n < 4; n++ {

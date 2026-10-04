@@ -19,7 +19,7 @@ var ErrUnknownExportResource = errors.New("未登记的导出资源")
 //
 // 本文件所有方法都接收调用方自备的 *gorm.DB，而不是在方法内部取连接：
 // 受理申请时查找重放与插入必须与审计写在同一事务里，由处理器决定传入 tx 还是
-// 普通连接；跨库取数所需的三个句柄由 ExportStore 一并持有。
+// 普通连接；ExportStore 持有 central_db 的读连接。
 
 // ExportTaskRow 对应 central_db.export_task，保存导出申请和有效期。
 type ExportTaskRow struct {
@@ -112,10 +112,9 @@ func ExportResource(name string) (ExportSpec, bool) {
 	return spec, ok
 }
 
-// ExportStore 持有导出所需的三条连接：多数资源在 central_db，
-// 但账单与结算按分库设计各自落在别处，取数时按表路由。
+// ExportStore 持有 central_db 的读连接。
 type ExportStore struct {
-	AdminDB, UserDB, BillingDB *gorm.DB
+	DB *gorm.DB
 }
 
 // ListExportTasks 分页返回导出任务，可按状态过滤，按 ID 倒序。
@@ -206,7 +205,7 @@ func (s ExportStore) ExpireExportTask(db *gorm.DB, taskNo string) error {
 	return db.Model(&ExportTaskRow{}).Where("task_no = ?", taskNo).Update("status", "expired").Error
 }
 
-// QueryExportSource 按资源取数到通用行集合：先按表路由到所属连接，
+// QueryExportSource 从 central_db 按资源取数到通用行集合：
 // 再依次应用软删除、日期区间与数据范围，最后按 limit 截断。
 // limit 由调用方给成「上限 + 1」，多出的那一行用来判断是否超限。
 func (s ExportStore) QueryExportSource(resource string, scope operations.DataScope, filters map[string]any, limit int) ([]map[string]any, error) {
@@ -234,12 +233,7 @@ func (s ExportStore) QueryExportSource(resource string, scope operations.DataSco
 	return records, nil
 }
 
-// sourceQuery 按表名选择所属连接，缺省落在 central_db。
+// sourceQuery 为已登记资源建立 central_db 查询。
 func (s ExportStore) sourceQuery(table string) *gorm.DB {
-	switch table {
-	case "station", "device_meta":
-		return s.AdminDB.Table(table)
-	default:
-		return s.UserDB.Table(table)
-	}
+	return s.DB.Table(table)
 }

@@ -20,7 +20,7 @@ func (a API) registerOnlineCards(r *gin.Engine) {
 }
 func (a API) onlineCards(c *gin.Context) {
 	rows := []cardstore.OnlineCard{}
-	if err := a.Store.UserDB.WithContext(c.Request.Context()).Order("id DESC").Limit(500).Find(&rows).Error; err != nil {
+	if err := a.DB.WithContext(c.Request.Context()).Order("id DESC").Limit(500).Find(&rows).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
@@ -42,9 +42,9 @@ func (a API) bindOnlineCard(c *gin.Context) {
 		return
 	}
 	var id uint64
-	store := cardstore.CardAdminStore{DB: a.Store.UserDB}
+	store := cardstore.CardAdminStore{DB: a.DB}
 	actor := c.MustGet("admin_profile").(operations.Profile).ID
-	err := a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := store.FindActiveUser(tx, userID); err != nil {
 			return err
 		}
@@ -94,9 +94,9 @@ func (a API) onlineCardStatus(c *gin.Context) {
 		httpapi.BadRequest(c, "卡状态与依据无效")
 		return
 	}
-	store := cardstore.CardAdminStore{DB: a.Store.UserDB}
+	store := cardstore.CardAdminStore{DB: a.DB}
 	actor := c.MustGet("admin_profile").(operations.Profile).ID
-	err := a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		card, err := store.LockCardByID(tx, id)
 		if err != nil {
 			return err

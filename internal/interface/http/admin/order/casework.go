@@ -36,7 +36,7 @@ func (a API) caseList(c *gin.Context, kind, statuses string) {
 		chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
 		return
 	}
-	items, total, err := (database.CaseStore{DB: a.Store.UserDB}).ListCases(c.Request.Context(), spec, q.Status, q.Page, q.PageSize)
+	items, total, err := (database.CaseStore{DB: a.DB}).ListCases(c.Request.Context(), spec, q.Status, q.Page, q.PageSize)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -74,8 +74,8 @@ func (a API) replyFeedback(c *gin.Context) {
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []chargehttp.AuditEntry
-	store := database.CaseStore{DB: a.Store.UserDB}
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	store := database.CaseStore{DB: a.DB}
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		row, err := store.LockCaseStatus(tx, "feedback", id)
 		if err != nil {
 			return err
@@ -114,8 +114,8 @@ func (a API) faultHistory(c *gin.Context) {
 	if !ok {
 		return
 	}
-	store := database.CaseStore{DB: a.Store.UserDB}
-	exists, err := store.FaultExists(c.Request.Context(), a.Store.UserDB, id)
+	store := database.CaseStore{DB: a.DB}
+	exists, err := store.FaultExists(c.Request.Context(), a.DB, id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -124,7 +124,7 @@ func (a API) faultHistory(c *gin.Context) {
 		chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
 		return
 	}
-	items, total, err := store.ListFaultEvents(c.Request.Context(), a.Store.UserDB, id, q.Page, q.PageSize)
+	items, total, err := store.ListFaultEvents(c.Request.Context(), a.DB, id, q.Page, q.PageSize)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -159,8 +159,8 @@ func (a API) dispatchFault(c *gin.Context) {
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []chargehttp.AuditEntry
-	store := database.CaseStore{DB: a.Store.UserDB}
-	err = chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	store := database.CaseStore{DB: a.DB}
+	err = chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		row, err := store.LockFault(tx, id)
 		if err != nil {
 			return err
@@ -217,8 +217,8 @@ func (a API) resolveFault(c *gin.Context) {
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
 	var auditPending []chargehttp.AuditEntry
-	store := database.CaseStore{DB: a.Store.UserDB}
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	store := database.CaseStore{DB: a.DB}
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		row, err := store.LockFault(tx, id)
 		if err != nil {
 			return err

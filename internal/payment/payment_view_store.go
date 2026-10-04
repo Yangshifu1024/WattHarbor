@@ -74,3 +74,22 @@ func PaymentOrders(ctx context.Context, db *gorm.DB, q PaymentOrderQuery) (persi
 	err := query.Select(columns).Order("p.created_at DESC,p.id DESC").Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Scan(&out.Items).Error
 	return out, err
 }
+
+// OrderPaymentBrief 是订单详情里的支付单摘要。
+type OrderPaymentBrief struct {
+	OrderNo       string `gorm:"column:order_no" json:"order_no"`
+	TotalCents    int64  `gorm:"column:total_cents" json:"total_cents"`
+	PaidCents     int64  `gorm:"column:paid_cents" json:"paid_cents"`
+	RefundedCents int64  `gorm:"column:refunded_cents" json:"refunded_cents"`
+	Status        string `gorm:"column:status" json:"status"`
+}
+
+// FindOrderPaymentBrief 取支付单摘要。取不到返回 gorm.ErrRecordNotFound，
+// 调用方按"没有支付单"处理而不是报错。
+func FindOrderPaymentBrief(ctx context.Context, db *gorm.DB, paymentOrderID uint64) (OrderPaymentBrief, error) {
+	var row OrderPaymentBrief
+	err := db.WithContext(ctx).Table("payment_order").
+		Select("order_no, total_cents, paid_cents, refunded_cents, status").
+		Where("id = ? AND deleted_at IS NULL", paymentOrderID).Take(&row).Error
+	return row, err
+}

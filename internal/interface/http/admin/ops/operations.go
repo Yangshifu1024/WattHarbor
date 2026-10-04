@@ -33,7 +33,7 @@ func (a API) registerOperations(r *gin.Engine) {
 				chargehttp.AdminResourceFailure(c, gorm.ErrRecordNotFound)
 				return
 			}
-			rows, err := (ops.AdminOpsStore{DB: a.Store.AdminDB}).ListRows(c.Request.Context(), spec)
+			rows, err := (ops.AdminOpsStore{DB: a.DB}).ListRows(c.Request.Context(), spec)
 			if err != nil {
 				chargehttp.AdminResourceFailure(c, err)
 				return
@@ -56,8 +56,8 @@ func (a API) registerOperations(r *gin.Engine) {
 // id=0 时新增并回填主键；否则锁定原记录，读取更新前快照后执行更新。
 func (a API) adminWrite(c *gin.Context, table, action string, id uint64, values map[string]any) (uint64, bool) {
 	p := c.MustGet("admin_profile").(operations.Profile)
-	store := ops.AdminOpsStore{DB: a.Store.AdminDB}
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	store := ops.AdminOpsStore{DB: a.DB}
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var before map[string]any
 		if id != 0 {
 			snapshot, err := store.LockRow(tx, table, id)
@@ -104,7 +104,7 @@ func (a API) createUser(c *gin.Context) {
 		return
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	codes, err := (ops.AdminOpsStore{DB: a.Store.AdminDB}).RolePermissionCodes(a.Store.AdminDB, in.RoleID)
+	codes, err := (ops.AdminOpsStore{DB: a.DB}).RolePermissionCodes(a.DB, in.RoleID)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -126,7 +126,7 @@ func (a API) createUser(c *gin.Context) {
 		return
 	}
 	var id uint64
-	err = a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		row := map[string]any{"username": in.Username, "display_name": in.DisplayName, "password_hash": string(hash), "phone": in.Phone, "role_id": in.RoleID, "status": "active"}
 		created, err := (ops.AdminOpsStore{DB: tx}).CreateAdminUser(tx, row)
 		if err != nil {
@@ -150,8 +150,8 @@ func (a API) ackAlert(c *gin.Context) {
 		return
 	}
 	p := c.MustGet("admin_profile").(operations.Profile)
-	store := ops.AdminOpsStore{DB: a.Store.AdminDB}
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	store := ops.AdminOpsStore{DB: a.DB}
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		row, err := store.LockAlertStatus(tx, id)
 		if err != nil {
 			return err

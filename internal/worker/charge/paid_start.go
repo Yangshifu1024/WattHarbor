@@ -6,19 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // PaidStarter 重试已支付订单，直到 gateway 接受持久化 START 命令；重复调用由 gateway 保证幂等。
 type PaidStarter struct {
-	UserDB       *gorm.DB
+	CentralURL   string
 	GatewayURL   string
 	ServiceToken string
 	Client       *http.Client
@@ -26,7 +24,7 @@ type PaidStarter struct {
 }
 
 func (s *PaidStarter) DispatchBatch(ctx context.Context) (int, error) {
-	if s == nil || s.UserDB == nil || s.ServiceToken == "" {
+	if s == nil || s.CentralURL == "" || s.ServiceToken == "" {
 		return 0, errors.New("paid start dispatcher is not configured")
 	}
 	base, err := url.Parse(s.GatewayURL)
@@ -34,13 +32,33 @@ func (s *PaidStarter) DispatchBatch(ctx context.Context) (int, error) {
 		(base.Scheme != "http" && base.Scheme != "https") {
 		return 0, errors.New("invalid gateway URL")
 	}
-	rows, err := payment.ListPaidOrdersAfter(ctx, s.UserDB, s.cursor)
+	var reply struct {
+		Code *int `json:"code"`
+		Data struct {
+			Items []struct {
+				ID      uint64 `json:"id"`
+				OrderNo string `json:"order_no"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	err = (serviceclient.Client{HTTP: s.Client}).GetJSON(ctx, s.CentralURL, s.ServiceToken, fmt.Sprintf("/api/v1/internal/charge-orders/paid-starts?after_id=%d", s.cursor), &reply)
+	rows := reply.Data.Items
 	if err != nil {
 		return 0, err
+	}
+	if reply.Code == nil || *reply.Code != 0 || rows == nil {
+		return 0, errors.New("central paid start list rejected")
 	}
 	if len(rows) == 0 {
 		s.cursor = 0
 		return 0, nil
+	}
+	previous := s.cursor
+	for _, row := range rows {
+		if row.ID <= previous || row.OrderNo == "" {
+			return 0, errors.New("central paid start cursor mismatch")
+		}
+		previous = row.ID
 	}
 	client := s.Client
 	if client == nil {

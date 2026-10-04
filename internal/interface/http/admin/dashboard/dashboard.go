@@ -11,7 +11,7 @@ import (
 )
 
 // Dashboard 从 central_db 查询订单、用户、站点、设备和告警指标，仅持有数据库连接。
-type Dashboard struct{ UserDB, AdminDB *gorm.DB }
+type Dashboard struct{ DB *gorm.DB }
 
 // Metrics 与 TrendDay 是看板的响应行，指标汇总的查询在持久化层。
 type Metrics = database.DashboardMetrics
@@ -20,7 +20,7 @@ type TrendDay = database.DashboardTrendDay
 
 // Read 汇总首页看板指标。
 func (d Dashboard) Read(ctx context.Context, now time.Time) (Metrics, error) {
-	return (database.DashboardStore{UserDB: d.UserDB, AdminDB: d.AdminDB}).Read(ctx, now)
+	return (database.DashboardStore{DB: d.DB}).Read(ctx, now)
 }
 
 // Register 注册 GET /api/v1/admin/dashboard，需要 dashboard.read 权限；

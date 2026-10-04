@@ -1,13 +1,17 @@
 package order
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-// API 是订单与工单接口的处理器。装配来自 admin.Deps，族内不感知自己被哪个
-// 进程挂载：admin 与 central 各自注册自己需要的族。
-type API struct{ admin.Deps }
+// API 持有本业务族所需的数据库、鉴权与外部调用依赖。
+type API struct {
+	DB                       *gorm.DB
+	Auth                     chargehttp.AdminAuth
+	GatewayURL, ServiceToken string
+}
 
 // Register 把订单与工单的全部路由挂到引擎上。
 func (a API) Register(r *gin.Engine) {

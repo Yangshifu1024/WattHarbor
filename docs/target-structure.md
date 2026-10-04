@@ -1,22 +1,20 @@
 # 目标结构方案
 
-> **本文的数字以「当前状态」一节为准。** 下面第 2–9 节是重构过程记录，
+> **本文的数字以「当前状态」一节为准。** 下面第 1–19 节是重构过程记录，
 > 里面的文件数与行数反映各阶段当时的状态，会与最终状态不同——这是过程记录
 > 的性质，不是错误。引用任何数字前先看第 0 节。
 
 ## 0. 当前状态
 
-由 `scripts/check/current_state.py` 生成，`make check` 会重算比对。下面的过程记录
-里出现的历史数字**不代表当前状态**，引用前先看这里。
+本节按当前源码人工核对；生命周期子包结构及依赖理由见第 20–21 节。`scripts/check` 已移除，历史章节中的脚本、预算与检查命令不再作为维护入口。下面的过程记录中的历史数字不代表当前状态。
 
 | 指标 | 当前值 | 取证方式 |
 |---|---|---|
 | 表（去重） | **87** | 三个 `migrations/*/0001_init.sql` 的 `CREATE TABLE` 并集（各 schema 合计 88，`event_outbox` 跨 central/gateway 同名） |
-| 非测试 Go 行数 | **37236** | `internal/` + `cmd/` 下非 `_test.go` 文件 |
-| use case 包 | **11** | order / settlement / wallet / pricing / card / device / identity / marketing / payment / ops / export |
-| `infrastructure/database` | **3 文件** | 表访问已下沉到各 use case 的 `*_store.go` |
+| 非测试 Go 行数 | **37550** | `internal/` + `cmd/` 下非 `_test.go` 文件 |
+| 业务模块 | **12** | charging（含 start/stop/finish/measurement）/ order / settlement / wallet / pricing / card / device / identity / marketing / payment / ops / export |
+| `infrastructure/database` | **2 文件** | 表访问已下沉到各 use case 的 `*_store.go` |
 | `database` 对 use case 的依赖 | **0** | `go list -deps ./internal/infrastructure/database` 中出现的 use case 包数；**0 才算达成** |
-| 目录树核对条数 | **634** | `scripts/check/doc_tree.py` 双向核对 |
 
 > **`database` 的零业务依赖是本方案的核心目标之一。** 若上表"依赖"一列不为 0，
 > 说明有 use case 的表访问留在了 `infrastructure/database` 里，需要搬回去。
@@ -825,3 +823,114 @@ adminListRegistry 无 webhook_subscription、OpenAPI 孤儿 schema 0 个、
 **教训**：`AGENTS.md` 早就写着"加任何护栏规则前，先证伪它"。这次我先写完
 就宣布结果，是同一个错误的最后一次出现。护栏的价值完全取决于它能不能失败，
 一个从没被证伪过的检查只是一段会输出 OK 的代码。
+
+## 19. 充电生命周期职责归位
+
+此前的 use case 迁移仍把启动授权放在 payment，把 START/结束回执事务留在 HTTP。现将它们与自动停机、计费截止冻结及遥测业务转换合并到 `internal/charging`；原 `internal/application` 删除。`domain/charging` 继续保持纯规则，不负责 IO。
+
+- charging 编排生命周期事务，保持钱包 → 刷卡会话 → 订单的既有加锁顺序与 READ COMMITTED 回执幂等。
+- payment 保留支付单、渠道、回调和支付意图；订单历史迁回 order，退款视图及退款记录写入迁入 settlement。
+- 刷卡操作状态写入归 card；计费任务写入归 settlement。启动失败和结算共用余额退款事务。
+- worker 通过 central 内部端点获取待起充清单，不直接查询业务表；重试仍使用原订单号。
+- 后台业务族不再继承全量 admin.Deps，显式声明 DB、Auth 和所需服务地址；共享权限及范围校验使用窄参数函数。导出和看板只持有一个 central_db 连接池。
+- 保留五个部署单元，本次调整代码职责，不改变端口、凭据与数据库拓扑。
+
+遗留边界：其他 HTTP 处理器仍有持久化事务，以逐文件预算限制它们只减不增；尚未声称所有 HTTP 业务逻辑都已下沉。新增 handler 默认零 SQL/事务预算。用例之间的许可必须有理由，charging 禁止依赖 HTTP 与具体设备协议；已归位表的写入归属及 worker 的充电业务库访问也有自检探针。
+
+### 调整后的用户扫码充电调用链
+
+```mermaid
+sequenceDiagram
+    participant U as 用户端
+    participant A as user HTTP
+    participant P as payment / pricing
+    participant X as 支付渠道
+    participant S as settlement
+    participant C as central charging
+    participant W as worker
+    participant G as gateway
+    participant D as 设备
+    U->>A: scan/resolve、scan/port、scan/offers
+    A->>G: 内部扫码查询
+    A->>P: 读取当前发布方案
+    U->>A: scan/start + client_request_id
+    A->>P: PaymentIntentStore.Replay / Reserve
+    P-->>A: 冻结方案、订单与支付意图
+    A-->>U: 预支付参数
+    U->>X: 渠道支付
+    X->>A: 支付通知
+    A->>P: 验签后 PaymentCallbackStore.Apply
+    Note over P: 持久化支付事实后才进入启动流程
+    W->>C: GET charge-orders/paid-starts
+    C-->>W: 有界待启动清单
+    W->>G: POST charge-orders/start（复用原订单号）
+    G->>C: start.AuthorizationService.Start
+    G->>G: ReserveStart 持久化指令与占用
+    G->>D: 下发 START
+    D-->>G: 启动回执
+    W->>C: start.StartResultService.Apply
+    Note over C: 成功推进 charging；失败退款，回执与 Outbox 同事务
+    D-->>G: 结束计量
+    W->>C: finish.EndResultService.Apply
+    C->>S: EnqueueChargeBilling
+    Note over C,S: 结束事实与计费完成是不同状态
+```
+
+扫码入口在 `payment_scan.go` 和 `payment_payment_http.go`；启动重试在 `worker/charge/paid_start.go`；设备启动在 `gateway/control/start.go`。结果同步由 worker 的启动/结束同步器执行，central 用例接收持久化回执后推进状态。用户主动停止与自动停止都由 charging 冻结计费截止，设备结束证据经 gateway、worker 回传后进入结算。
+
+## 20. 充电生命周期子包与规范维护
+
+第一阶段将生命周期归回 charging；本阶段进一步按业务步骤拆分，根目录不保留业务代码或汇总服务。
+
+| 子包 | 职责 | 主要文件 |
+|---|---|---|
+| `charging/start` | 启动授权、待启动查询、启动回执及失败退款编排 | authorization.go、authorization_store.go、pending_store.go、result_store.go |
+| `charging/stop` | 停止授权、自动停止、计费截止与刷卡时长截止 | authorization.go、auto_stop.go、gateway.go、meter.go、各 *_store.go |
+| `charging/finish` | 结束回执、释放端口归属、记录结束事实并提交结算任务 | result_store.go |
+| `charging/measurement` | 协议事件到领域计量证据的无 IO 转换 | telemetry.go |
+
+start、stop、finish 不相互引用。measurement 是共享转换的叶子包，供 stop、HTTP 实时计量和 worker 使用，只依赖 domain 与 protocol 根契约。计费方案与舍入算法仍在 domain/charging；具体设备协议仍在 protocol 的协议子目录。
+
+### 跨用例依赖理由
+
+| 引用方 | 被引用方 | 业务理由与事务边界 |
+|---|---|---|
+| charging/start | card、order、payment、wallet、settlement、ops | 启动回执推进订单和刷卡操作；失败时调用所属用例执行资金退款，支付退款任务、回执、日志和 Outbox 与状态变更保持同一事务 |
+| charging/finish | card、order、settlement、ops | 结束回执推进订单、释放刷卡端口归属并提交计费任务；回执、结束事实、日志与 Outbox 保持同一事务，结算金额由 settlement 后续计算 |
+| charging/stop | charging/measurement、contracts/gateway、domain、protocol | 按冻结方案与 gateway 证据判定停止；截止写入归 stop，Gateway 接口由 cmd 注入，不引用 HTTP 客户端实现 |
+| interface/http | charging 各子包、settlement | 按具体接口注入启动、停止、结束用例；账单任务状态查询归 settlement.FindBillingJob，计费截止查询归 stop.FindBillingCutoff |
+| worker/charge | charging/measurement | 复用计量证据转换；待启动订单经 central 内部端点查询，不持有 central 业务表查询职责 |
+
+启动与结束回执事务整体迁移，保持原有锁顺序、READ COMMITTED、幂等内容比对及 Outbox 原子性。对应真库测试移到 start/finish 子包；各自的连接辅助函数留在测试文件，不为这一处复用增加公共测试服务。刷卡截止的单层转发函数删除，自动停止直接调用 stop.FreezeDeadline。
+
+### 维护方式
+
+仓库不再使用 scripts/check；不保留失效的 Make 目标或改用另一套架构检查脚本。make check 只执行 fmt、lint、test。编译、go vet、单元测试和真库测试提供执行证据；目录、依赖理由、事务边界、表归属与 OpenAPI 契约由规范和代码评审核对。
+
+新增跨用例依赖时在本文件补充业务理由与事务边界。新增或迁移文件同步更新 AGENTS.md 目录图。历史章节保留原始实施记录，其检查命令、数字及脚本预算不代表现行维护流程。
+
+### 本阶段验证
+
+Go 1.27 开发容器内 make check 与全部 cmd 构建通过。使用现有开发 MySQL 数据卷执行 charging 各子包与 settlement 的 integration 测试全部通过，包含启动失败退款、结束回执并发重放及内容冲突。全仓真库测试未在本阶段重跑；验证边界和历史测试库问题见 REFACTOR-EVIDENCE.md。
+
+## 21. 网关调用的显式契约与客户端
+
+停止用例原来持有通用 HTTP 客户端、地址和令牌，并在调用处自行定义响应与 map 请求。现拆为三个职责：
+
+| 位置 | 职责与依赖 |
+|---|---|
+| charging/stop/gateway.go | 消费者定义 Gateway 窄接口；依赖 contracts/gateway，不依赖客户端实现 |
+| contracts/gateway/charging.go | 取证与停止端点、批量上限、命名请求和响应 DTO；依赖 protocol 根契约与标准库，无 IO、gin 或 gorm |
+| integration/gateway/client.go | 实现单次 HTTP 请求、服务鉴权、状态码与业务 code 校验；依赖 contracts/gateway 和 platform/serviceclient，不依赖充电用例或数据库 |
+| cmd/central/main.go | 装配地址、令牌和超时，向 AutoStopper 注入专用客户端 |
+| gateway/control | 注册共享端点，绑定共享请求 DTO 并输出共享响应 DTO；沿用原鉴权和输入约束 |
+
+DTO 保留当前 wire 形状：外层 device_id、port_no、next_after_id 使用下划线字段；心跳样本 Type、DeviceID、ReceivedAt、ChargingPorts 保留已有大小写，端口电量仍为 mWh、功率仍为 0.1 W。现有其他调用方仍能解码。停止 user_id 保持内部接口既有 uint64 整数类型，未修改公开用户 ID 契约。
+
+修复取证响应 NextAfterID 无 JSON 标签导致游标无法解码的问题。分页只续取未完成订单，保持订单主键与请求对应关系；游标不推进、响应数量或设备/端口对应不一致、达到 8 页上限仍未完成时返回错误，不把部分证据用于停机计价。网络失败沿用调用方的重试流程，专用客户端不自动重试或更换业务标识。
+
+客户端要求取证 HTTP 200；停止要求 HTTP 202、code=0、accepted=true、stopped=false 和非空命令 ID/状态。缺失 code/data、业务失败、传输失败和无效响应明确返回错误。通用 serviceclient 新增 PostStatus，原 Post 委托它并保持原行为；业务 HTTP 状态语义在专用客户端核对。
+
+测试使用真实 HTTP 服务模拟既有 wire 响应，覆盖字段解码、请求令牌、整数身份、HTTP 与业务错误、取消、受理语义及原处理器输入约束；停止用例注入 fake Gateway，覆盖混合完成状态、批量上限、游标停滞和页数上限。
+
+验证结果：Go 1.27 容器内 make check、全部 cmd 构建通过；真实 MySQL 下 gateway/control 与 charging 各子包的 integration 测试通过。真实路由测试读取随机设备的空证据，未写测试数据；其他回执测试沿用既有回滚及清理。全仓真库测试未在本轮重跑。

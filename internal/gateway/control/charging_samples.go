@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
@@ -17,25 +18,14 @@ import (
 // （每分钟一条可覆盖 7 天）。批量端点按条数乘该上界界定响应体积。
 const chargingEvidenceMaxRows = 10080
 
-// 一次批量取证请求允许的最大条目数；超出后调用方应分批。
-const chargingEvidenceMaxBatch = 20
-
 // chargingEvidenceWindow 是最远可回溯的取证窗口，与分区保留策略对齐。
 const chargingEvidenceWindow = 7 * 24 * time.Hour
-
-// chargingEvidenceSample 是一条端口级心跳证据，不含原始报文与卡片数据。
-type chargingEvidenceSample struct {
-	Type          protocol.EventType
-	DeviceID      string
-	ReceivedAt    time.Time
-	ChargingPorts []protocol.PortTelemetry
-}
 
 // collectChargingSamples 读取设备+端口在 [from, 当前] 窗口内的心跳证据，
 // 按 id 升序返回。afterID > 0 时只取 id 更大的行，用于游标翻页；
 // complete 为真表示窗口内证据已取完，为假时调用方应以返回的
 // nextAfterID 继续取下一段。单段行数上限 chargingEvidenceMaxRows。
-func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string, port uint8, from time.Time, afterID uint64, limit int) ([]chargingEvidenceSample, uint64, bool, error) {
+func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string, port uint8, from time.Time, afterID uint64, limit int) ([]gatewaycontract.EvidenceSample, uint64, bool, error) {
 	now := time.Now().UTC()
 	rows, err := gatewaystore.ListHeartbeatsInWindow(ctx, a.DB, device, from, now, afterID, limit)
 	if err != nil {
@@ -45,7 +35,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 	if !complete {
 		rows = rows[:limit]
 	}
-	samples := make([]chargingEvidenceSample, 0, len(rows))
+	samples := make([]gatewaycontract.EvidenceSample, 0, len(rows))
 	var lastID uint64
 	for _, row := range rows {
 		lastID = row.ID
@@ -58,7 +48,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 		}
 		for _, p := range e.ChargingPorts {
 			if p.Port == port {
-				samples = append(samples, chargingEvidenceSample{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: e.ReceivedAt, ChargingPorts: []protocol.PortTelemetry{p}})
+				samples = append(samples, gatewaycontract.EvidenceSample{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: e.ReceivedAt, ChargingPorts: []protocol.PortTelemetry{p}})
 				break
 			}
 		}
@@ -105,25 +95,15 @@ func (a TelemetryAPI) chargingSamples(c *gin.Context) {
 	httpapi.OK(c, gin.H{"samples": samples, "complete": complete, "next_after_id": nextAfterID})
 }
 
-// chargingEvidenceRequest 是批量取证的一条请求，语义与 GET 查询参数一致。
-type chargingEvidenceRequest struct {
-	DeviceID  string    `json:"device_id"`
-	PortNo    uint8     `json:"port_no"`
-	StartedAt time.Time `json:"started_at"`
-	AfterID   uint64    `json:"after_id"`
-}
-
 // chargingEvidence 一次为多个设备+端口取证，供停机判定循环批量拉取，
 // 避免每订单一次 HTTP 调用。单条上限与 GET 相同，条目数上限
-// chargingEvidenceMaxBatch；任一请求体无效则整体拒绝。
+// gatewaycontract.MaxEvidenceBatch；任一请求体无效则整体拒绝。
 func (a TelemetryAPI) chargingEvidence(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var body struct {
-		Requests []chargingEvidenceRequest `json:"requests"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil || len(body.Requests) == 0 || len(body.Requests) > chargingEvidenceMaxBatch {
+	var body gatewaycontract.EvidenceRequest
+	if err := c.ShouldBindJSON(&body); err != nil || len(body.Requests) == 0 || len(body.Requests) > gatewaycontract.MaxEvidenceBatch {
 		httpapi.BadRequest(c, "批量证据请求须为 1–20 条")
 		return
 	}
@@ -134,21 +114,14 @@ func (a TelemetryAPI) chargingEvidence(c *gin.Context) {
 			return
 		}
 	}
-	type entry struct {
-		DeviceID    string                   `json:"device_id"`
-		PortNo      uint8                    `json:"port_no"`
-		Samples     []chargingEvidenceSample `json:"samples"`
-		Complete    bool                     `json:"complete"`
-		NextAfterID uint64                   `json:"next_after_id"`
-	}
-	evidence := make([]entry, 0, len(body.Requests))
+	evidence := make([]gatewaycontract.EvidencePage, 0, len(body.Requests))
 	for _, req := range body.Requests {
 		samples, nextAfterID, complete, err := a.collectChargingSamples(c.Request.Context(), req.DeviceID, req.PortNo, req.StartedAt, req.AfterID, chargingEvidenceMaxRows)
 		if err != nil {
 			httpapi.Write(c, 503, 5003, "计量证据暂不可读取", nil)
 			return
 		}
-		evidence = append(evidence, entry{DeviceID: req.DeviceID, PortNo: req.PortNo, Samples: samples, Complete: complete, NextAfterID: nextAfterID})
+		evidence = append(evidence, gatewaycontract.EvidencePage{DeviceID: req.DeviceID, PortNo: req.PortNo, Samples: samples, Complete: complete, NextAfterID: nextAfterID})
 	}
-	httpapi.OK(c, gin.H{"evidence": evidence})
+	httpapi.OK(c, gatewaycontract.EvidenceData{Evidence: evidence})
 }

@@ -102,7 +102,7 @@ func run(ctx context.Context) error {
 	jobHTTP := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 	startResults := charge.Synchronizer{Gateway: serviceclient.Client{HTTP: internalHTTP}, GatewayURL: cfg.GatewayInternalURL, CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
 	endResults := charge.EndSynchronizer{Gateway: serviceclient.Client{HTTP: internalHTTP}, GatewayURL: cfg.GatewayInternalURL, CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
-	paidStarts := charge.PaidStarter{UserDB: orms["user"], GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
+	paidStarts := charge.PaidStarter{CentralURL: cfg.CentralInternalURL, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
 	cardEvents := charge.CardDispatcher{Gateway: serviceclient.Client{HTTP: internalHTTP}, CentralURL: cfg.CentralInternalURL, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
 	autoStops := charge.AutoStopper{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: serviceclient.Client{HTTP: jobHTTP}}
 	billingJobs := billing.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}

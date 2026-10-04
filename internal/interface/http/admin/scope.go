@@ -10,6 +10,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // RequestIDPattern 校验 UUID 请求号。发券幂等回执、人工退款与设备导入都用它
@@ -17,9 +18,9 @@ import (
 var RequestIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // StationScope 读取当前登录账号的数据范围。站点、设备、计费方案等多个族都要
-// 按同一份范围过滤，因此由 Deps 提供，而不是各族各自读一次。
-func (d Deps) StationScope(c *gin.Context) (operations.DataScope, bool) {
-	scope, err := ops.LoadDataScope(c.Request.Context(), d.Store.AdminDB, c.MustGet("admin_profile").(operations.Profile))
+// 按当前账号的实时范围过滤。
+func StationScope(c *gin.Context, db *gorm.DB) (operations.DataScope, bool) {
+	scope, err := ops.LoadDataScope(c.Request.Context(), db, c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return scope, false
@@ -28,8 +29,8 @@ func (d Deps) StationScope(c *gin.Context) (operations.DataScope, bool) {
 }
 
 // RequireStationScope 在站点读写前核对目标站点是否落在数据范围内。
-func (d Deps) RequireStationScope(c *gin.Context, id uint64) bool {
-	scope, ok := d.StationScope(c)
+func RequireStationScope(c *gin.Context, db *gorm.DB, id uint64) bool {
+	scope, ok := StationScope(c, db)
 	if !ok {
 		return false
 	}
@@ -48,8 +49,8 @@ func CanManageStationDefault(scope operations.DataScope) bool {
 
 // RequirePricingTargetScope 校验计费方案与分账模板的作用目标。
 // 厂商数据范围受限时，整站默认配置不可改，只能改到本厂商名下的设备。
-func (d Deps) RequirePricingTargetScope(c *gin.Context, stationID uint64, deviceID string) bool {
-	scope, ok := d.StationScope(c)
+func RequirePricingTargetScope(c *gin.Context, db *gorm.DB, stationID uint64, deviceID string) bool {
+	scope, ok := StationScope(c, db)
 	if !ok {
 		return false
 	}
@@ -64,7 +65,7 @@ func (d Deps) RequirePricingTargetScope(c *gin.Context, stationID uint64, device
 		httpapi.Write(c, 403, 1003, "厂商数据范围受限，不能修改整站默认配置", nil)
 		return false
 	}
-	vendorID, err := ops.DeviceVendorID(c.Request.Context(), d.Store.AdminDB, stationID, deviceID)
+	vendorID, err := ops.DeviceVendorID(c.Request.Context(), db, stationID, deviceID)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return false

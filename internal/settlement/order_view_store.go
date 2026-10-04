@@ -41,3 +41,12 @@ func FindOrderView(ctx context.Context, db *gorm.DB, id uint64) (orderstore.Orde
 	err := orderstore.OrderBaseQuery(ctx, db).Select(orderstore.OrderColumns).Where("c.id = ?", id).Take(&row).Error
 	return row, err
 }
+
+// ListOrderRefunds 返回订单产生的退款记录，按 ID 倒序。
+func ListOrderRefunds(ctx context.Context, db *gorm.DB, orderID uint64) ([]map[string]any, error) {
+	rows := []map[string]any{}
+	err := db.WithContext(ctx).Table("refund_record").
+		Where("biz_type = 'charge' AND biz_id = ? AND deleted_at IS NULL", orderID).
+		Select("refund_no, refund_cents, status, reason, created_at").Order("id DESC").Find(&rows).Error
+	return rows, err
+}

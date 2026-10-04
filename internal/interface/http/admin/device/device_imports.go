@@ -46,7 +46,7 @@ func (a API) registerImports(r *gin.Engine) {
 
 // imports 返回最近的导入任务（最多 100 条），供运营在看板上确认某批设备到底导进去没有。
 func (a API) imports(c *gin.Context) {
-	rows, err := (device.DeviceImportStore{DB: a.Store.AdminDB}).ListImportJobs(c.Request.Context(), 100)
+	rows, err := (device.DeviceImportStore{DB: a.DB}).ListImportJobs(c.Request.Context(), 100)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -92,7 +92,7 @@ func (a API) createImport(c *gin.Context) {
 		}
 		seen[key] = true
 	}
-	scope, ok := a.StationScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok || !requireImportScope(c, scope, in.Devices) {
 		return
 	}
@@ -103,7 +103,7 @@ func (a API) createImport(c *gin.Context) {
 		adapter, found := adapters[d.VendorID]
 		if !found {
 			var vendor vendorapi.VendorRow
-			if err := (vendorapi.API{Deps: a.Deps}).RequestVendor(c.Request.Context(), http.MethodGet, "/"+strconv.FormatUint(d.VendorID, 10), nil, nil, &vendor, httpapi.RequestID(c)); err != nil {
+			if err := (vendorapi.API{DB: a.DB, Auth: a.Auth, GatewayURL: a.GatewayURL, ServiceToken: a.ServiceToken}).RequestVendor(c.Request.Context(), http.MethodGet, "/"+strconv.FormatUint(d.VendorID, 10), nil, nil, &vendor, httpapi.RequestID(c)); err != nil {
 				vendorapi.VendorFailure(c, err)
 				return
 			}
@@ -124,8 +124,8 @@ func (a API) createImport(c *gin.Context) {
 	}
 	body, _ := json.Marshal(in.Devices)
 	p := c.MustGet("admin_profile").(operations.Profile)
-	store := device.DeviceImportStore{DB: a.Store.AdminDB}
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	store := device.DeviceImportStore{DB: a.DB}
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		prior, found := store.LockImportJob(tx, in.ImportID)
 		if found == nil {
 			var old []device.ImportDevice
@@ -196,15 +196,15 @@ func (a API) retryImport(c *gin.Context) {
 // runImport 调用网关开通接口后补建尚不存在的设备元数据；请求超时为 10 秒。
 // 已有设备不覆盖配置，厂商或站点不一致时拒绝。失败任务记录原因并递增 attempts；已完成任务保持幂等。
 func (a API) runImport(c *gin.Context, id string) {
-	scope, ok := a.StationScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
 	var result device.ImportJob
 	// 在这次有界的内部请求期间一直持着任务锁。崩溃会把元数据一起回滚，
 	// 重放则能安全地看到网关那边已经持久占用的设备身份。
-	store := device.DeviceImportStore{DB: a.Store.AdminDB}
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	store := device.DeviceImportStore{DB: a.DB}
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		locked, err := store.LockImportJob(tx, id)
 		if err != nil {
 			return err

@@ -1,11 +1,11 @@
 package http
 
 import (
+	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -14,7 +14,9 @@ import (
 )
 
 type StopAuthorization struct {
-	DB           *gorm.DB
+	Service interface {
+		Stop(context.Context, string, uint64) (chargestop.ActiveStopAuthorization, error)
+	}
 	ServiceToken string
 }
 
@@ -32,26 +34,24 @@ func (a StopAuthorization) handle(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid stop authorization request")
 		return
 	}
-	order, err := payment.FindActiveStopAuthorization(c.Request.Context(), a.DB, c.Param("order_no"), userID)
+	order, err := a.Service.Stop(c.Request.Context(), c.Param("order_no"), userID)
+	if errors.Is(err, chargestop.ErrBillingCutoffUnavailable) {
+		httpapi.Write(c, 503, 5001, "计费截止暂时无法保存", nil)
+		return
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusConflict, 2000, "order is not charging for this user", nil)
+		return
+	}
+	if errors.Is(err, chargestop.ErrPortIdentity) {
+		httpapi.Write(c, http.StatusConflict, 2000, "port identity unavailable", nil)
 		return
 	}
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "order storage unavailable", nil)
 		return
 	}
-	if !order.PortID.Valid || order.PortID.Int64 <= 0 {
-		httpapi.Write(c, http.StatusConflict, 2000, "port identity unavailable", nil)
-		return
-	}
-	if err := payment.RecordBillingCutoff(c.Request.Context(), a.DB, order.ChargeOrderID, "stop_request", time.Now().UTC()); err != nil {
-		httpapi.Write(c, 503, 5001, "计费截止暂时无法保存", nil)
-		return
-	}
 	httpapi.OK(c, gin.H{"charge_order_id": order.ChargeOrderID, "order_no": order.OrderNo,
 		"user_id": order.UserID, "device_id": order.DeviceID, "port_no": order.PortNo,
 		"port_id": order.PortID.Int64, "start_command_id": order.StartCommandID})
 }
-
-type activeStopAuthorizationRow = payment.ActiveStopAuthorization

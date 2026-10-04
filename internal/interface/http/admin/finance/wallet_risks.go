@@ -25,7 +25,7 @@ func (a API) registerWalletRisks(r *gin.Engine) {
 
 // walletRiskStore 返回风控审核与解冻的读写入口。
 func (a API) walletRiskStore() wallet.WalletRiskStore {
-	return wallet.WalletRiskStore{DB: a.Store.UserDB}
+	return wallet.WalletRiskStore{DB: a.DB}
 }
 
 // walletRisks 分页查询关联冻结记录的退款风控请求。
@@ -82,7 +82,7 @@ func (a API) reviewWalletRisk(c *gin.Context) {
 	var response map[string]any
 	var auditPending []chargehttp.AuditEntry
 	store := a.walletRiskStore()
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		req, err := store.LockRefundRequest(tx, c.Param("request_id"))
 		if err != nil {
 			return err
@@ -138,7 +138,7 @@ func reserveWalletRefund(tx *gorm.DB, req wallet.WalletRiskRequest) error {
 // 解冻后仅在用户 active 且无其他冻结时恢复钱包为 active。
 // 相同审核人和留言重放返回首次回执；内容不一致时返回冲突。
 func (a API) releaseWalletRisk(c *gin.Context) {
-	p, ok := a.RequireFinanceActor(c, "finance.wallet_risk.release")
+	p, ok := admin.RequireFinanceActor(c, "finance.wallet_risk.release")
 	if !ok {
 		return
 	}
@@ -155,7 +155,7 @@ func (a API) releaseWalletRisk(c *gin.Context) {
 	var response map[string]any
 	var auditPending []chargehttp.AuditEntry
 	store := a.walletRiskStore()
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		req, err := store.LockRefundRequest(tx, c.Param("request_id"))
 		if err != nil {
 			return err

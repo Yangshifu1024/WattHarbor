@@ -50,7 +50,7 @@ func (a API) orders(c *gin.Context) {
 		httpapi.BadRequest(c, "开始时间不能晚于结束时间")
 		return
 	}
-	out, err := orderstore.ListOrders(c.Request.Context(), a.Store.UserDB, q)
+	out, err := orderstore.ListOrders(c.Request.Context(), a.DB, q)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -67,19 +67,19 @@ func (a API) order(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	row, err := settlement.FindOrderView(ctx, a.Store.UserDB, id)
+	row, err := settlement.FindOrderView(ctx, a.DB, id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	rows := []orderstore.OrderView{row}
-	if err := orderstore.FillOrderStations(ctx, a.Store.UserDB, rows); err != nil {
+	if err := orderstore.FillOrderStations(ctx, a.DB, rows); err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	row = rows[0]
 	a.orderLive(ctx, rows)
-	selectedPackage, err := orderstore.OrderPackageSnapshot(ctx, a.Store.UserDB, row.OrderID)
+	selectedPackage, err := orderstore.OrderPackageSnapshot(ctx, a.DB, row.OrderID)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -98,11 +98,11 @@ func (a API) timeline(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := settlement.OrderExists(ctx, a.Store.UserDB, id); err != nil {
+	if err := settlement.OrderExists(ctx, a.DB, id); err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	rows, err := settlement.ListOrderEvents(ctx, a.Store.UserDB, id)
+	rows, err := settlement.ListOrderEvents(ctx, a.DB, id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

@@ -16,8 +16,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/application"
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
+	chargefinish "github.com/ChargePilot2026/charge-pilot/internal/charging/finish"
+	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
+	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
+	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	adminalertsync "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/alertsync"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
@@ -86,14 +89,19 @@ func run(ctx context.Context) error {
 		httpapi.OK(c, gin.H{"status": "central_storage_ready"})
 	})
 
-	// 充电流程：授权、结果回传与停机，全部由 gateway 携服务令牌调用。
-	identityhttp.StartAuthorization{DB: orm, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.StartResultAPI{Store: identityhttp.StartResultStore{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.EndResultAPI{Store: identityhttp.EndResultStore{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.StopAuthorization{DB: orm, ServiceToken: cfg.ServiceToken}.Register(router)
+	// 充电生命周期：gateway 查询授权，worker 查询待启动订单并同步回执。
+	identityhttp.PaidStartsAPI{Service: chargestart.PendingOrders{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.StartAuthorization{Service: chargestart.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.StartResultAPI{Service: chargestart.StartResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.EndResultAPI{Service: chargefinish.EndResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.StopAuthorization{Service: chargestop.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.CardAPI{Store: card.CardStore{DB: orm}, Pricing: pricing.PricingStore{DB: orm},
 		ServiceToken: cfg.ServiceToken}.RegisterInternal(router)
-	application.AutoStopAPI{Stopper: application.AutoStopper{UserDB: orm, Gateway: serviceclient.Client{Timeout: 10 * time.Second}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
+	gateway, err := gatewayclient.NewClient(serviceclient.Client{Timeout: 10 * time.Second}, cfg.GatewayInternalURL, cfg.ServiceToken)
+	if err != nil {
+		return err
+	}
+	identityhttp.AutoStopAPI{Stopper: chargestop.AutoStopper{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
 
 	// 资金与账单：开票、结算、退款派发。
 	identityhttp.Service{Store: settlement.Store{DB: orm}, Orders: settlement.BillingOrders{DB: orm}, ServiceToken: cfg.ServiceToken,

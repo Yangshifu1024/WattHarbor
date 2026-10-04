@@ -6,6 +6,7 @@ import (
 	"gorm.io/gorm"
 	"net/http"
 
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -79,7 +80,7 @@ type UserStopAPI struct {
 }
 
 func (a UserStopAPI) Register(router *gin.Engine) {
-	router.POST("/api/v1/internal/charge-orders/stop", a.handle)
+	router.POST(gatewaycontract.StopPath, a.handle)
 }
 
 func (a UserStopAPI) handle(c *gin.Context) {
@@ -87,11 +88,7 @@ func (a UserStopAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
-	var request struct {
-		OrderNo string `json:"order_no" binding:"required,max=64"`
-		UserID  uint64 `json:"user_id" binding:"required"`
-		Source  string `json:"source" binding:"required,oneof=user_app admin auto"`
-	}
+	var request gatewaycontract.StopRequest
 	if c.ShouldBindJSON(&request) != nil {
 		httpapi.BadRequest(c, "invalid stop request")
 		return
@@ -105,5 +102,5 @@ func (a UserStopAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "stop command unavailable", nil)
 		return
 	}
-	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gin.H{"accepted": true, "stopped": false, "command_id": stop.CommandID, "status": stop.Status})
+	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StopAcceptance{Accepted: true, Stopped: false, CommandID: stop.CommandID, Status: stop.Status})
 }

@@ -28,7 +28,7 @@ func (a API) paymentOrders(c *gin.Context) {
 		httpapi.BadRequest(c, err.Error())
 		return
 	}
-	out, err := payment.PaymentOrders(c.Request.Context(), a.Store.UserDB, q)
+	out, err := payment.PaymentOrders(c.Request.Context(), a.DB, q)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

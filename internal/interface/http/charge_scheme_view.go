@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
+	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 )
 
@@ -31,7 +32,7 @@ func (a UserQueryAPI) schemeView(ctx context.Context, order orderstore.ChargeOrd
 			payload["rule_description"] = frozen.Rule.Spec.Scheme.Remark
 		}
 	}
-	job, err := payment.FindBillingJob(ctx, a.DB, order.ID)
+	job, err := settlement.FindBillingJob(ctx, a.DB, order.ID)
 	if err != nil {
 		return err
 	}
@@ -42,7 +43,7 @@ func (a UserQueryAPI) schemeView(ctx context.Context, order orderstore.ChargeOrd
 	}
 	payload["card_operations"] = operations
 	payload["start_confirmation_pending"] = order.Status == "paid"
-	cutoff, err := payment.FindBillingCutoff(ctx, a.DB, order.ID)
+	cutoff, err := chargestop.FindBillingCutoff(ctx, a.DB, order.ID)
 	if err != nil {
 		return err
 	}

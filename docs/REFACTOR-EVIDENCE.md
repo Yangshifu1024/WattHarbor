@@ -1,52 +1,47 @@
 # 重构完成证据
 
-任何人拿到本仓库，**不需要读对话历史**，跑下面的命令即可自行核对每一条结论。
+任何人拿到本仓库，都可以通过当前源码、路由、初始化 SQL 和以下命令核对实现。
 
 ```bash
-make check                 # 七项机检，全绿才算达标
-make evidence              # 单独打印完成证据（make check 的最后一项）
-python3 scripts/check/completion_evidence.py   # 同上，可独立运行
+make check                       # go fmt / go vet / go test
+go build -trimpath -o bin/ ./cmd/...
+make test-integration TEST_MYSQL_URL=...  # 真实 MySQL，需先执行迁移
 ```
 
-## 当前状态
+架构、目录、表归属和 API 契约按 AGENTS.md 与代码评审核对。scripts/check 已移除；本文后面的历史章节保留过去的验证过程，其中脚本命令不再是现行入口。
 
-由 `scripts/check/current_state.py` 生成，`make check` 每次重算比对。
+## 当前结构
 
-| 指标 | 当前值 | 取证方式 |
-|---|---|---|
-| 表（去重） | 87 | 三个 `migrations/*/0001_init.sql` 的 `CREATE TABLE` 并集（各 schema 合计 88，`event_outbox` 跨 central/gateway 同名，属刻意设计） |
-| 非测试 Go 行数 | 37260 | `internal/` + `cmd/` 下非 `_test.go` 文件 |
-| use case 包 | 11 | order / settlement / wallet / pricing / card / device / identity / marketing / payment / ops / export |
-| `infrastructure/database` | 3 文件 | 表访问已下沉到各 use case 的 `*_store.go` |
-| `database` 对 use case 的依赖 | 0 | `go list -deps ./internal/infrastructure/database` 中出现的 use case 包数；**0 才算达成** |
-| 目录树核对条数 | 638 | `scripts/check/doc_tree.py` 双向核对 |
+charging 按 start、stop、finish、measurement 四个子包组织，测试随业务步骤放置。FindBillingJob 位于 settlement；计费截止读取与冻结位于 charging/stop。完整结构及依赖理由见 target-structure.md 第 20–21 节。停止用例定义 Gateway 窄接口，contracts/gateway 与 integration/gateway 分别维护共享 wire DTO 与客户端实现。
 
-## `make check` 的七项
+## 人工核验重点
 
-| 项 | 作用 | 判别力证伪 |
-|---|---|---|
-| `fmt` / `lint` / `test` | gofmt / vet / test | — |
-| `layers` | 6 条结构规则：domain 零框架、表名只归 store、use case 单向且须登记理由、platform/persist 独立、目录树、OpenAPI 契约 | `make layers-selftest`，15 个用例含"不应命中"的反向用例 |
-| `table-refs` | 代码里 `.Table("x")` 引用的表必须存在于 migrations | 注入 `.Table("zz_ghost_table")` 验证被抓 |
-| `current-state` | 重生成文档的「当前状态」小节；并拦截历史段落里无「当时」限定的过期断言 | 注入一条未标注的过期断言验证被抓 |
-| `evidence` | 打印七项完成事实 | 注入 `database → wallet` 依赖验证报 FAIL |
+- 新增跨用例引用有业务理由，start/stop/finish 无相互依赖；measurement 不依赖数据库、HTTP 或具体设备协议。
+- 回执迁移没有切碎资金、状态、幂等凭据及 Outbox 事务；锁顺序和隔离级别保持原有语义。
+- HTTP 不新增业务事务；worker 通过 central 的内部端点读取待启动订单。
+- OpenAPI 的端点、请求和响应与注册路由及真实接口一致，schema 引用有定义。
+- 迁移文件同步维护目录图；默认测试与真库测试分别执行，不以编译成功替代并发和幂等证据。
 
-## 各项结论的核验方法
+## 生命周期子包调整的验证结果
 
-```bash
-# database 零业务依赖
-go list -deps ./internal/infrastructure/database | grep -E '/internal/(order|settlement|wallet|pricing|card|device|identity|marketing|payment|ops|export)$'
-#   应无输出
+本阶段在 Go 1.27 开发容器中执行：
 
-# 表引用完整性
-python3 scripts/check/table_refs.py
+- `make check` 通过：格式化、go vet 和全量默认测试。
+- `go build -trimpath -o bin/ ./cmd/...` 通过：五个服务及 migrate/devseed/simulator-dc589。
+- 设置 TEST_MYSQL_URL 后执行 `go test -tags=integration -count=1 ./internal/charging/... ./internal/settlement` 全部通过，覆盖启动失败余额退款一次、结束回执并发及顺序重放、内容冲突和结算回归。
+- 人工核对四个子包的 import：start/stop/finish 不相互依赖，measurement 无数据库或 HTTP 依赖；源码不再引用 charging 根包。
+- `git diff --check` 通过；没有提交或暂存改动。
 
-# 目录树双向一致
-python3 scripts/check/doc_tree.py
+本阶段仅运行受影响用例的真库测试，未重跑全仓真库测试；历史记录中的后台账号测试库结构问题不据此宣称已解决。开发 MySQL 使用现有数据卷，迁移版本仍为 1。
 
-# 护栏自检（每条规则真的会失败，且不误报）
-make layers-selftest
-```
+## 网关调用契约调整的验证结果
+
+- Go 1.27 开发容器内 `make check` 与 `go build -trimpath -o bin/ ./cmd/...` 全部通过。
+- HTTP 客户端测试覆盖实际字段名、next_after_id 解码、服务令牌、整数身份、HTTP/业务错误、取消、缺失响应字段与停止受理语义。
+- fake Gateway 测试覆盖只续取未完成订单、20 条分批、游标停滞、身份不匹配、网络失败与 8 页上限；错误时不返回部分证据。
+- 新增真实路由契约测试经实际注册的 TelemetryAPI 和真实 gateway_db 调用客户端。该测试查询随机设备的空证据，不写数据库。
+- 配置 TEST_MYSQL_URL 与 DATABASE_URL_GATEWAY 后执行 `go test -tags=integration -count=1 ./internal/gateway/control ./internal/charging/...` 全部通过，同时回归启动失败退款、结束回执并发、重放和内容冲突。
+- 本轮未修改业务 SQL、资金或回执事务；未重跑全仓真库测试。现有 MySQL 数据卷保留，迁移工具核对三库版本仍为 1。
 
 ## 前端验证与其边界
 
@@ -621,3 +616,25 @@ CI 的 runner 上未必装了 mysql 客户端，而 SQL 本身可以由 mysql �
 但 `ListPublishableOutbox` 领的是全表所有到期行，
 而 `go test ./...` 并发跑别的包时，钱包到账、退款成功都在往同一张表写。
 断言改为只针对自己造的那 4 条，不受邻居干扰。
+
+## 充电生命周期归位的核验入口
+
+本轮以工作区源码为准，历史章节的数量不代表当前值；实时清单见 target-structure.md 第 0 节。
+
+- internal/charging 承接授权、回执、截止冻结与自动停机，原 application 删除；回执 HTTP 处理器不再创建事务。
+- 启动失败和刷卡结算共用 settlement 的余额退款逻辑，card 操作及计费任务写入迁回所属用例。
+- worker 不再查待启动业务表；新增 central 内部 GET 接口及其鉴权、参数、错误响应测试，worker 测试验证失败不改查询游标和扫完后的重试。
+- make layers-selftest 注入 HTTP SQL/事务、charging→HTTP、worker→业务库、错误表归属写入等违规，同时确认跨用例读取及正确归属写入不误报。
+- make check、make build-all 与 make test-integration 分别核对默认回归、部署装配和真库事务。真库结束回执并发测试迁到 charging，测试依据及隔离级别约束保留。
+
+部署边界保留五进程。HTTP 的其他持久化债务在 HTTP_LEGACY_BUDGET 逐文件登记；预算不是职责已完成的证明，后续迁出时必须减少。
+
+本轮实际验证结果：
+
+- make check 通过；五个服务及 migrate/devseed/simulator-dc589 构建通过。
+- 后台前端 npm test 的 78 项测试与 npm run build 通过。
+- 新内部 GET 接口在开发容器网络中实际返回 401（无令牌）与 200（有令牌，data.items=[]）。
+- 真库充电启动失败退款、结束回执并发幂等、支付、结算、钱包风控及 worker 测试通过。
+- 全量 make test-integration 尚有两项后台账号并发测试失败：现有 central_db 缺 admin_user，Goose 却已登记版本 1；当前初始化 SQL 的 Up 包含该表。没有重置数据卷、删除迁移版本或补造账号数据。
+
+表写入归属的静态检查覆盖字面量 Table 链和直接 Raw/Exec 写语句；动态表名及模型写入仍需评审核对。HTTP 遗留预算限制新增 SQL/事务，不能替代对处理器中业务分支的审查。

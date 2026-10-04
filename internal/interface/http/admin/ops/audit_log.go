@@ -53,7 +53,7 @@ func (a API) listAuditLogs(c *gin.Context) {
 		return
 	}
 
-	out, err := ops.ListAudits(c.Request.Context(), a.Store.AdminDB, ops.AuditQuery{
+	out, err := ops.ListAudits(c.Request.Context(), a.DB, ops.AuditQuery{
 		Module: module, Action: action, Actor: actor, TargetType: target, From: from, To: to,
 	}, page.Page, page.PageSize)
 	if err != nil {

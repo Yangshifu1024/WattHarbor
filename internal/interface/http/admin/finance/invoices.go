@@ -23,7 +23,7 @@ func (a API) registerInvoices(r *gin.Engine) {
 // 的三个字段是汇总后的当前值（优先取审核表，没有再回退到申请单本身），因为审核进度
 // 可能只记在审核表里。审核人 ID 统一转成字符串输出，避免 JS 大整数精度丢失。
 func (a API) invoices(c *gin.Context) {
-	rows, err := settlement.ListInvoiceRequests(c.Request.Context(), a.Store.UserDB)
+	rows, err := settlement.ListInvoiceRequests(c.Request.Context(), a.DB)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -40,7 +40,7 @@ func (a API) invoices(c *gin.Context) {
 // 第二签的实时身份核对回读 admin 授权域的账号档案与权限。
 func (a API) invoiceReviewStore() settlement.InvoiceReviewStore {
 	return settlement.InvoiceReviewStore{
-		DB: a.Store.UserDB,
+		DB: a.DB,
 		LookupReviewer: func(ctx context.Context, reviewerID uint64) (settlement.ReviewerStatus, error) {
 			p, err := a.Auth.Store.Profile(ctx, reviewerID)
 			if err != nil {
@@ -58,7 +58,7 @@ func (a API) reviewInvoice(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, ok := a.RequireFinanceActor(c, "invoice.review")
+	p, ok := admin.RequireFinanceActor(c, "invoice.review")
 	if !ok {
 		return
 	}
@@ -78,7 +78,7 @@ func (a API) reviewInvoice(c *gin.Context) {
 	status := ""
 	var before map[string]any
 	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		status, before, err = a.invoiceReviewStore().Review(c.Request.Context(), tx, id, settlement.InvoiceDecision{
 			Approve: approve, InvoiceURL: in.InvoiceURL, Reason: in.Reason, ActorID: p.ID,

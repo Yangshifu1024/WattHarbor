@@ -22,7 +22,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 
 ## 架构与目录
 
-代码按 **use case** 组织，依赖单向无例外：`domain`（纯规则与共享契约）、`protocol`（设备契约）、`platform`、`persist` 不依赖任何实现层；每个 use case 包只依赖 `domain` 与 `platform`，跨用例引用必须在 `scripts/check/layers.py` 的 `ALLOWED_CROSS` 逐条登记理由；表名与 gorm 查询构造只允许出现在 `*_store.go` / `*_schema.go`；`cmd/*` 做装配。
+代码按 **use case** 组织：`domain`（纯规则与共享契约）、`protocol`（设备契约）、`platform`、`persist` 保持独立；用例可以引用这些契约与能力，新增跨用例引用须在结构文档说明业务理由并经代码评审核对。业务 SQL 与事务归用例的 `*_store.go` / `*_schema.go`；HTTP 的遗留持久化逐步下沉，新增处理器不承担业务 SQL 或事务；`cmd/*` 做装配。
 
 | 进程 | 暴露面 | 职责 | 数据库 | 监听 |
 | --- | --- | --- | --- | --- |
@@ -33,11 +33,11 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使�
 | `worker` | 对内 | 事件消费、定时任务、命令同步、外部投递 | 三库（仅 outbox 转发读 `event_outbox`），执行状态存 `worker_db` | HTTP `8085` |
 | `migrate` / `devseed` / `simulator-dc589` | 工具 | schema 初始化、开发数据准备、设备模拟 | 三库 / 无 | 无 |
 
-`user` 与 `admin` 对外，端口由入口网关承接。`central` 的 8082 在两套编排里都不映射，跨服务调用只在容器网络内可达；开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地排查，生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。五个进程共享同一套 `domain`/`application`/`infrastructure`，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
+`user` 与 `admin` 对外，端口由入口网关承接。`central` 的 8082 在两套编排里都不映射，跨服务调用只在容器网络内可达；开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地排查，生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。五个进程共享同一套 use case、`domain` 与持久化实现，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
 
-`AdminDB`、`UserDB`、`BillingDB` 是同一连接池的领域名称，不是三个库。跨服务操作通过持久任务、幂等回执和内部 HTTP 协作。Redis Cache 保存会话，Redis Stream 保存事件，两者独立部署。
+业务数据统一在 `central_db`。后台各业务族显式持有一个 `DB`，不再通过全量依赖包传递三个同库别名。跨服务操作通过持久任务、幂等回执和内部 HTTP 协作。Redis Cache 保存会话，Redis Stream 保存事件，两者独立部署。
 
-完整目录结构、文件职责与分层维护规则见 [AGENTS.md](AGENTS.md#工具与代码风格)。以上边界由 `make layers`（`scripts/check/layers.py`）机检，`make layers-selftest` 注入已知违规确认每条规则真的会失败，违反即失败。
+完整目录结构、文件职责与分层维护规则见 [AGENTS.md](AGENTS.md#工具与代码风格)。目录、依赖方向和表归属按维护规范评审核对；`make check` 执行 Go 格式化、静态检查和默认测试。
 
 ## 本地运行
 
@@ -191,24 +191,23 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 
 ### 接口导航
 
-后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件为 `internal/interface/http/openapi.json`（迁移前位于 [openapi.json](internal/central/admin/openapi.json)），覆盖部分现行后台接口。完整注册路径及字段以各 `interface/http/*_api.go` 与 `cmd/*/main.go` 的实际装配为准。
+后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件是 `internal/interface/http/admin.openapi.json`；C 端文档是同目录的 `user.openapi.json`。实际路由装配见 `cmd/user/main.go`、`cmd/admin/main.go` 与 `cmd/central/main.go`。
 
-下表为分层结构的目标归属。迁移期间以 `cmd/*/main.go` 的实际装配为准，括号内为迁移前路径。
+| 业务 | HTTP 入口 | 用例实现 |
+| --- | --- | --- |
+| 用户身份与会话 | [user_api.go](internal/interface/http/user_api.go)、[auth.go](internal/interface/http/auth.go) | `identity` |
+| 扫码、支付意图与回调 | [payment_scan.go](internal/interface/http/payment_scan.go)、[payment_payment_http.go](internal/interface/http/payment_payment_http.go) | `payment`、`pricing` |
+| 充电授权与回执 | [order_authorization.go](internal/interface/http/order_authorization.go)、[order_start_result.go](internal/interface/http/order_start_result.go)、[order_end_result.go](internal/interface/http/order_end_result.go) | `charging`；订单读模型在 `order` |
+| 钱包、卡、券与发票 | [user_api.go](internal/interface/http/user_api.go) 注册各处理器 | `wallet`、`card`、`marketing`、`settlement` |
+| 后台业务族 | [admin](internal/interface/http/admin)、[admin_auth.go](internal/interface/http/admin_auth.go) | 各对应 use case |
+| 设备接入与遥测 | [gateway/control](internal/gateway/control)、[gateway/provision](internal/gateway/provision) | gateway 运行时与 `protocol` |
+| worker 运维与调度 | [worker/internaljob](internal/worker/internaljob)、[worker/schedule](internal/worker/schedule) | worker 编排，业务写入委托 central |
 
-| 领域 | 路径前缀 | 接口层 | 领域层 |
-| --- | --- | --- | --- |
-| 用户身份与会话 | `/api/v1/user/auth/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/identity` |
-| 扫码与支付 | `/api/v1/user/scan/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/money/payment.go` |
-| 充电状态、历史、停止 | `/api/v1/user/charge/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/charging` |
-| 钱包、卡、券、站点、发票、报修 | `/api/v1/user/*` | [user_api.go](internal/interface/http/user_api.go) | `domain/money`、`domain/devices` |
-| 后台身份、账号、角色、数据范围 | `/api/v1/admin/auth/*`、`/admin-users`、`/roles` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/operations` |
-| 站点、设备、厂商、方案 | `/api/v1/admin/stations`、`/devices`、`/vendors` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/devices` |
-| 订单、支付单、计量复核、发票 | `/api/v1/admin/orders`、`/payment-orders`、`/billing/*` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/charging`、`domain/money` |
-| 财务：退款、结算、导出 | `/api/v1/admin/billing/*`、`/exports` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/money` |
-| 告警、故障、反馈、公告、审计 | `/api/v1/admin/alerts`、`/device-fault-reports`、`/feedback` | [admin_api.go](internal/interface/http/admin_api.go) | `domain/operations` |
-| 服务间内部端点 | `/api/v1/internal/*` | [internal_api.go](internal/interface/http/internal_api.go) | `application` |
-| 设备接入端点 | `/api/v1/internal/devices/*`、`/charging-evidence` | [device_api.go](internal/interface/http/device_api.go) | [gateway](internal/gateway) |
-| worker 运维端点 | `/api/v1/internal/worker/ops/*`、`/scheduled-tasks/*` | [worker_api.go](internal/interface/http/worker_api.go) | [worker](internal/worker) |
+`GET /api/v1/internal/charge-orders/paid-starts?after_id=0` 由 central 提供，使用 `X-Service-Token`。成功响应的 `data.items` 是数组，每项包含整数 `id` 与字符串 `order_no`，按 ID 升序最多 100 项；空结果返回 `[]`。缺省游标为 0，非法游标返回 400，服务令牌错误返回 401，查询失败返回 503。worker 扫描完后从 0 重扫，使用原订单号重试 gateway 的 START 接口。
+
+充电生命周期按 `internal/charging/start`、`stop`、`finish` 和 `measurement` 组织；事务、幂等回执与 Outbox 在对应生命周期子包，回执与授权的 HTTP 处理器只做认证、绑定和错误映射。启动失败与结算共用 `settlement.RefundBalanceInTx`，钱包入账复用 `wallet.Move`；设备协议单位转换留在边缘适配器。
+
+自动停止经 `stop.Gateway` 调用网关；共享端点与 DTO 在 `internal/contracts/gateway`，HTTP 客户端在 `internal/integration/gateway`，地址、服务令牌和超时由 central 装配。取证按最多 20 条分批，只续取未完成的订单；游标不推进或 8 页后仍未取完则返回错误，本次扫描不使用不完整证据。停止响应必须为 HTTP 202、业务 code 为 0 且确认受理，设备结束仍由异步回执推进。
 
 后台用户档案的余额记录通过 `GET /api/v1/admin/charge-users/:id/recharges` 分页读取，要求 `charge_user.read`。数据来自该用户未删除的余额充值支付单，保留待支付、已支付和退款状态；实付与成功退款金额分别展示。仅接受 `page/page_size`，按创建时间及支付单 ID 倒序排列。
 
@@ -388,13 +387,13 @@ sh scripts/git/install-hooks.sh
 make check
 ```
 
-`make fmt/lint/test/layers` 分别直接调用 `go fmt ./...`、`go vet ./...`、`go test ./...`、`scripts/check/layers.py`，`make check` 顺序执行四项；另有 `make layers-selftest` 做护栏自检。目录树与仓库的一致性由 `scripts/check/doc_tree.py` 双向核对。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
+`make fmt/lint/test` 分别调用 `go fmt ./...`、`go vet ./...`、`go test ./...`，`make check` 顺序执行三项。架构和目录一致性按 AGENTS.md 与结构文档人工核对。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
 
 编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部八个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
 
-本仓库只保留单元测试，不设需要真实数据库的集成测试。`make check` 全部为秒级本地检查，可在每次改动后运行。
+`make check` 跑默认单元测试及静态护栏；真库测试单独使用 `make test-integration TEST_MYSQL_URL=...`，由 integration build tag 隔离，CI 也运行这一层。
 
-代价须明示：事务原子性、行锁并发、唯一键冲突、幂等重放这些依赖真实数据库的行为**没有自动化覆盖**，只能靠联调与人工核对。改动资金、并发或唯一性路径时，除了 `make check`，还须在开发栈上实际走一遍对应流程；涉及并发时可用 `make test` 之外的 `go test -race ./...` 补充竞态检测（该检查不需要数据库）。
+事务原子性、行锁并发、唯一键冲突及幂等重放需要真 MySQL 验证。开发栈内可执行 `make test-integration TEST_MYSQL_URL=mysql://chargepilot:chargepilot_dev@mysql:3306/central_db`；测试数据由事务回滚或显式收尾清理。默认测试通过不代表这一层已验证。
 
 | 目录 | 安装与开发 | 检查与构建 |
 | --- | --- | --- |

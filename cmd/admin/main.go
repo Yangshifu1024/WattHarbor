@@ -18,7 +18,6 @@ import (
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
 	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/dashboard"
 	admindevice "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/device"
 	adminexport "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/export"
@@ -98,29 +97,22 @@ func run(ctx context.Context) error {
 	authAPI := identityhttp.AdminAuth{Store: adminStore, Sessions: sessionstore.AdminSessions{Redis: cache}, JWT: jwt}
 	authAPI.Register(router)
 	// 后台业务按族注册：每个族是一个独立包，进程只挂自己提供的那些。
-	deps := admin.Deps{
-		Store:        admin.Store{AdminDB: orm, UserDB: orm, BillingDB: orm},
-		Auth:         authAPI,
-		GatewayURL:   cfg.GatewayInternalURL,
-		ServiceToken: cfg.ServiceToken,
-		ExportDir:    cfg.ExportDir,
-	}
-	adminops.API{Deps: deps}.Register(router)
-	adminpricing.API{Deps: deps}.Register(router)
-	adminstation.API{Deps: deps}.Register(router)
-	admindevice.API{Deps: deps}.Register(router)
-	adminorder.API{Deps: deps}.Register(router)
-	adminfinance.API{Deps: deps}.Register(router)
-	adminmarketing.API{Deps: deps}.Register(router)
-	adminuser.API{Deps: deps}.Register(router)
-	adminvendor.API{Deps: deps}.Register(router)
-	admindashboard.Dashboard{UserDB: orm, AdminDB: orm}.Register(router, authAPI)
+	adminops.API{DB: orm, Auth: authAPI}.Register(router)
+	adminpricing.API{DB: orm, Auth: authAPI}.Register(router)
+	adminstation.API{DB: orm, Auth: authAPI}.Register(router)
+	admindevice.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	adminorder.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	adminfinance.API{DB: orm, Auth: authAPI}.Register(router)
+	adminmarketing.API{DB: orm, Auth: authAPI}.Register(router)
+	adminuser.API{DB: orm, Auth: authAPI}.Register(router)
+	adminvendor.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	admindashboard.Dashboard{DB: orm}.Register(router, authAPI)
 	chargehttp.AdminAccounts{DB: orm, Auth: &authAPI}.RegisterRoles(router)
 	chargehttp.AdminAccounts{DB: orm, Auth: &authAPI}.Register(router)
-	adminexport.ExportTask{Store: admin.Store{AdminDB: orm}, Auth: authAPI, ExportDir: cfg.ExportDir}.Register(router)
+	adminexport.ExportTask{DB: orm, Auth: authAPI, ExportDir: cfg.ExportDir}.Register(router)
 
 	// 导出文件有过期时间，过期件定时清理，避免目录无限增长。
-	cleanup := adminexport.ExportTask{Store: admin.Store{AdminDB: orm}, ExportDir: cfg.ExportDir}
+	cleanup := adminexport.ExportTask{DB: orm, ExportDir: cfg.ExportDir}
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()

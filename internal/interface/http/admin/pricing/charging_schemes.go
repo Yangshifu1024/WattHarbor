@@ -48,7 +48,7 @@ type schemeInput struct {
 }
 
 func (a API) chargingSchemes(c *gin.Context) {
-	rows, err := (pricing.PricingStore{DB: a.Store.AdminDB}).ListPricingTemplates(c.Request.Context())
+	rows, err := (pricing.PricingStore{DB: a.DB}).ListPricingTemplates(c.Request.Context())
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -85,7 +85,7 @@ func (a API) saveChargingScheme(c *gin.Context) {
 	raw, _ := json.Marshal(in.Scheme.SpecFor(in.Scheme.Packages[0]))
 	display, _ := json.Marshal(in.Scheme.Display)
 	var version uint32
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		saved, savedVersion, before, err := (pricing.PricingStore{DB: tx}).SavePricingTemplate(tx, id, in.ExpectedVersion, pricing.PricingTemplateInput{
 			Name: in.Scheme.Name, Remark: in.Scheme.Remark, SpecJSON: string(raw), DisplayJSON: string(display),
 		})
@@ -119,7 +119,7 @@ func (a API) changeChargingScheme(c *gin.Context, remove bool) {
 		httpapi.BadRequest(c, "状态无效")
 		return
 	}
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		before, err := (pricing.PricingStore{DB: tx}).ChangePricingTemplateStatus(tx, id, in.ExpectedVersion, in.Status, remove)
 		if err != nil {
 			return err
@@ -152,7 +152,7 @@ func (a API) applyChargingScheme(c *gin.Context) {
 		httpapi.BadRequest(c, "请选择模板或完整方案，并提供请求编号与站点")
 		return
 	}
-	if !a.RequirePricingTargetScope(c, in.StationID, in.DeviceID) {
+	if !admin.RequirePricingTargetScope(c, a.DB, in.StationID, in.DeviceID) {
 		return
 	}
 	actor := c.MustGet("admin_profile").(operations.Profile)
@@ -162,8 +162,8 @@ func (a API) applyChargingScheme(c *gin.Context) {
 	var id uint64
 	var version uint32
 	replayed := false
-	store := pricing.PricingStore{DB: a.Store.AdminDB}
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	store := pricing.PricingStore{DB: a.DB}
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		// 先锁目标站点再查下发凭据：并发到达的相同请求会串行化，
 		// 后到的那个才能看到先到者写下的凭据，两者都返回首次发布的结果。
 		if err := store.LockStation(tx, in.StationID); err != nil {
@@ -244,10 +244,10 @@ func (a API) effectiveChargingScheme(c *gin.Context) {
 		return
 	}
 	device := c.Query("device_id")
-	if !a.RequirePricingTargetScope(c, station, device) {
+	if !admin.RequirePricingTargetScope(c, a.DB, station, device) {
 		return
 	}
-	db := a.Store.AdminDB.WithContext(c.Request.Context())
+	db := a.DB.WithContext(c.Request.Context())
 	store := pricing.PricingStore{DB: db}
 	if device != "" {
 		count, err := store.CountStationDevice(c.Request.Context(), station, device)
@@ -293,11 +293,11 @@ func (a API) inheritChargingScheme(c *gin.Context) {
 		httpapi.BadRequest(c, "请选择设备")
 		return
 	}
-	if !a.RequirePricingTargetScope(c, station, in.DeviceID) {
+	if !admin.RequirePricingTargetScope(c, a.DB, station, in.DeviceID) {
 		return
 	}
-	store := pricing.PricingStore{DB: a.Store.AdminDB}
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	store := pricing.PricingStore{DB: a.DB}
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := store.LockStation(tx, station); err != nil {
 			return err
 		}
@@ -355,10 +355,10 @@ func (a API) executionCapabilities(c *gin.Context) {
 		httpapi.BadRequest(c, "请选择设备")
 		return
 	}
-	if !a.RequirePricingTargetScope(c, station, device) {
+	if !admin.RequirePricingTargetScope(c, a.DB, station, device) {
 		return
 	}
-	adapter, cap, err := (pricing.PricingStore{DB: a.Store.AdminDB}).DeviceCapabilities(c.Request.Context(), station, device)
+	adapter, cap, err := (pricing.PricingStore{DB: a.DB}).DeviceCapabilities(c.Request.Context(), station, device)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

@@ -30,7 +30,7 @@ func (a API) devices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := a.StationScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
@@ -38,7 +38,7 @@ func (a API) devices(c *gin.Context) {
 		httpapi.Write(c, 403, 1003, "该站点不在您的数据范围内", nil)
 		return
 	}
-	out, err := device.ListDevices(c.Request.Context(), a.Store.AdminDB, q, scope)
+	out, err := device.ListDevices(c.Request.Context(), a.DB, q, scope)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -57,11 +57,11 @@ func (a API) device(c *gin.Context) {
 		return
 	}
 	var row device.Device
-	scope, ok := a.StationScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
-	query := device.ScopeVendors(scope, device.ScopeStations(scope, device.DeviceQuery(c.Request.Context(), a.Store.AdminDB), "d.station_id"), "d.vendor_id")
+	query := device.ScopeVendors(scope, device.ScopeStations(scope, device.DeviceQuery(c.Request.Context(), a.DB), "d.station_id"), "d.vendor_id")
 	if err := query.Select(device.DeviceColumns).Where("d.device_id = ?", id).Take(&row).Error; err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -144,12 +144,12 @@ func (a API) setDeviceStatus(c *gin.Context) {
 		httpapi.BadRequest(c, "运营状态只允许启用或禁用")
 		return
 	}
-	scope, ok := a.StationScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
 	var row device.Device
-	err := a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		locked, err := device.LockDeviceByID(c.Request.Context(), tx, scope, id)
 		if err != nil {
 			return err
@@ -191,12 +191,12 @@ func (a API) updateDevice(c *gin.Context) {
 		httpapi.BadRequest(c, err.Error())
 		return
 	}
-	scope, ok := a.StationScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
 	var row device.Device
-	err = a.Store.AdminDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		query := device.ScopeVendors(scope, device.ScopeStations(scope, device.DeviceQuery(c.Request.Context(), tx), "d.station_id"), "d.vendor_id")
 		if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).Select(device.DeviceColumns).Where("d.device_id=?", id).Take(&row).Error; err != nil {
 			return err

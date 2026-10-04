@@ -1,12 +1,11 @@
 package http
 
 import (
+	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -18,7 +17,9 @@ import (
 // StartAuthorization 是网关启动充电的只读校验入口，仅返回订单和支付记录均已支付的订单。
 // 支付状态由支付回调更新。
 type StartAuthorization struct {
-	DB           *gorm.DB
+	Service interface {
+		Start(context.Context, string) (chargestart.StartAuthorization, error)
+	}
 	ServiceToken string
 }
 
@@ -36,7 +37,15 @@ func (a StartAuthorization) handle(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid order number")
 		return
 	}
-	order, err := payment.FindPaidStartAuthorization(c.Request.Context(), a.DB, orderNo)
+	order, err := a.Service.Start(c.Request.Context(), orderNo)
+	if errors.Is(err, chargestart.ErrInvalidCardNumber) {
+		httpapi.Write(c, 409, 2000, "冻结卡号无效", nil)
+		return
+	}
+	if errors.Is(err, chargestart.ErrCardSessionUnavailable) {
+		httpapi.Write(c, 503, 5001, "刷卡执行快照暂不可读取", nil)
+		return
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, http.StatusConflict, 2000, "order is not fully paid", nil)
 		return
@@ -45,23 +54,11 @@ func (a StartAuthorization) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "order storage unavailable", nil)
 		return
 	}
-	consumer, cardNumber, balanceUnits := uint8(2), uint32(0), uint16(0)
-	cardSession, err := card.FindCardChargeSession(c.Request.Context(), a.DB, order.ChargeOrderID)
-	if err != nil {
-		httpapi.Write(c, 503, 5001, "刷卡执行快照暂不可读取", nil)
-		return
+	balanceUnits := uint16(0)
+	if order.ConsumerType == 3 {
+		balanceUnits = dc589.CardBalanceUnits(order.WalletAfterCents)
 	}
-	if cardSession.ChargeOrderID != 0 {
-		n, err := strconv.ParseUint(cardSession.CardNo, 10, 32)
-		if err != nil || n == 0 {
-			httpapi.Write(c, 409, 2000, "冻结卡号无效", nil)
-			return
-		}
-		consumer = 3
-		cardNumber = uint32(n)
-		balanceUnits = dc589.CardBalanceUnits(cardSession.WalletAfterCents)
-	}
-	httpapi.OK(c, gin.H{"consumer_type": consumer, "card_number": cardNumber, "card_balance_units": balanceUnits,
+	httpapi.OK(c, gin.H{"consumer_type": order.ConsumerType, "card_number": order.CardNumber, "card_balance_units": balanceUnits,
 		"charge_order_id":  order.ChargeOrderID,
 		"order_no":         order.OrderNo,
 		"user_id":          order.UserID,
@@ -72,5 +69,3 @@ func (a StartAuthorization) handle(c *gin.Context) {
 		"charge_quantity":  order.ChargeQuantity,
 	})
 }
-
-type paidStartAuthorizationRow = payment.PaidStartAuthorization

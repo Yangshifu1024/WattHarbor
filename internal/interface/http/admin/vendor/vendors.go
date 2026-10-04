@@ -70,7 +70,7 @@ func vendorIDs(ids []uint64) string {
 }
 
 func (a API) vendorScope(c *gin.Context) (operations.DataScope, bool) {
-	scope, err := ops.LoadDataScope(c.Request.Context(), a.Store.AdminDB, c.MustGet("admin_profile").(operations.Profile))
+	scope, err := ops.LoadDataScope(c.Request.Context(), a.DB, c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return scope, false
@@ -167,7 +167,7 @@ func (a API) createVendor(c *gin.Context) {
 		VendorFailure(c, err)
 		return
 	}
-	chargehttp.AuditToAdmin(c, a.Store.AdminDB, "create", "vendor", out.ID, nil, out, "")
+	chargehttp.AuditToAdmin(c, a.DB, "create", "vendor", out.ID, nil, out, "")
 	httpapi.OK(c, out)
 }
 
@@ -190,7 +190,7 @@ func (a API) updateVendor(c *gin.Context) {
 		VendorFailure(c, err)
 		return
 	}
-	chargehttp.AuditToAdmin(c, a.Store.AdminDB, "update", "vendor", id, before, out, "")
+	chargehttp.AuditToAdmin(c, a.DB, "update", "vendor", id, before, out, "")
 	httpapi.OK(c, out)
 }
 

@@ -4,7 +4,7 @@
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
 - 重构的完成证据与核验方法见 [docs/REFACTOR-EVIDENCE.md](docs/REFACTOR-EVIDENCE.md)，目标结构与实施记录见 [docs/target-structure.md](docs/target-structure.md)。
-- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十一个用例包，纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_store.go` 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
+- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 按生命周期分为四个子包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_store.go` 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。**`central` 的 8082 在两套编排里都不映射端口**，宿主机打不开，内部调用只在容器网络内可达。开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。
 
 五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
@@ -12,12 +12,13 @@
 - C 端充电中的遥测、历史曲线、充电采样与设备摘要，经 `GATEWAY_INTERNAL_URL` 回调 **gateway**（`:8083`）的 `/api/v1/internal/devices/*`，携服务令牌。这些端点由 `internal/gateway/control` 提供，不在 central 进程里——判断回调对象要看代码用的 base URL 字段，不能只看路径里有 `/internal`。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
 - 公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
+- 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
 
 ## 工具与代码风格
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
-- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`，`make layers` 调用 `scripts/check/layers.py`；另有 `make layers-selftest` 注入已知违规确认每条规则真的会失败。
+- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`；`make check` 顺序执行这三项。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
 - **真库集成测试单列一层**：`make test-integration TEST_MYSQL_URL=...` 带 `//go:build integration` 跑真实 MySQL。`make check` 不含它（不依赖 Docker），但 **CI 的 `integration` job 跑它**。行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 这些只��真库语义下存在的东西，单测一律覆盖不到，详见「并发与幂等」。
 - 目录结构定稿如下。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
@@ -34,7 +35,27 @@ charge-pilot/
 │   ├── cmd/simulator-dc589/main.go
 │   ├── cmd/user/main.go
 │   └── cmd/worker/main.go
+├── internal/charging                                     充电生命周期：按业务步骤组织子包
+│   ├── internal/charging/start                           启动授权、待启动查询与启动回执
+│   │   ├── internal/charging/start/authorization.go（迁移前：internal/charging/authorization.go[启动部分]）
+│   │   ├── internal/charging/start/authorization_store.go（迁移前：internal/charging/authorization_store.go[启动查询]）
+│   │   ├── internal/charging/start/pending_store.go（迁移前：internal/charging/paid_start_store.go）
+│   │   └── internal/charging/start/result_store.go（迁移前：internal/charging/start_result_store.go）
+│   ├── internal/charging/stop                            停止授权、自动停机与计费截止冻结
+│   │   ├── internal/charging/stop/authorization.go（迁移前：internal/charging/authorization.go[停止部分]）
+│   │   ├── internal/charging/stop/authorization_store.go（迁移前：internal/charging/authorization_store.go[停止查询]）
+│   │   ├── internal/charging/stop/auto_stop.go（迁移前：internal/charging/auto_stop.go[编排]、card_deadline.go[调用]）
+│   │   ├── internal/charging/stop/auto_stop_store.go（迁移前：internal/charging/auto_stop_store.go[订单查询]）
+│   │   ├── internal/charging/stop/cutoff_store.go（迁移前：internal/charging/authorization_store.go、auto_stop_store.go[截止记录]）
+│   │   ├── internal/charging/stop/deadline_store.go（迁移前：internal/charging/card_deadline_store.go）
+│   │   ├── internal/charging/stop/gateway.go（迁移前：internal/charging/auto_stop.go[网关调用]）
+│   │   └── internal/charging/stop/meter.go（迁移前：internal/charging/auto_stop.go[计量判断]）
+│   ├── internal/charging/finish                           结束回执、端口释放与结算任务提交
+│   │   └── internal/charging/finish/result_store.go（迁移前：internal/charging/finish/result_store.go）
+│   └── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
+│       └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
 ├── internal/order                                        订单表模型、编号分配与读模型
+│   ├── internal/order/order_history_store.go（迁移前：internal/payment/order_authorization_store.go[历史视图部分]）
 │   ├── internal/order/order_number.go
 │   ├── internal/order/order_package_store.go
 │   ├── internal/order/order_schema.go
@@ -43,6 +64,7 @@ charge-pilot/
 │   └── internal/order/pricing_snapshot_store.go
 ├── internal/settlement                                   结算：计价、账单、发票与退款
 │   ├── internal/settlement/admin_finance_store.go
+│   ├── internal/settlement/balance_refund_store.go（迁移前：internal/card/card_refund_store.go、internal/interface/http/order_start_result.go[共享退款]）
 │   ├── internal/settlement/bill_store.go
 │   ├── internal/settlement/billing_job_store.go
 │   ├── internal/settlement/calculation_number.go
@@ -52,6 +74,7 @@ charge-pilot/
 │   ├── internal/settlement/meter_review_store.go
 │   ├── internal/settlement/order_view_store.go
 │   ├── internal/settlement/refund_executor_store.go
+│   ├── internal/settlement/refund_record_store.go（迁移前：internal/payment/order_start_store.go[退款记录部分]）
 │   ├── internal/settlement/refund_review_list_store.go
 │   ├── internal/settlement/refund_review_store.go
 │   └── internal/settlement/user_invoice_store.go
@@ -68,13 +91,13 @@ charge-pilot/
 │   ├── internal/pricing/pricing_scope_store.go
 │   ├── internal/pricing/pricing_store.go
 │   └── internal/pricing/scheme_target_store.go
-├── internal/card                                         刷卡：在线卡、扣款、累计时长与退款
+├── internal/card                                         刷卡：在线卡、扣款与累计时长
 │   ├── internal/card/card_admin_store.go
-│   ├── internal/card/card_refund_store.go
 │   ├── internal/card/card_schema.go
 │   ├── internal/card/card_store.go
 │   ├── internal/card/charge_store.go
 │   ├── internal/card/interface_query_store.go
+│   ├── internal/card/start_result_store.go（迁移前：internal/payment/order_start_store.go[刷卡写入部分]）
 │   └── internal/card/user_card_store.go
 ├── internal/device                                       设备接入、遥测、会话、故障
 │   ├── internal/device/alert_sync_store.go
@@ -104,8 +127,7 @@ charge-pilot/
 │   ├── internal/marketing/interface_query_store.go
 │   ├── internal/marketing/rules_coupon.go
 │   └── internal/marketing/rules_coupon_activity.go
-├── internal/payment                                      支付意图、渠道、回调与启动授权
-│   ├── internal/payment/auto_stop_store.go
+├── internal/payment                                      支付意图、渠道、回调与支付记录
 │   ├── internal/payment/channel_factory.go
 │   ├── internal/payment/channel_refund.go
 │   ├── internal/payment/channel_simulation.go
@@ -113,8 +135,6 @@ charge-pilot/
 │   ├── internal/payment/errors.go
 │   ├── internal/payment/interface_query_store.go
 │   ├── internal/payment/money_schema.go
-│   ├── internal/payment/order_authorization_store.go
-│   ├── internal/payment/order_paid_start_store.go
 │   ├── internal/payment/order_start_store.go
 │   ├── internal/payment/payment_callback_store.go
 │   ├── internal/payment/payment_checkout_store.go
@@ -134,11 +154,10 @@ charge-pilot/
 │   └── internal/ops/interface_query_store.go
 ├── internal/export                                       后台批量导出
 │   └── internal/export/export_task_store.go
-├── internal/application                                  跨聚合事务编排
-│   ├── internal/application/auto_stop.go
-│   ├── internal/application/auto_stop_http.go
-│   ├── internal/application/card_deadline.go
-│   └── internal/application/telemetry.go
+├── internal/contracts                                    服务间 HTTP 的端点与共享 DTO
+│   └── internal/contracts/gateway/charging.go
+├── internal/integration                                  服务间 HTTP 的专用客户端
+│   └── internal/integration/gateway/client.go
 ├── internal/delivery                                     对外事件契约与签名投递器
 │   ├── internal/delivery/events.go
 │   └── internal/delivery/senders.go
@@ -208,8 +227,8 @@ charge-pilot/
 │   ├── internal/interface/http/admin/admin_actor.go
 │   ├── internal/interface/http/admin/alertsync/http.go
 │   ├── internal/interface/http/admin/alertsync/sync.go
+│   ├── internal/interface/http/admin/contracts.go（迁移前：internal/interface/http/admin/deps.go[共享契约部分]）
 │   ├── internal/interface/http/admin/dashboard/dashboard.go
-│   ├── internal/interface/http/admin/deps.go
 │   ├── internal/interface/http/admin/device/api.go
 │   ├── internal/interface/http/admin/device/device_imports.go
 │   ├── internal/interface/http/admin/device/devices.go
@@ -259,9 +278,11 @@ charge-pilot/
 │   ├── internal/interface/http/billing_service.go
 │   ├── internal/interface/http/card_api.go
 │   ├── internal/interface/http/card_balance.go
+│   ├── internal/interface/http/charge_auto_stop.go（迁移前：internal/application/auto_stop_http.go）
 │   ├── internal/interface/http/charge_card_lookup.go
 │   ├── internal/interface/http/charge_feedback.go
 │   ├── internal/interface/http/charge_live_meter.go
+│   ├── internal/interface/http/charge_paid_starts.go
 │   ├── internal/interface/http/charge_scheme_view.go
 │   ├── internal/interface/http/charge_status.go
 │   ├── internal/interface/http/charge_stop_authorization.go
@@ -307,7 +328,6 @@ charge-pilot/
 ├── internal/infrastructure                               持久化实现
 │   ├── internal/infrastructure/database/admin_case_store.go
 │   ├── internal/infrastructure/database/admin_dashboard_store.go
-│   ├── internal/infrastructure/database/card_deadline_store.go
 │   ├── internal/infrastructure/redis/admin_session.go
 │   ├── internal/infrastructure/redis/session_store.go
 │   └── internal/infrastructure/redis/session_token.go
@@ -365,7 +385,7 @@ charge-pilot/
 ├── migrations/gateway_db/0001_init.sql
 ├── migrations/worker_db/0001_init.sql
 │
-├── scripts/check/  scripts/db/  scripts/dev/
+├── scripts/db/  scripts/dev/
 │
 ├── AGENTS.md  README.md  REFACTOR-PLAN.md  Makefile  go.mod
 └── admin-web/  miniprogram/
@@ -376,11 +396,11 @@ charge-pilot/
 
   ```
   internal/
-    order/       settlement/   wallet/      pricing/    card/
+    charging/    order/       settlement/   wallet/      pricing/    card/
     device/      identity/     marketing/   payment/    ops/
-    export/                        —— 11 个 use case
+    export/                        —— 12 个 use case
     domain/                       纯规则与跨用例契约（零框架依赖）
-    platform/  persist/  protocol/  delivery/  interface/  application/
+    platform/  persist/  protocol/  contracts/  integration/  delivery/  interface/
     gateway/  worker/               —— 进程特有编排
     infrastructure/database/  redis/    —— 表访问
   ```
@@ -392,20 +412,19 @@ charge-pilot/
   protocol     →  无（契约自足）
   persist      →  无（分页、自增主键等原语）
   platform     →  无（无业务语义的通用能力）
-  use case     →  domain + platform + persist + 其它 use case（须登记理由）
+  use case     →  domain + contracts + platform + persist + 其它 use case（在结构文档说明业务理由并经评审）
   use case     →  infrastructure/database（表名只允许出现在 *_store.go / *_schema.go）
   ```
 
-  真正被约束的是三条，`make layers` 全部机检：
+  以下三条由实现者和评审者逐项核对：
 
   1. **domain 零框架**：不出现 gorm / gin / redis，不出现列映射与表名映射，
      不 import 任何实现层。
-  2. **表名只归 store**：`.Table("...")`、`gorm.Expr`、`gorm:"column:"`、
-     `TableName()` 与裸 SQL 只允许出现在 `*_store.go` / `*_schema.go` /
-     `*_model*.go`。函数签名收 `*gorm.DB` 把事务传下去是正常用法，不算越界。
-  3. **use case 之间单向**：跨用例引用必须在 `scripts/check/layers.py` 的
-     `ALLOWED_CROSS` 里逐条登记理由。**没有登记的一律失败**——登记是让人
-     解释耦合，不是给耦合开后门。
+  2. **表访问集中**：SQL、列映射和数据库写入位于所属用例的 `*_store.go` /
+     `*_schema.go` / `*_model*.go`。函数签名收 `*gorm.DB` 传递事务是正常用法。
+     同一回执的状态、幂等凭据、资金和 Outbox 保持完整事务边界。
+  3. **use case 之间单向**：新增跨用例引用须在 `docs/target-structure.md`
+     说明业务理由、数据归属与事务边界；评审核对是否反向依赖或形成循环。
 
   `worker` 与 `gateway` 是进程特有编排，可 import use case；但 `worker`
   不得直接访问 `central` 拥有的业务表，取数据要经 central 的内部端点。
@@ -417,17 +436,20 @@ charge-pilot/
   其他用例反过来引它。当前子包见上方目录树：charging / money / devices /
   operations。
 
-- `internal/application/` 跨聚合事务编排，扁平单包。
+- `internal/charging/` 按生命周期分为 `start`、`stop`、`finish`、`measurement` 四个子包，根目录不放业务代码或汇总转发服务。`start` 管启动授权、待启动清单与启动回执；`stop` 管停止授权、自动停机和计费截止；`finish` 管结束回执及提交结算任务；`measurement` 管无 IO 的协议事件转换。
+- `start`、`stop`、`finish` 不相互依赖；需要共享的计量证据转换放 `measurement`，纯业务规则放 `domain`。`measurement` 只引用领域契约与 `protocol` 根契约，不引用数据库、HTTP、设备具体协议或其他用例。子包的数据库代码、业务编排和测试放在一起，不统一再拆 `service/repository/model` 技术目录。
+- 跨聚合事务在对应生命周期子包内编排。付款渠道属于 payment，余额入账属于 wallet，退款事务、计费任务及其状态查询属于 settlement，刷卡操作状态属于 card。新增抽象以实际复用或隔离需求为依据；迁移不切碎既有事务、锁顺序和幂等判定。
+- 停止用例的 `Gateway` 接口只包含取证与停止受理。分页策略在用例中，单次 HTTP 调用、状态码、业务 code 与响应对应关系由专用客户端核对；不完整证据不得用于自动停机判定。wire DTO 显式标记 JSON 字段并保留既有大小写、整数类型与单位，处理器与客户端共用；字段变更需同步核对双方与契约测试。
 
-- `internal/interface/http/` 是唯一的 HTTP 层：`user_api.go` 与 `charge_*` 系列
+- central/user/admin 的业务 HTTP 适配位于 `internal/interface/http/`：`user_api.go` 与 `charge_*` 系列
   服务 `/api/v1/user/*`，`admin_*` 与 `admin/` 下的 12 个业务族服务
-  `/api/v1/admin/*`，`internal_*` 服务 `/api/v1/internal/*`。`gin.Context`
-  只在此处出现；`middleware.go` 管鉴权，`admin/scope*.go` 管数据范围。
+  `/api/v1/admin/*`，回执与授权处理器服务 central 的 `/api/v1/internal/*`。gateway/worker 运行时也有各自的 HTTP 端点；`middleware.go` 管鉴权，`admin/scope*.go` 管数据范围。各业务族显式声明 DB、Auth 与所需服务地址，不再继承全量 Deps。
+- HTTP 遗留 SQL/事务逐步下沉；新增处理器只做认证、输入绑定、用例调用和响应映射，不新增业务 SQL 或事务。`charging` 不依赖 gin、HTTP 层或具体设备协议；worker 的充电编排只经 central 内部接口取业务数据。评审核对写入归属：card_charge/card_operation 属于 card，charge_billing_cutoff 属于 charging/stop，charge_billing_job 属于 settlement。
 
 - `internal/protocol/` 是 gateway 与 central 共享的设备契约层，与 `domain` 平级，既不属于 `domain` 也不属于 `infrastructure`：
   - 根包只放跨进程契约：`Adapter`（`Name` + `ServeConn`）、`Sink`、`Event`、`Command`、`Registry`、`Listener`。
   - 每个协议一个子目录实现 `Adapter`，当前为 `dc589/`。帧格式、校验、指令编解码、故障码语义（`0xBB` 烟雾）、单位换算（分 → 协议余额单位）全部封闭在该目录内。
-  - **协议码值、帧结构、校验算法一律不得出现在 `domain/` 与 `application/`。** 业务代码出现 `0xBB`、`dc589.` 前缀或帧相关字样即违反本约定。
+  - **协议码值、帧结构、校验算法一律不得出现在 `domain/` 与 `charging/`。** 业务代码出现 `0xBB`、`dc589.` 前缀或帧相关字样即违反本约定。
   - **新增协议必须新开子目录实现 `Adapter`，不得修改 `protocol` 根包。** 若做不到，说明抽象有缺陷，应改抽象而不是把新协议逻辑塞进根包。
   - 设备领域模型对所有协议保持一致；加协议不产生新的设备类型，只产生新的语义翻译。
   - `ServeConn(context.Context, net.Conn, Sink)` 假设"一条长连接 = 一个设备会话"。若将来某协议走 HTTP 轮询，要改的是 `Adapter` 接口本身，不是各协议实现——那是接口演进，不要为想象中的协议提前过度抽象。
@@ -460,7 +482,7 @@ charge-pilot/
 - 后台授权实时读取有效账号、角色和权限；JWT 及前端菜单只表示会话或展示，不代替服务端授权。
 - 站点、设备、厂商及配置操作沿用服务端数据范围检查。列表与详情、导出、写入和批量操作使用一致的授权条件；客户端筛选不能扩大范围。
 - 用户资源以当前会话校验归属；无权访问与不存在统一按既有接口返回。服务间接口使用 `X-Service-Token`，前端不得持有服务令牌。
-- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和对应的 OpenAPI 文档：后台是 `internal/interface/http/admin.openapi.json`，C 端是 `user.openapi.json`（由 user 进程承载）。两份文档都要求"声明的端点必须真的注册"且"没有悬空的 schema 引用"，`make layers` 机检这两个方向。只锁"文档多写"——文档少写是补全工作，另行跟踪。文档准确性只能靠打真实接口核对：照代码"合理推断"写出来的请求体与响应形状会错，包括把整数写成字符串、给不分页的列表加分页字段。
+- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和对应的 OpenAPI 文档：后台是 `internal/interface/http/admin.openapi.json`，C 端是 `user.openapi.json`（由 user 进程承载）。两份文档都要求"声明的端点必须真的注册"且"没有悬空的 schema 引用"，修改时逐项核对路由注册与 schema 引用；缺失端点文档另行补全。文档准确性只能靠打真实接口核对：照代码"合理推断"写出来的请求体与响应形状会错，包括把整数写成字符串、给不分页的列表加分页字段。
 - 维持乐观版本检查和幂等标识。前端刷新令牌不能改变业务请求身份；账号切换后的旧请求不得覆盖新会话状态。
 
 ## 设备协议
@@ -494,8 +516,8 @@ charge-pilot/
 
 ### 集成测试怎么组织
 
-- 集成测试文件一律带 `//go:build integration`，由 `scripts/check/integration_tag.py` 机检。
-  漏了 tag 的文件**永远不会被编译**，看起来有测试，实际一次都没跑过。
+- 真库集成测试文件一律带 `//go:build integration`，评审核对 build tag 与 CI 执行命令。
+  默认单测不访问真实数据库；集成测试必须在提供测试库后明确执行。
 - **不提供跳过路径**：`TEST_MYSQL_URL` 缺失直接 `t.Fatal`，`make test-integration`
   不给变量时退出码 2。跳过的测试在 `go test` 输出里和通过的一模一样，
   CI 没配库就会一路绿灯——护栏最常见的失效正是靠放行通过。
@@ -537,7 +559,7 @@ charge-pilot/
 2. **靠 `sql.LevelReadCommitted` 撑起来的幂等，要写测试钉住隔离级别。**
    重复投递的判定如果靠普通读读「这单处理过没有」，在 RR 下会读到快照旧值、
    于是判成冲突而不是重放，调用方会永远等不到成功响应。
-   已知承重处：`internal/interface/http/order_end_result.go:122`。
+   已知承重处：`internal/charging/finish/result_store.go`。
 
 **改完注入变异证伪**（护栏靠放行通过是最常见的失效），至少覆盖：
 去掉行锁、去掉唯一键、去���加锁读、去掉隔离级别声明、去掉幂等凭据比对。
@@ -547,8 +569,7 @@ charge-pilot/
 - Git 操作一律需要用户明确授权。未获授权不得执行 `commit`、`reset`、`revert`、`push`、`rebase`、`merge`、`cherry-pick`、`tag`，不得新建或切换分支，不得改写提交历史。改动只落在工作区，由用户审阅后自行提交。`git status`、`git diff`、`git log`、`git show` 等只读命令可以直接使用。
 - 交付时报告工作区的未提交改动，不代替用户提交。
 - Go 业务变更运行 `make check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `make build SERVICE=<name>` 或 `make build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
-- 本仓库只保留单元测试，**不设需要真实数据库的集成测试**。`make check` 为秒级本地检查，可在每次改动后运行。
-- 由此产生的覆盖缺口须在交付说明中写明：事务原子性、行锁并发、唯一键冲突与幂等重放没有自动化覆盖。改动资金、并发或唯一性路径时，除 `make check` 外须在开发栈上实际走一遍对应流程，并可用 `go test -race ./...` 补充竞态检测。
+- `make check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `make test-integration TEST_MYSQL_URL=...`，使用开发 MySQL；有构建 tag 的真库测试不能用默认测试通过替代。
 - 后台逻辑修改运行 `npm test` 与 `npm run build`；用户端逻辑修改运行 `npm run typecheck`、`npm test`，涉及平台适配或构建配置时构建受影响的 H5／微信目标。命令在对应前端目录执行。
 - 纯文档、注释和文案修改检查链接、引用、事实与格式；不为低影响可逆修改增加重复测试。已有验证通过后，仅在新增修改、失败或未决问题需要时扩大检查。
 - 测试覆盖实际契约和故障边界，重点验证并发重放、非法状态、授权范围、金额与计量不一致、外部未知结果和回执丢失；避免照抄实现的测试。

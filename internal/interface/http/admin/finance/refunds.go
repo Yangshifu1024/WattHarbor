@@ -28,7 +28,7 @@ func (a API) registerRefunds(r *gin.Engine) {
 // 第二签的实时身份核对回读 admin 授权域的账号档案与权限。
 func (a API) refundReviewStore() settlement.ReviewStore {
 	return settlement.ReviewStore{
-		DB: a.Store.UserDB,
+		DB: a.DB,
 		LookupSigner: func(ctx context.Context, signerID uint64) (settlement.SignerStatus, error) {
 			p, err := a.Auth.Store.Profile(ctx, signerID)
 			if err != nil {
@@ -76,7 +76,7 @@ func (a API) manualRefund(c *gin.Context) {
 	refundNo := ""
 	var recordID uint64
 	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		created, refundNo, recordID, err = a.refundReviewStore().ManualCreate(c.Request.Context(), tx, settlement.ManualRefundInput{
 			ActorID: p.ID, OrderID: id, RequestID: in.RequestID, AmountCents: in.AmountCents, Reason: in.Reason,
@@ -107,7 +107,7 @@ func (a API) refunds(c *gin.Context) {
 		httpapi.BadRequest(c, "退款单号过长")
 		return
 	}
-	out, err := settlement.ListRefunds(c.Request.Context(), a.Store.UserDB, settlement.RefundListQuery{
+	out, err := settlement.ListRefunds(c.Request.Context(), a.DB, settlement.RefundListQuery{
 		Status: q.Status, RefundNo: c.Query("refund_no"), Page: q.Page, PageSize: q.PageSize,
 	})
 	if err != nil {
@@ -121,7 +121,7 @@ func (a API) refunds(c *gin.Context) {
 // 第二签（实时身份由 refund 家族经 LookupSigner 回读授权域核对）后 approved 并安排执行；
 // 驳回写入 refund_rejection 并置 rejected，无需第二签。
 func (a API) reviewRefund(c *gin.Context) {
-	p, ok := a.RequireFinanceActor(c, "order.refund.review")
+	p, ok := admin.RequireFinanceActor(c, "order.refund.review")
 	if !ok {
 		return
 	}
@@ -140,7 +140,7 @@ func (a API) reviewRefund(c *gin.Context) {
 	status := ""
 	var recordID uint64
 	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		status, recordID, err = a.refundReviewStore().Review(c.Request.Context(), tx, c.Param("refund_no"), settlement.ReviewDecision{
 			Approve: approve, ApproveComment: in.ApproveComment, Reason: in.Reason, ActorID: p.ID,
@@ -173,7 +173,7 @@ func (a API) retryRefund(c *gin.Context) {
 	}
 	var recordID uint64
 	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
+	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		recordID, err = a.refundReviewStore().Retry(c.Request.Context(), tx, c.Param("refund_no"))
 		if err != nil {

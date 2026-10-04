@@ -31,7 +31,7 @@ func (a API) ValidateScope(ctx context.Context, scopeType string, ids []uint64) 
 		}
 		return nil
 	}
-	found, err := device.CountExistingStations(ctx, a.Store.AdminDB, ids)
+	found, err := device.CountExistingStations(ctx, a.DB, ids)
 	if err != nil {
 		return err
 	}

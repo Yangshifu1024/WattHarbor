@@ -30,7 +30,7 @@ func (a API) listActivityRules(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rows, total, err := (marketing.AdminActivityStore{DB: a.Store.UserDB}).
+	rows, total, err := (marketing.AdminActivityStore{DB: a.DB}).
 		ListActivityRules(c.Request.Context(), page.Status, page.Keyword, page.Page, page.PageSize)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
@@ -87,9 +87,9 @@ func (a API) createActivityRule(c *gin.Context) {
 		CouponID: in.CouponID, InviterCouponID: in.InviterCouponID, ThresholdCents: in.ThresholdCents,
 		MaxGrants: in.MaxGrants, PerUserLimit: in.PerUserLimit, Status: in.Status,
 		StartAt: start, EndAt: end}
-	store := marketing.AdminActivityStore{DB: a.Store.UserDB}
+	store := marketing.AdminActivityStore{DB: a.DB}
 	var id uint64
-	err = a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
 		id, err = store.CreateActivityRule(c.Request.Context(), input)
 		if err != nil {
@@ -131,9 +131,9 @@ func (a API) updateActivityRule(c *gin.Context) {
 		CouponID: in.CouponID, InviterCouponID: in.InviterCouponID, ThresholdCents: in.ThresholdCents,
 		MaxGrants: in.MaxGrants, PerUserLimit: in.PerUserLimit, Status: in.Status,
 		StartAt: start, EndAt: end}
-	store := marketing.AdminActivityStore{DB: a.Store.UserDB}
+	store := marketing.AdminActivityStore{DB: a.DB}
 	var before marketing.AdminActivityRuleRow
-	err = a.Store.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var err error
 		before, err = store.UpdateActivityRule(c.Request.Context(), id, input)
 		if err != nil {
@@ -154,7 +154,7 @@ func (a API) updateActivityRule(c *gin.Context) {
 
 // couponUsable 校验券存在、状态为 active 且未软删除；不满足时返回 errActivityInput。
 func (a API) couponUsable(c *gin.Context, couponID uint64) error {
-	usable, err := marketing.CouponUsable(c.Request.Context(), a.Store.UserDB, couponID)
+	usable, err := marketing.CouponUsable(c.Request.Context(), a.DB, couponID)
 	if err != nil {
 		return err
 	}

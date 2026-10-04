@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -26,7 +27,7 @@ func (a TelemetryAPI) Register(router *gin.Engine) {
 	router.GET("/api/v1/internal/devices/:device_id/charging-samples", a.chargingSamples)
 	// 批量取证挂在 /internal 根下：/devices 下已存在 :device_id 通配，
 	// 静态段 charging-evidence 会与其在 gin 基数树上冲突。
-	router.POST("/api/v1/internal/charging-evidence", a.chargingEvidence)
+	router.POST(gatewaycontract.ChargingEvidencePath, a.chargingEvidence)
 	router.GET("/api/v1/internal/charge-orders/:order_no/process", a.chargeProcess)
 	router.GET("/api/v1/internal/devices/:device_id/historical-curve", a.historicalCurve)
 	router.POST("/api/v1/internal/devices/:device_id/backfill", a.backfill)
