@@ -2,7 +2,6 @@ package marketing
 
 import (
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
@@ -161,7 +160,7 @@ func (a API) grantCoupon(c *gin.Context) {
 	err := chargehttp.AuditedTransaction(c, a.Store.UserDB, &auditPending, func(tx *gorm.DB) error {
 		var err error
 		grantID, err = marketing.GrantCouponInTx(tx, id, userID, in.RequestID)
-		if errors.Is(err, money.ErrCouponGrant) {
+		if errors.Is(err, marketing.ErrCouponGrant) {
 			// 业务拒绝，不是故障：映射到统一的 409，否则会被当成 503 让运营反复重试。
 			return admin.ErrConflict
 		}

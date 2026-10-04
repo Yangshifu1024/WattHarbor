@@ -5,6 +5,7 @@ import (
 	cardstore "github.com/ChargePilot2026/charge-pilot/internal/card"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"net/http"
 	"regexp"
@@ -163,7 +164,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 	}
 	op, err := a.Store.Swipe(c.Request.Context(), in.CardNo, in.EventID, port, rule)
 	if err != nil {
-		if errors.Is(err, cardstore.ErrCardOperation) || errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, orderstore.ErrChargeNumberConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, cardstore.ErrCardOperation) || errors.Is(err, payment.ErrPaymentIntentConflict) || errors.Is(err, orderstore.ErrChargeNumberConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.Write(c, 409, 2009, cardstore.ErrCardOperation.Error(), gin.H{"insufficient_balance": errors.Is(err, cardstore.ErrCardBalance)})
 		} else {
 			httpapi.Write(c, 503, 5001, "刷卡操作结果暂不可读取，请按同一事件编号查询", nil)

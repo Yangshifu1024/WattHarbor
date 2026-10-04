@@ -1,4 +1,4 @@
-package money
+package payment
 
 import "errors"
 

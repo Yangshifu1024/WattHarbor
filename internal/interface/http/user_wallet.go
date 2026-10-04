@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
@@ -127,7 +126,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		prior, err := store.FindRechargeRequest(tx, in.RequestID)
 		if err == nil {
 			if prior.UserID != user || prior.AmountCents != in.AmountCents {
-				return money.ErrPaymentIntentConflict
+				return payment.ErrPaymentIntentConflict
 			}
 			return tx.Where("id=?", prior.PaymentOrderID).Take(&order).Error
 		}
@@ -145,7 +144,7 @@ func (a UserAccountAPI) walletRecharge(c *gin.Context) {
 		}
 		return store.InsertRechargeRequest(tx, walletpkg.WalletRechargeRequest{RequestID: in.RequestID, UserID: user, AmountCents: in.AmountCents, PaymentOrderID: order.ID, RequestJSON: mustJSON(in)})
 	})
-	if errors.Is(err, money.ErrPaymentIntentConflict) || errors.Is(err, errWalletFrozen) || errors.Is(err, errWalletIdentity) {
+	if errors.Is(err, payment.ErrPaymentIntentConflict) || errors.Is(err, errWalletFrozen) || errors.Is(err, errWalletIdentity) {
 		httpapi.Write(c, 409, 2009, "请求号冲突或钱包已冻结", nil)
 		return
 	}

@@ -1,4 +1,4 @@
-package money
+package marketing
 
 import (
 	"errors"

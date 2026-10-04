@@ -4,7 +4,6 @@
 package payment
 
 import (
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"strconv"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
@@ -22,7 +21,7 @@ func CheckoutPortAvailable(tx *gorm.DB, port string) error {
 		return err
 	}
 	if count != 0 {
-		return money.ErrPaymentIntentConflict
+		return ErrPaymentIntentConflict
 	}
 	return nil
 }

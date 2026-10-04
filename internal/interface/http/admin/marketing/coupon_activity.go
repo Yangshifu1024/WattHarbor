@@ -2,7 +2,6 @@ package marketing
 
 import (
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
@@ -57,7 +56,7 @@ type activityRuleInput struct {
 }
 
 // errActivityInput 是券活动各类校验失败的统一哨兵错误，只在事务内传播，由外层翻译成给运营看的中文提示。
-var errActivityInput = money.ErrActivityRule
+var errActivityInput = marketing.ErrActivityRule
 
 // createActivityRule 新建一个券活动。校验通过且所引用的券都可用后写入 coupon_activity_rule。
 func (a API) createActivityRule(c *gin.Context) {
@@ -65,7 +64,7 @@ func (a API) createActivityRule(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	start, end, status, err := money.NormalizeActivity(in.asActivity(), time.Now().UTC())
+	start, end, status, err := marketing.NormalizeActivity(in.asActivity(), time.Now().UTC())
 	if err == nil {
 		in.Status = status
 	}
@@ -116,7 +115,7 @@ func (a API) updateActivityRule(c *gin.Context) {
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	start, end, status, err := money.NormalizeActivity(in.asActivity(), time.Now().UTC())
+	start, end, status, err := marketing.NormalizeActivity(in.asActivity(), time.Now().UTC())
 	if err == nil {
 		in.Status = status
 	}
@@ -167,8 +166,8 @@ func (a API) couponUsable(c *gin.Context, couponID uint64) error {
 
 // asActivity 把请求体转成领域层的活动参数。
 // 两层的字段名一致，但分层是硬要求：校验规则不在接口层再实现一份。
-func (in *activityRuleInput) asActivity() money.ActivityRule {
-	return money.ActivityRule{
+func (in *activityRuleInput) asActivity() marketing.ActivityRule {
+	return marketing.ActivityRule{
 		Name: in.Name, TriggerType: in.TriggerType, CouponID: in.CouponID,
 		InviterCouponID: in.InviterCouponID, ThresholdCents: in.ThresholdCents,
 		MaxGrants: in.MaxGrants, PerUserLimit: in.PerUserLimit,

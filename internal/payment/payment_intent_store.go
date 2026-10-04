@@ -56,7 +56,7 @@ type PaymentIntentStore struct{ DB *gorm.DB }
 // 首次请求之后，已发布的活动或计价规则可能已经变了。
 func (s PaymentIntentStore) Replay(ctx context.Context, userID uint64, requestID, portID string, offerID, couponID uint64) (*PaymentIntent, error) {
 	if s.DB == nil || userID == 0 || uuid.Validate(requestID) != nil {
-		return nil, money.ErrPaymentIntentConflict
+		return nil, ErrPaymentIntentConflict
 	}
 	var row PaymentIntentRecord
 	err := s.DB.WithContext(ctx).Where("user_id = ? AND client_request_id = ?", userID, requestID).Take(&row).Error
@@ -68,7 +68,7 @@ func (s PaymentIntentStore) Replay(ctx context.Context, userID uint64, requestID
 	}
 	if row.PortCode != portID || row.CouponGrantID != couponID || row.Status != "initiated" || !time.Now().Before(row.ExpiresAt) ||
 		(row.OfferID.Valid && row.OfferID.Int64 != int64(offerID)) || (!row.OfferID.Valid && offerID != 0) {
-		return nil, money.ErrPaymentIntentConflict
+		return nil, ErrPaymentIntentConflict
 	}
 	var snapshot struct {
 		Estimate charging.Estimate `json:"estimate"`
@@ -76,7 +76,7 @@ func (s PaymentIntentStore) Replay(ctx context.Context, userID uint64, requestID
 	}
 	if json.Unmarshal(row.PricingSnapshot, &snapshot) != nil || snapshot.Estimate.TotalCents != row.TotalCents ||
 		(row.OfferID.Valid && (snapshot.Offer == nil || snapshot.Offer.ID != offerID)) {
-		return nil, money.ErrPaymentIntentConflict
+		return nil, ErrPaymentIntentConflict
 	}
 	return &PaymentIntent{IntentID: row.IntentID, MerchantOrderNo: row.MerchantOrderNo, PaymentOrderID: row.PaymentOrderID,
 		UserID: row.UserID, OpenID: row.OpenID, DeviceID: row.DeviceID, PortNo: row.PortNo, PortCode: row.PortCode,
@@ -90,12 +90,12 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 		input.Port.Kind != "port" || input.Port.Port == nil || !input.Port.Port.Available ||
 		input.Port.StationID == 0 || input.Port.StationID != input.Rule.StationID ||
 		input.Port.Port.PortID == "" || input.Port.Port.DeviceID != input.Port.DeviceID || input.Port.Port.PortNo == 0 {
-		return PaymentIntent{}, money.ErrPaymentIntentConflict
+		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	if input.Offer != nil && input.CouponGrantID != 0 {
 		// 套餐返还按实付金额处理。
 		// 券的分摊需要另立一份契约，才能与固定价套餐组合。
-		return PaymentIntent{}, money.ErrPaymentIntentConflict
+		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	var previous PaymentIntentRecord
 	err := s.DB.WithContext(ctx).Where("user_id = ? AND client_request_id = ?", input.UserID, input.ClientRequestID).Take(&previous).Error
@@ -193,7 +193,7 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 		}
 		if err := tx.Create(&intent).Error; err != nil {
 			if dbutil.IsMySQLDuplicate(err) {
-				return money.ErrPaymentIntentConflict
+				return ErrPaymentIntentConflict
 			}
 			return err
 		}
@@ -213,38 +213,38 @@ func (s PaymentIntentStore) Reserve(ctx context.Context, input IntentInput) (Pay
 
 func existingIntent(row PaymentIntentRecord, input IntentInput) (PaymentIntent, error) {
 	if row.PortCode != input.Port.Port.PortID || row.DeviceID != input.Port.DeviceID || row.Status != "initiated" || time.Now().After(row.ExpiresAt) {
-		return PaymentIntent{}, money.ErrPaymentIntentConflict
+		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	if input.Offer != nil {
 		if !row.OfferID.Valid || row.OfferID.Int64 != int64(input.Offer.ID) {
-			return PaymentIntent{}, money.ErrPaymentIntentConflict
+			return PaymentIntent{}, ErrPaymentIntentConflict
 		}
 	} else if row.OfferID.Valid || row.EstimatedMinutes != input.Minutes || row.PricingRuleID != input.Rule.ID || row.PricingRuleVersion != input.Rule.Version {
-		return PaymentIntent{}, money.ErrPaymentIntentConflict
+		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	// 重放必须使用首次意图绑定的优惠券。
 	if row.CouponGrantID != input.CouponGrantID {
-		return PaymentIntent{}, money.ErrPaymentIntentConflict
+		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	var snapshot struct {
 		Estimate charging.Estimate `json:"estimate"`
 		Offer    *charging.Offer   `json:"offer"`
 	}
 	if json.Unmarshal(row.PricingSnapshot, &snapshot) != nil {
-		return PaymentIntent{}, money.ErrPaymentIntentConflict
+		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	if input.Offer != nil {
 		if snapshot.Offer == nil || snapshot.Offer.ID != input.Offer.ID {
-			return PaymentIntent{}, money.ErrPaymentIntentConflict
+			return PaymentIntent{}, ErrPaymentIntentConflict
 		}
 	} else {
 		requestedEnergy, err := decimal.NewFromString(input.Energy)
 		if err != nil || snapshot.Estimate.EstimatedKWh != requestedEnergy.StringFixed(3) {
-			return PaymentIntent{}, money.ErrPaymentIntentConflict
+			return PaymentIntent{}, ErrPaymentIntentConflict
 		}
 	}
 	if snapshot.Estimate.TotalCents != row.TotalCents {
-		return PaymentIntent{}, money.ErrPaymentIntentConflict
+		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	return PaymentIntent{IntentID: row.IntentID, MerchantOrderNo: row.MerchantOrderNo, PaymentOrderID: row.PaymentOrderID,
 		UserID: row.UserID, OpenID: row.OpenID, DeviceID: row.DeviceID, PortNo: row.PortNo, PortCode: row.PortCode,
@@ -259,14 +259,14 @@ func (s PaymentIntentStore) PrepayParams(ctx context.Context, paymentOrderID uin
 	}
 	var params PrepayParams
 	if err := json.Unmarshal(record.ParamsJSON, &params); err != nil || params.PrepayID == "" || params.Provider == "" {
-		return PrepayParams{}, money.ErrPaymentIntentConflict
+		return PrepayParams{}, ErrPaymentIntentConflict
 	}
 	return params, nil
 }
 
 func (s PaymentIntentStore) SavePrepay(ctx context.Context, paymentOrderID uint64, params PrepayParams) error {
 	if s.DB == nil || paymentOrderID == 0 || params.PrepayID == "" || params.Provider == "" {
-		return money.ErrPaymentIntentConflict
+		return ErrPaymentIntentConflict
 	}
 	data, err := json.Marshal(params)
 	if err != nil {

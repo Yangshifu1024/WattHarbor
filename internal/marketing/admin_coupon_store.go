@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -123,7 +122,7 @@ func GrantCouponInTx(tx *gorm.DB, couponID, userID uint64, requestID string) (ui
 	var receipt struct{ CouponID, UserID, CouponGrantID uint64 }
 	err := tx.Table("coupon_grant_request").Where("request_id=?", requestID).Take(&receipt).Error
 	if err == nil {
-		return money.ReplayGrant(money.CouponGrantReceipt{RequestID: requestID, CouponID: receipt.CouponID,
+		return ReplayGrant(CouponGrantReceipt{RequestID: requestID, CouponID: receipt.CouponID,
 			UserID: receipt.UserID, CouponGrantID: receipt.CouponGrantID}, requestID, couponID, userID)
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -135,7 +134,7 @@ func GrantCouponInTx(tx *gorm.DB, couponID, userID uint64, requestID string) (ui
 		return 0, err
 	}
 	if user.Status != "active" {
-		return 0, money.ErrCouponGrant
+		return 0, ErrCouponGrant
 	}
 	var total, perUser int64
 	if err := tx.Table("coupon_grant").Where("coupon_id=?", couponID).Count(&total).Error; err != nil {
@@ -145,14 +144,14 @@ func GrantCouponInTx(tx *gorm.DB, couponID, userID uint64, requestID string) (ui
 		return 0, err
 	}
 	now := time.Now().UTC()
-	template := money.CouponTemplate{TemplateID: coupon.ID, Status: coupon.Status, TotalQuota: coupon.TotalQuota,
+	template := CouponTemplate{TemplateID: coupon.ID, Status: coupon.Status, TotalQuota: coupon.TotalQuota,
 		PerUserQuota: coupon.PerUserQuota, ValidHours: coupon.ValidHours, StartAt: coupon.StartAt, EndAt: coupon.EndAt}
-	if err := money.CheckGrantable(now, template, money.CouponUsage{TotalGranted: total, UserGranted: perUser}); err != nil {
-		return 0, money.ErrCouponGrant
+	if err := CheckGrantable(now, template, CouponUsage{TotalGranted: total, UserGranted: perUser}); err != nil {
+		return 0, ErrCouponGrant
 	}
 	if err := tx.Table("coupon_grant").Create(map[string]any{
 		"coupon_id": couponID, "user_id": userID, "grant_source": "manual", "status": "unused",
-		"expired_at": money.GrantExpiry(now, template), "source_event_id": requestID,
+		"expired_at": GrantExpiry(now, template), "source_event_id": requestID,
 	}).Error; err != nil {
 		return 0, err
 	}

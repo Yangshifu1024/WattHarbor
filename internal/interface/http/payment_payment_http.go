@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
@@ -99,7 +98,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 	}
 	{
 		previous, replayErr := a.Intents.Replay(c.Request.Context(), userID, body.ClientRequestID, body.PortID, body.OfferID, 0)
-		if errors.Is(replayErr, money.ErrPaymentIntentConflict) {
+		if errors.Is(replayErr, payment.ErrPaymentIntentConflict) {
 			httpapi.Write(c, http.StatusConflict, 2001, "payment intent unavailable", nil)
 			return
 		}
@@ -179,7 +178,7 @@ func (a PaymentStartAPI) start(c *gin.Context) {
 		httpapi.BadRequest(c, "未达到该优惠券的使用门槛")
 		return
 	}
-	if errors.Is(err, money.ErrPaymentIntentConflict) {
+	if errors.Is(err, payment.ErrPaymentIntentConflict) {
 		httpapi.Write(c, http.StatusConflict, 2001, "payment intent unavailable", nil)
 		return
 	}
