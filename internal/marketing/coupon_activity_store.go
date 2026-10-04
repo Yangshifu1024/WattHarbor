@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -140,9 +141,11 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent) (Activit
 
 	// 发放前校验券仍存在且可用；删除券不会自动删除规则。
 	// 无效券直接跳过，避免生成无法核销的记录、消耗库存或占用幂等键。
+	// deleted_at 必须一并过滤：软删的券 status 仍是 active，只看 status 会把
+	// 已下架的券照发出去（grantExpiry 早就查了 deleted_at，两处口径必须一致）。
 	var couponExists int64
 	if err := tx.Table("coupon").
-		Where("id = ? AND status = 'active'", locked.CouponID).
+		Where("id = ? AND status = 'active' AND deleted_at IS NULL", locked.CouponID).
 		Count(&couponExists).Error; err != nil {
 		return result, err
 	}
@@ -156,6 +159,13 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent) (Activit
 		"coupon_id": rule.CouponID, "user_id": event.UserID, "grant_source": grantSourceFor(rule.TriggerType),
 		"status": "unused", "expired_at": grantExpiry(tx, rule, event.Now), "source_event_id": eventID,
 	}).Error; err != nil {
+		if isDuplicateKey(err) {
+			// 同一事件此前已发放。幂等凭据已经写在那里，不重复写，
+			// 更不能把冲突当成故障抛出去——调用方在业务事务里调用这里，
+			// 一个唯一键冲突会连带回滚支付回调或计费的整个事务。
+			result.Already = true
+			return result, nil
+		}
 		return result, err
 	}
 	if err := tx.Raw("SELECT LAST_INSERT_ID()").Scan(&grantID).Error; err != nil {
@@ -198,6 +208,10 @@ func grantToInviter(tx *gorm.DB, rule activityRule, event ActivityEvent, eventID
 		"status": "unused", "expired_at": grantExpiry(tx, inviterRule, event.Now),
 		"source_event_id": activityEventID(rule.ID, inviterEvent, "inviter") + ":" + eventID,
 	}).Error; err != nil {
+		if isDuplicateKey(err) {
+			// 邀请人那份此前已发过，本次不再重复发放。
+			return true, nil
+		}
 		return false, err
 	}
 	return true, nil
@@ -263,6 +277,19 @@ func isEstablishedUser(tx *gorm.DB, userID uint64) (bool, error) {
 		return false, err
 	}
 	return recharges > 0, nil
+}
+
+// isDuplicateKey 判断错误是否是唯一约束冲突。
+//
+// 发放幂等靠 coupon_grant.source_event_id 的唯一键保证，重放必然撞上它。
+// 这是"已经发过"这个业务事实，不是故障：把它当错误抛出去，
+// 会让支付回调与计费在重试时回滚整个事务。
+func isDuplicateKey(err error) bool {
+	var myErr *mysql.MySQLError
+	if errors.As(err, &myErr) {
+		return myErr.Number == 1062
+	}
+	return errors.Is(err, gorm.ErrDuplicatedKey)
 }
 
 // ActivityEventKeyForRecharge 构造首充奖励的稳定键。
