@@ -268,3 +268,42 @@ MySQL 的 REPEATABLE READ 下，普通 SELECT 走事务快照，而快照在
 
 预置数据必须真的提交（两个独立事务得看到同一行规则），所以这两组测试
 不用事务回滚，改由收尾显式清理，跑完开发库 0 残留。
+
+### 支付回调：两笔并发场景分开验，才抓得住各自的守卫
+
+钱包充值回调的第一组测试只覆盖「同一笔支付单被重复投递」：
+余额只加一次、两笔中恰好一笔标记 `Replayed`、钱包流水只有一条。
+判别力验证时，支付单行锁与幂等摘要两处能被抓到，
+**钱包账户行锁、CAS 的 `status='initiated'` 守卫、充值申请行锁三处删掉都测不出来**。
+
+原因不是测试写得不好，是那个场景里最外层的 `payment_order` 行锁
+已经把两笔回调完全串行化，下游守卫根本不会被单独触发——
+它们是纵深防御，处在外层锁的荫蔽之下。
+
+补第二组场景才把它们分开：**同一个用户的两笔不同充值单同时到账**。
+外层锁的是两行不同记录，互不阻塞，两笔都会同时走到钱包余额更新。
+把闸门改挂在 `wallet_account` 的加锁读上，删掉该行锁后
+第二笔不再被挡、读到快照旧值，余额只增加一笔——测试报"丢了更新"。
+
+判别力：支付单行锁 ✔、幂等摘要 ✔、`wallet_account` 行锁 ✔。
+
+### 一处证明不了的守卫
+
+余额更新带 `WHERE id = ? AND version = ?` 的乐观版本条件，
+但删掉它测不出任何差异。查了全仓所有 `wallet_account` 写入路径——
+`payment_callback_store`、`wallet_ledger_store`、`wallet_refund_store`、
+`wallet_reservation_store`、`wallet_account_store`、`admin_wallet_risk_store`
+无一例外都是先 `FOR UPDATE` 再读后写。行锁在位时 `version` 不可能变化，
+这个条件恒为真。**它今天没有任何场景能让它失效**：
+要么是纵深防御，要么是早前某版并发写法留下的痕迹。
+记在这里，免得后来人以为删掉它会出事。
+
+### 顺带记一笔端口归属
+
+`CheckoutPortAvailable` 在事务里但前面没有加锁，看着是典型的检查后写入。
+实际由 `charge_payment_intent.active_port_code` 兜住：它是个 STORED 生成列
+（`status='initiated'` 时等于 `port_code`，否则 NULL），上面有唯一键
+`uk_active_port`。同端口并发建意图会被数据库挡下，不会双占。
+注意 MySQL 唯一索引不约束 NULL，所以这只保护 `initiated` 状态；
+`paid` 且订单在充电的占用仍只靠那条检查语句。撞库时返回的是原始 1062
+而不是 `ErrPaymentIntentConflict`，接口层会翻译成 500 而非"端口被占用"。
