@@ -356,3 +356,23 @@ MySQL 的 REPEATABLE READ 下，普通 SELECT 走事务快照，而快照在
 
 同包内两组集成测试共用一份骨架，提取到 `gorm_integration_test.go`：
 独立连接、并发闸门、按表名挂载的加锁回调。
+
+### 退款成功入账：查过之后守卫成立，仍有一处冗余锁
+
+`RefundExecutor.apply` 的 SUCCESS 分支拿的是「钱包分摊行 → payment_order 行锁 →
+refund_record 行锁」，钱账的累加读 `p.RefundedCents` 走的是那把支付单行锁的当前读，
+所以累加是安全的。三组真库测试：同一笔退款并发入账只加一次、
+同一支付单上两笔退款并发累加精确等于实付、退满后超额退款必须被拒。
+
+判别力：支付单行锁去掉 ✔、成功回执的幂等判断去掉 ✔、退额上限校验去掉 ✔。
+**退款单那把行锁删掉测不出差异**——两笔退款锁的是同一张支付单，
+已被外层行锁串行化，它处在荫蔽之下。
+
+顺带记一笔：`apply` 第 312 行那个 `Count` 也是快照读，但它只用来决定
+充电订单要不要从 `refunding` 翻回 `completed`。读到旧值的后果是这笔订单
+晚一轮才翻状态（活性问题），不涉及金额。刻意没有一并改成加锁读——
+它不参与金额决策，加锁只会白白串行化计费。
+
+三组测试都用 `biz_type='charge'`：那样 `LockRefundWallet` 与
+`SettleRefundWallet` 直接返回，要落的表只剩 payment_order、refund_record、
+charge_order 三张。
