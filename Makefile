@@ -1,4 +1,4 @@
-.PHONY: fmt lint test layers layers-selftest table-refs tree current-state evidence build build-all check clean
+.PHONY: fmt lint test test-integration layers layers-selftest table-refs tree integration-tag current-state evidence build build-all check clean
 .NOTPARALLEL: check
 
 # cmd 下的服务名，编译产物统一落到 bin/
@@ -26,6 +26,26 @@ layers-selftest:
 # db.Table("x") 这类字符串形式的引用——编译器不报错，只有运行时才炸。
 table-refs:
 	python3 scripts/check/table_refs.py
+
+# 真库集成测试。SQL 里的判定（活动窗口、门槛、软删除）纯函数覆盖不到，
+# 只能对着真库验；这些文件由 integration tag 隔离，make check 不依赖 Docker。
+#
+# 起库与迁移：
+#   docker compose -f compose.dev.yaml up -d mysql
+#   docker compose -f compose.dev.yaml run --rm migrate
+# 跑测试：
+#   make test-integration
+#
+# 刻意没有跳过路径：没配 TEST_MYSQL_URL 就直接失败而不是 skip——
+# 跳过的测试在输出里和通过的一模一样，CI 没配库就会一路绿灯。
+test-integration:
+	@test -n "$(TEST_MYSQL_URL)" || { echo '请先设置 TEST_MYSQL_URL，例如：'; echo '  make test-integration TEST_MYSQL_URL=mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/central_db'; exit 2; }
+	go test -tags=integration -count=1 ./...
+
+# 集成测试的 build tag 护栏。写了 *_integration_test.go 却没加 tag 的文件，
+# 默认构建永远不编译它——它在仓库里躺着看起来有测试，实际一次都没跑过。
+integration-tag:
+	python3 scripts/check/integration_tag.py
 
 # AGENTS.md 顶部的目录树是从实际目录生成的，不靠人手维护——
 # 一次 domain/money 归位，为了手改这棵树对了五轮（漏目录漏了 262→77→18→2→0 次）。
@@ -65,4 +85,4 @@ build-all:
 clean:
 	node -e "require('fs').rmSync('bin',{recursive:true,force:true})"
 
-check: fmt lint test layers table-refs tree current-state evidence
+check: fmt lint test layers table-refs tree integration-tag current-state evidence
