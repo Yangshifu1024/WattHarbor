@@ -176,3 +176,68 @@ AGENTS.md 顶部那棵树此前是人手维护的，`doc_tree.py` 双向核对�
 纯函数覆盖不到，只能对真实库验证；仓库目前没有对真库跑的测试。
 另外全仓有 7 处 `testGORMDB` 助手只被定义、从未被调用——
 测试基础设施备好了但还没有集成测试用它。
+
+---
+
+## 第十轮：真库集成测试开工，顺带挖出两个真缺陷
+
+### 此前没有真库测试
+
+`target-structure.md` 的「遗留的已知缺口」写着：事务原子性、行锁并发、
+唯一键冲突、幂等重放没有自动化覆盖。这三样单测一个都覆盖不到——
+它们只在真库的约束和真事务的回滚行为下才存在。
+
+仓库里有 7 处 `testGORMDB` 助手，**只被定义、从未被调用**：测试基础设施
+备好了，但没有任何集成测试用它。这 7 个文件已删除（零调用方，18-20 行，内容雷同）。
+
+### 真库怎么起
+
+    docker compose -f compose.dev.yaml up -d mysql
+    docker compose -f compose.dev.yaml run --rm migrate
+    make test-integration TEST_MYSQL_URL=mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/central_db
+
+集成测试由 `//go:build integration` 隔离，`make check` 不依赖 Docker。
+**刻意没有跳过路径**：环境变量缺失直接 `t.Fatal`，不设变量时
+`make test-integration` 退出码 2 而不是"没有测试可跑"。
+
+配套护栏 `scripts/check/integration_tag.py`：凡是叫 `*_integration_test.go`
+的文件必须带 build tag，防止"写了却永远不会被编译"的测试混进仓库。
+已证伪——造一个漏 tag 的文件，检查退出码 1；撤掉后回到 0。
+
+### 挖出的两个真缺陷
+
+两者都在真库路径上才暴露，单元测试全绿。
+
+**1. 软删的券照样发出去。** `coupon_activity_store.go` 校验券时只查了
+`status = 'active'`，漏了 `deleted_at IS NULL`——而下方的 `grantExpiry`
+却查了。两处口径不一致，一张已下架但状态未同步的券会被照发，
+生成永远核销不了的记录并白耗活动预算。已修。
+
+**2. 幂等重放会拖垮调用方整个事务。** `coupon_grant.source_event_id` 上有
+唯一键。默认单人上限是 1，重放会被"该用户已领过"挡在插入之前，
+唯一键根本碰不到；**一旦单人上限配成 2 或更多**，重放一路走到插入，
+撞出 `Error 1062`，冒泡回 `ApplyActivityRules`。
+
+而两个调用方都在自己的业务事务里：
+
+    internal/payment/payment_callback_store.go:350    支付回调
+    internal/settlement/billing_job_store.go:303     计费
+
+微信回调会重投。命中时一次重复投递就会连带回滚支付入账或整轮计费。
+已改为把唯一键冲突识别成"已经发过"这个业务事实返回，
+同时给 `ActivityResult.Already` 补上了写入方——这个字段此前
+**声明了却全仓无人写入、无人读取**，两个调用方还都把结果丢掉了（`_`）。
+
+### 判别力
+
+活动规则的窗口与门槛过滤写死在 SQL 里，6 次变异逐条注入、全部被捕获：
+结束边界放宽、开始边界收紧、软删除未过滤、门槛边界收紧、
+门槛零未过滤、状态未过滤。
+
+本轮两处修复另有 3 次变异：幂等退回抛错、软删券重新可发、Already 不标记，
+全部被捕获。
+
+### 仍在空白里
+
+行锁并发（两个事务同时抢同一活动规则）尚未覆盖：
+真库能验，但需要两个独立连接与显式并发编排，本轮没做。
