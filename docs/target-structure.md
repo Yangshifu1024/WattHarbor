@@ -606,7 +606,7 @@ JSON 字段是 `"role"`、停机原因是 `"user"`。**误报率 90% 的规则�
 
 | | |
 |---|---|
-| 文件数 | 12 个，全部带 `//go:build integration` |
+| 覆盖面 | 6 个包：`marketing` / `payment` / `settlement` / `interface` / `worker` / `ops`。文件数会随新增而变，全部带 `//go:build integration` |
 | 机检 | `integration_tag.py` 拦住漏 tag 的文件；`migration_sql.py` 兜住初始化 SQL |
 | 严禁 | 提供跳过路径。没配库直接失败——跳过的测试在输出里和通过的一模一样 |
 | 覆盖 | 活动发券、支付回调、人工退款、退款入账、计费、跨库结束回执、事件外盒、钱包风控 |
