@@ -96,7 +96,7 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent) (Activit
 
 	// 禁止自邀；邀请人必须已有已完成充电或已结算充值，防止空账号互邀消耗活动预算。
 	if rule.TriggerType == "invite_reward" {
-		if event.InviterID == 0 || event.InviterID == event.UserID {
+		if !InviteEligible(rule.TriggerType, event.InviterID, event.UserID) {
 			return result, ErrActivityNotApplicable
 		}
 		established, err := isEstablishedUser(tx, event.InviterID)
@@ -127,10 +127,7 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent) (Activit
 			return result, ErrActivityNotApplicable
 		}
 	}
-	perUser := locked.PerUserLimit
-	if perUser <= 0 {
-		perUser = 1
-	}
+	perUser := PerUserAllowance(locked.PerUserLimit)
 	var used int64
 	if err := tx.Table("coupon_grant").
 		Where("coupon_id = ? AND user_id = ? AND deleted_at IS NULL", rule.CouponID, event.UserID).
@@ -189,11 +186,7 @@ func grantToInviter(tx *gorm.DB, rule activityRule, event ActivityEvent, eventID
 		Count(&used).Error; err != nil {
 		return false, err
 	}
-	perUser := rule.PerUserLimit
-	if perUser <= 0 {
-		perUser = 1
-	}
-	if used >= int64(perUser) {
+	if used >= int64(PerUserAllowance(rule.PerUserLimit)) {
 		// 邀请人达到领取上限时仅跳过邀请人奖励，不影响被邀请人的奖励。
 		return false, nil
 	}
@@ -239,14 +232,11 @@ func grantExpiry(tx *gorm.DB, rule activityRule, now time.Time) time.Time {
 	if err := tx.Table("coupon").Where("id = ? AND deleted_at IS NULL", rule.CouponID).Take(&coupon).Error; err != nil {
 		return rule.EndAt
 	}
-	expires := now.Add(time.Duration(coupon.ValidHours) * time.Hour)
-	if coupon.EndAt.Valid && coupon.EndAt.Time.Before(expires) {
-		expires = coupon.EndAt.Time
+	var couponEnd *time.Time
+	if coupon.EndAt.Valid {
+		couponEnd = &coupon.EndAt.Time
 	}
-	if rule.EndAt.Before(expires) {
-		expires = rule.EndAt
-	}
-	return expires
+	return ActivityGrantExpiry(now, coupon.ValidHours, couponEnd, rule.EndAt)
 }
 
 func countRuleGrants(tx *gorm.DB, rule activityRule) (int64, error) {
