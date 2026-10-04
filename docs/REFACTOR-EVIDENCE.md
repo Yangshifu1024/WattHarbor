@@ -335,3 +335,24 @@ MySQL 的 REPEATABLE READ 下，普通 SELECT 走事务快照，而快照在
 `settlement/refund_review_store.go` 与 `settlement/refund_executor_store.go` 的两处 `SUM`。
 
 全仓还剩的 `Count`/`SUM` 聚合读都是分页计数或只读展示，不参与准入决策。
+
+### 计费主干：没找到缺陷，但护栏钉住了
+
+`Store.Calculate` 的结构是「按 `charge_order_id` upsert 回执 → 锁回执行 →
+看 `calculation_id` 是否已填」。填了走重放路径返回首次结果，没填才新建计价。
+这里的 `calculation_id` 是加锁读（当前读），所以拿到锁就能看到别人的提交。
+
+四层防护都在：`fee_receipt` 主键就是 `charge_order_id`（upsert 本身即行锁）、
+`fee_delivery` 主键同样是 `charge_order_id`、`fee_calculation` 有
+`uk_no(calculation_no, created_month)`、回执行的 `FOR UPDATE`。
+单测只覆盖 `PriceSource`，这套判重只在真库下才存在。
+
+补了两组真库测试：并发计费只出一份结果（计价一行、投递一行、两次拿到同一单号），
+以及同单不同来源必须判冲突、不得再出计价。三个变异全部被捕获：
+回执行锁去掉、回执 upsert 退化成纯插入、来源一致性比对去掉。
+
+**这轮没找到新缺陷。** 不是因为没看——是真查过之后确认防护成立，
+如实记下比编一个缺陷出来有价值。
+
+同包内两组集成测试共用一份骨架，提取到 `gorm_integration_test.go`：
+独立连接、并发闸门、按表名挂载的加锁回调。

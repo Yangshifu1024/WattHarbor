@@ -4,13 +4,9 @@ package settlement
 
 import (
 	"context"
-	"os"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 )
 
@@ -19,67 +15,6 @@ import (
 // 这段是"先锁支付单、再聚合已占用额度"的结构（refund_review_store.go:66 锁行，
 // 第 96 行 SUM）。聚合读若是快照读，两笔并发申请会各自读到「未占用 0」，
 // 一起通过 `pending > paid - refunded - amount` 校验，合计退超过实付。
-
-const testMySQLURLEnv = "TEST_MYSQL_URL"
-
-func testConn(t *testing.T) (*gorm.DB, func()) {
-	t.Helper()
-	raw := os.Getenv(testMySQLURLEnv)
-	if raw == "" {
-		t.Fatalf("%s 未设置。真库集成测试不提供跳过路径：没有库就是没测，不是测过了。", testMySQLURLEnv)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	sqlDB, err := dbconn.Open(ctx, raw)
-	if err != nil {
-		t.Fatalf("连接 %s 失败：%v", raw, err)
-	}
-	orm, err := dbconn.WrapGORM(sqlDB)
-	if err != nil {
-		t.Fatalf("包装 GORM 失败：%v", err)
-	}
-	return orm, func() { _ = sqlDB.Close() }
-}
-
-// lockGate 把一个事务卡在某条带 FOR UPDATE 的语句返回之后。
-type lockGate struct {
-	locked  chan struct{}
-	release chan struct{}
-	once    sync.Once
-	passOne sync.Once
-}
-
-func newLockGate() *lockGate {
-	return &lockGate{locked: make(chan struct{}), release: make(chan struct{})}
-}
-
-func (g *lockGate) await(t *testing.T, what string) {
-	t.Helper()
-	select {
-	case <-g.locked:
-	case <-time.After(15 * time.Second):
-		t.Fatalf("%s 迟迟没有到达加锁语句——锁子句可能已改名或去掉", what)
-	}
-}
-
-func (g *lockGate) pass() { g.passOne.Do(func() { close(g.release) }) }
-
-// armOnPaymentOrderLock 装回调：第一次锁定 payment_order 行后挂起该事务。
-func armOnPaymentOrderLock(t *testing.T, db *gorm.DB, gate *lockGate, name string) {
-	t.Helper()
-	err := db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
-		sql := tx.Statement.SQL.String()
-		if strings.Contains(sql, "FOR UPDATE") && strings.Contains(sql, "payment_order") {
-			gate.once.Do(func() {
-				close(gate.locked)
-				<-gate.release
-			})
-		}
-	})
-	if err != nil {
-		t.Fatalf("注册加锁回调失败：%v", err)
-	}
-}
 
 const (
 	refundUserID   = uint64(41001)
@@ -150,7 +85,7 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 	defer close2()
 
 	gate := newLockGate()
-	armOnPaymentOrderLock(t, p1, gate, "test:refund_lock")
+	armOnLock(t, p1, gate, "test:refund_lock", "payment_order")
 	defer gate.pass()
 
 	store := ReviewStore{}
@@ -173,8 +108,8 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 			})
 			if err != nil {
 				_ = tx.Rollback().Error
-			} else if err := tx.Commit().Error; err != nil {
-				err = err
+			} else {
+				err = tx.Commit().Error
 			}
 			ch <- outcome{created, no, err}
 		}()
