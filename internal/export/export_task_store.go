@@ -26,7 +26,7 @@ type ExportTaskRow struct {
 	ID          uint64  `json:"id"`                                      // 导出任务主键 ID
 	TaskNo      string  `json:"task_no" gorm:"column:task_no"`           // 任务号,形如 EXP + 32 位 UUID(大写无横线),同时用作文件名
 	Resource    string  `json:"resource" gorm:"column:resource"`         // 导出资源名,取自 exportRegistry：orders / stations / devices / bills
-	FileFormat  string  `json:"file_format" gorm:"column:file_format"`   // 文件格式：csv / xlsx / pdf；PDF 只支持 bills
+	FileFormat  string  `json:"file_format" gorm:"column:file_format"`   // 文件格式：csv / xlsx
 	Status      string  `json:"status" gorm:"column:status"`             // 任务状态:pending 待生成 / running 生成中 / completed 已完成 / failed 失败 / expired 已过期
 	RequestedBy uint64  `json:"requested_by" gorm:"column:requested_by"` // 发起导出的管理员 ID,下载时用于校验归属
 	FilterJSON  *string `json:"filter_json" gorm:"column:filter_json"`   // 筛选条件 JSON 原文(可空),如 from/to 日期区间
@@ -169,7 +169,7 @@ func (s ExportStore) ListExpirableExportTasks(db *gorm.DB, now time.Time, limit 
 type ExportTaskInsert struct {
 	TaskNo      string // 任务号,由请求号推导,同时用作文件名
 	Resource    string // 已登记的资源名
-	FileFormat  string // csv / xlsx / pdf
+	FileFormat  string // csv / xlsx
 	RequestedBy uint64 // 发起导出的管理员 ID
 	FilterJSON  string // 筛选条件 JSON 原文
 	ExpiresAt   time.Time

@@ -3,7 +3,6 @@ module github.com/ChargePilot2026/charge-pilot
 go 1.27.0
 
 require (
-	codeberg.org/go-pdf/fpdf v0.12.0
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -129,6 +128,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
+	golang.org/x/image v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect

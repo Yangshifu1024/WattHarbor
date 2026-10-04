@@ -1055,7 +1055,7 @@ CREATE TABLE `export_task` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `task_no` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '后台任务编号',
   `resource` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '目标业务资源标识',
-  `file_format` enum('csv','xlsx','pdf') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'csv' COMMENT '导出文件格式；取值 csv / xlsx / pdf',
+  `file_format` enum('csv','xlsx') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'csv' COMMENT '导出文件格式；取值 csv / xlsx',
   `status` enum('pending','running','completed','failed','expired') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT '当前业务状态；取值 pending / running / completed / failed / expired',
   `requested_by` bigint unsigned NOT NULL COMMENT '任务发起管理员 ID',
   `filter_json` json DEFAULT NULL COMMENT '导出任务筛选条件 JSON',

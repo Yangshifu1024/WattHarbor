@@ -1,4 +1,4 @@
-# 生产拓扑。配置、支付覆盖层与上线验收要求见 README.md。
+# 生产拓扑。环境变量与服务配置以本文件及配置加载代码为准。
 name: chargepilot
 
 x-go-build: &go-build

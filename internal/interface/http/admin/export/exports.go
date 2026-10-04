@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// ExportTask 提供 CSV、XLSX 和汇总 PDF 导出，限制单次行数。
+// ExportTask 提供 CSV、XLSX 导出，限制单次行数。
 // 申请时校验资源权限和数据范围；下载时复查权限、归属、范围及有效期。
 type ExportTask struct {
 	DB        *gorm.DB             // central_db 连接池
@@ -118,7 +118,7 @@ func (t ExportTask) listResources(c *gin.Context) {
 			items = append(items, name)
 		}
 	}
-	httpapi.OK(c, gin.H{"items": items, "formats": []string{"csv", "xlsx", "pdf"}, "pdf_resources": []string{"bills"}, "max_rows": t.maxRows()})
+	httpapi.OK(c, gin.H{"items": items, "formats": []string{"csv", "xlsx"}, "max_rows": t.maxRows()})
 }
 
 // exportRequiresGlobalScope 限制 bills 仅由全局范围管理员导出。
@@ -146,7 +146,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 	var in struct {
 		RequestID string         `json:"request_id"` // 客户端请求号,必须是 UUID,用于幂等
 		Resource  string         `json:"resource"`   // 要导出的资源名,必须已在 exportpkg.ExportResources 登记
-		Format    string         `json:"format"`     // 文件格式，留空按 csv；pdf 只支持 bills
+		Format    string         `json:"format"`     // 文件格式：csv / xlsx，留空按 csv
 		Filter    map[string]any `json:"filter"`     // 筛选条件，bills 必填 from/to 且跨度不超过 31 天
 	}
 	if !chargehttp.DecodeResource(c, &in) {
@@ -164,12 +164,8 @@ func (t ExportTask) createTask(c *gin.Context) {
 	if in.Format == "" {
 		in.Format = "csv"
 	}
-	if in.Format != "csv" && in.Format != "xlsx" && in.Format != "pdf" {
+	if in.Format != "csv" && in.Format != "xlsx" {
 		httpapi.BadRequest(c, "导出格式无效")
-		return
-	}
-	if in.Format == "pdf" && in.Resource != "bills" {
-		httpapi.BadRequest(c, "PDF 仅支持账单")
 		return
 	}
 	if in.Resource == "bills" && !operations.ValidExportPeriod(in.Filter) {
@@ -310,7 +306,7 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportpkg.Expor
 		}
 		lines = append(lines, line)
 	}
-	if err := writeExport(file, format, row.Resource, headers, lines, filters); err != nil {
+	if err := writeExport(file, format, headers, lines); err != nil {
 		file.Close()
 		os.Remove(pending)
 		return t.fail(ctx, taskNo, err)
@@ -409,7 +405,7 @@ func (t ExportTask) downloadTask(c *gin.Context) {
 	if format == "" {
 		format = "csv"
 	}
-	mime := map[string]string{"csv": "text/csv; charset=utf-8", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "pdf": "application/pdf"}[format]
+	mime := map[string]string{"csv": "text/csv; charset=utf-8", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[format]
 	if mime == "" {
 		httpapi.Write(c, 409, 2009, "导出格式不可用", nil)
 		return

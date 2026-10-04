@@ -3,7 +3,7 @@
   "info": {
     "title": "ChargePilot Go admin API",
     "version": "2026-10-01",
-    "description": "后台认证、仪表盘及运营页面的部分接口契约。完整接口以服务实际注册路由和 DTO 为准；业务规则与接口导航见仓库 README.md。"
+    "description": "后台认证、仪表盘及运营页面的部分接口契约。完整接口以服务实际注册路由和 DTO 为准；业务规则以所属用例源码为准。"
   },
   "paths": {
     "/api/v1/admin/auth/login": {
@@ -3147,7 +3147,7 @@
           }
         ],
         "x-permission": "export.create",
-        "description": "CSV 和 XLSX 支持所有授权资源；PDF 只支持 bills/reconciles 汇总，两个资源要求不超过 31 天的 from/to 日期范围。",
+        "description": "CSV 和 XLSX 支持所有授权资源；账单资源要求不超过 31 天的 from/to 日期范围。",
         "requestBody": {
           "required": true,
           "content": {
@@ -3178,8 +3178,7 @@
                     "type": "string",
                     "enum": [
                       "csv",
-                      "xlsx",
-                      "pdf"
+                      "xlsx"
                     ],
                     "default": "csv"
                   },
@@ -3232,7 +3231,7 @@
           }
         ],
         "x-permission": "export.create",
-        "description": "下载时重新校验创建者、资源权限和财务数据范围，返回 CSV/XLSX/PDF 对应媒体类型。",
+        "description": "下载时重新校验创建者、资源权限和财务数据范围，返回 CSV/XLSX 对应媒体类型。",
         "responses": {
           "200": {
             "description": "导出文件"
