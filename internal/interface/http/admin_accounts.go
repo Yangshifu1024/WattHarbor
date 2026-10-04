@@ -89,6 +89,10 @@ func assignableRole(ctx context.Context, db *gorm.DB, p operations.Profile, role
 // errInsufficient 表示要授予的权限超出了操作者自己拥有的范围，由 assignableRole 判定。
 var errInsufficient = errors.New("不能授予自己未拥有的权限")
 
+// errLastAdmin 表示这次删除会让系统里一个有效的客户管理员都不剩。
+// 它是业务拒绝而非存储故障，翻译成 409 而不是 503。
+var errLastAdmin = errors.New("必须保留至少一个有效的客户管理员账号")
+
 // updateAdminUser 更新已提交的资料字段、角色和状态；指针字段区分缺省值与显式更新。
 // 状态仅允许 active 或 disabled；禁止操作者停用或降级自己。角色变更递增 auth_version，撤销已有会话。
 func (a AdminAccounts) updateAdminUser(c *gin.Context) {
@@ -194,17 +198,21 @@ func (a AdminAccounts) deleteAdminUser(c *gin.Context) {
 		httpapi.Write(c, http.StatusConflict, 2009, "不能删除当前登录账号", nil)
 		return
 	}
-	remaining, err := (ops.AdminStore{DB: a.DB}).CountOtherActiveAdmins(c.Request.Context(), a.DB, id)
-	if err != nil {
-		AdminResourceFailure(c, err)
-		return
-	}
-	if remaining == 0 {
-		httpapi.Write(c, http.StatusConflict, 2009, "必须保留至少一个有效的客户管理员账号", nil)
-		return
-	}
-	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		before, err := (ops.AdminStore{DB: a.DB}).LockAdminUser(tx, id)
+	// 「至少留一个」必须在事务里、在角色行的锁下判断。
+	// 放在事务外的话，两个管理员并发互删会各自数到「还剩 1 个」而双双通过。
+	store := ops.AdminStore{DB: a.DB}
+	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := store.LockCustomerAdminRole(tx); err != nil {
+			return err
+		}
+		remaining, err := store.CountOtherActiveAdminsInTx(c.Request.Context(), tx, id)
+		if err != nil {
+			return err
+		}
+		if remaining == 0 {
+			return errLastAdmin
+		}
+		before, err := store.LockAdminUser(tx, id)
 		if err != nil {
 			return err
 		}
@@ -213,6 +221,10 @@ func (a AdminAccounts) deleteAdminUser(c *gin.Context) {
 		}
 		return AdminResourceAudit(tx, profile, "delete", "admin_user", id, before, nil, c.ClientIP(), c.GetHeader("X-Request-ID"))
 	})
+	if errors.Is(err, errLastAdmin) {
+		httpapi.Write(c, http.StatusConflict, 2009, "必须保留至少一个有效的客户管理员账号", nil)
+		return
+	}
 	if err != nil {
 		AdminResourceFailure(c, err)
 		return

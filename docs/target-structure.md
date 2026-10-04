@@ -12,7 +12,7 @@
 | 指标 | 当前值 | 取证方式 |
 |---|---|---|
 | 表（去重） | **87** | 三个 `migrations/*/0001_init.sql` 的 `CREATE TABLE` 并集（各 schema 合计 88，`event_outbox` 跨 central/gateway 同名） |
-| 非测试 Go 行数 | **37198** | `internal/` + `cmd/` 下非 `_test.go` 文件 |
+| 非测试 Go 行数 | **37236** | `internal/` + `cmd/` 下非 `_test.go` 文件 |
 | use case 包 | **11** | order / settlement / wallet / pricing / card / device / identity / marketing / payment / ops / export |
 | `infrastructure/database` | **3 文件** | 表访问已下沉到各 use case 的 `*_store.go` |
 | `database` 对 use case 的依赖 | **0** | `go list -deps ./internal/infrastructure/database` 中出现的 use case 包数；**0 才算达成** |
@@ -554,9 +554,12 @@ JSON 字段是 `"role"`、停机原因是 `"user"`。**误报率 90% 的规则�
 
 ### 剩余
 
-- `export_task`（admin-only 异步导出，419 行 + 字体资源）
-- 分账提现 6 张表（自有场站，需要改计费主干——`settlement` / `settlement_party_amount` 由 `worker/billing/dispatch` 每次计费都写）
+- `export_task`（admin-only 异步导出，419 行 + 字体资源）——**保留**，用户确认真需求
 - 5 进程合并为 1
+
+~~分账提现 6 张表~~ **已裁剪**（站点自有、无加盟商）。此前列在这里是因为
+`settlement` / `settlement_party_amount` 由 `worker/billing/dispatch` 每次计费都写，
+改动要连计费主干一起动；实际裁剪时连同其写入点一并移除，表已不存在。
 
 ## 10. 结论与未做的事
 
@@ -587,8 +590,28 @@ JSON 字段是 `"role"`、停机原因是 `"user"`。**误报率 90% 的规则�
 
 ### 遗留的已知缺口
 
-- 事务原子性、行锁并发、唯一键冲突、幂等重放**没有自动化覆盖**（仓库原有状态，未因重构改变）。改动资金或并发路径时必须开发栈实跑。
+- ~~事务原子性、行锁并发、唯一键冲突、幂等重放没有自动化覆盖~~ **已覆盖**（见下节）。
+  补这一层时挖出 7 个真缺陷，全部是读代码看不出来的；详见 `docs/REFACTOR-EVIDENCE.md`。
+- 仍需人工判断的部分：**`settlement/billing_job_store.go` 的计费主干没有端到端并发用例**。
+  该处无锁聚合读的修复依据是「机制已证明 + 与已修的两处同形」，不是端到端复现。
+  改动计费路径时仍应开发栈实跑。
 - ~~前端未同步裁剪~~ 已处理，见下。
+
+### 真库集成测试层（已建成）
+
+`make check` 不依赖 Docker；但行锁、唯一键、幂等重放、`SKIP LOCKED`
+只在真库语义下才存在，因此单列一层，由 CI 的 `integration` job 跑。
+
+    make test-integration TEST_MYSQL_URL=mysql://chargepilot:...@127.0.0.1:3306/central_db
+
+| | |
+|---|---|
+| 文件数 | 12 个，全部带 `//go:build integration` |
+| 机检 | `integration_tag.py` 拦住漏 tag 的文件；`migration_sql.py` 兜住初始化 SQL |
+| 严禁 | 提供跳过路径。没配库直接失败——跳过的测试在输出里和通过的一模一样 |
+| 覆盖 | 活动发券、支付回调、人工退款、退款入账、计费、跨库结束回执、事件外盒、钱包风控 |
+
+判据与写法见 AGENTS.md 的「并发与幂等」一节。
 
 ### 前端同步裁剪（已完成）
 

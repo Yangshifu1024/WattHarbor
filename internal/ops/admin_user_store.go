@@ -84,6 +84,32 @@ func (s AdminStore) CountOtherActiveAdmins(ctx context.Context, db *gorm.DB, id 
 	return remaining, err
 }
 
+// LockCustomerAdminRole 锁住客户管理员角色行。
+//
+// 「删完之后至少还剩一个客户管理员」是一条**跨行**约束，而
+// LockAdminUser 只锁住被删的那一行——两个管理员并发互删时，
+// 两把锁落在不同的行上，互不阻塞，两笔都会数到「还剩 1 个」而双双通过，
+// 结果一个都不剩，后台被永久锁死。
+//
+// 锁角色行是这里的串行化点：所有删除客户管理员的事务都排在它后面，
+// 后到的那笔在角色行的当前读里看得见前一笔刚做的软删除。
+func (s AdminStore) LockCustomerAdminRole(tx *gorm.DB) error {
+	var row struct{ ID uint64 }
+	return tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("code = ? AND deleted_at IS NULL", "customer_admin").Take(&row).Error
+}
+
+// CountOtherActiveAdminsInTx 是 CountOtherActiveAdmins 的事务内版本。
+// 必须在 LockCustomerAdminRole 之后调用，才算在同一个串行化窗口内。
+func (s AdminStore) CountOtherActiveAdminsInTx(ctx context.Context, tx *gorm.DB, id uint64) (int64, error) {
+	var remaining int64
+	err := tx.WithContext(ctx).Table("admin_user AS u").
+		Joins("JOIN role AS r ON r.id = u.role_id").
+		Where("u.deleted_at IS NULL AND u.status = 'active' AND r.code = 'customer_admin' AND r.deleted_at IS NULL").
+		Where("u.id <> ?", id).Clauses(clause.Locking{Strength: "UPDATE"}).Count(&remaining).Error
+	return remaining, err
+}
+
 // LockAdminUser 在行锁下取一个未删除账号，返回更新前快照供审计留痕。
 func (s AdminStore) LockAdminUser(tx *gorm.DB, id uint64) (map[string]any, error) {
 	var before map[string]any

@@ -86,8 +86,15 @@ func armOnOutboxLock(t *testing.T, db *gorm.DB, gate *lockGate, name string) {
 
 const outboxStream = "charge_ended_stream"
 
-func seedOutbox(t *testing.T, db *gorm.DB, prefix string, n int) {
+// seedOutbox 造 n 条事件，回填它们的事件号。
+//
+// 断言必须针对这 n 条本身而不是「表里一共 n 条」：
+// ListPublishableOutbox 领取的是全表所有到期行，
+// 而 `go test ./...` 会并发跑别的包，那些包的集成测试也会往同一张
+// event_outbox 写（钱包到账、退款成功都发事件）。计数写死必然被邻居干扰。
+func seedOutbox(t *testing.T, db *gorm.DB, prefix string, n int) []string {
 	t.Helper()
+	ids := make([]string, 0, n)
 	for i := 1; i <= n; i++ {
 		row := map[string]any{
 			"event_id": prefix + string(rune('0'+i)), "stream": outboxStream,
@@ -97,7 +104,9 @@ func seedOutbox(t *testing.T, db *gorm.DB, prefix string, n int) {
 		if err := db.Table("event_outbox").Create(row).Error; err != nil {
 			t.Fatalf("造外盒事件 %d 失败：%v", i, err)
 		}
+		ids = append(ids, row["event_id"].(string))
 	}
+	return ids
 }
 
 func cleanupOutbox(t *testing.T, db *gorm.DB, prefix string) {
@@ -132,7 +141,7 @@ func TestConcurrentOutboxClaimReturnsDisjointRows(t *testing.T) {
 	t.Cleanup(closeJanitor)
 	t.Cleanup(func() { cleanupOutbox(t, janitor, prefix) })
 	cleanupOutbox(t, setup, prefix)
-	seedOutbox(t, setup, prefix, 4)
+	seeded := seedOutbox(t, setup, prefix, 4)
 
 	p1, close1 := testConn(t)
 	defer close1()
@@ -192,8 +201,14 @@ func TestConcurrentOutboxClaimReturnsDisjointRows(t *testing.T) {
 	if first.err != nil {
 		t.Fatalf("事务一领取失败：%v", first.err)
 	}
-	if len(first.ids) != 4 {
-		t.Errorf("事务一应领到全部 4 条，实际 %v", first.ids)
+	claimed := map[string]bool{}
+	for _, id := range first.ids {
+		claimed[id] = true
+	}
+	for _, id := range seeded {
+		if !claimed[id] {
+			t.Errorf("事务一没有领到自己造的 %s", id)
+		}
 	}
 	// 两批的并集应等于全部 4 条，且没有任何一条同时出现在两批里。
 	union := map[string]bool{}
@@ -206,8 +221,10 @@ func TestConcurrentOutboxClaimReturnsDisjointRows(t *testing.T) {
 		}
 		union[id] = true
 	}
-	if len(union) != 4 {
-		t.Errorf("两批并集 %d 条，期望 4 条", len(union))
+	for _, id := range seeded {
+		if !union[id] {
+			t.Errorf("两批并集里缺 %s", id)
+		}
 	}
 }
 
