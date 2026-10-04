@@ -376,3 +376,26 @@ refund_record 行锁」，钱账的累加读 `p.RefundedCents` 走的是那把�
 三组测试都用 `biz_type='charge'`：那样 `LockRefundWallet` 与
 `SettleRefundWallet` 直接返回，要落的表只剩 payment_order、refund_record、
 charge_order 三张。
+
+### 事件外盒：SKIP LOCKED 是多副本不重复投递的全部依靠
+
+worker 有三个 publisher（gateway 读 `gateway_db.event_outbox`、
+user 与 admin 读 `central_db`），生产上多副本同时扫表。
+`ListPublishableOutbox` 的 `FOR UPDATE SKIP LOCKED` 让各副本各取各的——
+既不排队，也不会把同一条事件投递两次。
+
+这条性质**只在真库的行锁语义下存在**：SKIP LOCKED 是 MySQL 特有的，
+换成别的数据库整个假设就变了；单测和内存替身都验不了。
+
+三组测试：两个副本并发领取的两批互不重叠（并集等于全部，无一条同时出现）、
+发布成功后不再被领到、失败退避期内不被立刻重领。
+
+判别力四个变异全部捕获，且报出的正是对应失效模式：
+去掉 SKIP LOCKED → "SKIP LOCKED 失效，多副本会排队等同一批"；
+去掉整个行锁 → 被捕获；状态与到期过滤去掉 → "已发布的事件被再次领到"；
+退避间隔传 0 → "退避期内的事件被立刻重领"。
+
+`PublishBatch` 用 `READ COMMITTED` 隔离，不走快照，所以这一段没有前几轮
+那个"聚合读读到旧值"的问题。行锁一直持有到 Redis 确认收到为止，
+MySQL 提交失败时 Redis 侧可能已有一份重复消息——这是设计上接受的，
+消费端按 event_id 去重。
