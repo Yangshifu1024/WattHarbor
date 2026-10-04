@@ -4,225 +4,167 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
-	"io"
-	"net/http"
-	"time"
-
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"io"
+	"net/http"
 )
 
-// PrepayProvider 是预下单渠道契约，定义在持久化层以便 user 与 central 共用渠道构造。
-type PrepayProvider = payment.PrepayProvider
-
+// PaymentStartAPI 只绑定支付申请、提取用户身份并映射用例结果。
 type PaymentStartAPI struct {
-	Auth     SessionAuthenticator
-	Scan     ScanAPI
-	Pricing  pricing.PricingStore
-	Intents  payment.PaymentIntentStore
-	Provider PrepayProvider
+	Auth     SessionAuthenticator    // 当前用户身份适配
+	Checkout payment.CheckoutService // 匿名报价及登录支付准备用例
 }
 
+// Register 在 router 上保持匿名报价与登录创建支付的原 URL。
 func (a PaymentStartAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/user/scan/offers", a.offers)
 	router.POST("/api/v1/user/scan/start", a.start)
 }
 
+// offers 绑定 c 的匿名端口报价请求，业务拒绝由 Checkout 分类后映射。
 func (a PaymentStartAPI) offers(c *gin.Context) {
 	var body struct {
-		PortID string `json:"port_id"`
+		PortID string `json:"port_id"` /* 原二维码端口编码 */
 	}
 	if c.ShouldBindJSON(&body) != nil || !userScanCodePattern.MatchString(body.PortID) {
 		httpapi.BadRequest(c, "端口编码无效")
 		return
 	}
-	port, status := a.Scan.Lookup(c.Request.Context(), body.PortID)
-	if status != http.StatusOK {
-		if status == http.StatusNotFound {
-			httpapi.Write(c, http.StatusNotFound, 1004, "端口不存在", nil)
-		} else {
-			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "设备信息暂不可读取，请稍后重试", nil)
-		}
-		return
-	}
-	if port.Kind != "port" || port.Port == nil {
-		httpapi.Write(c, http.StatusNotFound, 1004, "端口不存在", nil)
-		return
-	}
-	if port.DeviceStatus != "enabled" {
-		httpapi.Write(c, http.StatusConflict, 2001, "设备已暂停服务，请选择其他设备", nil)
-		return
-	}
-	rule, err := a.Pricing.ActiveDeviceRule(c.Request.Context(), port.StationID, port.DeviceID)
+	out, err := a.Checkout.Offers(c.Request.Context(), body.PortID)
 	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "充电方案暂时无法读取", nil)
+		var failure *payment.CheckoutError
+		if errors.As(err, &failure) {
+			switch failure.Kind {
+			case payment.CheckoutNotFound:
+				httpapi.Write(c, 404, 1004, "端口不存在", nil)
+				return
+			case payment.CheckoutGateway:
+				httpapi.Write(c, 503, 5003, "设备信息暂不可读取，请稍后重试", nil)
+				return
+			case payment.CheckoutPaused:
+				httpapi.Write(c, 409, 2001, "设备已暂停服务，请选择其他设备", nil)
+				return
+			case payment.CheckoutCompatibility:
+				httpapi.Write(c, 409, 2009, err.Error(), nil)
+				return
+			}
+		}
+		httpapi.Write(c, 503, 5003, "充电方案暂时无法读取", nil)
 		return
 	}
-	if err := a.Pricing.CheckDeviceScheme(c.Request.Context(), port.StationID, port.DeviceID, *rule.Spec.Scheme); err != nil {
-		httpapi.Write(c, 409, 2009, err.Error(), nil)
-		return
-	}
-	httpapi.OK(c, gin.H{"station_id": port.StationID, "port_id": body.PortID, "items": rule.Spec.Scheme.Offers(rule), "display": rule.Spec.Scheme.Display, "stop_when_full": rule.Spec.Scheme.Stop.StopWhenFull})
+	httpapi.OK(c, out)
 }
 
+// start 提取 c 的登录身份并严格绑定原请求，调用用例后返回原公开形状。
 func (a PaymentStartAPI) start(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
 		return
 	}
-	if a.Provider == nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "payment provider unavailable", nil)
+	if a.Checkout.Provider == nil {
+		httpapi.Write(c, 503, 5003, "payment provider unavailable", nil)
 		return
 	}
-	var body struct {
-		ClientRequestID string `json:"client_request_id"`
-		PortID          string `json:"port_id"`
-		OfferID         uint64 `json:"offer_id"`
-	}
+	var in payment.CheckoutInput
 	decoder := json.NewDecoder(io.LimitReader(c.Request.Body, 16<<10))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF || uuid.Validate(body.ClientRequestID) != nil || !userScanCodePattern.MatchString(body.PortID) {
+	if decoder.Decode(&in) != nil || decoder.Decode(new(any)) != io.EOF || uuid.Validate(in.ClientRequestID) != nil || !userScanCodePattern.MatchString(in.PortID) {
 		httpapi.BadRequest(c, "invalid payment request")
 		return
 	}
-	if body.OfferID == 0 {
+	if in.OfferID == 0 {
 		httpapi.BadRequest(c, "请选择后台发布的充电方案")
 		return
 	}
-	{
-		previous, replayErr := a.Intents.Replay(c.Request.Context(), userID, body.ClientRequestID, body.PortID, body.OfferID, 0)
-		if errors.Is(replayErr, payment.ErrPaymentIntentConflict) {
-			httpapi.Write(c, http.StatusConflict, 2001, "payment intent unavailable", nil)
-			return
-		}
-		if replayErr != nil {
-			httpapi.Write(c, http.StatusServiceUnavailable, 5001, "payment storage unavailable", nil)
-			return
-		}
-		if previous != nil {
-			a.finishStart(c, *previous)
-			return
-		}
-	}
-	port, status := a.Scan.Lookup(c.Request.Context(), body.PortID)
-	if status == http.StatusNotFound {
-		httpapi.Write(c, http.StatusNotFound, 1004, "port not found", nil)
-		return
-	}
-	if status != http.StatusOK {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "gateway unavailable", nil)
-		return
-	}
-	if port.DeviceStatus != "enabled" {
-		httpapi.Write(c, http.StatusConflict, 2001, "设备已暂停服务，请选择其他设备", nil)
-		return
-	}
-	if port.Kind != "port" || port.Port == nil || !port.Port.Available || port.StationID == 0 {
-		httpapi.Write(c, http.StatusConflict, 2001, "port unavailable", nil)
-		return
-	}
-	rule, err := a.Pricing.ActiveDeviceRule(c.Request.Context(), port.StationID, port.DeviceID)
-	if errors.Is(err, charging.ErrRuleUnavailable) || errors.Is(err, charging.ErrInvalidPricing) {
-		httpapi.Write(c, http.StatusConflict, 2004, "pricing unavailable", nil)
-		return
-	}
+	out, err := a.Checkout.Start(c.Request.Context(), userID, in)
 	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "pricing storage unavailable", nil)
+		checkoutFailure(c, err)
 		return
 	}
-	var selected charging.Offer
-	lookupErr := charging.ErrOfferUnavailable
-	if rule.Spec.Scheme != nil {
-		for _, offer := range rule.Spec.Scheme.Offers(rule) {
-			if offer.ID == body.OfferID {
-				selected = offer
-				lookupErr = nil
-				break
-			}
-		}
-	}
-	if errors.Is(lookupErr, charging.ErrOfferUnavailable) {
-		httpapi.Write(c, http.StatusConflict, 2004, "充电方案已下架", nil)
-		return
-	}
-	if lookupErr != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "充电方案暂时无法读取", nil)
-		return
-	}
-	if err := a.Pricing.CheckDeviceScheme(c.Request.Context(), port.StationID, port.DeviceID, *rule.Spec.Scheme); err != nil {
-		httpapi.Write(c, 409, 2009, err.Error(), nil)
-		return
-	}
-	intent, err := a.Intents.Reserve(c.Request.Context(), payment.IntentInput{UserID: userID, ClientRequestID: body.ClientRequestID,
-		Port: port, Rule: rule, Offer: &selected})
-	if errors.Is(err, charging.ErrInvalidPricing) {
-		httpapi.BadRequest(c, "invalid charging estimate")
-		return
-	}
-	if errors.Is(err, marketing.ErrCouponNotFound) {
-		httpapi.BadRequest(c, "优惠券不存在或未发放给该账号")
-		return
-	}
-	if errors.Is(err, marketing.ErrCouponExhausted) {
-		httpapi.Write(c, http.StatusConflict, 2001, "优惠券已过期或已使用", nil)
-		return
-	}
-	if errors.Is(err, marketing.ErrCouponThreshold) {
-		httpapi.BadRequest(c, "未达到该优惠券的使用门槛")
-		return
-	}
-	if errors.Is(err, payment.ErrPaymentIntentConflict) {
-		httpapi.Write(c, http.StatusConflict, 2001, "payment intent unavailable", nil)
-		return
-	}
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "payment storage unavailable", nil)
-		return
-	}
-	a.finishStart(c, intent)
+	httpapi.OK(c, out)
 }
 
-func (a PaymentStartAPI) finishStart(c *gin.Context, intent payment.PaymentIntent) {
-	params, err := a.Intents.PrepayParams(c.Request.Context(), intent.PaymentOrderID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		params, err = a.Provider.Prepay(c.Request.Context(), payment.PrepayRequest{MerchantOrderNo: intent.MerchantOrderNo,
-			OpenID: intent.OpenID, AmountCents: intent.PayableCents, ExpiresAt: intent.ExpiresAt})
-		if err == nil {
-			err = a.Intents.SavePrepay(c.Request.Context(), intent.PaymentOrderID, params)
+// checkoutFailure 将 err 的业务阶段及领域错误映射到原支付状态、code 和文案。
+// c 的错误响应不包含存储错误正文或渠道敏感信息。
+func checkoutFailure(c *gin.Context, err error) {
+	var failure *payment.CheckoutError
+	if errors.As(err, &failure) {
+		switch failure.Kind {
+		case payment.CheckoutProvider:
+			httpapi.Write(c, 503, 5003, "payment provider unavailable", nil)
+			return
+		case payment.CheckoutNotFound:
+			httpapi.Write(c, 404, 1004, "port not found", nil)
+			return
+		case payment.CheckoutGateway:
+			httpapi.Write(c, 503, 5003, "gateway unavailable", nil)
+			return
+		case payment.CheckoutPaused:
+			httpapi.Write(c, 409, 2001, "设备已暂停服务，请选择其他设备", nil)
+			return
+		case payment.CheckoutPort:
+			httpapi.Write(c, 409, 2001, "port unavailable", nil)
+			return
+		case payment.CheckoutPricing:
+			httpapi.Write(c, 409, 2004, "pricing unavailable", nil)
+			return
+		case payment.CheckoutPricingStorage:
+			httpapi.Write(c, 503, 5003, "pricing storage unavailable", nil)
+			return
+		case payment.CheckoutOffer:
+			httpapi.Write(c, 409, 2004, "充电方案已下架", nil)
+			return
+		case payment.CheckoutCompatibility:
+			httpapi.Write(c, 409, 2009, err.Error(), nil)
+			return
+		case payment.CheckoutPrepay:
+			httpapi.Write(c, 503, 3001, "payment prepay unavailable", nil)
+			return
+		case payment.CheckoutInvalidInput:
+			httpapi.BadRequest(c, "invalid payment request")
+			return
 		}
 	}
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 3001, "payment prepay unavailable", nil)
-		return
+	switch {
+	case errors.Is(err, charging.ErrInvalidPricing):
+		httpapi.BadRequest(c, "invalid charging estimate")
+	case errors.Is(err, marketing.ErrCouponNotFound):
+		httpapi.BadRequest(c, "优惠券不存在或未发放给该账号")
+	case errors.Is(err, marketing.ErrCouponExhausted):
+		httpapi.Write(c, 409, 2001, "优惠券已过期或已使用", nil)
+	case errors.Is(err, marketing.ErrCouponThreshold):
+		httpapi.BadRequest(c, "未达到该优惠券的使用门槛")
+	case errors.Is(err, payment.ErrPaymentIntentConflict):
+		httpapi.Write(c, 409, 2001, "payment intent unavailable", nil)
+	default:
+		httpapi.Write(c, 503, 5001, "payment storage unavailable", nil)
 	}
-	httpapi.OK(c, gin.H{"intent_id": intent.IntentID, "merchant_order_no": intent.MerchantOrderNo,
-		"port_id": intent.PortCode, "device_id": intent.DeviceID, "station_id": intent.StationID,
-		"electric_cents": intent.Estimate.ElectricCents, "service_cents": intent.Estimate.ServiceCents,
-		"total_cents": intent.Estimate.TotalCents, "discount_cents": intent.DiscountCents,
-		"payable_cents": intent.PayableCents, "coupon_grant_id": intent.CouponGrantID,
-		"payment_params": params, "expires_at": intent.ExpiresAt.UTC()})
 }
 
 type NotificationVerifier interface {
+	// VerifyNotification 在 context 下验证 request 的渠道签名并解析到账身份；失败不得调用资金用例。
 	VerifyNotification(context.Context, *http.Request) (payment.VerifiedTransaction, error)
 }
 
 type WechatCallbackAPI struct {
-	Verifier NotificationVerifier
-	Store    payment.PaymentCallbackStore
+	Verifier NotificationVerifier    // cmd 注入的签名校验与解密能力
+	Store    payment.CallbackService // 已验签通知的资金用例，不接受客户端自报到账
 }
 
+// Register 在 router 上保持原公开渠道通知端点；通知不使用用户会话。
 func (a WechatCallbackAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/public/payments/wechat/callback", a.callback)
 }
 
+// callback 用 c 的原请求验签，再调用唯一资金入口；成功及相同通知重放均返回 204。
+// 验签失败为 400，资金身份冲突为 409，依赖或持久化故障为 503，不泄露渠道通知正文。
 func (a WechatCallbackAPI) callback(c *gin.Context) {
 	if a.Verifier == nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "payment callback unavailable", nil)
@@ -248,41 +190,38 @@ func (a WechatCallbackAPI) callback(c *gin.Context) {
 }
 
 type SimulationCallbackAPI struct {
-	DB           *gorm.DB
-	Store        payment.PaymentCallbackStore
-	ServiceToken string
+	Service      payment.SimulationService // 原意图读取与模拟回调用例
+	ServiceToken string                    // 内部模拟通知的服务令牌，仅由适配器验证
 }
 
+// Register 在 router 上保持原内部模拟成功端点。
 func (a SimulationCallbackAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/internal/payments/simulate-success", a.callback)
 }
 
+// callback 验证 c 的服务令牌与商户支付号后确认原模拟支付；错误映射沿用通知身份及存储契约。
 func (a SimulationCallbackAPI) callback(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
 	var body struct {
-		MerchantOrderNo string `json:"merchant_order_no" binding:"required,max=64"`
+		MerchantOrderNo string `json:"merchant_order_no" binding:"required,max=64"` // 原模拟渠道支付单号
 	}
 	if c.ShouldBindJSON(&body) != nil {
 		httpapi.BadRequest(c, "invalid simulation request")
 		return
 	}
-	var intent payment.PaymentIntentRecord
-	err := a.DB.WithContext(c.Request.Context()).Where("merchant_order_no = ?", body.MerchantOrderNo).Take(&intent).Error
+	result, err := a.Service.ConfirmIntent(c.Request.Context(), body.MerchantOrderNo)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		httpapi.Write(c, http.StatusNotFound, 1004, "payment intent not found", nil)
+		httpapi.Write(c, 404, 1004, "payment intent not found", nil)
 		return
 	}
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "payment intent unavailable", nil)
+
+	if errors.Is(err, payment.ErrSimulationLookup) {
+		httpapi.Write(c, 503, 5001, "payment intent unavailable", nil)
 		return
 	}
-	result, err := a.Store.Apply(c.Request.Context(), payment.VerifiedPayment{Provider: "simulation", MerchantID: "local-simulation",
-		AppID: a.Store.ExpectedAppID, MerchantOrderNo: intent.MerchantOrderNo,
-		TransactionID: "SIMTX" + intent.IntentID, OpenID: intent.OpenID,
-		PaidCents: intent.TotalCents, PaidAt: time.Now().UTC()})
 	if errors.Is(err, payment.ErrPaymentCallbackConflict) {
 		httpapi.Write(c, http.StatusConflict, 3001, "simulation payment conflict", nil)
 		return

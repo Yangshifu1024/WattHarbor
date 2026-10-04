@@ -1,14 +1,12 @@
 package finance
 
 import (
-	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // registerInvoices 挂载开票审核的三个接口。列表只读，要求 finance.read；审批和驳回
@@ -33,24 +31,6 @@ func (a API) invoices(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// financeActor 校验当前管理员为 customer_finance 且持有指定审核权限，失败返回 403。
-// 发票审核和计量核实共用此校验。
-
-// invoiceReviewStore 装配 settlement 家族的开票双审存储；
-// 第二签的实时身份核对回读 admin 授权域的账号档案与权限。
-func (a API) invoiceReviewStore() settlement.InvoiceReviewStore {
-	return settlement.InvoiceReviewStore{
-		DB: a.DB,
-		LookupReviewer: func(ctx context.Context, reviewerID uint64) (settlement.ReviewerStatus, error) {
-			p, err := a.Auth.Store.Profile(ctx, reviewerID)
-			if err != nil {
-				return settlement.ReviewerStatus{}, err
-			}
-			return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, nil
-		},
-	}
-}
-
 // reviewInvoice 处理审批和驳回。双审与申请单状态机的写入归属 settlement 家族，
 // 本 handler 只做输入校验、权限、审计与错误映射。
 func (a API) reviewInvoice(c *gin.Context) {
@@ -58,15 +38,12 @@ func (a API) reviewInvoice(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, ok := admin.RequireFinanceActor(c, "invoice.review")
+	_, ok = admin.RequireFinanceActor(c, "invoice.review")
 	if !ok {
 		return
 	}
 	// 请求体随动作而变：审批只读 invoice_url，驳回只读 reason，两者的必填项由下方校验区分。
-	var in struct {
-		InvoiceURL string `json:"invoice_url"` // 审批时必填的 HTTPS 发票链接。
-		Reason     string `json:"reason"`      // 驳回原因，最长 255 字符；审批时可留空。
-	}
+	var in settlement.InvoiceReviewInput
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
@@ -75,20 +52,8 @@ func (a API) reviewInvoice(c *gin.Context) {
 		httpapi.BadRequest(c, "请填写 HTTPS 发票链接或拒绝原因")
 		return
 	}
-	status := ""
-	var before map[string]any
-	var auditPending []chargehttp.AuditEntry
-	err := chargehttp.AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		var err error
-		status, before, err = a.invoiceReviewStore().Review(c.Request.Context(), tx, id, settlement.InvoiceDecision{
-			Approve: approve, InvoiceURL: in.InvoiceURL, Reason: in.Reason, ActorID: p.ID,
-		})
-		if err != nil {
-			return err
-		}
-		auditPending = []chargehttp.AuditEntry{{Action: status, Target: "invoice", ID: id, Before: before, After: in, RequestID: ""}}
-		return nil
-	})
+	status, err := a.Invoices.Review(c.Request.Context(), chargehttp.AdminAuditContext(c), id, approve, in)
+
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, asConflict(err))
 		return

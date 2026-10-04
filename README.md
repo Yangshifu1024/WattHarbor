@@ -130,7 +130,7 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 | 300 分购买 120 分钟，实际 61 分 30 秒 | 收 152 分，退 148 分 |
 | 电费/服务费 80/20 分每度，购买 3 度，实际 1375 Wh | 电费 109 分、服务费 28 分，共 137 分，退 163 分 |
 
-计算实现和边界示例见 `internal/domain/charging/scheme.go`（迁移前位于 [pricing](internal/central/pricing)）。旧兼容计价枚举不表示新方案支持相应模式。
+计算实现和边界示例见 [scheme.go](internal/domain/charging/scheme.go)。旧兼容计价枚举不表示新方案支持相应模式。
 
 ### 支付、启动与结束
 
@@ -546,4 +546,4 @@ docker compose -f compose.dev.yaml -f compose.monitoring.yaml up -d prometheus
 - 多主体分账、提现与对账已移除：站点全部自有，不存在把钱按比例拆给不同主体再走提现打款的业务对象。计价与开账单不经分账。
 - 合规认证与外部验收均不能由数据库表或本地测试推定完成。
 
-开源许可见 [LICENSE](LICENSE)，商业授权模板见 [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)，实际授权以签订合同为准。
+开源许可见 [LICENSE](LICENSE)，商业授权以签订合同为准。

@@ -45,7 +45,7 @@
 
 ## 下一阶段的组织原则
 
-当前主要问题已从「业务代码都在 database」转为「存储移回模块了，但业务入口仍在 HTTP」。例如 `billing_service.go` 的 `Service.Run`、`payment_payment_http.go` 的支付准备，以及 `user_wallet.go`、后台管理处理器中的事务，仍要求读者跨接口层和业务模块才能理解完整用例。
+资金批次已将计费调度、checkout、充值／退款申请、钱包风险及结算审核的事务入口迁入所属模块。仍待迁移的业务包括方案发布、卡前置准入、导入、工单、活动、账号及导出；这些用例仍要求读者跨 HTTP 和模块才能理解完整流程。资金模块的注释、锁图与路由验收继续按路线图完成，不以文件改名代替任务验收。
 
 先让一个用例在所属模块中有可调用的业务入口，再细分目录。默认在现有模块根包中增加按行为命名的用例文件与 repo 文件；只有职责、调用方和依赖已经可以独立说明时才新增子包。不要把所有模块统一切成 service/repo/model，也不要为每张表建一个业务包。
 
@@ -59,12 +59,12 @@
 
 ## 必须先处理的依赖交叉
 
-最容易把新结构改出循环的是支付、钱包和退款。当前已有 `settlement → payment/wallet/card/marketing/order/ops`、`card → payment/wallet/order`、`payment → marketing/order/ops`、`identity → wallet`、`pricing → device` 等单向引用。迁移服务前要把新增箭头与这些关系一起核对。
+最容易把新结构改出循环的是支付、钱包和退款。当前已有 `settlement → payment/wallet/card/marketing/order/ops`、`card → payment/wallet/order`、`payment → wallet/marketing/order/ops`、`wallet → ops`、`identity → wallet`、`pricing → device` 等单向引用。迁移服务前要把新增箭头与这些关系一起核对。
 
 - **迟到付款退款**：payment 不直接 import settlement，因为 settlement 已 import payment。由 payment 定义 `LateRefundRecorder` 一类的窄能力，方法接受事务和退款业务输入；cmd 注入 settlement 的实现。payment 回调在原事务内调用，settlement 写 refund_record 和相关退款事件；payment 更新支付状态。契约不暴露 `settlement.RefundRecord` 或 HTTP DTO。
 - **充值到账**：payment 可以调用 wallet 的事务内到账能力，但 wallet 的充值申请不能因此反向 import payment。wallet 定义所需的支付来源／创建能力，cmd 注入 payment 适配；所有需要同库原子性的调用沿用同一个事务。先确定锁顺序和输入契约，再迁 SQL。
-- **钱包退款预占**：当前 wallet 的预占路径直接创建 refund_record，迁移后由 wallet 定义事务内 `RefundRecorder` 能力，cmd 注入 settlement 实现。wallet 保留冻结金额与来源分摊，settlement 创建退款记录；共同沿用原事务。settlement 已依赖 wallet，因此 wallet 不反向 import settlement，也不搬走钱包自己的资金写入。
-- **结算模型归属**：`payment/money_schema.go` 中 charge_fee_receipt／refund_record 的模型最终迁 settlement。先把 payment 的直接退款写入改为上述窄能力，再移动模型与消费者；不能以 payment 中的别名 import settlement，否则立刻形成反向依赖。跨模块查询使用各自的投影或所属模块读取函数。
+- **钱包退款预占**：wallet 定义事务内 `RefundRecorder` 能力，cmd 注入 settlement 实现。wallet 保留冻结金额与来源分摊，settlement 创建 refund_record；共同沿用原事务。settlement 已依赖 wallet，因此 wallet 不反向 import settlement，也不搬走钱包自己的资金写入。
+- **结算模型归属**：charge_fee_receipt／refund_record 模型已归 settlement。payment 的迟到退款调用注入能力，钱包请求通过自己的接口注入结算记录；payment 不留结算类型别名。跨模块查询使用各自的投影或所属模块读取函数。
 - **订单组合查询**：order 提供自己的基础视图；组合支付、结算和实时计量的入口定义读取接口并由 cmd 注入。不为做一个列表让 order 再 import settlement，后者已经依赖 order。
 - **审计与运营**：ops 提供事务内审计能力和通用操作人／范围值；不要让 ops 的账号服务 import 每个业务服务。dashboard 和运维组合操作与基础账号能力分开，跨业务调用采用窄接口，避免「所有模块都依赖 ops，ops 又依赖所有模块」。
 
@@ -110,3 +110,31 @@ worker 保留任务顺序、游标、重试与投递编排，计费和退款的�
 ## 批次 0 的依赖核对
 
 stop 通过 card 的已购时长与会话行锁能力读取 card_charge，通过 order.LockChargingState 当前读取并锁定订单；截止点仍由 stop 写入。卡会话→订单锁顺序与刷卡续购一致，首写截止点及提交由 stop 的完整事务控制。card／order 不反向引用 stop；恢复使用原截止点和订单身份向具名 gateway 客户端重试。
+
+## 资金批次的实现边界
+
+| 用例 | 所属写入与协作 | 事务及外部调用 |
+|---|---|---|
+| payment.CheckoutService | PaymentIntentRepo 写支付、意图、预支付参数；device.DiscoveryService 合并 gateway 端口与中央运营状态 | 原请求先重放；首次意图事务提交后申请渠道参数，以支付唯一键保存并重读首写参数 |
+| payment.CallbackService | 支付、意图、摘要归 payment；钱包到账调用 wallet；迟到退款通过注入 RefundRecorder 归 settlement；订单、快照、事件调用 order；Outbox 调用 ops | 原回调 READ COMMITTED 事务不拆分，任一协作失败全部回滚；正常到账和迟到退款分支保持原身份 |
+| wallet.RechargeService／RefundService／RiskService | 钱包、请求、风险及来源分摊归 wallet；支付创建／来源通过接口注入 payment；退款记录通过接口注入 settlement | 申请及资金预占同事务，风险动作与审计同事务；批准表示已登记待执行退款，不代表渠道成功 |
+| settlement.BillingService | FeeCalculator 保存计算回执，BillingOrders 原子应用资金与费用回执，BillRepo 按原订单幂等开账单 | 原费用先投递；已入账缺账单由 Missing 有界恢复，不重新扣款 |
+| settlement.InvoiceService／审核服务 | 发票、计量核实、退款及审计归所属完整用例；order 提供开票来源行锁，payment 提供原支付锁与已确认退款更新 | 开票按用户／订单锁串行一单一张，使用 READ COMMITTED；计量核实存在性与原凭据采用当前读，不能假定任务行锁刷新旧 RR 快照 |
+
+wallet 不 import payment 或 settlement，payment 不 import settlement；cmd 注入窄能力。退款输入位于 domain/money，不带 ORM 映射。资金模型按所属模块移动，不保留旧 payment 类型别名。现有跨表只读视图仍留 repo；用户身份表访问将在 I-01 收拢，不能将它们描述为已全部消除。
+
+本批次单独验证的行为修复包括：账单投递后失败可仅补账单；并发预支付返回首写参数；钱包退款列表读取实际审核结论并按当前页批量补查；发票同请求拒绝不同用户／订单／内容，同订单不同请求串行防止重复申请；计量核实在旧 RR 快照下仍读取已提交的原凭据。验证范围是实际 MySQL、注册 HTTP、具名 loopback 客户端及受控渠道／身份 fixture，尚不代表真实支付或实机验收。
+
+资金入口的锁与隔离已按实际辅助函数展开：
+
+| 路径 | 锁／隔离与恢复依据 |
+|---|---|
+| 充值申请 | READ COMMITTED；身份普通读取后 user→wallet，原申请及支付只读重放，不反向取得回调持有的支付锁。申请提交后准备参数，原 request_id／payment_order_id 恢复未知响应 |
+| 充值回调 | READ COMMITTED；payment→recharge_request→wallet，付款人 openid 同原用户固定身份核对。已支付重放在钱包写入前返回；摘要、金额、交易身份必须一致 |
+| 钱包退款申请 | 钱包锁后才建立默认 RR 快照，申请重放是只读；冻结→候选已支付 ID→按 PRIMARY 索引锁候选支付→在途退款当前读。候选读取与锁定共两次 SQL，避开待支付回调的行锁 |
+| 风险批准／解除 | READ COMMITTED；request→wallet→支付／退款，或 request→wallet→关联冻结／其他生效冻结；原申请路径不会在已有请求重放时取得请求写锁。批准、解冻、原回执和审计同事务 |
+| 人工退款／计费 | 支付→订单／退款；余额计费先钱包→支付→订单。早期普通读取形成的 RR 快照不刷新，在途退款聚合、原申请、首签及费用回执使用当前读；稳定退款号与原载荷仲裁重复投递 |
+| 渠道退款 | claim 及成功确认使用适用的钱包→支付→退款；失败确认只使用适用的钱包→退款，不改支付金额。原成功回执及锁后分摊／余额使用当前读，流水余额对应实际出账；持久 processing／next_attempt_at 先提交，网络未知后查询原单，确认回执后才出账或释放预占 |
+| 开票／计量核实 | 开票 READ COMMITTED 且锁所属订单；审核锁发票申请。计量提案／裁决锁计费任务后当前读原核实凭据，不用任务锁推断旧快照已刷新 |
+
+新增真库证据覆盖：充值申请在身份读取后等待用户锁仍复用原支付；待付支付锁未释放时退款能完成已支付来源锁定；风险批准等待钱包锁后能使用新到账来源；充值余额 UPDATE 后取消请求会回滚支付、摘要、余额和流水。两独立连接固定旧 RR 快照及提交先后，还验证人工退款重放、接续首签、费用投递重放、钱包退款成功重放和流水余额；修复前分别出现冲突、重复键或余额流水错误，修复后通过。把相应隔离改回 RR、把候选扫描改为加锁扫描、删除付款人核对的变异分别稳定失败，变异均已恢复。这些证据验证上述指定路径，不宣称整个系统不存在任何死锁。

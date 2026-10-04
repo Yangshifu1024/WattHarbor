@@ -15,7 +15,7 @@ func TestDispatchRejectsInvalidServiceCredentialsBeforeStorage(t *testing.T) {
 	} {
 		router := gin.New()
 		// 未通过鉴权的请求不得访问数据库或订单服务。
-		(Service{ServiceToken: tc.configured}).Register(router)
+		(BillingAPI{ServiceToken: tc.configured}).Register(router)
 		req := httptest.NewRequest("POST", "/api/v1/internal/billing/dispatch", nil)
 		req.Header.Set("X-Service-Token", tc.supplied)
 		response := httptest.NewRecorder()

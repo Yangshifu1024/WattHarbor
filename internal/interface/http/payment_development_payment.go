@@ -1,7 +1,6 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 
@@ -13,9 +12,8 @@ import (
 // DevelopmentPaymentAPI 仅在 PAYMENT_MODE=simulation 时注册。
 // 通过正常支付回调事务确认当前用户的模拟结算，不接受任意金额或用户身份。
 type DevelopmentPaymentAPI struct {
-	Auth  SessionAuthenticator
-	DB    *gorm.DB
-	Store payment.PaymentCallbackStore
+	Auth    SessionAuthenticator
+	Service payment.SimulationService // 仅 simulation 模式装配的确认用例
 }
 
 func (a DevelopmentPaymentAPI) Register(r *gin.Engine) {
@@ -33,26 +31,20 @@ func (a DevelopmentPaymentAPI) confirm(c *gin.Context) {
 		httpapi.BadRequest(c, "invalid payment request")
 		return
 	}
-	order, err := payment.FindDevelopmentPayment(c.Request.Context(), a.DB, in.MerchantOrderNo, user)
+	result, err := a.Service.ConfirmUser(c.Request.Context(), user, in.MerchantOrderNo)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "payment not found", nil)
 		return
 	}
-	if err != nil {
+	if errors.Is(err, payment.ErrSimulationLookup) {
 		httpapi.Write(c, 503, 5001, "payment unavailable", nil)
 		return
 	}
-	var prepay payment.ChargePrepayRecord
-	var params struct {
-		Provider string `json:"provider"`
-	}
-	if err = a.DB.WithContext(c.Request.Context()).Where("payment_order_id=?", order.ID).Take(&prepay).Error; err != nil || json.Unmarshal(prepay.ParamsJSON, &params) != nil || params.Provider != "simulation" {
+	if errors.Is(err, payment.ErrNotSimulationCheckout) {
 		httpapi.Write(c, 409, 3001, "payment is not a simulated checkout", nil)
 		return
 	}
-	// Stable provider receipt values make concurrent/repeated confirmations use
-	// exactly the same callback digest rather than generating a second payment.
-	result, err := a.Store.Apply(c.Request.Context(), payment.VerifiedPayment{Provider: "simulation", MerchantID: "local-simulation", AppID: a.Store.ExpectedAppID, MerchantOrderNo: order.OrderNo, TransactionID: "SIMH5" + order.OrderNo, OpenID: order.OpenID, PaidCents: order.TotalCents, PaidAt: order.CreatedAt})
+
 	if errors.Is(err, payment.ErrPaymentCallbackConflict) {
 		httpapi.Write(c, 409, 3001, "simulation payment conflict", nil)
 		return

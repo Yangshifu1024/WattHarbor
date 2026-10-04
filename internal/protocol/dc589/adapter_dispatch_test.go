@@ -12,25 +12,33 @@ import (
 
 // recordingSink 收集适配器产生的事件，供测试断言解码结果与运维审计内容。
 type recordingSink struct {
-	mu     sync.Mutex
-	events []protocol.Event
+	mu       sync.Mutex       // 保护适配器 goroutine 与测试读取的事件集合
+	events   []protocol.Event // 按实际解析顺序保存的协议事件
+	recorded chan struct{}    // 每次成功记录的确认，供发送方等待帧已处理
 }
 
+// Register 接受 context 下注册事实并返回 nil；测试只断言后续帧事件，不执行持久化。
 func (s *recordingSink) Register(context.Context, protocol.Registration) error { return nil }
 
+// Record 在接收者锁内保存 event 并确认已处理，返回 nil；context 不控制此内存操作，无外部 IO。
 func (s *recordingSink) Record(_ context.Context, event protocol.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, event)
+	if s.recorded != nil {
+		s.recorded <- struct{}{}
+	}
 	return nil
 }
 
+// all 返回接收者事件的独立副本，避免测试读取与适配器追加竞态，无错误或 IO。
 func (s *recordingSink) all() []protocol.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]protocol.Event(nil), s.events...)
 }
 
+// findConfigResults 返回接收者事件中配置结果的副本；无结果为空集合，不修改事件。
 func (s *recordingSink) findConfigResults() []protocol.Event {
 	var out []protocol.Event
 	for _, event := range s.all() {
@@ -42,6 +50,7 @@ func (s *recordingSink) findConfigResults() []protocol.Event {
 }
 
 // serveWithFrames 通过回环 TCP 建立适配器会话，发送注册及指定帧并返回记录事件的 sink。
+// t 报告连接或解析失败，replies 中每帧须产生一条事件；等待记录确认后取消会话并收回读取 goroutine。
 func serveWithFrames(t *testing.T, replies []Frame) *recordingSink {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -50,9 +59,10 @@ func serveWithFrames(t *testing.T, replies []Frame) *recordingSink {
 	}
 	defer listener.Close()
 
-	sink := &recordingSink{}
+	sink := &recordingSink{recorded: make(chan struct{}, len(replies)+1)}
 	adapter := TCPAdapter{}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	served := make(chan error, 1)
 	go func() {
 		conn, err := listener.Accept()
@@ -72,7 +82,9 @@ func serveWithFrames(t *testing.T, replies []Frame) *recordingSink {
 		t.Fatal(err)
 	}
 	// 后台读取注册应答及 A6 心跳周期请求，避免下行写入阻塞被测上报帧。
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		buf := make([]byte, 512)
 		for {
 			if _, err := conn.Read(buf); err != nil {
@@ -101,13 +113,28 @@ func serveWithFrames(t *testing.T, replies []Frame) *recordingSink {
 			t.Fatalf("write reply: %v", err)
 		}
 	}
-	time.Sleep(250 * time.Millisecond)
+	// 固定睡眠无法证明解析已经完成，CPU 忙时会在注册应答之前关闭连接。
+	// 每个上报等待 sink 的实际记录确认，不以机器速度决定协议断言是否通过。
+	for range replies {
+		select {
+		case <-sink.recorded:
+		case err := <-served:
+			t.Fatalf("adapter ended before recording replies: %v", err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("adapter did not record the supplied frame")
+		}
+	}
 	cancel()
 	_ = conn.Close()
 	select {
 	case <-served:
 	case <-time.After(3 * time.Second):
 		t.Fatal("the adapter did not release the connection")
+	}
+	select {
+	case <-drained:
+	case <-time.After(3 * time.Second):
+		t.Fatal("test downstream reader did not exit")
 	}
 	return sink
 }

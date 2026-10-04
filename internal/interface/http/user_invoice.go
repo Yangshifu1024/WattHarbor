@@ -2,7 +2,6 @@ package http
 
 import (
 	"errors"
-	payment "github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
@@ -36,14 +35,7 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var in struct {
-		RequestID   string `json:"request_id"`
-		OrderNo     string `json:"order_no"`
-		InvoiceType string `json:"invoice_type"`
-		Title       string `json:"title"`
-		TaxNo       string `json:"tax_no"`
-		Email       string `json:"email"`
-	}
+	var in settlement.InvoiceInput
 	if c.ShouldBindJSON(&in) != nil {
 		httpapi.BadRequest(c, "发票申请无效")
 		return
@@ -70,65 +62,29 @@ func (a UserAccountAPI) applyInvoice(c *gin.Context) {
 		httpapi.BadRequest(c, "邮箱格式无效")
 		return
 	}
-	ctx := c.Request.Context()
-	order, err := settlement.FindInvoiceableOrder(ctx, a.UserDB, in.OrderNo, userID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		httpapi.Write(c, 404, 1004, "订单不存在", nil)
-		return
-	}
-	if err != nil {
-		httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
-		return
-	}
-	// 仅已结算的充电订单可申请发票。
-	if order.Status != "completed" && order.Status != "refunding" && order.Status != "refunded" {
-		httpapi.Write(c, 409, 2009, "订单尚未完成，暂不能申请发票", nil)
-		return
-	}
-	// 开票金额取自计费回执，
-	// 与订单视图同源，绝不取自计费任务从不写入的列。
-	receipt := payment.ChargeFeeRecord{}
-	if err := a.UserDB.WithContext(ctx).Where("charge_order_id = ?", order.ID).Take(&receipt).Error; err != nil {
+	out, err := a.Invoices.Create(c.Request.Context(), userID, in)
+	switch {
+	case errors.Is(err, settlement.ErrInvoiceUnbilled):
 		httpapi.Write(c, 409, 2009, "订单尚未计费，暂不能申请发票", nil)
-		return
-	}
-	_, _, totalCents, ok := receipt.Fees()
-	if !ok || totalCents <= 0 {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		httpapi.Write(c, 404, 1004, "订单不存在", nil)
+	case errors.Is(err, settlement.ErrInvoiceOrderLookup):
+		httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
+	case errors.Is(err, settlement.ErrInvoiceUnfinished):
+		httpapi.Write(c, 409, 2009, "订单尚未完成，暂不能申请发票", nil)
+	case errors.Is(err, settlement.ErrInvoiceZero):
 		httpapi.Write(c, 409, 2009, "订单金额为零，暂不能申请发票", nil)
-		return
-	}
-	invoiceNo := "INV" + strings.ToUpper(strings.ReplaceAll(in.RequestID, "-", ""))
-	var id uint64
-	err = a.UserDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		created, err := settlement.ApplyInvoice(tx, settlement.InvoiceApplyInput{
-			InvoiceNo: invoiceNo, UserID: userID, OrderID: order.ID, TotalCents: totalCents,
-			InvoiceType: in.InvoiceType, Title: title,
-			TaxNo: strings.TrimSpace(in.TaxNo), Email: strings.TrimSpace(in.Email),
-		})
-		if err != nil {
-			return err
-		}
-		id = created
-		return nil
-	})
-	if errors.Is(err, settlement.ErrInvoiceDuplicate) {
+	case errors.Is(err, settlement.ErrInvoiceDuplicate):
 		httpapi.Write(c, 409, 2009, "该订单已申请过发票", nil)
-		return
-	}
-	if err != nil {
+	case err != nil:
 		resourceWriteFailure(c, err)
-		return
+	default:
+		httpapi.OK(c, out)
 	}
-	httpapi.OK(c, gin.H{"invoice_no": invoiceNo, "id": id, "review_status": "pending", "total_cents": totalCents})
+
 }
 
 // ---- 共享工具 ----
-
-var (
-	ErrInsufficientBalance = errors.New("可用余额不足")
-	errWalletFrozen        = errors.New("钱包已冻结")
-	errWalletIdentity      = errors.New("账号身份不可用")
-)
 
 func readPaging(c *gin.Context) (int, int, bool) {
 	return readPagingDefault(c, 20)

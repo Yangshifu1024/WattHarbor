@@ -6,8 +6,8 @@ import (
 	"unicode"
 )
 
-// CalculationNumber keeps the charge request identity in new billing numbers.
-// Historic numeric, CH and fixture order numbers retain their original FEE rule.
+// CalculationNumber 根据 orderNo 生成 B 前缀原结算身份；旧订单号按 chargeOrderID 返回稳定 FEE 编号。
+// 无数据库或渠道调用，无错误返回；历史数字、CH 及测试编号继续沿用原编号规则。
 func CalculationNumber(orderNo string, chargeOrderID uint64) string {
 	if prefixedChargeOrderNumber(orderNo) {
 		return "B" + orderNo[1:]
@@ -15,8 +15,9 @@ func CalculationNumber(orderNo string, chargeOrderID uint64) string {
 	return fmt.Sprintf("FEE%020d", chargeOrderID)
 }
 
+// prefixedChargeOrderNumber 判断 no 是否为当前 C 时间戳＋设备＋两位端口编号，返回有效标志，无 IO。
 func prefixedChargeOrderNumber(no string) bool {
-	// C + 14 timestamp digits + nonempty device + exactly two port digits.
+	// 身份包含 C、14 位有效时间、非空设备编号以及非零的两位端口号。
 	if len(no) < 18 || len(no) > 64 || no[0] != 'C' {
 		return false
 	}

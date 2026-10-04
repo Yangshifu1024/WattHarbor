@@ -45,7 +45,9 @@ func testConn(t *testing.T) (*gorm.DB, func()) {
 	// 全仓 integration 同时写业务 Outbox；领取仅限本测试前缀，避免发布或修改其他包的事件。
 	// 仍经过真实 FOR UPDATE SKIP LOCKED、唯一键及退避 SQL，不用替身模拟行锁。
 	orm = orm.Scopes(func(q *gorm.DB) *gorm.DB {
-		if q.Statement.Table == "event_outbox" { return q.Where("event_id LIKE ?", "OB-%") }
+		if q.Statement.Table == "event_outbox" {
+			return q.Where("event_id LIKE ?", "OB-%")
+		}
 		return q
 	}).Session(&gorm.Session{})
 	return orm, func() { _ = sqlDB.Close() }

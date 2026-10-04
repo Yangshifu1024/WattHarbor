@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"net/http"
 	"time"
 
@@ -46,9 +49,18 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth) *
 	adminops.API{DB: orm, Auth: authAPI}.Register(router)
 	adminpricing.API{DB: orm, Auth: authAPI}.Register(router)
 	adminstation.API{DB: orm, Auth: authAPI}.Register(router)
-	admindevice.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	admindevice.API{Meters: settlement.MeterReviewService{Orders: settlement.BillingOrders{DB: orm}, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
+		p, err := authAPI.Store.Profile(ctx, id)
+		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err
+	}}, DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
 	adminorder.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
-	adminfinance.API{DB: orm, Auth: authAPI}.Register(router)
+	adminfinance.API{Refunds: settlement.RefundAdminService{DB: orm, ReviewRepo: settlement.RefundReviewRepo{DB: orm, LookupSigner: func(ctx context.Context, id uint64) (settlement.SignerStatus, error) {
+		p, err := authAPI.Store.Profile(ctx, id)
+		return settlement.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, err
+	}}}, Invoices: settlement.InvoiceReviewService{DB: orm, ReviewRepo: settlement.InvoiceReviewRepo{DB: orm, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
+		p, err := authAPI.Store.Profile(ctx, id)
+		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, err
+	}}}, Risks: wallet.RiskService{DB: orm, Refund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}}, DB: orm, Auth: authAPI}.Register(router)
 	adminmarketing.API{DB: orm, Auth: authAPI}.Register(router)
 	adminuser.API{DB: orm, Auth: authAPI}.Register(router)
 	adminvendor.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)

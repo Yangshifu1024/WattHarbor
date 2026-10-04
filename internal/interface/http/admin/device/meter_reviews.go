@@ -22,12 +22,13 @@ func (a API) registerMeterReviews(r *gin.Engine) {
 	r.POST("/api/v1/admin/billing/meter-reviews/:id/resolve-amount", a.Auth.Require("billing.meter.review"), a.resolveMeterAmount)
 }
 
+// resolveMeterAmount 绑定 c 的最终金额裁决，覆盖订单与操作人身份后调用结算用例并返回排队回执。
 func (a API) resolveMeterAmount(c *gin.Context) {
 	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
-	p, ok := admin.RequireFinanceActor(c, "billing.meter.review")
+	_, ok = admin.RequireFinanceActor(c, "billing.meter.review")
 	if !ok {
 		return
 	}
@@ -36,22 +37,23 @@ func (a API) resolveMeterAmount(c *gin.Context) {
 		return
 	}
 	in.ChargeOrderID = id
-	in.ActorID = p.ID
+
 	in.Reason = strings.TrimSpace(in.Reason)
-	if err := (settlement.BillingOrders{DB: a.DB}).ResolveAmount(c.Request.Context(), in); err != nil {
+	if err := a.Meters.ResolveAmount(c.Request.Context(), chargehttp.AdminAuditContext(c), id, in); err != nil {
 		meterFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"queued": true})
 }
 
-// meterReviews 按 pending、resolved 状态及订单号分页查询人工定价工单，逐单补充计量核实记录。
+// meterReviews 解析 c 的 pending／resolved 与分页筛选；用例批量补充本页计量核实，接口仅转换公开身份 JSON。
 func (a API) meterReviews(c *gin.Context) {
 	q, ok := chargehttp.ReadAdminPage(c, "pending resolved")
 	if !ok {
 		return
 	}
-	out, err := settlement.ListManualFeeReviews(c.Request.Context(), a.DB, q)
+	actor := c.MustGet("admin_profile").(operations.Profile)
+	out, err := a.Meters.List(c.Request.Context(), actor, q)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -63,23 +65,19 @@ func (a API) meterReviews(c *gin.Context) {
 			return
 		}
 		out.Items[i].SourceJSON = publicSource
-		reviews, err := settlement.ListOrderMeterReviews(c.Request.Context(), a.DB, out.Items[i].ChargeOrderID)
-		if err != nil {
-			chargehttp.AdminResourceFailure(c, err)
-			return
-		}
-		out.Items[i].Reviews = reviews
 	}
 	httpapi.OK(c, out)
 
 }
 
-// Preserve the exact persisted billing payload; only its public copy uses a
-// string user ID. Internal receipts still decode historical numeric IDs.
 // meterFailure 把核实相关的领域错误翻成管理端提示：状态被并发改动、原始数据对不上
 // 或审核人重复归 409 并提示刷新；计量分段和价格快照的校验失败归 400；其余交给通用的
 // resourceFailure 处理。
 func meterFailure(c *gin.Context, err error) {
+	if errors.Is(err, settlement.ErrMeterSignerUnavailable) {
+		httpapi.Write(c, 409, 2009, "首次核实人的账号或权限已失效，请拒绝后重新提交", nil)
+		return
+	}
 	if errors.Is(err, settlement.ErrBillingConflict) {
 		httpapi.Write(c, 409, 2009, "计量核实状态已变化、原始数据不一致或审核人重复，请刷新后重试", nil)
 		return
@@ -99,16 +97,12 @@ func (a API) proposeMeter(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, ok := admin.RequireFinanceActor(c, "billing.meter.review")
+	_, ok = admin.RequireFinanceActor(c, "billing.meter.review")
 	if !ok {
 		return
 	}
 	// 请求体只在此使用，不入库：核实记录由 settlement.BillingOrders 按这里的输入落库。
-	var in struct {
-		RequestID string                  `json:"request_id"` // 客户端生成的 UUID 幂等键。
-		Reason    string                  `json:"reason"`     // 核实依据，去空白后最长 500 字符。
-		Segments  []charging.MeterSegment `json:"segments"`   // 人工修正后的计量分段，须连续覆盖原始时段且总电量与原始一致。
-	}
+	var in settlement.MeterProposalInput
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
@@ -117,7 +111,7 @@ func (a API) proposeMeter(c *gin.Context) {
 		httpapi.BadRequest(c, "请填写 UUID、核实依据及有效计量分段")
 		return
 	}
-	row, err := (settlement.BillingOrders{DB: a.DB}).ProposeMeter(c.Request.Context(), id, p.ID, in.RequestID, in.Reason, in.Segments)
+	row, err := a.Meters.Propose(c.Request.Context(), chargehttp.AdminAuditContext(c), id, in)
 	if err != nil {
 		meterFailure(c, err)
 		return
@@ -132,16 +126,12 @@ func (a API) decideMeter(c *gin.Context) {
 	if !ok {
 		return
 	}
-	p, ok := admin.RequireFinanceActor(c, "billing.meter.review")
+	_, ok = admin.RequireFinanceActor(c, "billing.meter.review")
 	if !ok {
 		return
 	}
 	// review_id 指定待裁决的 charge_meter_review 记录。
-	var in struct {
-		ReviewID uint64 `json:"review_id"` // 待裁决的核实记录主键，必须属于本订单。
-		Approve  *bool  `json:"approve"`   // 是否通过；指针是为了把"没传"和 false 区分开，拒绝时必须另填原因。
-		Reason   string `json:"reason"`    // 拒绝原因，去空白后最长 500 字符；通过时可留空。
-	}
+	var in settlement.MeterDecisionInput
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
@@ -150,19 +140,7 @@ func (a API) decideMeter(c *gin.Context) {
 		httpapi.BadRequest(c, "请提供审核记录、决定和拒绝依据")
 		return
 	}
-	review, err := settlement.FindMeterReview(c.Request.Context(), a.DB, in.ReviewID, id)
-	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	if *in.Approve {
-		first, err := a.Auth.Store.Profile(c.Request.Context(), review.FirstReviewerID)
-		if err != nil || first.Role != "customer_finance" || !first.HasPermission("billing.meter.review") {
-			httpapi.Write(c, 409, 2009, "首次核实人的账号或权限已失效，请拒绝后重新提交", nil)
-			return
-		}
-	}
-	if err := (settlement.BillingOrders{DB: a.DB}).ReviewMeter(c.Request.Context(), id, in.ReviewID, p.ID, *in.Approve, in.Reason); err != nil {
+	if err := a.Meters.Decide(c.Request.Context(), chargehttp.AdminAuditContext(c), id, in); err != nil {
 		meterFailure(c, err)
 		return
 	}

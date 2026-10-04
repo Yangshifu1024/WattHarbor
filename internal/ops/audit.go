@@ -1,0 +1,49 @@
+package ops
+
+import (
+	"encoding/json"
+	"strconv"
+	"time"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"gorm.io/gorm"
+)
+
+// AuditContext 是变更事务所需的操作人与请求事实，不包含 gin 或认证令牌。
+type AuditContext struct {
+	Actor     operations.Profile // 已经由实时授权读取的账号、权限与数据范围
+	ClientIP  string             // 可信 HTTP 适配获得的客户地址
+	RequestID string             // 框架请求号，业务未指定幂等号时作为审计关联
+}
+
+// AuditChange 是与业务变更一起提交的安全快照，不应包含口令、令牌或渠道密钥。
+type AuditChange struct {
+	Action    string // 业务动作，如 review／release
+	Target    string // 对象类型及所属模块
+	ID        uint64 // 对象主键，入库转换为十进制文本
+	Before    any    // 变更前快照，新建为 nil
+	After     any    // 变更后业务快照
+	RequestID string // 优先于请求 context 的业务请求号
+}
+
+// AppendAuditInTx 在调用方 tx 中为 context 的操作人写入 change 快照。
+// 序列化或存储失败返回错误，调用方必须回滚业务变更；不自行提交或开新事务。
+// 请求号仍最多 64 字节，快照 nil 保持原 JSON null 语义。
+func AppendAuditInTx(tx *gorm.DB, context AuditContext, change AuditChange) error {
+	before, err := json.Marshal(change.Before)
+	if err != nil {
+		return err
+	}
+	after, err := json.Marshal(change.After)
+	if err != nil {
+		return err
+	}
+	requestID := change.RequestID
+	if requestID == "" {
+		requestID = context.RequestID
+	}
+	if len(requestID) > 64 {
+		requestID = requestID[:64]
+	}
+	return InsertAudit(tx, AuditEntryInput{ActorID: context.Actor.ID, ActorName: context.Actor.Username, Module: change.Target, Action: change.Action, TargetType: change.Target, TargetID: strconv.FormatUint(change.ID, 10), BeforeJSON: before, AfterJSON: after, ClientIP: context.ClientIP, RequestID: requestID}, time.Now().UTC())
+}

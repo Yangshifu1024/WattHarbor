@@ -66,13 +66,13 @@ func (g *lockGate) await(t *testing.T, what string) {
 func (g *lockGate) pass() { g.passOne.Do(func() { close(g.release) }) }
 
 // armOnPaymentOrderLock 装回调：本次执行里第一次锁定 payment_order 行后挂起。
-func armOnLock(t *testing.T, db *gorm.DB, gate *lockGate, name, wantSQLFragment string) {
+func armOnLock(t *testing.T, db *gorm.DB, gate *lockGate, name, wantTable string) {
 	t.Helper()
 	err := db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
 		if !strings.Contains(tx.Statement.SQL.String(), "FOR UPDATE") {
 			return
 		}
-		if !strings.Contains(tx.Statement.SQL.String(), wantSQLFragment) {
+		if !strings.Contains(tx.Statement.SQL.String(), "FROM `"+wantTable+"`") {
 			return
 		}
 		gate.once.Do(func() {
@@ -186,8 +186,8 @@ func TestConcurrentWalletRechargeCallbacksCreditOnce(t *testing.T) {
 	armOnLock(t, p1, gate, "test:payment_lock", "payment_order")
 	defer gate.pass()
 
-	store1 := PaymentCallbackStore{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
-	store2 := PaymentCallbackStore{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
+	store1 := CallbackService{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
+	store2 := CallbackService{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 
 	type outcome struct {
 		res PaymentCallbackResult
@@ -290,8 +290,8 @@ func TestConcurrentRechargesForSameUserDoNotLoseUpdate(t *testing.T) {
 	armOnLock(t, p1, gate, "test:wallet_lock", "wallet_account")
 	defer gate.pass()
 
-	store1 := PaymentCallbackStore{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
-	store2 := PaymentCallbackStore{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
+	store1 := CallbackService{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
+	store2 := CallbackService{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 
 	type outcome struct {
 		res PaymentCallbackResult

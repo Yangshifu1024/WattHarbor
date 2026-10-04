@@ -130,9 +130,10 @@ Redis 是 repo 的实现方式，不单独形成顶层业务模块。用户／�
 | 余额启动回执 | 钱包 → card 会话 → order；READ COMMITTED | 成功／拒绝回执、退款、幂等、日志、Outbox 保持原子 |
 | 结束回执 | card 会话 → order；READ COMMITTED | 结束幂等、计量、端口释放、计费任务和日志不可拆提交 |
 | 刷卡到期冻结 | card 会话 → order → 首次 cutoff | 用所属模块的锁定能力读取，保留原截止点 |
-| 钱包充值申请 | user → wallet，随后请求凭据／支付创建；预支付在提交后 | 并发同请求重放、钱包状态与原支付单复用保持一致 |
+| 钱包充值申请 | READ COMMITTED；user → wallet，随后请求凭据／支付创建；预支付在提交后 | 身份读取后等待锁仍看见同号原凭据，不用已有 RR 快照重建支付 |
 | 充值回调 | payment → recharge_request → wallet | 不重排成申请路径的锁顺序；支付摘要、到账、奖励与 Outbox 同事务 |
-| 钱包退款申请 | wallet → request，之后在预占路径锁定支付来源 | frozen_cents 与原来源分摊同事务；单独核对其与回调的锁图 |
+| 钱包退款申请 | wallet 后首次建立默认 RR 快照；原请求重放只读；候选支付 ID 普通读取后按 PRIMARY 锁定已支付来源 | 不扫描锁定待付充值，避免与到账 payment → wallet 形成循环；冻结、来源分摊及退款记录同事务 |
+| 风险批准／解冻 | READ COMMITTED；request → wallet，再锁所属支付／退款或冻结 | 等待钱包后读取新到账来源及用户状态，原动作回执和审计同事务；生效冻结用当前读 |
 | 计费入账 | 余额路径先 wallet，再 payment → order | 费用回执、余额动作、退款预留、优惠券及任务状态完整提交 |
 | 渠道退款 | 必要的钱包锁 → payment → refund；网络调用在持久 claim 后 | 查询未知结果并沿用原退款单号，确认后再更新到账与预占 |
 | 设备导入 | import 任务锁内执行有界 gateway 调用，然后更新元数据／任务 | 首批保持原顺序；优化持锁时间另作领取／租约／恢复设计 |
@@ -212,7 +213,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.2 settlement：S-01／S-02／N-settlement
 
-来源：[HTTP 计费服务](../internal/interface/http/billing_service.go)、[计费入账](../internal/settlement/billing_job_store.go)、[费用计算](../internal/settlement/fee_calculation_store.go)、[账单](../internal/settlement/bill_store.go)，以及 HTTP finance、device/meter_reviews、settlement_bill、user_invoice 的业务编排。
+来源：[HTTP 计费服务](../internal/interface/http/billing_service.go)、[计费入账](../internal/settlement/billing_job_repo.go)、[费用计算](../internal/settlement/fee_calculation_repo.go)、[账单](../internal/settlement/bill_repo.go)，以及 HTTP finance、device/meter_reviews、settlement_bill、user_invoice 的业务编排。
 
 目标：billing.go 的 BillingService.Run；billing_job_repo.go、fee_calculation_repo.go、bill_repo.go；refund.go、invoice.go、meter_review.go 与各自 repo／schema。Calculate 等有业务行为的组件按职责命名，不因为原名 Store 就统一改成万能 Repo。
 
@@ -227,7 +228,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.3 payment：F-01／PAY-01／PAY-02／N-payment
 
-来源：[扫码支付入口](../internal/interface/http/payment_payment_http.go)、[支付意图](../internal/payment/payment_intent_store.go)、[支付回调](../internal/payment/payment_callback_store.go)、[支付设备查询](../internal/payment/payment_device_store.go)、[混合资金模型](../internal/payment/money_schema.go)。
+来源：[扫码支付入口](../internal/interface/http/payment_payment_http.go)、[支付意图](../internal/payment/payment_intent_repo.go)、[支付回调](../internal/payment/payment_callback_repo.go)、[设备运营读取](../internal/device/operation_repo.go)、[支付模型](../internal/payment/money_schema.go)。
 
 目标：CheckoutService.Offers／Start、CallbackService.Apply；payment_intent_repo.go、payment_callback_repo.go、payment_order_repo.go 等支付数据能力。保留渠道验签／解密边界。
 
@@ -242,7 +243,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.4 wallet：W-01／N-wallet
 
-来源：[钱包 HTTP](../internal/interface/http/user_wallet.go)、[账户能力](../internal/wallet/wallet_account_store.go)、[退款预占](../internal/wallet/wallet_reservation_store.go)、[后台风控入口](../internal/interface/http/admin/finance/wallet_risks.go)。
+来源：[钱包 HTTP](../internal/interface/http/user_wallet.go)、[账户能力](../internal/wallet/wallet_account_repo.go)、[退款预占](../internal/wallet/wallet_reservation_repo.go)、[后台风控入口](../internal/interface/http/admin/finance/wallet_risks.go)。
 
 目标：RechargeService.Create／CreditInTx、RefundService.Request、RiskService.Review／Release；wallet_account_repo.go、wallet_ledger_repo.go、wallet_refund_repo.go、wallet_reservation_repo.go 和 risk repo。
 
@@ -515,10 +516,10 @@ make test-integration TEST_MYSQL_URL=...
 |---|---|---|
 | P-01／P-02 | 完成 | AGENTS 失效文档引用已修正；依当前 SQL、路由、锁顺序核对基线。管理员真库测试隔离自身账号，保留 bootstrap 管理员及真实角色锁 |
 | C-01／C-02／C-03／N-charging | 完成 | cutoff 恢复、首写保留及卡→订单锁归属已实现；gateway 实际取证到判定覆盖 10080 行分页边界；charging 持久化文件改为 repo。详细验证见 charging-review |
-| S-01／S-02／N-settlement | 进行中 | 计费调度及补账单恢复已移入 settlement，尚待资金批次整体验收及审核迁移 |
-| F-01／PAY-01／PAY-02／N-payment | 进行中 | 退款创建已通过注入能力归 settlement，充值到账归 wallet；checkout 及完整回调迁移待收尾 |
-| W-01／N-wallet | 进行中 | 充值和退款申请已移入 wallet，支付来源及退款记录经注入能力协作；风险审核与批次验收待完成 |
-| D-01／D-02／N-device | 待实施 | 准入、导入、站点／故障／告警入口待收拢 |
+| S-01／S-02／N-settlement | 完成 | 计费、缺账单恢复、人工退款／开票／计量审核入口及 repo 归位；审计回滚、首签撤权、并发一单一票及注册后台审核通过。两连接旧 RR 验证原申请、首签、费用与成功回执当前读；全仓及独立暂存快照 make check／integration／cmd 构建通过 |
+| F-01／PAY-01／PAY-02／N-payment | 完成 | checkout／回调及归属注入完成，支付模型与渠道中文契约已核对；注册路由覆盖原号恢复、严格输入、付款人／商户／应用／金额／交易号冲突；完整回调取消回滚通过。全仓及独立暂存快照验收通过，tidy 无差异 |
+| W-01／N-wallet | 完成 | 充值／退款／风险入口及 repo 归位；11 笔申请固定 5 次 SQL；两连接验证原请求重放、频次、来源额度、待付行锁隔离、审核等锁后新到账及原成功重放；流水余额使用当前资金事实，取消与审计故障整体回滚；全仓及快照验收通过 |
+| D-01／D-02／N-device | 进行中 | OperationRepo／DiscoveryService 已为 checkout 提供运营及网关事实；导入、站点／故障／告警入口待收拢 |
 | PR-01／N-pricing | 待实施 | domain 计价规则保留，管理发布事务待迁移 |
 | CA-01／N-card | 待实施 | Swipe 原事务保留，前置检查及管理入口待迁移 |
 | O-01／CQ-01／N-order | 待实施 | 基础订单 repo 保留，组合查询及 case 待迁移 |
@@ -545,4 +546,6 @@ make test-integration TEST_MYSQL_URL=...
 
 ### 下一项工作的直接入口
 
-批次 P／0 已完成。继续资金批次：完成支付 checkout、钱包风险及结算审核的用例迁移，核对跨模块锁图、充值／退款重放和提交后恢复；每批验收后提交，不推送。
+批次 P／0 已完成并提交；资金批次完成入口、归属、中文契约及实际锁图核对。2026-10-05 工作区及独立暂存快照 `.tmp/batch1-validation-replay` 均通过 `make check`、`go test -tags=integration -count=1 ./...`；快照另通过 `go build -buildvcs=false -trimpath -o bin/ ./cmd/...` 和 `go mod tidy -diff`（无差异）。日志为 `.tmp/batch1-check-replay-final.log`、`.tmp/batch1-integration-replay-final.log`、`.tmp/batch1-snapshot-replay-*.log`。后台 78 项测试及构建、用户端 typecheck 与 59 项测试通过；构建保留已有 Vite 大 chunk 警告。协议测试原固定延时退出改为等待实际事件记录，业务协议未改变。
+
+变异验证包括计量当前读、审计、发票内容、充值付款人、充值／风险 RC、来源扫描锁和退款第二签当前读，均稳定失败并已恢复。资金原凭据及钱包流水的旧快照测试在修复前分别复现冲突、重复键及错误余额，修复后通过；真实提交造数按本测试身份清理并核对零残留，其他使用外层回滚。验收证据是实际 MySQL 与注册 HTTP，渠道、会话存在性和设备准入 fixture 不等于真实资金／实机验收。每批验收后提交，不推送；下一批按 D-01／PR-01／CA-01 继续，其他任务仍按表中状态实施。

@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"strconv"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
@@ -10,15 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// BillStore 与 Bill 是账单生成与查询的读写入口，定义在持久化层。
-type BillStore = settlement.BillStore
-
-type Bill = settlement.Bill
-
 // BillHTTP 把账单视图暴露给客户。
 type BillHTTP struct {
 	Auth  SessionAuthenticator
-	Bills BillStore
+	Bills settlement.BillRepo
 }
 
 func (a BillHTTP) Register(r *gin.Engine) {
@@ -85,17 +79,4 @@ func (a BillHTTP) markRead(c *gin.Context) {
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "read": true})
-}
-
-// BillStoreIssuer 把 BillStore 适配成计费包的接口，
-// 同时不让计费反过来依赖本模块。
-type BillStoreIssuer struct{ Store BillStore }
-
-// Issue 为已结算的充电发布账单。
-func (a BillStoreIssuer) Issue(ctx context.Context, chargeOrderID uint64) (uint64, error) {
-	bill, created, err := a.Store.Issue(ctx, chargeOrderID)
-	if err != nil || !created {
-		return 0, err
-	}
-	return bill.ID, nil
 }

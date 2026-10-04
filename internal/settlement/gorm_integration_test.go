@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -51,22 +50,53 @@ func testConn(t *testing.T) (*gorm.DB, func()) {
 // 由主控用 channel 决定何时放行。每一步的先后都是确定的，
 // 不靠起 N 个 goroutine 碰运气——那样的测试要么抓不到竞态，要么换台机器就偶发。
 type lockGate struct {
-	locked  chan struct{}
-	release chan struct{}
-	once    sync.Once
-	passOne sync.Once
+	locked  chan struct{} // 指定行锁查询已返回，关闭后主控可启动竞争事务
+	release chan struct{} // 主控释放持锁事务的通知，关闭前回调保持阻塞
+	once    sync.Once     // 一次测试只捕获首次指定行锁
+	passOne sync.Once     // 确保释放通道可被显式和 defer 重复关闭
 }
 
+// newLockGate 返回未触发、未放行的锁闸门；无 IO 或错误，由测试通过 await／pass 控制顺序。
 func newLockGate() *lockGate {
 	return &lockGate{locked: make(chan struct{}), release: make(chan struct{})}
 }
 
+// await 最多等待十五秒确认 what 对应锁已取得，超时终止测试；不放行持锁事务。
 func (g *lockGate) await(t *testing.T, what string) {
 	t.Helper()
 	select {
 	case <-g.locked:
 	case <-time.After(15 * time.Second):
 		t.Fatalf("%s 迟迟没有到达加锁语句——锁子句可能已改名或去掉", what)
+	}
+}
+
+// armOnLockAttempt 注册指定表的 FOR UPDATE 请求通知，返回只读通道；不等待查询返回或阻塞回调。
+// t 负责注销，db 必须是竞争连接，name 需唯一；用于确认旧快照普通读已完成并开始等待目标锁。
+func armOnLockAttempt(t *testing.T, db *gorm.DB, name, table string) <-chan struct{} {
+	t.Helper()
+	trying := make(chan struct{})
+	var once sync.Once
+	if err := db.Callback().Query().Before("gorm:query").Register(name, func(q *gorm.DB) {
+		if q.Statement.Table == table {
+			if _, ok := q.Statement.Clauses["FOR"]; ok {
+				once.Do(func() { close(trying) })
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Callback().Query().Remove(name) })
+	return trying
+}
+
+// awaitLockAttempt 等待 trying 通知，what 用于诊断；超时终止测试，不通过睡眠猜测竞争事务已开始。
+func awaitLockAttempt(t *testing.T, trying <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-trying:
+	case <-time.After(15 * time.Second):
+		t.Fatalf("%s 未请求目标行锁", what)
 	}
 }
 
@@ -79,7 +109,7 @@ func armOnLock(t *testing.T, db *gorm.DB, gate *lockGate, name, wantTable string
 	t.Helper()
 	err := db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
 		sql := tx.Statement.SQL.String()
-		if !strings.Contains(sql, "FOR UPDATE") || !strings.Contains(sql, wantTable) {
+		if !strings.Contains(sql, "FOR UPDATE") || !strings.Contains(sql, "FROM `"+wantTable+"`") {
 			return
 		}
 		gate.once.Do(func() {
@@ -92,16 +122,8 @@ func armOnLock(t *testing.T, db *gorm.DB, gate *lockGate, name, wantTable string
 	}
 }
 
-// snapshotStalenessProof 演示一个具体机制，作为 billing_job_store.go 那处
-// 加锁读的判据。
-//
-// 形状：事务一先做一次普通读（快照就此建立）→ 再去拿行锁（此时事务二
-// 已提交）→ 聚合读。MySQL 的 REPEATABLE READ 下，最后那步聚合读看到的是
-// **快照建立那一刻**的状态，看不到事务二刚插入的行。
-//
-// 这不是假想：`BillingOrders.Apply` 第 178 行就是一次普通 Pluck，
-// 第 190 行才拿 payment_order 的行锁，第 244 行聚合已占用的退款额。
-// 少了那把锁，surplus 会被高估，多退钱进用户钱包。
+// TestSnapshotReadMissesCommitThatHappenedDuringLockWait 用两连接固定 RR 快照、并发提交及后续行锁顺序。
+// 对照普通聚合与当前读，证明支付行锁不会刷新之前的快照；造数按测试支付身份清理。
 func TestSnapshotReadMissesCommitThatHappenedDuringLockWait(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -168,14 +190,14 @@ func TestSnapshotReadMissesCommitThatHappenedDuringLockWait(t *testing.T) {
 
 	// 快照读：看不到事务二刚插入的那 4000。
 	var plainSum int64
-	if err := tx1.Model(&pay.RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").
+	if err := tx1.Model(&RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").
 		Where("payment_order_id = ? AND status IN ('pending','processing') AND deleted_at IS NULL", orderKey).
 		Scan(&plainSum).Error; err != nil {
 		t.Fatalf("快照聚合失败：%v", err)
 	}
 	// 加锁读：看得到。
 	var lockedSum int64
-	if err := tx1.Model(&pay.RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
+	if err := tx1.Model(&RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("COALESCE(SUM(refund_cents),0)").
 		Where("payment_order_id = ? AND status IN ('pending','processing') AND deleted_at IS NULL", orderKey).
 		Scan(&lockedSum).Error; err != nil {

@@ -10,7 +10,7 @@ import (
 )
 
 // 后台审计日志的查询，以及数据范围与定价目标核对所需的零散读取。
-// 审计只读不写：写入统一走 chargehttp.AdminResourceAudit。
+// 审计查询只读；写入由所属业务事务调用 ops.AppendAuditInTx。
 
 // AuditQuery 是审计列表的筛选条件，零值表示该维度不限。
 type AuditQuery struct {

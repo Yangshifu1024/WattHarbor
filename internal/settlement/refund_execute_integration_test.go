@@ -67,6 +67,10 @@ func seedExecutableRefund(t *testing.T, db *gorm.DB) {
 
 func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 	t.Helper()
+	// 仅清理由本测试退款身份生成的事件，避免删除其他包的开发或并发测试数据。
+	if err := db.Table("event_outbox").Where("stream=? AND JSON_EXTRACT(envelope_json,'$.payment_order_id')=?", "refund_succeeded_stream", execPayOrdID).Delete(nil).Error; err != nil {
+		t.Errorf("清理本测试发件箱失败：%v", err)
+	}
 	for _, id := range refundIDs {
 		if err := db.Table("refund_success_receipt").Where("refund_record_id = ?", id).Delete(nil).Error; err != nil {
 			t.Errorf("清理退款回执 %d 失败：%v", id, err)
@@ -74,9 +78,6 @@ func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 		if err := db.Table("refund_record").Where("id = ?", id).Delete(nil).Error; err != nil {
 			t.Errorf("清理退款单 %d 失败：%v", id, err)
 		}
-	}
-	if err := db.Table("event_outbox").Where("stream = ?", "refund_succeeded_stream").Delete(nil).Error; err != nil {
-		t.Errorf("清理发件箱失败：%v", err)
 	}
 	if err := db.Table("charge_order").Where("id = ?", execChargeID).Delete(nil).Error; err != nil {
 		t.Errorf("清理充电订单失败：%v", err)
@@ -86,8 +87,8 @@ func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 	}
 }
 
-func execRecord(id uint64, refundNo string, cents int64) pay.RefundRecord {
-	return pay.RefundRecord{
+func execRecord(id uint64, refundNo string, cents int64) RefundRecord {
+	return RefundRecord{
 		ID: id, RefundNo: refundNo, PaymentOrderID: execPayOrdID, UserID: execUserID,
 		BizType: "charge", BizID: execChargeID, RefundCents: cents, Status: "processing",
 	}
@@ -143,16 +144,13 @@ func TestConcurrentApplySameRefundCreditsOnce(t *testing.T) {
 	}()
 	gate.await(t, "第一笔入账")
 
+	trying := armOnLockAttempt(t, p2, "test:apply_attempt", "payment_order")
 	done2 := make(chan error, 1)
 	go func() {
 		done2 <- e2.apply(context.Background(), execRecord(refundID, refundNo, 4000),
 			execRequest(refundNo, 4000), execResult(refundNo, 4000, "WR-1"))
 	}()
-	select {
-	case err := <-done2:
-		t.Fatalf("第一笔仍持支付单锁时第二笔就返回了（%v）——入账没有串行化", err)
-	case <-time.After(2 * time.Second):
-	}
+	awaitLockAttempt(t, trying, "第二笔退款入账")
 
 	gate.pass()
 	if err := <-done1; err != nil {
@@ -222,17 +220,14 @@ func TestConcurrentApplyTwoRefundsAccumulates(t *testing.T) {
 	}()
 	gate.await(t, "第一笔入账")
 
+	trying := armOnLockAttempt(t, p2, "test:apply_attempt2", "payment_order")
 	done2 := make(chan error, 1)
 	go func() {
 		done2 <- e2.apply(context.Background(), execRecord(idB, noB, 6000),
 			execRequest(noB, 6000), execResult(noB, 6000, "WR-B"))
 	}()
 
-	select {
-	case err := <-done2:
-		t.Fatalf("第一笔仍持支付单锁时第二笔就返回了（%v）——两笔退款的累加没有串行化", err)
-	case <-time.After(2 * time.Second):
-	}
+	awaitLockAttempt(t, trying, "第二笔退款入账")
 
 	gate.pass()
 	if err := <-done1; err != nil {

@@ -9,8 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 
@@ -53,7 +57,7 @@ func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := httpapi.NewRouter()
-	ScanAPI{Operations: scanOperation("enabled"), Auth: SessionAuthenticator{Auth: NewAuthenticator(jwt, scanSession{}, scanUser{})}, GatewayURL: backend.URL, ServiceToken: "service-token"}.Register(router)
+	ScanAPI{Discovery: testScanDiscovery(t, backend, "service-token", scanOperation("enabled"))}.Register(router)
 	for _, route := range []string{"/api/v1/user/scan/resolve", "/api/v1/user/scan/port"} {
 		body := `{"code":"board:1"}`
 		if route == "/api/v1/user/scan/port" {
@@ -84,7 +88,7 @@ func TestScanShowsOperationalStateAndFailsClosed(t *testing.T) {
 	defer backend.Close()
 	for _, status := range []string{"enabled", "disabled", "fault", "retired", "error"} {
 		router := httpapi.NewRouter()
-		ScanAPI{GatewayURL: backend.URL, ServiceToken: "service", Operations: scanOperation(status)}.Register(router)
+		ScanAPI{Discovery: testScanDiscovery(t, backend, "service", scanOperation(status))}.Register(router)
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest("POST", "/api/v1/user/scan/resolve", bytes.NewBufferString(`{"code":"board"}`))
 		router.ServeHTTP(response, request)
@@ -104,7 +108,7 @@ func TestScanShowsOperationalStateAndFailsClosed(t *testing.T) {
 			t.Fatal("operational state erased physical charging state")
 		}
 	}
-	_, status := (ScanAPI{GatewayURL: backend.URL, ServiceToken: "service"}).Lookup(context.Background(), "board")
+	_, status := (ScanAPI{Discovery: testScanDiscovery(t, backend, "service", nil)}).Lookup(context.Background(), "board")
 	if status != 503 {
 		t.Fatal("missing operation guard allowed discovery")
 	}
@@ -116,7 +120,7 @@ func TestDisabledDeviceCannotReadOffers(t *testing.T) {
 	}))
 	defer backend.Close()
 	router := httpapi.NewRouter()
-	PaymentStartAPI{Scan: ScanAPI{GatewayURL: backend.URL, ServiceToken: "service", Operations: scanOperation("disabled")}}.Register(router)
+	PaymentStartAPI{Checkout: payment.CheckoutService{Ports: testScanDiscovery(t, backend, "service", scanOperation("disabled"))}}.Register(router)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest("POST", "/api/v1/user/scan/offers", bytes.NewBufferString(`{"port_id":"board:1"}`)))
 	if response.Code != 409 {
@@ -140,4 +144,14 @@ func TestCanonicalScanCode(t *testing.T) {
 			t.Fatalf("scan code %q: code=%q valid=%t", tc.raw, got, ok)
 		}
 	}
+}
+
+// testScanDiscovery 用实际具名客户端装配匿名设备查询；t 报告装配错误。
+func testScanDiscovery(t *testing.T, backend *httptest.Server, token string, operations device.DeviceOperationReader) device.DiscoveryService {
+	t.Helper()
+	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: backend.Client()}, backend.URL, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return device.DiscoveryService{Gateway: client, Operations: operations}
 }

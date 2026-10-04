@@ -3,19 +3,24 @@ package http
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // UserAccountAPI 提供钱包、优惠券、发票、公告、附近站点、手机号绑定及用户故障上报接口。
 type UserAccountAPI struct {
-	Auth         SessionAuthenticator
-	UserDB       *gorm.DB
-	AdminDB      *gorm.DB
-	GatewayURL   string
-	ServiceToken string
-	Gateway      serviceclient.Client
-	Prepay       PrepayProvider
+	WalletQuery    wallet.QueryService       // 余额、充值续付与退款进度查询能力
+	Invoices       settlement.InvoiceService // 订单开票申请用例
+	Auth           SessionAuthenticator
+	UserDB         *gorm.DB
+	AdminDB        *gorm.DB
+	GatewayURL     string
+	ServiceToken   string
+	Gateway        serviceclient.Client
+	WalletRecharge wallet.RechargeService // 充值申请及提交后预支付业务能力
+	WalletRefund   wallet.RefundService   // 钱包退款业务能力，由 cmd 装配
 }
 
 // Register 注册用户账户路由；各处理器先验证会话，缺失或无效时返回 401。

@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"net/http"
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
@@ -37,27 +40,27 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		httpapi.OK(c, gin.H{"status": "user_storage_ready"})
 	})
 
+	discovery := device.DiscoveryService{Gateway: stopGateway, Operations: device.OperationRepo{DB: orm}}
 	cEndAuth := identityhttp.NewAuthenticator(jwt, sessionstore.Sessions{Redis: cache}, identity.UserStore{DB: orm})
 	var loginExchanger identity.CodeExchanger = wechat
 	if cfg.LoginMode == "development" {
 		loginExchanger = identity.DevelopmentExchanger{}
 	}
 	identityhttp.API{WeChat: loginExchanger, Users: identity.UserStore{DB: orm}, Sessions: sessionstore.Sessions{Redis: cache}, JWT: jwt}.Register(router)
-	identityhttp.ScanAPI{Operations: payment.DeviceOperationStore{DB: orm}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	identityhttp.ScanAPI{Discovery: discovery}.Register(router)
 	identityhttp.UserStopAPI{JWT: jwt, Sessions: sessionstore.Sessions{Redis: cache}, Users: identity.UserStore{DB: orm}, Gateway: stopGateway}.Register(router)
 	// 支付回调由渠道服务器经对外入口打进来，属于本进程。
 	if cfg.PaymentMode == "simulation" {
-		identityhttp.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, DB: orm,
-			Store: payment.PaymentCallbackStore{DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}.Register(router)
+		identityhttp.DevelopmentPaymentAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Service: payment.SimulationService{DB: orm, Callback: payment.CallbackService{Refunds: settlement.RefundRecorder{}, DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}}.Register(router)
 	}
 	if cfg.PaymentMode == "wechat_direct" {
-		identityhttp.WechatCallbackAPI{Verifier: channel.Prepay.(identityhttp.NotificationVerifier), Store: payment.PaymentCallbackStore{
+		identityhttp.WechatCallbackAPI{Verifier: channel.Prepay.(identityhttp.NotificationVerifier), Store: payment.CallbackService{Refunds: settlement.RefundRecorder{},
 			DB: orm, ExpectedProvider: "wechat_direct", ExpectedMerchantID: cfg.WechatMchID, ExpectedAppID: cfg.WeChatAppID}}.Register(router)
 	}
-	identityhttp.UserAccountAPI{
+	identityhttp.UserAccountAPI{WalletQuery: wallet.QueryService{Repo: wallet.UserWalletRepo{DB: orm}}, Invoices: settlement.InvoiceService{DB: orm}, WalletRecharge: wallet.RechargeService{DB: orm, Payments: payment.RechargePaymentRepo{DB: orm, Provider: channel.Prepay}}, WalletRefund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}},
 		Auth:   identityhttp.SessionAuthenticator{Auth: cEndAuth},
 		UserDB: orm, AdminDB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken,
-		Gateway: serviceclient.Client{Timeout: 8 * time.Second}, Prepay: channel.Prepay,
+		Gateway: serviceclient.Client{Timeout: 8 * time.Second},
 	}.Register(router)
 	identityhttp.UserQueryAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
 		DB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Gateway: serviceclient.Client{Timeout: 8 * time.Second}}.Register(router)
@@ -67,15 +70,12 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		DevelopmentPhone: cfg.LoginMode == "development",
 		PhoneExchange:    wechat.ExchangePhone,
 	}.Register(router)
-	identityhttp.BillHTTP{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Bills: identityhttp.BillStore{DB: orm}}.Register(router)
+	identityhttp.BillHTTP{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Bills: settlement.BillRepo{DB: orm}}.Register(router)
 	identityhttp.CouponAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Coupons: marketing.CouponStore{DB: orm}}.Register(router)
 	identityhttp.PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		Scan:     identityhttp.ScanAPI{Operations: payment.DeviceOperationStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken},
-		Pricing:  pricing.PricingStore{DB: orm},
-		Intents:  payment.PaymentIntentStore{DB: orm},
-		Provider: channel.Prepay}.Register(router)
+		Checkout: payment.CheckoutService{Ports: discovery, Pricing: pricing.PricingStore{DB: orm}, Intents: payment.PaymentIntentRepo{DB: orm}, Provider: channel.Prepay}}.Register(router)
 	identityhttp.CardAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Store: card.CardStore{DB: orm}, Pricing: pricing.PricingStore{DB: orm},
-		Scan:         identityhttp.ScanPortLookup{API: identityhttp.ScanAPI{Operations: payment.DeviceOperationStore{DB: orm}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}},
+		Scan:         identityhttp.ScanPortLookup{API: identityhttp.ScanAPI{Discovery: discovery}},
 		ServiceToken: cfg.ServiceToken}.RegisterUser(router)
 
 	return router

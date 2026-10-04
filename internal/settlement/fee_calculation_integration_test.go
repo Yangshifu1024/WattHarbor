@@ -82,14 +82,14 @@ func TestConcurrentCalculateProducesSingleResult(t *testing.T) {
 	}
 	done1 := make(chan outcome, 1)
 	go func() {
-		res, err := Store{DB: p1}.Calculate(context.Background(), src)
+		res, err := FeeCalculator{DB: p1}.Calculate(context.Background(), src)
 		done1 <- outcome{res, err}
 	}()
 	gate.await(t, "第一次计费")
 
 	done2 := make(chan outcome, 1)
 	go func() {
-		res, err := Store{DB: p2}.Calculate(context.Background(), src)
+		res, err := FeeCalculator{DB: p2}.Calculate(context.Background(), src)
 		done2 <- outcome{res, err}
 	}()
 
@@ -146,7 +146,7 @@ func TestCalculateRejectsDifferentSourceForSameOrder(t *testing.T) {
 	t.Cleanup(func() { cleanupFee(t, janitor, chargeOrderID, orderNo) })
 	cleanupFee(t, setup, chargeOrderID, orderNo)
 
-	store := Store{DB: setup}
+	store := FeeCalculator{DB: setup}
 	first := feeSource(chargeOrderID, orderNo)
 	if _, err := store.Calculate(context.Background(), first); err != nil {
 		t.Fatalf("首次计费失败：%v", err)

@@ -7,8 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,16 +23,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// 钱包退款频次风控的真库并发测试。
-//
-// `walletRefund` 的流程是：锁钱包账户行 → 幂等复查 → 落申请 → 数近 5 分钟
-// 已有多少笔 → 达到 3 笔就转人工复核并冻结钱包。
-//
-// 频次计数走的是 `CountRecentRefundRequests`，一个没有加锁子句的普通读。
-// 事务用的是默认的 REPEATABLE READ，所以它是**快照读**。这是否构成漏洞
-// 取决于快照在哪一刻建立：若在拿到钱包行锁**之前**建立，并发申请就各自
-// 读到旧值，5 分钟内 3 笔的上限会被整个绕过——用户可以一次性提交任意多笔。
-// 单测完全看不出来，必须真库并发验。
+// 钱包退款的注册 HTTP 并发验收使用两条独立 MySQL 连接。
+// 首请求取得 wallet_account 行锁后挂起；第二请求到达同表锁查询后放行首请求。
+// 频次查询在取得钱包锁后首次建立快照，来源退款额度由当前读取核对。
 
 const (
 	riskUserID    = uint64(71001)
@@ -82,6 +79,10 @@ func cleanupWalletForRisk(t *testing.T, db *gorm.DB) {
 		if err := db.Table(q.table).Where(q.where, arg).Delete(nil).Error; err != nil {
 			t.Errorf("清理 %s 失败：%v", q.table, err)
 		}
+		var left int64
+		if err := db.Table(q.table).Where(q.where, arg).Count(&left).Error; err != nil || left != 0 {
+			t.Errorf("清理 %s 后残留=%d err=%v", q.table, left, err)
+		}
 	}
 }
 
@@ -110,206 +111,166 @@ func postRefund(t *testing.T, router *gin.Engine, token, requestID string) (int,
 	return rec.Code, parsed
 }
 
-// TestConcurrentWalletRefundRequestsEnforceFrequencyLimit 钉住频次上限不被并发绕过。
-//
-// 5 分钟内最多 3 笔（达到第 3 笔就转人工复核并冻结钱包）。
-// 5 笔并发提交：恰好 3 笔 accepted、2 笔 manual_review，且钱包被冻结。
-// 若频次计数读到快照旧值，5 笔会全部 accepted——风控形同虚设。
+// concurrentWalletReplies 在实际注册路由上用 first、second 连接执行两个退款请求。
+// t 报告闸门或路由错误，token 提供测试用户身份，amount 为每笔分值，prefix 为隔离请求号。
+// 首请求锁定钱包后启动第二请求，确认第二请求到达钱包锁再放行；返回两份按启动顺序的回执。
+func concurrentWalletReplies(t *testing.T, first, second *gorm.DB, jwt *auth.JWT, token string, amount int64, prefix string) [2]walletRouteReply {
+	t.Helper()
+	locked, release, attempting := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var lockOnce, releaseOnce, attemptOnce sync.Once
+	pass := func() { releaseOnce.Do(func() { close(release) }) }
+	defer pass()
+	firstName, secondName := "test:wallet_first_"+prefix, "test:wallet_second_"+prefix
+	if err := first.Callback().Query().After("gorm:query").Register(firstName, func(q *gorm.DB) {
+		sql := q.Statement.SQL.String()
+		if !strings.Contains(sql, "FROM `wallet_account`") || !strings.Contains(sql, "FOR UPDATE") {
+			return
+		}
+		lockOnce.Do(func() { close(locked); <-release })
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer first.Callback().Query().Remove(firstName)
+	if err := second.Callback().Query().Before("gorm:query").Register(secondName, func(q *gorm.DB) {
+		if q.Statement.Table != "wallet_account" {
+			return
+		}
+		if _, ok := q.Statement.Clauses["FOR"]; !ok {
+			return
+		}
+		attemptOnce.Do(func() { close(attempting) })
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer second.Callback().Query().Remove(secondName)
+	send := func(db *gorm.DB, idx int) <-chan walletRouteReply {
+		ch := make(chan walletRouteReply, 1)
+		router := httpapi.NewRouter()
+		UserAccountAPI{WalletRefund: wallet.RefundService{DB: db, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}, Auth: SessionAuthenticator{Auth: NewAuthenticator(jwt, walletSession{}, walletUser{})}}.Register(router)
+		go func() {
+			body := fmt.Sprintf(`{"request_id":"%s%04d-3333-4333-8333-333333333333","amount_cents":%d,"reason":"确定顺序并发"}`, prefix, idx, amount)
+			r := httptest.NewRequest("POST", "/api/v1/user/wallet/refund", bytes.NewBufferString(body))
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+			var payload map[string]any
+			_ = json.Unmarshal(w.Body.Bytes(), &payload)
+			ch <- walletRouteReply{code: w.Code, body: payload}
+		}()
+		return ch
+	}
+	wait := func(ch <-chan struct{}, name string) {
+		select {
+		case <-ch:
+		case <-time.After(15 * time.Second):
+			t.Fatalf("%s 未到达指定表锁", name)
+		}
+	}
+	firstResult := send(first, 0)
+	wait(locked, "首请求")
+	secondResult := send(second, 1)
+	wait(attempting, "次请求")
+	pass()
+	var out [2]walletRouteReply
+	for i, ch := range []<-chan walletRouteReply{firstResult, secondResult} {
+		select {
+		case out[i] = <-ch:
+		case <-time.After(15 * time.Second):
+			t.Fatal("退款请求未在期限内结束")
+		}
+	}
+	return out
+}
+
+// walletRouteReply 保留并发请求的状态码与原业务 JSON，按启动顺序核对结果。
+type walletRouteReply struct {
+	code int            // 实际注册 HTTP 状态码
+	body map[string]any // 原业务响应信封
+}
+
+// walletRiskToken 用 jwt 为固定测试用户签发会话令牌；t 报告错误，不调用真实身份服务。
+func walletRiskToken(t *testing.T, jwt *auth.JWT) string {
+	t.Helper()
+	now := time.Now()
+	token, err := jwt.Sign(auth.Claims{Subject: fmt.Sprint(riskUserID), Kind: "user", OpenID: "ox-risk-1", SessionID: "session-risk", IssuedAt: now.Add(-time.Minute).Unix(), ExpiresAt: now.Add(time.Hour).Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+// TestConcurrentWalletRefundRequestsEnforceFrequencyLimit 确认第三次申请冻结钱包，等待中的第四次按当前状态拒绝。
+// 两条独立连接与明确表锁闸门控制顺序；真实提交后按固定测试身份清理，并核对零残留。
 func TestConcurrentWalletRefundRequestsEnforceFrequencyLimit(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
-
 	janitor, closeJanitor := testConn(t)
 	t.Cleanup(closeJanitor)
 	t.Cleanup(func() { cleanupWalletForRisk(t, janitor) })
 	cleanupWalletForRisk(t, setup)
 	seedWalletForRisk(t, setup)
-
+	for i := 0; i < 2; i++ {
+		if err := setup.Table("wallet_refund_request").Create(map[string]any{"request_id": fmt.Sprintf("2222999%d-3333-4333-8333-333333333333", i), "user_id": riskUserID, "amount_cents": 100, "reason": "既有频次", "response_json": "{}"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, closeFirst := testConn(t)
+	defer closeFirst()
+	second, closeSecond := testConn(t)
+	defer closeSecond()
 	jwt, err := auth.NewJWT("test-wallet-risk-secret-must-be-at-least-32-bytes")
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now()
-	token, err := jwt.Sign(auth.Claims{
-		Subject: fmt.Sprint(riskUserID), Kind: "user", OpenID: "ox-risk-1",
-		SessionID: "session-risk", IssuedAt: now.Add(-time.Minute).Unix(),
-		ExpiresAt: now.Add(time.Hour).Unix(),
-	})
-	if err != nil {
+	results := concurrentWalletReplies(t, first, second, jwt, walletRiskToken(t, jwt), riskEachCents, "2222")
+	data, _ := results[0].body["data"].(map[string]any)
+	if results[0].code != 200 || data["status"] != "manual_review" || results[1].code != 409 {
+		t.Fatalf("频次回执=%+v", results)
+	}
+	var status string
+	var count int64
+	if err := setup.Table("wallet_account").Where("user_id=?", riskUserID).Pluck("status", &status).Error; err != nil {
 		t.Fatal(err)
 	}
-	gin.SetMode(gin.TestMode)
-
-	const total = 5
-	type reply struct {
-		code int
-		body map[string]any
+	if err := setup.Table("wallet_refund_request").Where("user_id=?", riskUserID).Count(&count).Error; err != nil {
+		t.Fatal(err)
 	}
-	results := make([]reply, total)
-	start := make(chan struct{})
-	var wg sync.WaitGroup
-	for i := 0; i < total; i++ {
-		// 每笔用各自的独立连接与自己的 API 实例：共用一个连接池时，
-		// 请求会串行执行，测出来的是假并发。
-		p, closeP := testConn(t)
-		router := httpapi.NewRouter()
-		UserAccountAPI{
-			Auth:   SessionAuthenticator{Auth: NewAuthenticator(jwt, walletSession{}, walletUser{})},
-			UserDB: p,
-		}.Register(router)
-		wg.Add(1)
-		go func(idx int, r *gin.Engine) {
-			defer wg.Done()
-			<-start
-			code, body := postRefund(t, r, token, fmt.Sprintf("2222%04d-2222-4222-8222-222222222222", idx))
-			results[idx] = reply{code, body}
-		}(i, router)
-		defer closeP()
-	}
-	close(start)
-	wg.Wait()
-
-	accepted, review, frozen := 0, 0, 0
-	for i, r := range results {
-		data, _ := r.body["data"].(map[string]any)
-		state, _ := data["status"].(string)
-		switch {
-		case r.code == 200 && state == "accepted":
-			accepted++
-		case r.code == 200 && state == "manual_review":
-			review++
-		case r.code == 409:
-			frozen++
-		default:
-			t.Errorf("第 %d 笔返回了预期之外的结果：code=%d body=%v", i, r.code, r.body)
-		}
-	}
-	// 上限是「5 分钟内第 3 笔起转人工复核并冻结钱包」。
-	// 冻结之后到达的申请会被 409 挡下，那是正确行为，不是失败。
-	if accepted+review > riskLimit {
-		t.Errorf("受理 %d + 复核 %d = %d 笔，超过 5 分钟 %d 笔的上限——频次风控被绕过",
-			accepted, review, accepted+review, riskLimit)
-	}
-	if review != 1 {
-		t.Errorf("应有恰好 1 笔转入人工复核，实际 %d 笔（受理 %d、冻结后拒绝 %d）", review, accepted, frozen)
-	}
-	if accepted != riskLimit-review {
-		t.Errorf("受理 %d 笔，期望 %d 笔（上限 %d 减去转复核的 %d 笔）",
-			accepted, riskLimit-review, riskLimit, review)
-	}
-
-	// 达到上限时钱包必须被冻结，否则后续申请仍会照常受理。
-	verify, closeVerify := testConn(t)
-	defer closeVerify()
-	var status string
-	var frozenCents int64
-	if err := verify.Table("wallet_account").Where("user_id = ?", riskUserID).
-		Select("status, frozen_cents").Row().Scan(&status, &frozenCents); err != nil {
-		t.Fatalf("读钱包失败：%v", err)
-	}
-	if review > 0 && status != "frozen" {
-		t.Errorf("有 %d 笔转了人工复核，钱包状态却是 %q，期望 frozen", review, status)
+	if status != "frozen" || count != riskLimit {
+		t.Fatalf("频次未保护：status=%s requests=%d", status, count)
 	}
 }
 
-// TestConcurrentWalletRefundsDoNotExceedRecharge 钉住并发退款不超原充值额。
-//
-// 上面验的是频次，这里验金额。两笔并发退款各 8000，而原充值只有 10000。
-// ReserveRefund 拆单时数的是 refund_record 的 SUM——一个没有加锁的快照读。
-// 单看它，两笔都可能在快照里数到 0，于是各自算出「可退 10000」，
-// 合计退掉 16000。
-//
-// 真正的守门员是 wallet_account.frozen_cents：它随每笔预占累加，
-// 且是在钱包行锁内读到的当前值，所以后到的那笔会看到已冻结的 8000。
-// 这个测试就是为了钉住「frozen_cents 确实是承重的」——
-// 拿掉它或让它读快照，测试立刻变红。
+// TestConcurrentWalletRefundsDoNotExceedRecharge 确认首笔 8000 分提交后，次笔不能占用同充值的剩余 2000 分。
+// 钱包余额高于原渠道来源，以便由在途退款当前读而非余额总额决定第二笔拒绝；清理已提交的真实行。
 func TestConcurrentWalletRefundsDoNotExceedRecharge(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
-
 	janitor, closeJanitor := testConn(t)
 	t.Cleanup(closeJanitor)
 	t.Cleanup(func() { cleanupWalletForRisk(t, janitor) })
 	cleanupWalletForRisk(t, setup)
 	seedWalletForRisk(t, setup)
-
+	first, closeFirst := testConn(t)
+	defer closeFirst()
+	second, closeSecond := testConn(t)
+	defer closeSecond()
 	jwt, err := auth.NewJWT("test-wallet-risk-secret-must-be-at-least-32-bytes")
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now()
-	token, err := jwt.Sign(auth.Claims{
-		Subject: fmt.Sprint(riskUserID), Kind: "user", OpenID: "ox-risk-1",
-		SessionID: "session-risk", IssuedAt: now.Add(-time.Minute).Unix(),
-		ExpiresAt: now.Add(time.Hour).Unix(),
-	})
-	if err != nil {
+	results := concurrentWalletReplies(t, first, second, jwt, walletRiskToken(t, jwt), 8000, "3333")
+	if results[0].code != 200 || results[1].code != 409 {
+		t.Fatalf("来源额度回执=%+v", results)
+	}
+	var total, frozen int64
+	if err := setup.Table("refund_record").Where("payment_order_id=? AND status IN ('pending','processing')", 71001).Select("COALESCE(SUM(refund_cents),0)").Row().Scan(&total); err != nil {
 		t.Fatal(err)
 	}
-	gin.SetMode(gin.TestMode)
-
-	post := func(idx int) (int, map[string]any) {
-		p, closeP := testConn(t)
-		defer closeP()
-		router := httpapi.NewRouter()
-		UserAccountAPI{
-			Auth:   SessionAuthenticator{Auth: NewAuthenticator(jwt, walletSession{}, walletUser{})},
-			UserDB: p,
-		}.Register(router)
-		body := fmt.Sprintf(`{"request_id":"3333%04d-3333-4333-8333-333333333333","amount_cents":8000,"reason":"并发超额退款"}`, idx)
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/wallet/refund", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+token)
-		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, req)
-		var parsed map[string]any
-		_ = json.Unmarshal(rec.Body.Bytes(), &parsed)
-		return rec.Code, parsed
+	if err := setup.Table("wallet_account").Where("user_id=?", riskUserID).Pluck("frozen_cents", &frozen).Error; err != nil {
+		t.Fatal(err)
 	}
-
-	codes := make([]int, 2)
-	bodies := make([]map[string]any, 2)
-	start := make(chan struct{})
-	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			<-start
-			codes[idx], bodies[idx] = post(idx)
-		}(i)
-	}
-	close(start)
-	wg.Wait()
-
-	succeeded := 0
-	for i, c := range codes {
-		if c == 200 {
-			succeeded++
-			continue
-		}
-		t.Logf("第 %d 笔被拒：%d %v", i, c, bodies[i])
-	}
-	if succeeded > 1 {
-		t.Errorf("两笔各 8000 的退款都受理了，而原充值只有 %d 分", rechargeCents)
-	}
-
-	verify, closeVerify := testConn(t)
-	defer closeVerify()
-	var total, frozenCents int64
-	if err := verify.Table("refund_record").
-		Where("payment_order_id = ? AND status IN ('pending','processing')", 71001).
-		Select("COALESCE(SUM(refund_cents),0)").Row().Scan(&total); err != nil {
-		t.Fatalf("统计待处理退款失败：%v", err)
-	}
-	if err := verify.Table("wallet_account").Where("user_id = ?", riskUserID).
-		Select("frozen_cents").Row().Scan(&frozenCents); err != nil {
-		t.Fatalf("读冻结额失败：%v", err)
-	}
-	if total > rechargeCents {
-		t.Errorf("待处理退款合计 %d 分，超过原充值 %d 分——并发退款超发", total, rechargeCents)
-	}
-	if total != frozenCents {
-		t.Errorf("退款记录合计 %d 与冻结额 %d 不一致，两者本该同增同减", total, frozenCents)
+	if total != 8000 || frozen != total {
+		t.Fatalf("预占不一致：refund=%d frozen=%d", total, frozen)
 	}
 }

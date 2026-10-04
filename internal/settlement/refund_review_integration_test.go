@@ -4,17 +4,14 @@ package settlement
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 )
 
-// 人工退款的真库并发测试：同一笔支付单上的两笔退款申请不得合计超额。
-//
-// 这段是"先锁支付单、再聚合已占用额度"的结构（refund_review_store.go:66 锁行，
-// 第 96 行 SUM）。聚合读若是快照读，两笔并发申请会各自读到「未占用 0」，
-// 一起通过 `pending > paid - refunded - amount` 校验，合计退超过实付。
+// 人工退款并发验收固定支付行锁的取得顺序，核对等待后的在途当前读不超原实付。
 
 const (
 	refundUserID   = uint64(41001)
@@ -50,8 +47,9 @@ func seedRefundableOrder(t *testing.T, db *gorm.DB) {
 func cleanupRefundableOrder(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, q := range []struct {
-		table, where string
-		args         []any
+		table string // 本测试拥有的持久表
+		where string // 本测试退款或支付身份
+		args  []any  // 筛选值
 	}{
 		{"refund_record", "payment_order_id = ?", []any{refundPayOrdID}},
 		{"manual_refund_request", "request_id LIKE ?", []any{"MR-CONC-%"}},
@@ -60,6 +58,10 @@ func cleanupRefundableOrder(t *testing.T, db *gorm.DB) {
 	} {
 		if err := db.Table(q.table).Where(q.where, q.args...).Delete(nil).Error; err != nil {
 			t.Errorf("清理 %s 失败：%v", q.table, err)
+		}
+		var n int64
+		if err := db.Table(q.table).Where(q.where, q.args...).Count(&n).Error; err != nil || n != 0 {
+			t.Errorf("remaining %s=%d err=%v", q.table, n, err)
 		}
 	}
 }
@@ -88,11 +90,11 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 	armOnLock(t, p1, gate, "test:refund_lock", "payment_order")
 	defer gate.pass()
 
-	store := ReviewStore{}
+	store := RefundReviewRepo{}
 	type outcome struct {
-		created bool
-		no      string
-		err     error
+		created bool   // 是否实际新建原退款
+		no      string // 原稳定退款单号
+		err     error  // 原事务及建单结果
 	}
 	mk := func(p *gorm.DB, requestID string) chan outcome {
 		ch := make(chan outcome, 1)
@@ -118,31 +120,19 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 
 	done1 := mk(p1, "MR-CONC-A")
 	gate.await(t, "第一笔退款申请")
+	trying := armOnLockAttempt(t, p2, "test:refund_attempt", "payment_order")
 	done2 := mk(p2, "MR-CONC-B")
 
-	select {
-	case got := <-done2:
-		t.Fatalf("第一笔仍持支付单锁时第二笔就返回了（created=%v err=%v）——支付单行锁没有串行化退款申请", got.created, got.err)
-	case <-time.After(2 * time.Second):
-	}
+	awaitLockAttempt(t, trying, "第二笔退款申请")
 
 	gate.pass()
 	first, second := <-done1, <-done2
 
-	succeeded := 0
-	var errs []error
-	for _, o := range []outcome{first, second} {
-		if o.err != nil {
-			errs = append(errs, o.err)
-			continue
-		}
-		if o.created {
-			succeeded++
-		}
+	if first.err != nil || !first.created || first.no == "" {
+		t.Fatalf("first=%+v", first)
 	}
-	if succeeded > 1 {
-		t.Errorf("实付 %d 分，两笔各 6000 分的申请都创建成功了（合计 %d，超发 %d）",
-			refundPaid, int64(succeeded)*6000, int64(succeeded)*6000-refundPaid)
+	if !errors.Is(second.err, ErrRefundConflict) || second.created {
+		t.Fatalf("second must conflict: %+v", second)
 	}
 	// 落库的才是真相：两笔都插入过就是超发。
 	verify, closeVerify := testConn(t)
@@ -157,11 +147,10 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 		Select("COALESCE(SUM(refund_cents),0)").Row().Scan(&total); err != nil {
 		t.Fatalf("合计退款额失败：%v", err)
 	}
-	if total > refundPaid {
+	if total != 6000 {
 		t.Errorf("待处理退款合计 %d 分，超过实付 %d 分（%d 条记录）", total, refundPaid, rows)
 	}
-	if rows > 1 {
+	if rows != 1 {
 		t.Errorf("并发的两笔申请都落了库（%d 条，合计 %d 分）", rows, total)
 	}
-	_ = errs
 }

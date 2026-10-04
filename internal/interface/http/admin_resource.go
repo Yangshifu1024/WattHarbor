@@ -1,13 +1,11 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"log"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
@@ -69,7 +67,7 @@ func AdminPathID(c *gin.Context) (uint64, bool) {
 
 // ErrConflict 表示这条记录当前的状态不接受这次写入（例如期望版本号已被别人改过），
 // 映射为 409 并提示前端刷新后重试。
-var ErrConflict = errors.New("当前记录状态不允许此操作，请刷新后重试")
+var ErrConflict = operations.ErrConflict
 
 // AdminResourceFailure 把存储层错误翻译成统一响应：业务冲突 409、记录不存在 404、
 // 唯一索引冲突 409，其余一律 503 通用提示，不把底层错误暴露给前端。
@@ -90,23 +88,7 @@ func AdminResourceFailure(c *gin.Context, err error) {
 // AdminResourceAudit 在业务事务内保存变更快照、操作人、对象、客户端 IP 和请求号。
 // 快照只记录接口层的入参与返回值，不含口令散列、令牌或密钥。
 func AdminResourceAudit(tx *gorm.DB, p operations.Profile, action, target string, id uint64, before, after any, ip, requestID string) error {
-	old, err := json.Marshal(before)
-	if err != nil {
-		return err
-	}
-	next, err := json.Marshal(after)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	if len(requestID) > 64 {
-		requestID = requestID[:64]
-	}
-	return ops.InsertAudit(tx, ops.AuditEntryInput{
-		ActorID: p.ID, ActorName: p.Username, Module: target, Action: action,
-		TargetType: target, TargetID: strconv.FormatUint(id, 10),
-		BeforeJSON: old, AfterJSON: next, ClientIP: ip, RequestID: requestID,
-	}, now)
+	return ops.AppendAuditInTx(tx, ops.AuditContext{Actor: p, ClientIP: ip, RequestID: requestID}, ops.AuditChange{Action: action, Target: target, ID: id, Before: before, After: after, RequestID: requestID})
 }
 
 // FirstNonEmpty 依次取参数中第一个非空字符串，全空则返回空串。
@@ -158,3 +140,8 @@ func AuditToAdmin(c *gin.Context, db *gorm.DB, action, target string, id uint64,
 
 // AdminLikePattern 把关键词转成 LIKE 模式，转义规则与仓储层共用同一实现。
 func AdminLikePattern(value string) string { return dbutil.LikePattern(value) }
+
+// AdminAuditContext 从 c 提取已实时授权的操作人与请求审计事实，不开启事务。
+func AdminAuditContext(c *gin.Context) ops.AuditContext {
+	return ops.AuditContext{Actor: c.MustGet("admin_profile").(operations.Profile), ClientIP: c.ClientIP(), RequestID: httpapi.RequestID(c)}
+}

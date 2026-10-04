@@ -71,6 +71,7 @@ charge-pilot/
 │   └── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
 │       └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
 ├── internal/order                                        订单表模型、编号分配与读模型
+│   ├── internal/order/funding_repo.go（新增：资金及开票事务的所属订单能力）
 │   ├── internal/order/order_history_store.go（迁移前：internal/payment/order_authorization_store.go[历史视图部分]）
 │   ├── internal/order/order_number.go
 │   ├── internal/order/order_package_store.go
@@ -79,28 +80,40 @@ charge-pilot/
 │   ├── internal/order/order_view_store.go
 │   └── internal/order/pricing_snapshot_store.go
 ├── internal/settlement                                   结算：计价、账单、发票与退款
-│   ├── internal/settlement/admin_finance_store.go
-│   ├── internal/settlement/balance_refund_store.go（迁移前：internal/card/card_refund_store.go、internal/interface/http/order_start_result.go[共享退款]）
-│   ├── internal/settlement/bill_store.go
-│   ├── internal/settlement/billing_job_store.go
+│   ├── internal/settlement/billing.go（迁移前：internal/interface/http/billing_service.go[调度]）
+│   ├── internal/settlement/invoice.go（迁移前：internal/interface/http/user_invoice.go[申请]）
+│   ├── internal/settlement/invoice_review.go（迁移前：internal/interface/http/admin/finance/invoices.go[审核]）
+│   ├── internal/settlement/meter_review.go（迁移前：internal/interface/http/admin/device/meter_reviews.go[核实]）
+│   ├── internal/settlement/refund.go（迁移前：internal/interface/http/admin/finance/refunds.go[人工退款]）
+│   ├── internal/settlement/refund_creation_repo.go（迁移前：payment/callback、wallet/reservation[退款记录]）
+│   ├── internal/settlement/money_schema.go（迁移前：internal/payment/money_schema.go[费用与退款模型]）
+│   ├── internal/settlement/balance_refund_repo.go（迁移前：internal/card/card_refund_store.go、internal/interface/http/order_start_result.go[共享退款]）
+│   ├── internal/settlement/bill_repo.go
+│   ├── internal/settlement/billing_job_repo.go
 │   ├── internal/settlement/calculation_number.go
-│   ├── internal/settlement/fee_calculation_store.go
-│   ├── internal/settlement/invoice_store.go
-│   ├── internal/settlement/manual_store.go
-│   ├── internal/settlement/meter_review_store.go
-│   ├── internal/settlement/order_view_store.go
-│   ├── internal/settlement/refund_executor_store.go
-│   ├── internal/settlement/refund_record_store.go（迁移前：internal/payment/order_start_store.go[退款记录部分]）
-│   ├── internal/settlement/refund_review_list_store.go
-│   ├── internal/settlement/refund_review_store.go
-│   └── internal/settlement/user_invoice_store.go
+│   ├── internal/settlement/fee_calculation_repo.go
+│   ├── internal/settlement/invoice_repo.go
+│   ├── internal/settlement/manual_repo.go
+│   ├── internal/settlement/meter_review_repo.go
+│   ├── internal/settlement/order_view_repo.go
+│   ├── internal/settlement/refund_executor_repo.go
+│   ├── internal/settlement/refund_record_repo.go（迁移前：internal/payment/order_start_repo.go[退款记录部分]）
+│   ├── internal/settlement/refund_review_list_repo.go
+│   ├── internal/settlement/refund_review_repo.go
+│   └── internal/settlement/user_invoice_repo.go
 ├── internal/wallet                                       钱包：余额、充值、流水、退款预占、频次风控
-│   ├── internal/wallet/admin_wallet_risk_store.go
-│   ├── internal/wallet/wallet_account_store.go
-│   ├── internal/wallet/wallet_ledger_store.go
+│   ├── internal/wallet/recharge.go（迁移前：internal/interface/http/user_wallet.go[充值]）
+│   ├── internal/wallet/refund.go（迁移前：internal/interface/http/user_wallet.go[退款]）
+│   ├── internal/wallet/risk.go（迁移前：internal/interface/http/admin/finance/wallet_risks.go[风险事务]）
+│   ├── internal/wallet/query.go（迁移前：internal/interface/http/user_wallet.go[查询组合]）
+│   ├── internal/wallet/query_repo.go（新增：本页退款详情批量查询）
+│   ├── internal/wallet/recharge_credit_repo.go（迁移前：internal/payment/payment_callback_store.go[钱包到账]）
+│   ├── internal/wallet/admin_wallet_risk_repo.go
+│   ├── internal/wallet/wallet_account_repo.go
+│   ├── internal/wallet/wallet_ledger_repo.go
 │   ├── internal/wallet/wallet_model.go
-│   ├── internal/wallet/wallet_refund_store.go
-│   └── internal/wallet/wallet_reservation_store.go
+│   ├── internal/wallet/wallet_refund_repo.go
+│   └── internal/wallet/wallet_reservation_repo.go
 ├── internal/pricing                                      计费方案、规则、发布与计量匹配
 │   ├── internal/pricing/metering_store.go
 │   ├── internal/pricing/pricing_admin_store.go
@@ -113,9 +126,11 @@ charge-pilot/
 │   ├── internal/card/card_store.go
 │   ├── internal/card/charge_store.go
 │   ├── internal/card/interface_query_store.go
-│   ├── internal/card/start_result_store.go（迁移前：internal/payment/order_start_store.go[刷卡写入部分]）
+│   ├── internal/card/start_result_store.go（迁移前：internal/payment/order_start_repo.go[刷卡写入部分]）
 │   └── internal/card/user_card_store.go
 ├── internal/device                                       设备接入、遥测、会话、故障
+│   ├── internal/device/discovery.go（迁移前：internal/interface/http/payment_scan.go[事实组合]）
+│   ├── internal/device/operation_repo.go（迁移前：internal/payment/payment_device_store.go）
 │   ├── internal/device/alert_sync_store.go
 │   ├── internal/device/device_admin_store.go
 │   ├── internal/device/device_import.go
@@ -144,21 +159,27 @@ charge-pilot/
 │   ├── internal/marketing/rules_coupon.go
 │   └── internal/marketing/rules_coupon_activity.go
 ├── internal/payment                                      支付意图、渠道、回调与支付记录
+│   ├── internal/payment/checkout.go（迁移前：internal/interface/http/payment_payment_http.go[支付准备]）
+│   ├── internal/payment/callback.go（新增：迟到退款事务内契约）
+│   ├── internal/payment/recharge_payment_repo.go（迁移前：internal/interface/http/user_wallet.go[支付与参数]）
+│   ├── internal/payment/recharge_source_repo.go（迁移前：internal/wallet/wallet_reservation_store.go[支付来源]）
+│   ├── internal/payment/refund_payment_repo.go（迁移前：internal/settlement/refund_executor_store.go[支付锁及更新]）
+│   ├── internal/payment/simulation_repo.go（迁移前：internal/interface/http/payment_development_payment.go[模拟确认]）
 │   ├── internal/payment/channel_factory.go
 │   ├── internal/payment/channel_refund.go
 │   ├── internal/payment/channel_simulation.go
 │   ├── internal/payment/channel_wechat.go
 │   ├── internal/payment/errors.go
-│   ├── internal/payment/interface_query_store.go
+│   ├── internal/payment/interface_query_repo.go
 │   ├── internal/payment/money_schema.go
-│   ├── internal/payment/order_start_store.go
-│   ├── internal/payment/payment_callback_store.go
-│   ├── internal/payment/payment_checkout_store.go
-│   ├── internal/payment/payment_device_store.go
-│   ├── internal/payment/payment_intent_store.go
-│   ├── internal/payment/payment_view_store.go
-│   └── internal/payment/user_recharge_store.go
+│   ├── internal/payment/order_start_repo.go
+│   ├── internal/payment/payment_callback_repo.go
+│   ├── internal/payment/payment_checkout_repo.go
+│   ├── internal/payment/payment_intent_repo.go
+│   ├── internal/payment/payment_view_repo.go
+│   └── internal/payment/user_recharge_repo.go
 ├── internal/ops                                          后台账号、角色、审计与事件发件箱
+│   ├── internal/ops/audit.go（迁移前：internal/interface/http/admin_resource.go[事务内审计]）
 │   ├── internal/ops/admin_account_store.go
 │   ├── internal/ops/admin_audit_store.go
 │   ├── internal/ops/admin_ops_store.go
@@ -176,12 +197,14 @@ charge-pilot/
 │   ├── internal/contracts/central/charging.go（迁移前：internal/worker/charge/paid_start.go[待启动响应]）
 │   ├── internal/contracts/central/errors.go
 │   ├── internal/contracts/central/results.go（迁移前：internal/interface/http/order_*_result.go、internal/worker/charge/*sync.go[回执 DTO]）
+│   ├── internal/contracts/gateway/scan.go（新增：扫码端点与缺失错误契约）
 │   ├── internal/contracts/gateway/charging.go（START、STOP 与计量证据契约）
 │   └── internal/contracts/gateway/sync.go（迁移前：internal/worker/charge/*sync.go、meter_segments.go[同步 DTO]）
 ├── internal/integration                                  服务间 HTTP 的专用客户端
 │   ├── internal/integration/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP]）
 │   ├── internal/integration/central/client.go（迁移前：internal/worker/charge/paid_start.go[待启动 HTTP 查询]）
 │   ├── internal/integration/central/results.go（迁移前：internal/worker/charge/*sync.go[回执 HTTP]）
+│   ├── internal/integration/gateway/scan.go（迁移前：internal/interface/http/payment_scan.go[出站 HTTP]）
 │   ├── internal/integration/gateway/client.go
 │   └── internal/integration/gateway/sync.go（迁移前：internal/worker/charge/sync_client.go[启动/结束同步]）
 ├── internal/delivery                                     对外事件契约与签名投递器
@@ -385,10 +408,12 @@ charge-pilot/
 │   ├── internal/domain/charging/segments.go
 │   ├── internal/domain/charging/spec.go
 │   ├── internal/domain/devices/telemetry.go
+│   ├── internal/domain/money/refund.go（新增：无 ORM 的事务内退款输入）
 │   ├── internal/domain/money/card_number.go
 │   ├── internal/domain/money/card_port.go
 │   ├── internal/domain/money/review.go
 │   ├── internal/domain/money/scan.go
+│   ├── internal/domain/operations/errors.go（迁移前：internal/interface/http/admin_resource.go[业务冲突]）
 │   ├── internal/domain/operations/account.go
 │   ├── internal/domain/operations/export.go
 │   ├── internal/domain/operations/scope.go

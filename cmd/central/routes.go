@@ -50,12 +50,11 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 	identityhttp.AutoStopAPI{Stopper: chargestop.AutoStopper{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
 
 	// 资金与账单：开票、结算、退款派发。
-	identityhttp.Service{Store: settlement.Store{DB: orm}, Orders: settlement.BillingOrders{DB: orm}, ServiceToken: cfg.ServiceToken,
-		Bills: identityhttp.BillStoreIssuer{Store: identityhttp.BillStore{DB: orm}}}.Register(router)
+	identityhttp.BillingAPI{Service: settlement.BillingService{Calculator: settlement.FeeCalculator{DB: orm}, Orders: settlement.BillingOrders{DB: orm},
+		Bills: settlement.BillRepo{DB: orm}}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.RefundAPI{Executor: settlement.RefundExecutor{DB: orm, Provider: channel.Refund, ProviderName: channel.Name}, ServiceToken: cfg.ServiceToken}.Register(router)
 	if cfg.PaymentMode == "simulation" {
-		identityhttp.SimulationCallbackAPI{DB: orm, Store: payment.PaymentCallbackStore{
-			DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}, ServiceToken: cfg.ServiceToken}.Register(router)
+		identityhttp.SimulationCallbackAPI{Service: payment.SimulationService{DB: orm, Callback: payment.CallbackService{Refunds: settlement.RefundRecorder{}, DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}, ServiceToken: cfg.ServiceToken}.Register(router)
 	}
 
 	// 设备告警同步。
