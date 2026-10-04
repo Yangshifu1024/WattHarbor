@@ -92,8 +92,15 @@ func (s ReviewStore) ManualCreate(ctx context.Context, tx *gorm.DB, in ManualRef
 		if !oneOf(order.Status, "completed cancelled failed refunded") || order.Status == "refunded" || pay.UserID != order.UserID || pay.PayMethod != "wechat" || !oneOf(pay.Status, "paid partial_refunded") || in.AmountCents > pay.PaidCents-pay.RefundedCents {
 			return ErrRefundConflict
 		}
+		// 聚合读必须用加锁读。上面那把 payment_order 行锁只挡住了同样走
+		// ManualCreate 的事务，却挡不住本事务快照里看不到的那些已落库记录：
+		// 快照在第一次读充电订单时就已建立，早于并发的另一笔提交。
+		// 两笔各 6000 的申请会各自读到「未占用 0」，合计退掉 12000。
 		var pending int64
-		if err := tx.Table("refund_record").Select("COALESCE(SUM(refund_cents),0)").Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", pay.ID).Scan(&pending).Error; err != nil {
+		if err := tx.Table("refund_record").Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("COALESCE(SUM(refund_cents),0)").
+			Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", pay.ID).
+			Scan(&pending).Error; err != nil {
 			return err
 		}
 		if pending > pay.PaidCents-pay.RefundedCents-in.AmountCents {

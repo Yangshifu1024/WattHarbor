@@ -307,3 +307,31 @@ MySQL 的 REPEATABLE READ 下，普通 SELECT 走事务快照，而快照在
 注意 MySQL 唯一索引不约束 NULL，所以这只保护 `initiated` 状态；
 `paid` 且订单在充电的占用仍只靠那条检查语句。撞库时返回的是原始 1062
 而不是 `ErrPaymentIntentConflict`，接口层会翻译成 500 而非"端口被占用"。
+
+### 人工退款：同一笔支付单上的并发申请会合计超额
+
+同一类缺陷的第三次出现。`ManualCreate` 在 `refund_review_store.go:66`
+锁了 `payment_order` 行，第 96 行再用 `SUM(refund_cents)` 算已占用额度。
+看着很稳——**但那把行锁挡不住别人已经落库的记录**：
+聚合读是快照读，而快照在第 61 行第一次读充电订单时就已建立，
+早于并发的另一笔申请提交。
+
+实测：实付 10000，两笔各 6000 的申请并发提交，两笔各自读到「未占用 0」，
+一起通过 `pending > paid - refunded - amount` 校验。**合计退掉 12000，超发 2000。**
+
+已把两处聚合都改为加锁读：`ManualCreate` 与 `RefundExecutor.claim`。
+判别力：聚合退回快照读 → 报"超发 2000"；支付单行锁去掉 → 被捕获；
+超额校验条件去掉 → 报"超发 2000"。
+
+### 这一类缺陷出现三次了
+
+活动发券预算计数、支付回调、还有这次的退款累计占用。
+共同形状是：**先加锁锁住某一行，再聚合读一个集合，据聚合值做准入决策**。
+行锁让事务串行化了，但聚合读仍按自己的快照算，于是串行化帮不上忙。
+
+判据不变——凡是「锁一行 → 读聚合计数 → 按计数决策」的流程，
+**那个计数必须自己也是当前读**。已经改掉的三处：
+`marketing/coupon_activity_store.go` 的三处计数、
+`settlement/refund_review_store.go` 与 `settlement/refund_executor_store.go` 的两处 `SUM`。
+
+全仓还剩的 `Count`/`SUM` 聚合读都是分页计数或只读展示，不参与准入决策。

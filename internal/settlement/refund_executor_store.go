@@ -172,7 +172,12 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (pay.RefundRecord,
 		}
 
 		var reserved int64
-		if err := tx.Model(&pay.RefundRecord{}).Select("COALESCE(SUM(refund_cents),0)").Where("payment_order_id = ? AND id <> ? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID, r.ID).Scan(&reserved).Error; err != nil {
+		// 同上：payment_order 的行锁串行化不了并发新建的退款单，
+		// 这里必须用加锁读（当前读）才看得到别人已经落库的占用额。
+		if err := tx.Model(&pay.RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("COALESCE(SUM(refund_cents),0)").
+			Where("payment_order_id = ? AND id <> ? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID, r.ID).
+			Scan(&reserved).Error; err != nil {
 			return err
 		}
 		if reserved > p.PaidCents-p.RefundedCents-r.RefundCents {
