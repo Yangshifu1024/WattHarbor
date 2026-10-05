@@ -1,40 +1,20 @@
 package http
 
 import (
-	"context"
 	"errors"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
-
-	idstore "github.com/ChargePilot2026/charge-pilot/internal/identity"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"net/http"
+	"strings"
 )
 
-const accessTTL = 15 * time.Minute
-
-type UserRepository interface {
-	Login(context.Context, string, string) (idstore.User, error)
-	Active(context.Context, uint64) (bool, error)
-	Profile(context.Context, uint64) (idstore.Profile, error)
-}
-type SessionRepository interface {
-	Create(context.Context, idstore.User) (string, string, error)
-	Rotate(context.Context, string) (idstore.User, string, string, error)
-	Revoke(context.Context, string) error
-	Exists(context.Context, string) (bool, error)
-}
+// API 只适配用户登录、刷新、注销和档案端点，流程归 identity.SessionService。
 type API struct {
-	WeChat   idstore.CodeExchanger
-	Users    UserRepository
-	Sessions SessionRepository
-	JWT      *auth.JWT
+	Service identity.SessionService /* cmd 注入的完整用户会话用例 */
 }
 
+// Register 在 router 注册原公开身份端点，不启动后台任务或打开资源。
 func (a API) Register(router *gin.Engine) {
 	router.POST("/api/v1/user/auth/login", a.login)
 	router.POST("/api/v1/user/auth/refresh", a.refresh)
@@ -42,120 +22,96 @@ func (a API) Register(router *gin.Engine) {
 	router.GET("/api/v1/user/profile", a.profile)
 }
 
+// login 从 c 绑定 code 并调用完整身份用例，返回原字段或原阶段 HTTP 错误。
 func (a API) login(c *gin.Context) {
 	var request struct {
-		Code string `json:"code" binding:"required,min=1,max=128"`
+		Code string `json:"code" binding:"required,min=1,max=128"` /* 原交换凭据 */
 	}
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if c.ShouldBindJSON(&request) != nil {
 		httpapi.BadRequest(c, "invalid login code")
 		return
 	}
-	identity, err := a.WeChat.Exchange(c.Request.Context(), request.Code)
-	if err != nil {
+	out, err := a.Service.Login(c.Request.Context(), request.Code)
+	if err == nil {
+		httpapi.OK(c, out)
+		return
+	}
+	var failure *identity.SessionError
+	switch {
+	case errors.Is(err, identity.ErrUserFrozen):
+		httpapi.Write(c, 403, 1003, "account frozen", nil)
+	case errors.As(err, &failure) && failure.Stage == "exchange":
 		httpapi.Write(c, http.StatusBadGateway, 3001, "WeChat login failed", nil)
-		return
+	case failure != nil && failure.Stage == "session":
+		httpapi.Write(c, 503, 5001, "session storage unavailable", nil)
+	case failure != nil && failure.Stage == "sign":
+		httpapi.Write(c, 500, 5001, "token signing failed", nil)
+	default:
+		httpapi.Write(c, 503, 5001, "login storage unavailable", nil)
 	}
-	user, err := a.Users.Login(c.Request.Context(), identity.OpenID, identity.UnionID)
-	if errors.Is(err, idstore.ErrUserFrozen) {
-		httpapi.Write(c, http.StatusForbidden, 1003, "account frozen", nil)
-		return
-	}
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "login storage unavailable", nil)
-		return
-	}
-	sid, refresh, err := a.Sessions.Create(c.Request.Context(), user)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "session storage unavailable", nil)
-		return
-	}
-	access, err := a.sign(user, sid)
-	if err != nil {
-		_ = a.Sessions.Revoke(c.Request.Context(), refresh)
-		httpapi.Write(c, http.StatusInternalServerError, 5001, "token signing failed", nil)
-		return
-	}
-	httpapi.OK(c, gin.H{"jwt": access, "token": access, "refresh_token": refresh, "user_id": strconv.FormatUint(user.ID, 10), "is_new_user": user.IsNew, "jwt_expires_in": int(accessTTL.Seconds())})
 }
 
+// refresh 从 c 提取原刷新凭据，返回轮换后的访问回执或原错误，流程不在 HTTP 拼接。
 func (a API) refresh(c *gin.Context) {
-	token := bearer(c)
-	user, sid, next, err := a.Sessions.Rotate(c.Request.Context(), token)
-	if errors.Is(err, sessionstore.ErrInvalidRefresh) {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "refresh token invalid", nil)
+	out, err := a.Service.Refresh(c.Request.Context(), bearer(c))
+	if err == nil {
+		httpapi.OK(c, out)
 		return
 	}
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "session storage unavailable", nil)
-		return
+	var failure *identity.SessionError
+	switch {
+	case errors.Is(err, identity.ErrInvalidRefresh):
+		httpapi.Write(c, 401, 1001, "refresh token invalid", nil)
+	case errors.Is(err, identity.ErrAccountFrozen):
+		httpapi.Write(c, 403, 1003, "account frozen", nil)
+	case errors.As(err, &failure) && failure.Stage == "sign":
+		httpapi.Write(c, 500, 5001, "token signing failed", nil)
+	case failure != nil && failure.Stage == "user":
+		httpapi.Write(c, 503, 5001, "user status unavailable", nil)
+	default:
+		httpapi.Write(c, 503, 5001, "session storage unavailable", nil)
 	}
-	active, err := a.Users.Active(c.Request.Context(), user.ID)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "user storage unavailable", nil)
-		return
-	}
-	if !active {
-		_ = a.Sessions.Revoke(c.Request.Context(), next)
-		httpapi.Write(c, http.StatusForbidden, 1003, "account frozen", nil)
-		return
-	}
-	access, err := a.sign(user, sid)
-	if err != nil {
-		httpapi.Write(c, http.StatusInternalServerError, 5001, "token signing failed", nil)
-		return
-	}
-	httpapi.OK(c, gin.H{"jwt": access, "token": access, "refresh_token": next, "jwt_expires_in": int(accessTTL.Seconds())})
 }
 
+// logout 从 c 提取刷新凭据并撤销原会话，返回原注销标志或格式／存储错误。
 func (a API) logout(c *gin.Context) {
-	if err := a.Sessions.Revoke(c.Request.Context(), bearer(c)); errors.Is(err, sessionstore.ErrInvalidRefresh) {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "refresh token invalid", nil)
+	err := a.Service.Logout(c.Request.Context(), bearer(c))
+	if errors.Is(err, identity.ErrInvalidRefresh) {
+		httpapi.Write(c, 401, 1001, "refresh token invalid", nil)
 		return
-	} else if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "session storage unavailable", nil)
+	}
+	if err != nil {
+		httpapi.Write(c, 503, 5001, "session storage unavailable", nil)
 		return
 	}
 	httpapi.OK(c, gin.H{"logged_out": true})
 }
 
+// profile 在 c 的取消范围读取认证用户档案，保持原访问／会话／状态错误文案。
 func (a API) profile(c *gin.Context) {
-	claims, err := a.JWT.Verify(bearer(c), "user", time.Now())
-	if err != nil || claims.SessionID == "" {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "access token invalid", nil)
+	out, err := a.Service.Profile(c.Request.Context(), bearer(c))
+	if err == nil {
+		httpapi.OK(c, out)
 		return
 	}
-	valid, err := a.Sessions.Exists(c.Request.Context(), claims.SessionID)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "session storage unavailable", nil)
-		return
+	var failure *identity.SessionError
+	switch {
+	case errors.Is(err, identity.ErrTokenInvalid):
+		httpapi.Write(c, 401, 1001, "access token invalid", nil)
+	case errors.Is(err, identity.ErrSessionExpired):
+		httpapi.Write(c, 401, 1001, "session expired", nil)
+	case errors.Is(err, identity.ErrAccountFrozen):
+		httpapi.Write(c, 403, 1003, "account frozen", nil)
+	case errors.As(err, &failure) && failure.Stage == "profile":
+		httpapi.Write(c, 503, 5001, "profile storage unavailable", nil)
+	case failure != nil && failure.Stage == "profile_session":
+		httpapi.Write(c, 503, 5001, "session storage unavailable", nil)
+	default:
+		httpapi.Write(c, 503, 5001, "user status unavailable", nil)
 	}
-	if !valid {
-		httpapi.Write(c, http.StatusUnauthorized, 1001, "session expired", nil)
-		return
-	}
-	id, _ := strconv.ParseUint(claims.Subject, 10, 64)
-	active, err := a.Users.Active(c.Request.Context(), id)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "user storage unavailable", nil)
-		return
-	}
-	if !active {
-		httpapi.Write(c, http.StatusForbidden, 1003, "account frozen", nil)
-		return
-	}
-	profile, err := a.Users.Profile(c.Request.Context(), id)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "user storage unavailable", nil)
-		return
-	}
-	httpapi.OK(c, profile)
 }
 
-func (a API) sign(user idstore.User, sid string) (string, error) {
-	now := time.Now().Unix()
-	return a.JWT.Sign(auth.Claims{Subject: strconv.FormatUint(user.ID, 10), Kind: "user", OpenID: user.OpenID, SessionID: sid, IssuedAt: now, ExpiresAt: now + int64(accessTTL.Seconds())})
-}
-
+// bearer 从 c 原头提取单个 Bearer 凭据，格式错误返回空串；不验证或记录明文。
 func bearer(c *gin.Context) string {
 	parts := strings.Fields(c.GetHeader("Authorization"))
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {

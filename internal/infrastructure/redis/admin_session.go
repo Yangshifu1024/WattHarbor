@@ -9,6 +9,7 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -32,15 +33,15 @@ type AdminSessions struct{ Redis *redis.Client }
 // Create 为一个账号新建会话，返回会话 id（sid）和完整的刷新令牌。
 // 令牌形如 ART_<sid>.<secret>，完整明文只在这里返回一次，之后客户端凭它换新令牌。
 func (s AdminSessions) Create(ctx context.Context, account operations.AccountIdentity) (string, string, error) {
-	sid, token, secret, err := adminTokens.mint()
+	sid, token, secret, err := adminTokens.Mint()
 	if err != nil {
 		return "", "", err
 	}
-	record, err := json.Marshal(adminSessionRecord{AuthVersion: account.AuthVersion, AdminID: account.ID, Username: account.Username, Digest: digest(secret)})
+	record, err := json.Marshal(adminSessionRecord{AuthVersion: account.AuthVersion, AdminID: account.ID, Username: account.Username, Digest: sessiontoken.Digest(secret)})
 	if err != nil {
 		return "", "", err
 	}
-	if err := s.Redis.Set(ctx, adminTokens.key(sid), record, refreshTTL).Err(); err != nil {
+	if err := s.Redis.Set(ctx, adminTokens.Key(sid), record, refreshTTL).Err(); err != nil {
 		return "", "", err
 	}
 	return sid, token, nil
@@ -64,7 +65,7 @@ return value
 // Rotate 校验当前或 previous 中的刷新令牌摘要，返回账号、SID 与新刷新令牌。
 // 未匹配任何有效摘要时返回 operations.ErrInvalidRefresh。
 func (s AdminSessions) Rotate(ctx context.Context, token string) (operations.AccountIdentity, string, string, error) {
-	sid, oldSecret, ok := adminTokens.parse(token)
+	sid, oldSecret, ok := adminTokens.Parse(token)
 	if !ok {
 		return operations.AccountIdentity{}, "", "", operations.ErrInvalidRefresh
 	}
@@ -72,12 +73,15 @@ func (s AdminSessions) Rotate(ctx context.Context, token string) (operations.Acc
 	if err != nil {
 		return operations.AccountIdentity{}, "", "", err
 	}
-	result, err := adminRotateScript.Run(ctx, s.Redis, []string{adminTokens.key(sid)}, digest(oldSecret), digest(newSecret)).Result()
-	if errors.Is(err, redis.Nil) || result == nil || result == int64(0) {
+	result, err := adminRotateScript.Run(ctx, s.Redis, []string{adminTokens.Key(sid)}, sessiontoken.Digest(oldSecret), sessiontoken.Digest(newSecret)).Result()
+	if errors.Is(err, redis.Nil) {
 		return operations.AccountIdentity{}, "", "", operations.ErrInvalidRefresh
 	}
 	if err != nil {
 		return operations.AccountIdentity{}, "", "", err
+	}
+	if result == nil || result == int64(0) {
+		return operations.AccountIdentity{}, "", "", operations.ErrInvalidRefresh
 	}
 	value, ok := result.(string)
 	if !ok {
@@ -88,16 +92,16 @@ func (s AdminSessions) Rotate(ctx context.Context, token string) (operations.Acc
 		return operations.AccountIdentity{}, "", "", err
 	}
 	identity := operations.AccountIdentity{ID: record.AdminID, Username: record.Username, AuthVersion: record.AuthVersion}
-	return identity, sid, adminTokens.tokenPrefix + sid + "." + newSecret, nil
+	return identity, sid, adminTokens.TokenPrefix + sid + "." + newSecret, nil
 }
 
 // Revoke 校验令牌格式及当前或 previous 摘要后删除会话；验证失败返回 operations.ErrInvalidRefresh。
 func (s AdminSessions) Revoke(ctx context.Context, token string) error {
-	sid, secret, ok := adminTokens.parse(token)
+	sid, secret, ok := adminTokens.Parse(token)
 	if !ok {
 		return operations.ErrInvalidRefresh
 	}
-	result, err := revokeScript.Run(ctx, s.Redis, []string{adminTokens.key(sid)}, digest(secret)).Int()
+	result, err := sessiontoken.RevokeScript.Run(ctx, s.Redis, []string{adminTokens.Key(sid)}, sessiontoken.Digest(secret)).Int()
 	if err != nil {
 		return err
 	}
@@ -112,7 +116,7 @@ func (s AdminSessions) Exists(ctx context.Context, sid string) (bool, error) {
 	if sid == "" {
 		return false, nil
 	}
-	n, err := s.Redis.Exists(ctx, adminTokens.key(sid)).Result()
+	n, err := s.Redis.Exists(ctx, adminTokens.Key(sid)).Result()
 	return n == 1, err
 }
 
@@ -121,7 +125,7 @@ func (s AdminSessions) Matches(ctx context.Context, sid string, id, version uint
 	if sid == "" {
 		return false, nil
 	}
-	value, err := s.Redis.Get(ctx, adminTokens.key(sid)).Bytes()
+	value, err := s.Redis.Get(ctx, adminTokens.Key(sid)).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return false, nil
 	}
@@ -141,7 +145,7 @@ func (s AdminSessions) RevokeSession(ctx context.Context, sid string) error {
 	if sid == "" {
 		return operations.ErrInvalidRefresh
 	}
-	return s.Redis.Del(ctx, adminTokens.key(sid)).Err()
+	return s.Redis.Del(ctx, adminTokens.Key(sid)).Err()
 }
 
 // mfaChallengeTTL 限制密码验证通过后完成二次验证的时间窗口。
@@ -187,3 +191,6 @@ func (s AdminSessions) ResolveMFA(ctx context.Context, token string) (uint64, er
 // mfaKey 把二次验证挑战码拼成 Redis 键，与会话键分开存放，
 // 保证挑战记录不会被会话逻辑读成一条会话。
 func mfaKey(token string) string { return "admin:mfa:" + token }
+
+// adminTokens 保留后台专属前缀，通用编码与摘要由 platform 提供。
+var adminTokens = sessiontoken.Layout{TokenPrefix: "ART_", KeyPrefix: "admin:session:"}

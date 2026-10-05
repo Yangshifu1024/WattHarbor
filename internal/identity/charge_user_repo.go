@@ -11,7 +11,7 @@ import (
 )
 
 // central_db.user 的充电用户读模型。账号冻结与解冻由风控流程处理，
-// 本文件只提供列表、档案与充值记录三类查询。
+// 本文件提供列表、档案与用户存在性；充值表读取由支付所属能力提供。
 
 // ChargeUserRow 是后台充电用户列表的一行。
 type ChargeUserRow struct {
@@ -42,7 +42,7 @@ func (ChargeUserRow) TableName() string { return "user" }
 
 // ChargeUserDetail 是单个充电用户的档案，列表行的超集。
 type ChargeUserDetail struct {
-	ChargeUserRow
+	ChargeUserRow                        // 原用户身份及批量派生统计
 	WalletStatus  string                 `json:"wallet_status"`  // 钱包状态：active/frozen
 	RecentOrders  []ChargeUserOrderBrief `json:"recent_orders"`  // 最近订单，按下单时间倒序
 	CouponGranted int64                  `json:"coupon_granted"` // 累计发放的优惠券张数
@@ -77,7 +77,8 @@ type ChargeUserStat struct {
 	LastOrderAt  *time.Time // 最近下单时间
 }
 
-// decorateChargeUsers 批量回填手机号、钱包余额与订单统计。
+// DecorateChargeUsers 在 ctx 下用 db 按 rows 当页身份批量回填手机号、钱包与订单事实。
+// 成功原位更新 rows；空页无查询，读取失败返回错误，无数据库写入。
 func DecorateChargeUsers(ctx context.Context, db *gorm.DB, rows []ChargeUserRow) error {
 	if len(rows) == 0 {
 		return nil
@@ -109,7 +110,8 @@ func DecorateChargeUsers(ctx context.Context, db *gorm.DB, rows []ChargeUserRow)
 	return nil
 }
 
-// ChargeUsers 按关键词与状态分页查出充电用户主记录，不含任何派生列。
+// ChargeUsers 在 ctx 下用 db 按 q 已校验页号、大小、关键词与状态读取原用户主记录。
+// 返回当页、符合条件总数或读取错误；空页为空切片，不含派生列，无写入。
 func ChargeUsers(ctx context.Context, db *gorm.DB, q persist.PageQuery) ([]ChargeUserRow, int64, error) {
 	out := []ChargeUserRow{}
 	query := db.WithContext(ctx).Model(&ChargeUserRow{}).Where("deleted_at IS NULL")
@@ -134,13 +136,14 @@ func ChargeUsers(ctx context.Context, db *gorm.DB, q persist.PageQuery) ([]Charg
 	return out, total, err
 }
 
-// ChargeUserStats 一次性取回一批用户的手机号、钱包余额与订单聚合，避免按行查库。
+// ChargeUserStats 在 ctx 下用 db 按 ids 原用户主键完成三次批量投影，返回主键到事实的映射或读取错误。
+// 仅未删除钱包和订单参与金额聚合；缺失投影保持零值，不逐用户查询，无写入。
 func ChargeUserStats(ctx context.Context, db *gorm.DB, ids []uint64) (map[uint64]ChargeUserStat, error) {
 	stats := make(map[uint64]ChargeUserStat, len(ids))
 
 	var users []struct {
-		ID    uint64  `gorm:"column:id"`
-		Phone *string `gorm:"column:phone"`
+		ID    uint64  `gorm:"column:id"`    // 原用户主键
+		Phone *string `gorm:"column:phone"` // 当前号码，未绑定为空
 	}
 	if err := db.WithContext(ctx).Raw(
 		"SELECT id, phone FROM user WHERE id IN ?", ids).Scan(&users).Error; err != nil {
@@ -156,9 +159,9 @@ func ChargeUserStats(ctx context.Context, db *gorm.DB, ids []uint64) (map[uint64
 
 	// 批量查询未删除的钱包记录；不假定历史数据严格满足每用户单一钱包。
 	var wallets []struct {
-		UserID       uint64 `gorm:"column:user_id"`
-		BalanceCents int64  `gorm:"column:balance_cents"`
-		FrozenCents  int64  `gorm:"column:frozen_cents"`
+		UserID       uint64 `gorm:"column:user_id"`       // 原钱包所有人
+		BalanceCents int64  `gorm:"column:balance_cents"` // 当前可用余额，分
+		FrozenCents  int64  `gorm:"column:frozen_cents"`  // 当前冻结金额，分
 	}
 	if err := db.WithContext(ctx).Raw(
 		"SELECT user_id, balance_cents, frozen_cents FROM wallet_account WHERE deleted_at IS NULL AND user_id IN ?", ids).
@@ -174,10 +177,10 @@ func ChargeUserStats(ctx context.Context, db *gorm.DB, ids []uint64) (map[uint64
 
 	// 累计消费仅统计已计费金额；NULL 通过 COALESCE 按 0 处理。
 	var orders []struct {
-		UserID      uint64     `gorm:"column:user_id"`
-		OrderCount  int64      `gorm:"column:order_count"`
-		TotalCents  int64      `gorm:"column:total_cents"`
-		LastOrderAt *time.Time `gorm:"column:last_order_at"`
+		UserID      uint64     `gorm:"column:user_id"`       // 原订单所有人
+		OrderCount  int64      `gorm:"column:order_count"`   // 未删除历史订单数
+		TotalCents  int64      `gorm:"column:total_cents"`   // 非空已计费合计，分
+		LastOrderAt *time.Time `gorm:"column:last_order_at"` // 最近原下单时间，无订单为空
 	}
 	if err := db.WithContext(ctx).Raw(`
 		SELECT user_id, COUNT(*) AS order_count,
@@ -198,7 +201,8 @@ func ChargeUserStats(ctx context.Context, db *gorm.DB, ids []uint64) (map[uint64
 	return stats, nil
 }
 
-// LoadChargeUserDetail 组装单个充电用户的档案：主记录、钱包状态、最近订单、券与报障计数。
+// LoadChargeUserDetail 在 ctx 下用 db 按 id 读取未删除用户档案，orderLimit 限定最近订单数。
+// 返回主记录、钱包状态、最近订单、券与报障计数或缺失／读取错误；仅做只读跨域投影。
 func LoadChargeUserDetail(ctx context.Context, db *gorm.DB, id uint64, orderLimit int) (ChargeUserDetail, error) {
 	detail := ChargeUserDetail{}
 	if err := db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", id).Take(&detail.ChargeUserRow).Error; err != nil {
@@ -227,9 +231,9 @@ func LoadChargeUserDetail(ctx context.Context, db *gorm.DB, id uint64, orderLimi
 	// 仅聚合优惠券和报障数量，不加载明细。
 	// 使用独立计数结构扫描，避免 GORM 将详情模型的 RecentOrders 切片解析为数据库关联。
 	var counts struct {
-		CouponGranted int64 `gorm:"column:coupon_granted"`
-		CouponUnused  int64 `gorm:"column:coupon_unused"`
-		FaultReports  int64 `gorm:"column:fault_reports"`
+		CouponGranted int64 `gorm:"column:coupon_granted"` // 未删除历史发券数
+		CouponUnused  int64 `gorm:"column:coupon_unused"`  // 未删除 unused 券数，沿用原后台语义
+		FaultReports  int64 `gorm:"column:fault_reports"`  // 未删除用户报障数
 	}
 	if err := db.WithContext(ctx).Raw(`
 		SELECT
@@ -243,4 +247,12 @@ func LoadChargeUserDetail(ctx context.Context, db *gorm.DB, id uint64, orderLimi
 	detail.CouponUnused = counts.CouponUnused
 	detail.FaultReports = counts.FaultReports
 	return detail, nil
+}
+
+// RequireUserExists 在 ctx 下用 db 核对 id 用户未删除，返回缺失／读取错误；冻结用户仍存在，不写入。
+func RequireUserExists(ctx context.Context, db *gorm.DB, id uint64) error {
+	var row struct {
+		ID uint64 /* 原用户身份 */
+	}
+	return db.WithContext(ctx).Table("user").Select("id").Where("id=? AND deleted_at IS NULL", id).Take(&row).Error
 }

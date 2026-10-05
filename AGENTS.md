@@ -103,6 +103,7 @@ charge-pilot/
 │   ├── internal/settlement/refund_review_repo.go
 │   └── internal/settlement/user_invoice_repo.go
 ├── internal/wallet                                       钱包：余额、充值、流水、退款预占、频次风控
+│   ├── internal/wallet/recharge_history.go（迁移前：internal/interface/http/admin/user/charge_users.go[充值读取能力]）
 │   ├── internal/wallet/recharge.go（迁移前：internal/interface/http/user_wallet.go[充值]）
 │   ├── internal/wallet/refund.go（迁移前：internal/interface/http/user_wallet.go[退款]）
 │   ├── internal/wallet/risk.go（迁移前：internal/interface/http/admin/finance/wallet_risks.go[风险事务]）
@@ -158,10 +159,15 @@ charge-pilot/
 ├── internal/identity                                     用户、会话、登录与手机号
 │   ├── internal/identity/auth.go
 │   ├── internal/identity/card_user_repo.go（迁移前：internal/card/card_admin_store.go[用户事实]）
-│   ├── internal/identity/charge_user_store.go
+│   ├── internal/identity/charge_user_repo.go（迁移前：internal/identity/charge_user_store.go）
 │   ├── internal/identity/development.go
 │   ├── internal/identity/user.go
-│   ├── internal/identity/user_repository_store.go
+│   ├── internal/identity/user_repo.go（迁移前：internal/identity/user_repository_store.go）
+│   ├── internal/identity/user_schema.go（迁移前：internal/identity/user_repository_store.go[列模型]）
+│   ├── internal/identity/session.go（迁移前：internal/interface/http/user_api.go[身份流程]）
+│   ├── internal/identity/session_repo.go（迁移前：internal/infrastructure/redis/session_store.go）
+│   ├── internal/identity/phone.go（迁移前：internal/interface/http/phone_api.go[号码来源及准入]）
+│   ├── internal/identity/query.go（迁移前：internal/interface/http/admin/user/charge_users.go[查询编排]）
 │   └── internal/identity/wechat.go
 ├── internal/marketing                                    优惠券、活动规则与核销
 │   ├── internal/marketing/admin_activity_store.go
@@ -192,7 +198,7 @@ charge-pilot/
 │   ├── internal/payment/payment_checkout_repo.go
 │   ├── internal/payment/payment_intent_repo.go
 │   ├── internal/payment/payment_view_repo.go
-│   └── internal/payment/user_recharge_repo.go
+│   └── internal/payment/recharge_history_repo.go（迁移前：internal/payment/user_recharge_repo.go[支付历史投影]）
 ├── internal/ops                                          后台账号、角色、审计与事件发件箱
 │   ├── internal/ops/audit.go（迁移前：internal/interface/http/admin_resource.go[事务内审计]）
 │   ├── internal/ops/admin_account_store.go
@@ -401,9 +407,7 @@ charge-pilot/
 ├── internal/infrastructure                               持久化实现
 │   ├── internal/infrastructure/database/admin_case_store.go
 │   ├── internal/infrastructure/database/admin_dashboard_store.go
-│   ├── internal/infrastructure/redis/admin_session.go
-│   ├── internal/infrastructure/redis/session_store.go
-│   └── internal/infrastructure/redis/session_token.go
+│   └── internal/infrastructure/redis/admin_session.go
 ├── internal/persist                                      与业务无关的持久化原语
 │   ├── internal/persist/insert_id.go
 │   └── internal/persist/page.go
@@ -455,6 +459,7 @@ charge-pilot/
 │   ├── internal/platform/phone/phone.go
 │   ├── internal/platform/serviceclient/client.go
 │   ├── internal/platform/serviceclient/token.go
+│   ├── internal/platform/sessiontoken/token.go（迁移前：internal/infrastructure/redis/session_token.go[通用编码与注销]）
 │   └── internal/platform/snowflake/snowflake.go
 │
 ├── migrations/central_db/0001_init.sql

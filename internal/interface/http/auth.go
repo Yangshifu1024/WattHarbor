@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	identity "github.com/ChargePilot2026/charge-pilot/internal/identity"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -12,22 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// userTokenVerifier 把 platform/auth.JWT 适配成 identity.TokenVerifier。
-// kind 固定为 user，后台令牌不能用于 C 端接口。
-type userTokenVerifier struct{ jwt *auth.JWT }
-
-func (v userTokenVerifier) Verify(token string) (string, string, error) {
-	claims, err := v.jwt.Verify(token, "user", time.Now())
-	if err != nil {
-		return "", "", err
-	}
-	return claims.Subject, claims.SessionID, nil
-}
-
 // NewAuthenticator 装配 C 端鉴权器。sessions 与 users 由调用方注入，
 // 本包不持有数据库或 Redis 句柄。
 func NewAuthenticator(jwt *auth.JWT, sessions identity.SessionChecker, users identity.UserStatusChecker) identity.Authenticator {
-	return identity.Authenticator{Tokens: userTokenVerifier{jwt: jwt}, Sessions: sessions, Users: users}
+	return identity.Authenticator{Tokens: identity.JWTAccess{JWT: jwt}, Sessions: sessions, Users: users}
 }
 
 // authError 把领域哨兵翻译成 HTTP 响应。四类原因对应四种状态：

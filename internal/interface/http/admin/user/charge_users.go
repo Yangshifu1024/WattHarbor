@@ -2,17 +2,14 @@ package user
 
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"net/url"
 
 	"github.com/gin-gonic/gin"
 )
 
-// 本文件只保留后台充电用户的 HTTP 处理，读模型与查询在 database 包。
+// 本文件处理后台充电用户的 HTTP 参数与响应，查询编排由 identity 用例执行。
 
 // registerChargeUsers 注册用户列表、档案和充值记录，要求 user.read 权限。
 // 账号冻结和解冻由风控流程处理。
@@ -30,17 +27,12 @@ func (a API) chargeUsers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rows, total, err := identity.ChargeUsers(c.Request.Context(), a.DB, q)
+	out, err := a.Users.List(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile), q)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	if err := identity.DecorateChargeUsers(c.Request.Context(), a.DB, rows); err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	httpapi.OK(c, persist.Page[identity.ChargeUserRow]{Items: rows, Total: total, Page: q.Page, PageSize: q.PageSize,
-		Permissions: c.MustGet("admin_profile").(operations.Profile).Permissions})
+	httpapi.OK(c, out)
 }
 
 // chargeUser 返回单个充电用户的完整档案：钱包、累计消费、最近订单、券与报障计数。
@@ -49,18 +41,12 @@ func (a API) chargeUser(c *gin.Context) {
 	if !ok {
 		return
 	}
-	detail, err := identity.LoadChargeUserDetail(c.Request.Context(), a.DB, id, identity.ChargeUserDetailOrderLimit)
+	out, err := a.Users.Detail(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile), id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	row := []identity.ChargeUserRow{detail.ChargeUserRow}
-	if err := identity.DecorateChargeUsers(c.Request.Context(), a.DB, row); err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	detail.ChargeUserRow = row[0]
-	httpapi.OK(c, detail)
+	httpapi.OK(c, out)
 }
 
 // chargeUserRecharges 分页读取路径用户的充值支付单，查询参数不能改变用户或业务范围。
@@ -84,7 +70,7 @@ func (a API) chargeUserRecharges(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := payment.ChargeUserRecharges(c.Request.Context(), a.DB, id, page)
+	out, err := a.Users.RechargeHistory(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile), id, page)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

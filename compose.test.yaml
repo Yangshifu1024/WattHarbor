@@ -1,6 +1,14 @@
 # 独立真库测试实例，避免测试显式主键抬高开发库自增序号。
 name: chargepilot-refactor-tests
 services:
+  redis:
+    image: redis:8-alpine
+    ports: ["127.0.0.1:6381:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
   mysql:
     image: mysql:8.4
     environment:

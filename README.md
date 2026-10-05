@@ -407,7 +407,7 @@ make check
 
 `make check` 跑默认单元测试及静态护栏；真库测试单独使用 `make test-integration TEST_MYSQL_URL=...`，由 integration build tag 隔离，CI 也运行这一层。
 
-事务原子性、行锁并发、唯一键冲突及幂等重放需要真 MySQL 验证。Windows 本地执行 `./scripts/db/test-integration.ps1`，使用 [compose.test.yaml](compose.test.yaml) 的独立 MySQL（`127.0.0.1:3307`），迁移并测试三库；CI 使用独立服务执行 `make test-integration`。测试虽回滚或清理自身数据，显式高位主键仍会抬高 MySQL 自增序号，不能在需要联调的开发库运行。默认测试通过不代表这一层已验证。
+事务原子性、行锁并发、唯一键冲突及幂等重放需要真 MySQL 验证，会话 Lua 原子轮换需要真 Redis。Windows 本地执行 `./scripts/db/test-integration.ps1`，使用 [compose.test.yaml](compose.test.yaml) 的独立 MySQL（`127.0.0.1:3307`）及 Redis（`127.0.0.1:6381`），迁移并测试三库；CI 使用独立服务执行 `make test-integration`。直接运行集成测试还须配置 `TEST_REDIS_URL`，缺配置会失败。测试虽回滚或清理自身数据，显式高位主键仍会抬高 MySQL 自增序号，不能在需要联调的开发库运行。默认测试通过不代表这一层已验证。
 
 | 目录 | 安装与开发 | 检查与构建 |
 | --- | --- | --- |

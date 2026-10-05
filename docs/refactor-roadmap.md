@@ -77,7 +77,7 @@ internal/
 
 HTTP 目标路径采用 `internal/http`，移除只有一个子目录且没有独立职责的 `interface` 层。user／admin／central 表示接口面与注册归属，auth 提供共享 HTTP 鉴权适配；通用响应与服务器工具仍在 platform/httpapi，服务间出站客户端仍在 integration。以后出现独立的入站协议再按实际职责增加目录，不预建 interface／transport 包。下文源码链接仍指向迁移前的真实路径。
 
-Redis 是 repo 的实现方式，不单独形成顶层业务模块。用户／后台记录、键前缀、刷新寿命与轮换策略归各自模块；无 IO 的通用令牌生成、解析、摘要能力归 platform/auth。已有共用注销脚本若继续抽取，只按客户端、key 与摘要提供原子操作，可放 platform/redis；不得引用 identity／ops 的业务模型或固定业务键，不把整个会话包直接搬进 platform。
+Redis 是 repo 的实现方式，不单独形成顶层业务模块。用户／后台记录、键前缀、刷新寿命与轮换策略归各自模块；无 IO 的随机源归 platform/auth，令牌布局、编码、摘要与共用注销脚本归 platform/sessiontoken。共用机制只接受调用方的前缀、key 与摘要；不得引用 identity／ops 的业务模型或固定业务键，不把整个会话包直接搬进 platform。
 
 ### 2.1 repo 命名迁移 N-模块
 
@@ -292,11 +292,11 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：SwipeService.Apply、CardStatusService.Change、CardAdminService.Bind／ChangeStatus；card_repo.go、charge_repo.go、start_result_repo.go 与窄读取能力。
 
-- [ ] CA-01：将事件时效、端口事实、活跃会话、方案与余额准入放入 SwipeService；现有 Swipe 事务原样收拢后再考虑拆函数。
-- [ ] CA-01：迁入用户卡状态和后台绑定／启停事务，绑定人与操作范围校验归用例。
-- [ ] CA-01：为 charging 提供会话 Lock／ConfirmStart／FailStart／ClearActivePort 的稳定 InTx 能力，避免跨模块自行映射 card 表。
-- [ ] CA-01：卡事件读取、决定冻结、reply、advance 迁入共享契约和具名客户端；冻结后的回复和原 event_key 重试不变。
-- [ ] N-card：更新 CardStore 等类型与调用方，不把纯卡号／端口校验搬出 domain。
+- [x] CA-01：将事件时效、端口事实、活跃会话、方案与余额准入放入 SwipeService；现有 Swipe 事务原样收拢后再考虑拆函数。
+- [x] CA-01：迁入用户卡状态和后台绑定／启停事务，绑定人与操作范围校验归用例。
+- [x] CA-01：为 charging 提供会话 Lock／ConfirmStart／FailStart／ClearActivePort 的稳定 InTx 能力，避免跨模块自行映射 card 表。
+- [x] CA-01：卡事件读取、决定冻结、reply、advance 迁入共享契约和具名客户端；冻结后的回复和原 event_key 重试不变。
+- [x] N-card：更新 CardStore 等类型与调用方，不把纯卡号／端口校验搬出 domain。
 
 验收：过期事件拒绝、同事件重放、卡归属及冻结限制、端口占用冲突；续费与截止冻结竞争保持已购时长一致；扣款／累计时长／操作凭据一起提交；回复丢失后重发原决定，金额与不足余额语义不变。
 
@@ -333,12 +333,12 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：SessionService.Login／Refresh／Logout／Authenticate、PhoneService.Bind、UserQueryService；用户 repo 与 session_repo.go 的 Redis 实现。HTTP auth 子包只提取凭据、调用身份能力及写入请求上下文。
 
-- [ ] I-01：登录交换 → 用户准入／创建 → 会话创建 → 签发，以及签发失败撤销会话的顺序迁入用例。
-- [ ] I-01：刷新、注销、冻结用户和会话归属核对进入服务；Redis／JWT 实现通过所需能力注入。
-- [ ] I-01：将 infrastructure/redis/session_store.go 及用户会话测试迁到 identity/session_repo.go；保持用户 ID 十进制字符串、旧数值记录兼容、Lua 原子轮换、previous 摘要与 KEEPTTL。通用令牌机制与 OP-01 共用，RT_ 和 user:session: 前缀留在 identity。
-- [ ] I-01：手机号正式绑定继续使用微信验证结果；开发模式单独注入，不能与正式绑定共享绕过分支。
-- [ ] I-01：后台用户列表／详情／状态业务归 identity，充值历史通过钱包读取能力提供；后台账号、角色和 MFA 留 ops。
-- [ ] N-identity：用户与用户会话的持久化类型／文件命名归 repo，保留既有稳定的 Repository 接口名和会话键格式；cmd 注入新实现，删除旧用户会话实现。
+- [x] I-01：登录交换 → 用户准入／创建 → 会话创建 → 签发，以及签发失败撤销会话的顺序迁入用例。
+- [x] I-01：刷新、注销、冻结用户和会话归属核对进入服务；Redis／JWT 实现通过所需能力注入。
+- [x] I-01：将 infrastructure/redis/session_store.go 及用户会话测试迁到 identity/session_repo.go；保持用户 ID 十进制字符串、旧数值记录兼容、Lua 原子轮换、previous 摘要与 KEEPTTL。通用令牌机制与 OP-01 共用，RT_ 和 user:session: 前缀留在 identity。
+- [x] I-01：手机号正式绑定继续使用微信验证结果；开发模式单独注入，不能与正式绑定共享绕过分支。
+- [x] I-01：后台用户列表／详情／状态业务归 identity，充值历史通过钱包读取能力提供；后台账号、角色和 MFA 留 ops。
+- [x] N-identity：用户与用户会话的持久化类型／文件命名归 repo，保留既有稳定的 Repository 接口名和会话键格式；cmd 注入新实现，删除旧用户会话实现。
 
 验收：会话过期／撤销／刷新竞争、冻结用户、跨用户凭据、签发失败清理；号码唯一性与归属、重复绑定、微信缺失结果；公开身份仍为十进制字符串，开发能力不能进入生产路径。
 
@@ -438,7 +438,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 | infrastructure/database/admin_case_store.go | order/feedback_repo.go、device/fault_repo.go，按用途拆分 | O-01／D-02 |
 | infrastructure/redis/session_store.go | identity/session_repo.go，用户会话 | I-01 |
 | infrastructure/redis/admin_session.go | ops/session_repo.go，后台会话与挑战记录 | OP-01 |
-| infrastructure/redis/session_token.go | 通用令牌机制归 platform/auth；业务前缀归所属模块，共用原子 IO 按需独立提取 | I-01／OP-01 |
+| infrastructure/redis/session_token.go | 通用令牌布局与编码、摘要、原子注销归 platform/sessiontoken；随机源归 platform/auth，业务前缀归所属模块 | I-01／OP-01 |
 | infrastructure/redis/session_store_test.go | 用户会话测试随 identity 迁移，共用机制测试随提取能力迁移 | I-01／OP-01 |
 
 验收：旧包没有消费者或遗留文件；cmd、HTTP 适配、测试与源码链接引用真实新路径；identity／ops 无反向依赖；用户与后台会话原契约测试、相关装配和全仓默认检查通过。最后删除空的 infrastructure 并更新 AGENTS 的实际目录图，不添加占位包、旧路径别名或兼容转发。
@@ -484,9 +484,9 @@ make build SERVICE=worker
 make test-integration TEST_MYSQL_URL=...
 ```
 
-构建只跑受影响服务；跨包路径迁移影响全部 cmd 时构建全部入口。Make 的前置检查使用 Node，全部入口通过 `go build -trimpath -o bin/ ./cmd/...` 构建，产物仅落 bin；Windows 本地真库入口为 `scripts/db/test-integration.ps1`，使用 `compose.test.yaml` 独立 MySQL（3307），不得将显式测试主键插入联调开发库。构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
+构建只跑受影响服务；跨包路径迁移影响全部 cmd 时构建全部入口。Make 的前置检查使用 Node，全部入口通过 `go build -trimpath -o bin/ ./cmd/...` 构建，产物仅落 bin；Windows 本地真库入口为 `scripts/db/test-integration.ps1`，使用 `compose.test.yaml` 独立 MySQL（3307）与 Redis（6381），不得将显式测试主键插入联调开发库。构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
 
-真库测试需要 TEST_MYSQL_URL；跨库／网关测试还需其实际使用的 DATABASE_URL_GATEWAY、DATABASE_URL_CENTRAL、DATABASE_URL_WORKER，参照现有 CI integration job 与测试连接辅助函数。迁移使用现有开发栈与 cmd/migrate；不得为了通过测试另建旁路容器、自动建表或无条件清库。每个 integration 文件必须保留 build tag，缺配置明确失败，不能跳过。
+真库测试需要 TEST_MYSQL_URL，真实会话测试还需要 TEST_REDIS_URL；跨库／网关测试还需其实际使用的 DATABASE_URL_GATEWAY、DATABASE_URL_CENTRAL、DATABASE_URL_WORKER，参照现有 CI integration job 与测试连接辅助函数。迁移使用现有开发栈与 cmd/migrate；不得为了通过测试另建旁路容器、自动建表或无条件清库。每个 integration 文件必须保留 build tag，缺配置明确失败，不能跳过。
 
 阶段内可运行受影响包的 `go test -tags=integration -count=1 <包路径>` 快速定位；这不替代阶段退出的全仓 integration 命令。测试提交结果未知或环境不可用时记为待验收，该任务不能勾为完成。
 
@@ -525,7 +525,7 @@ make test-integration TEST_MYSQL_URL=...
 | CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
 | O-01／CQ-01／N-order | 待实施 | 基础订单 repo 保留，组合查询及 case 待迁移 |
 | M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
-| I-01／N-identity | 待实施 | 认证／用户能力已有，Redis 用户会话与手机号入口待收拢 |
+| I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，后台会话与 HTTP 事务待迁移 |
 | E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
@@ -565,4 +565,10 @@ make test-integration TEST_MYSQL_URL=...
 
 2b 退出证据：工作区 `.tmp/batch2b-check-final.log`、`.tmp/batch2b-integration-final.log` 及实际独立测试入口 `.tmp/batch2b-test-entry.log` 通过；精确暂存快照 `.tmp/batch2b-validation` 的 check／integration／build／tidy 日志 `.tmp/batch2b-snapshot-*.log` 全部通过，tidy 无差异，575份 Go 与模块原 blob 完全一致。暂存快照初验发现结算准备路由测试的 Scopes 条件会被前次查询消费，包间扫描锁可能冲突；改用本测试连接的意图更新回调持续限定本用户后，工作区及快照全量真库通过。后台78项、用户59项测试及类型检查、后台生产构建通过，保留既有 Vite 大 chunk 提示。前端使用直接 Node 执行既有脚本；pnpm 自动安装生成的未跟踪锁文件已移除，未修改依赖清单或锁文件。
 
-批次2b已完成；批次3按订单组合查询、营销与身份边界继续实施，后续故障／运营／导出及HTTP／基础设施任务仍待完成。开发样例及本次模拟充值／充电／退款保留；临时模拟器已停止，五个开发服务继续运行；后续真库测试只使用3307独立实例。
+批次2b与3a身份部分已完成；批次3继续订单组合查询及营销边界，后续故障／运营／导出及HTTP／基础设施任务仍待完成。开发样例及本次模拟充值／充电／退款保留；临时模拟器已停止，五个开发服务继续运行；后续真库测试只使用3307独立实例。
+
+批次3a（I-01／N-identity）完成：身份服务从 HTTP 迁入 identity/session.go、phone.go、query.go；用户与 Redis 持久实现改为所属 repo，列模型归 user_schema。通用 sessiontoken 无业务前缀；后台会话实现暂留 infrastructure，OP-01／INF-01 未完成。新用户与零余额钱包保持同事务，身份唯一锁行保留恢复依据；正式号码来源只接收微信代码，开发来源在 cmd 单独装配。后台身份只读跨域投影及 identity → wallet、payment → wallet 的充值读取已登记 architecture-boundaries；旧支付用户存在性／充值组合入口删除。
+
+3a 真实证据：`.tmp/batch3-identity-all-targeted.log`、`.tmp/batch3-identity-concurrency.log`、`.tmp/batch3-identity-routes.log`、`.tmp/batch3-user-query-routes.log`。两连接按身份锁与号码预查闸门固定并发，核对一用户一钱包、首次 unionID、失败开户回滚、号码唯一归属及 NULL 解绑；提交造数清理自身记录。真实 Redis 验证并发轮换仅一获胜、previous 注销、KEEPTTL、旧大整数连续两轮精确保存、格式与取消、真实 Lua 存储故障。注册 user/admin 使用真实 DB／Redis，微信交换为 fixture；冻结、签发失败清理、用户精度、全局 user.read 即时撤销、充值范围及原金额通过。列表一名及11名用户固定5次SQL。`.tmp/batch3a-mutant-{storage-classification,legacy-precision}.log` 的针对变异稳定失败，恢复后 `.tmp/batch3a-mutants-restored.log` 通过；后台共享注销及故障分类在真实 Redis 通过，不把它称为 OP-01 全部完成。
+
+3a 退出证据：工作区 `.tmp/batch3a-{check,integration,build,tidy}.log`；精确暂存快照 `.tmp/batch3a-validation` 的 `.tmp/batch3a-snapshot-{check,integration,build,tidy}.log` 均通过，585份 Go／模块文件与暂存原 blob 一致，tidy 无差异。CI 及独立测试入口增加 TEST_REDIS_URL，测试 Redis 6381 不访问开发实例。后台78项、用户59项测试及类型检查、后台构建通过，保留既有 Vite 大 chunk 警告。user/admin 开发进程已重启，`.tmp/batch3a-live-identity.json` 记录实际登录、档案、开发号码绑定／解绑、刷新、原令牌注销后访问401、后台档案与原充值页；未触发真实微信登录或手机号渠道。

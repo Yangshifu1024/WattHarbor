@@ -97,7 +97,13 @@ worker 保留任务顺序、游标、重试与投递编排，计费和退款的�
 
 **目标结构同样移除 infrastructure 层。** 现有 `infrastructure/redis` 持有用户／后台会话的记录、寿命、刷新、撤销与键布局，按业务归属分别迁到 identity/session_repo.go 与 ops/session_repo.go；MFA 的 Redis 数据访问归 ops。Redis 实现沿用 repo 命名，不另建顶层 redis 业务包，也不把带用户／后台规则的会话实现整体放入 platform。
 
-无 IO 的通用令牌生成、解析与摘要复用 platform/auth；共用 Redis 原子脚本若提取到 platform/redis，仅接受客户端、key 与摘要等技术输入，不引用 identity／ops 模型或固定业务前缀。用户／后台令牌与键格式、TTL、Lua 原子性、旧记录兼容和权限版本校验保持原契约。database 与 redis 职责全部迁出、装配和测试通过后删除空的 infrastructure，避免仅换目录名留下混合职责。
+无 IO 的随机源保留 platform/auth；令牌布局、编码、摘要及共用原子注销集中 platform/sessiontoken，仅接收调用方的前缀、key 与摘要，不引用 identity／ops 模型。RT_／user:session: 留 identity，ART_／admin:session: 留后台会话所属实现。用户／后台令牌与键格式、TTL、Lua 原子性、旧记录兼容和权限版本校验保持原契约。database 与 redis 职责全部迁出、装配和测试通过后删除空的 infrastructure，避免仅换目录名留下混合职责。
+
+身份用例由 SessionService、PhoneService、UserQueryService 拥有。用户开户通过 identity → wallet 的所属 InTx 能力保持 user 与零余额钱包同事务；openid 唯一锁行先提交以串行恢复，不删除重试所需身份。手机号来源在 cmd 分别注入正式微信交换和开发输入，正式能力拒绝明文号码，唯一键最终仲裁两连接同时绑定。
+
+identity/user_repo 与 charge_user_repo 的钱包、订单、优惠与报障字段是既有只读投影，保留公开金额、空值、用户身份精度及固定批量查询次数，不写其他领域表。后台用户充值页通过 identity → wallet 的窄读取接口装配 payment/recharge_history_repo；payment → wallet 仅依赖充值历史 DTO／读取契约，不反向引用 identity。充值表和金额确认事实由 payment 提供，未删除的冻结用户仍可查原历史；后台 user.read 沿用全局范围，权限在注册鉴权及用例入口校验。钱包风控的冻结写入仍属已定义风控事务，不创建第二条用户冻结后台端点。
+
+用户 SessionRepo 已迁入 identity；Lua 只允许当前摘要轮换，previous 最多32项仅用于注销，KEEPTTL 保留七天绝对寿命。旧数值身份从原 JSON 十进制文本恢复后存字符串，连续轮换保持精度；Redis Lua 失败是存储错误，不伪装为失效令牌。用户冻结及签发失败沿用尽力撤销同一会话的原清理顺序，取消导致的清理失败不宣称已撤销。真实会话集成测试使用独立 Redis 6381，按本测试 SID 清理，开发 Redis 数据不参与测试。
 
 ## 服务拆分的判断
 

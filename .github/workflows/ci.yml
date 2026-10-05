@@ -38,6 +38,15 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     services:
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
       mysql:
         image: mysql:8.4
         env:
@@ -54,11 +63,15 @@ jobs:
     env:
       # 集成测试不提供跳过路径：连不上就是失败，不是「没有测试可跑」。
       TEST_MYSQL_URL: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/central_db
+      TEST_REDIS_URL: redis://127.0.0.1:6379/0
       DATABASE_URL_GATEWAY: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/gateway_db
       DATABASE_URL_CENTRAL: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/central_db
       DATABASE_URL_WORKER: mysql://chargepilot:ci-app-pw@127.0.0.1:3306/worker_db
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod

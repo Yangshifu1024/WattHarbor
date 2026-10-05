@@ -126,7 +126,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	userAuth := chargehttp.NewAuthenticator(jwt, cardRouteSessions{}, identity.UserStore{DB: central})
+	userAuth := chargehttp.NewAuthenticator(jwt, cardRouteSessions{}, identity.UserRepo{DB: central})
 	router := httpapi.NewRouter()
 	api := chargehttp.CardAPI{Swipe: card.SwipeService{DB: central, Ports: device.DiscoveryService{Gateway: edge, Operations: device.OperationRepo{DB: central}}, Devices: device.OperationRepo{DB: central}, Pricing: pricing.Repo{DB: central}, Cutoff: stop.CutoffRepo{}}, Status: card.CardStatusService{DB: central}, Auth: chargehttp.SessionAuthenticator{Auth: userAuth}, ServiceToken: token}
 	api.RegisterInternal(router)

@@ -1,4 +1,4 @@
-// Package user 定义用户聚合：访问令牌校验与账号状态判定。
+// 本文件定义用户访问令牌校验与实时账号状态判定。
 // 不认识 HTTP，失败一律以哨兵错误返回，由接口层翻译成状态码。
 package identity
 
@@ -19,17 +19,20 @@ var (
 
 // SessionChecker 判断会话是否仍然存活。
 type SessionChecker interface {
+	// Exists 在请求 context 下读取 SID 是否仍存活，返回事实或存储错误，不延长寿命。
 	Exists(context.Context, string) (bool, error)
 }
 
 // UserStatusChecker 读取账号当前状态，冻结账号不得继续使用会话。
 type UserStatusChecker interface {
+	// Active 在请求 context 下读取用户主键的当前启用状态，返回事实或读取错误，不改状态。
 	Active(context.Context, uint64) (bool, error)
 }
 
 // TokenVerifier 校验签名并取出声明。实现方负责选择算法与密钥管理，
 // 并自行拒绝 kind 不匹配的令牌——C 端与后台的令牌不通用。
 type TokenVerifier interface {
+	// Verify 校验 token，返回原 subject、sessionID 或签名／声明错误；不执行持久写入。
 	Verify(token string) (subject string, sessionID string, err error)
 }
 
@@ -38,16 +41,16 @@ type TokenVerifier interface {
 // 它不认识 HTTP：失败一律以哨兵错误返回，由 interface/http 的适配器翻译成
 // 状态码与响应体。这样业务包可以依赖本包而不必依赖 gin。
 type Authenticator struct {
-	Tokens   TokenVerifier
-	Sessions SessionChecker
-	Users    UserStatusChecker
+	Tokens   TokenVerifier     // 用户类型的访问令牌校验器
+	Sessions SessionChecker    // 当前会话存活能力
+	Users    UserStatusChecker // 当前账号启用状态能力
 }
 
 // Authenticate 依次校验令牌签名、会话存活与账号状态。
 //
-// 返回的错误必定是上述四个哨兵之一，调用方可用 errors.Is 判定。
+// ctx 控制会话和状态读取，token 为原访问签名；返回原用户主键或四类哨兵之一，无写入。
 func (a Authenticator) Authenticate(ctx context.Context, token string) (uint64, error) {
-	if token == "" {
+	if token == "" || a.Tokens == nil {
 		return 0, ErrTokenInvalid
 	}
 	subject, sessionID, err := a.Tokens.Verify(token)
