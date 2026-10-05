@@ -7,6 +7,7 @@ import (
 	"fmt"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"net/url"
 	"strings"
@@ -18,14 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	ErrOrderNotFound = errors.New("充电订单不存在")
-	ErrNotOwner      = errors.New("无权查看该订单")
-)
-
 // UserQueryAPI 提供用户实时状态、遥测曲线及订单历史。
 // 遥测由 gateway_db 管理，通过带服务令牌的网关接口读取。
 type UserQueryAPI struct {
+	Orders         orderstore.QueryService // 所属订单隔离、当前状态及批量历史费用用例
 	Auth           SessionAuthenticator
 	DB             *gorm.DB
 	GatewayURL     string
@@ -62,13 +59,12 @@ func (a UserQueryAPI) resolveOrder(c *gin.Context, orderNo string) (orderstore.C
 		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return orderstore.ChargeOrderRecord{}, false
 	}
-	orderNo = strings.TrimSpace(orderNo)
-	if orderNo == "" || len(orderNo) > 64 {
-		httpapi.BadRequest(c, "订单号无效")
+	order, err := a.Orders.Resolve(c.Request.Context(), userID, orderNo)
+	var input *orderstore.QueryInputError
+	if errors.As(err, &input) {
+		httpapi.BadRequest(c, input.Message)
 		return orderstore.ChargeOrderRecord{}, false
 	}
-	var order orderstore.ChargeOrderRecord
-	err := a.DB.WithContext(c.Request.Context()).Where("order_no = ? AND user_id = ? AND deleted_at IS NULL", orderNo, userID).Take(&order).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "充电订单不存在", nil)
 		return orderstore.ChargeOrderRecord{}, false
@@ -86,10 +82,7 @@ func (a UserQueryAPI) ongoing(c *gin.Context) {
 		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
-	var order orderstore.ChargeOrderRecord
-	err := a.DB.WithContext(c.Request.Context()).
-		Where("user_id = ? AND deleted_at IS NULL AND status IN ('paid','charging')", userID).
-		Order("id DESC").Take(&order).Error
+	order, err := a.Orders.Ongoing(c.Request.Context(), userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.OK(c, gin.H{"order_no": "", "status": ""})
 		return
@@ -347,8 +340,6 @@ func (a UserQueryAPI) fee(ctx context.Context, orderID uint64) (electric, servic
 	return electric, service, total, receipt.ShortfallCents, true
 }
 
-type historyRow = orderstore.UserOrderHistoryRow
-
 // history 按最新优先分页返回客户自己的订单，
 // 归属规则与其他所有订单读取完全一致。
 func (a UserQueryAPI) history(c *gin.Context) {
@@ -366,38 +357,16 @@ func (a UserQueryAPI) history(c *gin.Context) {
 		httpapi.BadRequest(c, "订单状态无效")
 		return
 	}
-	out, err := orderstore.ListUserOrderHistory(c.Request.Context(), a.DB, userID, status, page, pageSize)
+	out, err := a.Orders.History(c.Request.Context(), userID, persist.PageQuery{Page: page, PageSize: pageSize, Status: status})
 	if err != nil {
-		httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
+		if orderstore.IsFeeQueryError(err) {
+			httpapi.Write(c, 503, 5003, "费用暂时无法读取", nil)
+		} else {
+			httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
+		}
 		return
 	}
-	// 费用保存在 charge_fee_receipt.result_json 中，分页读取订单后批量加载对应回执并解析金额。
-	rows := out.Items
-	if len(rows) > 0 {
-		ids := make([]uint64, 0, len(rows))
-		for _, r := range rows {
-			ids = append(ids, r.OrderID)
-		}
-		receipts := []settlement.ChargeFeeRecord{}
-		if err := a.DB.WithContext(c.Request.Context()).Where("charge_order_id IN ?", ids).Find(&receipts).Error; err != nil {
-			httpapi.Write(c, 503, 5003, "费用暂时无法读取", nil)
-			return
-		}
-		byOrder := map[uint64]settlement.ChargeFeeRecord{}
-		for _, receipt := range receipts {
-			byOrder[receipt.ChargeOrderID] = receipt
-		}
-		for i := range rows {
-			if receipt, present := byOrder[rows[i].OrderID]; present {
-				if electric, service, total, ok := receipt.Fees(); ok {
-					rows[i].ElectricCents = &electric
-					rows[i].ServiceCents = &service
-					rows[i].TotalCents = &total
-				}
-			}
-		}
-	}
-	httpapi.OK(c, gin.H{"items": rows, "total": out.Total, "page": page, "page_size": pageSize})
+	httpapi.OK(c, gin.H{"items": out.Items, "total": out.Total, "page": page, "page_size": pageSize})
 }
 
 // detail 返回一笔订单及其费用回执和退款汇总，

@@ -62,7 +62,7 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		UserDB: orm, AdminDB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken,
 		Gateway: serviceclient.Client{Timeout: 8 * time.Second},
 	}.Register(router)
-	identityhttp.UserQueryAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
+	identityhttp.UserQueryAPI{Orders: ordercase.QueryService{DB: orm, Fees: settlement.QueryFeeRepo{DB: orm}}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
 		DB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Gateway: serviceclient.Client{Timeout: 8 * time.Second}}.Register(router)
 	var phoneSource identity.PhoneSource = identity.WeChatPhoneSource{Exchange: wechat.ExchangePhone}
 	if cfg.LoginMode == "development" {

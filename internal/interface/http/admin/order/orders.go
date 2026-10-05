@@ -1,18 +1,18 @@
 package order
 
 import (
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 	"strconv"
 	"time"
 )
 
-// 本文件只保留后台订单的 HTTP 处理，读模型与查询在 database 包。
+// 本文件只保留后台订单输入、身份适配与公开响应，基础查询由 order.QueryService 执行。
 
+// orders 解析 c 中分页、筛选和后台身份，输出原订单页或公开输入／权限／读取错误；不写业务数据。
 func (a API) orders(c *gin.Context) {
 	page, ok := chargehttp.ReadAdminPage(c, "pending_payment paid charging completed cancelled failed refunding refunded")
 	if !ok {
@@ -50,7 +50,7 @@ func (a API) orders(c *gin.Context) {
 		httpapi.BadRequest(c, "开始时间不能晚于结束时间")
 		return
 	}
-	out, err := orderstore.ListOrders(c.Request.Context(), a.DB, q)
+	out, err := a.Query.List(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile), q)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
@@ -67,26 +67,14 @@ func (a API) order(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	row, err := settlement.FindOrderView(ctx, a.DB, id)
+	row, err := a.Query.Detail(ctx, c.MustGet("admin_profile").(operations.Profile), id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
 	rows := []orderstore.OrderView{row}
-	if err := orderstore.FillOrderStations(ctx, a.DB, rows); err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	row = rows[0]
 	a.orderLive(ctx, rows)
-	selectedPackage, err := orderstore.OrderPackageSnapshot(ctx, a.DB, row.OrderID)
-	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	row.SelectedPackage = selectedPackage
-	row.SelectedSchemeName, row.SelectedPackageName = charging.SelectedSchemeName(selectedPackage), charging.SelectedPackageName(selectedPackage)
-	httpapi.OK(c, row)
+	httpapi.OK(c, rows[0])
 }
 
 // timeline 是 GET /api/v1/admin/orders/：id/timeline 的处理函数：
@@ -98,11 +86,7 @@ func (a API) timeline(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := settlement.OrderExists(ctx, a.DB, id); err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	rows, err := settlement.ListOrderEvents(ctx, a.DB, id)
+	rows, err := a.Query.Timeline(ctx, c.MustGet("admin_profile").(operations.Profile), id)
 	if err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return

@@ -5,16 +5,15 @@ import (
 	"fmt"
 	"time"
 	"unicode"
-
-	"gorm.io/gorm"
 )
 
 // ErrChargeNumberConflict 表示充电单号与设备标识、端口或既有单号冲突。
 // 独立于 payment 包的哨兵：order 作为 payment 的上游被依赖方，不得反向 import payment。
 var ErrChargeNumberConflict = errors.New("charge order number conflicts with device identity, port or an existing order")
 
-// The start request is numbered before the device ACK exists. Keep this number
-// immutable for payment, command and callback correlation; StartedAt records ACK time.
+// ChargeOrderNumber 为 at 原启动请求时刻、device 原设备身份与 port(1–99)生成既有业务号。
+// 返回 C+北京时间14位时刻+设备号+两位端口，非法输入或超64字节返回冲突；无 IO。
+// 编号早于设备确认，支付、命令及回执沿用原号；真实启动时间单独记录，不重新编号。
 func ChargeOrderNumber(at time.Time, device string, port uint8) (string, error) {
 	if at.IsZero() || device == "" || port == 0 || port > 99 {
 		return "", ErrChargeNumberConflict
@@ -34,21 +33,8 @@ func ChargeOrderNumber(at time.Time, device string, port uint8) (string, error) 
 	}
 	return no, nil
 }
+
+// pricingTime 将 at 请求时刻转为北京时间14位文本，无 IO 或错误。
 func pricingTime(at time.Time) string {
 	return at.In(time.FixedZone("CST", 8*3600)).Format("20060102150405")
-}
-
-func NewChargeOrderNumber(tx *gorm.DB, device string, port uint8) (string, error) {
-	no, err := ChargeOrderNumber(time.Now(), device, port)
-	if err != nil {
-		return "", err
-	}
-	var count int64
-	if err := tx.Model(&ChargeOrderRecord{}).Where("order_no=?", no).Count(&count).Error; err != nil {
-		return "", err
-	}
-	if count != 0 {
-		return "", ErrChargeNumberConflict
-	}
-	return no, nil
 }

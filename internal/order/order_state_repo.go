@@ -26,6 +26,7 @@ func LockChargingState(tx *gorm.DB, id uint64) (ChargingState, error) {
 const PaymentStatusSQL = "CASE WHEN p.paid_cents>0 AND p.refunded_cents>=p.paid_cents THEN 'refunded' WHEN p.refunded_cents>0 THEN 'partial_refunded' WHEN p.paid_cents>0 OR p.status IN ('paid','partial_refunded','refunded') THEN 'paid' ELSE 'pending' END"
 
 // SettledPaymentStatus 依据已经到账和已成功退款的金额计算展示状态。
+// paidCents/refundedCents 为已到账／成功退款分值，ledgerStatus 是原支付状态；返回公开状态，无 IO。
 // 退款申请或渠道处理中不增加 refunded_cents，因此不会提前变成已退款。
 func SettledPaymentStatus(paidCents, refundedCents int64, ledgerStatus string) string {
 	if paidCents > 0 && refundedCents >= paidCents {
@@ -43,12 +44,13 @@ func SettledPaymentStatus(paidCents, refundedCents int64, ledgerStatus string) s
 // SyncOrderPaymentStatus 与实际支付/退款金额写入共用事务，不使用隐式 ORM hook。
 // 一笔支付可能尚未生成充电订单（例如过期支付自动退款），也可能是钱包充值；
 // 这两种情况没有订单资料需要修改。业务状态由数据库的 STORED generated 列维护。
+// tx 为调用方资金事务，paymentID 为原支付身份；返回读取／写入错误，不提交或修改支付表。
 func SyncOrderPaymentStatus(tx *gorm.DB, paymentID uint64) error {
 	var payment struct {
-		ID            uint64
-		BizType       string
-		UserID        uint64
-		PaymentStatus string
+		ID            uint64 // 原支付主键
+		BizType       string // charge 或 wallet_recharge
+		UserID        uint64 // 原付款用户
+		PaymentStatus string // 实际到账与成功退款对应状态
 	}
 	if err := tx.Table("payment_order p").Select("p.id,p.biz_type,p.user_id,"+PaymentStatusSQL+" AS payment_status").Where("p.id=?", paymentID).Take(&payment).Error; err != nil {
 		return err
@@ -59,7 +61,8 @@ func SyncOrderPaymentStatus(tx *gorm.DB, paymentID uint64) error {
 	return tx.Table("charge_order").Where("payment_order_id=? AND user_id=?", payment.ID, payment.UserID).Update("payment_status", payment.PaymentStatus).Error
 }
 
-// SetStatusRefunded 把订单标记为已退款。起充失败且钱已退回时使用。
+// SetStatusRefunded 在调用方 tx 中按 orderID 写原 refunded 生命周期，返回写入错误，不提交。
+// 仅在起充失败且钱已退回时调用，不因申请退款提前标记。
 func SetStatusRefunded(tx *gorm.DB, orderID uint64) error {
 	return tx.Model(&ChargeOrderRecord{}).Where("id=?", orderID).Update("status", "refunded").Error
 }

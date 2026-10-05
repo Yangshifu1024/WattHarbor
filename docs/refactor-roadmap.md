@@ -306,11 +306,11 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：order.QueryService.History／Detail、FeedbackService.Submit／Reply；charging/query.Service.Ongoing／Snapshot／Curve／Process。身份、范围及窗口作为业务输入。
 
-- [ ] O-01：订单基础 repo 提供状态锁定、编号、定价快照和历史投影；付款／退款金额写入仍调用 payment 能力。
+- [x] O-01：订单基础 repo 提供状态锁定、编号、定价快照和历史投影；付款／退款金额写入仍调用 payment 能力。
 - [x] O-01：反馈提交、回复状态、订单归属与附件规则迁回 order，拆除通用 case 的表名选择能力；审计同事务。
 - [ ] CQ-01：组合计费进度、cutoff、支付／费用摘要及 gateway 遥测／历史曲线／过程；定义窄 Reader，order 不 import settlement 或 charging。
 - [ ] CQ-01：gateway DTO 转为本用例读模型，再由 HTTP 映射公开字段；不把当前遥测当最终结算，不将缺失值替换为零。
-- [ ] N-order：history／state／view／package／snapshot repo 统一名称，纯展示规则与 SQL 投影分清。
+- [x] N-order：history／state／view／package／snapshot repo 统一名称，纯展示规则与 SQL 投影分清。
 
 验收：用户隔离、后台范围、稳定分页、非法／超限曲线窗口；已结算与待计费明确区分；网关不可用时按现有接口表达缺失／失败；套餐名称从冻结快照读取；反馈状态和重放规则不改变；组合查询无逐行外部调用。
 
@@ -523,7 +523,7 @@ make test-integration TEST_MYSQL_URL=...
 | D-02／N-device | 待实施 | 导入、设备运营和站点 repo 已改名；报修状态与事件表访问已归 device/fault_repo，并回归实际后台指派／修复／关闭与3条历史。故障业务编排、告警及其余持久文件、用户站点组合查询仍待迁移 |
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
-| O-01／CQ-01／N-order | 进行中 | FeedbackService 接管用户提交及后台回复／关闭审计，反馈与报修表访问分归 order/device，通用 case 表名选择已删除；真库、注册路由及旧 RR 当前读变异通过。订单基础持久命名与组合查询、CQ-01 尚待实施 |
+| O-01／CQ-01／N-order | 进行中 | FeedbackService 接管用户提交及后台回复／关闭审计，反馈与报修表访问分归 order/device，通用 case 表名选择已删除；真库、注册路由及旧 RR 当前读变异通过。订单基础 repo 命名、归属、历史批量费用、后台基础档案／事件已归 QueryService；用户组合详情与 CQ-01 尚待实施 |
 | M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，后台会话与 HTTP 事务待迁移 |
@@ -578,3 +578,9 @@ make test-integration TEST_MYSQL_URL=...
 3b 真库证据：`.tmp/batch3b-feedback-{repo,routes,restored}.log`。两独立连接按订单锁门控验证只提交一评价；旧 RR 快照早于另一连接提交时，SHARE 当前读拒绝重复。`.tmp/batch3b-mutant-feedback-current-read.log` 移除当前读后稳定失败，原实现恢复通过。注册 user/admin 使用真实用户、订单、后台权限及 Redis，覆盖数字／业务号归属、未完成拒绝、评分／附件、原重复409、后台身份精度与图片数组、回复与关闭重放、即时撤权、审计503及整体回滚。报修所属 repo 回归 open→dispatched→fixed→closed，重复指派不增事件、跳级拒绝、历史恰好3条；不将此记为 D-02全部完成。外层事务回滚或清理自身提交行并核对零残留。
 
 3b 退出证据：工作区 `.tmp/batch3b-{check,integration,build,tidy}.log` 与精确暂存快照 `.tmp/batch3b-validation` 的 `.tmp/batch3b-snapshot-{check,integration,build,tidy}.log` 均通过，589份 Go／模块原 blob 一致，tidy 无差异。实际重启 user/admin 后，`.tmp/batch3b-live-feedback.json` 验证原2b已退款订单的用户提交、原重复409、后台回复／关闭／关闭重放，保留一份已关闭开发反馈并注销测试会话。公开 HTTP 字段与 OpenAPI 未改变；订单查询、CQ-01、营销和后续批次仍待完成。
+
+批次3c（O-01基础查询／N-order）实施：history、state、view、package、pricing_snapshot 改为 repo，编号 SQL 从纯编号规则拆到 order_number_repo；订单事件／后台基础投影从 ops／settlement 归 order/admin_query_repo。QueryService 接管原用户归属、正在充电、历史及后台列表／档案／时间线；FeeReader 由 cmd 注入 settlement/query_fee_repo，一次批量读取确认费用，保持无回执 null 与确认零值的区别。包内订单 builder 不再对外导出。原全局 order.read 权限、用户隔离、分页、原身份及冻结方案契约保持；修复站点投影缺少明确表名。后台详情输出实际补充后的行，实时视图完整证据仍随 CQ-01 验收。字段与函数／方法中文契约已核对，组合用户详情及实时查询尚未完成。
+
+3c 定向证据：`.tmp/batch3c-order-query.log`、`.tmp/batch3c-order-query-routes.log` 验证实际 MySQL、Redis 和注册 user/admin 路由，覆盖一笔与多笔历史均三次 SQL、他人隔离、费用无回执／无效内容／确认零值、冻结名称／站点、事件与缺行、取消、费用故障503和即时撤权。`.tmp/batch3c-mutant-{station-table,history-owner}.log` 变异稳定失败，恢复后 `.tmp/batch3c-mutants-restored.log` 通过；数据使用外层回滚及自身 Redis SID 清理。工作区全仓验收通过，精确暂存快照证据见下。
+
+3c 退出证据：工作区 `.tmp/batch3c-{check,integration,build,tidy}.log` 与精确暂存快照 `.tmp/batch3c-validation` 的 `.tmp/batch3c-snapshot-{check,integration,build,tidy}.log` 全部通过，596份 Go／模块文件与原暂存 blob 一致，tidy 无差异；后台78项、用户59项测试、两端类型检查及后台构建通过，保留已有大 chunk 提示。重启 user/admin 后 `.tmp/batch3c-live-order-query.json` 确认原2b已退款订单、零确认费用、冻结套餐、站点及5条事件。联调脚本首轮注销误将刷新凭据放在请求体，改用原 Bearer 契约后重跑通过；首轮两份开发会话按原TTL自然过期，未清空共享 Redis。只读联调未新增业务订单或修改资金；CQ-01、营销和后续批次继续实施。

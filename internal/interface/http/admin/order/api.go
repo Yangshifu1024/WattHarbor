@@ -9,6 +9,7 @@ import (
 
 // API 持有本业务族所需的数据库、鉴权与外部调用依赖。
 type API struct {
+	Query                    ordercase.QueryService    // 原订单页、详情与事件的所属只读用例
 	Feedback                 ordercase.FeedbackService // 原订单反馈列表、回复与审计事务
 	DB                       *gorm.DB
 	Auth                     chargehttp.AdminAuth
