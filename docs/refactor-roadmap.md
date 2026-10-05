@@ -572,6 +572,30 @@ make test-integration TEST_MYSQL_URL=...
    第一格能自动退全额，是因为掉电后实际电量为 0.0000 kWh，恰好绕开第 72 行「总电量大于零」的条件；第三格能自动计费，是因为 `device_duration` 不受该条约束，且其截止点按秒裁剪不依赖分段。用户停机那一格进复核与截止点先后无关：实测 `cutoff_at` 晚于 `ended_at`，切分根本未触发。
 
    结论：**DC589 设备按功率分档计价时，只要实际充过电就只能人工计费**；自动差额退款仅在电量为零或按时长计价时可用。若要扩大自动覆盖，需设备提供分段功率读数，或计费改从网关采样构造分段（实时查询已有此能力，见 `internal/charging/query/live_evidence.go`）——属独立设计决策，本轮未实施。真实微信与外部渠道退款、实机设备、监管投递同样未验收。
+
+   **上述「结构性走不通」的结论已订正（2026-10-05）**。上面判断「凡按功率分档且充过电的订单必然进复核」是错的：它只看了 `actual.go` 的判据，没有去看分段是从哪来的。实际上 worker 早已在 `internal/worker/charge/meter_segments.go` 用网关心跳采样构造分段，随结束回执一起冻结进 `charge_end_receipt.meter_json`（`freezeEndResult` → `FreezeEndDelivery`），结算侧直接读这段。真正让用户停机那格拿不到分段的是 `internal/domain/charging/measured_segments.go` 里一对自相矛盾的判据：
+
+   - 函数开头校验 `|start − span.StartedAt| ≤ clockSkewTolerance`（5 秒），显式接受两者的时钟偏差；
+   - 紧接着又用 `at.Before(cursor)` 拒绝任何落在 `start` 之前的读数，等于把这 5 秒容差窗口内的读数重新判成证据自相矛盾。
+
+   `start` 是 `charge_order.started_at`，来自 START 命令回执的 `ack_at`（`internal/worker/charge/sync.go:55` 写 `OccurredAt: row.AckAt.UTC()`）；`span.StartedAt` 是设备在结束帧里自报的会话起点。两者由不同观测者独立记录，设备按自己的时钟先起充、服务器稍后才等到回执，首条心跳落在 `start` 之前是常态。上一轮 M2 实测设备自报 `22:49:54+08:00`、中央记录 `ack_at` 为 `22:49:55`，差 1 秒，整段证据因此被丢进复核。
+
+   **修复**：只放宽「落在 `start` 之前、仍在已校验的时钟容差内、本次没有新增累计电量」这一种读数——设备自己都报告这段时间没有电量，说明它不构成可计费区间，跳过既不移动收口游标也不改变累计电量，其功率读数仍用于描述随后的区间。越过容差窗口、已起充后再回退时刻、或在 `start` 之前出现电量增量，证据仍然整段拒绝。放宽没有跨越任何计价判据：分段首段仍从 `start` 起，与 `charge_order.started_at` 对齐才被 `actual.go` 接受。
+
+   **修复后重跑 M2（同一场景，隔离栈 3307／6381，订单 1）**：
+
+   | 项目 | 修复前 | 修复后 |
+   |---|---|---|
+   | 结束回执分段 | 无 | **9 段，全部带 150 W，合计 5 Wh = 设备自报 5 Wh** |
+   | 计费任务 | `manual_review` | `done`，attempts=0 |
+   | 费用回执 | 无 | `total=2`（electric=2，service=0） |
+   | 人工核实记录 | 有 | **无** |
+   | 退款 | 无 | **98 分 success／automatic**，退款单 `FEE-R00000000000000000001` |
+   | 支付单 | 100／paid | 100 → 已退 98／`partial_refunded` |
+
+   事件链 `payment_confirmed → start_acked → charge_ended → fee_calculated → bill_issued` 完整。起充时刻偏差在本次运行中同样存在且被记录在案：设备自报 `23:12:43+08:00`，`charge_order.started_at` 为 `2026-10-05T15:12:44.744`（=23:12:44.744+08:00），差 1.744 秒；生成的首段起点即 `15:12:44.744`，与 `charge_order.started_at` 逐毫秒对齐。
+
+   这次落地的是「采样构造分段」路线，不需要设备改造：DC589 协议未改动，现有桩立即生效，精度受 15 秒心跳限制——最后一条心跳到结束帧之间最多 60 秒的尾段沿用前次功率，代价是这 60 秒的功率按前值计价。用户已接受该妥协。**仍未验收**：真实微信与外部渠道退款、实机设备、监管投递。
 4. ~~**定稿DEP-01部署比较。**~~ **已定稿（2026-10-05）。** C组及上述流程前置完成后，将保留五进程与user＋central四进程候选的比较原位写入架构文档“central的后续评估”，覆盖凭据／安全隔离、独立扩容／发布、资源限制、故障范围、请求成本、恢复成本、运维成本及来源。当前推荐保留五进程；user没有现有user→central HTTP消费者，gateway／worker的远程协调仍在。五Go应用限额、多副本容量和四进程性能／运维成本未实测，明确标为未验证；Redis已有内存预算不写成整个编排无限额。以“评估完成，保留五进程”关闭DEP，不实施合并或新增候选部署配置。实际交付见架构文档该节，并纠正了一处此前的预设：`config.Central` 的凭据集是 `config.User` 的真子集，凭据隔离不构成分进程理由，决定性理由是 central 内部端点当前只 `expose` 不映射宿主端口。
 5. **执行最终全局退出。** 对最终工作区和精确暂存源码核对单一业务入口、表写入归属、跨模块事务、依赖方向、中文字段／函数／接口契约、repo消费者、Request／Reply、路由／OpenAPI／embed及本地文档链接；删除真实失效消费者，不删除历史来源记录。执行`make check`、`go mod tidy -diff`、完整独立三库／Redis integration和全部cmd构建。前端或公开契约有改动才重跑受影响前端测试／构建；无变动沿用最近完整结果并注明覆盖版本。加载受影响开发进程后只读核对服务就绪及原持久事实，保留失败／修复／恢复日志，检查没有遗留变异或未受管理进程。**状态：本轮改动已完成（2026-10-05）。** 门禁全部重跑通过：`make check` 0、`go mod tidy -diff` 无差异、全部 cmd 构建 0、`go test -tags=integration -count=1 ./...` 全仓 67 个包通过且 0 失败 0 跳过。只读核对结果：充电生命周期已无 charge_order／charge_event_log／event_outbox 的直接表访问；已删除的三类公共回执记录无任何残留消费者；本轮未改动任何路由、OpenAPI、embed 或 `internal/http`，故公开契约与前端结果沿用 4b／5ap 已有证据并在此注明覆盖版本；`docs/` 相对链接 0 处失效。变异已恢复原实现，开发进程本轮未加载、未改开发数据。历史批次引用的 `.tmp/batch*` 日志已不在工作区，该部分历史证据无法就地复核，已在第 9 节开头说明。
 6. **交付并关闭整个目标。** 将本表与第8.4节要求逐项对照，所有显式要求有当前证据后，提交最后适用改动并交付工作报告，说明各模块做了什么、关键正确性修复、测试层次、提交范围及遗留边界。报告保留真实微信／外部退款、实机和监管等未验范围；补采原始样本先提交但聚合取消后去重重放未必修复、Redis接收与MySQL发布标记非原子、厂商提交后中央审计尽力记录等既有语义不冒称已修复。缺证据的要求继续待验收；只有全部要求实际完成才关闭目标，不以百分比、准备稿或默认测试通过提前结束。**状态：已交付（2026-10-05）。** 17 个任务组全部关闭，工作报告随本轮回复交付并保留上列未验边界。
@@ -965,3 +989,11 @@ make test-integration TEST_MYSQL_URL=...
 批次5ar（收尾进度与详细计划）：原位更新第9节唯一任务表、当前收尾安排和开头现状，H／X／G／WK组合据 .tmp/final-runtime-closure.md 对6.1–6.4逐项读源／消费者／断言闭合，当前733份Go／模块与已实际通过的5ap快照相同；旧空目录不存在，取消观察者join及真实结束确认／owner保护证据齐全。15／17组完成约88%，C及DEP仍未关闭；5aj只有隔离稿及局部结果不算合入验收。后续六步明确所属提取、正式源码真库回归、支付至进程恢复证据归档、七项部署比较、最终全局退出和工作报告，每步保留顺序／完成条件／未验边界。README及8.2同步仅测试P_S只读需求和现有CI实际构建范围；本批没有Go、SQL实现、环境值或开发数据变更，不以纯文档提交重复无变动的业务流程。
 
 批次5as（README精简与维护规则同步）：README由563行缩为119行，保留本地启动、模拟器、五进程、接口入口、开发检查、生产入口及功能边界；计量／资金／权限／异步规则迁至 business-contracts.md，配置／部署／数据库兼容更新／备份恢复／监控／模拟器高级操作迁至 operations.md。删除重复实现叙述及静态全表清单，修正五进程健康端点、central宿主隔离、公告列表与站点详情的范围区别、未装配Webhook与监管的描述。AGENTS同步文档职责、现行HTTP／query目录、OpenAPI方式、未装配任务及独立测试要求，修正乱码与冻结额度必须持行锁的约束。91个本地文档引用及锚点、503个目录图路径、Compose隔离、五进程路由、前端命令与脚本入口核对通过，保留AGENTS引用的本地运行／模拟器锚点；仅文档变更，提交钩子执行vet及默认测试，不重复相同源码真库流程或操作开发数据。C及DEP进度不变，仍15／17组约88%。
+
+批次5at（计量起充时刻容差修复，独立行为批次）：只改 `internal/domain/charging/measured_segments.go` 一处判据并补该文件测试。`MeasuredSegments` 开头接受 `|start − span.StartedAt| ≤ 5s` 的时钟偏差，随后又用 `at.Before(cursor)` 拒绝落在 `start` 之前的读数，把自己的容差窗口重新判成证据矛盾。`start` 是 `charge_order.started_at`（来自 START 回执 `ack_at`），`span.StartedAt` 是设备结束帧自报起点，两者独立记录，设备先起充、服务器后等回执，首条心跳落在 `start` 之前是常态。只放宽「在 `start` 之前、仍在容差内、本次无新增累计电量」这一种读数，跳过时不移动收口游标、不改变累计电量，功率读数仍用于描述随后区间；越过容差、已起充后回退时刻、`start` 之前出现电量增量仍整段拒绝。分段首段仍从 `start` 起，计价判据、协议、单位、表与路由均未改动。
+
+5at基线证据：先用隔离栈上一轮 M2 的真实心跳与结束帧数据构造用例，现有实现稳定返回 nil，与该单当时进 `manual_review` 的实测一致。修复后同一数据产出 15 段、合计 8 Wh 等于设备自报 8 Wh、首段起点等于 `start`。变异双向验证：把新分支短路回旧的硬拒绝，`TestMeasuredSegmentsAcceptsDeviceStartOneSecondBeforeRecordedStart`、`TestUserStoppedSessionPricesWithoutMeterReview`（报 `实际计量不足或矛盾`）及容差用例的「容差内的偏移」三格同时失败；只去掉 `wh != previous` 则「起充前已有电量」格错误产出 3 段。两方向均恢复并复跑通过。夹具按形状枚举拆分，不用布尔开关堆叠，避免某格实际被另一条判据挡下却顶着别的名字。
+
+5at真库证据：按隔离栈流程重建三库（`charge_order` 自增回到 1）并 `cmd/migrate` 重新应用，起五进程与 `stop-on-command` 模拟器，金额套餐下单支付后用户主动停机。结束帧到达时 `charge_stop_command` 为 `acked`／result_code=16，设备自报 `started_at=23:12:43+08:00`，`charge_order.started_at=2026-10-05T15:12:44.744`，差 1.744 秒。结算结果：`charge_end_receipt.meter_json` 落 9 段、全部带 150 W、合计 5 Wh 等于设备自报，首段起点与 `charge_order.started_at` 逐毫秒对齐；计费任务 `done`／attempts=0，费用回执 `total=2`（electric=2 service=0），无 `manual_fee_review` 记录，退款 98 分 success／automatic（`FEE-R00000000000000000001`），`payment_order` 100→已退 98／`partial_refunded`，事件链 `payment_confirmed → start_acked → charge_ended → fee_calculated → bill_issued` 完整。上一轮同一场景为 `manual_review` 且无退款，此为前后对照。脚本首轮把 `meter_json` 误写在 `charge_order` 上、`refund_record` 误取不存在的 `last_error`，两处如实保留并改正后重查，不把命令错误当作业务结论。真实微信与外部渠道退款、实机设备、监管投递仍未验收。
+
+5at退出：默认 `make check` 通过、`go mod tidy -diff` 无差异、全部 cmd 构建 0，`go test -tags=integration -count=1 ./...` 全仓 67 个包通过、0 失败 0 跳过。本批无路由、OpenAPI、embed、前端、SQL 或协议改动，公开契约沿用既有证据。未改 `AGENTS.md` 中任何维护规则。

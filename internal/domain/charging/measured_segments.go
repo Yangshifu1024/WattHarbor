@@ -23,6 +23,12 @@ const powerJoinWindow = 60 * time.Second
 // 定位到设备时钟上；接收时间只用来剔除过期或前后矛盾的上报，
 // 绝不用来分摊 Wh。
 //
+// start 是调用方记录的实际起充时刻（结算侧为 charge_order.started_at，
+// 与 START 命令回执同源），span.StartedAt 则是设备在结束帧里自报的会话起点。
+// 两者由不同的观测者独立记录，允许 clockSkewTolerance 内的偏差：起充后
+// 第一条心跳常常落在 start 之前一两秒，因为设备按自己的时钟先开始计量、
+// 服务器才等到回执。这类读数在下面按「无新增电量」跳过，不移动收口游标。
+//
 // 任一环节的证据不成立（时长与累计秒数不符、时钟漂移、精度不足、读数回退、
 // 分段求和对不上总量）都返回 nil，让调用方进入计量复核，而不是猜一个值。
 func MeasuredSegments(start time.Time, span devices.SessionSpan, samples []devices.ReadingSample) []MeterSegment {
@@ -53,8 +59,21 @@ func MeasuredSegments(start time.Time, span devices.SessionSpan, samples []devic
 				return nil
 			}
 			wh := reading.ChargedMWh / 1000
-			if wh < previous || wh > span.EnergyMilliKWh || at.Before(cursor) {
+			if wh < previous || wh > span.EnergyMilliKWh {
 				return nil
+			}
+			if at.Before(cursor) {
+				// 设备按自身时钟计量的起点可以早于服务器记录的起充时刻：开头的时钟容差
+				// 已经接受了这两者的偏差，就不能再把容差窗口内的读数判成证据自相矛盾。
+				// 只有「落在 start 之前、仍在容差内、本次没有新增累计电量」的读数可以跳过——
+				// 设备自己都报告这段时间没有电量，说明它不构成可计费区间，跳过既不移动
+				// 收口游标也不改变累计电量，功率读数仍用于描述随后的区间。
+				// 一旦越过容差窗口、已经起充后再回退时刻、或出现电量增量，证据仍然拒绝。
+				if !at.Before(start) || wh != previous || at.Before(start.Add(-clockSkewTolerance)) {
+					return nil
+				}
+				previousPower = ptr(reading.PowerW)
+				continue
 			}
 			if at.Equal(cursor) {
 				if wh != previous {
