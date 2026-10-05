@@ -16,9 +16,9 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
-	alertsync "github.com/ChargePilot2026/charge-pilot/internal/http/admin/alertsync"
 	adminops "github.com/ChargePilot2026/charge-pilot/internal/http/admin/ops"
 	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
+	centralhttp "github.com/ChargePilot2026/charge-pilot/internal/http/central"
 	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
@@ -185,7 +185,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 	centralRouter := httpapi.NewRouter()
-	(alertsync.DeviceAlertSyncAPI{Sync: device.AlertSyncService{DB: tx, Gateway: gateway}, ServiceToken: "registered-alert-token"}).Register(centralRouter)
+	(centralhttp.DeviceAlertSyncAPI{Sync: device.AlertSyncService{DB: tx, Gateway: gateway}, ServiceToken: "registered-alert-token"}).Register(centralRouter)
 	centralServer := httptest.NewServer(centralRouter)
 	defer centralServer.Close()
 	central, err := centralclient.NewClient(serviceclient.Client{HTTP: centralServer.Client()}, centralServer.URL, "registered-alert-token")

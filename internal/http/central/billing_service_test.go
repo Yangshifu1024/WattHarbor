@@ -1,4 +1,4 @@
-package http
+package central
 
 import (
 	"net/http/httptest"
@@ -8,9 +8,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// TestDispatchRejectsInvalidServiceCredentialsBeforeStorage 用t核对真实注册的计费路由及原401／1001。
+// 依赖未装配，空配置、缺凭据及坏凭据必须在业务访问前返回；不验证计费或数据库事务。
 func TestDispatchRejectsInvalidServiceCredentialsBeforeStorage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, tc := range []struct{ configured, supplied string }{
+	for _, tc := range []struct {
+		configured, supplied string // 路由配置令牌和请求提供令牌，覆盖空配置、缺凭据及坏凭据。
+	}{
 		{"", ""}, {"billing-test-secret", ""}, {"billing-test-secret", "wrong-secret"},
 	} {
 		router := gin.New()

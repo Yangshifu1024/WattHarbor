@@ -208,3 +208,5 @@ HTTP目录实施边界（5a）：后台业务族已在internal/http/admin，账�
 用户认证响应边界（5b）：http/auth.SessionAuthenticator在原凭据、会话、状态读取失败时唯一写入错误信封并返回0／false，消费者立即返回；不得再附加401覆盖冻结403或存储503。零用户身份由identity.Authenticator拒绝，HTTP助手直接传递结果。原成功读取、归属和写入服务不因此改变；注册路由单信封回归与真实注销会话路径共同核对，认证故障fixture不宣称真实存储故障注入。
 
 HTTP查询及范围边界（5c）：剩余10个查询／账单入口由wallet、settlement、payment、device各所属服务提供，HTTP不持有DB／UserDB、Repo或直接仓储函数。后台16处范围读取通过admin.ScopeReader，由cmd注入ops.ScopeQueryService；导入执行前仍再次读取范围，不新增事务或锁，也不把范围读取当作权限授予。原站点分页、支付关联及可空值、退款／发票列表、最近100条导入任务查询保持；导入列表沿用device.import准入，不额外增加原来未执行的数据范围过滤。UserBillService先按用户归属查询，再幂等保存已读记录，查询失败保留404、保存失败保留503；错误原因仅供errors.Is，不公开内部故障。已读补查失败时原列表展示未读的规则保持。所有SQL仍在所属repo，未新增跨用例依赖、资金写入或后台任务；user／central目录拆分继续下一批。
+
+内部HTTP目录边界（5d）：实际由central注册的启动／停止授权、待启动、启动／结束回执、自动停止、内部刷卡／余额、计费、退款、模拟通知和告警同步统一归internal/http/central。原CardAPI的用户卡与内部刷卡分别持有所需字段，不共享包含两种鉴权方式的容器；业务规则仍唯一归card。内部SimulationCallbackAPI不与对外WeChat回调同文件；user仍拥有渠道验签及公开通知。告警同步只由central注册，从admin目录迁出；唯一消费的服务令牌中间件归http/auth，central不依赖admin或旧HTTP根包。各处理器原方法／路径、服务身份、超时、回执及错误顺序保持，不增加路由汇总、兼容包装或业务事务；用户目录仍待下一批。

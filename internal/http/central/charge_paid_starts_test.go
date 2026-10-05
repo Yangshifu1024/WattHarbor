@@ -1,4 +1,4 @@
-package http
+package central
 
 import (
 	"context"
@@ -13,12 +13,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// paidStartsStub 记录HTTP传入的原游标及调用次数，返回固定待启动事实或指定读取错误。
 type paidStartsStub struct {
-	after uint64
-	calls int
-	err   error
+	after uint64 // 最近一次请求的原after_id游标。
+	calls int    // PaidStarts调用次数，用于核对拒绝请求未访问用例。
+	err   error  // 指定的读取错误，原样交给HTTP映射，不执行数据库操作。
 }
 
+// TestPaidStartsClientMatchesRegisteredCentralRoute 用t核对具名客户端与真实注册路由的游标及公开集合。
+// 用例为固定fixture，覆盖一条记录和空数组，不验证真实库筛选、并发或派发设备命令。
 func TestPaidStartsClientMatchesRegisteredCentralRoute(t *testing.T) {
 	service := &paidStartsStub{}
 	router := gin.New()
@@ -39,6 +42,8 @@ func TestPaidStartsClientMatchesRegisteredCentralRoute(t *testing.T) {
 	}
 }
 
+// PaidStarts 忽略输入context，以after更新s记录和次数；游标9返回固定订单，其余返回nil集合。
+// 所有分支返回s.err，无IO、后台任务或取消模拟；空集合的公开数组形状由真实HTTP适配及客户端核对。
 func (s *paidStartsStub) PaidStarts(_ context.Context, after uint64) ([]chargestart.PaidChargeOrder, error) {
 	s.after, s.calls = after, s.calls+1
 	if after == 9 {
@@ -47,13 +52,15 @@ func (s *paidStartsStub) PaidStarts(_ context.Context, after uint64) ([]chargest
 	return nil, s.err
 }
 
+// TestPaidStartsHTTPContract 用t检查真实GET路由的令牌、游标、数组、存储错误脱敏及用例调用次数。
+// 用例为窄fixture，验证400／401／503映射及拒绝后不调用，不代表真实MySQL或设备执行证据。
 func TestPaidStartsHTTPContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, test := range []struct {
-		query, token  string
-		err           error
-		status, calls int
-		body          string
+		query, token  string // 原游标查询串和提供的服务令牌。
+		err           error  // fixture返回的原读取错误，nil表示读取成功。
+		status, calls int    // 预期HTTP状态及所属查询调用次数。
+		body          string // 响应必须包含的原公开形状或提示片段。
 	}{
 		{"", "", nil, 401, 0, "service token invalid"},
 		{"?after_id=-1", "secret", nil, 400, 0, "invalid paid start cursor"},

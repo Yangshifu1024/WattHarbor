@@ -213,7 +213,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.2 settlement：S-01／S-02／N-settlement
 
-来源：[HTTP 计费服务](../internal/interface/http/billing_service.go)、[计费入账](../internal/settlement/billing_job_repo.go)、[费用计算](../internal/settlement/fee_calculation_repo.go)、[账单](../internal/settlement/bill_repo.go)，以及 HTTP finance、device/meter_reviews、settlement_bill、user_invoice 的业务编排。
+来源：[HTTP 计费服务](../internal/http/central/billing_service.go)、[计费入账](../internal/settlement/billing_job_repo.go)、[费用计算](../internal/settlement/fee_calculation_repo.go)、[账单](../internal/settlement/bill_repo.go)，以及 HTTP finance、device/meter_reviews、settlement_bill、user_invoice 的业务编排。
 
 目标：billing.go 的 BillingService.Run；billing_job_repo.go、fee_calculation_repo.go、bill_repo.go；refund.go、invoice.go、meter_review.go 与各自 repo／schema。Calculate 等有业务行为的组件按职责命名，不因为原名 Store 就统一改成万能 Repo。
 
@@ -528,7 +528,7 @@ make test-integration TEST_MYSQL_URL=...
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
-| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | 5a拆出auth及admin，5b修复用户认证重复响应，5c查询与范围归所属服务；剩余user／central、具名客户端及runtime／repo继续实施 |
+| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | auth／admin／central已拆出，查询与范围归所属服务、认证单次响应已验收；剩余user分包、具名客户端及runtime／repo继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
@@ -717,6 +717,14 @@ make test-integration TEST_MYSQL_URL=...
 
 5c定向及工作区证据：实际Register的用户账单三路由在独立真实MySQL验证本人／他人归属、原金额／null、列表、同账单已读重放与两个阶段的错误恢复，`.tmp/batch5c-bill-registered.log`通过。身份为窄能力fixture，指定GORM查询／创建回调故障仅验证原阶段错误映射，不宣称实际数据库故障或并发幂等验收。工作区`.tmp/batch5c-{check,integration,build,tidy}.log`全部通过；完整集成仅使用独立三库3307／Redis6381。迁移辅助工具初版按import路径末段误删版本化包名的有效导入，已恢复全部24份无关源码及7份实际迁移文件的Redis导入；最终检查均在修复后执行，不将初版结果计为通过。
 
-5c开发及复核：admin／user加载本批源码后，`.tmp/batch5c-live-queries.json`验证7条后台及3条用户查询，复用既有tester-1零余额用户，两类会话均注销；没有新增用户、开发业务来源写入或资金变动。只读复核确认原查询、归属及范围语义不变，未发现新增阻断。无前端或公开DTO改动，最近前端完整验收为5b的后台78／用户59项、两端类型检查及后台构建。精确暂存退出检查待补；H-01组合组仍进行中，17组维持15组完成。
+5c开发及复核：admin／user加载本批源码后，`.tmp/batch5c-live-queries.json`验证7条后台及3条用户查询，复用既有tester-1零余额用户，两类会话均注销；没有新增用户或资金变动，查询没有写入来源业务数据。登录沿用原SQL登录时间及会话记录更新，不能把整个验收描述成完全没有持久写入；5d核对原UserRepo.Login后补明此边界。只读复核确认原查询、归属及范围语义不变，未发现新增阻断。无前端或公开DTO改动，最近前端完整验收为5b的后台78／用户59项、两端类型检查及后台构建。精确暂存退出检查待补；H-01组合组仍进行中，17组维持15组完成。
 
 5c最终退出：精确暂存快照`.tmp/batch5c-validation`的`.tmp/batch5c-snapshot-{check,integration,build,tidy}.log`全部通过；1196份文件中的685份Go／模块与原blob及工作区一致，tidy无差异，本地Markdown链接有效。最终仅补本退出记录及状态说明；H-01组合组仍进行中，下一批按真实路由拆user／central，再完成X／G／WK及DEP评估。17组仍完成15组，不代表整个目标完成。
+
+批次5d（H-01内部适配目录）实施：按cmd实际注册将central授权、回执、派发、内部卡、模拟通知及告警同步归internal/http/central；CardAPI拆开用户与服务身份依赖，原规则不复制。告警服务令牌适配归http/auth，central不依赖admin或旧根包。迁移前新增cmd/central真实装配回归，三种支付模式、空／非空配置及缺失／错误凭据覆盖原11／12路由，共136次拒绝；单JSON401、业务码、消息及请求／追踪号核对，所有业务依赖为空，`.tmp/batch5d-assembly-before.log`通过。这仅证明注册及拒绝先于业务调用，不替代资金或真实存储测试。迁移、全仓及开发容器网络验收继续，H-01组合组不提前完成。
+
+5d工作区证据：`.tmp/batch5d-{targeted,check,integration,build,tidy}.log`全部通过，集成只用独立三库／Redis。迁移生产字段、函数和接口方法及四份随迁测试均补中文输入、结果、错误及副作用说明；AST注释清单无central缺项。`.tmp/batch5d-move-proof.log`将33个原生产函数、11个原测试／fixture函数及cmd装配共45个签名和方法体按语法树规范打印后核对token；仅规范化已迁移类型和服务令牌中间件的包选择器，匿名结构注释产生的换行不算逻辑变化。公开JSON、SQL、用例、schema、配置与前端未变，最近前端验收仍为5b。
+
+5d开发验收：重启central／user后，在现有Compose容器网络核对central原12路由24次坏凭据及4条合法只读查询，`.tmp/batch5d-live-central-{before,after}.json`中空待启动、无效卡零余额、原缺失订单409及单信封401一致；没有映射8082到宿主机。`.tmp/batch5d-live-user-admin.json`及日志保留7条后台／3条用户原查询、既有tester-1零余额及两类会话注销。未新增用户或资金写入；登录按原规则更新SQL登录元数据和Redis会话，已补明5c同一验收边界。没有触发合法的central写入路由，不把该联调当作真实支付或实机验收。精确暂存退出检查继续，用户分包与X／G／WK及DEP仍待完成。
+
+5d最终退出：精确暂存快照`.tmp/batch5d-validation`的`.tmp/batch5d-snapshot-{check,integration,build,tidy}.log`全部通过；1199份文件中的688份Go／模块与原blob及工作区一致，tidy无差异、本地Markdown链接有效。最终仅补本退出记录、状态及README实际入口说明；H-01组合组仍进行中，下一批按用户接口族拆除UserAccountAPI全量容器及旧根包。17组仍完成15组，继续X／G／WK和DEP评估，不代表整个目标完成。

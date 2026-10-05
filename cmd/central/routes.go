@@ -10,9 +10,8 @@ import (
 	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
 	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	adminalertsync "github.com/ChargePilot2026/charge-pilot/internal/http/admin/alertsync"
+	centralhttp "github.com/ChargePilot2026/charge-pilot/internal/http/central"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -40,24 +39,24 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 	})
 
 	// 充电生命周期：gateway 查询授权，worker 查询待启动订单并同步回执。
-	identityhttp.PaidStartsAPI{Service: chargestart.PendingOrders{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.StartAuthorization{Service: chargestart.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.StartResultAPI{Service: chargestart.StartResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.EndResultAPI{Service: chargefinish.EndResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.StopAuthorization{Service: chargestop.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.CardAPI{Swipe: card.SwipeService{DB: orm, Ports: device.DiscoveryService{Gateway: gateway, Operations: device.OperationRepo{DB: orm}}, Devices: device.OperationRepo{DB: orm}, Pricing: pricing.Repo{DB: orm}, Cutoff: chargestop.CutoffRepo{}}, Status: card.CardStatusService{DB: orm}, ServiceToken: cfg.ServiceToken}.RegisterInternal(router)
-	identityhttp.AutoStopAPI{Stopper: chargestop.AutoStopper{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.PaidStartsAPI{Service: chargestart.PendingOrders{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.StartAuthorization{Service: chargestart.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.StartResultAPI{Service: chargestart.StartResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.EndResultAPI{Service: chargefinish.EndResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.StopAuthorization{Service: chargestop.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.CardAPI{Swipe: card.SwipeService{DB: orm, Ports: device.DiscoveryService{Gateway: gateway, Operations: device.OperationRepo{DB: orm}}, Devices: device.OperationRepo{DB: orm}, Pricing: pricing.Repo{DB: orm}, Cutoff: chargestop.CutoffRepo{}}, Status: card.CardStatusService{DB: orm}, ServiceToken: cfg.ServiceToken}.RegisterInternal(router)
+	centralhttp.AutoStopAPI{Stopper: chargestop.AutoStopper{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
 
 	// 资金与账单：开票、结算、退款派发。
-	identityhttp.BillingAPI{Service: settlement.BillingService{Calculator: settlement.FeeCalculator{DB: orm}, Orders: settlement.BillingOrders{DB: orm},
+	centralhttp.BillingAPI{Service: settlement.BillingService{Calculator: settlement.FeeCalculator{DB: orm}, Orders: settlement.BillingOrders{DB: orm},
 		Bills: settlement.BillRepo{DB: orm}}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.RefundAPI{Executor: settlement.RefundExecutor{DB: orm, Provider: channel.Refund, ProviderName: channel.Name}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.RefundAPI{Executor: settlement.RefundExecutor{DB: orm, Provider: channel.Refund, ProviderName: channel.Name}, ServiceToken: cfg.ServiceToken}.Register(router)
 	if cfg.PaymentMode == "simulation" {
-		identityhttp.SimulationCallbackAPI{Service: payment.SimulationService{DB: orm, Callback: payment.CallbackService{Refunds: settlement.RefundRecorder{}, DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}, ServiceToken: cfg.ServiceToken}.Register(router)
+		centralhttp.SimulationCallbackAPI{Service: payment.SimulationService{DB: orm, Callback: payment.CallbackService{Refunds: settlement.RefundRecorder{}, DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}, ServiceToken: cfg.ServiceToken}.Register(router)
 	}
 
 	// 设备告警同步。
-	adminalertsync.DeviceAlertSyncAPI{Sync: device.AlertSyncService{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
+	centralhttp.DeviceAlertSyncAPI{Sync: device.AlertSyncService{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
 
 	return router
 }

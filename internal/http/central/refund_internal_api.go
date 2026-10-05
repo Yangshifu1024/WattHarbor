@@ -1,4 +1,4 @@
-package http
+package central
 
 import (
 	"context"
@@ -10,11 +10,15 @@ import (
 	"time"
 )
 
+// RefundAPI 适配worker的退款派发触发，资金及渠道执行由所属退款用例拥有。
 type RefundAPI struct {
-	Executor     settlement.RefundExecutor
-	ServiceToken string
+	Executor     settlement.RefundExecutor // 原渠道退款批次用例，由cmd装配并管理资源。
+	ServiceToken string                    // 原内部服务令牌，仅HTTP准入使用，不进入业务用例。
 }
 
+// Register 在r挂载原退款派发POST路径，无返回值或注册期IO。
+// 处理器先校验服务令牌；未配置渠道返回enabled=false，否则以请求派生的20秒context执行批次。
+// 批次成功返回原processed／enabled，失败503保留已处理数量，不在HTTP重建资金事务或更换请求身份。
 func (a RefundAPI) Register(r *gin.Engine) {
 	r.POST("/api/v1/internal/refunds/dispatch", func(c *gin.Context) {
 		if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {

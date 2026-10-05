@@ -4,18 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
-
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"io"
+	"net/http"
 )
 
 // PaymentStartAPI 只绑定支付申请、提取用户身份并映射用例结果。
@@ -189,48 +186,4 @@ func (a WechatCallbackAPI) callback(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-}
-
-type SimulationCallbackAPI struct {
-	Service      payment.SimulationService // 原意图读取与模拟回调用例
-	ServiceToken string                    // 内部模拟通知的服务令牌，仅由适配器验证
-}
-
-// Register 在 router 上保持原内部模拟成功端点。
-func (a SimulationCallbackAPI) Register(router *gin.Engine) {
-	router.POST("/api/v1/internal/payments/simulate-success", a.callback)
-}
-
-// callback 验证 c 的服务令牌与商户支付号后确认原模拟支付；错误映射沿用通知身份及存储契约。
-func (a SimulationCallbackAPI) callback(c *gin.Context) {
-	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
-		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
-		return
-	}
-	var body struct {
-		MerchantOrderNo string `json:"merchant_order_no" binding:"required,max=64"` // 原模拟渠道支付单号
-	}
-	if c.ShouldBindJSON(&body) != nil {
-		httpapi.BadRequest(c, "invalid simulation request")
-		return
-	}
-	result, err := a.Service.ConfirmIntent(c.Request.Context(), body.MerchantOrderNo)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		httpapi.Write(c, 404, 1004, "payment intent not found", nil)
-		return
-	}
-
-	if errors.Is(err, payment.ErrSimulationLookup) {
-		httpapi.Write(c, 503, 5001, "payment intent unavailable", nil)
-		return
-	}
-	if errors.Is(err, payment.ErrPaymentCallbackConflict) {
-		httpapi.Write(c, http.StatusConflict, 3001, "simulation payment conflict", nil)
-		return
-	}
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "simulation persistence unavailable", nil)
-		return
-	}
-	httpapi.OK(c, result)
 }

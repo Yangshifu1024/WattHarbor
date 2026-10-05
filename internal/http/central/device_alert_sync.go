@@ -1,28 +1,28 @@
-package alertsync
+package central
 
 import (
 	"net/http"
 
 	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/http/admin"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
-// DeviceAlertSyncAPI 把设备告警同步暴露给 worker 触发；同步在 central 完成，
-// worker 只按原每秒节奏发触发意图，不接触 device_event 或 alert_event。
+// DeviceAlertSyncAPI 适配worker按原每秒节奏触发设备告警同步，同步与持久写入由device用例拥有。
 type DeviceAlertSyncAPI struct {
 	Sync         device.AlertSyncService // central所属同步用例
 	ServiceToken string                  // 原内部鉴权凭据，不返回用户
 }
 
-// Register 在r上注册原服务鉴权同步端点，无数据库或后台任务。
+// Register 在r挂载原告警同步POST路径及服务令牌中间件，无返回值、业务IO或后台任务。
 func (a DeviceAlertSyncAPI) Register(r *gin.Engine) {
-	r.POST(contract.DeviceAlertSyncPath, admin.RequireServiceToken(a.ServiceToken), a.sync)
+	r.POST(contract.DeviceAlertSyncPath, authhttp.RequireServiceToken(a.ServiceToken), a.sync)
 }
 
-// sync 使用c原请求context触发所属用例，输出原raised及失败503，不持有业务事务。
+// sync 在c原请求context下执行所属告警同步，成功返回原raised数量，未完成503保留该数量。
+// 错误只映射原公开提示，HTTP不持有同步事务或复制告警规则。
 func (a DeviceAlertSyncAPI) sync(c *gin.Context) {
 	raised, err := a.Sync.Run(c.Request.Context())
 	if err != nil {

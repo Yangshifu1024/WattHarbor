@@ -1,4 +1,4 @@
-package http
+package central
 
 import (
 	"errors"
@@ -8,7 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// balance 从 c 校验内部令牌和卡号，调用共享钱包读取用例，写原有效性／金额或错误响应。
+// balance 校验c内部令牌后按原card_no读取所属卡状态及钱包余额，返回原valid／balance_cents。
+// 无效卡号400、读取失败503，金额单位分；不变更卡状态、余额或发起渠道调用。
 func (a CardAPI) balance(c *gin.Context) {
 	if !a.internal(c) {
 		return

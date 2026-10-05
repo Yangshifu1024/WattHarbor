@@ -22,6 +22,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
+	centralhttp "github.com/ChargePilot2026/charge-pilot/internal/http/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
@@ -129,9 +130,10 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	}
 	userAuth := authhttp.NewAuthenticator(jwt, cardRouteSessions{}, identity.UserRepo{DB: central})
 	router := httpapi.NewRouter()
-	api := chargehttp.CardAPI{Swipe: card.SwipeService{DB: central, Ports: device.DiscoveryService{Gateway: edge, Operations: device.OperationRepo{DB: central}}, Devices: device.OperationRepo{DB: central}, Pricing: pricing.Repo{DB: central}, Cutoff: stop.CutoffRepo{}}, Status: card.CardStatusService{DB: central}, Auth: authhttp.SessionAuthenticator{Auth: userAuth}, ServiceToken: token}
-	api.RegisterInternal(router)
-	api.RegisterUser(router)
+	internalAPI := centralhttp.CardAPI{Swipe: card.SwipeService{DB: central, Ports: device.DiscoveryService{Gateway: edge, Operations: device.OperationRepo{DB: central}}, Devices: device.OperationRepo{DB: central}, Pricing: pricing.Repo{DB: central}, Cutoff: stop.CutoffRepo{}}, Status: card.CardStatusService{DB: central}, ServiceToken: token}
+	userAPI := chargehttp.CardAPI{Status: card.CardStatusService{DB: central}, Auth: authhttp.SessionAuthenticator{Auth: userAuth}}
+	internalAPI.RegisterInternal(router)
+	userAPI.RegisterUser(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	core, err := centralclient.NewClient(serviceclient.Client{}, server.URL, token)
