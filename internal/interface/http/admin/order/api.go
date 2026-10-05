@@ -2,12 +2,14 @@ package order
 
 import (
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // API 持有本业务族所需的数据库、鉴权与外部调用依赖。
 type API struct {
+	Feedback                 ordercase.FeedbackService // 原订单反馈列表、回复与审计事务
 	DB                       *gorm.DB
 	Auth                     chargehttp.AdminAuth
 	GatewayURL, ServiceToken string

@@ -1,7 +1,8 @@
-package http
+package order
 
 import "testing"
 
+// TestHTTPSImageRejectsNonTLS 验证反馈附件的原HTTPS、长度与认证信息约束。
 func TestHTTPSImageRejectsNonTLS(t *testing.T) {
 	// 验证反馈附件拒绝非 HTTPS 及脚本链接，避免在客服页面回显不安全 URL。
 	accepted := []string{
@@ -9,7 +10,7 @@ func TestHTTPSImageRejectsNonTLS(t *testing.T) {
 		"https://cdn.example.com/a.jpg?x=1&y=2",
 	}
 	for _, raw := range accepted {
-		if !httpsImage(raw) {
+		if !ValidFeedbackImage(raw) {
 			t.Fatalf("%q should be accepted", raw)
 		}
 	}
@@ -25,7 +26,7 @@ func TestHTTPSImageRejectsNonTLS(t *testing.T) {
 		"https://cdn.example.com/" + string(make([]byte, 600)),
 	}
 	for _, raw := range rejected {
-		if httpsImage(raw) {
+		if ValidFeedbackImage(raw) {
 			t.Fatalf("%q should be rejected", raw)
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
@@ -62,7 +63,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 		p, err := authAPI.Store.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err
 	}}, DB: orm, Auth: authAPI}.Register(router)
-	adminorder.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	adminorder.API{Feedback: ordercase.FeedbackService{DB: orm}, DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
 	adminfinance.API{Refunds: settlement.RefundAdminService{DB: orm, ReviewRepo: settlement.RefundReviewRepo{DB: orm, LookupSigner: func(ctx context.Context, id uint64) (settlement.SignerStatus, error) {
 		p, err := authAPI.Store.Profile(ctx, id)
 		return settlement.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, err

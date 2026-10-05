@@ -258,7 +258,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.5 device：D-01／D-02／N-device
 
-来源：[导入编排](../internal/interface/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/infrastructure/database/admin_case_store.go)、[告警存储](../internal/device/alert_sync_store.go)。
+来源：[导入编排](../internal/interface/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_sync_store.go)。
 
 目标：ImportService.Create／Retry、OperationReader、StationService、FaultService.Report／Dispatch／Resolve／History、AlertService.Sync／Acknowledge；import_repo.go、operation_repo.go、fault_repo.go 等。
 
@@ -307,7 +307,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 目标：order.QueryService.History／Detail、FeedbackService.Submit／Reply；charging/query.Service.Ongoing／Snapshot／Curve／Process。身份、范围及窗口作为业务输入。
 
 - [ ] O-01：订单基础 repo 提供状态锁定、编号、定价快照和历史投影；付款／退款金额写入仍调用 payment 能力。
-- [ ] O-01：反馈提交、回复状态、订单归属与附件规则迁回 order，拆除通用 case 的表名选择能力；审计同事务。
+- [x] O-01：反馈提交、回复状态、订单归属与附件规则迁回 order，拆除通用 case 的表名选择能力；审计同事务。
 - [ ] CQ-01：组合计费进度、cutoff、支付／费用摘要及 gateway 遥测／历史曲线／过程；定义窄 Reader，order 不 import settlement 或 charging。
 - [ ] CQ-01：gateway DTO 转为本用例读模型，再由 HTTP 映射公开字段；不把当前遥测当最终结算，不将缺失值替换为零。
 - [ ] N-order：history／state／view／package／snapshot repo 统一名称，纯展示规则与 SQL 投影分清。
@@ -520,10 +520,10 @@ make test-integration TEST_MYSQL_URL=...
 | F-01／PAY-01／PAY-02／N-payment | 完成 | checkout／回调及归属注入完成，支付模型与渠道中文契约已核对；注册路由覆盖原号恢复、严格输入、付款人／商户／应用／金额／交易号冲突；完整回调取消回滚通过。全仓及独立暂存快照验收通过，tidy 无差异 |
 | W-01／N-wallet | 完成 | 充值／退款／风险入口及 repo 归位；11 笔申请固定 5 次 SQL；两连接验证原请求重放、频次、来源额度、待付行锁隔离、审核等锁后新到账及原成功重放；流水余额使用当前资金事实，取消与审计故障整体回滚；全仓及快照验收通过 |
 | D-01 | 完成 | 导入、站点、设备运营及厂商编排已归 device，普通归属／能力和站点锁由所属 repo 提供；真实注册后台及 gateway 覆盖范围、原号重放、旧版本、未知值、提交后恢复及审计。两连接验证首次申请唯一键及反向清单统一锁序，变异稳定失败并恢复；工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
-| D-02／N-device | 待实施 | 导入、设备运营和站点 repo 已改名；故障／告警及其余持久文件、用户站点组合查询仍待按所属批次迁移 |
+| D-02／N-device | 待实施 | 导入、设备运营和站点 repo 已改名；报修状态与事件表访问已归 device/fault_repo，并回归实际后台指派／修复／关闭与3条历史。故障业务编排、告警及其余持久文件、用户站点组合查询仍待迁移 |
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
-| O-01／CQ-01／N-order | 待实施 | 基础订单 repo 保留，组合查询及 case 待迁移 |
+| O-01／CQ-01／N-order | 进行中 | FeedbackService 接管用户提交及后台回复／关闭审计，反馈与报修表访问分归 order/device，通用 case 表名选择已删除；真库、注册路由及旧 RR 当前读变异通过。订单基础持久命名与组合查询、CQ-01 尚待实施 |
 | M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，后台会话与 HTTP 事务待迁移 |
@@ -572,3 +572,9 @@ make test-integration TEST_MYSQL_URL=...
 3a 真实证据：`.tmp/batch3-identity-all-targeted.log`、`.tmp/batch3-identity-concurrency.log`、`.tmp/batch3-identity-routes.log`、`.tmp/batch3-user-query-routes.log`。两连接按身份锁与号码预查闸门固定并发，核对一用户一钱包、首次 unionID、失败开户回滚、号码唯一归属及 NULL 解绑；提交造数清理自身记录。真实 Redis 验证并发轮换仅一获胜、previous 注销、KEEPTTL、旧大整数连续两轮精确保存、格式与取消、真实 Lua 存储故障。注册 user/admin 使用真实 DB／Redis，微信交换为 fixture；冻结、签发失败清理、用户精度、全局 user.read 即时撤销、充值范围及原金额通过。列表一名及11名用户固定5次SQL。`.tmp/batch3a-mutant-{storage-classification,legacy-precision}.log` 的针对变异稳定失败，恢复后 `.tmp/batch3a-mutants-restored.log` 通过；后台共享注销及故障分类在真实 Redis 通过，不把它称为 OP-01 全部完成。
 
 3a 退出证据：工作区 `.tmp/batch3a-{check,integration,build,tidy}.log`；精确暂存快照 `.tmp/batch3a-validation` 的 `.tmp/batch3a-snapshot-{check,integration,build,tidy}.log` 均通过，585份 Go／模块文件与暂存原 blob 一致，tidy 无差异。CI 及独立测试入口增加 TEST_REDIS_URL，测试 Redis 6381 不访问开发实例。后台78项、用户59项测试及类型检查、后台构建通过，保留既有 Vite 大 chunk 警告。user/admin 开发进程已重启，`.tmp/batch3a-live-identity.json` 记录实际登录、档案、开发号码绑定／解绑、刷新、原令牌注销后访问401、后台档案与原充值页；未触发真实微信登录或手机号渠道。
+
+批次3b（O-01反馈部分）实施：用户评价及后台反馈列表／回复／关闭归 order.FeedbackService，表访问归 feedback_repo；HTTPS 附件规则与测试迁入订单。device/user_fault_store 的反馈写入删除，infrastructure/database/admin_case_store 拆为订单反馈与 device/fault_repo，删除 CaseListSpec／CaseStore 通用表名选择。报修原 HTTP 编排尚待 D-02，订单基础 repo 命名和 O-01／CQ-01 组合查询尚未完成。
+
+3b 真库证据：`.tmp/batch3b-feedback-{repo,routes,restored}.log`。两独立连接按订单锁门控验证只提交一评价；旧 RR 快照早于另一连接提交时，SHARE 当前读拒绝重复。`.tmp/batch3b-mutant-feedback-current-read.log` 移除当前读后稳定失败，原实现恢复通过。注册 user/admin 使用真实用户、订单、后台权限及 Redis，覆盖数字／业务号归属、未完成拒绝、评分／附件、原重复409、后台身份精度与图片数组、回复与关闭重放、即时撤权、审计503及整体回滚。报修所属 repo 回归 open→dispatched→fixed→closed，重复指派不增事件、跳级拒绝、历史恰好3条；不将此记为 D-02全部完成。外层事务回滚或清理自身提交行并核对零残留。
+
+3b 退出证据：工作区 `.tmp/batch3b-{check,integration,build,tidy}.log` 与精确暂存快照 `.tmp/batch3b-validation` 的 `.tmp/batch3b-snapshot-{check,integration,build,tidy}.log` 均通过，589份 Go／模块原 blob 一致，tidy 无差异。实际重启 user/admin 后，`.tmp/batch3b-live-feedback.json` 验证原2b已退款订单的用户提交、原重复409、后台回复／关闭／关闭重放，保留一份已关闭开发反馈并注销测试会话。公开 HTTP 字段与 OpenAPI 未改变；订单查询、CQ-01、营销和后续批次仍待完成。

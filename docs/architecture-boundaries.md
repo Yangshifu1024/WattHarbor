@@ -93,7 +93,9 @@
 
 worker 保留任务顺序、游标、重试与投递编排，计费和退款的金额／状态写入仍由业务用例执行；不把它们搬进 worker。gateway 的协议接入、持久命令、端口占用与会话运行时继续独立；control 中剩余 SQL 逐步改为 gateway/repo 的完整操作，不向控制器返回可继续拼查询的 GORM builder。协议解析不引入数据库。
 
-`infrastructure/database` 当前剩余的 dashboard 和 case 查询按业务用途收敛：dashboard 是 ops 的跨模块只读投影；case 的反馈／故障写入分归 order／device。允许明确的跨模块读模型，不以「文件全部搬空」作为正确性证据。
+`infrastructure/database` 当前剩余 dashboard 待迁为 ops 跨模块只读投影；case 文件已拆除，反馈表访问归 order/feedback_repo，报修状态与事件归 device/fault_repo。报修 HTTP 业务编排仍待 D-02，INF-01 不能提前完成。允许明确的跨模块读模型，不以「文件全部搬空」作为正确性证据。
+
+FeedbackService 拥有订单评价、后台读取、回复、关闭及审计事务。order → ops 仅使用所属 AppendAuditInTx 能力，ops 不反向依赖 order；反馈原用户与设备身份来自已锁订单。提交按订单锁 → 已有反馈当前读 → 插入，旧 RR 快照不能漏掉另一连接已提交的反馈；重复提交仍为冲突，关闭重放不重复审计。反馈无站点范围列，后台沿用 feedback.read／feedback.reply 全局权限，普通设备范围不能据页面位置改变反馈归属。回复和关闭的状态／审计共用事务，审计失败整体回滚。
 
 **目标结构同样移除 infrastructure 层。** 现有 `infrastructure/redis` 持有用户／后台会话的记录、寿命、刷新、撤销与键布局，按业务归属分别迁到 identity/session_repo.go 与 ops/session_repo.go；MFA 的 Redis 数据访问归 ops。Redis 实现沿用 repo 命名，不另建顶层 redis 业务包，也不把带用户／后台规则的会话实现整体放入 platform。
 

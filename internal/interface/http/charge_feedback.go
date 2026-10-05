@@ -1,129 +1,49 @@
 package http
 
 import (
-	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"net/url"
-	"strconv"
-	"strings"
-
+	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-var (
-	errFeedbackExists = errors.New("order already has feedback")
-	errOrderNotReady  = errors.New("order is not a completed order of this user")
-)
-
-// submitFeedback 为用户已完成的订单提交反馈。
-// 事务中锁定 charge_order 后校验归属、状态和已有反馈，保证每个订单最多提交一次。
+// submitFeedback 从 c 读取原用户、订单引用和 JSON，调用完整反馈用例，保持原输入与状态文案。
+// 业务单号预查仍先于 JSON 绑定；数字主键的归属及状态由同一提交事务核对。
 func (a UserAccountAPI) submitFeedback(c *gin.Context) {
 	userID, ok := a.userID(c)
 	if !ok {
 		return
 	}
-	orderID, err := strconv.ParseUint(c.Param("order_id"), 10, 64)
-	if err != nil || orderID == 0 {
-		orderNo := strings.TrimSpace(c.Param("order_id"))
-		if orderNo == "" || len(orderNo) > 64 {
-			httpapi.BadRequest(c, "订单号无效")
-			return
+	orderID, err := a.Feedback.ResolveReference(c.Request.Context(), userID, c.Param("order_id"))
+	var input *order.FeedbackInputError
+	if err != nil {
+		switch {
+		case errors.As(err, &input):
+			httpapi.BadRequest(c, input.Message)
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			httpapi.Write(c, 404, 1004, "订单不存在", nil)
+		default:
+			resourceWriteFailure(c, err)
 		}
-		var order orderstore.ChargeOrderRecord
-		if err := a.UserDB.WithContext(c.Request.Context()).Select("id").Where("order_no=? AND user_id=? AND deleted_at IS NULL", orderNo, userID).Take(&order).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				httpapi.Write(c, 404, 1004, "订单不存在", nil)
-			} else {
-				resourceWriteFailure(c, err)
-			}
-			return
-		}
-		orderID = order.ID
+		return
 	}
-	var in struct {
-		Rating   int8     `json:"rating"`
-		Category string   `json:"category"`
-		Content  *string  `json:"content"`
-		Images   []string `json:"images"`
-	}
+	var in order.FeedbackInput
 	if c.ShouldBindJSON(&in) != nil {
 		httpapi.BadRequest(c, "反馈请求无效")
 		return
 	}
-	if in.Rating < 1 || in.Rating > 5 || !oneOfStatus(in.Category, "rating complaint suggestion") {
-		httpapi.BadRequest(c, "评分或反馈类型无效")
-		return
-	}
-	if in.Content != nil && len([]rune(*in.Content)) > 2000 {
-		httpapi.BadRequest(c, "反馈内容过长")
-		return
-	}
-	if len(in.Images) > 5 {
-		httpapi.BadRequest(c, "图片最多 5 张")
-		return
-	}
-	for _, image := range in.Images {
-		if !httpsImage(image) {
-			httpapi.BadRequest(c, "图片链接必须为 HTTPS")
-			return
-		}
-	}
-	images, _ := json.Marshal(in.Images)
-
-	var feedbackID uint64
-	tx := a.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var order struct {
-			ID       uint64
-			UserID   uint64
-			DeviceID string
-			Status   string
-		}
-		// 订单表按 created_month 分区，此处按订单主键定位需要加锁的记录。
-		order, err := device.LockFeedbackOrder(tx, orderID)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errOrderNotReady
-			}
-			return err
-		}
-		if order.UserID != userID || !oneOfStatus(order.Status, "completed refunding refunded") {
-			return errOrderNotReady
-		}
-		existing, err := device.CountOrderFeedback(tx, orderID)
-		if err != nil {
-			return err
-		}
-		if existing > 0 {
-			return errFeedbackExists
-		}
-		feedbackID, err = device.InsertFeedback(tx, userID, orderID, order.DeviceID, in.Rating, in.Category, in.Content, string(images))
-		return err
-	})
+	id, err := a.Feedback.Submit(c.Request.Context(), userID, orderID, in)
 	switch {
-	case errors.Is(tx, errOrderNotReady):
-		// 越权订单与不存在的订单使用相同 not-found 响应，避免泄露订单存在性。
+	case errors.As(err, &input):
+		httpapi.BadRequest(c, input.Message)
+	case errors.Is(err, order.ErrFeedbackOrderNotReady):
 		httpapi.Write(c, 404, 1004, "订单不存在或不可评价", nil)
-	case errors.Is(tx, errFeedbackExists):
+	case errors.Is(err, order.ErrFeedbackExists):
 		httpapi.Write(c, 409, 2009, "该订单已评价", nil)
-	case tx != nil:
+	case err != nil:
 		httpapi.Write(c, 503, 5003, "反馈提交失败，请稍后重试", nil)
 	default:
-		httpapi.OK(c, gin.H{"submitted": true, "feedback_id": feedbackID})
+		httpapi.OK(c, gin.H{"submitted": true, "feedback_id": id})
 	}
-}
-
-// httpsImage 校验反馈附件使用 HTTPS 域名链接，拒绝明文 HTTP 和脚本 URL。
-func httpsImage(raw string) bool {
-	if len(raw) == 0 || len(raw) > 512 || strings.TrimSpace(raw) != raw {
-		return false
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-		return false
-	}
-	return parsed.User == nil
 }

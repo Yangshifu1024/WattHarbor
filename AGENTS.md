@@ -71,6 +71,8 @@ charge-pilot/
 │   └── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
 │       └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
 ├── internal/order                                        订单表模型、编号分配与读模型
+│   ├── internal/order/feedback.go（迁移前：internal/interface/http/charge_feedback.go、admin/order/casework.go[反馈业务]）
+│   ├── internal/order/feedback_repo.go（迁移前：internal/device/user_fault_store.go[评价表访问]、internal/infrastructure/database/admin_case_store.go[反馈]）
 │   ├── internal/order/funding_repo.go（新增：资金及开票事务的所属订单能力）
 │   ├── internal/order/card_session_repo.go（迁移前：internal/card/card_store.go[续购订单锁]）
 │   ├── internal/order/order_history_store.go（迁移前：internal/payment/order_authorization_store.go[历史视图部分]）
@@ -138,6 +140,7 @@ charge-pilot/
 │   ├── internal/card/start_result_repo.go（迁移前：internal/payment/order_start_repo.go[刷卡写入部分]）
 │   └── internal/card/user_card_repo.go
 ├── internal/device                                       设备接入、遥测、会话、故障
+│   ├── internal/device/fault_repo.go（迁移前：internal/infrastructure/database/admin_case_store.go[报修表访问]）
 │   ├── internal/device/discovery.go（迁移前：internal/interface/http/payment_scan.go[事实组合]）
 │   ├── internal/device/operation_repo.go（迁移前：internal/payment/payment_device_store.go）
 │   ├── internal/device/alert_sync_store.go
@@ -405,7 +408,6 @@ charge-pilot/
 │   ├── internal/protocol/router.go
 │   └── internal/protocol/session_audit.go
 ├── internal/infrastructure                               持久化实现
-│   ├── internal/infrastructure/database/admin_case_store.go
 │   ├── internal/infrastructure/database/admin_dashboard_store.go
 │   └── internal/infrastructure/redis/admin_session.go
 ├── internal/persist                                      与业务无关的持久化原语
