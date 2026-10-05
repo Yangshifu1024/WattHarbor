@@ -129,20 +129,34 @@ func (s AdminStore) Login(ctx context.Context, username, password, ip string) (A
 	return account, nil
 }
 
-// CompleteMFA 校验 TOTP，成功后更新登录时间；错误验证码计入账号锁定计数。
-func (s AdminStore) CompleteMFA(ctx context.Context, accountID uint64, code, ip string) (AdminAccount, error) {
+// CompleteMFA 在ctx下锁identity原账号，核对原版本及code；ip用于审计，consume原子消费已验证挑战。
+// 锁定／版本失效不消费；坏码计数与审计同事务提交，好码先消费后记录成功。
+// 消费后SQL失败会回滚SQL但不恢复Redis挑战，失败关闭且须重新密码登录。
+func (s AdminStore) CompleteMFA(ctx context.Context, identity operations.AccountIdentity, code, ip string, consume func(context.Context) error) (AdminAccount, error) {
 	var account AdminAccount
 	var denied error
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", accountID).Take(&account).Error; err != nil {
-			return deniedMFA(tx, err, accountID, &denied, ip)
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", identity.ID).Take(&account).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return operations.ErrCredentials
+			}
+			return err
 		}
 		now := time.Now().UTC()
+		if account.AuthVersion != identity.AuthVersion || account.Username != identity.Username {
+			return operations.ErrInvalidMFAChallenge
+		}
+		if account.Status == "locked" && (!account.LockedUntil.Valid || account.LockedUntil.Time.After(now)) {
+			return operations.ErrLocked
+		}
 		if account.Status == "disabled" || !account.MFAEnabled || account.MFASecret == nil || *account.MFASecret == "" {
 			return operations.ErrCredentials
 		}
 		if err := auth.VerifyTOTP(*account.MFASecret, code, now); err != nil {
 			attempts := account.FailedLoginCount + 1
+			if account.LockedUntil.Valid && !account.LockedUntil.Time.After(now) {
+				attempts = 1
+			}
 			updates := map[string]any{"failed_login_count": attempts, "status": "active", "locked_until": nil}
 			denied = operations.ErrInvalidTOTP
 			if attempts >= 5 {
@@ -154,6 +168,12 @@ func (s AdminStore) CompleteMFA(ctx context.Context, accountID uint64, code, ip 
 				return err
 			}
 			return WriteAuthAudit(tx, account, "mfa_failed", ip)
+		}
+		if consume == nil {
+			return operations.ErrInvalidMFAChallenge
+		}
+		if err := consume(ctx); err != nil {
+			return err
 		}
 		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {
 			return err
@@ -168,15 +188,6 @@ func (s AdminStore) CompleteMFA(ctx context.Context, accountID uint64, code, ip 
 		return AdminAccount{}, denied
 	}
 	return account, nil
-}
-
-// deniedMFA 将账号不存在记录为凭据错误，并正常结束事务；存储错误继续向上传递。
-func deniedMFA(tx *gorm.DB, err error, accountID uint64, denied *error, ip string) error {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		*denied = operations.ErrCredentials
-		return nil
-	}
-	return err
 }
 
 // Profile 读取一个账号的登录身份与权限清单：先联表取角色编码，再按角色展开权限码。

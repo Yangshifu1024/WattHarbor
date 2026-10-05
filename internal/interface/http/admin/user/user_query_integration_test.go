@@ -131,7 +131,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 	tx.Callback().Query().Remove(countName)
 	tx.Callback().Row().Remove(countName)
 	router := httpapi.NewRouter()
-	API{Users: service, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, Sessions: sessions, JWT: jwt}}.Register(router)
+	API{Users: service, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: sessions, Tokens: ops.JWTAccess{JWT: jwt}}}}.Register(router)
 	call := func(path, bearer string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", path, nil)
 		if bearer != "" {

@@ -350,8 +350,8 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 - [ ] OP-01：先提取 Actor／AuditContext 值与 AppendAuditInTx，供前面批次复用；HTTP 不持有 AuditedTransaction 的业务提交责任。
 - [ ] OP-01：账号创建／修改／删除／解锁／密码重置、角色和数据范围变更、MFA 设置迁入服务；保留最后管理员保护及角色集合的原串行化边界。
-- [ ] OP-01：权限实时读取，不信任 JWT／前端菜单；首签人实时权限查询通过注入回调或窄接口提供，ops 不 import settlement。
-- [ ] OP-01：Redis MFA pending／锁／频次 IO 由实现层提供，规则归 ops；审计和用户返回不得包含密码、token、密钥、验证码。
+- [x] OP-01：权限实时读取，不信任 JWT／前端菜单；首签人实时权限查询通过注入回调或窄接口提供，ops 不 import settlement。
+- [x] OP-01：Redis MFA pending／锁／频次 IO 由实现层提供，规则归 ops；敏感证明不进入审计或普通数据查询。原登录／刷新回执仅返回自己的凭据，口令通过的新登记回执仅返回自己的短期绑定密钥，保留原受保护契约。
 - [x] OP-01：将 infrastructure/redis/admin_session.go 迁入 ops/session_repo.go，后台刷新、撤销与挑战记录由 ops 持有；保留 AuthVersion、ART_／admin:session:、绝对 TTL、轮换／撤销脚本和令牌格式。共用技术能力按第 2 节提取，不让 ops 与 identity 为复用会话实现互相引用。
 - [ ] OP-01：公告业务归 ops；dashboard 移成有明确来源的跨模块只读投影，保留北京时间日界。admin/ops 中告警确认转 D-02。
 - [ ] N-ops：业务 repo 统一命名；不要通过泛化“表名 + values”写入接口绕过所属业务模块。
@@ -526,7 +526,7 @@ make test-integration TEST_MYSQL_URL=...
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
 | M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
-| OP-01／N-ops | 进行中 | 后台会话 repo 与真实 Redis 回归已归 ops，共用轮换精确保留旧 ID／版本；实时权限及最后管理员保护保留。HTTP 认证、MFA、账号角色和运营事务继续迁移 |
+| OP-01／N-ops | 进行中 | 后台SessionService／MFAService及会话、频次、设置repo归位，锁后原版本／挑战CAS及实时权限完成定向验证。最后管理员保护保留，账号角色、公告写入和dashboard继续迁移 |
 | E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
 | INF-01 | 待实施 | dashboard、case、用户与后台会话归位后，删除 infrastructure 及残留引用 |
@@ -656,3 +656,9 @@ make test-integration TEST_MYSQL_URL=...
 批次4e（OP-01后台会话repo）实施与证据：后台SessionRepo及真实Redis测试从infrastructure/redis迁入ops，旧实现和源码消费者删除，cmd和注册HTTP测试直接装配所属repo，无别名。ART_、admin:session:、七天绝对寿命、previous仅注销、五分钟登录挑战及AuthVersion归属保留。真实Redis复现旧数值ID／权限版本经cjson轮换后精度丢失，原失败见`.tmp/batch4e-legacy-precision-before.log`；共用RotateScript从原JSON恢复十进制文本、新记录用JSONUint64字符串编码，identity与ops互不引用。边界编码、原精度连续两轮、KEEPTTL、两真实调用仅一获胜、旧令牌注销、取消、Lua存储故障与挑战隔离通过，日志`.tmp/batch4e-{codec,session-real-redis,mutants-restored}.log`。精度和摘要竞争两项变异在指定断言失败并恢复，`.tmp/batch4e-mutant-{precision,digest}.log`保留；只清理自身测试SID／挑战，未访问开发Redis。
 
 4e退出证据：工作区`.tmp/batch4e-{check,integration,build,tidy}.log`及精确暂存快照`.tmp/batch4e-validation`对应四份`.tmp/batch4e-snapshot-*.log`全部通过；864份暂存文件中的640份Go／模块与原blob逐字节一致，tidy无差异、本地文档链接有效。重启admin后`.tmp/batch4e-live-session.json`验证实际登录、刷新保持原账号／权限、注销后401，不记录令牌，不修改开发账号安全设置或资金。前端代码／公开JSON未改变，最近完整前端验收仍为4b。后台HTTP认证、MFA设置／锁／频次、账号角色与运营事务尚待迁移；现有登录挑战读取不消费，HTTP将挑战当刷新令牌撤销的原错误及挑战版本准入继续下一认证批次纠正，OP-01／INF-01不提前完成。
+
+批次4f（OP-01后台认证／MFA）实施：AdminAuth只保留HTTP输入、Bearer提取、上下文和原响应映射，删除原认证编排、JWT声明、Redis频次、MFA设置SQL事务及缓存IO；SessionService／MFAService分别拥有完整顺序，cmd注入账号、会话、专属JWT、AuthRateRepo及MFARepo。原路径、公开字段、八小时访问期限、五次一分钟窗口、五分钟登记及错误状态保持。修正原HTTP把登录挑战当刷新令牌撤销而未消费的问题；原密码验证账号／版本在SQL行锁后核对，锁定账号拒绝，好码消费原CAS挑战后才写成功审计并发会话。签发失败尽力撤销新会话；取消后的原context清理可能失败，测试核对仍受原TTL限制，不宣称已注销。设置同账号租锁、SID／版本／标识／绝对期限、坏码不消费、版本提升及审计事务归ops，无旧入口别名；字段和方法中文契约已核对。
+
+4f定向证据：`.tmp/batch4f-security-{flow,registered,all}.log`及`.tmp/batch4f-mutants-restored.log`使用真实MySQL／Redis，验证实时权限删除、改密及刷新失效、旧挑战版本、锁定准入、成功消费后重放、原公开回执和敏感证明不进入审计。两个独立连接在两个原Redis读取后固定放行，恰好一个会话／成功审计；旧RR快照早于版本提交时，当前锁读拒绝且不消费。消费后注入审计故障回滚SQL，挑战／设置凭据保持已消费、须重新登录／登记，不宣称Redis与SQL跨存储原子提交。挑战消费、版本、当前锁读及设置审计四项变异均在指定断言失败并恢复，`.tmp/batch4f-mutant-*.log`保留；去掉当前锁读时会在后续档案阶段拒绝但已错误消费挑战，针对该事实的断言失败，不把它描述为成功签发。提交fixture创建自己的自定义角色／账号并清理表、随机SID／挑战；注册设置造数外层回滚，缓存只清理本测试键，不触碰bootstrap或开发安全设置。
+
+4f退出证据：工作区与精确暂存快照`.tmp/batch4f-validation`的check／完整三库integration／全部入口build／tidy全部通过，日志`.tmp/batch4f-{check,integration,build,tidy}.log`及`.tmp/batch4f-snapshot-*.log`；870份暂存文件中的646份Go／模块与原blob逐字节一致，tidy无差异，本地Markdown链接有效。新增用户技能目录及skills-lock.json保留在工作区，已从本批暂存与最终验证快照移出，不混入重构提交。后台78项／用户59项、两端typecheck及后台构建通过，保留原Vite大chunk提示。重启admin后`.tmp/batch4f-live-session.json`验证新服务实际登录、原档案／权限、刷新和注销后401，未修改开发密码、MFA或资金；真实设置流程由独立测试库及注册路由覆盖。OP-01尚余账号角色、公告写入、dashboard及剩余ops持久命名，后续任务仍按表中状态实施。

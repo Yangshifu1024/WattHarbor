@@ -54,7 +54,10 @@ func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application
 	if err := adminStore.Bootstrap(ctx, cfg.AdminBootstrapUser, cfg.AdminBootstrapPassword); err != nil {
 		return nil, err
 	}
-	authAPI := identityhttp.AdminAuth{Store: adminStore, Sessions: ops.SessionRepo{Redis: r.Cache}, JWT: jwt}
+	authAPI := identityhttp.AdminAuth{
+		Sessions: ops.SessionService{Accounts: adminStore, Sessions: ops.SessionRepo{Redis: r.Cache}, Tokens: ops.JWTAccess{JWT: jwt}, Limits: ops.AuthRateRepo{Redis: r.Cache}},
+		MFA:      ops.MFAService{DB: adminStore.DB, Repo: ops.MFARepo{Redis: r.Cache}},
+	}
 	gateway, err := gatewayclient.NewClient(serviceclient.Client{HTTP: r.InternalHTTP}, cfg.GatewayInternalURL, cfg.ServiceToken)
 	if err != nil {
 		return nil, err

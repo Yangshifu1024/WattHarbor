@@ -92,8 +92,8 @@ func TestAdminSessionConcurrentRotationHasOneWinner(t *testing.T) {
 	if ttl, err := client.PTTL(ctx, mfaKey(challenge)).Result(); err != nil || ttl > 5*time.Minute || ttl < 5*time.Minute-5*time.Second {
 		t.Fatalf("challenge TTL %v %v", ttl, err)
 	}
-	if actual, err := repo.ResolveMFA(ctx, challenge); err != nil || actual != account.ID {
-		t.Fatalf("challenge identity %d %v", actual, err)
+	if actual, err := repo.ResolveMFA(ctx, challenge); err != nil || actual.Account != account {
+		t.Fatalf("challenge identity %+v %v", actual, err)
 	}
 	if exists, err := repo.Exists(ctx, challenge); err != nil || exists {
 		t.Fatalf("challenge became session %v %v", exists, err)

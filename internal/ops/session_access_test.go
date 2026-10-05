@@ -1,4 +1,4 @@
-package http
+package ops
 
 import (
 	"encoding/json"
@@ -21,7 +21,11 @@ func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 	}
 	router := httpapi.NewRouter()
 	router.GET("/issue", func(c *gin.Context) {
-		(AdminAuth{JWT: jwt}).issue(c, operations.Profile{ID: 7, RoleID: 8}, "fixture-session", "fixture-refresh")
+		result, err := (SessionService{Tokens: JWTAccess{JWT: jwt}}).issue(c.Request.Context(), operations.Profile{ID: 7, RoleID: 8}, "fixture-session", "fixture-refresh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		httpapi.OK(c, result)
 	})
 	reply := httptest.NewRecorder()
 	router.ServeHTTP(reply, httptest.NewRequest(http.MethodGet, "/issue", nil))
@@ -68,5 +72,29 @@ func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 				t.Fatalf("valid = %t, verification error = %v", tc.valid, err)
 			}
 		})
+	}
+}
+
+func TestIssuedIdentityIncludesDisplayNameActualRoleAndMFAState(t *testing.T) {
+	jwt, err := auth.NewJWT(strings.Repeat("x", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := SessionService{Tokens: JWTAccess{JWT: jwt}}
+	router := httpapi.NewRouter()
+	router.GET("/identity", func(c *gin.Context) {
+		result, err := a.issue(c.Request.Context(), operations.Profile{ID: 7, Username: "fixture", DisplayName: "管理员显示名", Role: "custom", RoleName: "自定义中文角色", RoleID: 8, MFAEnabled: true}, "fixture-session", "fixture-refresh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		httpapi.OK(c, result)
+	})
+	reply := httptest.NewRecorder()
+	router.ServeHTTP(reply, httptest.NewRequest(http.MethodGet, "/identity", nil))
+	var envelope struct {
+		Data operations.Profile `json:"data"`
+	}
+	if err := json.Unmarshal(reply.Body.Bytes(), &envelope); err != nil || reply.Code != 200 || envelope.Data.DisplayName != "管理员显示名" || envelope.Data.RoleName != "自定义中文角色" || envelope.Data.RoleID != 8 || !envelope.Data.MFAEnabled {
+		t.Fatalf("issued identity omitted live account metadata: status=%d err=%v", reply.Code, err)
 	}
 }

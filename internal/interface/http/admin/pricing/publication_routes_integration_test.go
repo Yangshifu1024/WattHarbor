@@ -137,7 +137,7 @@ func TestRegisteredSchemeRoutesPreserveAuthorizationAndResults(t *testing.T) {
 	record, _ := json.Marshal(map[string]any{"uid": id, "version": 1})
 	sessions.AddHook(pricingRouteSessionHook{records: map[string]string{"admin:session:" + sid: string(record)}})
 	router := httpapi.NewRouter()
-	API{Queries: pricing.QueryService{DB: tx}, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: ops.SessionRepo{Redis: sessions}}, Schemes: pricing.SchemeService{DB: tx}, Publications: pricing.PublicationService{DB: tx}}.Register(router)
+	API{Queries: pricing.QueryService{DB: tx}, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: ops.SessionRepo{Redis: sessions}, Tokens: ops.JWTAccess{JWT: jwt}}}, Schemes: pricing.SchemeService{DB: tx}, Publications: pricing.PublicationService{DB: tx}}.Register(router)
 	base := "/api/v1/admin/settings/charging-schemes"
 	call := func(method, path, body, bearer string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))

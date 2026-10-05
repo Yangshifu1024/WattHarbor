@@ -62,15 +62,15 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 	admindevice.API{Management: device.ManagementService{DB: orm, Summaries: gateway}, Imports: device.ImportService{DB: orm, Gateway: gateway, Compatibility: pricing.Repo{DB: orm}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {
 		return ops.LoadDataScope(ctx, orm, p)
 	}}, Meters: settlement.MeterReviewService{Orders: settlement.BillingOrders{DB: orm}, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
-		p, err := authAPI.Store.Profile(ctx, id)
+		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err
 	}}, DB: orm, Auth: authAPI}.Register(router)
 	adminorder.API{Faults: device.FaultService{DB: orm}, Process: chargingquery.ProcessService{Orders: ordercase.QueryService{DB: orm}, Gateway: gateway}, Live: chargingquery.LiveService{Gateway: gateway, Orders: ordercase.SnapshotRepo{DB: orm}, Cards: card.PurchaseQueryRepo{DB: orm}}, Query: ordercase.QueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
 	adminfinance.API{Refunds: settlement.RefundAdminService{DB: orm, ReviewRepo: settlement.RefundReviewRepo{DB: orm, LookupSigner: func(ctx context.Context, id uint64) (settlement.SignerStatus, error) {
-		p, err := authAPI.Store.Profile(ctx, id)
+		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, err
 	}}}, Invoices: settlement.InvoiceReviewService{DB: orm, ReviewRepo: settlement.InvoiceReviewRepo{DB: orm, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
-		p, err := authAPI.Store.Profile(ctx, id)
+		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, err
 	}}}, Risks: wallet.RiskService{DB: orm, Refund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}}, DB: orm, Auth: authAPI}.Register(router)
 	adminmarketing.API{Coupons: marketing.CouponService{DB: orm}, Activities: marketing.ActivityService{DB: orm}, Auth: authAPI}.Register(router)

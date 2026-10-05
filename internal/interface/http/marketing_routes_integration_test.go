@@ -90,7 +90,7 @@ func TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds(t *testing.T) {
 	}
 	router := httpapi.NewRouter()
 	userAuth := chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, identity.UserRepo{DB: tx})}
-	(adminmarketing.API{Coupons: marketing.CouponService{DB: tx}, Activities: marketing.ActivityService{DB: tx}, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: admins}}).Register(router)
+	(adminmarketing.API{Coupons: marketing.CouponService{DB: tx}, Activities: marketing.ActivityService{DB: tx}, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: admins, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	(chargehttp.CouponAPI{Auth: userAuth, Query: marketing.CouponQueryService{DB: tx}}).Register(router)
 	(chargehttp.UserAccountAPI{Auth: userAuth, CouponQuery: marketing.CouponQueryService{DB: tx}}).Register(router)
 	call := func(method, path, token, body string) *httptest.ResponseRecorder {

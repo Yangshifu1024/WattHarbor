@@ -93,7 +93,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	(adminops.API{Alerts: device.AlertService{DB: tx}, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: sessions}}).Register(router)
+	(adminops.API{Alerts: device.AlertService{DB: tx}, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: sessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	call := func(method, path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, nil)
 		req.Header.Set("Authorization", "Bearer "+token)

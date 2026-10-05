@@ -157,25 +157,51 @@ func (s SessionRepo) BeginMFA(ctx context.Context, account operations.AccountIde
 	return token, nil
 }
 
-// ResolveMFA 在ctx下读取token原挑战并返回账号ID或格式／缺失／存储错误，不消费记录。
+// MFAChallenge 保存所属存储读出的原身份与私有CAS凭据，不作为HTTP公开响应。
+type MFAChallenge struct {
+	Account operations.AccountIdentity // 原密码验证时的账号及权限版本
+	token   string                     // 原随机挑战，决定唯一存储键
+	raw     string                     // 原JSON文本，用于拒绝并发替换／重复消费
+}
+
+// ResolveMFA 在ctx下读取token原挑战身份与CAS凭据，返回格式／缺失／存储错误，不消费记录。
 // 验证码错误时保留挑战以允许重试，不直接创建会话。
-func (s SessionRepo) ResolveMFA(ctx context.Context, token string) (uint64, error) {
+func (s SessionRepo) ResolveMFA(ctx context.Context, token string) (MFAChallenge, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return 0, operations.ErrInvalidMFAChallenge
+		return MFAChallenge{}, operations.ErrInvalidMFAChallenge
 	}
 	value, err := s.Redis.Get(ctx, mfaKey(token)).Bytes()
 	if errors.Is(err, redis.Nil) {
-		return 0, operations.ErrInvalidMFAChallenge
+		return MFAChallenge{}, operations.ErrInvalidMFAChallenge
 	}
 	if err != nil {
-		return 0, err
+		return MFAChallenge{}, err
 	}
 	var record adminSessionRecord
 	if err := json.Unmarshal(value, &record); err != nil {
-		return 0, operations.ErrInvalidMFAChallenge
+		return MFAChallenge{}, operations.ErrInvalidMFAChallenge
 	}
-	return uint64(record.AdminID), nil
+	if record.AdminID == 0 {
+		return MFAChallenge{}, operations.ErrInvalidMFAChallenge
+	}
+	return MFAChallenge{Account: operations.AccountIdentity{ID: uint64(record.AdminID), AuthVersion: uint64(record.AuthVersion), Username: record.Username}, token: token, raw: string(value)}, nil
+}
+
+// ConsumeMFA 在ctx下比较challenge原JSON并原子删除，仅原读取获胜一次；缺失／替换返回失效挑战。
+// Redis执行错误原样返回，不能降级为可重放的成功登录。
+func (s SessionRepo) ConsumeMFA(ctx context.Context, challenge MFAChallenge) error {
+	if challenge.token == "" || challenge.raw == "" {
+		return operations.ErrInvalidMFAChallenge
+	}
+	n, err := mfaCompareDelete.Run(ctx, s.Redis, []string{mfaKey(challenge.token)}, challenge.raw).Int()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return operations.ErrInvalidMFAChallenge
+	}
+	return nil
 }
 
 // mfaKey 把二次验证挑战码拼成 Redis 键，与会话键分开存放，

@@ -142,7 +142,7 @@ func TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit(t *testing.
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	API{DB: tx, Auth: chargehttp.AdminAuth{Store: store, JWT: jwt, Sessions: ops.SessionRepo{Redis: sessions}}, Invoices: service}.Register(router)
+	API{DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: store, Sessions: ops.SessionRepo{Redis: sessions}, Tokens: ops.JWTAccess{JWT: jwt}}}, Invoices: service}.Register(router)
 	path := "/api/v1/admin/billing/invoices/" + strconv.FormatUint(id, 10) + "/approve"
 	post := func(body, token string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", path, bytes.NewBufferString(body))
