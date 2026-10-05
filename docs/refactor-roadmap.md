@@ -485,7 +485,7 @@ make build SERVICE=worker
 make test-integration TEST_MYSQL_URL=...
 ```
 
-构建只跑受影响服务；跨包路径迁移影响全部 cmd 时构建全部入口。Make 的前置检查使用 Node，全部入口通过 `go build -trimpath -o bin/ ./cmd/...` 构建，产物仅落 bin；Windows 本地真库入口为 `scripts/db/test-integration.ps1`，使用 `compose.test.yaml` 独立 MySQL（3307）与 Redis（6381），不得将显式测试主键插入联调开发库。构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
+构建只跑受影响服务；跨包路径迁移影响全部 cmd 时构建全部入口。Make 的前置检查使用 Node，全部入口通过 `go build -trimpath -o bin/ ./cmd/...` 构建，产物仅落 bin；本地真库入口为 `scripts/db/test-integration.mjs`，使用 `compose.test.yaml` 独立 MySQL（3307）与 Redis（6381），不得将显式测试主键插入联调开发库。构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
 
 真库测试需要 TEST_MYSQL_URL，真实会话测试还需要 TEST_REDIS_URL；跨库／网关测试还需其实际使用的 DATABASE_URL_GATEWAY、DATABASE_URL_CENTRAL、DATABASE_URL_WORKER，参照现有 CI integration job 与测试连接辅助函数。迁移使用现有开发栈与 cmd/migrate；不得为了通过测试另建旁路容器、自动建表或无条件清库。每个 integration 文件必须保留 build tag，缺配置明确失败，不能跳过。
 

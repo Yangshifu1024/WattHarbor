@@ -4,10 +4,10 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台，支持扫�
 
 ## 本地运行
 
-需要 Docker Desktop（或 Docker Engine）及 Compose v2；准备数据需要 Node.js 24。Windows 使用 PowerShell 7，以下命令均从仓库根目录执行：
+需要 Docker Desktop（或 Docker Engine）、Compose v2 及 Node.js 24。脚本均为跨平台 Node 脚本，以下命令在任意系统均从仓库根目录直接执行：
 
-```powershell
-./scripts/dev/start.ps1
+```sh
+node scripts/dev/start.mjs
 # 等待服务就绪后准备厂商、站点、两台设备和测试方案
 node scripts/dev/prepare.mjs
 ```
@@ -36,9 +36,9 @@ docker compose -f compose.dev.yaml up -d --no-deps --force-recreate user admin c
 
 准备设备后，在两个终端分别执行：
 
-```powershell
-./scripts/dev/simulator.ps1 -Number 1
-./scripts/dev/simulator.ps1 -Number 2
+```sh
+node scripts/dev/simulator.mjs --number 1
+node scripts/dev/simulator.mjs --number 2
 ```
 
 两个实例对应设备 `5348240514082652`、`5348240514082653`，控制端口为 `9190`、`9191`，状态保存在各自的 `.tmp/` 文件。模拟器只连接已开通设备；端口数须与后台一致。
@@ -73,15 +73,15 @@ central 的 `8082` 在开发和生产编排中都不映射到宿主机，只能�
 
 宿主机需要 Go 1.27、Node.js 24、npm 和 Make。开发 Compose 提供运行环境；后端检查与构建：
 
-```powershell
-./scripts/git/install-hooks.ps1
+```sh
+node scripts/git/install-hooks.mjs
 make check
 make build-all
 # 独立测试 MySQL 3307 / Redis 6381，迁移三库并执行集成测试
-./scripts/db/test-integration.ps1
+node scripts/db/test-integration.mjs
 ```
 
-其他系统用 `sh scripts/git/install-hooks.sh` 安装钩子。`make check` 顺序运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`；pre-commit 运行 vet 和默认测试。缺少 Make 时可直接运行对应 Go 命令。编译产物在 `bin/`，可用 `make build SERVICE=central` 单独构建。
+`make check` 顺序运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`；pre-commit 直接运行 vet 和默认测试（经 scripts/git/pre-commit.mjs，不依赖 make）。缺少 Make 时可直接运行对应 Go 命令。编译产物在 `bin/`，可用 `make build SERVICE=central` 单独构建。
 
 真库测试由 `integration` tag 隔离，不包含在 `make check` 中。直接执行 `make test-integration` 须配置独立三库连接、`TEST_MYSQL_URL` 和 `TEST_REDIS_URL`；角色锁测试还需要 [锁观测只读授权](docker/mysql/test-lock-observer.sql)，测试脚本和 CI 已处理。**集成测试使用独立实例，不能指向开发或生产数据。**
 

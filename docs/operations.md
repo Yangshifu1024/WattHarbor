@@ -110,7 +110,7 @@ ALTER TABLE central_db.wallet_recharge_request
 明确可丢弃的开发数据可重建：
 
 ```powershell
-./scripts/db/reset-dev.ps1 -ResetDevelopmentData
+node scripts/db/reset-dev.mjs --reset-development-data
 node scripts/dev/prepare.mjs
 ```
 
@@ -118,11 +118,11 @@ node scripts/dev/prepare.mjs
 
 ## 备份与恢复
 
-[backup.sh](../scripts/db/backup.sh) 和 [restore.sh](../scripts/db/restore.sh) 依赖 Bash、gzip 与 MySQL 客户端。输出目录须预先存在；容器客户端回退需设置 `MYSQL_CLIENT_CONTAINER`。连接参数为 `MYSQL_HOST/MYSQL_PORT/MYSQL_USER`；原生客户端用 `MYSQL_PWD`，容器回退从 `MYSQL_PASSWORD` 传入密码。凭证从安全环境加载，避免写入命令历史。
+[backup.mjs](../scripts/db/backup.mjs) 和 [restore.mjs](../scripts/db/restore.mjs) 依赖 Node.js 24（gzip 由内置 zlib 提供）与 MySQL 客户端。输出目录须预先存在；容器客户端回退需设置 `MYSQL_CLIENT_CONTAINER`。连接参数为 `MYSQL_HOST/MYSQL_PORT/MYSQL_USER`；原生客户端用 `MYSQL_PWD`，容器回退从 `MYSQL_PASSWORD` 传入密码。凭证从安全环境加载，避免写入命令历史。
 
 ```bash
 mkdir -p .tmp/backups
-bash scripts/db/backup.sh .tmp/backups
+node scripts/db/backup.mjs .tmp/backups
 ```
 
 备份包含三库的 SQL、例程、触发器、事件及 Goose 历史，逐库使用 single-transaction。跨库不保证同一时点，协调停止写入后备份；DDL 与备份也须避免并行。脚本检查压缩完整性和最低大小，不证明可恢复；定期在隔离环境恢复并核对资金、订单和幂等记录。
@@ -132,7 +132,7 @@ SQL 备份不包含 Redis AOF、导出文件、Caddy 状态、密钥和部署配
 恢复会先删除归档声明的三库，再重建并导入，失败时可能只完成部分数据。停止业务写入，核对归档及目标环境后执行：
 
 ```bash
-RESTORE_CONFIRM="gateway_db central_db worker_db" bash scripts/db/restore.sh "$BACKUP_ARCHIVE"
+RESTORE_CONFIRM="gateway_db central_db worker_db" node scripts/db/restore.mjs "$BACKUP_ARCHIVE"
 ```
 
 `BACKUP_ARCHIVE` 须设置为已核对的归档路径。恢复后核对三库、Goose 版本和关键台账；若执行 migrate，必须配置全部三库 URL。开发服务用 `docker compose -f compose.dev.yaml restart user admin central gateway worker`；生产使用实际部署的全部 Compose 文件重启对应服务。更新或恢复不得使用 `docker compose down -v`。
