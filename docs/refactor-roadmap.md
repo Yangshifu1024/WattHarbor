@@ -807,3 +807,11 @@ make test-integration TEST_MYSQL_URL=...
 5o退出检查：默认定向 .tmp/batch5o-targeted.log、全仓 .tmp/batch5o-check.log、默认包并行的完整独立三库／Redis .tmp/batch5o-integration.log 和 gateway 构建 .tmp/batch5o-build.log 全部通过。两份原备份与 HEAD 一致，.tmp/batch5o-source-comparison.log 完整 AST 核对只有已审查提取与注释／格式变化，原 SQL 和事务边界保持；三份 Go 文件的函数／字段／接口中文说明清单无缺项。没有依赖或前端变化，最近完整前端验收仍5b；开发重启和最终暂存核对继续，17组完成15组约88%，G／WK及DEP未提前关闭。
 
 5o最终暂存核对：.tmp/batch5o-validation 的1228份原 blob 中716份 Go／模块与已验收工作区一致，本地 Markdown 链接有效，.tmp/batch5o-snapshot-source.log 保留；不重复执行相同源码全量测试。重启既有开发 gateway 后 .tmp/batch5o-health-{before,after}.json 仅 GET 核对五进程原就绪均200，没有开发清库、手动设备命令或资金任务。最终只补本记录，接续刷卡／故障、设备开通及补录边界、运行时与DEP评估；G／WK组合未提前完成。
+
+批次5p（G-01 故障标记与心跳完整读取）：MarkEventsProcessed 接管原整个请求事务，原普通候选 Find、原 ids／processed_at IS NULL 条件 bulk UPDATE、UTC_TIMESTAMP(3) 和 RowsAffected 保持，不增加锁读、排序或类型／协议过滤。原“行锁保证扫描顺序”错误注释校正。ReadLatestHeartbeat 接管键定位、零水印及后续查询，原两段 SQL 助手私有化；HTTP 保留键优先／时间解析／原偏移、三种缺失或存在事实、消息和 DTO，不再持 SQL 或事务。AGENTS 目录图同步，无 schema、公开字段或具名客户端变化。
+
+5p定向证据：原 HEAD 新注册端点真库基线 .tmp/batch5p-fault-baseline.log 与迁移后 .tmp/batch5p-fault-real.log 均通过。标记在唯一 bulk UPDATE 两行后取消，持久值回滚0、恢复2及重放0；重复／缺失／零主键、异协议非fault主键仍原样处理，已处理时刻保持、未请求行不写。心跳覆盖键优先坏after、缺原键和设备隔离、严格 >／dc589／类型过滤、同刻ID倒序、原偏移回复、坏／零水印及真实取消503。随机标记主键清理与心跳外层回滚均零残留。隔离原源码副本去外层事务稳定失败 marked=2，.tmp/batch5p-atomic-mutation.log；倒转ID仲裁稳定返回旧证据失败，.tmp/batch5p-order-mutation.log，两次均恢复，不改生产源码。
+
+5p退出检查：.tmp/batch5p-targeted.log、全仓 .tmp/batch5p-check.log、默认包并行的完整独立三库／Redis .tmp/batch5p-integration.log 及 gateway 构建 .tmp/batch5p-build.log 全通过，既有告警实际注册真库恢复／乱序回归保持。两份备份与 HEAD 相同，.tmp/batch5p-source-comparison.log 完整 AST 核对仅已审查提取和注释／格式变化；三份 Go 的中文函数／字段／接口说明清单无缺项，旧两段导出读取无消费者。无依赖、schema或前端变化，最近完整前端验收仍5b；不把此批当作 TCP、计费或渠道执行证据。开发重启及最终暂存核对继续，17组完成15组约88%，G／WK及DEP未提前完成。
+
+5p最终暂存核对：.tmp/batch5p-validation 的1229份原 blob 中717份 Go／模块与已验收工作区一致，本地 Markdown 链接有效，.tmp/batch5p-snapshot-source.log 保留，不重复执行相同源码全量测试。重启既有开发 gateway 后 .tmp/batch5p-health-{before,after}.json 只以 GET 核对五进程原就绪均200，没有开发清库、手动设备命令或资金任务。最终只补此记录，继续刷卡决定、开通、补录及运行时／DEP，G／WK组合未提前关闭。

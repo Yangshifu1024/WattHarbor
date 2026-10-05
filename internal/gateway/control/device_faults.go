@@ -9,7 +9,6 @@ import (
 	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 )
@@ -23,7 +22,8 @@ func (a TelemetryAPI) registerDeviceFaults(r *gin.Engine) {
 	r.GET("/api/v1/internal/devices/:device_id/latest-heartbeat", a.latestHeartbeat)
 }
 
-// deviceFaults 按 id 升序返回未处理故障，limit 1–100，默认 100。
+// deviceFaults 接收 c 中的服务令牌和可选 limit，按 id 升序返回原未处理故障载荷，空 reports 保持 []。
+// limit 一至一百，默认一百；鉴权失败返回 401，限额无效返回 400，读取失败返回原 503，无标记写入。
 func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -49,8 +49,8 @@ func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// markFaultsProcessed 批量推进故障事件的处理时间；已处理的行跳过，
-// 返回实际推进条数。行锁保证与并发扫描的顺序一致。
+// markFaultsProcessed 接收 c 中的服务令牌及一至一百个原事件主键，交由 repo 完整事务推进仍未处理记录。
+// 成功返回实际影响行数；鉴权失败返回 401，绑定或长度错误返回 400，事务失败返回原 503 且不输出中间计数。
 func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -60,12 +60,7 @@ func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 		httpapi.BadRequest(c, "ids 须为 1–100 个事件主键")
 		return
 	}
-	marked := int64(0)
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		count, err := repo.MarkEventsProcessed(tx, body.IDs)
-		marked = count
-		return err
-	})
+	marked, err := repo.MarkEventsProcessed(c.Request.Context(), a.DB, body.IDs)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "处理标记暂不可写", nil)
 		return
@@ -73,10 +68,9 @@ func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 	httpapi.OK(c, contract.MarkDeviceFaultsReply{Marked: marked})
 }
 
-// latestHeartbeat 返回某设备在指定时间之后的最新 dc589 心跳原始载荷；
-// 没有更新的心跳时 found 为 false，供恢复判定区分"无证据"与"未恢复"。
-// after_key 以事件键为水印（取该事件的接收时间），优先于 after；
-// 恢复判定用它锚定"最近一次故障之后"的心跳。
+// latestHeartbeat 接收 c 中的服务令牌、设备 ID 和原水印参数，非空 after_key 优先且不解析 after。
+// 没有 key 时解析 RFC3339Nano 时间，交由 repo 完整读取，再返回缺水印、缺心跳或原心跳证据。
+// 鉴权失败返回 401，设备/时间无效返回 400；零水印与 SQL 错误分别映射原 503 消息，不解释协议恢复状态。
 func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -86,38 +80,34 @@ func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 		httpapi.BadRequest(c, "设备无效")
 		return
 	}
+	key := c.Query("after_key")
 	var after time.Time
 	var err error
-	if key := c.Query("after_key"); key != "" {
-		receivedAt, found := repo.FindEventReceivedAt(c.Request.Context(), a.DB, device, key)
-		if found != nil {
-			if errors.Is(found, gorm.ErrRecordNotFound) {
-				httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: false})
-				return
-			}
-			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "心跳证据暂不可读取", nil)
-			return
-		}
-		after = receivedAt
-	} else {
+	if key == "" {
 		after, err = time.Parse(time.RFC3339Nano, c.Query("after"))
 		if err != nil {
 			httpapi.BadRequest(c, "after 须为 RFC 3339 时间")
 			return
 		}
 	}
-	if after.IsZero() {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "故障水印暂不可读取", nil)
-		return
-	}
-	row, err := repo.LatestHeartbeatAfter(c.Request.Context(), a.DB, device, after.UTC())
+	evidence, err := repo.ReadLatestHeartbeat(
+		c.Request.Context(),
+		a.DB,
+		device,
+		key,
+		after,
+	)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: false, AfterReceivedAt: &after})
+		if errors.Is(err, repo.ErrHeartbeatWatermarkUnreadable) {
+			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "故障水印暂不可读取", nil)
 			return
 		}
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "心跳证据暂不可读取", nil)
 		return
 	}
-	httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: true, AfterReceivedAt: &after, ReceivedAt: &row.ReceivedAt, Payload: string(row.Payload)})
+	if evidence.Heartbeat == nil {
+		httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: false, AfterReceivedAt: evidence.Watermark})
+		return
+	}
+	httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: true, AfterReceivedAt: evidence.Watermark, ReceivedAt: &evidence.Heartbeat.ReceivedAt, Payload: string(evidence.Heartbeat.Payload)})
 }
