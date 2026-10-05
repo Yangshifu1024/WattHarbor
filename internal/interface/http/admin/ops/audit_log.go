@@ -2,15 +2,11 @@ package ops
 
 import (
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"time"
 )
-
-// auditRow 是审计列表的响应行，定义在持久化层。
-type auditRow = ops.AuditRow
 
 // registerAuditLogs 挂载审计日志查询接口，权限为 audit.read。
 func (a API) registerAuditLogs(r *gin.Engine) {
@@ -24,9 +20,8 @@ func (a API) listAuditLogs(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out := admin.Page[auditRow]{Items: []auditRow{}, Page: page.Page, PageSize: page.PageSize}
 
-	// Count 与列表查询分别构造 GORM 语句，避免计数操作修改后续查询的投影。
+	// 仅解析原RFC3339输入；存储过滤和分页计数由所属审计仓储负责。
 	var (
 		module, action, actor, target string
 		from, to                      *time.Time
@@ -34,8 +29,8 @@ func (a API) listAuditLogs(c *gin.Context) {
 	)
 	module, action, actor, target = c.Query("module"), c.Query("action"), c.Query("actor"), c.Query("target_type")
 	for _, spec := range []struct {
-		raw  string
-		into **time.Time
+		raw  string      // 原查询参数
+		into **time.Time // 对应可空UTC时刻
 	}{{c.Query("from"), &from}, {c.Query("to"), &to}} {
 		if spec.raw == "" {
 			continue
@@ -53,11 +48,11 @@ func (a API) listAuditLogs(c *gin.Context) {
 		return
 	}
 
-	out, err := ops.ListAudits(c.Request.Context(), a.DB, ops.AuditQuery{
+	out, err := a.Audits.List(c.Request.Context(), chargehttp.AdminAuditContext(c).Actor, ops.AuditQuery{
 		Module: module, Action: action, Actor: actor, TargetType: target, From: from, To: to,
-	}, page.Page, page.PageSize)
+	}, page)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		chargehttp.AdminManagementFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)

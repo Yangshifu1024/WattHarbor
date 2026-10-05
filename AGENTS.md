@@ -4,7 +4,7 @@
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
 - 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
-- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`（未迁移模块暂保留 `*_store.go`） 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
+- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`（未迁移模块暂保留 `*_store.go`），进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。**`central` 的 8082 在两套编排里都不映射端口**，宿主机打不开，内部调用只在容器网络内可达。开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。
 
 五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
@@ -376,14 +376,17 @@ charge-pilot/
 │   ├── internal/ops/account_management.go（迁移前：internal/interface/http/admin_accounts.go、admin/ops/operations.go[账号管理事务]）
 │   ├── internal/ops/management.go（迁移前：后台HTTP[当前准入与角色集合约束]）
 │   ├── internal/ops/role.go（迁移前：internal/interface/http/admin_roles.go[角色事务]）
-│   ├── internal/ops/admin_audit_store.go
-│   ├── internal/ops/admin_ops_store.go
-│   ├── internal/ops/admin_projection_store.go
+│   ├── internal/ops/audit_query.go（迁移前：internal/interface/http/admin/ops/audit_log.go[查询组合]）
+│   ├── internal/ops/audit_query_repo.go（迁移前：internal/ops/admin_audit_store.go）
+│   ├── internal/ops/announcement.go（迁移前：internal/interface/http/admin/ops/operations.go[公告发布事务]）
+│   ├── internal/ops/announcement_repo.go（迁移前：internal/ops/admin_ops_store.go[公告表访问]）
+│   ├── internal/ops/dashboard.go（迁移前：internal/infrastructure/database/admin_dashboard_store.go[日界与趋势组合]）
+│   ├── internal/ops/dashboard_repo.go（迁移前：internal/infrastructure/database/admin_dashboard_store.go[只读投影]）
 │   ├── internal/ops/role_repo.go（迁移前：internal/ops/admin_role_store.go）
-│   ├── internal/ops/admin_scope_store.go
+│   ├── internal/ops/scope_repo.go（迁移前：internal/ops/admin_scope_store.go）
 │   ├── internal/ops/account_management_repo.go（迁移前：internal/ops/admin_user_store.go）
-│   ├── internal/ops/event_outbox_store.go
-│   └── internal/ops/interface_query_store.go
+│   ├── internal/ops/event_outbox_repo.go（迁移前：internal/ops/event_outbox_store.go）
+│   └── internal/ops/audit_repo.go（迁移前：internal/ops/interface_query_store.go）
 ├── internal/export                                       后台批量导出
 │   ├── internal/export/cleanup.go（迁移前：cmd/admin/main.go[过期文件清理循环]）
 │   └── internal/export/export_task_store.go
@@ -579,8 +582,6 @@ charge-pilot/
 │   ├── internal/protocol/endpoint.go
 │   ├── internal/protocol/router.go
 │   └── internal/protocol/session_audit.go
-├── internal/infrastructure                               持久化实现
-│   └── internal/infrastructure/database/admin_dashboard_store.go
 ├── internal/persist                                      与业务无关的持久化原语
 │   ├── internal/persist/insert_id.go
 │   └── internal/persist/page.go
@@ -657,7 +658,6 @@ charge-pilot/
     domain/                       纯规则与跨用例契约（零框架依赖）
     platform/  persist/  protocol/  contracts/  integration/  delivery/  interface/
     gateway/  worker/               —— 进程特有编排
-    infrastructure/database/  redis/    —— 表访问
   ```
 
   依赖方向：
@@ -668,7 +668,7 @@ charge-pilot/
   persist      →  无（分页、自增主键等原语）
   platform     →  无（无业务语义的通用能力）
   use case     →  domain + contracts + platform + persist + 其它 use case（在结构文档说明业务理由并经评审）
-  use case     →  infrastructure/database（表名只允许出现在 *_store.go / *_schema.go）
+  use case     →  所属repo（表名与列映射仅在 *_repo.go / *_schema.go / *_model*.go；未迁移模块暂保留store）
   ```
 
   以下三条由实现者和评审者逐项核对：

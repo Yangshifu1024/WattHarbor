@@ -14,6 +14,7 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/dashboard"
 	adminops "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -45,7 +46,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	permissions := []string{"admin_user.read", "admin_user.create", "admin_user.update", "admin_user.delete", "admin_user.reset_password", "role.create", "role.update", "role.delete", "order.read"}
+	permissions := []string{"admin_user.read", "admin_user.create", "admin_user.update", "admin_user.delete", "admin_user.reset_password", "role.create", "role.update", "role.delete", "order.read", "announcement.create", "announcement.read", "audit.read", "dashboard.read"}
 	for _, code := range permissions {
 		if err := tx.Exec("INSERT INTO role_permission(role_id,permission_id) SELECT ?,id FROM permission WHERE code=?", id+1, code).Error; err != nil {
 			t.Fatal(err)
@@ -76,7 +77,8 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	api := chargehttp.AdminAccounts{Accounts: accounts, Roles: roles, Auth: &authAPI}
 	api.Register(router)
 	api.RegisterRoles(router)
-	(adminops.API{Accounts: accounts, DB: tx, Auth: authAPI}).Register(router)
+	(adminops.API{Accounts: accounts, Announcements: ops.AnnouncementService{DB: tx}, Audits: ops.AuditQueryService{DB: tx}, Auth: authAPI}).Register(router)
+	(admindashboard.Dashboard{Queries: ops.DashboardQueryService{DB: tx}}).Register(router, authAPI)
 	call := func(method, path string, input any, status int) json.RawMessage {
 		t.Helper()
 		raw, err := json.Marshal(input)
@@ -114,6 +116,92 @@ func TestRegisteredAdminManagement(t *testing.T) {
 		return reply.ID
 	}
 	base := "/api/v1/admin/"
+	// 注册路由保留原公告空值、审计筛选及看板故障503；业务造数由外层事务回滚。
+	announcementInput := map[string]any{"title": "registered_" + tag, "content": "中文公告", "scope": "global", "start_at": time.Now().UTC()}
+	badAnnouncement := map[string]any{"title": "无效", "content": "内容", "scope": "global", "start_at": time.Now().UTC(), "unknown": true}
+	call("POST", base+"announcements", badAnnouncement, 400)
+	announcement := readID(call("POST", base+"announcements", announcementInput, 200))
+	var announcements struct {
+		Items []ops.AnnouncementRow `json:"items"`
+	}
+	if err := json.Unmarshal(call("GET", base+"announcements", nil, 200), &announcements); err != nil {
+		t.Fatal(err)
+	}
+	foundAnnouncement := false
+	for _, row := range announcements.Items {
+		if row.ID == announcement {
+			foundAnnouncement = true
+			if string(row.TargetIDs) != "null" || row.EndAt != nil || row.Status != "published" {
+				t.Fatalf("original announcement %+v", row)
+			}
+		}
+	}
+	if !foundAnnouncement {
+		t.Fatal("registered announcement absent")
+	}
+	call("GET", base+"audit-logs?from=invalid", nil, 400)
+	var audits struct {
+		Total int64          `json:"total"`
+		Items []ops.AuditRow `json:"items"`
+	}
+	if err := json.Unmarshal(call("GET", base+"audit-logs?module=announcement&actor="+profile.Username, nil, 200), &audits); err != nil || audits.Total != 1 || len(audits.Items) != 1 || audits.Items[0].BeforeJSON == nil || *audits.Items[0].BeforeJSON != "null" {
+		t.Fatalf("registered audits %+v %v", audits, err)
+	}
+	var metrics ops.DashboardMetrics
+	if err := json.Unmarshal(call("GET", base+"dashboard", nil, 200), &metrics); err != nil || len(metrics.DailyTrend) != 7 {
+		t.Fatalf("registered metrics %+v %v", metrics, err)
+	}
+	dashboardFailure := errors.New("registered private dashboard failure")
+	dashboardCallback := "registered-dashboard-" + tag
+	if err := tx.Callback().Query().Before("gorm:query").Register(dashboardCallback, func(q *gorm.DB) {
+		if q.Statement.Table == "charge_order" {
+			q.AddError(dashboardFailure)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if raw := call("GET", base+"dashboard", nil, 503); string(raw) != "null" {
+		t.Fatalf("partial dashboard %s", raw)
+	}
+	tx.Callback().Query().Remove(dashboardCallback)
+	// 鉴权首次读取后才撤权／提升版本，使服务第二次读取真正遇到准入变化。
+	for _, versionChange := range []bool{false, true} {
+		changed := false
+		key := "registered-dashboard-admission-" + tag
+		if err := tx.Callback().Query().After("gorm:query").Register(key, func(q *gorm.DB) {
+			if changed || !strings.Contains(q.Statement.SQL.String(), "JOIN role_permission AS rp") {
+				return
+			}
+			changed = true
+			var err error
+			if versionChange {
+				err = tx.Exec("UPDATE admin_user SET auth_version=auth_version+1 WHERE id=?", id).Error
+			} else {
+				err = tx.Exec("DELETE rp FROM role_permission rp JOIN permission p ON p.id=rp.permission_id WHERE rp.role_id=? AND p.code='dashboard.read'", id+1).Error
+			}
+			if err != nil {
+				q.AddError(err)
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		status := 403
+		if versionChange {
+			status = 401
+		}
+		call("GET", base+"dashboard", nil, status)
+		tx.Callback().Query().Remove(key)
+		if !changed {
+			t.Fatal("admission fixture not reached")
+		}
+		if versionChange {
+			if err := tx.Exec("UPDATE admin_user SET auth_version=? WHERE id=?", profile.AuthVersion, id).Error; err != nil {
+				t.Fatal(err)
+			}
+		} else if err := tx.Exec("INSERT INTO role_permission(role_id,permission_id) SELECT ?,id FROM permission WHERE code='dashboard.read'", id+1).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	call("GET", base+"admin-users?page_size=0", nil, 400)
 	call("GET", base+"admin-users", nil, 200)
 	call("GET", base+"roles", nil, 200)

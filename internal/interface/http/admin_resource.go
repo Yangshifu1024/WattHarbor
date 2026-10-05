@@ -3,7 +3,6 @@ package http
 import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"log"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -100,42 +99,6 @@ func FirstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-// AuditEntry 是一条待写入的审计记录，与它的业务变更在同一事务提交。
-type AuditEntry struct {
-	Action    string // 动作，如 create / update / grant
-	Target    string // 目标类型，同时也是所属模块，如 coupon
-	ID        uint64 // 目标主键
-	Before    any    // 变更前快照，新建时为 nil
-	After     any    // 变更后快照
-	RequestID string // 关联请求号，可为空
-}
-
-// AuditedTransaction 在同一事务内提交业务变更与审计：审计写不进去，整个事务回滚。
-// entries 由调用方先填好；apply 拿到事务句柄执行实际写入。
-func AuditedTransaction(c *gin.Context, db *gorm.DB, entries *[]AuditEntry, apply func(*gorm.DB) error) error {
-	return db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := apply(tx); err != nil {
-			return err
-		}
-		p := c.MustGet("admin_profile").(operations.Profile)
-		for _, entry := range *entries {
-			if err := AdminResourceAudit(tx, p, entry.Action, entry.Target, entry.ID, entry.Before, entry.After, c.ClientIP(), FirstNonEmpty(entry.RequestID, httpapi.RequestID(c))); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-// AuditToAdmin 记录由远端服务提交、响应后才落库的运营审计。
-// 这类变更发生在别的服务上，无法与业务变更同事务，因此只记日志不阻断。
-func AuditToAdmin(c *gin.Context, db *gorm.DB, action, target string, id uint64, before, after any, requestID string) {
-	p := c.MustGet("admin_profile").(operations.Profile)
-	if err := AdminResourceAudit(db.WithContext(c.Request.Context()), p, action, target, id, before, after, c.ClientIP(), FirstNonEmpty(requestID, httpapi.RequestID(c))); err != nil {
-		log.Printf("gateway audit failed action=%s target=%s id=%d: %v", action, target, id, err)
-	}
 }
 
 // AdminLikePattern 把关键词转成 LIKE 模式，转义规则与仓储层共用同一实现。

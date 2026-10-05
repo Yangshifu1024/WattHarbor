@@ -344,17 +344,17 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.11 ops：OP-01／N-ops
 
-来源：[账号管理](../internal/interface/http/admin_accounts.go)、[角色管理](../internal/interface/http/admin_roles.go)、[MFA](../internal/interface/http/admin_mfa_settings.go)、[审计辅助](../internal/interface/http/admin_resource.go)、[dashboard](../internal/infrastructure/database/admin_dashboard_store.go)、HTTP admin/ops/operations.go。
+来源：[账号管理](../internal/interface/http/admin_accounts.go)、[角色管理](../internal/interface/http/admin_roles.go)、[MFA](../internal/interface/http/admin_mfa_settings.go)、[审计辅助](../internal/interface/http/admin_resource.go)、[dashboard](../internal/ops/dashboard_repo.go)、HTTP admin/ops/operations.go。
 
 目标：AccountService、RoleService、MFAService、AnnouncementService、DashboardQueryService；account／role／audit／projection repo、session_repo.go 的后台会话实现及 mfa_repo.go。审核人实时状态能力供 settlement 使用。
 
-- [ ] OP-01：先提取 Actor／AuditContext 值与 AppendAuditInTx，供前面批次复用；HTTP 不持有 AuditedTransaction 的业务提交责任。
-- [ ] OP-01：账号创建／修改／删除／解锁／密码重置、角色和数据范围变更、MFA 设置迁入服务；保留最后管理员保护及角色集合的原串行化边界。
+- [x] OP-01：先提取 Actor／AuditContext 值与 AppendAuditInTx，供前面批次复用；HTTP 不持有 AuditedTransaction 的业务提交责任。
+- [x] OP-01：账号创建／修改／删除／解锁／密码重置、角色、MFA 设置迁入服务；数据范围读取归scope_repo，当前无写入注册路由，不新增API；保留最后管理员保护及角色集合的原串行化边界。
 - [x] OP-01：权限实时读取，不信任 JWT／前端菜单；首签人实时权限查询通过注入回调或窄接口提供，ops 不 import settlement。
-- [x] OP-01：Redis MFA pending／锁／频次 IO 由实现层提供，规则归 ops；敏感证明不进入审计或普通数据查询。原登录／刷新回执仅返回自己的凭据，口令通过的新登记回执仅返回自己的短期绑定密钥，保留原受保护契约。
+- [x] OP-01：Redis MFA pending／锁／频次 IO 由实现层提供，规则归 ops；敏感证明不进入审计或普通数据查询；原受授权目标MFA登记回执保留专用材料。原登录／刷新回执仅返回自己的凭据，口令通过的新登记回执仅返回自己的短期绑定密钥，保留原受保护契约。
 - [x] OP-01：将 infrastructure/redis/admin_session.go 迁入 ops/session_repo.go，后台刷新、撤销与挑战记录由 ops 持有；保留 AuthVersion、ART_／admin:session:、绝对 TTL、轮换／撤销脚本和令牌格式。共用技术能力按第 2 节提取，不让 ops 与 identity 为复用会话实现互相引用。
-- [ ] OP-01：公告业务归 ops；dashboard 移成有明确来源的跨模块只读投影，保留北京时间日界。admin/ops 中告警确认转 D-02。
-- [ ] N-ops：业务 repo 统一命名；不要通过泛化“表名 + values”写入接口绕过所属业务模块。
+- [x] OP-01：公告业务归 ops；dashboard 移成有明确来源的跨模块只读投影，保留北京时间日界。admin/ops 中告警确认转 D-02。
+- [x] N-ops：业务 repo 统一命名；不要通过泛化“表名 + values”写入接口绕过所属业务模块。
 
 验收：回归现有并发互删与角色锁真库测试；过期权限、越权范围、锁定／解锁、TOTP 重放、首签权限撤销；事务失败不留下审计成功记录；dashboard 查询失败不输出伪完整快照。
 
@@ -526,10 +526,10 @@ make test-integration TEST_MYSQL_URL=...
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
 | M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
-| OP-01／N-ops | 进行中 | 后台SessionService／MFAService及会话、频次、设置repo归位，锁后原版本／挑战CAS及实时权限完成定向验证。AccountService／RoleService及所属repo已迁入并定向验收当前权限、引用及最后管理员；公告写入、dashboard和剩余ops命名继续 |
+| OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
-| INF-01 | 待实施 | dashboard、case、用户与后台会话归位后，删除 infrastructure 及残留引用 |
+| INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
 状态只用：待实施、进行中、待验收、完成、待评估。每个任务按下面格式填写短记录；检查失败或未执行如实写明。
@@ -668,3 +668,9 @@ make test-integration TEST_MYSQL_URL=...
 4g定向验证：`.tmp/batch4g-management-{flow,concurrency,registered,restored}.log`通过真实独立MySQL／Redis及实际注册账号、角色、运营创建路由，覆盖原字段／状态／严格输入、实时撤权、旧RR权限与新引用、最后管理员三个移除路径、停用再启用、目标MFA原材料、敏感快照和审计503整体回滚。两真实连接按实际集合锁查询闸门固定撤权先提交、分配后当前读取，只拒绝旧权限且没有新账号。四项当前权限／引用／剩余管理员／原MFA密钥变异在指定断言失败并恢复，`.tmp/batch4g-mutant-*.log`保留；提交造数按自身身份清理零残留，注册造数外层回滚，不修改bootstrap、开发安全设置或资金。仓库新增Go技能规则本轮已加载；gopls／govulncheck及C编译器未发现可用命令，采用源码引用核对、编译／vet和真库闸门证据，不声称完成语言服务或race验收。完整退出验收继续，OP-01整体仍进行中。
 
 4g退出证据：工作区默认检查、完整独立三库integration、全部入口构建与tidy通过；最终精确暂存快照`.tmp/batch4g-validation`的`.tmp/batch4g-snapshot-{check,integration,build,tidy}.log`全部通过，875份文件中的651份Go／模块与原blob逐字节一致，tidy无差异，文档本地链接有效。首次快照中既有发布并发测试失败但旧日志未展开error；已仅改善失败诊断，不改业务，原日志保留`.tmp/batch4g-snapshot-publication-original-failure.log`。隔离5次及完整工作区诊断回归、最终快照回归通过，未复现原底层原因，不宣称已定位修复；后续若重现以新诊断跟进。后台78项、用户59项及两端typecheck／后台构建通过，保留已有Vite大chunk提示。admin已重启，`.tmp/batch4g-live-management.json`核对实际原账号、角色和权限公开读取、无敏感列且会话注销；未更改开发安全设置或资金。只读技能审查未发现新的可达功能问题，补齐repo中文事务前提与错误契约；用户技能目录和锁文件仍未提交。OP-01继续公告、审计查询组合、dashboard及剩余持久命名，下一批不提前完成。
+
+批次4h（OP-01运营查询／N-ops／INF-01）实施：公告发布和列表迁入AnnouncementService，审计筛选分页迁入AuditQueryService，看板日界和七格补零迁入DashboardQueryService；所属表访问均为repo，dashboard最后跨模块只读投影从infrastructure归ops，旧包无消费者／源码。删除泛化表名+values、未用投影及无消费者HTTP审计事务，不保留别名。保留公告target_ids的JSON null／字符串数组、可空end_at、published及审计目标JSON文本；所有发布和审计同事务，当前账号／权限在原集合串行点后核对。看板保留北京时间自然日、确认零与未计费区别、原跨表全球指标，不新增范围过滤或多查询一致快照承诺。
+
+4h定向验证：`.tmp/batch4h-operations-{targeted,registered}.log`、`.tmp/batch4h-admission.log`及`.tmp/batch4h-mutants-restored.log`使用独立真实MySQL／Redis及实际注册路由，覆盖当日两端边界、七格补零、软删、原公告及审计空值、严格输入、审计回滚、取消、当前撤权及版本变化的403／401，任一看板查询失败只503而无部分数据。注册审计筛选暴露原LikePattern用!转义但SQL未声明的问题，已显式ESCAPE，含下划线账号原筛选回归通过。公告审计、未计费条件和转义声明三项变异均在指定断言失败并恢复，日志`.tmp/batch4h-mutant-*.log`；fixture仅自身账号和随机SID，业务造数外层回滚，不修改开发事实。初版站点fixture缺必填坐标已补齐，不改生产schema。数据库技能只读审查发现看板二次准入误映射503，已修正并以首次鉴权后实际撤权／提升版本的SQL闸门验证；其余未发现新可达问题，过时描述及字段中文说明已清理。用户技能及锁文件另行授权提交295f5c4，后续精确验证快照包含其已提交原blob，不混入本批业务改动。
+
+4h退出证据：工作区与最终精确暂存快照`.tmp/batch4h-validation`的check、完整三库integration、全部入口build及tidy全部通过，日志`.tmp/batch4h-{check,integration,build,tidy}.log`与`.tmp/batch4h-snapshot-*.log`。快照包含用户已提交技能，1177份文件中的666份Go／模块与原blob逐字节一致，tidy无差异、本地Markdown链接有效。admin已重启，`.tmp/batch4h-live-operations.json`核对原公告、审计和看板七格趋势读取，会话注销；无公告发布、开发安全设置或资金修改。前端及公开字段未改，最近前端完整验收为4g的78／59项、两端类型检查及后台构建，原chunk提示保留。最终仅更新任务完成及本退出记录，下一批继续导出。

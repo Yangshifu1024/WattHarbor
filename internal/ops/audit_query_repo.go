@@ -9,15 +9,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// 后台审计日志的查询，以及数据范围与定价目标核对所需的零散读取。
+// 后台审计日志的所属只读查询，不承载其它模块的身份或定价投影。
 // 审计查询只读；写入由所属业务事务调用 ops.AppendAuditInTx。
 
 // AuditQuery 是审计列表的筛选条件，零值表示该维度不限。
 type AuditQuery struct {
-	Module     string
-	Action     string
-	Actor      string
-	TargetType string
+	Module     string     // 原所属模块筛选
+	Action     string     // 原动作筛选
+	Actor      string     // 登录名转义LIKE筛选
+	TargetType string     // 原目标类型筛选
 	From       *time.Time // 起始时间（含），RFC 3339 解析后的 UTC
 	To         *time.Time // 截止时间（含）
 }
@@ -46,11 +46,17 @@ type AuditRow struct {
 const auditSelect = "id, actor_id, actor_name, module, action, target_type, target_id, request_id, client_ip, " +
 	"CAST(before_json AS CHAR) AS before_json, CAST(after_json AS CHAR) AS after_json, created_at"
 
-// ListAudits 分页返回审计记录，按 ID 倒序。计数与列表复用同一套筛选条件。
-func ListAudits(ctx context.Context, db *gorm.DB, q AuditQuery, page, pageSize int) (persist.Page[AuditRow], error) {
+// AuditRepo 只读取所属审计表，写入由各业务完整事务调用AppendAuditInTx。
+type AuditRepo struct {
+	DB *gorm.DB /* 所属审计数据库 */
+}
+
+// List 在ctx下按q与page／pageSize读取原分页，返回结果或取消／存储错误，不写入。
+// 计数与列表分别构造同一过滤条件，快照保留原可空JSON文本，参数约束由AuditQueryService核对。
+func (s AuditRepo) List(ctx context.Context, q AuditQuery, page, pageSize int) (persist.Page[AuditRow], error) {
 	out := persist.Page[AuditRow]{Items: []AuditRow{}, Page: page, PageSize: pageSize}
 	filtered := func() *gorm.DB {
-		query := db.WithContext(ctx).Table("audit_log")
+		query := s.DB.WithContext(ctx).Table("audit_log")
 		if q.Module != "" {
 			query = query.Where("module = ?", q.Module)
 		}
@@ -58,7 +64,8 @@ func ListAudits(ctx context.Context, db *gorm.DB, q AuditQuery, page, pageSize i
 			query = query.Where("action = ?", q.Action)
 		}
 		if q.Actor != "" {
-			query = query.Where("actor_name LIKE ?", dbutil.LikePattern(q.Actor))
+			// 通用模式用!转义百分号和下划线；SQL必须显式声明，否则原账号名含_时不能匹配。
+			query = query.Where("actor_name LIKE ? ESCAPE '!'", dbutil.LikePattern(q.Actor))
 		}
 		if q.TargetType != "" {
 			query = query.Where("target_type = ?", q.TargetType)

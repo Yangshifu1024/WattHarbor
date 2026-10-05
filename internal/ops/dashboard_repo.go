@@ -1,4 +1,4 @@
-package database
+package ops
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 )
 
 // 首页看板的指标汇总。业务日界按北京时间切：库里的时间统一存 UTC，
-// 跨时区的换算集中在 Read 里的 local，不散落到各个查询。
+// 自然日边界由查询服务计算，仓储只接收已换算的UTC区间。
 //
 // 全部指标通过同一个 central_db 连接池读取。
 
@@ -37,21 +37,15 @@ type DashboardMetrics struct {
 	UpdatedAt            time.Time           `json:"updated_at"`             // 本次快照的生成时间(UTC)
 }
 
-// DashboardStore 汇总首页看板指标。
-type DashboardStore struct {
-	DB *gorm.DB
+// DashboardRepo 汇总首页看板指标。
+type DashboardRepo struct {
+	DB *gorm.DB // 同一central数据库的跨模块只读投影
 }
 
-// beijing 是业务日界使用的固定时区。库里的时间存 UTC，"今天"按北京时间切。
-var beijing = time.FixedZone("Asia/Shanghai", 8*3600)
-
-// Read 先按东八区切出"今天"，再回查最近 7 天（含今天）的趋势，
-// 并把今天的格子顺带填进今日指标，避免为同一个数字再查一次库。
-func (s DashboardStore) Read(ctx context.Context, now time.Time) (DashboardMetrics, error) {
-	local := now.In(beijing)
-	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
-	start, end := today.UTC(), today.AddDate(0, 0, 1).UTC()
-	m := DashboardMetrics{UpdatedAt: now.UTC(), DailyTrend: make([]DashboardTrendDay, 0, 7)}
+// Read 在ctx下读取[start,end)的当日事实与[trendStart,end)的按日趋势，返回投影或取消／存储错误。
+// 仅访问各模块原事实，不写表、不补造未计费金额；任一查询失败不能把部分指标作为完整快照。
+func (s DashboardRepo) Read(ctx context.Context, start, end, trendStart time.Time) (DashboardMetrics, error) {
+	m := DashboardMetrics{DailyTrend: []DashboardTrendDay{}}
 
 	orders := s.DB.WithContext(ctx).Table("charge_order").Where("deleted_at IS NULL")
 	if err := applyCount(orders, &m.ChargingOrders, "status = 'charging'"); err != nil {
@@ -77,8 +71,8 @@ func (s DashboardStore) Read(ctx context.Context, now time.Time) (DashboardMetri
 
 	admin := s.DB.WithContext(ctx)
 	for _, c := range []struct {
-		table string
-		into  *int64
+		table string // 已知来源表
+		into  *int64 // 对应只读指标
 	}{{"station", &m.StationCount}, {"device_meta", &m.DeviceCount}} {
 		if err := admin.Table(c.table).Where("deleted_at IS NULL").Count(c.into).Error; err != nil {
 			return m, err
@@ -90,25 +84,12 @@ func (s DashboardStore) Read(ctx context.Context, now time.Time) (DashboardMetri
 	err := orders.Session(&gorm.Session{}).
 		Select("DATE_FORMAT(DATE_ADD(ended_at, INTERVAL 8 HOUR), '%Y-%m-%d') AS day, "+
 			"COUNT(*) AS completed_orders, COALESCE(SUM(total_cents),0) AS settled_cents").
-		Where("ended_at >= ? AND ended_at < ? AND total_cents IS NOT NULL", today.AddDate(0, 0, -6).UTC(), end).
+		Where("ended_at >= ? AND ended_at < ? AND total_cents IS NOT NULL", trendStart, end).
 		Group("day").Find(&rows).Error
 	if err != nil {
 		return m, err
 	}
-	byDay := map[string]DashboardTrendDay{}
-	for _, row := range rows {
-		byDay[row.Day] = row
-	}
-	for i := -6; i <= 0; i++ {
-		day := today.AddDate(0, 0, i).Format("2006-01-02")
-		row := byDay[day]
-		row.Day = day
-		m.DailyTrend = append(m.DailyTrend, row)
-		if i == 0 {
-			m.TodayCompletedOrders = row.CompletedOrders
-			m.TodaySettledCents = row.SettledCents
-		}
-	}
+	m.DailyTrend = rows
 
 	err = admin.Table("alert_event").Where("status IN ('active','acknowledged')").Count(&m.ActiveAlerts).Error
 	return m, err
@@ -127,7 +108,7 @@ func applyCount(base *gorm.DB, into *int64, where string, args ...any) error {
 	return query.Count(into).Error
 }
 
-// applyDistinctCount 统计去重用户数。
+// applyDistinctCount 在基础查询的独立session中按where和args统计user_id，返回计数或存储错误。
 func applyDistinctCount(base *gorm.DB, into *int64, where string, args ...any) error {
 	return base.Session(&gorm.Session{}).Where(where, args...).Distinct("user_id").Count(into).Error
 }

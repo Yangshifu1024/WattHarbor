@@ -28,7 +28,7 @@ type fieldMaskRow struct {
 // TableName 指明 fieldMaskRow 映射到 admin_field_mask。
 func (fieldMaskRow) TableName() string { return "admin_field_mask" }
 
-// LoadDataScope 读出账号配置的站点与厂商范围并归并为内存集合。
+// LoadDataScope 在ctx下从db读取p原账号的站点与厂商范围，返回归并集合或取消／存储错误，不写入。
 // 无范围记录的账号返回 Unrestricted=true，此时不附加数据范围限制。
 func LoadDataScope(ctx context.Context, db *gorm.DB, p operations.Profile) (operations.DataScope, error) {
 	rows := []dataScopeRow{}
@@ -42,7 +42,7 @@ func LoadDataScope(ctx context.Context, db *gorm.DB, p operations.Profile) (oper
 	return operations.NewDataScope(p.ID, items), nil
 }
 
-// LoadFieldMask 读出绑在某个角色上的遮蔽规则。
+// LoadFieldMask 在ctx下从db读取roleID绑定的遮蔽规则，返回规则集或取消／存储错误，不写入。
 // roleID 为 0 表示不限角色，直接返回空规则集（不遮蔽）。
 func LoadFieldMask(ctx context.Context, db *gorm.DB, roleID uint64) (operations.FieldMask, error) {
 	mask := operations.FieldMask{RoleID: roleID}

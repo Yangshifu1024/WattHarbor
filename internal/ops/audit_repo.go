@@ -6,20 +6,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// InsertAudit 写一条审计记录。created_month 是分区列，必须显式给：
-
-// 但落哪张表、有哪些列、created_month 怎么算都由这里决定。
+// AuditEntryInput 是已编码的安全审计输入；表、列与分区月份由所属仓储决定。
 type AuditEntryInput struct {
-	ActorID    uint64
-	ActorName  string
-	Module     string
-	Action     string
-	TargetType string
-	TargetID   string
-	BeforeJSON []byte
-	AfterJSON  []byte
-	ClientIP   string
-	RequestID  string
+	ActorID    uint64 // 操作人身份
+	ActorName  string // 操作时账号名
+	Module     string // 所属业务模块
+	Action     string // 操作名称
+	TargetType string // 目标类型
+	TargetID   string // 原十进制或文本目标身份
+	BeforeJSON []byte // 变更前安全快照的JSON
+	AfterJSON  []byte // 变更后安全快照的JSON
+	ClientIP   string // 原请求客户端地址
+	RequestID  string // 原请求追踪标识
 }
 
 // InsertAudit 写一条审计记录。created_month 是分区列，必须显式给：

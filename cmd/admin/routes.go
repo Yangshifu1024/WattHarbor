@@ -56,7 +56,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 
 	authAPI.Register(router)
 	// 后台业务按族注册：每个族是一个独立包，进程只挂自己提供的那些。
-	adminops.API{Accounts: ops.AccountService{DB: orm}, Alerts: device.AlertService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
+	adminops.API{Accounts: ops.AccountService{DB: orm}, Alerts: device.AlertService{DB: orm}, Announcements: ops.AnnouncementService{DB: orm}, Audits: ops.AuditQueryService{DB: orm}, Auth: authAPI}.Register(router)
 	adminpricing.API{Queries: pricing.QueryService{DB: orm}, DB: orm, Auth: authAPI, Schemes: pricing.SchemeService{DB: orm}, Publications: pricing.PublicationService{DB: orm}}.Register(router)
 	adminstation.API{Stations: device.StationService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
 	admindevice.API{Management: device.ManagementService{DB: orm, Summaries: gateway}, Imports: device.ImportService{DB: orm, Gateway: gateway, Compatibility: pricing.Repo{DB: orm}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {
@@ -76,7 +76,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 	adminmarketing.API{Coupons: marketing.CouponService{DB: orm}, Activities: marketing.ActivityService{DB: orm}, Auth: authAPI}.Register(router)
 	adminuser.API{Users: identity.UserQueryService{DB: orm, Recharges: wallet.RechargeHistoryService{Payments: payment.RechargeHistoryRepo{DB: orm}}}, Auth: authAPI, Cards: card.CardAdminService{DB: orm}}.Register(router)
 	adminvendor.API{Vendors: device.VendorService{DB: orm, Gateway: gateway}, DB: orm, Auth: authAPI}.Register(router)
-	admindashboard.Dashboard{DB: orm}.Register(router, authAPI)
+	admindashboard.Dashboard{Queries: ops.DashboardQueryService{DB: orm}}.Register(router, authAPI)
 	chargehttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.RegisterRoles(router)
 	chargehttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.Register(router)
 	adminexport.ExportTask{DB: orm, Auth: authAPI, ExportDir: cfg.ExportDir}.Register(router)
