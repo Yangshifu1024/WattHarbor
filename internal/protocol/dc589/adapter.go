@@ -55,6 +55,9 @@ type TCPAdapter struct {
 
 func (TCPAdapter) Name() string { return "dc589" }
 
+// ServeConn 在非 nil ctx 下读取非 nil conn 的 DC589 注册与设备帧，并将事实交给非 nil sink，返回原连接、解析或持久化错误。
+// 保留原设备注册、会话审计和先持久化再确认顺序；取消观察者按原 ctx 关闭连接，所有返回路径先通知并等待观察者退出。
+// 本方法不关闭 sink 或进程连接池；正常读取错误无需等待 ctx 取消，取消时仍等待在途 conn.Close 返回。
 func (a TCPAdapter) ServeConn(ctx context.Context, conn net.Conn, sink protocol.Sink) (serveErr error) {
 	clock := a.Clock
 	if clock == nil {
@@ -62,8 +65,14 @@ func (a TCPAdapter) ServeConn(ctx context.Context, conn net.Conn, sink protocol.
 	}
 	// 会话标识由服务器生成并通过注册响应下发，用于连接审计；每次重连生成独立记录。
 	done := make(chan struct{})
-	defer close(done)
+	// watcherDone 仅在取消观察者及其在途 Close 全部退出后关闭，供本处理器返回前等待。
+	watcherDone := make(chan struct{})
+	defer func() {
+		close(done)
+		<-watcherDone
+	}()
 	go func() {
+		defer close(watcherDone)
 		select {
 		case <-ctx.Done():
 			_ = conn.Close()
