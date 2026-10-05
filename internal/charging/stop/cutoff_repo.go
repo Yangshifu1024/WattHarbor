@@ -2,11 +2,29 @@ package stop
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// CutoffRepo 为消费者提供停止用例所属的事务内截止事实，不持有连接或卡实现。
+type CutoffRepo struct{}
+
+// FrozenInTx 在调用方 tx 中当前读取 orderID 的截止，返回冻结标志或存储错误。
+// 调用方已锁订单，SHARE 强制真实当前读，避免先前 RR 快照隐藏随后提交的冻结；无行返回 false。
+// 不写入、延长截止或提交事务，不返回截止费用以供消费者重新计价。
+func (CutoffRepo) FrozenInTx(tx *gorm.DB, orderID uint64) (bool, error) {
+	var row struct {
+		ChargeOrderID uint64 /* 截止唯一订单身份 */
+	}
+	err := tx.Table("charge_billing_cutoff").Clauses(clause.Locking{Strength: "SHARE"}).Where("charge_order_id=?", orderID).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
 
 // RecordBillingCutoff 记下计费截止时刻：停机之后发生的电量不再计入本单。
 // ctx 控制取消，db 可为事务，chargeOrderID 为订单主键，reason 为业务原因，at 为 UTC 截止时刻。

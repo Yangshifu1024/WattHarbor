@@ -57,7 +57,7 @@ func assemble(cfg config.Worker, r *resources) (*application, error) {
 	paidStarts := charge.PaidStarter{Orders: central, Gateway: gateway}
 	startResults := charge.Synchronizer{Gateway: gateway, Central: central}
 	endResults := charge.EndSynchronizer{Gateway: gateway, Central: central}
-	cardEvents := charge.CardDispatcher{Gateway: serviceclient.Client{HTTP: internalHTTP}, CentralURL: cfg.CentralInternalURL, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Client: internalHTTP}
+	cardEvents := charge.CardDispatcher{Gateway: gateway, Central: central}
 	autoStops := charge.AutoStopper{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: serviceclient.Client{HTTP: jobHTTP}}
 	billingJobs := billing.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}
 	refunds := refund.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}

@@ -76,6 +76,13 @@
 
 ## HTTP、worker 与 gateway 的配套收敛
 
+
+卡用例的入口由 SwipeService、CardStatusService 和 CardAdminService 拥有。新增 card → device/identity 的单向读取分别核对真实端口与协议、活跃绑定用户；card 的当前方案仅通过 cmd 注入的窄接口读取 pricing。支付与意图写入委托 payment/card_funding_repo，订单写入、快照、事件及续购订单锁委托 order 所属 InTx 能力；wallet 金额仍由钱包账本写入，所有卡扣款与时长、原操作共用完整事务。card/interface_query_repo 的余额和有效性是单条只读联表投影，不写用户或钱包表。卡绑定没有站点列，沿用实时 online_card.manage 全局用户管理权限，不把设备范围误用为卡归属。首次绑定先竞争卡号唯一键，再当前读锁定身份，避免缺行 RR 间隙锁；同人已启用重放不重复审计。
+
+续购依次锁卡、钱包、卡会话、订单，再通过 cmd 注入的 stop.CutoffRepo 窄接口当前读截止；card 不 import stop，避免 stop → card 的反向循环。先前 RR 快照不会因后续行锁刷新，因此原操作、会话身份、待确认状态和截止使用当前读。两真实连接的截止提交晚于快照场景已复现漏拒绝，当前读修复后无扣款或时长增加。首次扣款继续冻结完整方案和套餐，当前发布改变不影响续购。
+
+卡事件协议位于 contracts/central/card 与 contracts/gateway/card，具名客户端位于 integration 对应服务；worker 只持有所需窄接口，不持有 URL、服务令牌或通用 HTTP。卡回复先按原事件首写冻结，竞争失败采用权威回复，发送后未知结果沿用原冻结 JSON 和 event_key 重试；余额随后改变不能重算回复。明确 HTTP409／2009 才映射业务拒绝，不将网络未知结果或畸形响应映射为卡无效。五秒期限、受管理连接池和禁止重定向由 integration 与 cmd 管理，真实设备消费仍依赖后续流程验收。
+
 **HTTP 目录在业务入口迁出后整理。** 目标直接采用 `internal/http`，移除只有 http 子目录、没有独立职责的 interface 层。用户侧按 `user/payment`、`user/wallet`、`user/order`、`user/card`、`user/identity` 等实际接口族逐批归类；central 内部端点与 admin 接口保持各自注册入口，auth 提供共享 HTTP 鉴权适配。现有 admin 业务子目录继续复用，业务事务移走后结构体只持有所需服务、鉴权器与 HTTP 配置。
 
 通用 HTTP 响应与服务器工具仍归 platform/httpapi，服务间出站客户端归 integration；gateway／worker 的进程特有入口按既定运行职责组织。以后新增入站协议时依据实际职责增加目录，不预建只有分组含义的 interface／transport 层。路径迁移同步 import、cmd、OpenAPI 嵌入资源及测试，当前源码引用在迁移完成前保持真实路径。

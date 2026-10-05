@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
@@ -23,12 +24,13 @@ import (
 var ErrCardOperation = errors.New("刷卡不可用：卡状态、余额、端口、累计上限或设备确认状态不满足要求")
 var ErrCardBalance = fmt.Errorf("%w：钱包可用余额不足", ErrCardOperation)
 
-func (OnlineCard) TableName() string { return "online_card" }
-
-type CardStore struct{ DB *gorm.DB }
+type Repo struct {
+	DB     *gorm.DB          // 原卡事务或连接，提交由用例管理
+	Cutoff SwipeCutoffReader // 所属停止用例的当前截止事实
+}
 
 // mapWalletMoveError 把钱包账本的错误映射回刷卡业务的哨兵错误。
-// 留在卡族：判据（余额不足/账户非活跃对应哪个刷卡错误）是刷卡自己的语义。
+// err 为原钱包错误，返回不足余额／不可操作哨兵或其他原错误；nil 保持 nil，无 IO。
 func mapWalletMoveError(err error) error {
 	if errors.Is(err, wallet.ErrInsufficient) {
 		return ErrCardBalance
@@ -39,13 +41,11 @@ func mapWalletMoveError(err error) error {
 	return err
 }
 
-func CanExtend(card, orderCard uint64, p charging.Package, purchased, max uint16, balance int64, pending bool) bool {
-	return card == orderCard && p.Mode == "duration" && p.PriceCents > 0 && p.Minutes > 0 && !pending && balance >= p.PriceCents && uint32(purchased)+uint32(p.Minutes) <= uint32(max)
-}
-
-// Swipe only consumes events whose hardware identity has been verified by the
-// adapter. Transport retries reuse device_id/event_id and the same operation.
-func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money.PortRef, rule charging.Rule) (CardOperation, error) {
+// applyInTx 在调用方 tx 中按 cardNo/eventID、port 原物理身份和 rule 首次报价执行原刷卡状态机。
+// 返回原 CardOperation 或准入／资金／唯一键／存储错误；本方法不提交，所有失败必须由用例回滚。
+// 卡→钱包→会话→订单依序加锁，原操作及待确认状态当前读；截止通过所属窄能力当前读取。
+// 首购同时写支付、订单、方案、会话和扣款凭据；续购使用原套餐，并原子累计资金和时长。
+func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef, rule charging.Rule) (CardOperation, error) {
 	var out CardOperation
 	if n, err := strconv.ParseUint(cardNo, 10, 32); err != nil || n == 0 || strconv.FormatUint(n, 10) != cardNo {
 		return out, ErrCardOperation
@@ -53,13 +53,14 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 	if cardNo == "" || eventID == "" || len(eventID) > 128 || !port.Found || !port.Online || port.Kind != "port" {
 		return out, ErrCardOperation
 	}
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := func() error {
 		var card OnlineCard
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("card_no=?", cardNo).Take(&card).Error; err != nil {
 			return err
 		}
 		var previous CardOperation
-		found := tx.Where("device_id=? AND event_id=?", port.DeviceID, eventID).Find(&previous)
+		// 卡锁只串行同卡操作，不能刷新已建立的 RR 快照；原操作必须使用当前读恢复。
+		found := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("device_id=? AND event_id=?", port.DeviceID, eventID).Find(&previous)
 		if found.Error != nil {
 			return found.Error
 		}
@@ -68,7 +69,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 				return ErrCardOperation
 			}
 			var session CardCharge
-			if err := tx.Where("charge_order_id=? AND port_code=?", previous.ChargeOrderID, port.PortID).Take(&session).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("charge_order_id=? AND port_code=?", previous.ChargeOrderID, port.PortID).Take(&session).Error; err != nil {
 				return ErrCardOperation
 			}
 			out = previous
@@ -77,12 +78,8 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 		if card.Status != "active" {
 			return ErrCardOperation
 		}
-		var user struct{ Status string }
-		if err := tx.Table("user").Where("id=? AND deleted_at IS NULL", card.UserID).Take(&user).Error; err != nil {
+		if err := identity.RequireActiveUserInTx(tx, card.UserID); err != nil {
 			return err
-		}
-		if user.Status != "active" {
-			return ErrCardOperation
 		}
 		w, err := wallet.Lock(tx, card.UserID)
 		if err != nil {
@@ -99,26 +96,29 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 			if json.Unmarshal(session.PackageJSON, &p) != nil {
 				return ErrCardOperation
 			}
-			var order orderstore.ChargeOrderRecord
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND status='charging' AND deleted_at IS NULL", session.ChargeOrderID).Take(&order).Error; err != nil {
+			order, err := orderstore.LockCardChargingInTx(tx, session.ChargeOrderID)
+			if err != nil {
 				return ErrCardOperation
 			}
 			if !order.StartedAt.Valid || !time.Now().UTC().Before(order.StartedAt.Time.Add(time.Duration(session.PurchasedMinutes)*time.Minute)) || order.UserID != card.UserID {
 				return ErrCardOperation
 			}
-			var cutoff int64
-			if err := tx.Table("charge_billing_cutoff").Where("charge_order_id=?", order.ID).Count(&cutoff).Error; err != nil {
+			if s.Cutoff == nil {
+				return errors.New("card cutoff reader is not configured")
+			}
+			cutoff, err := s.Cutoff.FrozenInTx(tx, order.ID)
+			if err != nil {
 				return err
 			}
-			if cutoff != 0 {
+			if cutoff {
 				return ErrCardOperation
 			}
-			var pending int64
-			if err := tx.Model(&CardOperation{}).Where("charge_order_id=? AND status='confirming'", session.ChargeOrderID).Count(&pending).Error; err != nil {
+			var pending []CardOperation
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("charge_order_id=? AND status='confirming'", session.ChargeOrderID).Find(&pending).Error; err != nil {
 				return err
 			}
-			if !CanExtend(card.ID, session.CardID, p, session.PurchasedMinutes, session.MaxMinutes, w.BalanceCents-w.FrozenCents, pending > 0) {
-				if CanExtend(card.ID, session.CardID, p, session.PurchasedMinutes, session.MaxMinutes, p.PriceCents, pending > 0) {
+			if !CanExtend(card.ID, session.CardID, p, session.PurchasedMinutes, session.MaxMinutes, w.BalanceCents-w.FrozenCents, len(pending) > 0) {
+				if CanExtend(card.ID, session.CardID, p, session.PurchasedMinutes, session.MaxMinutes, p.PriceCents, len(pending) > 0) {
 					return ErrCardBalance
 				}
 				return ErrCardOperation
@@ -126,12 +126,11 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 			out.Kind = "extend"
 			out.Status = "confirmed"
 			out.ChargeOrderID = session.ChargeOrderID
-			updated := tx.Model(&pay.PaymentOrderRecord{}).Where("id=? AND pay_method='balance' AND status IN ('paid','partial_refunded')", order.PaymentOrderID.Int64).Updates(map[string]any{"paid_cents": gorm.Expr("paid_cents+?", p.PriceCents), "total_cents": gorm.Expr("total_cents+?", p.PriceCents)})
-			if updated.Error != nil {
-				return updated.Error
-			}
-			if updated.RowsAffected != 1 {
-				return ErrCardOperation
+			if err := pay.ExtendCardPaymentInTx(tx, uint64(order.PaymentOrderID.Int64), p.PriceCents); err != nil {
+				if errors.Is(err, pay.ErrCardFundingConflict) {
+					return ErrCardOperation
+				}
+				return err
 			}
 			if err := orderstore.SyncOrderPaymentStatus(tx, uint64(order.PaymentOrderID.Int64)); err != nil {
 				return err
@@ -172,7 +171,7 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 				return err
 			}
 			payment := pay.PaymentOrderRecord{OrderNo: payNo, BizType: "charge", UserID: card.UserID, PayMethod: "balance", TotalCents: p.PriceCents, PaidCents: p.PriceCents, Status: "paid", PaidAt: sql.NullTime{Time: time.Now().UTC(), Valid: true}, CreatedMonth: dbutil.MonthStart()}
-			if err := tx.Create(&payment).Error; err != nil {
+			if err := pay.CreateCardPaymentInTx(tx, &payment); err != nil {
 				return err
 			}
 			chargeNo, err := orderstore.NewChargeOrderNumber(tx, port.DeviceID, port.PortNo)
@@ -180,18 +179,18 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 				return err
 			}
 			order := orderstore.ChargeOrderRecord{OrderNo: chargeNo, UserID: card.UserID, DeviceID: port.DeviceID, PortNo: port.PortNo, PortCode: sql.NullString{String: port.PortID, Valid: true}, PaymentOrderID: sql.NullInt64{Int64: int64(payment.ID), Valid: true}, Status: "paid", PaymentStatus: "paid", ChargeMode: 4, ChargeQuantity: spec.Scheme.Normalized().Card.MaxMinutes, CreatedMonth: dbutil.MonthStart()}
-			if err := tx.Create(&order).Error; err != nil {
+			if err := orderstore.CreatePaidInTx(tx, &order); err != nil {
 				return err
 			}
 			out.ChargeOrderID = order.ID
-			if err := tx.Model(&pay.PaymentOrderRecord{}).Where("id=?", payment.ID).Update("biz_id", order.ID).Error; err != nil {
+			if err := pay.SetCardOrderInTx(tx, payment.ID, order.ID); err != nil {
 				return err
 			}
 			intent := pay.PaymentIntentRecord{IntentID: intentID, ClientRequestID: out.OperationID, MerchantOrderNo: payNo, PaymentOrderID: payment.ID, UserID: card.UserID, DeviceID: port.DeviceID, PortNo: port.PortNo, PortCode: port.PortID, StationID: port.StationID, PricingRuleID: rule.ID, PricingRuleVersion: rule.Version, PricingSnapshot: snapshot, EstimatedKWh: "0.000", EstimatedMinutes: p.Minutes, TotalCents: p.PriceCents, ChargeMode: 4, ChargeQuantity: spec.Scheme.Normalized().Card.MaxMinutes, Status: "paid", ExpiresAt: time.Now().UTC().Add(5 * time.Minute), ChargeOrderID: sql.NullInt64{Int64: int64(order.ID), Valid: true}}
-			if err := tx.Create(&intent).Error; err != nil {
+			if err := pay.CreateCardIntentInTx(tx, &intent); err != nil {
 				return err
 			}
-			if err := tx.Create(&orderstore.ChargePricingSnapshotRecord{ChargeOrderID: order.ID, PaymentIntentID: intentID, UserID: card.UserID, PortCode: port.PortID, PricingSnapshot: snapshot}).Error; err != nil {
+			if err := orderstore.FreezePricingInTx(tx, orderstore.ChargePricingSnapshotRecord{ChargeOrderID: order.ID, PaymentIntentID: intentID, UserID: card.UserID, PortCode: port.PortID, PricingSnapshot: snapshot}); err != nil {
 				return err
 			}
 			praw, _ := json.Marshal(p)
@@ -217,7 +216,15 @@ func (s CardStore) Swipe(ctx context.Context, cardNo, eventID string, port money
 				return err
 			}
 		}
-		return tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: out.ChargeOrderID, EventID: out.OperationID, Event: "card_" + out.Kind + "_" + out.Status, Actor: "card", Detail: fmt.Sprintf("card=%d cents=%d minutes=%d", card.ID, p.PriceCents, p.Minutes), OccurredAt: time.Now().UTC()}).Error
-	})
+		return orderstore.AppendEventInTx(tx, orderstore.ChargeEventLogRecord{ChargeOrderID: out.ChargeOrderID, EventID: out.OperationID, Event: "card_" + out.Kind + "_" + out.Status, Actor: "card", Detail: fmt.Sprintf("card=%d cents=%d minutes=%d", card.ID, p.PriceCents, p.Minutes), OccurredAt: time.Now().UTC()})
+	}()
 	return out, err
+}
+
+// ActiveSessionCount 在 ctx 下统计原 portCode 的活跃卡会话；返回计数或存储错误。
+// 此读仅选择当前报价是否需要，事务内会重新锁会话，不作为扣款授权。
+func (s Repo) ActiveSessionCount(ctx context.Context, portCode string) (int64, error) {
+	var count int64
+	err := s.DB.WithContext(ctx).Model(&CardCharge{}).Where("active_port=?", portCode).Count(&count).Error
+	return count, err
 }

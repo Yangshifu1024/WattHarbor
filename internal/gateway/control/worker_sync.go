@@ -28,11 +28,11 @@ func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 	r.POST(gatewaycontract.ReleasePortPath, a.releasePort)
 	r.GET(gatewaycontract.MeterSamplesRoute, a.meterSamples)
 	r.POST(gatewaycontract.FreezeEndDeliveryPath, a.freezeEndDelivery)
-	r.GET("/api/v1/internal/card-events", a.cardEvents)
+	r.GET(gatewaycontract.CardEventsPath, a.cardEvents)
 	r.POST("/api/v1/internal/card-events/decide-begin", a.cardDecideBegin)
-	r.POST("/api/v1/internal/card-events/decide-finish", a.cardDecideFinish)
-	r.POST("/api/v1/internal/card-events/advance", a.cardEventAdvance)
-	r.GET("/api/v1/internal/ports/resolve", a.resolvePort)
+	r.POST(gatewaycontract.CardFreezePath, a.cardDecideFinish)
+	r.POST(gatewaycontract.CardAdvancePath, a.cardEventAdvance)
+	r.GET(gatewaycontract.CardPortPath, a.resolvePort)
 }
 
 // startResults 返回已回执未上报的启动命令，按 updated_at 升序，最多 50 条。

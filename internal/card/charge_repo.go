@@ -32,14 +32,14 @@ func LockPurchaseForOrder(tx *gorm.DB, orderID uint64) (OrderCardPurchase, error
 	return row, err
 }
 
-// OrderCardCharge 是一次用卡购买。ChargeOrderID 为 0 表示该订单没用卡。
+// OrderCardCharge 是一次用卡购买的投影；无会话同时返回缺失错误，不使用零值冒充购买。
 type OrderCardCharge struct {
-	ChargeOrderID uint64
-	OrderCardPurchase
+	ChargeOrderID     uint64 // 原充电订单主键，无会话时投影为零并返回缺失错误
+	OrderCardPurchase        // 原会话累计金额、分钟及上限
 }
 
-// FindOrderCardCharge 返回订单的用卡购买记录。取不到时 ChargeOrderID 为 0，
-// 调用方据此判断"这张单没用卡"，而不是当成查询失败。
+// FindOrderCardCharge 在 ctx 下用 db 读取 orderID 的刷卡购买，返回投影或缺失／存储错误。
+// 无会话返回 gorm.ErrRecordNotFound，调用方判断非刷卡订单；不加锁、修改或提交。
 func FindOrderCardCharge(ctx context.Context, db *gorm.DB, orderID uint64) (OrderCardCharge, error) {
 	var card OrderCardCharge
 	err := db.WithContext(ctx).Table("card_charge").

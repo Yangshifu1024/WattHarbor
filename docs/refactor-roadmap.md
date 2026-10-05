@@ -203,11 +203,11 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：stop 拥有停机判定与恢复；cutoff_repo.go／deadline_repo.go 持有数据库操作；证据契约由 contracts/gateway 与 integration/gateway 共同维护。
 
-- [ ] C-01：在重新计价／取证前读取已有 cutoff；冻结记录是原决策的恢复依据，不能因为新证据缺失阻断已经确定的 STOP。首次写入遇到并发唯一键冲突时重读原记录，不重新冻结费用或时间。
-- [ ] C-01：仍在充电时沿用原订单身份请求 STOP；gateway 已持久受理后由既有重试恢复，central 不把受理视为停机完成。单笔冲突／调用失败记录并继续，系统性数据库或整批取证失败与单笔错误区分。
-- [ ] C-02：保留目标端口缺失事实，检查证据时间顺序、未来时间、新鲜度、相邻缺口及分页连续性；间隔阈值依据可证明的采样契约定稿，不把具体协议码或帧常量写入 charging。
-- [ ] C-03：将 deadline 中 card／order 读取改为所属模块的事务内能力，原 card 会话 → order 顺序不变；统一首写／重读行为。
-- [ ] N-charging：全部生命周期 *_store.go 改 *_repo.go，保留 StartResultService／EndResultService 等业务类型，start／stop／finish 不相互 import。
+- [x] C-01：在重新计价／取证前读取已有 cutoff；冻结记录是原决策的恢复依据，不能因为新证据缺失阻断已经确定的 STOP。首次写入遇到并发唯一键冲突时重读原记录，不重新冻结费用或时间。
+- [x] C-01：仍在充电时沿用原订单身份请求 STOP；gateway 已持久受理后由既有重试恢复，central 不把受理视为停机完成。单笔冲突／调用失败记录并继续，系统性数据库或整批取证失败与单笔错误区分。
+- [x] C-02：保留目标端口缺失事实，检查证据时间顺序、未来时间、新鲜度、相邻缺口及分页连续性；间隔阈值依据可证明的采样契约定稿，不把具体协议码或帧常量写入 charging。
+- [x] C-03：将 deadline 中 card／order 读取改为所属模块的事务内能力，原 card 会话 → order 顺序不变；统一首写／重读行为。
+- [x] N-charging：全部生命周期 *_store.go 改 *_repo.go，保留 StartResultService／EndResultService 等业务类型，start／stop／finish 不相互 import。
 
 验收：冻结提交后请求失败、gateway 已受理但响应丢失、重启恢复、并发首写、原截止／费用不变、已结束订单不再派发、早期失败不阻挡后续订单；连续零功率成功，重连／缺失端口／陈旧／乱序／未来／分页缺口不误停；默认与真库用例分别覆盖判断和持久语义。回归现有启动拒绝退款一次、结束并发／顺序重放及内容冲突测试。
 
@@ -217,12 +217,12 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：billing.go 的 BillingService.Run；billing_job_repo.go、fee_calculation_repo.go、bill_repo.go；refund.go、invoice.go、meter_review.go 与各自 repo／schema。Calculate 等有业务行为的组件按职责命名，不因为原名 Store 就统一改成万能 Repo。
 
-- [ ] S-01：迁入 Run、deliverPending、人工计费复核入队和 defer；BillIssuer 等能力由 settlement 定义。HTTP 只绑定、鉴权、调用和映射结果。
-- [ ] S-01：明确 Calculate 持久结果、Apply 入账、MarkDelivered、账单 Issue 的不同完成事实；迁移先保留原算法与快照，再单列补出账恢复任务。
-- [ ] S-01：新增有界的“满足现有出账条件但没有账单”恢复查询，覆盖 MarkDelivered 后 Issue 失败及 backlog 投递路径；使用原结算回执与既有账单唯一键，不重算、重复扣款或创建影子账单来源。
-- [ ] S-02：迁入人工结算、退款申请／审核／执行、发票申请／审核、计量分段提案／复核；将操作人、范围、实时复核权限与审计放进用例事务。
-- [ ] S-02：ChargeFeeRecord／RefundRecord 模型迁到 settlement，必须先完成 F-01 和 PAY-02／W-01 的反向依赖消除；payment 不通过类型别名引用 settlement。
-- [ ] N-settlement：退款、账单、发票和计费 repo 统一名称；复用 RefundBalanceInTx，不新增另一套余额退还算法。
+- [x] S-01：迁入 Run、deliverPending、人工计费复核入队和 defer；BillIssuer 等能力由 settlement 定义。HTTP 只绑定、鉴权、调用和映射结果。
+- [x] S-01：明确 Calculate 持久结果、Apply 入账、MarkDelivered、账单 Issue 的不同完成事实；迁移先保留原算法与快照，再单列补出账恢复任务。
+- [x] S-01：新增有界的“满足现有出账条件但没有账单”恢复查询，覆盖 MarkDelivered 后 Issue 失败及 backlog 投递路径；使用原结算回执与既有账单唯一键，不重算、重复扣款或创建影子账单来源。
+- [x] S-02：迁入人工结算、退款申请／审核／执行、发票申请／审核、计量分段提案／复核；将操作人、范围、实时复核权限与审计放进用例事务。
+- [x] S-02：ChargeFeeRecord／RefundRecord 模型迁到 settlement，必须先完成 F-01 和 PAY-02／W-01 的反向依赖消除；payment 不通过类型别名引用 settlement。
+- [x] N-settlement：退款、账单、发票和计费 repo 统一名称；复用 RefundBalanceInTx，不新增另一套余额退还算法。
 
 验收：相同来源费用重放一致，异内容冲突；并发退款占用不超实付；缺少计量／快照进入复核；补出账失败可下一轮恢复且不再入账；不同人员复核、首签权限变化、金额／链接／分段快照变化均按原约束处理；渠道未知结果仍留预占和原退款编号。
 
@@ -232,12 +232,12 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：CheckoutService.Offers／Start、CallbackService.Apply；payment_intent_repo.go、payment_callback_repo.go、payment_order_repo.go 等支付数据能力。保留渠道验签／解密边界。
 
-- [ ] F-01：先定义充值请求读取／到账、迟到退款与钱包退款记录的事务内输入输出；补上 payment、wallet、settlement 的 cmd 注入，证明无反向 import。
-- [ ] PAY-01：把 Replay → 端口准入 → 有效方案／套餐核对 → Reserve → 预支付参数复用／申请／保存迁入 checkout；报价发现的匿名访问与提交支付的登录要求不变。
-- [ ] PAY-01：设备状态查询归 device，扫码运行端口事实由具名 gateway 客户端提供；用例返回业务错误，不依赖 ScanAPI 或 HTTP 状态码。
-- [ ] PAY-02：回调继续拥有 payment／intent／幂等摘要事务；同 tx 调用 wallet 到账、marketing 权益、settlement 退款记录、order 建单／快照及 ops Outbox 能力。
-- [ ] PAY-02：拆出 settleWalletRecharge 中的 wallet 表访问和 queueLatePaymentRefund 的 refund_record 写入；渠道金额／身份核验与支付状态推进仍归 payment。
-- [ ] N-payment：迁移文件、类型和消费者；money_schema.go 只留下 payment 所属模型，删除迁出的退款／结算模型旧定义。
+- [x] F-01：先定义充值请求读取／到账、迟到退款与钱包退款记录的事务内输入输出；补上 payment、wallet、settlement 的 cmd 注入，证明无反向 import。
+- [x] PAY-01：把 Replay → 端口准入 → 有效方案／套餐核对 → Reserve → 预支付参数复用／申请／保存迁入 checkout；报价发现的匿名访问与提交支付的登录要求不变。
+- [x] PAY-01：设备状态查询归 device，扫码运行端口事实由具名 gateway 客户端提供；用例返回业务错误，不依赖 ScanAPI 或 HTTP 状态码。
+- [x] PAY-02：回调继续拥有 payment／intent／幂等摘要事务；同 tx 调用 wallet 到账、marketing 权益、settlement 退款记录、order 建单／快照及 ops Outbox 能力。
+- [x] PAY-02：拆出 settleWalletRecharge 中的 wallet 表访问和 queueLatePaymentRefund 的 refund_record 写入；渠道金额／身份核验与支付状态推进仍归 payment。
+- [x] N-payment：迁移文件、类型和消费者；money_schema.go 只留下 payment 所属模型，删除迁出的退款／结算模型旧定义。
 
 验收：同 request_id 同内容返回原支付单与参数，异内容拒绝；过期意图付款退款且不正常建单；通知商户／应用／付款人／关联／金额／交易号不符拒绝；重复通知一次到账和发券；预支付响应未知可用原单恢复，客户端成功不推进设备状态。
 
@@ -247,12 +247,12 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：RechargeService.Create／CreditInTx、RefundService.Request、RiskService.Review／Release；wallet_account_repo.go、wallet_ledger_repo.go、wallet_refund_repo.go、wallet_reservation_repo.go 和 risk repo。
 
-- [ ] W-01：迁入充值申请的用户／钱包检查、请求重放、支付创建和提交后预支付复用；payment 能力通过接口注入。
-- [ ] W-01：迁入退款申请的归属、余额减冻结额度、近期频次、冻结联动、请求内容核对与响应凭据；不能把风险批准视为渠道已到账。
-- [ ] W-01：ReserveRefund 保留钱包冻结、原充值来源分摊与 wallet_refund_part；其中 refund_record 创建调用注入的 settlement 能力，同事务提交。
-- [ ] W-01：定义充值到账的事务内能力，冻结钱包仍可接收已确认资金；账户版本与流水必须一致，首充奖励仍在支付回调原事务内执行。
-- [ ] W-01：后台风险审核／解除用例保留范围、复核、预占释放与审计，不能由 handler 任意改状态。
-- [ ] N-wallet：repo 与持久化模型的角色分开；钱包不 import payment／settlement，实现通过 cmd 注入。
+- [x] W-01：迁入充值申请的用户／钱包检查、请求重放、支付创建和提交后预支付复用；payment 能力通过接口注入。
+- [x] W-01：迁入退款申请的归属、余额减冻结额度、近期频次、冻结联动、请求内容核对与响应凭据；不能把风险批准视为渠道已到账。
+- [x] W-01：ReserveRefund 保留钱包冻结、原充值来源分摊与 wallet_refund_part；其中 refund_record 创建调用注入的 settlement 能力，同事务提交。
+- [x] W-01：定义充值到账的事务内能力，冻结钱包仍可接收已确认资金；账户版本与流水必须一致，首充奖励仍在支付回调原事务内执行。
+- [x] W-01：后台风险审核／解除用例保留范围、复核、预占释放与审计，不能由 handler 任意改状态。
+- [x] N-wallet：repo 与持久化模型的角色分开；钱包不 import payment／settlement，实现通过 cmd 注入。
 
 验收：并发预占不超可用余额；申请／审批／渠道重试分别幂等；重复充值只一条资金动作；退款未知结果不释放 frozen；驳回／失败／成功按既有规则只释放一次；同请求不同金额／原因／用户冲突，响应丢失后重放返回原结果。
 
@@ -288,7 +288,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.7 card：CA-01／N-card
 
-来源：[刷卡 HTTP](../internal/interface/http/card_api.go)、[主事务](../internal/card/card_store.go)、[后台在线卡](../internal/interface/http/admin/user/online_cards.go)、worker/charge/cards.go。
+来源：[刷卡 HTTP](../internal/interface/http/card_api.go)、[主事务](../internal/card/card_repo.go)、[后台在线卡](../internal/interface/http/admin/user/online_cards.go)、worker/charge/cards.go。
 
 目标：SwipeService.Apply、CardStatusService.Change、CardAdminService.Bind／ChangeStatus；card_repo.go、charge_repo.go、start_result_repo.go 与窄读取能力。
 
@@ -484,7 +484,7 @@ make build SERVICE=worker
 make test-integration TEST_MYSQL_URL=...
 ```
 
-构建只跑受影响服务；跨包路径迁移影响全部 cmd 时构建全部入口。Windows 的 Make 构建 shell 循环不可用时，使用已验证的 `go build -trimpath -o bin/ ./cmd/...`，产物仅落 bin。若 test-integration 的 shell 前置检查不可用，确认连接变量已配置后执行同一测试命令 `go test -tags=integration -count=1 ./...`；构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
+构建只跑受影响服务；跨包路径迁移影响全部 cmd 时构建全部入口。Make 的前置检查使用 Node，全部入口通过 `go build -trimpath -o bin/ ./cmd/...` 构建，产物仅落 bin；Windows 本地真库入口为 `scripts/db/test-integration.ps1`，使用 `compose.test.yaml` 独立 MySQL（3307），不得将显式测试主键插入联调开发库。构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
 
 真库测试需要 TEST_MYSQL_URL；跨库／网关测试还需其实际使用的 DATABASE_URL_GATEWAY、DATABASE_URL_CENTRAL、DATABASE_URL_WORKER，参照现有 CI integration job 与测试连接辅助函数。迁移使用现有开发栈与 cmd/migrate；不得为了通过测试另建旁路容器、自动建表或无条件清库。每个 integration 文件必须保留 build tag，缺配置明确失败，不能跳过。
 
@@ -522,7 +522,7 @@ make test-integration TEST_MYSQL_URL=...
 | D-01 | 完成 | 导入、站点、设备运营及厂商编排已归 device，普通归属／能力和站点锁由所属 repo 提供；真实注册后台及 gateway 覆盖范围、原号重放、旧版本、未知值、提交后恢复及审计。两连接验证首次申请唯一键及反向清单统一锁序，变异稳定失败并恢复；工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | D-02／N-device | 待实施 | 导入、设备运营和站点 repo 已改名；故障／告警及其余持久文件、用户站点组合查询仍待按所属批次迁移 |
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
-| CA-01／N-card | 待实施 | Swipe 原事务保留，前置检查及管理入口待迁移 |
+| CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
 | O-01／CQ-01／N-order | 待实施 | 基础订单 repo 保留，组合查询及 case 待迁移 |
 | M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
 | I-01／N-identity | 待实施 | 认证／用户能力已有，Redis 用户会话与手机号入口待收拢 |
@@ -554,3 +554,15 @@ make test-integration TEST_MYSQL_URL=...
 2a 实际证据：`.tmp/batch2-management-full-registered.log`、`.tmp/batch2-pricing-read-registered.log`、`.tmp/batch2-owned-device-facts.log`、`.tmp/batch2-import-concurrency.log`、`.tmp/batch2-import-overlap.log` 已通过。站点详情／更新范围、设备版本、首次导入缺行间隙锁和反向清单锁序变异稳定失败，日志为 `.tmp/batch2-*-mutation.log`，变异均恢复。真实提交场景清理自身身份为零，其余外层回滚；网关开通、厂商与摘要使用实际注册端点及真实库，权限会话存在性／并发开通次数部分为 fixture。厂商中央审计仍是跨服务提交后尽力记录，无持久补偿；两台现有 DC589 模拟器实际 TCP 注册、心跳、后台摘要、两端口在线空闲扫码及完整方案读取已验收；支付到结束的完整流程和实机尚未在此子批验收。
 
 2a 退出证据：工作区 `.tmp/batch2a-check-final.log`、`.tmp/batch2a-integration-final.log`、`.tmp/batch2a-build-final.log`、`.tmp/batch2a-tidy-final.log` 与独立暂存快照 `.tmp/batch2a-validation` 的同类日志全部通过，tidy 无差异；后台 78 项测试及构建、用户端 59 项测试及 typecheck 通过。快照 Go 文件与 Git 暂存原内容核对一致，Windows 导出换行转换不作为依赖变化。真实开发栈过程见 `.tmp/batch2a-live-prepare.log`、`.tmp/batch2a-live-summary.json`：修复准备脚本的大整数 ID 精度丢失，以及无规则同站多设备缓存误判／完整方案兼容检查遗漏；新增真库测试与两项稳定失败并恢复的变异见 `.tmp/batch2a-import-*-mutation.log`。临时模拟器已停止，开发服务继续运行，准备脚本创建的开发样例保留；数据库备份保留，未再次重建。
+
+2b 实施与行为证据：三种 card 服务位于 `internal/card/{swipe,status,admin}.go`，卡、会话、操作、用户和管理访问集中到六个 repo，payment／order／identity 提供所属事务内能力；stop.CutoffRepo 通过窄接口注入。卡→钱包→会话→订单锁序、原事件身份、首购完整支付与方案、续购原套餐、回执退款与释放保持同一事务。管理绑定先争卡号唯一键再当前读，避免缺行间隙锁；全局卡权限保留原用户归属语义。字段、方法入参与结果、错误及副作用的中文契约已核对；卡号行政绑定1–19位与设备32位范围分别保留。
+
+2b 验证：`.tmp/batch2b-card-current-read.log`、`.tmp/batch2b-card-binding-concurrency.log`、`.tmp/batch2b-card-registered-routes.log`、`.tmp/batch2b-card-admin-registered.log`、`.tmp/batch2b-card-concurrency-final.log`、`.tmp/batch2b-card-clients.log` 和原冻结回复恢复测试通过。两连接按门控固定同事件／首绑等待与续购先提交、截止先提交；核对实付、钱包、购买分钟、凭据和截止。截止当前读、原操作当前读、绑定当前锁三项变异稳定失败并恢复。真实库及注册 HTTP 使用外层回滚或自身身份清理；会话存在、设备准入和回复丢失部分为 fixture，不等于实机证明。服务端／客户端共享端点及 DTO，5秒上下文期限、禁止重定向、有界响应，只有409/2009映射明确拒绝；缺字段不得当作正常零值。
+
+2b 开发流程证据：`.tmp/batch2b-live-{summary.json,central-facts.log,gateway-facts.log,final-facts.log}` 及 `.tmp/batch2b-simulator.log`。实际登录、两笔模拟充值、绑定、原生 TCP B6 首购、B7/B8 启动、移卡重刷续购、用户停机、B9/BA/BB/BC 回执、完成与后续结算退款。首购／续购各100分，累计120分钟，唯一START使用首次余额190个协议单位，两个操作均confirmed且原事件done；两端端口均释放。3秒低额计费按原规则归零，异步全退200分，最终钱包2000分。模拟支付与模拟器不替代真实商户或实机。
+
+2b 环境问题：先前真库测试虽清理行，显式高位主键仍抬高开发自增序号，导致19位新订单不能编码16位 BCD；未改变协议或业务身份绕过。测试已隔离独立三库3307，新增 `compose.test.yaml` 和 `scripts/db/test-integration.ps1`；实际入口迁移与全量测试通过。按已有明确授权备份并重建开发栈，保留 `.tmp/dev-db-before-reset-20261005-090128.sql` 及前两份备份，恢复样例后 TCP 全流程成功。开发 Compose 改用仓库实际 SQL 初始化文件，重建脚本停下并恢复五个写入进程；Make 验收移除 Bash 条件／循环。
+
+2b 退出证据：工作区 `.tmp/batch2b-check-final.log`、`.tmp/batch2b-integration-final.log` 及实际独立测试入口 `.tmp/batch2b-test-entry.log` 通过；精确暂存快照 `.tmp/batch2b-validation` 的 check／integration／build／tidy 日志 `.tmp/batch2b-snapshot-*.log` 全部通过，tidy 无差异，575份 Go 与模块原 blob 完全一致。暂存快照初验发现结算准备路由测试的 Scopes 条件会被前次查询消费，包间扫描锁可能冲突；改用本测试连接的意图更新回调持续限定本用户后，工作区及快照全量真库通过。后台78项、用户59项测试及类型检查、后台生产构建通过，保留既有 Vite 大 chunk 提示。前端使用直接 Node 执行既有脚本；pnpm 自动安装生成的未跟踪锁文件已移除，未修改依赖清单或锁文件。
+
+批次2b已完成；批次3按订单组合查询、营销与身份边界继续实施，后续故障／运营／导出及HTTP／基础设施任务仍待完成。开发样例及本次模拟充值／充电／退款保留；临时模拟器已停止，五个开发服务继续运行；后续真库测试只使用3307独立实例。

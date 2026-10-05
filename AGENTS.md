@@ -72,6 +72,7 @@ charge-pilot/
 │       └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
 ├── internal/order                                        订单表模型、编号分配与读模型
 │   ├── internal/order/funding_repo.go（新增：资金及开票事务的所属订单能力）
+│   ├── internal/order/card_session_repo.go（迁移前：internal/card/card_store.go[续购订单锁]）
 │   ├── internal/order/order_history_store.go（迁移前：internal/payment/order_authorization_store.go[历史视图部分]）
 │   ├── internal/order/order_number.go
 │   ├── internal/order/order_package_store.go
@@ -124,13 +125,17 @@ charge-pilot/
 │   ├── internal/pricing/pricing_repo.go（迁移前：internal/pricing/pricing_store.go）
 │   └── internal/pricing/scheme_target_repo.go（迁移前：internal/pricing/scheme_target_store.go）
 ├── internal/card                                         刷卡：在线卡、扣款与累计时长
-│   ├── internal/card/card_admin_store.go
+│   ├── internal/card/admin.go（迁移前：internal/interface/http/admin/user/online_cards.go[事务]）
+│   ├── internal/card/status.go（迁移前：internal/interface/http/card_api.go[用户卡]、card_balance.go）
+│   ├── internal/card/swipe.go（迁移前：internal/interface/http/card_api.go[刷卡准入]）
+│   ├── internal/card/card_admin_repo.go
+│   ├── internal/card/extension.go（迁移前：internal/card/card_store.go[续购纯规则]）
 │   ├── internal/card/card_schema.go
-│   ├── internal/card/card_store.go
-│   ├── internal/card/charge_store.go
-│   ├── internal/card/interface_query_store.go
-│   ├── internal/card/start_result_store.go（迁移前：internal/payment/order_start_repo.go[刷卡写入部分]）
-│   └── internal/card/user_card_store.go
+│   ├── internal/card/card_repo.go
+│   ├── internal/card/charge_repo.go
+│   ├── internal/card/interface_query_repo.go
+│   ├── internal/card/start_result_repo.go（迁移前：internal/payment/order_start_repo.go[刷卡写入部分]）
+│   └── internal/card/user_card_repo.go
 ├── internal/device                                       设备接入、遥测、会话、故障
 │   ├── internal/device/discovery.go（迁移前：internal/interface/http/payment_scan.go[事实组合]）
 │   ├── internal/device/operation_repo.go（迁移前：internal/payment/payment_device_store.go）
@@ -152,6 +157,7 @@ charge-pilot/
 │   └── internal/device/user_fault_store.go
 ├── internal/identity                                     用户、会话、登录与手机号
 │   ├── internal/identity/auth.go
+│   ├── internal/identity/card_user_repo.go（迁移前：internal/card/card_admin_store.go[用户事实]）
 │   ├── internal/identity/charge_user_store.go
 │   ├── internal/identity/development.go
 │   ├── internal/identity/user.go
@@ -173,6 +179,7 @@ charge-pilot/
 │   ├── internal/payment/recharge_source_repo.go（迁移前：internal/wallet/wallet_reservation_store.go[支付来源]）
 │   ├── internal/payment/refund_payment_repo.go（迁移前：internal/settlement/refund_executor_store.go[支付锁及更新]）
 │   ├── internal/payment/simulation_repo.go（迁移前：internal/interface/http/payment_development_payment.go[模拟确认]）
+│   ├── internal/payment/card_funding_repo.go（迁移前：internal/card/card_store.go[卡支付写入]）
 │   ├── internal/payment/channel_factory.go
 │   ├── internal/payment/channel_refund.go
 │   ├── internal/payment/channel_simulation.go
@@ -202,22 +209,26 @@ charge-pilot/
 │   └── internal/export/export_task_store.go
 ├── internal/contracts                                    服务间 HTTP 的端点、共享 DTO 与错误契约
 │   ├── internal/contracts/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP 授权响应]）
+│   ├── internal/contracts/central/card.go（迁移前：internal/interface/http/card_api.go、worker/charge/cards.go[服务 DTO]）
 │   ├── internal/contracts/central/charging.go（迁移前：internal/worker/charge/paid_start.go[待启动响应]）
 │   ├── internal/contracts/central/errors.go
 │   ├── internal/contracts/central/results.go（迁移前：internal/interface/http/order_*_result.go、internal/worker/charge/*sync.go[回执 DTO]）
 │   ├── internal/contracts/gateway/provision.go（迁移前：后台导入／厂商 HTTP DTO）
 │   ├── internal/contracts/gateway/summary.go（迁移前：后台设备 HTTP 摘要 DTO）
 │   ├── internal/contracts/gateway/scan.go（新增：扫码端点与缺失错误契约）
+│   ├── internal/contracts/gateway/card.go（迁移前：internal/worker/charge/cards.go、gateway/control/card_delivery.go[服务 DTO]）
 │   ├── internal/contracts/gateway/charging.go（START、STOP 与计量证据契约）
 │   └── internal/contracts/gateway/sync.go（迁移前：internal/worker/charge/*sync.go、meter_segments.go[同步 DTO]）
 ├── internal/integration                                  服务间 HTTP 的专用客户端
 │   ├── internal/integration/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP]）
+│   ├── internal/integration/central/card.go（迁移前：internal/worker/charge/cards.go[central HTTP]）
 │   ├── internal/integration/central/client.go（迁移前：internal/worker/charge/paid_start.go[待启动 HTTP 查询]）
 │   ├── internal/integration/central/results.go（迁移前：internal/worker/charge/*sync.go[回执 HTTP]）
 │   ├── internal/integration/gateway/provision.go（迁移前：后台设备导入出站 HTTP）
 │   ├── internal/integration/gateway/vendor.go（迁移前：后台厂商通用出站 HTTP）
 │   ├── internal/integration/gateway/summary.go（迁移前：后台设备摘要通用出站 HTTP）
 │   ├── internal/integration/gateway/scan.go（迁移前：internal/interface/http/payment_scan.go[出站 HTTP]）
+│   ├── internal/integration/gateway/card.go（迁移前：internal/worker/charge/cards.go[gateway HTTP]）
 │   ├── internal/integration/gateway/client.go
 │   └── internal/integration/gateway/sync.go（迁移前：internal/worker/charge/sync_client.go[启动/结束同步]）
 ├── internal/delivery                                     对外事件契约与签名投递器
@@ -342,7 +353,6 @@ charge-pilot/
 │   ├── internal/interface/http/card_api.go
 │   ├── internal/interface/http/card_balance.go
 │   ├── internal/interface/http/charge_auto_stop.go（迁移前：internal/application/auto_stop_http.go）
-│   ├── internal/interface/http/charge_card_lookup.go
 │   ├── internal/interface/http/charge_feedback.go
 │   ├── internal/interface/http/charge_live_meter.go
 │   ├── internal/interface/http/charge_paid_starts.go
@@ -637,7 +647,7 @@ charge-pilot/
 - Git 操作一律需要用户明确授权。未获授权不得执行 `commit`、`reset`、`revert`、`push`、`rebase`、`merge`、`cherry-pick`、`tag`，不得新建或切换分支，不得改写提交历史。改动只落在工作区，由用户审阅后自行提交。`git status`、`git diff`、`git log`、`git show` 等只读命令可以直接使用。
 - 交付时报告工作区的未提交改动，不代替用户提交。
 - Go 业务变更运行 `make check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `make build SERVICE=<name>` 或 `make build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
-- `make check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `make test-integration TEST_MYSQL_URL=...`，使用开发 MySQL；有构建 tag 的真库测试不能用默认测试通过替代。
+- `make check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `make test-integration TEST_MYSQL_URL=...`，使用独立测试 MySQL；Windows 本地入口是 `scripts/db/test-integration.ps1` 和 `compose.test.yaml`（3307）。显式测试主键即使回滚仍会抬高自增序号，不得在联调开发库运行；有构建 tag 的真库测试不能用默认测试通过替代。
 - 后台逻辑修改运行 `npm test` 与 `npm run build`；用户端逻辑修改运行 `npm run typecheck`、`npm test`，涉及平台适配或构建配置时构建受影响的 H5／微信目标。命令在对应前端目录执行。
 - 纯文档、注释和文案修改检查链接、引用、事实与格式；不为低影响可逆修改增加重复测试。已有验证通过后，仅在新增修改、失败或未决问题需要时扩大检查。
 - 测试覆盖实际契约和故障边界，重点验证并发重放、非法状态、授权范围、金额与计量不一致、外部未知结果和回执丢失；避免照抄实现的测试。

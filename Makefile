@@ -3,7 +3,7 @@
 
 # cmd 下的服务名，编译产物统一落到 bin/
 SERVICES := user admin central gateway worker migrate devseed simulator-dc589
-export TEST_MYSQL_URL
+export TEST_MYSQL_URL SERVICE
 
 fmt:
 	go fmt ./...
@@ -26,7 +26,7 @@ test:
 # 刻意没有跳过路径：没配 TEST_MYSQL_URL 就直接失败而不是 skip——
 # 跳过的测试在输出里和通过的一模一样，CI 没配库就会一路绿灯。
 test-integration:
-	@test -n "$(TEST_MYSQL_URL)" || { echo '请先设置 TEST_MYSQL_URL，例如：'; echo '  make test-integration TEST_MYSQL_URL=mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/central_db'; exit 2; }
+	@node -e "if (!process.env.TEST_MYSQL_URL) { console.error('请先设置 TEST_MYSQL_URL，例如 mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/central_db'); process.exit(2); }"
 	go test -tags=integration -count=1 ./...
 
 # build 编译单个服务，用法：make build SERVICE=central
@@ -34,13 +34,13 @@ test-integration:
 MKDIR = node -e "require('fs').mkdirSync('bin',{recursive:true})"
 
 build:
-	@test -n "$(SERVICE)" || { echo '用法：make build SERVICE=$(word 1,$(SERVICES))'; exit 2; }
+	@node -e "if (!process.env.SERVICE) { console.error('用法：make build SERVICE=user'); process.exit(2); }"
 	@$(MKDIR)
 	go build -trimpath -o bin/$(SERVICE) ./cmd/$(SERVICE)
 
 build-all:
 	@$(MKDIR)
-	@for s in $(SERVICES); do echo 'building' $$s; go build -trimpath -o bin/$$s ./cmd/$$s || exit 1; done
+	go build -trimpath -o bin/ ./cmd/...
 
 # 只删 bin 下的编译产物，不触碰 .tmp 与容器数据。
 # 走 node 而非 rm -rf：Makefile 在 Windows 上也用，rm 在那里不存在。

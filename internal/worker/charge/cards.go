@@ -1,70 +1,62 @@
 package charge
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
-	"time"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	central "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
+	gateway "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"github.com/google/uuid"
+	"strconv"
 )
 
-// CardDispatcher 把原生刷卡事件决策后回复设备；事件清单、决策冻结、
-// 投递推进与端口解析经 gateway 内部端点，本组件不持有 gateway 库句柄。
+// CardGateway 只提供原事件清单、冻结、原回复、推进及端口码，不暴露网络配置或数据库。
+type CardGateway interface {
+	// CardEvents 在 context 下返回原待投递集合及冻结值，失败返回错误；不推进。
+	CardEvents(context.Context) ([]gateway.CardEvent, error)
+	// FreezeCardResponse 在 context 下按原请求首写并返回权威 JSON，失败返回错误。
+	FreezeCardResponse(context.Context, gateway.CardFreeze) (gateway.CardFrozen, error)
+	// AdvanceCardEvent 在 context 下按原事件重排或完成，失败返回错误。
+	AdvanceCardEvent(context.Context, gateway.CardAdvance) error
+	// ReplyCard 在 context 下向原设备会话发送原回复，失败返回错误。
+	ReplyCard(context.Context, gateway.CardReply) error
+	// ResolveCardPort 在 context 下读取原设备及端口序号的业务码或错误。
+	ResolveCardPort(context.Context, string, uint8) (gateway.CardPort, error)
+}
+
+// CardCentral 只提供原事件决策和原卡余额，不执行投递或拥有设备连接。
+type CardCentral interface {
+	// SwipeCard 在 context 下执行原事件并返回原操作、明确拒绝或未知结果错误。
+	SwipeCard(context.Context, central.CardSwipe) (central.CardOperation, error)
+	// CardBalance 在 context 下返回原卡有效性及可花费分值或错误。
+	CardBalance(context.Context, string) (central.CardBalance, error)
+}
+
+// CardDispatcher 编排原卡事件决策和回复；冻结完成后只重发原回复及原 event_key。
 type CardDispatcher struct {
-	Gateway                              serviceclient.Client
-	CentralURL, GatewayURL, ServiceToken string
-	Client                               *http.Client
+	Gateway CardGateway // cmd 注入的具名 gateway 客户端
+	Central CardCentral // cmd 注入的具名 central 客户端
 }
 
-type cardReply struct {
-	Accepted     bool                 `json:"accepted"`
-	DeviceID     string               `json:"device_id"`
-	Session      string               `json:"session"`
-	Kind         protocol.CommandKind `json:"kind"`
-	CardNumber   uint32               `json:"card_number"`
-	BalanceUnits uint16               `json:"balance_units"`
-	Invalid      bool                 `json:"invalid"`
-}
-
+// Run 在 ctx 下处理一页原卡事件，返回已推进数与首个失败；每次失败按原事件重排。
+// 成功决策先首写冻结，再发送拒绝／余额回复，最后推进；任一步未知结果保留原号供下一轮恢复。
 func (d CardDispatcher) Run(ctx context.Context) (int, error) {
-	if d.GatewayURL == "" || d.ServiceToken == "" {
+	if d.Gateway == nil || d.Central == nil {
 		return 0, errors.New("card dispatcher is not configured")
 	}
-	gateway := newGatewaySyncAPI(d.Gateway, d.GatewayURL, d.ServiceToken)
-	var list struct {
-		Items []struct {
-			EventKey string `json:"event_key"`
-			Payload  string `json:"payload"`
-			Response string `json:"response"`
-		} `json:"items"`
-	}
-	if err := gateway.get(ctx, "/api/v1/internal/card-events", &list); err != nil {
+	list, err := d.Gateway.CardEvents(ctx)
+	if err != nil {
 		return 0, err
 	}
 	done := 0
 	var first error
-	for _, item := range list.Items {
-		reply, err := d.decisionFor(ctx, gateway, item.EventKey, item.Payload, item.Response)
+	for _, item := range list {
+		reply, err := d.decisionFor(ctx, item.EventKey, item.Payload, item.Response)
 		if err == nil && !reply.Accepted {
-			var ack struct {
-				Accepted bool `json:"accepted"`
-			}
-			err = d.call(ctx, d.GatewayURL, "POST", "/api/v1/internal/cards/reply", reply, &ack)
-			if err == nil && !ack.Accepted {
-				err = errors.New("card reply not accepted")
-			}
+			err = d.Gateway.ReplyCard(ctx, reply)
 		}
 		if err != nil {
 			if first == nil {
@@ -74,14 +66,12 @@ func (d CardDispatcher) Run(ctx context.Context) (int, error) {
 			if len(message) > 255 {
 				message = message[:255]
 			}
-			var ignored struct{}
-			if aerr := gateway.post(ctx, "/api/v1/internal/card-events/advance", map[string]any{"event_key": item.EventKey, "outcome": "retry", "error": message}, &ignored); aerr != nil {
+			if aerr := d.Gateway.AdvanceCardEvent(ctx, gateway.CardAdvance{EventKey: item.EventKey, Outcome: "retry", Error: message}); aerr != nil {
 				return done, aerr
 			}
 			continue
 		}
-		var ignored struct{}
-		if err := gateway.post(ctx, "/api/v1/internal/card-events/advance", map[string]any{"event_key": item.EventKey, "outcome": "done"}, &ignored); err != nil {
+		if err := d.Gateway.AdvanceCardEvent(ctx, gateway.CardAdvance{EventKey: item.EventKey, Outcome: "done"}); err != nil {
 			return done, err
 		}
 		done++
@@ -89,32 +79,27 @@ func (d CardDispatcher) Run(ctx context.Context) (int, error) {
 	return done, first
 }
 
-// decisionFor 返回冻结后的决策回复：清单里已有冻结回复时直接使用；
-// 否则解析事件、决策并经 decide-finish 首写冻结，竞争输掉时采用胜出方回复。
-// 决策是事件的纯函数，首写冻结保证同一事件只有一个回复事实。
-func (d CardDispatcher) decisionFor(ctx context.Context, gateway gatewaySyncAPI, key, payload, frozen string) (cardReply, error) {
-	var reply cardReply
+// decisionFor 在 ctx 下恢复 key 对应 frozen 或解析 payload 决策并首写冻结，返回权威回复或错误。
+// 竞争失败使用胜出回复，不根据当前余额重算；本方法不推进投递，发送后未知由原冻结值恢复。
+func (d CardDispatcher) decisionFor(ctx context.Context, key, payload, frozen string) (gateway.CardReply, error) {
+	var reply gateway.CardReply
 	if frozen != "" {
 		return reply, json.Unmarshal([]byte(frozen), &reply)
 	}
-	var e protocol.Event
-	if json.Unmarshal([]byte(payload), &e) != nil || e.EventID != key || uuid.Validate(e.EventID) != nil {
+	var event protocol.Event
+	if json.Unmarshal([]byte(payload), &event) != nil || event.EventID != key || uuid.Validate(event.EventID) != nil {
 		return reply, errors.New("card event identity mismatch")
 	}
-	reply, err := d.decide(ctx, gateway, e)
+	reply, err := d.decide(ctx, event)
 	if err != nil {
 		return reply, err
 	}
 	raw, _ := json.Marshal(reply)
-	var finish struct {
-		Stored       bool   `json:"stored"`
-		ResponseJSON string `json:"response_json"`
-	}
-	if err := gateway.post(ctx, "/api/v1/internal/card-events/decide-finish", map[string]any{"event_key": key, "response_json": string(raw)}, &finish); err != nil {
+	finish, err := d.Gateway.FreezeCardResponse(ctx, gateway.CardFreeze{EventKey: key, ResponseJSON: string(raw)})
+	if err != nil {
 		return reply, err
 	}
 	if !finish.Stored {
-		// 并发决策已先冻结：以胜出方回复为准，二者本应是同一事实。
 		if err := json.Unmarshal([]byte(finish.ResponseJSON), &reply); err != nil {
 			return reply, err
 		}
@@ -122,116 +107,51 @@ func (d CardDispatcher) decisionFor(ctx context.Context, gateway gatewaySyncAPI,
 	return reply, nil
 }
 
-func (d CardDispatcher) decide(ctx context.Context, gateway gatewaySyncAPI, e protocol.Event) (cardReply, error) {
-	r := cardReply{DeviceID: e.DeviceID, Session: hex.EncodeToString(e.SessionID[:]), CardNumber: e.CardNumber}
-	card := strconv.FormatUint(uint64(e.CardNumber), 10)
+// decide 在 ctx 下按原 e 卡事件获取 central 决定或余额，返回原协议回复或未知结果错误。
+// 明确不足余额映射原非无效卡拒绝；协议金额单位和饱和继续复用 dc589 规则，不复制资金逻辑。
+func (d CardDispatcher) decide(ctx context.Context, e protocol.Event) (gateway.CardReply, error) {
+	reply := gateway.CardReply{DeviceID: e.DeviceID, Session: hex.EncodeToString(e.SessionID[:]), CardNumber: e.CardNumber}
+	cardNo := strconv.FormatUint(uint64(e.CardNumber), 10)
 	if e.Type == protocol.CardSwipe {
 		if e.Port == 0xFF {
-			r.Kind, r.Invalid = protocol.CommandCardDenied, true
-			return r, nil
+			reply.Kind, reply.Invalid = protocol.CommandCardDenied, true
+			return reply, nil
 		}
-		var resolved struct {
-			Found    bool   `json:"found"`
-			PortCode string `json:"port_code"`
-		}
-		if err := gateway.get(ctx, "/api/v1/internal/ports/resolve?device_id="+url.QueryEscape(e.DeviceID)+"&port_no="+strconv.Itoa(int(e.Port)), &resolved); err != nil {
-			return r, err
+		resolved, err := d.Gateway.ResolveCardPort(ctx, e.DeviceID, e.Port)
+		if err != nil {
+			return reply, err
 		}
 		if !resolved.Found {
-			return r, errors.New("card port not provisioned")
+			return reply, errors.New("card port not provisioned")
 		}
-		var op struct {
-			OperationID string `json:"operation_id"`
-		}
-		err := d.call(ctx, d.CentralURL, "POST", "/api/v1/internal/cards/swipe", map[string]any{"event_id": e.EventID, "card_no": card, "port_id": resolved.PortCode, "occurred_at": e.ReceivedAt}, &op)
+		op, err := d.Central.SwipeCard(ctx, central.CardSwipe{EventID: e.EventID, CardNo: cardNo, PortID: resolved.PortCode, OccurredAt: e.ReceivedAt})
 		if err == nil {
 			if uuid.Validate(op.OperationID) != nil {
-				return r, errors.New("card operation response missing identity")
+				return reply, errors.New("card operation response missing identity")
 			}
-			r.Accepted = true
-			return r, nil
+			reply.Accepted = true
+			return reply, nil
 		}
-		if !errors.Is(err, ErrCardDeclined) {
-			return r, err
+		if !errors.Is(err, central.ErrCardDeclined) {
+			return reply, err
 		}
-		r.Kind = protocol.CommandCardDenied
-		var declined *cardDecline
-		r.Invalid = !errors.As(err, &declined) || !declined.InsufficientBalance
+		reply.Kind = protocol.CommandCardDenied
+		var declined *central.CardDecline
+		reply.Invalid = !errors.As(err, &declined) || !declined.InsufficientBalance
 	} else if e.Type == protocol.CardBalanceQuery {
-		r.Kind = protocol.CommandCardBalance
+		reply.Kind = protocol.CommandCardBalance
 		if e.CardNumber == 0 {
-			r.Invalid = true
-			return r, nil
+			reply.Invalid = true
+			return reply, nil
 		}
 	} else {
-		return r, errors.New("unexpected card event type")
+		return reply, errors.New("unexpected card event type")
 	}
-	var balance struct {
-		Valid        bool  `json:"valid"`
-		BalanceCents int64 `json:"balance_cents"`
-	}
-	if err := d.call(ctx, d.CentralURL, "GET", "/api/v1/internal/cards/balance?card_no="+card, nil, &balance); err != nil {
-		return r, err
-	}
-	r.Invalid = r.Invalid || !balance.Valid
-	r.BalanceUnits = dc589.CardBalanceUnits(balance.BalanceCents)
-	return r, nil
-}
-
-var ErrCardDeclined = errors.New("card operation declined")
-
-type cardDecline struct{ InsufficientBalance bool }
-
-func (e *cardDecline) Error() string { return ErrCardDeclined.Error() }
-func (e *cardDecline) Unwrap() error { return ErrCardDeclined }
-
-func (d CardDispatcher) call(ctx context.Context, base, method, path string, body, out any) error {
-	u, err := url.Parse(base)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return errors.New("invalid card service URL")
-	}
-	raw, err := json.Marshal(body)
+	balance, err := d.Central.CardBalance(ctx, cardNo)
 	if err != nil {
-		return err
+		return reply, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(base, "/")+path, bytes.NewReader(raw))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Service-Token", d.ServiceToken)
-	client := d.Client
-	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == 409 {
-		var rejected struct {
-			Data struct {
-				InsufficientBalance bool `json:"insufficient_balance"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&rejected); err != nil {
-			return err
-		}
-		return &cardDecline{InsufficientBalance: rejected.Data.InsufficientBalance}
-	}
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("card service returned %d", resp.StatusCode)
-	}
-	var envelope struct {
-		Code int             `json:"code"`
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&envelope); err != nil {
-		return err
-	}
-	if envelope.Code != 0 || len(envelope.Data) == 0 {
-		return errors.New("invalid card service envelope")
-	}
-	return json.Unmarshal(envelope.Data, out)
+	reply.Invalid = reply.Invalid || !balance.Valid
+	reply.BalanceUnits = dc589.CardBalanceUnits(balance.BalanceCents)
+	return reply, nil
 }

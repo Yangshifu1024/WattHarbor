@@ -8,7 +8,7 @@ if ($LASTEXITCODE -ne 0 -or $project.Trim() -ne 'chargepilot-dev') { throw 'Expe
 $backupDir = Join-Path $root '.tmp'
 New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 $backup = Join-Path $backupDir ("dev-db-before-reset-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.sql')
-docker compose -f "$root/compose.dev.yaml" stop central gateway worker
+docker compose -f "$root/compose.dev.yaml" stop user admin central gateway worker
 if ($LASTEXITCODE -ne 0) { throw 'Unable to stop backend services.' }
 docker exec $container sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -u root --single-transaction --routines --triggers --databases gateway_db central_db worker_db > /tmp/chargepilot-before-reset.sql'
 if ($LASTEXITCODE -ne 0) { throw 'Backup failed; schemas were not reset.' }
@@ -25,6 +25,6 @@ foreach ($redis in @('chargepilot-dev-redis-cache-1','chargepilot-dev-redis-stre
 }
 docker compose -f "$root/compose.dev.yaml" run --rm migrate
 if ($LASTEXITCODE -ne 0) { throw 'Init failed; keep services stopped and inspect the backup.' }
-docker compose -f "$root/compose.dev.yaml" up -d central gateway worker admin-web
+docker compose -f "$root/compose.dev.yaml" up -d user admin central gateway worker admin-web
 if ($LASTEXITCODE -ne 0) { throw 'Unable to restart the development stack.' }
 Write-Host "Development schemas rebuilt. Backup: $backup"

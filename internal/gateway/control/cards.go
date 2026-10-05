@@ -2,6 +2,7 @@ package control
 
 import (
 	"encoding/hex"
+	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -10,25 +11,23 @@ import (
 	"net/http"
 )
 
+// CardReplyAPI 处理已冻结的设备回复，不执行资金决策。
 type CardReplyAPI struct {
-	Devices      *session.Registry
-	ServiceToken string
+	Devices      *session.Registry // 进程拥有的在线连接，发送响应受请求取消管理
+	ServiceToken string            // 内部调用身份凭据
 }
 
-func (a CardReplyAPI) Register(r *gin.Engine) { r.POST("/api/v1/internal/cards/reply", a.reply) }
+// Register 在 r 注册共享内部回复端点；不发送设备命令或打开资源。
+func (a CardReplyAPI) Register(r *gin.Engine) { r.POST(contract.CardReplyPath, a.reply) }
+
+// reply 从 c 读取原设备、会话和冻结决定，鉴权后发送；失败返回对应 HTTP 错误。
+// accepted 只说明连接发送完成，不能据此确认设备消费或扣款结果。
 func (a CardReplyAPI) reply(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
-	var in struct {
-		DeviceID     string               `json:"device_id"`
-		Session      string               `json:"session"`
-		Kind         protocol.CommandKind `json:"kind"`
-		CardNumber   uint32               `json:"card_number"`
-		BalanceUnits uint16               `json:"balance_units"`
-		Invalid      bool                 `json:"invalid"`
-	}
+	var in contract.CardReply
 	if c.ShouldBindJSON(&in) != nil || in.DeviceID == "" || (in.CardNumber == 0 && !(in.Kind == protocol.CommandCardBalance && in.Invalid)) || (in.Kind != protocol.CommandCardDenied && in.Kind != protocol.CommandCardBalance) {
 		httpapi.BadRequest(c, "invalid card reply")
 		return
@@ -44,5 +43,5 @@ func (a CardReplyAPI) reply(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "card reply not delivered", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"accepted": true})
+	httpapi.OK(c, contract.CardReplyAccepted{Accepted: true})
 }

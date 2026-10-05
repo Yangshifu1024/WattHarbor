@@ -94,12 +94,18 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 		t.Fatal(err)
 	}
 	// 原意图过期扫描只访问本测试用户，防止外层事务锁住其他包的测试历史。
-	scoped := tx.Scopes(func(q *gorm.DB) *gorm.DB {
+	// Scopes 会被一次查询消费，不能保证后续过期 UPDATE 仍按本测试用户筛选。
+	// 在此独立连接的每次意图 UPDATE 前加同一条件，避免包间真库造数的范围锁互相阻塞。
+	const expiryScope = "route_checkout_expiry_scope"
+	if err := tx.Callback().Update().Before("gorm:update").Register(expiryScope, func(q *gorm.DB) {
 		if q.Statement.Table == "charge_payment_intent" {
-			return q.Where("user_id=?", id)
+			q.Where("user_id=?", id)
 		}
-		return q
-	}).Session(&gorm.Session{})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Callback().Update().Remove(expiryScope)
+	scoped := tx.Session(&gorm.Session{})
 	f := &routeCheckoutFixture{failed: true, port: money.ScanResult{Kind: "port", DeviceID: deviceID, StationID: 1, DeviceStatus: "enabled", Port: &money.ScanPort{PortID: portID, DeviceID: deviceID, PortNo: 1, Online: true, Available: true}}, rule: charging.Rule{ID: 42, StationID: 1, Version: 1, Spec: charging.Spec{Scheme: &charging.Scheme{Name: "路由套餐", Packages: []charging.Package{{ID: 1, Name: "时长", Mode: "duration", PriceCents: 400, Minutes: 60}}}}}}
 	authn, token := paymentRouteToken(t, id)
 	router := httpapi.NewRouter()

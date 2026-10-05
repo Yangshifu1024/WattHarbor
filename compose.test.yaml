@@ -1,0 +1,17 @@
+# 独立真库测试实例，避免测试显式主键抬高开发库自增序号。
+name: chargepilot-refactor-tests
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: chargepilot_root_dev
+      MYSQL_USER: chargepilot
+      MYSQL_PASSWORD: chargepilot_dev
+    ports: ["127.0.0.1:3307:3306"]
+    volumes:
+      - ./docker/mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-chargepilot.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u chargepilot -e 'SELECT 1'"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

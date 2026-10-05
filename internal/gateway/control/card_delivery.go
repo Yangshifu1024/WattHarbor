@@ -3,6 +3,7 @@ package control
 import (
 	"encoding/json"
 	"errors"
+	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
@@ -14,7 +15,8 @@ import (
 	"time"
 )
 
-// cardEvents 返回待投递的刷卡事件（含原始事件与已冻结的回复），按事件 id 升序，最多 100 条。
+// cardEvents 在 c 的鉴权及取消范围读取待投递事件（含原始事件与冻结回复），按 id 升序最多100条。
+// 返回共享集合或503，不领取事件或修改投递状态。
 func (a TelemetryAPI) cardEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -24,14 +26,11 @@ func (a TelemetryAPI) cardEvents(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡事件暂不可读取", nil)
 		return
 	}
-	items := make([]gin.H, 0, len(rows))
+	items := make([]contract.CardEvent, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, gin.H{
-			"event_key": row.EventKey, "payload": string(row.EventJSON),
-			"response": string(row.ResponseJSON),
-		})
+		items = append(items, contract.CardEvent{EventKey: row.EventKey, Payload: string(row.EventJSON), Response: string(row.ResponseJSON)})
 	}
-	httpapi.OK(c, gin.H{"items": items})
+	httpapi.OK(c, contract.CardEvents{Items: items})
 }
 
 // cardDecideBegin 锁定投递行并返回决策输入：已有冻结回复时只回回复；
@@ -86,21 +85,23 @@ func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 var errCardIdentity = errors.New("card event identity mismatch")
 
 // frozenResponse 是 decide-begin 发现已有冻结回复时的正常出口。
-type frozenResponse struct{ response string }
+type frozenResponse struct {
+	response string /* 原已冻结 JSON */
+}
 
+// Error 返回已冻结提示，不读写持久状态。
 func (e *frozenResponse) Error() string { return "card response already frozen" }
 
+// errResponseFrozen 包装 response 原 JSON 为已有决定出口；无 IO。
 func errResponseFrozen(response string) error { return &frozenResponse{response: response} }
 
-// cardDecideFinish 首写冻结决策回复；并发输掉时返回已存回复，调用方使用存量。
+// cardDecideFinish 在 c 的鉴权及取消范围首写原事件回复；并发输掉返回已存决定。
+// 参数错误400、存储失败503，不重算金额或生成新事件。
 func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in struct {
-		EventKey     string `json:"event_key" binding:"required,max=64"`
-		ResponseJSON string `json:"response_json" binding:"required,max=65535"`
-	}
+	var in contract.CardFreeze
 	if err := c.ShouldBindJSON(&in); err != nil || uuid.Validate(in.EventKey) != nil {
 		httpapi.BadRequest(c, "冻结请求无效")
 		return
@@ -111,7 +112,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		return
 	}
 	if stored == 1 {
-		httpapi.OK(c, gin.H{"stored": true, "response_json": in.ResponseJSON})
+		httpapi.OK(c, contract.CardFrozen{Stored: true, ResponseJSON: in.ResponseJSON})
 		return
 	}
 	frozen, err := store.FindFrozenCardResponse(c.Request.Context(), a.DB, in.EventKey)
@@ -119,19 +120,16 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复暂不可读取", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"stored": false, "response_json": frozen})
+	httpapi.OK(c, contract.CardFrozen{Stored: false, ResponseJSON: frozen})
 }
 
-// cardEventAdvance 推进投递状态：retry 增加尝试次数并 5 秒后重排；done 标记完成。
+// cardEventAdvance 在 c 的鉴权及取消范围推进原事件：retry 增加次数并5秒后重排，done 标记完成。
+// 返回共享推进事实，参数错误400、存储失败503，冻结决定保持原值。
 func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in struct {
-		EventKey string `json:"event_key" binding:"required,max=64"`
-		Outcome  string `json:"outcome" binding:"required,oneof=retry done"`
-		Error    string `json:"error" binding:"omitempty,max=255"`
-	}
+	var in contract.CardAdvance
 	if err := c.ShouldBindJSON(&in); err != nil || uuid.Validate(in.EventKey) != nil {
 		httpapi.BadRequest(c, "推进请求无效")
 		return
@@ -142,10 +140,11 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡投递状态暂不可用", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"advanced": affected == 1})
+	httpapi.OK(c, contract.CardAdvanced{Advanced: affected == 1})
 }
 
-// resolvePort 按设备与端口序号取二维码，未开通返回 found:false。
+// resolvePort 在 c 的鉴权及取消范围按设备与端口序号只读取业务码，未开通返回 found:false。
+// 参数错误400、读取失败503，不创建端口或修改设备状态。
 func (a TelemetryAPI) resolvePort(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -162,8 +161,8 @@ func (a TelemetryAPI) resolvePort(c *gin.Context) {
 		return
 	}
 	if code == "" {
-		httpapi.OK(c, gin.H{"found": false})
+		httpapi.OK(c, contract.CardPort{Found: false})
 		return
 	}
-	httpapi.OK(c, gin.H{"found": true, "port_code": code})
+	httpapi.OK(c, contract.CardPort{Found: true, PortCode: code})
 }

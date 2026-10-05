@@ -46,8 +46,7 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 	identityhttp.StartResultAPI{Service: chargestart.StartResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.EndResultAPI{Service: chargefinish.EndResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.StopAuthorization{Service: chargestop.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.CardAPI{Devices: device.OperationRepo{DB: orm}, Store: card.CardStore{DB: orm}, Pricing: pricing.Repo{DB: orm},
-		ServiceToken: cfg.ServiceToken}.RegisterInternal(router)
+	identityhttp.CardAPI{Swipe: card.SwipeService{DB: orm, Ports: device.DiscoveryService{Gateway: gateway, Operations: device.OperationRepo{DB: orm}}, Devices: device.OperationRepo{DB: orm}, Pricing: pricing.Repo{DB: orm}, Cutoff: chargestop.CutoffRepo{}}, Status: card.CardStatusService{DB: orm}, ServiceToken: cfg.ServiceToken}.RegisterInternal(router)
 	identityhttp.AutoStopAPI{Stopper: chargestop.AutoStopper{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
 
 	// 资金与账单：开票、结算、退款派发。

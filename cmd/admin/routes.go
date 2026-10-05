@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/card"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
@@ -69,7 +70,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, err
 	}}}, Risks: wallet.RiskService{DB: orm, Refund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}}, DB: orm, Auth: authAPI}.Register(router)
 	adminmarketing.API{DB: orm, Auth: authAPI}.Register(router)
-	adminuser.API{DB: orm, Auth: authAPI}.Register(router)
+	adminuser.API{DB: orm, Auth: authAPI, Cards: card.CardAdminService{DB: orm}}.Register(router)
 	adminvendor.API{Vendors: device.VendorService{DB: orm, Gateway: gateway}, DB: orm, Auth: authAPI}.Register(router)
 	admindashboard.Dashboard{DB: orm}.Register(router, authAPI)
 	chargehttp.AdminAccounts{DB: orm, Auth: &authAPI}.RegisterRoles(router)
