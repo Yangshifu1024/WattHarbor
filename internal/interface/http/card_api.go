@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	cardstore "github.com/ChargePilot2026/charge-pilot/internal/card"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
@@ -20,9 +21,10 @@ import (
 )
 
 type CardAPI struct {
+	Devices      device.DeviceCapabilityReader // 已选设备协议事实，由 cmd 注入
 	Store        cardstore.CardStore
 	Auth         SessionAuthenticator
-	Pricing      pricing.PricingStore
+	Pricing      pricing.Repo
 	Scan         money.PortLookup
 	ServiceToken string
 }
@@ -127,7 +129,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		httpapi.Write(c, 409, 2009, "设备已暂停服务，不接受新的刷卡启动或加时", nil)
 		return
 	}
-	_, cap, err := a.Pricing.DeviceCapabilities(c.Request.Context(), port.StationID, port.DeviceID)
+	_, cap, err := a.Devices.Capabilities(c.Request.Context(), port.StationID, port.DeviceID)
 	if err != nil {
 		httpapi.Write(c, 503, 5001, "设备协议能力暂不可读取", nil)
 		return

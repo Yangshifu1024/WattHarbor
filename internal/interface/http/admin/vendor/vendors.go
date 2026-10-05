@@ -1,299 +1,119 @@
 package vendor
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
+	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"io"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
-	"time"
 )
 
-// 厂商归网关所有；后台通过服务接口管理，不能另建一份厂商表或跨库写入。
-type VendorRow struct {
-	ID           uint64     `json:"id"`
-	VendorCode   string     `json:"vendor_code"`
-	VendorName   string     `json:"vendor_name"`
-	AdapterClass string     `json:"adapter_class"`
-	Protocol     string     `json:"protocol"`
-	Status       string     `json:"status"`
-	EnabledAt    *time.Time `json:"enabled_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-}
-
-type vendorInput struct {
-	VendorCode   string `json:"vendor_code"`
-	VendorName   string `json:"vendor_name"`
-	AdapterClass string `json:"adapter_class"`
-	Protocol     string `json:"protocol"`
-	Status       string `json:"status"`
-}
-
+// registerVendors 在 r 注册厂商公开路由及实时权限中间件；无返回值、数据库操作或后台任务。
 func (a API) registerVendors(r *gin.Engine) {
 	r.GET("/api/v1/admin/vendors", a.Auth.Require("vendor.read"), a.listVendors)
 	r.GET("/api/v1/admin/vendors/:id", a.Auth.Require("vendor.read"), a.getVendor)
 	r.POST("/api/v1/admin/vendors", a.Auth.Require("vendor.create"), a.createVendor)
 	r.PUT("/api/v1/admin/vendors/:id", a.Auth.Require("vendor.update"), a.updateVendor)
-	// 设备开通只需要可选厂商，不要求同时持有厂商管理权限。
 	r.GET("/api/v1/admin/vendor-options", a.Auth.Require("device.import"), a.vendorOptions)
 }
 
-func VendorQuery(page admin.PageQuery, scope operations.DataScope) url.Values {
-	query := url.Values{
-		"page": {strconv.Itoa(page.Page)}, "page_size": {strconv.Itoa(page.PageSize)},
-		"keyword": {page.Keyword}, "status": {page.Status},
-	}
-	// 范围来自登录账号，绝不转发客户端自己给的 ids。
-	if !scope.Unrestricted && len(scope.VendorIDs) > 0 {
-		query.Set("ids", vendorIDs(scope.VendorIDs))
-	}
-	return query
-}
+// listVendors 从 c 解析分页、读取实时范围并返回用例结果，公开列表允许启用或禁用筛选。
+func (a API) listVendors(c *gin.Context) { a.listVendorPage(c, false) }
 
-func vendorIDs(ids []uint64) string {
-	parts := make([]string, len(ids))
-	for i, id := range ids {
-		parts[i] = strconv.FormatUint(id, 10)
-	}
-	return strings.Join(parts, ",")
-}
-
-func (a API) vendorScope(c *gin.Context) (operations.DataScope, bool) {
-	scope, err := ops.LoadDataScope(c.Request.Context(), a.DB, c.MustGet("admin_profile").(operations.Profile))
-	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return scope, false
-	}
-	return scope, true
-}
-
-func (a API) listVendors(c *gin.Context)   { a.listVendorPage(c, false) }
+// vendorOptions 从 c 返回当前范围内的启用厂商选项，不额外要求厂商管理权限。
 func (a API) vendorOptions(c *gin.Context) { a.listVendorPage(c, true) }
 
-func (a API) listVendorPage(c *gin.Context, optionsOnly bool) {
+// listVendorPage 从 c 解析分页并调用用例，options 选择导入选项；返回原分页及本地权限或安全错误。
+func (a API) listVendorPage(c *gin.Context, options bool) {
 	page, ok := chargehttp.ReadAdminPage(c, "enabled disabled")
 	if !ok {
 		return
 	}
-	if optionsOnly {
-		page.Status = "enabled"
-	}
-	scope, ok := a.vendorScope(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
-	var out admin.Page[VendorRow]
-	if err := a.RequestVendor(c.Request.Context(), http.MethodGet, "", VendorQuery(page, scope), nil, &out, httpapi.RequestID(c)); err != nil {
+	out, err := a.Vendors.List(c.Request.Context(), chargehttp.AdminAuditContext(c), scope, page, options)
+	if err != nil {
 		VendorFailure(c, err)
 		return
-	}
-	if out.Items == nil {
-		out.Items = []VendorRow{}
-	}
-	for _, vendor := range out.Items {
-		if !scope.AllowsVendor(vendor.ID) || (optionsOnly && vendor.Status != "enabled") {
-			VendorFailure(c, errVendorService)
-			return
-		}
-	}
-	// 只有后台鉴权档案可以授予权限，不能信任上游同名响应字段。
-	out.Permissions = nil
-	permissions := c.MustGet("admin_profile").(operations.Profile).Permissions
-	for _, permission := range permissions {
-		// 有厂商范围的账号不能创建一个范围之外的新厂商。
-		if permission == "vendor.create" && !scope.Unrestricted && len(scope.VendorIDs) > 0 {
-			continue
-		}
-		out.Permissions = append(out.Permissions, permission)
 	}
 	httpapi.OK(c, out)
 }
 
-func (a API) visibleVendorID(c *gin.Context) (uint64, bool) {
+// getVendor 从 c 解析主键及实时范围，调用用例读取公开字典；返回原资料或范围／服务错误。
+func (a API) getVendor(c *gin.Context) {
 	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
-		return 0, false
+		return
 	}
-	scope, ok := a.vendorScope(c)
-	if !ok {
-		return 0, false
-	}
-	if !scope.AllowsVendor(id) {
-		httpapi.Write(c, http.StatusNotFound, 1004, "厂商不存在或不在数据范围内", nil)
-		return 0, false
-	}
-	return id, true
-}
-
-func (a API) getVendor(c *gin.Context) {
-	id, ok := a.visibleVendorID(c)
+	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
-	var out VendorRow
-	if err := a.RequestVendor(c.Request.Context(), http.MethodGet, "/"+strconv.FormatUint(id, 10), nil, nil, &out, httpapi.RequestID(c)); err != nil {
+	out, err := a.Vendors.Get(c.Request.Context(), chargehttp.AdminAuditContext(c), scope, id)
+	if err != nil {
 		VendorFailure(c, err)
 		return
 	}
 	httpapi.OK(c, out)
 }
 
-func (a API) createVendor(c *gin.Context) {
-	scope, ok := a.vendorScope(c)
-	if !ok {
-		return
-	}
-	if !scope.Unrestricted && len(scope.VendorIDs) > 0 {
-		httpapi.Write(c, http.StatusForbidden, 1003, "创建厂商需要不受厂商数据范围限制的账号", nil)
-		return
-	}
-	var in vendorInput
-	if !chargehttp.DecodeResource(c, &in) {
-		return
-	}
-	var out VendorRow
-	if err := a.RequestVendor(c.Request.Context(), http.MethodPost, "", nil, in, &out, httpapi.RequestID(c)); err != nil {
-		VendorFailure(c, err)
-		return
-	}
-	chargehttp.AuditToAdmin(c, a.DB, "create", "vendor", out.ID, nil, out, "")
-	httpapi.OK(c, out)
-}
+// createVendor 从 c 严格解析厂商完整字段，以实时范围和权限调用新建用例；返回网关确认结果或原错误。
+func (a API) createVendor(c *gin.Context) { a.saveVendor(c, 0) }
 
+// updateVendor 从 c 解析主键，以实时范围及完整字段调用更新用例；返回网关确认结果或原错误。
 func (a API) updateVendor(c *gin.Context) {
-	id, ok := a.visibleVendorID(c)
+	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
-	var in vendorInput
+	a.saveVendor(c, id)
+}
+
+// saveVendor 读取 c 的实时范围及原输入，以 id 选择新建或更新；用例负责外部调用与提交后审计。
+func (a API) saveVendor(c *gin.Context, id uint64) {
+	scope, ok := admin.StationScope(c, a.DB)
+	if !ok {
+		return
+	}
+	// 保留原受限创建先拒绝范围、再解析输入的响应顺序。
+	if id == 0 && !scope.Unrestricted && len(scope.VendorIDs) > 0 {
+		httpapi.Write(c, 403, 1003, "创建厂商需要不受厂商数据范围限制的账号", nil)
+		return
+	}
+	if id != 0 && !scope.AllowsVendor(id) {
+		VendorFailure(c, device.VendorNotVisible{})
+		return
+	}
+	var in contract.VendorInput
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	path := "/" + strconv.FormatUint(id, 10)
-	var before, out VendorRow
-	if err := a.RequestVendor(c.Request.Context(), http.MethodGet, path, nil, nil, &before, httpapi.RequestID(c)); err != nil {
+	out, err := a.Vendors.Save(c.Request.Context(), chargehttp.AdminAuditContext(c), scope, id, in)
+	if err != nil {
 		VendorFailure(c, err)
 		return
 	}
-	if err := a.RequestVendor(c.Request.Context(), http.MethodPut, path, nil, in, &out, httpapi.RequestID(c)); err != nil {
-		VendorFailure(c, err)
-		return
-	}
-	chargehttp.AuditToAdmin(c, a.DB, "update", "vendor", id, before, out, "")
 	httpapi.OK(c, out)
 }
 
-type vendorServiceError struct {
-	status, code int
-	message      string
-}
-
-func (e *vendorServiceError) Error() string { return e.message }
-
-var errVendorService = &vendorServiceError{http.StatusServiceUnavailable, 5003, "厂商服务暂时不可用，请稍后重试"}
-
+// VendorFailure 把 err 的原公开业务码、范围缺失或权限写入 c；其他异常统一依赖不可用，不透传认证错误。
 func VendorFailure(c *gin.Context, err error) {
-	var serviceError *vendorServiceError
-	if !errors.As(err, &serviceError) {
-		serviceError = errVendorService
-	}
-	httpapi.Write(c, serviceError.status, serviceError.code, serviceError.message, nil)
-}
-
-// 限制超时和响应大小；内部认证失败返回服务不可用，不能让前端误以为登录已失效。
-func (a API) RequestVendor(ctx context.Context, method, path string, query url.Values, body, out any, requestID string) error {
-	if a.GatewayURL == "" || a.ServiceToken == "" {
-		return errVendorService
-	}
-	endpoint := strings.TrimRight(a.GatewayURL, "/") + "/api/v1/internal/vendors" + path
-	if len(query) > 0 {
-		endpoint += "?" + query.Encode()
-	}
-	var payload io.Reader
-	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			return errVendorService
-		}
-		payload = bytes.NewReader(encoded)
-	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, payload)
-	if err != nil {
-		return errVendorService
-	}
-	req.Header.Set("X-Service-Token", a.ServiceToken)
-	req.Header.Set("X-Request-ID", requestID)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.Do(req)
-	if err != nil {
-		return errVendorService
-	}
-	defer resp.Body.Close()
-	const limit = 1 << 20
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil || len(raw) > limit {
-		return errVendorService
-	}
-	var envelope struct {
-		Code    *int            `json:"code"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return errVendorService
-	}
-	if envelope.Code == nil {
-		return errVendorService
-	}
-	if resp.StatusCode != http.StatusOK || *envelope.Code != 0 {
-		switch resp.StatusCode {
-		case http.StatusBadRequest, http.StatusNotFound, http.StatusConflict:
-			if envelope.Message != "" && *envelope.Code != 0 {
-				return &vendorServiceError{resp.StatusCode, *envelope.Code, envelope.Message}
-			}
-		}
-		return errVendorService
-	}
-	if len(envelope.Data) == 0 || string(envelope.Data) == "null" || json.Unmarshal(envelope.Data, out) != nil || !validVendorResponse(out) {
-		return errVendorService
-	}
-	return nil
-}
-
-func validVendorResponse(out any) bool {
-	validRow := func(row VendorRow) bool {
-		return row.ID > 0 && row.VendorCode != "" && row.VendorName != "" && row.AdapterClass != "" && row.Protocol != "" && (row.Status == "enabled" || row.Status == "disabled")
-	}
-	switch result := out.(type) {
-	case *VendorRow:
-		return validRow(*result)
-	case *admin.Page[VendorRow]:
-		if result.Page < 1 || result.PageSize < 1 || result.PageSize > 100 || result.Total < int64(len(result.Items)) {
-			return false
-		}
-		for _, row := range result.Items {
-			if !validRow(row) {
-				return false
-			}
-		}
-		return true
+	var service *contract.VendorFailure
+	var invisible device.VendorNotVisible
+	switch {
+	case errors.As(err, &service):
+		httpapi.Write(c, service.Status, service.Code, service.Message, nil)
+	case errors.As(err, &invisible):
+		httpapi.Write(c, http.StatusNotFound, 1004, invisible.Error(), nil)
+	case errors.Is(err, operations.ErrForbidden):
+		httpapi.Write(c, 403, 1003, "创建厂商需要不受厂商数据范围限制的账号", nil)
 	default:
-		return false
+		httpapi.Write(c, 503, 5003, "厂商服务暂时不可用，请稍后重试", nil)
 	}
 }

@@ -61,6 +61,10 @@
 
 最容易把新结构改出循环的是支付、钱包和退款。当前已有 `settlement → payment/wallet/card/marketing/order/ops`、`card → payment/wallet/order`、`payment → wallet/marketing/order/ops`、`wallet → ops`、`identity → wallet`、`pricing → device` 等单向引用。迁移服务前要把新增箭头与这些关系一起核对。
 
+计费管理入口由 `pricing.SchemeService`／`PublicationService` 负责，新增 `pricing → ops` 只调用同事务审计能力，ops 不反向引用 pricing。显式 `operations.DataScope` 是实时范围输入，厂商归属经 `device.OperationRepo.VendorID` 单向读取；device 不引用 pricing。发布默认事务先锁站点，随后读取原请求、共享锁模板、核对目标兼容与当前版本，发布规则、原请求凭据及审计一起提交。相同请求恢复原结果，不重新读取当前模板或替换任何订单／支付／刷卡快照；HTTP 输入输出和错误码沿用原约定。
+
+设备导入由 `device.ImportService` 拥有原两段事务。受理冻结从 gateway 厂商公开字典解析的协议及能力，设备身份、任务与受理审计同事务；执行前通过注入的窄范围读取重读当前范围。执行同步保持任务锁，最多十秒等待开通；网关失败提交 failed，中央元数据或完成审计失败回滚执行事务，原 pending／failed 任务可重试。`ImportCompatibility` 由 cmd 注入 `pricing.Repo`，device 无 pricing import；新增 `device → ops` 仅用于所属变更的同事务审计。gateway 的具名 Vendor／Provision 客户端只引用共享契约和通用传输，厂商 CRUD 仍归 gateway。实际两库提交、真实注册 gateway 路由及 loopback 网络证明原身份恢复，测试身份按自身清理为零；部署栈／实机与并发导入验收仍待批次完成。
+
 - **迟到付款退款**：payment 不直接 import settlement，因为 settlement 已 import payment。由 payment 定义 `LateRefundRecorder` 一类的窄能力，方法接受事务和退款业务输入；cmd 注入 settlement 的实现。payment 回调在原事务内调用，settlement 写 refund_record 和相关退款事件；payment 更新支付状态。契约不暴露 `settlement.RefundRecord` 或 HTTP DTO。
 - **充值到账**：payment 可以调用 wallet 的事务内到账能力，但 wallet 的充值申请不能因此反向 import payment。wallet 定义所需的支付来源／创建能力，cmd 注入 payment 适配；所有需要同库原子性的调用沿用同一个事务。先确定锁顺序和输入契约，再迁 SQL。
 - **钱包退款预占**：wallet 定义事务内 `RefundRecorder` 能力，cmd 注入 settlement 实现。wallet 保留冻结金额与来源分摊，settlement 创建 refund_record；共同沿用原事务。settlement 已依赖 wallet，因此 wallet 不反向 import settlement，也不搬走钱包自己的资金写入。
@@ -138,3 +142,9 @@ wallet 不 import payment 或 settlement，payment 不 import settlement；cmd �
 | 开票／计量核实 | 开票 READ COMMITTED 且锁所属订单；审核锁发票申请。计量提案／裁决锁计费任务后当前读原核实凭据，不用任务锁推断旧快照已刷新 |
 
 新增真库证据覆盖：充值申请在身份读取后等待用户锁仍复用原支付；待付支付锁未释放时退款能完成已支付来源锁定；风险批准等待钱包锁后能使用新到账来源；充值余额 UPDATE 后取消请求会回滚支付、摘要、余额和流水。两独立连接固定旧 RR 快照及提交先后，还验证人工退款重放、接续首签、费用投递重放、钱包退款成功重放和流水余额；修复前分别出现冲突、重复键或余额流水错误，修复后通过。把相应隔离改回 RR、把候选扫描改为加锁扫描、删除付款人核对的变异分别稳定失败，变异均已恢复。这些证据验证上述指定路径，不宣称整个系统不存在任何死锁。
+
+设备与计价子批次新增的实际边界：设备管理由 ManagementService 处理范围过滤、完整资料版本、运营启停及同事务审计；StationService 对已有站点详情和更新使用显式范围，补齐原列表受限但详情／更新无范围校验的缺口。新建沿用 station.create 权限，不自动增加账号站点范围。OperationRepo 提供设备归属、适配器和计量能力，pricing 的普通设备事实及站点锁使用 device 所属能力。scheme_target_repo 的目标兼容检查保留一次跨表只读投影：排除 pricing 当前自有规则并 SHARE 锁目标 device_meta，只供同事务发布准入，不写设备配置。
+
+导入受理先以原 import_id 唯一键登记 pending，再当前读原任务；身份、方案兼容和受理审计失败仍整体回滚登记。两段同步事务继续保留，执行前重读范围。设备身份登记、网关开通批次和中央元数据使用一致设备号顺序取得锁，持久原清单仍保持原数组顺序，重放内容与操作人比对不变。指定两连接证据覆盖同请求首次竞争和反向清单重叠，恢复缺行锁或请求顺序的变异稳定失败；不据此宣称全部导入路径无死锁。
+
+厂商字典仍归 gateway。VendorService 接管中央账号范围、公开查询／写入编排和审计，integration/gateway 的具名四操作保持十秒、一 MiB、禁止重定向与原公开错误映射，并核对详情／更新结果的原厂商身份。写入网络结果未知时不自动重试或更换编码；中央审计仍沿用网关提交后的尽力记录，失败只记录日志，不能回滚网关提交，也没有新增持久审计补偿。注册真库测试明确验证这一继承边界。后台具名客户端复用 cmd 管理的 HTTP 池，受管理请求退出后释放闲置连接；真实支付、实机以及完整模拟器流程仍需后续验收。

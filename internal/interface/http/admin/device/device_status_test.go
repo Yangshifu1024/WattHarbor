@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,7 +35,7 @@ func TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown(t *testing.T)
 	}))
 	defer gateway.Close()
 	rows := []device.Device{{DeviceID: "visible-board"}}
-	(API{GatewayURL: gateway.URL, ServiceToken: "service"}).enrichDevices(context.Background(), rows)
+	summaryAPI(t, gateway.URL).enrichDevices(context.Background(), rows)
 	if !rows[0].RuntimeAvailable || rows[0].VendorName == nil || *rows[0].VendorName != "测试厂商" || rows[0].LastHeartbeatAt == nil {
 		t.Fatalf("missing enrichment: %+v", rows)
 	}
@@ -43,7 +45,7 @@ func TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown(t *testing.T)
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
 	defer failing.Close()
 	rows = []device.Device{{DeviceID: "visible-board"}}
-	(API{GatewayURL: failing.URL, ServiceToken: "service"}).enrichDevices(context.Background(), rows)
+	summaryAPI(t, failing.URL).enrichDevices(context.Background(), rows)
 	if rows[0].RuntimeAvailable || rows[0].LastHeartbeatAt != nil || rows[0].SignalStrength != nil || rows[0].SignalAt != nil || rows[0].Ports == nil || len(rows[0].Ports) != 0 {
 		t.Fatal("outage fabricated known runtime")
 	}
@@ -53,7 +55,7 @@ func TestDeviceEnrichmentNormalizesMissingPortArrays(t *testing.T) {
 	for _, body := range []string{`{"code":0,"data":{"items":[{"device_id":"board","ports":null}]}}`, `{"code":0,"data":{"items":[{"device_id":"board"}]}}`} {
 		gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
 		rows := []device.Device{{DeviceID: "board"}}
-		(API{GatewayURL: gateway.URL, ServiceToken: "service"}).enrichDevices(context.Background(), rows)
+		summaryAPI(t, gateway.URL).enrichDevices(context.Background(), rows)
 		gateway.Close()
 		if !rows[0].RuntimeAvailable || rows[0].Ports == nil || len(rows[0].Ports) != 0 {
 			t.Fatalf("missing ports must stay unknown in an empty array: %+v", rows[0])
@@ -71,4 +73,14 @@ func TestDeviceEnrichmentNormalizesMissingPortArrays(t *testing.T) {
 	if err := json.Unmarshal(encoded, &out); err != nil || out.Ports == nil || rows[0].RuntimeAvailable {
 		t.Fatalf("unconfigured runtime must expose [] without fabricating availability: %s %v", encoded, err)
 	}
+}
+
+// summaryAPI 为 t 在 url 的 loopback 服务注入真实具名客户端；配置错误终止，无数据库写入。
+func summaryAPI(t *testing.T, url string) API {
+	t.Helper()
+	client, err := gatewayclient.NewClient(serviceclient.Client{}, url, "service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return API{Management: device.ManagementService{Summaries: client}}
 }

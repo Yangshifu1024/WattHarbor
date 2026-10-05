@@ -73,8 +73,8 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 	identityhttp.BillHTTP{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Bills: settlement.BillRepo{DB: orm}}.Register(router)
 	identityhttp.CouponAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Coupons: marketing.CouponStore{DB: orm}}.Register(router)
 	identityhttp.PaymentStartAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		Checkout: payment.CheckoutService{Ports: discovery, Pricing: pricing.PricingStore{DB: orm}, Intents: payment.PaymentIntentRepo{DB: orm}, Provider: channel.Prepay}}.Register(router)
-	identityhttp.CardAPI{Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Store: card.CardStore{DB: orm}, Pricing: pricing.PricingStore{DB: orm},
+		Checkout: payment.CheckoutService{Ports: discovery, Pricing: pricing.Repo{DB: orm}, Intents: payment.PaymentIntentRepo{DB: orm}, Provider: channel.Prepay}}.Register(router)
+	identityhttp.CardAPI{Devices: device.OperationRepo{DB: orm}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Store: card.CardStore{DB: orm}, Pricing: pricing.Repo{DB: orm},
 		Scan:         identityhttp.ScanPortLookup{API: identityhttp.ScanAPI{Discovery: discovery}},
 		ServiceToken: cfg.ServiceToken}.RegisterUser(router)
 

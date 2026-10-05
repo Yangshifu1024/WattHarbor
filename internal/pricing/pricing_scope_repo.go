@@ -4,6 +4,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// PricingTemplateRow 是可复用方案模板的数据库读取投影，发布需核对当前状态及版本。
 type PricingTemplateRow struct {
 	ID          uint64 `gorm:"column:id"`           // 模板主键
 	Name        string `gorm:"column:name"`         // 模板名称
@@ -14,6 +15,7 @@ type PricingTemplateRow struct {
 	Version     uint32 `gorm:"column:version"`      // 模板版本号，每次修改或停用都 +1，用作 expected_version 乐观锁
 }
 
+// RuleScope 为 stationID／deviceID 返回目标规则过滤器；空设备匹配 SQL NULL，不执行查询或写入。
 func RuleScope(stationID uint64, deviceID string) func(*gorm.DB) *gorm.DB {
 	return func(q *gorm.DB) *gorm.DB {
 		if deviceID == "" {
@@ -23,6 +25,7 @@ func RuleScope(stationID uint64, deviceID string) func(*gorm.DB) *gorm.DB {
 	}
 }
 
+// NullableDevice 将空 deviceID 转为 SQL NULL，否则返回原设备号；无 IO 或错误。
 func NullableDevice(deviceID string) any {
 	if deviceID == "" {
 		return nil

@@ -1,15 +1,14 @@
 package station
 
 import (
+	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
-	"strings"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // stations 分页返回站点列表。数据范围由管理员的站点授权决定，
@@ -25,7 +24,7 @@ func (a API) stations(c *gin.Context) {
 	}
 	out, err := device.ListStations(c.Request.Context(), a.DB, q, scope)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		stationFailure(c, err)
 		return
 	}
 	out.Permissions = c.MustGet("admin_profile").(operations.Profile).Permissions
@@ -38,83 +37,57 @@ func (a API) station(c *gin.Context) {
 	if !ok {
 		return
 	}
-	row, err := device.FindStation(c.Request.Context(), a.DB, id)
+	scope, ok := admin.StationScope(c, a.DB)
+	if !ok {
+		return
+	}
+	row, err := a.Stations.Get(c.Request.Context(), scope, id)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		stationFailure(c, err)
 		return
 	}
 	httpapi.OK(c, row)
 }
 
-// createStation 新建站点。站点是计费配置的挂载点，计费方案都挂在它上面。
-func (a API) createStation(c *gin.Context) {
-	var input device.StationInput
-	if !chargehttp.DecodeResource(c, &input) {
-		return
-	}
-	if input.Code != nil {
-		httpapi.BadRequest(c, "编码已移除：站点统一使用主键 ID，请勿提交 code 字段")
-		return
-	}
-	if !device.ValidStationInput(input) {
-		httpapi.BadRequest(c, "站点参数无效：请检查名称、经纬度和状态")
-		return
-	}
-	row := device.Station{Name: strings.TrimSpace(input.Name), Address: input.Address,
-		Longitude: *input.Longitude, Latitude: *input.Latitude, Status: input.Status,
-		ContactPhone: input.ContactPhone}
-	p := c.MustGet("admin_profile").(operations.Profile)
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&row).Error; err != nil {
-			return err
-		}
-		return chargehttp.AdminResourceAudit(tx, p, "create", "station", row.ID, nil, row, c.ClientIP(), httpapi.RequestID(c))
-	})
-	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	httpapi.OK(c, row)
-}
+// createStation 从 c 严格解析原站点资料，以实时权限调用新建用例，返回完整资料或原错误响应。
+func (a API) createStation(c *gin.Context) { a.saveStation(c, 0) }
 
-// updateStation 改站点资料。站点主键不可变，改名改地址不影响挂在它上面的配置。
+// updateStation 从 c 解析主键和完整资料，调用范围受限的更新用例，返回资料或原错误响应。
 func (a API) updateStation(c *gin.Context) {
 	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
-	var input device.StationInput
-	if !chargehttp.DecodeResource(c, &input) {
+	a.saveStation(c, id)
+}
+
+// saveStation 从 c 校验资料并读取实时范围，以 id 选择新建或更新；用例拥有事务，适配器只写 HTTP 响应。
+func (a API) saveStation(c *gin.Context, id uint64) {
+	var in device.StationInput
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	if input.Code != nil {
-		httpapi.BadRequest(c, "编码已移除：站点统一使用主键 ID，请勿提交 code 字段")
+	if err := device.ValidateStationInput(in); err != nil {
+		httpapi.BadRequest(c, err.Error())
 		return
 	}
-	if !device.ValidStationInput(input) {
-		httpapi.BadRequest(c, "站点参数无效：请检查名称、经纬度和状态")
+	scope, ok := admin.StationScope(c, a.DB)
+	if !ok {
 		return
 	}
-	row := device.Station{ID: id, Name: strings.TrimSpace(input.Name), Address: input.Address,
-		Longitude: *input.Longitude, Latitude: *input.Latitude, Status: input.Status,
-		ContactPhone: input.ContactPhone}
-	p := c.MustGet("admin_profile").(operations.Profile)
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		before, err := device.LockStationForUpdate(tx, id)
-		if err != nil {
-			return err
-		}
-		if err := device.UpdateStation(tx, id, map[string]any{
-			"name": row.Name, "address": row.Address, "longitude": row.Longitude,
-			"latitude": row.Latitude, "status": row.Status, "contact_phone": row.ContactPhone,
-		}); err != nil {
-			return err
-		}
-		return chargehttp.AdminResourceAudit(tx, p, "update", "station", id, before, row, c.ClientIP(), httpapi.RequestID(c))
-	})
+	row, err := a.Stations.Save(c.Request.Context(), chargehttp.AdminAuditContext(c), scope, id, in)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		stationFailure(c, err)
 		return
 	}
 	httpapi.OK(c, row)
+}
+
+// stationFailure 将 err 的范围拒绝写入 c 的 403，其余沿用原资源错误；不执行 IO 或事务。
+func stationFailure(c *gin.Context, err error) {
+	if errors.Is(err, operations.ErrForbidden) {
+		httpapi.Write(c, 403, 1003, "该站点不在您的数据范围内", nil)
+		return
+	}
+	chargehttp.AdminResourceFailure(c, err)
 }

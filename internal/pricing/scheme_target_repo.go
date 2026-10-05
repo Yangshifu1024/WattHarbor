@@ -14,10 +14,12 @@ const EffectiveRuleSQL = "status='active' AND deleted_at IS NULL AND (effective_
 
 // CheckSchemeTargets 校验一次方案变更不会让目标站点的任何设备落到协议不支持的计费方式上。
 // 设备端具体能力由 charging.Scheme.ValidateCapabilities 判定，这里只负责取数与逐台套用。
+// tx 属于发布事务，station／device 定义目标；共享锁读取目标设备，返回缺行、兼容或存储错误。
+// 整站默认排除具有当前自有规则的设备，不修改设备或独立提交。
 func CheckSchemeTargets(tx *gorm.DB, station uint64, device string, scheme charging.Scheme) error {
 	var rows []struct {
-		DeviceID        string
-		ProtocolAdapter string
+		DeviceID        string // 目标设备原全局身份
+		ProtocolAdapter string // 创建时明确选定的适配器，领域能力的来源
 	}
 	q := tx.Table("device_meta").Where("station_id=? AND deleted_at IS NULL", station)
 	if device != "" {

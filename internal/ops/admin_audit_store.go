@@ -79,14 +79,6 @@ func ListAudits(ctx context.Context, db *gorm.DB, q AuditQuery, page, pageSize i
 	return out, err
 }
 
-// DeviceVendorID 返回设备所属的厂商 ID。设备不存在或不属于该站点时按未找到处理。
-func DeviceVendorID(ctx context.Context, db *gorm.DB, stationID uint64, deviceID string) (uint64, error) {
-	var row struct{ VendorID uint64 }
-	err := db.WithContext(ctx).Table("device_meta").Select("vendor_id").
-		Where("station_id=? AND device_id=? AND deleted_at IS NULL", stationID, deviceID).Take(&row).Error
-	return row.VendorID, err
-}
-
 // OrderProcessIdentity 是订单处理视图需要的订单身份字段。
 type OrderProcessIdentity struct {
 	ID       uint64

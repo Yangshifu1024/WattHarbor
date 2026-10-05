@@ -3,6 +3,7 @@ package provision
 import (
 	"encoding/json"
 	"errors"
+	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"io"
 	"net/http"
@@ -41,10 +42,10 @@ var (
 )
 
 func (a API) registerVendors(r *gin.Engine) {
-	r.GET("/api/v1/internal/vendors", a.listVendors)
-	r.GET("/api/v1/internal/vendors/:id", a.getVendor)
-	r.POST("/api/v1/internal/vendors", a.createVendor)
-	r.PUT("/api/v1/internal/vendors/:id", a.updateVendor)
+	r.GET(contract.VendorPath, a.listVendors)
+	r.GET(contract.VendorPath+"/:id", a.getVendor)
+	r.POST(contract.VendorPath, a.createVendor)
+	r.PUT(contract.VendorPath+"/:id", a.updateVendor)
 }
 
 func (a API) vendorAuthorized(c *gin.Context) bool {

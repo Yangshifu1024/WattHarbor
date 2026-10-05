@@ -258,13 +258,13 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.5 device：D-01／D-02／N-device
 
-来源：[导入编排](../internal/interface/http/admin/device/device_imports.go)、[导入任务](../internal/device/device_import_job_store.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/infrastructure/database/admin_case_store.go)、[告警存储](../internal/device/alert_sync_store.go)。
+来源：[导入编排](../internal/interface/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/infrastructure/database/admin_case_store.go)、[告警存储](../internal/device/alert_sync_store.go)。
 
 目标：ImportService.Create／Retry、OperationReader、StationService、FaultService.Report／Dispatch／Resolve／History、AlertService.Sync／Acknowledge；import_repo.go、operation_repo.go、fault_repo.go 等。
 
-- [ ] D-01：先提供设备操作状态、站点／端口归属与能力事实，支撑 payment、card、pricing；接管 payment_device_store 中业务元数据读取。
-- [ ] D-01：迁入导入创建、任务锁、范围核对、gateway 预置、metadata 更新、失败／完成及审计；保留有界请求和失败状态可提交的原行为。
-- [ ] D-01：站点／设备新增、更新、启停、导入身份冲突检查迁回 device；厂商 CRUD 仍由 gateway 提供具名能力。
+- [x] D-01：先提供设备操作状态、站点／端口归属与能力事实，支撑 payment、card、pricing；接管 payment_device_store 中业务元数据读取。
+- [x] D-01：迁入导入创建、任务锁、范围核对、gateway 预置、metadata 更新、失败／完成及审计；保留有界请求和失败状态可提交的原行为。
+- [x] D-01：站点／设备新增、更新、启停、导入身份冲突检查迁回 device；厂商 CRUD 仍由 gateway 提供具名能力。
 - [ ] D-02：从 casework 与通用 CaseStore 拆出设备工单；参数不再收任意表名。状态机沿用 device/fault.go，历史事件和用户可见字段与状态变更同事务。
 - [ ] D-02：告警同步与确认归 device，用例调用 typed gateway 读取；后台 ops 目录中 ackAlert 只是 HTTP 路由位置，不拥有 alert_event。
 - [ ] N-device：统一 repo 命名并消除接口／payment 包里的设备表写入。
@@ -275,14 +275,14 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.6 pricing：PR-01／N-pricing
 
-来源：[方案管理 HTTP](../internal/interface/http/admin/pricing/charging_schemes.go)、pricing_admin_store.go、pricing_scope_store.go、scheme_target_store.go、metering_store.go。
+来源：[方案管理 HTTP](../internal/interface/http/admin/pricing/charging_schemes.go)、pricing_admin_repo.go、pricing_scope_repo.go、scheme_target_repo.go、metering_repo.go。
 
-目标：SchemeService.Create／Update、PublicationService.Publish／Assign、有效方案只读能力及所属 repo；计算继续留 domain/charging。
+目标：SchemeService.Save／ChangeStatus、QueryService.List／Effective／Capabilities、PublicationService.Publish／Assign、有效方案只读能力及所属 repo；计算继续留 domain/charging。
 
-- [ ] PR-01：迁入方案格式／范围、目标重叠、设备计量兼容、乐观版本、发布与审计；后台 scope 转为明确用例输入。
-- [ ] PR-01：保留 pricing → device 单向读取，device 不反向 import pricing；payment／card 使用所需的方案读取能力。
-- [ ] PR-01：订单／支付意图／刷卡首次扣款继续冻结完整方案和套餐，发布变更不覆盖历史快照。
-- [ ] N-pricing：根包 repo 命名，不新增一套规则计算或每设备协议的计费包。
+- [x] PR-01：迁入方案格式／范围、目标重叠、设备计量兼容、乐观版本、发布与审计；后台 scope 转为明确用例输入。
+- [x] PR-01：保留 pricing → device 单向读取，device 不反向 import pricing；payment／card 使用所需的方案读取能力。
+- [x] PR-01：订单／支付意图／刷卡首次扣款继续冻结完整方案和套餐，发布变更不覆盖历史快照。
+- [x] N-pricing：根包 repo 命名，不新增一套规则计算或每设备协议的计费包。
 
 验收：不兼容设备、目标重叠、版本变化和无权范围被拒绝；发布事务失败不留下半发布；不同收费模式、单位与舍入继续回归已有 domain 测试；历史价格不受当前方案修改影响。
 
@@ -519,8 +519,9 @@ make test-integration TEST_MYSQL_URL=...
 | S-01／S-02／N-settlement | 完成 | 计费、缺账单恢复、人工退款／开票／计量审核入口及 repo 归位；审计回滚、首签撤权、并发一单一票及注册后台审核通过。两连接旧 RR 验证原申请、首签、费用与成功回执当前读；全仓及独立暂存快照 make check／integration／cmd 构建通过 |
 | F-01／PAY-01／PAY-02／N-payment | 完成 | checkout／回调及归属注入完成，支付模型与渠道中文契约已核对；注册路由覆盖原号恢复、严格输入、付款人／商户／应用／金额／交易号冲突；完整回调取消回滚通过。全仓及独立暂存快照验收通过，tidy 无差异 |
 | W-01／N-wallet | 完成 | 充值／退款／风险入口及 repo 归位；11 笔申请固定 5 次 SQL；两连接验证原请求重放、频次、来源额度、待付行锁隔离、审核等锁后新到账及原成功重放；流水余额使用当前资金事实，取消与审计故障整体回滚；全仓及快照验收通过 |
-| D-01／D-02／N-device | 进行中 | OperationRepo／DiscoveryService 已为 checkout 提供运营及网关事实；导入、站点／故障／告警入口待收拢 |
-| PR-01／N-pricing | 待实施 | domain 计价规则保留，管理发布事务待迁移 |
+| D-01 | 完成 | 导入、站点、设备运营及厂商编排已归 device，普通归属／能力和站点锁由所属 repo 提供；真实注册后台及 gateway 覆盖范围、原号重放、旧版本、未知值、提交后恢复及审计。两连接验证首次申请唯一键及反向清单统一锁序，变异稳定失败并恢复；工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
+| D-02／N-device | 待实施 | 导入、设备运营和站点 repo 已改名；故障／告警及其余持久文件、用户站点组合查询仍待按所属批次迁移 |
+| PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | CA-01／N-card | 待实施 | Swipe 原事务保留，前置检查及管理入口待迁移 |
 | O-01／CQ-01／N-order | 待实施 | 基础订单 repo 保留，组合查询及 case 待迁移 |
 | M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
@@ -548,4 +549,8 @@ make test-integration TEST_MYSQL_URL=...
 
 批次 P／0 已完成并提交；资金批次完成入口、归属、中文契约及实际锁图核对。2026-10-05 工作区及独立暂存快照 `.tmp/batch1-validation-replay` 均通过 `make check`、`go test -tags=integration -count=1 ./...`；快照另通过 `go build -buildvcs=false -trimpath -o bin/ ./cmd/...` 和 `go mod tidy -diff`（无差异）。日志为 `.tmp/batch1-check-replay-final.log`、`.tmp/batch1-integration-replay-final.log`、`.tmp/batch1-snapshot-replay-*.log`。后台 78 项测试及构建、用户端 typecheck 与 59 项测试通过；构建保留已有 Vite 大 chunk 警告。协议测试原固定延时退出改为等待实际事件记录，业务协议未改变。
 
-变异验证包括计量当前读、审计、发票内容、充值付款人、充值／风险 RC、来源扫描锁和退款第二签当前读，均稳定失败并已恢复。资金原凭据及钱包流水的旧快照测试在修复前分别复现冲突、重复键及错误余额，修复后通过；真实提交造数按本测试身份清理并核对零残留，其他使用外层回滚。验收证据是实际 MySQL 与注册 HTTP，渠道、会话存在性和设备准入 fixture 不等于真实资金／实机验收。每批验收后提交，不推送；下一批按 D-01／PR-01／CA-01 继续，其他任务仍按表中状态实施。
+变异验证包括计量当前读、审计、发票内容、充值付款人、充值／风险 RC、来源扫描锁和退款第二签当前读，均稳定失败并已恢复。资金原凭据及钱包流水的旧快照测试在修复前分别复现冲突、重复键及错误余额，修复后通过；真实提交造数按本测试身份清理并核对零残留，其他使用外层回滚。验收证据是实际 MySQL 与注册 HTTP，渠道、会话存在性和设备准入 fixture 不等于真实资金／实机验收。每批验收后提交，不推送。批次 2 按依赖拆成 2a（D-01／PR-01）与 2b（CA-01）；2a 已完成验收，2b 及其余任务仍按表中状态实施。
+
+2a 实际证据：`.tmp/batch2-management-full-registered.log`、`.tmp/batch2-pricing-read-registered.log`、`.tmp/batch2-owned-device-facts.log`、`.tmp/batch2-import-concurrency.log`、`.tmp/batch2-import-overlap.log` 已通过。站点详情／更新范围、设备版本、首次导入缺行间隙锁和反向清单锁序变异稳定失败，日志为 `.tmp/batch2-*-mutation.log`，变异均恢复。真实提交场景清理自身身份为零，其余外层回滚；网关开通、厂商与摘要使用实际注册端点及真实库，权限会话存在性／并发开通次数部分为 fixture。厂商中央审计仍是跨服务提交后尽力记录，无持久补偿；两台现有 DC589 模拟器实际 TCP 注册、心跳、后台摘要、两端口在线空闲扫码及完整方案读取已验收；支付到结束的完整流程和实机尚未在此子批验收。
+
+2a 退出证据：工作区 `.tmp/batch2a-check-final.log`、`.tmp/batch2a-integration-final.log`、`.tmp/batch2a-build-final.log`、`.tmp/batch2a-tidy-final.log` 与独立暂存快照 `.tmp/batch2a-validation` 的同类日志全部通过，tidy 无差异；后台 78 项测试及构建、用户端 59 项测试及 typecheck 通过。快照 Go 文件与 Git 暂存原内容核对一致，Windows 导出换行转换不作为依赖变化。真实开发栈过程见 `.tmp/batch2a-live-prepare.log`、`.tmp/batch2a-live-summary.json`：修复准备脚本的大整数 ID 精度丢失，以及无规则同站多设备缓存误判／完整方案兼容检查遗漏；新增真库测试与两项稳定失败并恢复的变异见 `.tmp/batch2a-import-*-mutation.log`。临时模拟器已停止，开发服务继续运行，准备脚本创建的开发样例保留；数据库备份保留，未再次重建。

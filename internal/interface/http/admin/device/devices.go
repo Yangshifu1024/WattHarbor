@@ -2,21 +2,13 @@ package device
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-	"net/url"
-
-	"time"
 )
 
 // devices 响应设备分页列表，状态入参只接受 enabled/disabled/retired/fault，
@@ -34,104 +26,42 @@ func (a API) devices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if q.StationID > 0 && !scope.AllowsStation(q.StationID) {
-		httpapi.Write(c, 403, 1003, "该站点不在您的数据范围内", nil)
-		return
-	}
-	out, err := device.ListDevices(c.Request.Context(), a.DB, q, scope)
+	out, err := a.Management.List(c.Request.Context(), scope, q)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		managementFailure(c, err)
 		return
 	}
 	out.Permissions = c.MustGet("admin_profile").(operations.Profile).Permissions
-	a.enrichDevices(c.Request.Context(), out.Items)
 	httpapi.OK(c, out)
 }
 
-// device 按设备编号（不是内部主键）返回单台设备详情，编号最长 64 字符。查不到由
-// resourceFailure 回 404。
+// device 从 c 解析设备号及实时范围，返回范围内完整资料与摘要或原错误；业务读取由用例执行。
 func (a API) device(c *gin.Context) {
 	id := c.Param("id")
 	if len(id) > 64 {
 		httpapi.BadRequest(c, "设备编号过长")
 		return
 	}
-	var row device.Device
 	scope, ok := admin.StationScope(c, a.DB)
 	if !ok {
 		return
 	}
-	query := device.ScopeVendors(scope, device.ScopeStations(scope, device.DeviceQuery(c.Request.Context(), a.DB), "d.station_id"), "d.vendor_id")
-	if err := query.Select(device.DeviceColumns).Where("d.device_id = ?", id).Take(&row).Error; err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+	row, err := a.Management.Get(c.Request.Context(), scope, id)
+	if err != nil {
+		managementFailure(c, err)
 		return
 	}
-	if err := row.NormalizeMetadata(); err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	cap, _ := charging.ProtocolCapabilities(row.ProtocolAdapter)
-	row.ReportsEnergy = cap.ReportsEnergy
-	row.ReportsSegmentedPower = cap.ReportsSegmentedPower
-	rows := []device.Device{row}
-	a.enrichDevices(c.Request.Context(), rows)
-	httpapi.OK(c, rows[0])
+	httpapi.OK(c, row)
 }
 
-// Enrich only devices already authorized by the central data scope, in one call.
-// A gateway outage must not fabricate a 'never online' result or hide operations.
-func (a API) enrichDevices(ctx context.Context, rows []device.Device) {
-	for i := range rows {
-		if rows[i].Ports == nil {
-			rows[i].Ports = []device.DevicePortStatus{}
-		}
-	}
-	if len(rows) == 0 || a.GatewayURL == "" || a.ServiceToken == "" {
-		return
-	}
-	query := url.Values{}
-	for _, row := range rows {
-		query.Add("device_id", row.DeviceID)
-	}
-	var result struct {
-		Code int `json:"code"`
-		Data struct {
-			Items []struct {
-				DeviceID        string                    `json:"device_id"`
-				VendorName      *string                   `json:"vendor_name"`
-				LastHeartbeatAt *time.Time                `json:"last_heartbeat_at"`
-				SignalStrength  *uint8                    `json:"signal_strength"`
-				SignalAt        *time.Time                `json:"signal_at"`
-				Ports           []device.DevicePortStatus `json:"ports"`
-			} `json:"items"`
-		} `json:"data"`
-	}
-	if err := (serviceclient.Client{Timeout: 5 * time.Second}).GetJSON(ctx, a.GatewayURL, a.ServiceToken, "/api/v1/internal/device-summaries?"+query.Encode(), &result); err != nil || result.Code != 0 {
-		return
-	}
-	for i := range rows {
-		for _, extra := range result.Data.Items {
-			if extra.DeviceID == rows[i].DeviceID {
-				rows[i].VendorName = extra.VendorName
-				rows[i].LastHeartbeatAt = extra.LastHeartbeatAt
-				rows[i].SignalStrength = extra.SignalStrength
-				rows[i].SignalAt = extra.SignalAt
-				rows[i].Ports = extra.Ports
-				if rows[i].Ports == nil {
-					rows[i].Ports = []device.DevicePortStatus{}
-				}
-				rows[i].RuntimeAvailable = true
-				break
-			}
-		}
-	}
-}
+// enrichDevices 将 ctx 下已授权 rows 交给用例丰富摘要；无返回值，故障仍保留未知运行事实。
+func (a API) enrichDevices(ctx context.Context, rows []device.Device) { a.Management.Enrich(ctx, rows) }
 
-// Operational suspension leaves the gateway connection and existing orders intact.
+// setDeviceStatus 从 c 严格校验编号及启停输入，读取实时范围后调用用例，返回资料或原 HTTP 错误。
 func (a API) setDeviceStatus(c *gin.Context) {
 	id := c.Param("id")
 	var in struct {
-		Status string `json:"status"`
+		Status string `json:"status"` /* 仅运营启停，不允许故障／退役替代 */
 	}
 	if id == "" || len(id) > 64 {
 		httpapi.BadRequest(c, "设备编号无效")
@@ -148,46 +78,26 @@ func (a API) setDeviceStatus(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var row device.Device
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		locked, err := device.LockDeviceByID(c.Request.Context(), tx, scope, id)
-		if err != nil {
-			return err
-		}
-		row = locked
-		if row.Status != "enabled" && row.Status != "disabled" {
-			return admin.ErrConflict
-		}
-		if err := row.NormalizeMetadata(); err != nil {
-			return err
-		}
-		before := row
-		row.Status = in.Status
-		row.UpdatedAt = device.NextDeviceUpdateTime(row.UpdatedAt)
-		if err := device.SaveDeviceStatus(tx, row.ID, in.Status, row.UpdatedAt); err != nil {
-			return err
-		}
-		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.status", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
-	})
+	row, err := a.Management.ChangeStatus(c.Request.Context(), chargehttp.AdminAuditContext(c), scope, id, in.Status)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		managementFailure(c, err)
 		return
 	}
 	httpapi.OK(c, row)
 }
 
+// updateDevice 从 c 校验完整资料和原版本，读取实时范围后调用更新用例，返回资料、摘要或原错误。
 func (a API) updateDevice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" || len(id) > 64 {
 		httpapi.BadRequest(c, "设备编号无效")
 		return
 	}
-	var input device.DeviceInput
-	if !chargehttp.DecodeResource(c, &input) {
+	var in device.DeviceInput
+	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}
-	metadata, expected, err := input.Metadata()
-	if err != nil {
+	if _, _, err := in.Metadata(); err != nil {
 		httpapi.BadRequest(c, err.Error())
 		return
 	}
@@ -195,41 +105,23 @@ func (a API) updateDevice(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var row device.Device
-	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		query := device.ScopeVendors(scope, device.ScopeStations(scope, device.DeviceQuery(c.Request.Context(), tx), "d.station_id"), "d.vendor_id")
-		if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).Select(device.DeviceColumns).Where("d.device_id=?", id).Take(&row).Error; err != nil {
-			return err
-		}
-		if err := row.NormalizeMetadata(); err != nil {
-			return err
-		}
-		if !row.UpdatedAt.Equal(expected) {
-			return fmt.Errorf("%w：设备资料已被修改，请刷新后重试", admin.ErrConflict)
-		}
-		before := row
-		row.Model, row.SerialNo = metadata.Model, metadata.SerialNo
-		row.WarrantyUntil, row.Tags = metadata.WarrantyUntil, metadata.Tags
-		row.UpdatedAt = device.NextDeviceUpdateTime(row.UpdatedAt)
-		tags, err := json.Marshal(row.Tags)
-		if err != nil {
-			return err
-		}
-		if err := device.SaveDeviceMetadata(tx, row.ID, map[string]any{
-			"model": row.Model, "serial_no": row.SerialNo,
-			"warranty_until": row.WarrantyUntil, "tags_json": string(tags), "updated_at": row.UpdatedAt,
-		}); err != nil {
-			return err
-		}
-		return chargehttp.AdminResourceAudit(tx, c.MustGet("admin_profile").(operations.Profile), "device.update", "device", row.ID, before, row, c.ClientIP(), httpapi.RequestID(c))
-	})
+	row, err := a.Management.Update(c.Request.Context(), chargehttp.AdminAuditContext(c), scope, id, in)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		managementFailure(c, err)
 		return
 	}
-	cap, _ := charging.ProtocolCapabilities(row.ProtocolAdapter)
-	row.ReportsEnergy, row.ReportsSegmentedPower = cap.ReportsEnergy, cap.ReportsSegmentedPower
-	rows := []device.Device{row}
-	a.enrichDevices(c.Request.Context(), rows)
-	httpapi.OK(c, rows[0])
+	httpapi.OK(c, row)
+}
+
+// managementFailure 将 err 的输入及权限分类写入 c，其余沿用原资源错误映射；不暴露存储细节。
+func managementFailure(c *gin.Context, err error) {
+	var input device.ManagementInputError
+	switch {
+	case errors.As(err, &input):
+		httpapi.BadRequest(c, input.Error())
+	case errors.Is(err, operations.ErrForbidden):
+		httpapi.Write(c, 403, 1003, "该站点不在您的数据范围内", nil)
+	default:
+		chargehttp.AdminResourceFailure(c, err)
+	}
 }

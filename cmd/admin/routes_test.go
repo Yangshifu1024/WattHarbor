@@ -12,7 +12,7 @@ import (
 )
 
 func TestAdminAssemblyRegistersDocumentedRoutes(t *testing.T) {
-	router := newRouter(config.Admin{}, &resources{}, identityhttp.AdminAuth{})
+	router := newRouter(config.Admin{}, &resources{}, identityhttp.AdminAuth{}, nil)
 	actual := map[string]bool{}
 	for _, route := range router.Routes() {
 		actual[route.Method+" "+route.Path] = true

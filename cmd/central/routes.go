@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"net/http"
 	"time"
 
@@ -45,7 +46,7 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 	identityhttp.StartResultAPI{Service: chargestart.StartResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.EndResultAPI{Service: chargefinish.EndResultService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
 	identityhttp.StopAuthorization{Service: chargestop.AuthorizationService{DB: orm}, ServiceToken: cfg.ServiceToken}.Register(router)
-	identityhttp.CardAPI{Store: card.CardStore{DB: orm}, Pricing: pricing.PricingStore{DB: orm},
+	identityhttp.CardAPI{Devices: device.OperationRepo{DB: orm}, Store: card.CardStore{DB: orm}, Pricing: pricing.Repo{DB: orm},
 		ServiceToken: cfg.ServiceToken}.RegisterInternal(router)
 	identityhttp.AutoStopAPI{Stopper: chargestop.AutoStopper{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
 

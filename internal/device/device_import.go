@@ -1,12 +1,12 @@
 package device
 
 // 设备批量导入的记录类型。任务表 device_import 的落库投影与请求体 DTO 一并
-// 定义在持久化层：导入任务的写入与读取都发生在这里，接口层只负责编排。
+// 定义在所属用例：ImportService 管理事务及外部能力，HTTP 仅适配请求和响应。
 
 // ImportDevice 描述批量导入的设备身份、厂商、站点、端口数、型号及计费模式。
 // 设备计量能力由所选协议确定。
 type ImportDevice struct {
-	ProtocolAdapter string  `json:"protocol_adapter"` // Resolved by the server from the selected vendor; never trust the client.
+	ProtocolAdapter string  `json:"protocol_adapter"` // 服务根据原厂商公开事实冻结的协议标签，覆盖客户端声明
 	DeviceID        string  `json:"device_id"`        // 设备编号，全局唯一，8–32 位字母数字及 _ -，大小写不敏感判重
 	VendorID        uint64  `json:"vendor_id"`        // 厂商 ID，必须非 0
 	StationID       uint64  `json:"station_id"`       // 所属站点 ID，必须非 0 且该站点处于 active
@@ -14,8 +14,8 @@ type ImportDevice struct {
 	Model           *string `json:"model"`            // 型号，可空；非空时最多 128 字
 	// 兼容导入字段；实际计量能力按协议计算，不依赖客户端人工声明。
 	ChargeMode            string `json:"charge_mode"`             // 计费方式，取值为计费引擎认可的六种模式之一；留空表示不覆盖
-	ReportsEnergy         bool   `json:"reports_energy"`          // 是否上报电量，引擎据此决定该设备能否用带电表的计费方式
-	ReportsSegmentedPower bool   `json:"reports_segmented_power"` // 是否上报分段功率，同上
+	ReportsEnergy         bool   `json:"reports_energy"`          // 原选定协议的电量能力，客户端声明会被覆盖，不持久复制到设备表
+	ReportsSegmentedPower bool   `json:"reports_segmented_power"` // 原选定协议的分段功率能力，客户端声明会被覆盖
 }
 
 // ImportJob 是一次批量导入任务在 device_import 表中的状态投影，也是导入列表接口的返回行。

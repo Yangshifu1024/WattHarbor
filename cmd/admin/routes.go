@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"net/http"
@@ -26,7 +31,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth) *gin.Engine {
+func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
 	// 指标端点无需运营会话，只暴露路由模板、状态码与耗时。
@@ -47,12 +52,14 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth) *
 	authAPI.Register(router)
 	// 后台业务按族注册：每个族是一个独立包，进程只挂自己提供的那些。
 	adminops.API{DB: orm, Auth: authAPI}.Register(router)
-	adminpricing.API{DB: orm, Auth: authAPI}.Register(router)
-	adminstation.API{DB: orm, Auth: authAPI}.Register(router)
-	admindevice.API{Meters: settlement.MeterReviewService{Orders: settlement.BillingOrders{DB: orm}, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
+	adminpricing.API{Queries: pricing.QueryService{DB: orm}, DB: orm, Auth: authAPI, Schemes: pricing.SchemeService{DB: orm}, Publications: pricing.PublicationService{DB: orm}}.Register(router)
+	adminstation.API{Stations: device.StationService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
+	admindevice.API{Management: device.ManagementService{DB: orm, Summaries: gateway}, Imports: device.ImportService{DB: orm, Gateway: gateway, Compatibility: pricing.Repo{DB: orm}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {
+		return ops.LoadDataScope(ctx, orm, p)
+	}}, Meters: settlement.MeterReviewService{Orders: settlement.BillingOrders{DB: orm}, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
 		p, err := authAPI.Store.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err
-	}}, DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	}}, DB: orm, Auth: authAPI}.Register(router)
 	adminorder.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
 	adminfinance.API{Refunds: settlement.RefundAdminService{DB: orm, ReviewRepo: settlement.RefundReviewRepo{DB: orm, LookupSigner: func(ctx context.Context, id uint64) (settlement.SignerStatus, error) {
 		p, err := authAPI.Store.Profile(ctx, id)
@@ -63,7 +70,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth) *
 	}}}, Risks: wallet.RiskService{DB: orm, Refund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}}, DB: orm, Auth: authAPI}.Register(router)
 	adminmarketing.API{DB: orm, Auth: authAPI}.Register(router)
 	adminuser.API{DB: orm, Auth: authAPI}.Register(router)
-	adminvendor.API{DB: orm, Auth: authAPI, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}.Register(router)
+	adminvendor.API{Vendors: device.VendorService{DB: orm, Gateway: gateway}, DB: orm, Auth: authAPI}.Register(router)
 	admindashboard.Dashboard{DB: orm}.Register(router, authAPI)
 	chargehttp.AdminAccounts{DB: orm, Auth: &authAPI}.RegisterRoles(router)
 	chargehttp.AdminAccounts{DB: orm, Auth: &authAPI}.Register(router)

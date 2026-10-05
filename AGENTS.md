@@ -115,11 +115,14 @@ charge-pilot/
 │   ├── internal/wallet/wallet_refund_repo.go
 │   └── internal/wallet/wallet_reservation_repo.go
 ├── internal/pricing                                      计费方案、规则、发布与计量匹配
-│   ├── internal/pricing/metering_store.go
-│   ├── internal/pricing/pricing_admin_store.go
-│   ├── internal/pricing/pricing_scope_store.go
-│   ├── internal/pricing/pricing_store.go
-│   └── internal/pricing/scheme_target_store.go
+│   ├── internal/pricing/query.go（迁移前：internal/interface/http/admin/pricing/charging_schemes.go[读取组合]）
+│   ├── internal/pricing/scheme.go（迁移前：internal/interface/http/admin/pricing/charging_schemes.go[模板变更事务]）
+│   ├── internal/pricing/publication.go（迁移前：internal/interface/http/admin/pricing/charging_schemes.go[发布与继承事务]）
+│   ├── internal/pricing/metering_repo.go（迁移前：internal/pricing/metering_store.go）
+│   ├── internal/pricing/pricing_admin_repo.go（迁移前：internal/pricing/pricing_admin_store.go）
+│   ├── internal/pricing/pricing_scope_repo.go（迁移前：internal/pricing/pricing_scope_store.go）
+│   ├── internal/pricing/pricing_repo.go（迁移前：internal/pricing/pricing_store.go）
+│   └── internal/pricing/scheme_target_repo.go（迁移前：internal/pricing/scheme_target_store.go）
 ├── internal/card                                         刷卡：在线卡、扣款与累计时长
 │   ├── internal/card/card_admin_store.go
 │   ├── internal/card/card_schema.go
@@ -132,15 +135,20 @@ charge-pilot/
 │   ├── internal/device/discovery.go（迁移前：internal/interface/http/payment_scan.go[事实组合]）
 │   ├── internal/device/operation_repo.go（迁移前：internal/payment/payment_device_store.go）
 │   ├── internal/device/alert_sync_store.go
-│   ├── internal/device/device_admin_store.go
+│   ├── internal/device/admin_repo.go（迁移前：internal/device/device_admin_store.go）
 │   ├── internal/device/device_import.go
-│   ├── internal/device/device_import_job_store.go
-│   ├── internal/device/device_store.go
+│   ├── internal/device/import.go（迁移前：internal/interface/http/admin/device/device_imports.go[导入受理与执行]）
+│   ├── internal/device/import_repo.go（迁移前：internal/device/device_import_job_store.go）
+│   ├── internal/device/device_repo.go（迁移前：internal/device/device_store.go）
+│   ├── internal/device/management.go（迁移前：internal/interface/http/admin/device/devices.go[读取组合、资料与启停]）
+│   ├── internal/device/management_input.go（迁移前：internal/device/device_store.go[完整资料校验]）
+│   ├── internal/device/vendor.go（迁移前：internal/interface/http/admin/vendor/[范围、字典编排与审计]）
 │   ├── internal/device/fault.go
 │   ├── internal/device/identity.go
 │   ├── internal/device/interface_query_store.go
 │   ├── internal/device/scope.go
-│   ├── internal/device/station_store.go
+│   ├── internal/device/station.go（迁移前：internal/interface/http/admin/station/stations.go[新建与更新]）
+│   ├── internal/device/station_repo.go（迁移前：internal/device/station_store.go）
 │   └── internal/device/user_fault_store.go
 ├── internal/identity                                     用户、会话、登录与手机号
 │   ├── internal/identity/auth.go
@@ -197,6 +205,8 @@ charge-pilot/
 │   ├── internal/contracts/central/charging.go（迁移前：internal/worker/charge/paid_start.go[待启动响应]）
 │   ├── internal/contracts/central/errors.go
 │   ├── internal/contracts/central/results.go（迁移前：internal/interface/http/order_*_result.go、internal/worker/charge/*sync.go[回执 DTO]）
+│   ├── internal/contracts/gateway/provision.go（迁移前：后台导入／厂商 HTTP DTO）
+│   ├── internal/contracts/gateway/summary.go（迁移前：后台设备 HTTP 摘要 DTO）
 │   ├── internal/contracts/gateway/scan.go（新增：扫码端点与缺失错误契约）
 │   ├── internal/contracts/gateway/charging.go（START、STOP 与计量证据契约）
 │   └── internal/contracts/gateway/sync.go（迁移前：internal/worker/charge/*sync.go、meter_segments.go[同步 DTO]）
@@ -204,6 +214,9 @@ charge-pilot/
 │   ├── internal/integration/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP]）
 │   ├── internal/integration/central/client.go（迁移前：internal/worker/charge/paid_start.go[待启动 HTTP 查询]）
 │   ├── internal/integration/central/results.go（迁移前：internal/worker/charge/*sync.go[回执 HTTP]）
+│   ├── internal/integration/gateway/provision.go（迁移前：后台设备导入出站 HTTP）
+│   ├── internal/integration/gateway/vendor.go（迁移前：后台厂商通用出站 HTTP）
+│   ├── internal/integration/gateway/summary.go（迁移前：后台设备摘要通用出站 HTTP）
 │   ├── internal/integration/gateway/scan.go（迁移前：internal/interface/http/payment_scan.go[出站 HTTP]）
 │   ├── internal/integration/gateway/client.go
 │   └── internal/integration/gateway/sync.go（迁移前：internal/worker/charge/sync_client.go[启动/结束同步]）
@@ -315,7 +328,6 @@ charge-pilot/
 │   ├── internal/interface/http/admin/user/charge_users.go
 │   ├── internal/interface/http/admin/user/online_cards.go
 │   ├── internal/interface/http/admin/vendor/api.go
-│   ├── internal/interface/http/admin/vendor/scope.go
 │   ├── internal/interface/http/admin/vendor/vendors.go
 │   ├── internal/interface/http/admin_accounts.go
 │   ├── internal/interface/http/admin_accounts_store.go

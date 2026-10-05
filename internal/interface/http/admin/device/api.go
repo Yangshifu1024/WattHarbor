@@ -1,6 +1,7 @@
 package device
 
 import (
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
@@ -9,10 +10,11 @@ import (
 
 // API 持有本业务族所需的数据库、鉴权与外部调用依赖。
 type API struct {
-	Meters                   settlement.MeterReviewService // 计量核实、最终金额裁决及审计用例，由 cmd 装配
-	DB                       *gorm.DB
-	Auth                     chargehttp.AdminAuth
-	GatewayURL, ServiceToken string
+	Management device.ManagementService      // 设备范围读取、运营变更及运行摘要，由 cmd 装配
+	Imports    device.ImportService          // 批量导入受理、同步执行及原身份恢复，由 cmd 装配
+	Meters     settlement.MeterReviewService // 计量核实、最终金额裁决及审计用例，由 cmd 装配
+	DB         *gorm.DB                      // 实时数据范围读取连接
+	Auth       chargehttp.AdminAuth          // 实时后台会话及权限
 }
 
 // Register 把设备的全部路由挂到引擎上。

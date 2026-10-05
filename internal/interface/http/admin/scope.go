@@ -5,10 +5,12 @@ import (
 	"regexp"
 	"strconv"
 
+	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -41,12 +43,6 @@ func RequireStationScope(c *gin.Context, db *gorm.DB, id uint64) bool {
 	return true
 }
 
-// CanManageStationDefault 判断该范围能否改动整站默认配置：
-// 只有不受限或无厂商限制的账号可以。
-func CanManageStationDefault(scope operations.DataScope) bool {
-	return scope.Unrestricted || len(scope.VendorIDs) == 0
-}
-
 // RequirePricingTargetScope 校验计费方案与分账模板的作用目标。
 // 厂商数据范围受限时，整站默认配置不可改，只能改到本厂商名下的设备。
 func RequirePricingTargetScope(c *gin.Context, db *gorm.DB, stationID uint64, deviceID string) bool {
@@ -54,24 +50,12 @@ func RequirePricingTargetScope(c *gin.Context, db *gorm.DB, stationID uint64, de
 	if !ok {
 		return false
 	}
-	if !scope.AllowsStation(stationID) {
-		httpapi.Write(c, 403, 1003, "该站点不在您的数据范围内", nil)
-		return false
-	}
-	if CanManageStationDefault(scope) {
-		return true
-	}
-	if deviceID == "" {
-		httpapi.Write(c, 403, 1003, "厂商数据范围受限，不能修改整站默认配置", nil)
-		return false
-	}
-	vendorID, err := ops.DeviceVendorID(c.Request.Context(), db, stationID, deviceID)
-	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return false
-	}
-	if !scope.AllowsVendor(vendorID) {
-		httpapi.Write(c, 403, 1003, "该设备厂商不在您的数据范围内", nil)
+	if err := pricing.CheckTargetScope(c.Request.Context(), db, scope, stationID, deviceID); err != nil {
+		if errors.Is(err, operations.ErrForbidden) {
+			httpapi.Write(c, 403, 1003, err.Error(), nil)
+		} else {
+			chargehttp.AdminResourceFailure(c, err)
+		}
 		return false
 	}
 	return true

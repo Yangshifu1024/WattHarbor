@@ -2,6 +2,7 @@ package provision
 
 import (
 	"errors"
+	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -21,7 +22,7 @@ type API struct {
 }
 
 func (a API) Register(r *gin.Engine) {
-	r.POST("/api/v1/internal/devices/provision", a.provision)
+	r.POST(contract.ProvisionPath, a.provision)
 	a.registerVendors(r)
 }
 
