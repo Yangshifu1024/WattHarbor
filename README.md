@@ -256,6 +256,18 @@ go run ./cmd/migrate -schema all
 
 MySQL init 脚本仅在空数据卷创建三库和授权，表由 Goose 初始化。项目尚未发布，各 schema 仅保留 `0001_init.sql`，结构调整直接修改定义，不新增发布前递增迁移，也不自动建表。已执行版本不会因文件修改重新应用；既有数据需要兼容迁移，不能只删除 Goose 版本表。MySQL DDL 无事务回滚。
 
+充值申请的 `idx_payment_order(payment_order_id)` 是非唯一索引，供支付回调锁定所属申请，避免扫描无关申请。已执行旧版初始化的数据库须先备份该表并核对 `SHOW INDEX FROM central_db.wallet_recharge_request`；没有此索引时执行兼容增量更新，无需重建数据：
+
+```sql
+SET SESSION lock_wait_timeout = 10;
+ALTER TABLE central_db.wallet_recharge_request
+  ADD INDEX idx_payment_order (payment_order_id)
+    COMMENT '支付回调定位并锁定所属充值申请，避免扫描无关申请',
+  ALGORITHM=INPLACE, LOCK=NONE;
+```
+
+更新后核对索引为非唯一、列为 `payment_order_id`；保留已有 NULL 和重复关联，不去重或改为 UNIQUE。索引减少无关申请的扫描争用，同一钱包仍按原行锁串行入账。
+
 明确可丢弃的开发数据可重建：
 
 ```powershell

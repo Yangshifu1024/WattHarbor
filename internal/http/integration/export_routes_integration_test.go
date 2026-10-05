@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
 	adminexport "github.com/ChargePilot2026/charge-pilot/internal/http/admin/export"
@@ -33,23 +34,25 @@ func TestRegisteredExportRoutes(t *testing.T) {
 	defer tx.Rollback()
 	ctx := context.Background()
 	cache := identityRouteRedis(t)
-	id := uint64(time.Now().UnixNano())
 	tag := "export-route-" + uuid.NewString()
-	for _, seed := range []struct {
-		table string         // fixture所属表
-		row   map[string]any // 自有身份和必需字段
-	}{
-		{"role", map[string]any{"id": id + 1, "code": tag, "name": "导出注册操作者", "is_builtin": false}},
-		{"admin_user", map[string]any{"id": id, "username": tag, "password_hash": "export_route_private_hash", "role_id": id + 1, "status": "active", "auth_version": 9007199254741133}},
-		{"station", map[string]any{"id": id, "name": "注册中文站点", "longitude": 0, "latitude": 0}},
-		{"admin_data_scope", map[string]any{"admin_user_id": id, "scope_type": "station", "scope_id": id, "created_by": id}},
-	} {
-		if err := tx.Table(seed.table).Create(seed.row).Error; err != nil {
-			t.Fatal(err)
-		}
+	role := ops.RoleRow{Code: tag, Name: "导出注册操作者", IsBuiltin: false}
+	if err := tx.Table("role").Select("code", "name", "is_builtin").Create(&role).Error; err != nil {
+		t.Fatal(err)
+	}
+	account := ops.AdminAccount{Username: tag, PasswordHash: "export_route_private_hash", RoleID: role.ID, Status: "active", AuthVersion: 9007199254741133}
+	if err := tx.Create(&account).Error; err != nil {
+		t.Fatal(err)
+	}
+	station := device.Station{Name: "注册中文站点", Longitude: 0, Latitude: 0}
+	if err := tx.Select("name", "longitude", "latitude").Create(&station).Error; err != nil {
+		t.Fatal(err)
+	}
+	id := account.ID
+	if err := tx.Table("admin_data_scope").Create(map[string]any{"admin_user_id": id, "scope_type": "station", "scope_id": station.ID, "created_by": id}).Error; err != nil {
+		t.Fatal(err)
 	}
 	for _, code := range []string{"export.create", "finance.read", "station.read"} {
-		if err := tx.Exec("INSERT INTO role_permission(role_id,permission_id) SELECT ?,id FROM permission WHERE code=?", id+1, code).Error; err != nil {
+		if err := tx.Exec("INSERT INTO role_permission(role_id,permission_id) SELECT ?,id FROM permission WHERE code=?", role.ID, code).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -161,7 +164,7 @@ func TestRegisteredExportRoutes(t *testing.T) {
 		t.Fatal("storage reason leaked")
 	}
 	tx.Callback().Create().Remove(key)
-	if err := tx.Exec("DELETE rp FROM role_permission rp JOIN permission p ON p.id=rp.permission_id WHERE rp.role_id=? AND p.code='station.read'", id+1).Error; err != nil {
+	if err := tx.Exec("DELETE rp FROM role_permission rp JOIN permission p ON p.id=rp.permission_id WHERE rp.role_id=? AND p.code='station.read'", role.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	call("GET", fmt.Sprintf("%s/%d/download", base, lastID), nil, 403)

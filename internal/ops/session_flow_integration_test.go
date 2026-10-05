@@ -54,36 +54,46 @@ func securityFixture(t *testing.T) (*gorm.DB, *gorm.DB, SessionRepo, AdminAccoun
 	cache := redis.NewClient(options)
 	t.Cleanup(func() { cache.Close() })
 	tag := uuid.NewString()
-	id := uint64(time.Now().UnixNano())
 	password := "Test!SecurityPassword2026"
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := first.Table("role").Create(map[string]any{"id": id + 1, "code": "security-" + tag, "name": "security fixture", "is_builtin": false}).Error; err != nil {
+	role := RoleRow{Code: "security-" + tag, Name: "security fixture", IsBuiltin: false}
+	if err := first.Table("role").Select("code", "name", "is_builtin").Create(&role).Error; err != nil {
 		t.Fatal(err)
 	}
-	account := AdminAccount{ID: id, Username: "security-" + tag, PasswordHash: string(hash), RoleID: id + 1, Status: "active", AuthVersion: 9007199254741111}
+	t.Cleanup(func() {
+		for _, table := range []string{"role_permission", "role"} {
+			column := "id"
+			if table == "role_permission" {
+				column = "role_id"
+			}
+			if err := first.Table(table).Where(column+"=?", role.ID).Delete(map[string]any{}).Error; err != nil {
+				t.Error(err)
+			}
+			var count int64
+			if err := first.Table(table).Where(column+"=?", role.ID).Count(&count).Error; err != nil || count != 0 {
+				t.Errorf("cleanup %s count=%d err=%v", table, count, err)
+			}
+		}
+	})
+	account := AdminAccount{Username: "security-" + tag, PasswordHash: string(hash), RoleID: role.ID, Status: "active", AuthVersion: 9007199254741111}
 	if err := first.Create(&account).Error; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		for _, table := range []string{"audit_log", "admin_user", "role_permission", "role"} {
-			column, value := "id", account.ID
+		for _, table := range []string{"audit_log", "admin_user"} {
+			column := "id"
 			switch table {
 			case "audit_log":
 				column = "actor_id"
-			case "role_permission":
-				column = "role_id"
-				value = account.RoleID
-			case "role":
-				value = account.RoleID
 			}
-			if err := first.Table(table).Where(column+"=?", value).Delete(map[string]any{}).Error; err != nil {
+			if err := first.Table(table).Where(column+"=?", account.ID).Delete(map[string]any{}).Error; err != nil {
 				t.Error(err)
 			}
 			var count int64
-			if err := first.Table(table).Where(column+"=?", value).Count(&count).Error; err != nil || count != 0 {
+			if err := first.Table(table).Where(column+"=?", account.ID).Count(&count).Error; err != nil || count != 0 {
 				t.Errorf("cleanup %s count=%d err=%v", table, count, err)
 			}
 		}
@@ -387,8 +397,8 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 	read, release := make(chan struct{}, 2), make(chan struct{})
 	gated := gatedChallenges{SessionRepo: repo, read: read, release: release}
 	type result struct {
-		reply AccessReply
-		err   error
+		reply AccessReply // 本次挑战消费的认证回执
+		err   error       // 并发消费的原错误
 	}
 	results := make(chan result, 2)
 	for _, db := range []*gorm.DB{first, second} {

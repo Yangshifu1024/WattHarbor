@@ -768,7 +768,8 @@ CREATE TABLE `wallet_recharge_request` (
   `request_json` json DEFAULT NULL COMMENT '业务请求参数快照 JSON',
   `prepay_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '支付渠道预支付会话标识',
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
-  PRIMARY KEY (`request_id`)
+  PRIMARY KEY (`request_id`),
+  KEY `idx_payment_order` (`payment_order_id`) COMMENT '支付回调定位并锁定所属充值申请，避免扫描无关申请'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='钱包充值请求幂等键';
 
 -- wallet_refund_part：钱包退款按原支付渠道拆分明细

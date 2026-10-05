@@ -194,8 +194,8 @@ func TestManagementAccountRoleTransactionsAndSafeAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	var snapshots []struct {
-		Before string `gorm:"column:before_json"`
-		After  string `gorm:"column:after_json"`
+		Before string `gorm:"column:before_json"` // 变更前安全快照
+		After  string `gorm:"column:after_json"`  // 变更后安全快照
 	}
 	if err := db.Table("audit_log").Where("actor_id=?", audit.Actor.ID).Find(&snapshots).Error; err != nil {
 		t.Fatal(err)
@@ -357,16 +357,18 @@ func TestManagementLastCustomerAdminAllRemovalPaths(t *testing.T) {
 	if err := first.Table("role").Where("code='customer_admin' AND deleted_at IS NULL").Pluck("id", &rootRole).Error; err != nil || rootRole == 0 {
 		t.Fatalf("root %d %v", rootRole, err)
 	}
-	ids := []uint64{audit.Actor.ID + 2, audit.Actor.ID + 3}
-	for i, id := range ids {
+	ids := make([]uint64, 0, 2)
+	for i := range 2 {
 		status := "active"
 		if i == 1 {
 			status = "disabled"
 		}
-		if err := first.Table("admin_user").Create(map[string]any{"id": id, "username": fmt.Sprint("cust-", id), "password_hash": "fixture", "role_id": rootRole, "status": status, "auth_version": 1}).Error; err != nil {
+		account := AdminAccount{Username: "cust-" + uuid.NewString(), PasswordHash: "fixture", RoleID: rootRole, Status: status, AuthVersion: 1}
+		if err := first.Create(&account).Error; err != nil {
 			t.Fatal(err)
 		}
-		cleanupManagementUser(t, first, id)
+		ids = append(ids, account.ID)
+		cleanupManagementUser(t, first, account.ID)
 	}
 	isolateManagementAdmins(t, first, ids)
 	isolateManagementAdmins(t, second, ids)
@@ -478,8 +480,8 @@ func TestManagementConcurrentRevocationBeforeAssignment(t *testing.T) {
 		t.Fatal("first root lock not reached")
 	}
 	type result struct {
-		id  uint64
-		err error
+		id  uint64 // 并发创建返回的真实账号主键
+		err error  // 创建或当前权限准入错误
 	}
 	assigned := make(chan result, 1)
 	username := "race-" + uuid.NewString()
