@@ -8,7 +8,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
-	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,22 +34,19 @@ func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 	r.GET(gatewaycontract.CardPortPath, a.resolvePort)
 }
 
-// startResults 返回已回执未上报的启动命令，按 updated_at 升序，最多 50 条。
+// startResults 接收 c 中的服务令牌与可选 command_id，返回已回执未上报的启动命令，
+// 按 updated_at 升序最多五十条；鉴权失败返回 401，过长筛选值返回 400，读取失败返回 503，无写入。
 func (a TelemetryAPI) startResults(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	query := a.DB.WithContext(c.Request.Context()).Model(&workerSyncCommandRow{}).
-		Where("status IN ('acked','rejected') AND result_reported = FALSE AND result_code IS NOT NULL AND ack_at IS NOT NULL")
-	if filter := c.Query("command_id"); filter != "" {
-		if len(filter) > 64 {
-			httpapi.BadRequest(c, "command_id 无效")
-			return
-		}
-		query = query.Where("command_id = ?", filter)
+	filter := c.Query("command_id")
+	if len(filter) > 64 {
+		httpapi.BadRequest(c, "command_id 无效")
+		return
 	}
-	var rows []workerSyncCommandRow
-	if err := query.Order("updated_at").Limit(50).Find(&rows).Error; err != nil {
+	rows, err := gatewayrepo.ListStartResults(c.Request.Context(), a.DB, filter)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "启动回执暂不可读取", nil)
 		return
 	}
@@ -61,7 +57,8 @@ func (a TelemetryAPI) startResults(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.StartResultsReply{Items: items})
 }
 
-// markStartResultsReported 只推进仍处于未上报状态的行，重放安全。
+// markStartResultsReported 接收 c 中的服务令牌和命令身份集合，返回同一事务内实际推进的条数。
+// 鉴权失败返回 401，绑定失败返回 400；事务失败返回 503 且不输出中间计数，重复身份不重复推进。
 func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -71,19 +68,7 @@ func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 		httpapi.BadRequest(c, "上报标记请求无效")
 		return
 	}
-	marked := 0
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		for _, id := range in.CommandIDs {
-			res := tx.Model(&workerSyncCommandRow{}).
-				Where("command_id = ? AND status IN ('acked','rejected') AND result_reported = FALSE", id).
-				Update("result_reported", true)
-			if res.Error != nil {
-				return res.Error
-			}
-			marked += int(res.RowsAffected)
-		}
-		return nil
-	})
+	marked, err := gatewayrepo.MarkStartResultsReported(c.Request.Context(), a.DB, in.CommandIDs)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "上报标记暂不可用", nil)
 		return
@@ -91,16 +76,13 @@ func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.MarkReply{Marked: marked})
 }
 
-// endEvents 返回未处理的刷卡/扫码结束事件（ConsumerType 2/3），按 id 升序，最多 50 条。
+// endEvents 接收 c 中的服务令牌，返回未处理的 ConsumerType 2/3 结束事件，按 id 升序最多五十条。
+// 鉴权失败返回 401，读取失败返回 503；响应保留原事件载荷，不标记事件或写入数据。
 func (a TelemetryAPI) endEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var rows []workerSyncEventRow
-	err := a.DB.WithContext(c.Request.Context()).
-		Select("id, event_json").
-		Where("event_type = 'charge_end' AND processed_at IS NULL AND JSON_EXTRACT(event_json, '$.ConsumerType') IN (2,3)").
-		Order("id").Limit(50).Find(&rows).Error
+	rows, err := gatewayrepo.ListUnprocessedEndEvents(c.Request.Context(), a.DB)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束事件暂不可读取", nil)
 		return
@@ -112,7 +94,8 @@ func (a TelemetryAPI) endEvents(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.EventsReply{Items: items})
 }
 
-// chargeCommandByOrder 按订单取一条启动命令（原 Take 语义：不保证多行时的选择），不存在返回 found:false。
+// chargeCommandByOrder 接收 c 中的服务令牌和订单 ID，以无排序 Limit(1).Find 读取命令，
+// 不存在返回 found:false；鉴权失败返回 401，无效 ID 返回 400，读取失败返回 503，无写入。
 func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -122,13 +105,12 @@ func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 		httpapi.BadRequest(c, "订单 ID 无效")
 		return
 	}
-	var row workerSyncCommandRow
-	res := a.DB.WithContext(c.Request.Context()).Model(&workerSyncCommandRow{}).Where("charge_order_id = ?", orderID).Limit(1).Find(&row)
-	if res.Error != nil {
+	row, found, err := gatewayrepo.FindChargeCommandByOrder(c.Request.Context(), a.DB, orderID)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "启动命令暂不可读取", nil)
 		return
 	}
-	if res.RowsAffected == 0 {
+	if !found {
 		httpapi.OK(c, gatewaycontract.CommandReply{Found: false})
 		return
 	}
@@ -136,7 +118,8 @@ func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.CommandReply{Found: true, Command: &command})
 }
 
-// markDeviceEventsProcessed 只推进未处理的行，返回推进条数。
+// markDeviceEventsProcessed 接收 c 中的服务令牌和事件身份集合，返回同一事务内实际推进的条数。
+// 鉴权失败返回 401，绑定失败返回 400；事务失败返回 503 且不输出中间计数，重复身份不重复推进。
 func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -146,17 +129,7 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 		httpapi.BadRequest(c, "处理标记请求无效")
 		return
 	}
-	marked := 0
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		for _, id := range in.IDs {
-			affected, err := gatewayrepo.MarkSyncEventProcessed(tx, id)
-			if err != nil {
-				return err
-			}
-			marked += int(affected)
-		}
-		return nil
-	})
+	marked, err := gatewayrepo.MarkDeviceEventsProcessed(c.Request.Context(), a.DB, in.IDs)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "处理标记暂不可用", nil)
 		return
@@ -164,8 +137,9 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.MarkReply{Marked: marked})
 }
 
-// releasePort 在 central 确认结算后释放端口：条件更新占用中的端口；
-// 已被释放过的端口返回 already，其余状态视为释放失败（409）。
+// releasePort 接收 c 中的服务令牌、端口 ID 和订单号，条件更新该订单占用的 charging 端口。
+// 更新一行返回 released；未更新时读取端口，idle 且占用为 NULL 返回 already，其余状态返回 409。
+// 鉴权失败返回 401，绑定失败返回 400，更新与读取失败分别返回原 503 消息；本端点不验证结算状态。
 func (a TelemetryAPI) releasePort(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -175,19 +149,22 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 		httpapi.BadRequest(c, "端口释放请求无效")
 		return
 	}
-	res := a.DB.WithContext(c.Request.Context()).Model(&workerSyncPortRow{}).
-		Where("id = ? AND current_order_id = ? AND status = 'charging'", in.PortID, in.OrderNo).
-		Updates(map[string]any{"status": "idle", "current_order_id": nil})
-	if res.Error != nil {
+	affected, err := gatewayrepo.ReleaseChargingPort(
+		c.Request.Context(),
+		a.DB,
+		in.PortID,
+		in.OrderNo,
+	)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口释放暂不可用", nil)
 		return
 	}
-	if res.RowsAffected == 1 {
+	if affected == 1 {
 		httpapi.OK(c, gatewaycontract.ReleasePortReply{Released: true, Already: false})
 		return
 	}
-	var port workerSyncPortRow
-	if err := a.DB.WithContext(c.Request.Context()).Select("status, current_order_id").Where("id = ?", in.PortID).Take(&port).Error; err != nil {
+	port, err := gatewayrepo.ReadSyncPort(c.Request.Context(), a.DB, in.PortID)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口状态暂不可读取", nil)
 		return
 	}
@@ -198,8 +175,9 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 	httpapi.Write(c, http.StatusConflict, 2009, "端口在结算后无法释放", nil)
 }
 
-// meterSamples 返回计量证据：设备心跳在 [ack_at, end_at] 内且 id 不超过
-// end_id 的全部原始事件，按 id 升序，上限 10081（末行为哨兵，与旧实现一致）。
+// meterSamples 接收 c 中的服务令牌、设备 ID、RFC3339Nano 起止时刻和 end_id，
+// 返回 UTC 闭区间内且 id 不超过 end_id 的心跳原始载荷，按 id 升序最多 10081 条（含哨兵预算）。
+// 鉴权失败返回 401，无效设备或窗口返回 400，读取失败返回 503，无写入。
 func (a TelemetryAPI) meterSamples(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -216,10 +194,14 @@ func (a TelemetryAPI) meterSamples(c *gin.Context) {
 		httpapi.BadRequest(c, "计量窗口无效")
 		return
 	}
-	var rows []workerSyncEventRow
-	err := a.DB.WithContext(c.Request.Context()).Select("id, event_json").
-		Where("device_id=? AND event_type='heartbeat' AND id<=? AND received_at>=? AND received_at<=?", device, endID, ackAt.UTC(), endAt.UTC()).
-		Order("id").Limit(10081).Find(&rows).Error
+	rows, err := gatewayrepo.ListMeterSamples(
+		c.Request.Context(),
+		a.DB,
+		device,
+		ackAt,
+		endAt,
+		endID,
+	)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "计量证据暂不可读取", nil)
 		return

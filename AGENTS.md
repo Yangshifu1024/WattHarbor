@@ -478,6 +478,7 @@ charge-pilot/
 │   ├── internal/gateway/repo/sync_models.go（迁移前：internal/gateway/store/sync_models.go）
 │   ├── internal/gateway/repo/telemetry_curve_repo.go（迁移前：internal/gateway/store/telemetry_curve_store.go）
 │   ├── internal/gateway/repo/telemetry_read_repo.go（迁移前：internal/gateway/store/telemetry_read_store.go）
+│   ├── internal/gateway/repo/worker_sync_repo.go（迁移前：internal/gateway/control/worker_sync.go[同步查询、批量标记与端口读写]）
 │   └── internal/gateway/repo/user_stop_repo.go（迁移前：internal/gateway/store/user_stop_store.go）
 ├── internal/worker                                       事件消费、定时与投递编排
 │   ├── internal/worker/alerts/sync.go
