@@ -1,16 +1,13 @@
 package control
 
 import (
-	"encoding/json"
 	"errors"
 	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"github.com/go-sql-driver/mysql"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -213,9 +210,9 @@ func (a TelemetryAPI) meterSamples(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.EventsReply{Items: items})
 }
 
-// freezeEndDelivery 冻结结束回执：已有冻结时校验身份（忽略 segments 后
-// 逐字节一致）并返回存量；否则落库首写。并发首写冲突按错误重读校验，
-// 不做静默空更新（B19 约束）。
+// freezeEndDelivery 接收 c 中的服务令牌与冻结请求，返回首次原载荷或身份一致的存量载荷和 frozen 标志。
+// 鉴权失败返回 401，绑定失败返回 400；首次读取、冻结阶段与身份冲突分别映射原 503 消息和 409/code2009。
+// 所有 SQL 与冲突重读由 repo 执行，本层不重试未知写结果或更换身份。
 func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -225,59 +222,25 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 		httpapi.BadRequest(c, "冻结请求无效")
 		return
 	}
-	stored, err := a.frozenEndPayload(c, in.DeviceEventID)
+	payload, frozen, err := gatewayrepo.FreezeEndDelivery(
+		c.Request.Context(),
+		a.DB,
+		in.DeviceEventID,
+		in.ChargeOrderID,
+		in.Payload,
+	)
 	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束回执暂不可读取", nil)
+		switch {
+		case errors.Is(err, gatewayrepo.ErrEndDeliveryReadFailed):
+			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束回执暂不可读取", nil)
+		case errors.Is(err, gatewayrepo.ErrEndDeliveryIdentityConflict):
+			httpapi.Write(c, http.StatusConflict, 2009, "frozen end result identity conflict", nil)
+		case errors.Is(err, gatewayrepo.ErrEndDeliveryFreezeFailed):
+			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束回执冻结失败", nil)
+		default:
+			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束回执冻结失败", nil)
+		}
 		return
 	}
-	if stored == "" {
-		err = gatewayrepo.InsertFrozenEndDelivery(a.DB.WithContext(c.Request.Context()), in.DeviceEventID, in.ChargeOrderID, in.Payload)
-		if err == nil {
-			httpapi.OK(c, gatewaycontract.FreezeEndDeliveryReply{Payload: in.Payload, Frozen: false})
-			return
-		}
-		var mysqlErr *mysql.MySQLError
-		if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {
-			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束回执冻结失败", nil)
-			return
-		}
-		// 主键冲突：并发首写已落库，重读并校验身份。
-		stored, err = a.frozenEndPayload(c, in.DeviceEventID)
-		if err != nil || stored == "" {
-			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "结束回执冻结失败", nil)
-			return
-		}
-	}
-	if !sameEndIdentity(stored, in.Payload) {
-		httpapi.Write(c, http.StatusConflict, 2009, "frozen end result identity conflict", nil)
-		return
-	}
-	httpapi.OK(c, gatewaycontract.FreezeEndDeliveryReply{Payload: stored, Frozen: true})
-}
-
-// frozenEndPayload 接收 c 与 deviceEventID，用原请求 context 读取冻结结束载荷；返回原文或 SQL 错误，无写入。
-func (a TelemetryAPI) frozenEndPayload(c *gin.Context, deviceEventID uint64) (string, error) {
-	return gatewayrepo.FrozenEndPayload(c.Request.Context(), a.DB, deviceEventID)
-}
-
-// sameEndIdentity 比较两份结束回执是否同一事实：忽略 meter.segments 后
-// 语义一致即可（重放时 segments 允许为空，其余字段必须逐字节相同）。
-func sameEndIdentity(stored, candidate string) bool {
-	strip := func(raw string) string {
-		var value map[string]any
-		decoder := json.NewDecoder(strings.NewReader(raw))
-		decoder.UseNumber()
-		if err := decoder.Decode(&value); err != nil || !json.Valid([]byte(raw)) {
-			return raw
-		}
-		if meter, ok := value["meter"].(map[string]any); ok {
-			delete(meter, "segments")
-		}
-		normalized, err := json.Marshal(value)
-		if err != nil {
-			return raw
-		}
-		return string(normalized)
-	}
-	return strip(stored) == strip(candidate)
+	httpapi.OK(c, gatewaycontract.FreezeEndDeliveryReply{Payload: payload, Frozen: frozen})
 }

@@ -8,13 +8,16 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 )
 
-// worker-sync 全部端点要求服务令牌，未配置令牌时一律 401。
+// TestWorkerSyncAPIRequiresServiceToken 接收 t，通过实际注册的十三条同步路由验证缺失服务令牌返回 401；
+// fixture 未注入数据库，拒绝应先于持久操作，本测试不验证合法身份的业务读写。
 func TestWorkerSyncAPIRequiresServiceToken(t *testing.T) {
 	router := httpapi.NewRouter()
 	(TelemetryAPI{ServiceToken: "service"}).Register(router)
 	cases := []struct {
+		// method 原注册路由的 HTTP 方法。
 		method string
-		path   string
+		// path 原同步端点及请求查询参数。
+		path string
 	}{
 		{"GET", "/api/v1/internal/start-results"},
 		{"POST", "/api/v1/internal/start-results/mark-reported"},
@@ -37,21 +40,5 @@ func TestWorkerSyncAPIRequiresServiceToken(t *testing.T) {
 		if w.Code != 401 {
 			t.Fatalf("%s %s status=%d want=401", tc.method, tc.path, w.Code)
 		}
-	}
-}
-
-func TestFrozenEndIdentityKeepsExactIntegerIDs(t *testing.T) {
-	stored := `{"charge_order_id":9007199254740992,"port_id":9007199254740992,"meter":{"charged_wh":1000,"segments":[{"energy_wh":1000}]}}`
-	if sameEndIdentity(stored, `{"charge_order_id":9007199254740993,"port_id":9007199254740992,"meter":{"charged_wh":1000}}`) {
-		t.Fatal("different charge IDs became the same float value")
-	}
-	if sameEndIdentity(stored, `{"charge_order_id":9007199254740992,"port_id":9007199254740993,"meter":{"charged_wh":1000}}`) {
-		t.Fatal("different port IDs became the same float value")
-	}
-	if !sameEndIdentity(stored, `{"charge_order_id":9007199254740992,"port_id":9007199254740992,"meter":{"charged_wh":1000}}`) {
-		t.Fatal("replay without candidate segments lost the original identity")
-	}
-	if sameEndIdentity(stored, stored+`{}`) {
-		t.Fatal("trailing JSON accepted as a frozen identity")
 	}
 }

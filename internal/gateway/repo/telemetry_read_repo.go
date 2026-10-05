@@ -105,30 +105,6 @@ func MarkSyncEventProcessed(tx *gorm.DB, id uint64) (int64, error) {
 	return res.RowsAffected, res.Error
 }
 
-// FrozenEndPayload 接收 ctx、db 与 deviceEventID，读取原冻结结束载荷；无记录返回空串和 nil，SQL 失败返回错误，无写入。
-func FrozenEndPayload(ctx context.Context, db *gorm.DB, deviceEventID uint64) (string, error) {
-	var row struct {
-		// PayloadJSON 原冻结结束回执 JSON 字节。
-		PayloadJSON []byte `gorm:"column:payload_json"`
-	}
-	res := db.WithContext(ctx).Table("charge_end_delivery").
-		Where("device_event_id=?", deviceEventID).Find(&row)
-	if res.Error != nil {
-		return "", res.Error
-	}
-	if res.RowsAffected == 0 {
-		return "", nil
-	}
-	return string(row.PayloadJSON), nil
-}
-
-// InsertFrozenEndDelivery 接收 db、deviceEventID、chargeOrderID 与 payload，插入原冻结记录；返回唯一键或其它 SQL 错误，由调用方决定重读与事务边界。
-func InsertFrozenEndDelivery(db *gorm.DB, deviceEventID, chargeOrderID uint64, payload string) error {
-	return db.Table("charge_end_delivery").Create(map[string]any{
-		"device_event_id": deviceEventID, "charge_order_id": chargeOrderID, "payload_json": payload,
-	}).Error
-}
-
 // ChargeProcessPoint 是原充电过程查询投影，保留整数身份、原功率和电量换算以及可空协议扩展证据。
 type ChargeProcessPoint struct {
 	// ID charge_process 表的原自增主键，用作过程曲线游标。

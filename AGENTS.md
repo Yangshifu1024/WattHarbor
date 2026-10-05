@@ -468,6 +468,7 @@ charge-pilot/
 │   ├── internal/gateway/repo/charge_start_repo.go（迁移前：internal/gateway/store/charge_start_store.go）
 │   ├── internal/gateway/repo/compensation_repo.go（迁移前：internal/gateway/store/compensation_store.go）
 │   ├── internal/gateway/repo/device_event_repo.go（迁移前：internal/gateway/store/device_event_store.go）
+│   ├── internal/gateway/repo/end_delivery_repo.go（迁移前：internal/gateway/control/worker_sync.go[结束回执冻结]、internal/gateway/repo/telemetry_read_repo.go[冻结记录读写]）
 │   ├── internal/gateway/repo/gorm_models.go（迁移前：internal/gateway/store/gorm_models.go）
 │   ├── internal/gateway/repo/mysql.go（迁移前：internal/gateway/store/mysql.go）
 │   ├── internal/gateway/repo/port_repo.go（迁移前：internal/gateway/store/port_store.go）

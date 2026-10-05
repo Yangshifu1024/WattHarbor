@@ -791,3 +791,11 @@ make test-integration TEST_MYSQL_URL=...
 5m 定向真库证据：.tmp/batch5m-atomic-baseline.log以原HEAD源码隔离副本及新增测试核对实际Register两条随机命令／事件的首行写后取消、整批回滚、重复身份恢复2及重放0，以及端口首次／already、新订单占用后迟到旧释放409保持新owner、缺失端口原503。取消在单行默认事务回调之后触发；仅隔离原源码副本删除两外层事务，.tmp/batch5m-atomic-mutation.log两条路径均稳定失败marked=1，证明回归能检出部分提交，随后恢复副本，生产源码从未做变异。命令／事件夹具完整主键清理零残留，端口外层事务回滚零残留，不操作开发或资金数据。.tmp/batch5m-sync-real.log新源码与实际注册客户端旧真库回归共同通过；原64位／NULL／冻结身份／状态保持。默认定向 .tmp/batch5m-targeted.log、全仓 .tmp/batch5m-check.log、完整独立三库／Redis .tmp/batch5m-integration.log、受影响gateway .tmp/batch5m-build.log及无依赖差异 .tmp/batch5m-tidy.log均通过。没有schema、公开契约或前端变化，最近前端完整验收仍5b；G／WK组合及DEP继续，17组完成15组约88%。
 
 5m 退出核对：.tmp/batch5m-validation的1224份暂存原blob中712份Go／模块与上述已验收工作区一致，.tmp/batch5m-snapshot-source.log保留，本地Markdown链接有效；不重复执行相同源码全量测试。重启既有开发gateway后 .tmp/batch5m-health-{before,after}.json仅GET核对五进程原就绪均200，未清库或手动触发设备／资金任务。最终只补退出记录；下一子项继续结束回执冻结、设备连接会话、刷卡／故障及开通的职责边界，之后运行时和DEP评估，G／WK组合未提前关闭。
+
+批次5n（G-01 结束回执冻结完整操作）：原先读、首次插入、1062重读及存量身份比较完整归repo/end_delivery_repo。原SQL读写私有化，控制层仅绑定原Request、映射三个阶段哨兵及原Reply；删除两旧导出SQL函数与HTTP读取包装。原sameEndIdentity函数体和精确整数单测迁至repo，不保留跨层alias。UseNumber、json.Valid、仅忽略meter.segments及规范化比较保持；首次false／重放true、原两种503中文消息及409/code2009英文消息保留，底层错误以%w保留，不泄漏SQL。没有新事务、锁、upsert、重试或业务身份，其他同步路由及操作未动。AGENTS生产目录图同步。
+
+5n证据：原实现上的 .tmp/batch5n-freeze-baseline.log 已通过新真实并发characterization。实际Register两请求的初读闸门确保都读缺失，真实MySQL两次Create且恰一次1062，得到唯一首写false与存量true；返回的完整首写segments和大于2^53整数身份不变。空segments再次重放不写，原身份+1冲突409不写，随机冻结主键清理零残留。.tmp/batch5n-freeze-real.log新代码及原注册客户端真库回归通过，并覆盖初读取消、非法JSON真实数据库拒绝的两种原503消息、data:null及无新记录，内部数据库错误不进入响应。并发请求及服务器先退出再移除观测钩子／清理夹具，不使用开发库或中央资金接口。
+
+5n退出检查：全仓 .tmp/batch5n-check.log、完整独立三库／Redis .tmp/batch5n-integration.log、gateway构建 .tmp/batch5n-build.log 及无依赖差异 .tmp/batch5n-tidy.log全通过。三份原备份与HEAD相同，.tmp/batch5n-source-comparison.log完整AST确认五份源文件只有已审查的提取、阶段错误适配及注释／格式变化；原SQL、JSON比较和既有纯测试断言按精确原文移动。六份变动Go文件的中文函数／字段／接口说明清单无缺项。没有schema、公开契约或前端变化，前端最近完整验收仍5b；G／WK组合及DEP继续，17组完成15组约88%，接续设备连接会话与其他gateway职责边界。
+
+5n最终暂存核对：.tmp/batch5n-validation的1227份原blob中715份Go／模块与已验证工作区一致，.tmp/batch5n-snapshot-source.log保留，本地Markdown链接有效，不重复运行同一源码全量测试。重启既有开发gateway后 .tmp/batch5n-health-{before,after}.json仅GET核对五进程原就绪均200，未清库、触发新设备命令或资金任务。最终只补本记录，继续设备连接会话的完整读取及候选清理事务；G／WK组合和DEP未提前关闭。
