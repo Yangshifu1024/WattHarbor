@@ -351,11 +351,22 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	if w := call(userDetail+"/curve?granularity=minute", owner); w.Code != 400 {
 		t.Fatal("legacy wrong documentation granularity accepted")
 	}
-	if err := tx.Table("charge_order").Where("id=?", id).Update("started_at", time.Now().UTC().Add(-2000*15*time.Minute)).Error; err != nil {
-		t.Fatal(err)
-	}
-	if w := call(userDetail+"/curve", owner); w.Code != 400 {
-		t.Fatalf("oversized history=%d %s", w.Code, w.Body)
+	// 已结束订单以原结束时刻计算包含首尾的桶数；不可用当前墙钟推断历史尾桶。
+	// 使用完整过去桶，所有测试phase的结束都早于当前时刻，不触发网关未来窗口拒绝。
+	historyEndBucket := liveStart.Add(time.Minute).Truncate(15 * time.Minute).Add(-15 * time.Minute)
+	for _, phase := range []time.Duration{0, 8 * time.Minute, 14*time.Minute + 59*time.Second} {
+		if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"ended_at": historyEndBucket.Add(phase), "started_at": historyEndBucket.Add(-1999 * 15 * time.Minute)}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if w := call(userDetail+"/curve", owner); w.Code != 200 {
+			t.Fatalf("2000 inclusive buckets phase=%s rejected=%d %s", phase, w.Code, w.Body)
+		}
+		if err := tx.Table("charge_order").Where("id=?", id).Update("started_at", historyEndBucket.Add(-2000*15*time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
+		if w := call(userDetail+"/curve", owner); w.Code != 400 {
+			t.Fatalf("2001 inclusive buckets phase=%s accepted=%d %s", phase, w.Code, w.Body)
+		}
 	}
 	if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"status": "charging", "started_at": liveStart, "ended_at": nil, "charged_kwh": nil, "charged_seconds": nil}).Error; err != nil {
 		t.Fatal(err)
