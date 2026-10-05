@@ -15,6 +15,8 @@ import (
 )
 
 // newRouter 接收 cfg、r、deviceConnections、orders、compensation 与 userStops，注册原接口、指标及健康检查并返回 router；不启动监听，健康处理器按请求 context 检查数据库。
+// cfg 提供服务令牌，r 提供 SQL／ORM；deviceConnections 持有设备连接，orders 提供中央授权，compensation 与 userStops 提供既有停止恢复。
+// 返回未监听的 Gin 引擎，无错误返回；设置全局发布模式，注册时不查询业务存储或发送设备指令。
 func newRouter(cfg config.Gateway, r *resources, deviceConnections *session.Registry, orders control.CentralAuthorizer, compensation control.Compensation, userStops control.UserStopService) *gin.Engine {
 	db, orm := r.DB, r.ORM
 	sink := repo.MySQLSink{DB: orm}

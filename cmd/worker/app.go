@@ -49,6 +49,8 @@ type application struct {
 
 // assemble 以 cfg 和已打开的 r 装配应用，返回应用或客户端配置错误；不执行业务请求或启动循环。
 // 原 internalHTTP 用于查询及同步，jobHTTP 单独注入资金任务客户端，资源关闭仍由 run 管理。
+// cfg 提供中央、网关地址及服务令牌；r 提供三库、事件流 Redis 与两个超时不同的 HTTP 客户端。
+// 成功返回未启动的应用与 nil；任一具名客户端配置失败返回 nil 与原错误，创建空调度处理表与三个固定来源发布器，不写业务数据。
 func assemble(cfg config.Worker, r *resources) (*application, error) {
 	internalHTTP, jobHTTP := r.InternalHTTP, r.JobHTTP
 	central, err := centralclient.NewClient(serviceclient.Client{HTTP: internalHTTP}, cfg.CentralInternalURL, cfg.ServiceToken)

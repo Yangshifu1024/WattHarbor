@@ -9,8 +9,13 @@ import (
 	"time"
 )
 
-type blockedCleaner struct{ started, canceled, release chan struct{} }
+// blockedCleaner 提供可阻塞的清理夹具，通过取消与释放两个阶段验证应用等待责任。
+type blockedCleaner struct {
+	// started,canceled,release started 通知清理已进入，canceled 通知已观察取消，release 由测试关闭后允许任务退出；三个通道由测试持有。
+	started, canceled, release chan struct{}
+}
 
+// CleanupExpired 接收 ctx，通知清理已进入并等待取消，再通知已取消并等待测试 release；返回零数量与 ctx.Err()，不删除文件。
 func (c blockedCleaner) CleanupExpired(ctx context.Context) (int, error) {
 	close(c.started)
 	<-ctx.Done()
@@ -19,6 +24,7 @@ func (c blockedCleaner) CleanupExpired(ctx context.Context) (int, error) {
 	return 0, ctx.Err()
 }
 
+// TestCancellationWaitsForCleanup 使用 t 启动真实应用，确认进程取消传入导出清理且应用等待清理释放闸门后才返回；失败通过 t 报告，测试关闭监听并释放任务。
 func TestCancellationWaitsForCleanup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -57,9 +63,13 @@ func TestCancellationWaitsForCleanup(t *testing.T) {
 	}
 }
 
+// idleCleaner 提供立即成功的空清理夹具，避免绑定失败测试产生文件副作用。
 type idleCleaner struct{}
 
+// CleanupExpired 忽略传入的 context，立即返回零数量与 nil；无文件或后台任务副作用。
 func (idleCleaner) CleanupExpired(context.Context) (int, error) { return 0, nil }
+
+// TestHTTPBindFailureStopsCleanupLoop 使用 t 占用 HTTP 地址，核对绑定错误取消导出清理循环并及时返回非空错误；测试关闭占用监听，无数据库操作。
 func TestHTTPBindFailureStopsCleanupLoop(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -8,13 +8,19 @@ import (
 	"time"
 )
 
+// recordedTask 通过内存记录、固定失败及可选取消验证任务次序，不访问外部依赖。
 type recordedTask struct {
-	name   string
-	calls  *[]string
-	fail   bool
+	// name 当前夹具写入调用记录的名称。
+	name string
+	// calls 测试持有的调用记录切片指针，供同一测试线程追加与断言。
+	calls *[]string
+	// fail 为 true 时在记录与可选取消之后返回固定临时失败。
+	fail bool
+	// cancel 可选的测试取消函数；nil 不取消，非 nil 在任务记录后调用。
 	cancel context.CancelFunc
 }
 
+// Run 忽略传入的 context，向 t.calls 追加名称后调用非 nil 取消函数；fail 为 true 时返回零与固定临时错误，否则返回一与 nil，无外部 IO。
 func (t recordedTask) Run(context.Context) (int, error) {
 	*t.calls = append(*t.calls, t.name)
 	if t.cancel != nil {
@@ -25,17 +31,29 @@ func (t recordedTask) Run(context.Context) (int, error) {
 	}
 	return 1, nil
 }
+
+// DispatchBatch 接收 ctx 并原样交给同一 t.Run，返回其数量与错误；保留记录、可选取消及失败副作用，不另执行任务。
 func (t recordedTask) DispatchBatch(ctx context.Context) (int, error) { return t.Run(ctx) }
-func (t recordedTask) SyncBatch(ctx context.Context) (int, error)     { return t.Run(ctx) }
-func (t recordedTask) PublishBatch(ctx context.Context) (int, error)  { return t.Run(ctx) }
 
-type recordedDispatch struct{ recordedTask }
+// SyncBatch 接收 ctx 并原样交给同一 t.Run，返回其数量与错误；保留记录、可选取消及失败副作用，不另执行任务。
+func (t recordedTask) SyncBatch(ctx context.Context) (int, error) { return t.Run(ctx) }
 
+// PublishBatch 接收 ctx 并原样交给同一 t.Run，返回其数量与错误；保留记录、可选取消及失败副作用，不另执行任务。
+func (t recordedTask) PublishBatch(ctx context.Context) (int, error) { return t.Run(ctx) }
+
+// recordedDispatch 将计数任务夹具适配为只返回错误的资金派发夹具。
+type recordedDispatch struct {
+	// recordedTask 复用记录、失败与可选取消行为的计数任务夹具。
+	recordedTask
+}
+
+// Run 接收 ctx 并传入嵌入的 recordedTask，忽略其数量，返回原错误；保留内存记录与可选取消副作用。
 func (t recordedDispatch) Run(ctx context.Context) error {
 	_, err := t.recordedTask.Run(ctx)
 	return err
 }
 
+// TestSyncOrderAndContinueAfterTaskFailure 使用 t 核对一轮同步的固定任务与发布顺序，首任务失败不阻止后续任务；只记录内存调用，断言失败由 t 报告，无网络或数据库操作。
 func TestSyncOrderAndContinueAfterTaskFailure(t *testing.T) {
 	var calls []string
 	makeTask := func(name string) recordedTask { return recordedTask{name: name, calls: &calls} }
@@ -49,6 +67,7 @@ func TestSyncOrderAndContinueAfterTaskFailure(t *testing.T) {
 	}
 }
 
+// TestFinanceOrderAndCancellationStopsLaterTasks 使用 t 核对自动停机先于计费派发，计费任务取消后不再进入退款任务；只记录内存调用，失败由 t 报告并释放 context。
 func TestFinanceOrderAndCancellationStopsLaterTasks(t *testing.T) {
 	var calls []string
 	ctx, cancel := context.WithCancel(context.Background())
@@ -60,6 +79,7 @@ func TestFinanceOrderAndCancellationStopsLaterTasks(t *testing.T) {
 	}
 }
 
+// TestPollWaitsForInFlightTaskToExit 使用 t 与释放闸门核对取消后 poll 必须等待在途同步回调退出；失败由 t 报告，测试取消 context 并释放回调，不访问存储。
 func TestPollWaitsForInFlightTaskToExit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

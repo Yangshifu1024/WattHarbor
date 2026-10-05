@@ -20,6 +20,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// newRouter 注册当前进程路由、指标与健康端点；cfg 提供服务令牌与支付模式，r 提供已打开存储，channel 提供退款渠道，gateway 提供设备内部调用。
+// 返回未监听的 Gin 引擎，无错误返回；设置全局 Gin 发布模式，仅装配不执行业务请求，健康处理器用请求 context 的两秒子期限检查存储。
 func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)

@@ -877,3 +877,7 @@ make test-integration TEST_MYSQL_URL=...
 5y变异证据：仅隔离副本把网关释放移到中央确认前，.tmp/batch5y-early-release-mutation.log 在独立观察端口idle／NULL而应保留原占用时失败；仅删除release原订单归属条件，.tmp/batch5y-owner-mutation.log 在新占用被提前清空时失败。两个生产文件副本恢复原HEAD后 .tmp/batch5y-end-restored.log 两项通过；实际生产无修改。最初从仓库根以嵌套模块包路径启动变异测试为setup failure、未执行数据库操作，改到副本目录后取得上述真实失败，不以编译失败代替变异检出。新测试先核对实际持久状态，再核对HTTP顺序，中文契约清单无缺项；全仓退出验收继续。
 
 5y完整退出：精确暂存 .tmp/batch5y-validation 的 .tmp/batch5y-snapshot-{check,integration}.log 全通过，完整三库／Redis保持默认包并行；1240份原blob中728份Go／模块与最终实际源码一致，.tmp/batch5y-snapshot-source.log及本地Markdown链接核对通过。只有新增integration测试和本记录，没有生产／依赖／路径／公开接口／前端改动；原cmd构建及开发五服务就绪仍由5x／5w最近证据支持，不重复无变动的开发业务流程。端口归属保护两变异已恢复，新实际跨服务回归补强原纯能力测试；不宣称实机、真实worker重启或资金执行。后续补齐最终复核发现的运行时／客户端中文契约与配置消费者，再完成DEP评估和最终报告；G／WK组合仍未关闭。
+
+批次5z（运行时中文契约收尾）：五服务cmd入口、装配、资源及路由，公共HTTP排空、worker循环与gateway listener及原测试补齐中文说明，34文件实际变化、36文件完整核对。输入／返回错误、SQL池与ORM共用、初始化失败清理、任务退出后Close、资金HTTP池先关、HTTP宽限后取消仍等待、三循环次序和实例状态、TCP先全绑定／关闭及等待准确记录；Accept故障不会自行取消ctx，处理器仍须能随连接关闭返回。不改变任何语义token、AST、标签、导入、常量、控制流或测试断言，无行为修复混入。
+
+5z证据：.tmp/batch5z-source-comparison.log完整36文件AST与非注释token对照通过，中文函数／字段／接口清单 .tmp/batch5z-comment-inventory.log 无缺项；.tmp/batch5z-overlay-test.log 以准备副本覆盖运行五cmd及HTTP、worker runtime、gateway listener共8默认包全部通过。首次overlay参数拆分导致命令失败独立保留 .tmp/batch5z-overlay-command-failure.log，修正后才计为通过。复制前原HEAD仍与备份一致，工作区与已经完整核对／测试副本逐字节一致，.tmp/batch5z-working-copy-proof.log保存；gofmt无差异。最终暂存 .tmp/batch5z-validation 的1240份原blob中728份Go／模块与已核对源码一致，.tmp/batch5z-snapshot-source.log及本地Markdown链接核对通过。按8.1纯注释不重复无改变的资金／真库／开发业务流程，最近完整真库为5y；客户端及其它迁移测试说明另批收尾，组合组未关闭。

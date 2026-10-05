@@ -10,21 +10,34 @@ import (
 	workerruntime "github.com/ChargePilot2026/charge-pilot/internal/worker/runtime"
 )
 
+// idleBatch 提供立即成功的空批任务，供 worker 生命周期检查。
 type idleBatch struct{}
 
-func (idleBatch) Run(context.Context) (int, error)           { return 0, nil }
-func (idleBatch) DispatchBatch(context.Context) (int, error) { return 0, nil }
-func (idleBatch) SyncBatch(context.Context) (int, error)     { return 0, nil }
+// Run 忽略传入的 context，立即返回零数量与 nil，无任务或存储副作用。
+func (idleBatch) Run(context.Context) (int, error) { return 0, nil }
 
+// DispatchBatch 忽略传入的 context，立即返回零数量与 nil，无任务或存储副作用。
+func (idleBatch) DispatchBatch(context.Context) (int, error) { return 0, nil }
+
+// SyncBatch 忽略传入的 context，立即返回零数量与 nil，无任务或存储副作用。
+func (idleBatch) SyncBatch(context.Context) (int, error) { return 0, nil }
+
+// idleDispatch 提供立即成功的空资金派发任务，不执行资金写入。
 type idleDispatch struct{}
 
+// Run 忽略传入的 context，立即返回 nil，无资金、调度或存储副作用。
 func (idleDispatch) Run(context.Context) error { return nil }
 
+// idleScheduler 提供立即成功的空调度任务，不访问调度表。
 type idleScheduler struct{}
 
+// CleanupHistory 忽略传入的 context，立即返回 nil，无资金、调度或存储副作用。
 func (idleScheduler) CleanupHistory(context.Context) error { return nil }
-func (idleScheduler) RunDue(context.Context) error         { return nil }
 
+// RunDue 忽略传入的 context，立即返回 nil，无资金、调度或存储副作用。
+func (idleScheduler) RunDue(context.Context) error { return nil }
+
+// TestHTTPBindFailureStopsAllWorkerLoops 使用 t 占用 HTTP 地址，确认应用返回绑定错误且等待三个 worker 循环退出；测试关闭监听，注入空任务，不访问存储。
 func TestHTTPBindFailureStopsAllWorkerLoops(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

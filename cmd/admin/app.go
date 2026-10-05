@@ -19,6 +19,7 @@ import (
 )
 
 // run 在 ctx 下加载配置、打开资源并运行后台进程，返回初始化、执行及释放错误；退出前等待受管理任务。
+// ctx 为进程取消来源，无额外入参；初始化失败直接返回原错误，运行后 err 合并连接关闭错误。
 func run(ctx context.Context) (err error) {
 	cfg, err := config.LoadAdmin()
 	if err != nil {
@@ -44,6 +45,8 @@ type application struct {
 
 // assemble 在 ctx 下按 cfg 及 r 装配鉴权、内部客户端、路由和清理，返回应用或装配错误。
 // bootstrap 沿用原账号初始化规则，客户端不启动后台任务，资源释放由 run 管理。
+// cfg 提供 JWT、后台初始化账号、网关地址及导出目录，r 提供同池 SQL／ORM、缓存与内部 HTTP 客户端。
+// 成功返回未启动的应用与 nil，JWT、账号初始化或客户端配置失败返回 nil 与原错误；初始化账号可能写入数据库。
 func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application, error) {
 	jwt, err := auth.NewJWT(cfg.JWTSecret)
 	if err != nil {

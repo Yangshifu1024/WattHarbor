@@ -22,9 +22,11 @@ type deniedOpsRedisHook struct {
 }
 
 // DialHook 保留客户端拨号能力；本验收只允许 ProcessHook 在拨号前阻断。
+// next 为客户端原拨号回调，返回同一回调且不自行拨号，不改变其 context 或错误。
 func (*deniedOpsRedisHook) DialHook(next redis.DialHook) redis.DialHook { return next }
 
 // ProcessHook 记录真实命令并返回固定错误，不访问外部网络。
+// 忽略传入的原命令处理回调；返回的处理器忽略 context 与命令内容，增加 h.calls 后返回固定错误，不调用后续处理器。
 func (h *deniedOpsRedisHook) ProcessHook(redis.ProcessHook) redis.ProcessHook {
 	return func(context.Context, redis.Cmder) error {
 		h.calls.Add(1)
@@ -33,6 +35,7 @@ func (h *deniedOpsRedisHook) ProcessHook(redis.ProcessHook) redis.ProcessHook {
 }
 
 // ProcessPipelineHook 同样阻断并统计流水线，不能通过换入口绕过零命令断言。
+// 忽略传入的原流水线回调；返回的处理器忽略 context，按 commands 长度增加 h.calls 并返回固定错误，不执行原回调。
 func (h *deniedOpsRedisHook) ProcessPipelineHook(redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(_ context.Context, commands []redis.Cmder) error {
 		h.calls.Add(int64(len(commands)))

@@ -48,6 +48,8 @@ type application struct {
 }
 
 // assemble 接收 cfg 与已打开 r，注入中央客户端、同一命令 repo 和连接注册表，返回应用或配置错误；仅装配，不启动监听或循环。
+// cfg 提供中央地址、服务令牌、HTTP／设备监听地址、连接上限与协议调试开关；r 提供同池 SQL／ORM 与五秒内部 HTTP 客户端。
+// 成功返回未启动的应用与 nil，中央客户端配置失败返回 nil 与原错误；创建注册表、sink 与路由并记录启动配置，不写设备状态。
 func assemble(cfg config.Gateway, r *resources) (*application, error) {
 	central, err := centralclient.NewClient(serviceclient.Client{HTTP: r.InternalHTTP}, cfg.CentralInternalURL, cfg.ServiceToken)
 	if err != nil {

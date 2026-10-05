@@ -23,6 +23,7 @@ type resources struct {
 
 // openResources 在 ctx 下按 cfg 初始化数据库、缓存及内部 HTTP 池，返回资源或初始化错误。
 // 任一步失败会释放此前打开的资源，不留下启动失败后的连接。
+// cfg 提供数据库与缓存 URL；ctx 传入连接可达性检查，成功后所有权交给返回的资源，失败时返回 nil 与合并清理错误。
 func openResources(ctx context.Context, cfg config.Admin) (_ *resources, err error) {
 	r := &resources{}
 	defer func() {

@@ -36,6 +36,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// newRouter 注册当前进程路由、指标与健康端点；cfg 提供导出目录等配置，r 提供已打开存储，authAPI 提供后台身份能力，gateway 提供网关查询与控制。
+// 返回未监听的 Gin 引擎，无错误返回；设置全局 Gin 发布模式，仅装配不执行业务请求，健康处理器用请求 context 的两秒子期限检查存储。
 func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)

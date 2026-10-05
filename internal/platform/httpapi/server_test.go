@@ -11,18 +11,24 @@ import (
 	"time"
 )
 
+// observedListener 包装真实 TCP 监听并仅通知一次关闭事件，供 HTTP 停机顺序验证。
 type observedListener struct {
+	// net.Listener 被包装的真实 TCP 监听，关闭结果保持原样。
 	net.Listener
+	// closed 首次关闭时被关闭的通知通道，由观察监听负责关闭。
 	closed chan struct{}
-	once   sync.Once
+	// once 保证关闭通知仅发送一次，底层 Close 仍按每次调用执行。
+	once sync.Once
 }
 
+// Close 无入参，关闭被包装监听并返回原关闭错误；无论该错误是否为空，仅首次调用关闭 l.closed 通知通道。
 func (l *observedListener) Close() error {
 	err := l.Listener.Close()
 	l.once.Do(func() { close(l.closed) })
 	return err
 }
 
+// waitSignal 接收测试句柄 t 与事件通道 ch，最多等待三秒收到事件；无返回值，超时由 t.Fatal 终止当前测试，不关闭 ch。
 func waitSignal(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
 	select {
@@ -32,6 +38,7 @@ func waitSignal(t *testing.T, ch <-chan struct{}) {
 	}
 }
 
+// testListener 接收测试句柄 t，在回环随机端口打开 TCP 监听并返回关闭可观测的包装；绑定错误由 t.Fatal 终止，监听关闭登记到 t.Cleanup。
 func testListener(t *testing.T) *observedListener {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -42,6 +49,7 @@ func testListener(t *testing.T) *observedListener {
 	return &observedListener{Listener: l, closed: make(chan struct{})}
 }
 
+// TestServeDrainsRequestsBeforeReturning 使用 t 启动真实本地 HTTP 请求，核对取消进程时请求 context 保持有效且 serve 等待处理器完成；失败通过 t 报告，闸门与监听在退出时释放。
 func TestServeDrainsRequestsBeforeReturning(t *testing.T) {
 	l := testListener(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -102,6 +110,7 @@ func TestServeDrainsRequestsBeforeReturning(t *testing.T) {
 	}
 }
 
+// TestServeTimeoutCancelsAndWaitsForHandler 使用 t 核对宽限超时会取消真实请求，但 serve 仍等待已取消处理器退出并返回截止错误；测试释放闸门、监听及客户端，无数据库操作。
 func TestServeTimeoutCancelsAndWaitsForHandler(t *testing.T) {
 	l := testListener(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,6 +156,7 @@ func TestServeTimeoutCancelsAndWaitsForHandler(t *testing.T) {
 	waitSignal(t, requestDone)
 }
 
+// TestServeBindFailureReturnsWithoutWaitingForCancellation 使用 t 占用监听地址，核对 Serve 立即返回绑定错误，不等待未取消的进程 context；测试清理占用监听。
 func TestServeBindFailureReturnsWithoutWaitingForCancellation(t *testing.T) {
 	l := testListener(t)
 	if err := Serve(context.Background(), &http.Server{Addr: l.Addr().String()}, time.Second); err == nil {

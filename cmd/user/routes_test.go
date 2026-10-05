@@ -12,6 +12,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 )
 
+// TestUserAssemblyRegistersDocumentedRoutes 使用 t 对照模拟模式 C 端装配与 OpenAPI 的方法／路径，并拒绝其他业务族；文件读取或比对失败由 t 报告，不执行支付或存储操作。
 func TestUserAssemblyRegistersDocumentedRoutes(t *testing.T) {
 	router := newRouter(config.User{LoginMode: "development", PaymentMode: "simulation"}, &resources{}, nil, identity.MiniProgram{}, payment.PaymentChannel{Prepay: payment.Simulator{}}, nil)
 	actual := map[string]bool{}
@@ -26,6 +27,7 @@ func TestUserAssemblyRegistersDocumentedRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc struct {
+		// Paths OpenAPI 路径到方法声明的映射，仅用于注册清单比对，不执行接口。
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {

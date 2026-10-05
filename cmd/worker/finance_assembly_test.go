@@ -20,6 +20,8 @@ type workerJobTransport struct {
 }
 
 // RoundTrip 核对中央地址与身份并返回端点真实成功形状，未知路径失败；不重试或创建业务任务。
+// r 为客户端实际发出的请求；成功返回 200 与对应 JSON 信封，地址、身份或路径不匹配返回 nil 与固定错误。
+// 已通过地址与身份检查的路径会追加到 s.paths；响应体由调用客户端关闭。
 func (s *workerJobTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.URL.Host != "central.invalid" || r.Header.Get("X-Service-Token") != s.token {
 		return nil, errors.New("assembled finance client used wrong address or identity")
@@ -45,6 +47,7 @@ type workerUnexpectedTransport struct {
 }
 
 // RoundTrip 记录调用后拒绝，不访问外部网络。
+// 忽略传入的请求；返回 nil 响应与固定错误，并增加 s.calls，不启动任务。
 func (s *workerUnexpectedTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	s.calls++
 	return nil, errors.New("finance task used internal query transport")
