@@ -9,6 +9,9 @@ Push-Location $root
 try {
   docker compose -f compose.test.yaml up -d --wait mysql redis
   if ($LASTEXITCODE -ne 0) { throw 'Unable to start isolated integration MySQL and Redis.' }
+  # 既存测试卷不会再次执行 entrypoint SQL，故迁移前补幂等的最小只读锁观测授权。
+  Get-Content -Raw -Encoding utf8 docker/mysql/test-lock-observer.sql | docker compose -f compose.test.yaml exec -T mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=TCP -h 127.0.0.1 -uroot'
+  if ($LASTEXITCODE -ne 0) { throw 'Isolated integration lock observation grant failed.' }
   $env:TEST_MYSQL_URL = 'mysql://chargepilot:chargepilot_dev@127.0.0.1:3307/central_db'
   $env:TEST_REDIS_URL = 'redis://127.0.0.1:6381/0'
   $env:DATABASE_URL_CENTRAL = $env:TEST_MYSQL_URL

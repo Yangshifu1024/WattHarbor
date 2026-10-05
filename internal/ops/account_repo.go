@@ -55,7 +55,7 @@ func (s AccountRepo) Bootstrap(ctx context.Context, username, password string) e
 		var role struct {
 			ID uint64 /* 初始化角色的原主键 */
 		}
-		if err := tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = 'customer_admin' AND deleted_at IS NULL").Take(&role).Error; err != nil {
+		if err := tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).Where("active_code = ?", "customer_admin").Take(&role).Error; err != nil {
 			return err
 		}
 		var count int64

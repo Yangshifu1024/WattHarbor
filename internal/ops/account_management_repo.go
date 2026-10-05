@@ -48,7 +48,7 @@ func (s AccountRepo) ListAdminUsers(ctx context.Context, q persist.PageQuery) (p
 		query = query.Where("u.status = ?", q.Status)
 	}
 	if q.Keyword != "" {
-		query = query.Where("u.username LIKE ? OR u.display_name LIKE ?", dbutil.LikePattern(q.Keyword), dbutil.LikePattern(q.Keyword))
+		query = query.Where("u.username LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!'", dbutil.LikePattern(q.Keyword), dbutil.LikePattern(q.Keyword))
 	}
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
 		return out, err
@@ -67,7 +67,7 @@ func (s AccountRepo) LockCustomerAdminRole(tx *gorm.DB) error {
 		ID uint64 /* 内置角色串行点主键 */
 	}
 	return tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("code = ? AND deleted_at IS NULL", "customer_admin").Take(&row).Error
+		Where("active_code = ?", "customer_admin").Take(&row).Error
 }
 
 // CountOtherActiveAdminsInTx 在ctx与tx下当前统计除id外有效客户管理员，返回数量或存储错误，不修改。

@@ -84,6 +84,10 @@ jobs:
             -e MYSQL_PWD=ci-root-pw \
             -i mysql:8.4 \
             mysql -h 127.0.0.1 -uroot --protocol=TCP < docker/mysql/init-databases.sql
+          docker run --rm --network host \
+            -e MYSQL_PWD=ci-root-pw \
+            -i mysql:8.4 \
+            mysql -h 127.0.0.1 -uroot --protocol=TCP < docker/mysql/test-lock-observer.sql
       - name: Apply migrations
         run: go run ./cmd/migrate --schema all
       - name: Real-database integration tests
