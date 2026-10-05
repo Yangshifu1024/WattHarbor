@@ -2,9 +2,9 @@
 // 场景结束后直接查询测试库，对持久事实逐项断言。场景矩阵与逐表断言说明见
 // docs/operations.md「隔离栈全链路验收」。
 //
-// 前置：compose.test.yaml 已 up --wait 并完成三库迁移；node scripts/dev/prepare.mjs
-// 已执行；五个进程由同目录 up.sh 启动；模拟器已按场景以 -scenario <x> 接入 9100
-// 端口（控制口 9190）。场景与模拟器场景的对应关系：
+// 前置：make e2e 已启动容器化五服务（compose.test.yaml + compose.e2e.yaml 合并
+// 编排，服务在容器内编译运行）；模拟器已按场景以 -scenario <x> 接入宿主机
+// 9100 端口（控制口 9190）。场景与模拟器场景的对应关系：
 //   s3 → reject-start        s1 → by-time            s2 → stop-on-command
 //   s5 → stop-on-command     s7 → stop-on-command    s4 → stop-on-command（先执行 budget）
 //   s8 → reconnect
@@ -14,8 +14,7 @@
 // 断言统一取库中最新一笔订单，因此不得并行运行多个场景；每个场景自建订单、
 // 自行轮询闭环、输出一行 E2E-RESULT JSON，任何断言失败以非零码退出。
 // 模拟支付与模拟器结果不构成实机、真实微信商户或监管投递的验收。
-import { execFileSync, spawn } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\\$/, '');
@@ -24,17 +23,8 @@ const ADMIN = 'http://127.0.0.1:8081/api/v1';
 const SIM = 'http://127.0.0.1:9190';
 // prepare.mjs 导入的 1 号模拟器设备的 1 号端口业务编码。
 const PORT_CODE = '5348240514082652-1';
-// 与 up.sh 中 worker 注入完全一致；s7 重启 worker 时复用。
-const WORKER_ENV = {
-  DATABASE_URL_CENTRAL: 'mysql://chargepilot:chargepilot_dev@127.0.0.1:3307/central_db',
-  DATABASE_URL_WORKER: 'mysql://chargepilot:chargepilot_dev@127.0.0.1:3307/worker_db',
-  DATABASE_URL_GATEWAY: 'mysql://chargepilot:chargepilot_dev@127.0.0.1:3307/gateway_db',
-  REDIS_STREAM_URL: 'redis://127.0.0.1:6381/1',
-  SERVICE_TOKEN: 'e2e-internal-service-token-0123456789abcdef',
-  WORKER_HTTP_ADDR: ':8085',
-  CENTRAL_INTERNAL_URL: 'http://127.0.0.1:8082',
-  GATEWAY_INTERNAL_URL: 'http://127.0.0.1:8083',
-};
+// 与 make e2e 相同的合并编排；s7 对 worker 容器执行 SIGKILL 并重新拉起。
+const COMPOSE = ['compose', '-f', 'compose.test.yaml', '-f', 'compose.e2e.yaml'];
 
 // 大整数身份按原 JSON 文本保留为 BigInt，再以 rawJSON 写回请求，不经 Number。
 const readJSON = text => JSON.parse(text, (_k, v, ctx) =>
@@ -276,7 +266,8 @@ async function s5() {
   return verdict('S5 掉电零功率自动停机', done, fail, { cutoff, fee, pay, refunds });
 }
 
-// S7 worker 中断恢复：SIGKILL 在途 worker，滞留事实由重启补齐。
+// S7 worker 中断恢复：SIGKILL 在途 worker 容器，滞留事实由重启补齐。
+// 容器编排下以 docker kill 的 KILL 信号终止 worker，与进程级 SIGKILL 等价；
 // 断言两点：缺席期间中央保持 charging 且无结束回执（滞留属实），重启后
 // 结束回执、事件与费用在同一闭环内补齐。超短会话没有心跳采样，分段为空
 // 属预期，不据此断言分段数。
@@ -286,7 +277,7 @@ async function s7() {
   await startCharge(token, 'amount');
   const o = await waitOrder(x => x?.status === 'charging', '订单转 charging', 90000);
   const id = o.id;
-  execFileSync('taskkill', ['/F', '/IM', 'worker.exe'], { stdio: 'pipe' });
+  execFileSync('docker', [...COMPOSE, 'kill', '--signal=KILL', 'worker'], { cwd: ROOT, stdio: 'pipe' });
   await sleep(3000);
   await call(USER, 'POST', '/user/charge/stop', { order_no: o.order_no }, token);
   // worker 缺席：给同步链路 12 秒，中央必须仍然停在 charging 且无结束回执。
@@ -295,8 +286,7 @@ async function s7() {
   const stuckReceipt = await orderEndReceipt(id);
   assert(stuck.status === 'charging', `worker 缺席期间订单应保持 charging，得到 ${stuck.status}`, fail);
   assert(stuckReceipt.length === 0, 'worker 缺席期间不应出现结束回执', fail);
-  const log = openSync(`${ROOT}/.tmp/e2e-logs/worker-restart.log`, 'a');
-  spawn(`${ROOT}/bin/worker.exe`, { env: WORKER_ENV, stdio: ['ignore', log, log], detached: true }).unref();
+  execFileSync('docker', [...COMPOSE, 'up', '-d', '--wait', 'worker'], { cwd: ROOT, stdio: 'pipe' });
   const done = await waitOrder(x => x?.status === 'completed', '重启后订单转 completed', 120000);
   await waitJobDone(id);
   const events = (await orderEvents(id)).map(r => r[0]);

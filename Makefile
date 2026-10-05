@@ -1,4 +1,4 @@
-.PHONY: fmt lint test test-integration build build-all check clean
+.PHONY: fmt lint test test-integration build build-all check clean e2e e2e-down
 .NOTPARALLEL: check
 
 # cmd 下的服务名，编译产物统一落到 bin/
@@ -48,3 +48,25 @@ clean:
 	node -e "require('fs').rmSync('bin',{recursive:true,force:true})"
 
 check: fmt lint test
+
+# 端到端验收：五个服务以 docker/Dockerfile 在容器内编译并运行，不在本机编译；
+# 复用 compose.test.yaml 的 3307 测试三库与 6381 Redis，场景与断言见
+# docs/operations.md「隔离栈全链路验收」。central 8082 不映射宿主机端口。
+# 第一步构建并启动（migrate 容器执行完迁移即退出），第二步等五个服务全部
+# running 后由宿主机轮询 /health/ready，避免 distroless 无 shell 无法做
+# 容器内健康检查导致的就绪竞态。模拟器与场景驱动仍按 runbook 在宿主机执行。
+E2E_COMPOSE = -f compose.test.yaml -f compose.e2e.yaml
+
+e2e:
+	@node -e "require('fs').mkdirSync('.tmp/e2e',{recursive:true});require('fs').mkdirSync('.tmp/e2e-logs',{recursive:true})"
+	docker compose $(E2E_COMPOSE) up -d --build
+	docker compose $(E2E_COMPOSE) up -d --wait central gateway user admin worker
+	@node -e "const ports=[8080,8081,8083,8085];const t0=Date.now();(async()=>{for(;;){try{const ok=(await Promise.all(ports.map(p=>fetch('http://127.0.0.1:'+p+'/health/ready').then(r=>r.ok)))).every(Boolean);if(ok){console.log('e2e services ready');return}}catch{}if(Date.now()-t0>60000)throw new Error('e2e 服务未就绪');await new Promise(r=>setTimeout(r,1000))}})().catch(e=>{console.error(e.message);process.exit(1)})"
+	node scripts/dev/prepare.mjs
+	@echo
+	@echo "端到端栈已就绪。模拟器（独立终端）：scripts/dev/simulator.ps1 -Number 1"
+	@echo "场景驱动：node scripts/dev/e2e/scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>"
+	@echo "收尾：make e2e-down"
+
+e2e-down:
+	docker compose $(E2E_COMPOSE) down
