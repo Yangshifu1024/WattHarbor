@@ -57,6 +57,7 @@ func TestSessionRepoAtomicRotationAndPreviousRevocation(t *testing.T) {
 	if err != nil || before <= 0 {
 		t.Fatalf("initial TTL=%v %v", before, err)
 	}
+	// result 传递真实 Redis 原子轮换返回的用户、SID、新令牌与错误，用于判定唯一获胜者；它不代表 SQL 事务结果。
 	type result struct {
 		user       User   /* 原用户身份 */
 		sid, token string /* 原SID及新令牌 */

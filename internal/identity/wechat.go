@@ -12,6 +12,7 @@ type WeChatIdentity struct {
 	OpenID, UnionID string /* 原小程序身份及可选开放平台身份 */
 }
 
+// CodeExchanger 定义登录用例所需的代码换身份能力，调用方管理请求取消；实现只返回渠道身份，不创建用户或会话。
 type CodeExchanger interface {
 	// Exchange 在请求 context 下交换一次代码，返回原微信身份或渠道／响应错误，不写用户。
 	Exchange(context.Context, string) (WeChatIdentity, error)

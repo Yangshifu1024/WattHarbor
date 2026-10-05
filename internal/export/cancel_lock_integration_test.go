@@ -54,6 +54,7 @@ func TestExportCancellationKeepsLockUntilCallbackExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.DB.Callback().Query().Remove(key)
+	// outcome 传递取消与竞争导出 Create 的同步回执及错误；回执不单独证明文件可下载，最终任务与产物另行核对。
 	type outcome struct {
 		result CreateResult // 原同步回执
 		err    error        // 取消或事务错误

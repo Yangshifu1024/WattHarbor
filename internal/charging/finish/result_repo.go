@@ -20,6 +20,7 @@ import (
 
 var ErrEndResultConflict = errors.New("charge end result conflicts with order state")
 
+// EndResult 携带原订单、启动及停止命令身份和结束计量，供中央用例核对结束回执；它本身不证明回执已落库或计费已完成。
 type EndResult struct {
 	OrderNo        string         `json:"order_no"`         // 原业务订单号
 	ChargeOrderID  uint64         `json:"charge_order_id"`  // 原订单主键，必须仍在充电
@@ -31,6 +32,7 @@ type EndResult struct {
 	Meter          rules.EndMeter `json:"meter"`            // 结束计量证据；时长秒、电量 Wh、结束时刻 UTC
 }
 
+// EndResultService 在中央事务中登记结束凭据、推进订单并排入计费与 Outbox；网关占用释放和后续计费由各自流程完成。
 type EndResultService struct {
 	DB *gorm.DB /* central 结束回执事务连接，生命周期由进程管理 */
 }

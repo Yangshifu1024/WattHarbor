@@ -171,6 +171,7 @@ func TestConcurrentOutboxClaimReturnsDisjointRows(t *testing.T) {
 	}
 	defer tx1.Rollback()
 
+	// claim 传递仍在调用方事务中的 Outbox 锁读身份与错误，用于比对 SKIP LOCKED 结果；返回身份不表示事务提交或事件已发布。
 	type claim struct {
 		ids []string // 本事务实际领取的原事件身份。
 		err error    // 原仓储查询或锁错误。

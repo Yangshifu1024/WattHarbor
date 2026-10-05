@@ -18,16 +18,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// scanSession 是支付路由测试的固定有效会话能力，用于隔离 Redis 会话读取，不创建真实会话。
 type scanSession struct{}
 
 // Exists 忽略输入 context 和 SID，返回 true、nil，以隔离支付报价测试会话依赖；不访问 Redis。
 func (scanSession) Exists(context.Context, string) (bool, error) { return true, nil }
 
+// scanUser 是支付路由测试的固定有效用户能力，用于隔离账号状态读取，不查询真实用户。
 type scanUser struct{}
 
 // Active 忽略输入 context 和用户编号，返回 true、nil，以隔离支付报价测试用户依赖；不访问数据库。
 func (scanUser) Active(context.Context, uint64) (bool, error) { return true, nil }
 
+// scanOperation 以字符串指定设备运行状态或读取错误，用于扫码发现的准入映射；不替代网关返回的物理端口状态。
 type scanOperation string
 
 // DeviceStatus 忽略 context 和设备编码，返回 s 指定的运行状态或 error 对应读取错误；不访问数据库，仅验证设备发现的准入映射。

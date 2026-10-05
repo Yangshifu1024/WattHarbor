@@ -101,6 +101,7 @@ func activityGrantedCounts(db *gorm.DB, couponIDs []uint64) (map[uint64]int64, e
 	if len(couponIDs) == 0 {
 		return counts, nil
 	}
+	// row 是按优惠券模板聚合的活动及邀请奖励发放份数，只回填后台规则统计；多条规则共享同一模板计数。
 	type row struct {
 		CouponID uint64 `gorm:"column:coupon_id"` // 原模板主键
 		Total    int64  `gorm:"column:total"`     // 原聚合份数

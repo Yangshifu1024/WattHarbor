@@ -479,6 +479,7 @@ func TestManagementConcurrentRevocationBeforeAssignment(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("first root lock not reached")
 	}
+	// result 传递并发账号创建用例返回的主键与权限错误，用于核对角色撤权后的拒绝；账号是否落库另查真实表。
 	type result struct {
 		id  uint64 // 并发创建返回的真实账号主键
 		err error  // 创建或当前权限准入错误

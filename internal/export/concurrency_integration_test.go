@@ -88,6 +88,7 @@ func TestExportConcurrentClaimAndOldSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.DB.Callback().Query().Remove(key)
+	// outcome 传递同一导出申请两次 Create 的同步回执及错误，用于比较重放结果；任务提交与审计数量另查真实表。
 	type outcome struct {
 		result CreateResult // 原同步回执
 		err    error        // 事务或准入错误

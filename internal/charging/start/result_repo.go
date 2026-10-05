@@ -24,6 +24,7 @@ import (
 
 var ErrStartResultConflict = errors.New("charge start result conflicts with order state")
 
+// StartResult 携带原启动命令及订单的设备回执事实，供中央用例核对成功或拒绝结果；不创建新的命令身份。
 type StartResult struct {
 	CommandID     string    `json:"command_id"`      // 原启动命令幂等身份
 	ChargeOrderID uint64    `json:"charge_order_id"` // 原已付订单主键
@@ -36,6 +37,7 @@ type StartResult struct {
 	OccurredAt    time.Time `json:"occurred_at"`     // 回执发生时刻，入库规范为 UTC 毫秒
 }
 
+// StartResultService 在中央事务中登记启动回执并推进订单或退款状态；渠道退款登记不表示款项已经到账。
 type StartResultService struct {
 	DB *gorm.DB /* central 回执事务连接，生命周期由进程管理 */
 }

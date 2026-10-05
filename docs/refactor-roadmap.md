@@ -366,11 +366,11 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 目标：ExportService.Create／Generate／GetDownload／CleanupExpired、FormatWriter、ExportRepo；HTTP 只流式输出被授权的文件。清理循环继续由 admin 受管理运行。
 
-- [ ] E-01：迁入资源选择、范围快照、行数限制、生成、成功／失败推进与清理；数据源使用明确只读 repo，避免复制业务写入。
-- [ ] E-01：首批保持当前同步执行／受管理生命周期，不添加脱离请求 context 的后台 goroutine，也不默认把导出搬给 worker。
-- [ ] E-01：下载用例复查当前权限、申请人、范围与有效期；文件路径由可信目录与任务编号推导，不信任库中任意路径。
+- [x] E-01：迁入资源选择、范围快照、行数限制、生成、成功／失败推进与清理；数据源使用明确只读 repo，避免复制业务写入。
+- [x] E-01：首批保持当前同步执行／受管理生命周期，不添加脱离请求 context 的后台 goroutine，也不默认把导出搬给 worker。
+- [x] E-01：下载用例复查当前权限、申请人、范围与有效期；文件路径由可信目录与任务编号推导，不信任库中任意路径。
 - [x] E-01：迁入 CSV、XLSX 格式实现，保留转义、中文、缺失字段表达与 XLSX 流式写入；资源清单、格式校验、MIME、文件扩展名和 OpenAPI 保持一致。
-- [ ] N-export：任务和清理数据访问改 repo；Cleaner 的实现也回 export，不由 HTTP 实现业务清理。
+- [x] N-export：任务和清理数据访问改 repo；Cleaner 的实现也回 export，不由 HTTP 实现业务清理。
 
 验收：多取一行判超限并失败、文件 IO 失败／取消后的任务状态、24 小时下载窗口、重复清理和文件已不存在、路径越界拒绝、权限撤销后下载拒绝；CSV／XLSX 格式回归通过，PDF 与未知格式请求仍被拒绝，历史 PDF 下载仍返回格式不可用。历史任务及文件的保留／清理按现有生命周期执行，不借重构修改现有库枚举或删除历史数据。
 
@@ -515,18 +515,18 @@ make test-integration TEST_MYSQL_URL=...
 | 任务 | 状态 | 完成证据／剩余边界 |
 |---|---|---|
 | P-01／P-02 | 完成 | AGENTS 失效文档引用已修正；依当前 SQL、路由、锁顺序核对基线。管理员真库测试隔离自身账号，保留 bootstrap 管理员及真实角色锁 |
-| C-01／C-02／C-03／N-charging | 完成 | cutoff 恢复、首写保留及卡→订单锁归属已实现；gateway 实际取证到判定覆盖 10080 行分页边界；charging 持久化文件改为 repo。详细验证见 charging-review |
+| C-01／C-02／C-03／N-charging | 进行中 | cutoff 恢复、首写保留及卡→订单锁归属已实现；gateway 实际取证到判定覆盖 10080 行分页边界；charging 持久化文件改为 repo。详细验证见 charging-review；最终核验发现启动／结束仍直接锁写订单状态、订单事件及ops Outbox；所属InTx职责需继续收齐，不以原完整事务测试代替归属完成。 |
 | S-01／S-02／N-settlement | 完成 | 计费、缺账单恢复、人工退款／开票／计量审核入口及 repo 归位；审计回滚、首签撤权、并发一单一票及注册后台审核通过。两连接旧 RR 验证原申请、首签、费用与成功回执当前读；全仓及独立暂存快照 make check／integration／cmd 构建通过 |
 | F-01／PAY-01／PAY-02／N-payment | 完成 | checkout／回调及归属注入完成，支付模型与渠道中文契约已核对；注册路由覆盖原号恢复、严格输入、付款人／商户／应用／金额／交易号冲突；完整回调取消回滚通过。全仓及独立暂存快照验收通过，tidy 无差异 |
 | W-01／N-wallet | 完成 | 充值／退款／风险入口及 repo 归位；11 笔申请固定 5 次 SQL；两连接验证原请求重放、频次、来源额度、待付行锁隔离、审核等锁后新到账及原成功重放；流水余额使用当前资金事实，取消与审计故障整体回滚；全仓及快照验收通过 |
 | D-01 | 完成 | 导入、站点、设备运营及厂商编排已归 device，普通归属／能力和站点锁由所属 repo 提供；真实注册后台及 gateway 覆盖范围、原号重放、旧版本、未知值、提交后恢复及审计。两连接验证首次申请唯一键及反向清单统一锁序，变异稳定失败并恢复；工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | D-02／N-device | 完成 | 工单提交、查询和流转归 FaultService，状态／事件／审计同事务，后台范围一致及实时处理人准入已定向验证；告警同步与确认已归所属服务并验收；用户站点组合／公告所属读取及最后device repo已归位；精确快照全仓默认检查、完整三库、全部入口构建与tidy通过，开发原站点读取保持原空值与设备事实 |
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
-| CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
+| CA-01／N-card | 进行中 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过；最终核验仍有纯规则测试card_store_test.go旧文件名，N-card匹配文件改名待收尾。 |
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
 | M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
-| OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
+| OP-01／N-ops | 进行中 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持；最终核验发现账号关键词LikePattern的!转义缺SQL ESCAPE，实际列表仍需独立真库回归与修复。 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面、具名客户端与N-gateway／N-worker命名已验收；worker完整repo和运维准入已验收，查询与范围归所属服务、认证单次响应保持；剩余gateway完整repo操作与运行时收尾继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
@@ -899,3 +899,5 @@ make test-integration TEST_MYSQL_URL=...
 批次5ah（TCP受管理取消任务退出修复，独立行为批次）：只在DC589 ServeConn增加watcherDone通知，原done defer在同位置登记并于close(done)后等待watcher退出；原ctx取消select、conn.Close、设备注册／帧解析／事件持久化确认／会话审计和later defer次序保持。返回前等待在途Close，不要求正常首帧错误先取消ctx，不伪造强制退出期限。eacadd1原完整生产AST只允许三项新增等待操作，.tmp/batch5ah-source-comparison.log证明其它分支／协议／身份／错误／日志／IO未变。真实net.Pipe＋Close受控闸门和synctest确定原版本提前返回，.tmp/batch5ah-baseline-failure.log保留；只删除join变异同断言失败 .tmp/batch5ah-no-join-mutation.log，修复两项及全dc589包通过 .tmp/batch5ah-{fixed-targeted,package-restored}.log。最初peer过早关闭的无效夹具失败单独解释，正式原缺口以Read已经进入的确定闸门证明。root核对原HEAD及稿SHA后复制，真实dc589／listener／gateway runtime／cmd gateway四包count=1通过 .tmp/batch5ah-actual-targeted.log；精确暂存默认检查和构建继续，尚不关闭组合组。
 
 5ah完整退出：精确暂存 .tmp/batch5ah-validation 的 .tmp/batch5ah-snapshot-{check,build}.log通过全仓默认检查和gateway构建，1243份blob中730份Go／模块与已核对源码一致、Markdown链接有效。开发只重建gateway使新等待逻辑生效，数据库和Redis卷保留；重建后首个立即GET遇到编译启动期fetch failed，未重启或更换容器，随后同一容器五服务就绪200 .tmp/batch5ah-health-after.json。同步TCP包没有SQL／资金算法或协议字段改变，不把健康检查称为实机或真实资金验收；最近完整三库为5y，最终三库退出回归和订单／Outbox表归属的剩余核对继续。
+
+批次5ai（命名类型中文规范）：总AST清单另发现56个缺类型Doc、35文件，不以5af函数／字段清单代替类型规范。按真实调用补卡会话／操作、charging输入／服务、gateway请求／回复、私有统计／冻结／缓存投影及并发测试result／outcome职责，明确领取和函数返回不等于提交。原783956f全文SHA核对，root复制前当前HEAD／工作区与备份相同、稿SHA匹配；.tmp/batch5ai-actual-source-proof.log完整AST／全部token（含自动分号）及旧注释／构建指令保持，字段类型和断言字符串的纯内存负面对照均被识别。实际全仓 make check通过 .tmp/batch5ai-check.log；纯注释不重复未变资金／真库流程，后续最终全仓退出继续。独立源码审查 .tmp/final-modules-audit.md与export报告逐项核对真实入口、归属和既有日志，export四个遗留checkbox已据4j实际实现和真库证据原位勾选；C、OP、N-card发现明确残留，进度表重新列为进行中，不能只按历史完成表关闭目标。

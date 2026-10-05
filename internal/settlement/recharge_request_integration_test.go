@@ -78,6 +78,7 @@ func TestConcurrentRechargeRequestsReplayAfterIdentityRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Callback().Query().Remove(key)
+	// outcome 传递同一充值申请并发 Create 的支付身份、参数与错误，用于核对原支付重放；生成模拟参数不表示支付到账。
 	type outcome struct {
 		result wallet.RechargeResult // 首次或同内容重放的原充值身份
 		err    error                 // 原事务及渠道准备错误

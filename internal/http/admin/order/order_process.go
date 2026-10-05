@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// orderProcessQuery 保存后台订单过程接口已校验的事件游标与页长，只控制只读分页，不参与计量或资金写入。
 type orderProcessQuery struct {
 	AfterID uint64 // 原过程行游标，首读为0
 	Limit   uint16 // 单页条数，1–2000

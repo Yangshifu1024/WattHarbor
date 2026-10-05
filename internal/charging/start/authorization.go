@@ -20,6 +20,7 @@ type AuthorizationService struct {
 	DB *gorm.DB /* central 授权数据连接，由进程管理 */
 }
 
+// StartAuthorization 汇集已付订单归属与可选刷卡首购快照，供网关组装 START；授权不改变订单状态，也不证明设备已经启动。
 type StartAuthorization struct {
 	PaidStartAuthorization        // 已核对支付、用户及设备归属的订单执行事实
 	ConsumerType           uint8  // 设备消费来源，2 扫码、3 在线卡

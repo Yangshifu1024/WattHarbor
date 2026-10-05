@@ -17,11 +17,13 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 )
 
+// liveSession 是停止路由测试的固定有效会话能力，用于隔离 Redis 会话读取，保留真实 JWT 身份解析。
 type liveSession struct{}
 
 // Exists 忽略输入 context 和 SID，返回 true、nil，供停止路由隔离会话依赖；不访问 Redis。
 func (liveSession) Exists(context.Context, string) (bool, error) { return true, nil }
 
+// liveUser 是停止路由测试的固定有效用户能力，用于隔离用户状态读取，不查询真实账号。
 type liveUser struct{}
 
 // Active 忽略输入 context 和用户编号，返回 true、nil，供停止路由隔离用户依赖；不访问数据库。
@@ -79,6 +81,7 @@ func TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff(t *testing.T) {
 	}
 }
 
+// failingStopGateway 是停止路由错误映射的窄依赖，按 fixture 返回指定错误，不发送设备命令或产生停止事实。
 type failingStopGateway struct {
 	// err 指定的 gateway 错误 fixture，不访问真实设备。
 	err error

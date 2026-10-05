@@ -34,6 +34,7 @@ func measuredMeter(order AutoStopOrder, latest meterReading, samples []protocol.
 	return meter
 }
 
+// meterReading 保存一条合格心跳的接收时刻、累计电量 Wh 与时长秒，供停止计量取证；单条读数不构成完整连续窗口。
 type meterReading struct {
 	at      time.Time // 遥测接收的 UTC 时刻
 	wh      uint32    // 累计电量，单位 Wh

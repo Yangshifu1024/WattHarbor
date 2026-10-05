@@ -50,9 +50,12 @@ type EventsReply struct {
 	Items []SyncEvent `json:"items"` // 原有序记录集合；空集合保持数组
 }
 
+// MarkStartResultsRequest 在中央接受启动回执后请求网关标记原命令已报告，保留原命令 UUID 批次。
 type MarkStartResultsRequest struct {
 	CommandIDs []string `json:"command_ids" binding:"required,min=1,max=50"` // 本批原启动命令UUID，最多50条
 }
+
+// MarkDeviceEventsRequest 请求网关将已处理的原设备事件批次推进为已消费，不修改事件载荷或生成新的身份。
 type MarkDeviceEventsRequest struct {
 	IDs []uint64 `json:"ids" binding:"required,min=1,max=100"` // 本批原持久事件主键，最多100条
 }
@@ -62,6 +65,7 @@ type MarkReply struct {
 	Marked int `json:"marked"` // 本次实际推进数；0为正常幂等重放
 }
 
+// ReleasePortRequest 以原端口主键和订单号限定网关占用释放，防止迟到结束流程释放后来订单的占用。
 type ReleasePortRequest struct {
 	PortID  uint64 `json:"port_id" binding:"required"`         // 原开通端口主键；可空字段表示未知
 	OrderNo string `json:"order_no" binding:"required,max=64"` // 原业务订单号
@@ -81,6 +85,7 @@ type MeterSamplesRequest struct {
 	EndID    uint64    // 原结束事件主键，固定取证游标
 }
 
+// FreezeEndDeliveryRequest 首次冻结原结束事件对应订单的投递载荷；重放必须使用既有权威载荷，不能更换事件或订单身份。
 type FreezeEndDeliveryRequest struct {
 	DeviceEventID uint64 `json:"device_event_id" binding:"required"`   // 原设备结束事件主键
 	ChargeOrderID uint64 `json:"charge_order_id" binding:"required"`   // 原中央充电订单主键
@@ -92,6 +97,8 @@ type FreezeEndDeliveryReply struct {
 	Payload string `json:"payload"` // 原冻结事件JSON，不重写协议字段或单位
 	Frozen  bool   `json:"frozen"`  // false为首次冻结，true为返回既有权威载荷
 }
+
+// CompensateStartRequest 在原订单路由中引用原 START 命令，请求持久受理补偿停止；受理不证明设备从未启动或授权退款。
 type CompensateStartRequest struct {
 	CommandID string `json:"command_id" binding:"required,uuid"` // 原持久命令UUID，不生成新的回执身份
 }

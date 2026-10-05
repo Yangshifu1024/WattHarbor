@@ -48,6 +48,7 @@ func stationSpecOf(tx *gorm.DB, stationID uint64) (charging.Spec, bool, error) {
 // 完整方案检查全部套餐及算法，旧模式口径沿用模式检查；无规则不能因缓存命中误判为存在空模式。
 // 返回不兼容 ErrMeteringBlocked 或查询错误；未配置有效整站模式时跳过，不写入导入数据。
 func (s Repo) CheckImportAgainstStation(tx *gorm.DB, devices []device.ImportDevice) error {
+	// cachedSpec 在单次导入检查内缓存站点口径及实际存在标志，避免把未配置或不可解析的规则当成空模式；不形成跨请求缓存。
 	type cachedSpec struct {
 		spec   charging.Spec // 原规则口径，含完整方案或旧模式
 		exists bool          // 是否实际存在可解析的整站规则

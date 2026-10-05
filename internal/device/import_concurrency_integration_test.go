@@ -123,6 +123,7 @@ func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 	defer cancel()
 	gateway := &concurrentImportGateway{vendor: id}
 	scope := operations.DataScope{Unrestricted: true}
+	// answer 传递不同请求按相反设备顺序执行导入后的任务与错误，用于核对统一锁序；提交后的资料与冻结输入另查真实表。
 	type answer struct {
 		out device.ImportJob /* 原任务状态 */
 		err error            /* 执行错误 */
@@ -267,6 +268,7 @@ func TestConcurrentFirstImportClaimsOriginalIdentity(t *testing.T) {
 	scope := operations.DataScope{Unrestricted: true}
 	originalModel := "原型号"
 	in := device.ImportInput{ImportID: request, Devices: []device.ImportDevice{{DeviceID: board, VendorID: id, StationID: id, PortCount: 2, Model: &originalModel}}}
+	// answer 传递同一导入请求并发 Create 的任务与错误，用于核对原任务重放；唯一导入记录和网关调用次数分别验证。
 	type answer struct {
 		out device.ImportJob /* 原任务状态 */
 		err error            /* 原申请结果 */

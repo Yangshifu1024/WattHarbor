@@ -35,6 +35,7 @@ func TestRoleUserCountDoesNotLockOtherRoles(t *testing.T) {
 			}
 		})
 	}
+	// account 是角色引用锁测试写入 admin_user 的私有夹具，区分启用、停用和软删除引用；占位口令不用于登录。
 	type account struct {
 		ID           uint64     `gorm:"primaryKey"` // 插入回填的私有账号主键。
 		Username     string     // 本测试独有用户名，不依赖共享用户名。

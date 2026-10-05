@@ -15,6 +15,7 @@ var (
 	ErrCouponExceedsFee = errors.New("优惠金额不能超过订单金额")
 )
 
+// CouponGrant 是持券记录与模板规则组成的权益投影，保留发放、过期和核销身份；读取该投影不执行准入或核销。
 type CouponGrant struct {
 	ID                 uint64    `json:"id" gorm:"column:id"`                                     // 原记录主键
 	CouponID           uint64    `json:"coupon_id" gorm:"column:coupon_id"`                       // 原模板主键

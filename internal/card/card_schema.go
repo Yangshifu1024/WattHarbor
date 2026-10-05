@@ -11,6 +11,7 @@ import (
 // order_authorization.go 里，按表名而非按聚合组织。刷卡有自己的生命周期
 // （绑卡、扣款、累计时长、退款），归在一起才能看清它改哪些状态。
 
+// OnlineCard 映射在线卡绑定记录，以规范卡号关联用户及可用状态，协议卡号范围仍由刷卡准入校验。
 type OnlineCard struct {
 	ID     uint64 `json:"id"`             // 在线卡主键
 	CardNo string `json:"card_no"`        // 绑定卡号的规范十进制文本；协议刷卡仍校验其原32位范围
@@ -18,6 +19,7 @@ type OnlineCard struct {
 	Status string `json:"status"`         // 卡状态：active/lost/disabled/unbound
 }
 
+// CardCharge 保存刷卡订单的占用、累计购买事实与首购执行快照；续购沿用冻结套餐和上限，不读取当前价格替换它们。
 type CardCharge struct {
 	ChargeOrderID    uint64  // 原充电订单主键，会话不存在时读取投影为零
 	CardID           uint64  // 原绑定卡主键
@@ -30,6 +32,8 @@ type CardCharge struct {
 	WalletAfterCents int64   // 首次扣款后的可花费余额，分，供原 START 使用
 	PackageJSON      []byte  // 首次完整套餐 JSON，续购不使用当前发布价格
 }
+
+// CardOperation 保存一次首购或续购的扣款凭据，以设备和原事件判重；confirming 状态不表示设备已确认启动。
 type CardOperation struct {
 	OperationID   string `json:"operation_id"`    // 原操作 UUID，同事件回复和资金凭据
 	DeviceID      string `json:"device_id"`       // 原设备身份，与 EventID 共同判重

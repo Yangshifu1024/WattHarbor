@@ -78,6 +78,7 @@ func TestConcurrentDeviceMetadataKeepsOneVersion(t *testing.T) {
 	defer second.Callback().Query().Remove(key)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// answer 传递资料更新用例返回的设备行与错误，区分首次更新和旧版本冲突；最终资料及审计通过真实表确认。
 	type answer struct {
 		row device.Device /* 更新结果 */
 		err error         /* 原事务错误 */

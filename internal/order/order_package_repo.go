@@ -26,6 +26,7 @@ func OrderSchemeNames(ctx context.Context, db *gorm.DB, rows []OrderView) error 
 	if err := db.WithContext(ctx).Select("charge_order_id,pricing_snapshot").Where("charge_order_id IN ?", ids).Find(&snapshots).Error; err != nil {
 		return err
 	}
+	// selectionNames 缓存每笔订单冻结快照中的方案名与套餐名，供当页回填；缺失名称保持空值，不读取当前发布规则补造。
 	type selectionNames struct {
 		scheme, packageName *string /* 冻结方案名与原套餐名，缺失各自为空 */
 	}

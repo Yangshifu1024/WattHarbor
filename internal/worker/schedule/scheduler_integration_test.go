@@ -152,6 +152,7 @@ func TestSchedulerLeaseExclusionCancellationAndTakeover(t *testing.T) {
 				return 2, ctx.Err()
 			}}}
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			// outcome 传递调度 Trigger 的租约受理标志与执行、落盘错误；受理不代表任务成功，最终租约及日志另查真实表。
 			type outcome struct {
 				accepted bool  // 原触发是否已经取得租约。
 				err      error // 原执行及落盘聚合错误。

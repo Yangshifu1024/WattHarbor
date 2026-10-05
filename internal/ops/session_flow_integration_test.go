@@ -396,6 +396,7 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 	}
 	read, release := make(chan struct{}, 2), make(chan struct{})
 	gated := gatedChallenges{SessionRepo: repo, read: read, release: release}
+	// result 传递并发 MFA 验证的访问回执与错误，用于判定挑战消费获胜者；Redis 消费、SQL 审计和会话分别核对。
 	type result struct {
 		reply AccessReply // 本次挑战消费的认证回执
 		err   error       // 并发消费的原错误

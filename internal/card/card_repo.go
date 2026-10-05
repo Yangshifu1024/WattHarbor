@@ -24,6 +24,7 @@ import (
 var ErrCardOperation = errors.New("刷卡不可用：卡状态、余额、端口、累计上限或设备确认状态不满足要求")
 var ErrCardBalance = fmt.Errorf("%w：钱包可用余额不足", ErrCardOperation)
 
+// Repo 在调用方连接或事务中访问刷卡、钱包与订单表；刷卡写入由用例统一提交，仓储不自行确认设备执行。
 type Repo struct {
 	DB     *gorm.DB          // 原卡事务或连接，提交由用例管理
 	Cutoff SwipeCutoffReader // 所属停止用例的当前截止事实

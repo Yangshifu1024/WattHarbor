@@ -118,6 +118,7 @@ func concurrentLoginWallet(t *testing.T, forceRetry bool) {
 		t.Fatal(err)
 	}
 	defer b.Callback().Create().Remove(callback)
+	// result 传递同一 openid 并发 Login 返回的身份、首次标志与错误；用户及钱包是否只创建一次另查真实表。
 	type result struct {
 		user User  /* 实际身份及首次标志 */
 		err  error /* 登录结果 */
@@ -241,6 +242,7 @@ func TestPhoneServiceConcurrentUniqueOwnership(t *testing.T) {
 		defer db.Callback().Query().Remove(callback)
 	}
 	number := fmt.Sprintf("188%08d", id%100000000)
+	// result 关联手机号绑定申请的原用户与 Bind 错误，用于识别唯一归属获胜者；不携带提交事务或渠道确认对象。
 	type result struct {
 		uid uint64 /* 请求原用户 */
 		err error  /* 唯一归属结果 */

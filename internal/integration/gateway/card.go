@@ -38,6 +38,7 @@ func (c *Client) FreezeCardResponse(ctx context.Context, in contract.CardFreezeR
 		return contract.CardFreezeReply{}, errors.New("invalid card freeze identity")
 	}
 	var empty contract.CardFreezeReply
+	// cardFreezeWireReply 是冻结卡回复端点的解码投影，以可空 Stored 区分缺字段与正常竞争重放，再转换为共享回执。
 	type cardFreezeWireReply struct {
 		Stored       *bool  `json:"stored"`        // nil 表示缺少首写结果，false 仍为正常竞争重放
 		ResponseJSON string `json:"response_json"` // 原权威冻结回复
@@ -84,6 +85,7 @@ func (c *Client) ResolveCardPort(ctx context.Context, deviceID string, portNo ui
 	ctx, cancel, client := c.cardBound(ctx)
 	defer cancel()
 	path := contract.CardPortPath + "?device_id=" + url.QueryEscape(deviceID) + "&port_no=" + strconv.Itoa(int(portNo))
+	// cardPortWireReply 是卡端口查询的解码投影，以可空 Found 区分缺字段与确实未开通，不把缺失开通事实默认为 false。
 	type cardPortWireReply struct {
 		Found    *bool  `json:"found"`     // nil 表示缺少开通事实，false 为确实未开通
 		PortCode string `json:"port_code"` // 已开通时要求存在原业务码

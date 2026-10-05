@@ -92,6 +92,7 @@ func cleanupWalletForRisk(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// walletSession 是钱包路由测试的固定有效会话能力，用于隔离 Redis；真实 JWT 验证仍由注册的认证器执行。
 type walletSession struct{}
 
 // Exists 忽略输入 context 和 SID，固定返回 true、nil 以隔离钱包业务测试；不访问 Redis，不能证明真实会话认证。
@@ -99,6 +100,7 @@ func (walletSession) Exists(context.Context, string) (bool, error) {
 	return true, nil
 }
 
+// walletUser 是钱包路由测试的固定有效用户能力，用于隔离账号状态读取；不证明真实用户状态已通过数据库校验。
 type walletUser struct{}
 
 // Active 忽略输入 context 和用户编号，固定返回 true、nil 以隔离钱包业务测试；不访问数据库，不能证明真实用户状态认证。

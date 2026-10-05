@@ -35,6 +35,7 @@ const (
 	StopSourceUser         = "user_app"
 )
 
+// EvidenceQueryRequest 固定一个订单的设备端口、开始时刻和事件游标，作为批量充电取证中的单项查询。
 type EvidenceQueryRequest struct {
 	DeviceID  string    `json:"device_id"`  // 网关设备业务标识
 	PortNo    uint8     `json:"port_no"`    // 目标物理端口号，从 1 开始
@@ -42,6 +43,7 @@ type EvidenceQueryRequest struct {
 	AfterID   uint64    `json:"after_id"`   // 上页最后事件主键，首次为 0
 }
 
+// EvidenceRequest 按输入顺序批量请求网关的端口心跳证据；每项保留自己的取证窗口与游标。
 type EvidenceRequest struct {
 	Requests []EvidenceQueryRequest `json:"requests"` // 按输入顺序批量查询设备端口，最多 20 项
 }
@@ -64,10 +66,12 @@ type EvidencePageReply struct {
 	NextAfterID uint64           `json:"next_after_id"` // 未完成时必须大于请求游标的事件主键
 }
 
+// EvidenceReply 按请求顺序返回各端口的证据页；是否已读完整窗口由各页 Complete 和后续游标表示。
 type EvidenceReply struct {
 	Evidence []EvidencePageReply `json:"evidence"` // 按请求顺序对应的证据页
 }
 
+// StopRequest 使用原订单、所属用户与来源请求网关授权并持久受理 STOP；请求不表示设备已经停电。
 type StopRequest struct {
 	OrderNo string `json:"order_no" binding:"required,max=64"`                  // 原充电订单号，不生成新的请求身份
 	UserID  uint64 `json:"user_id" binding:"required"`                          // 原订单所属用户主键
@@ -82,6 +86,7 @@ type StopReply struct {
 	Status    string `json:"status"`     // 命令持久化状态
 }
 
+// StartRequest 使用原充电订单号请求网关授权并持久受理 START，重试沿用同一订单和命令流程。
 type StartRequest struct {
 	OrderNo string `json:"order_no" binding:"required,min=1,max=64"` // 原充电订单号，不生成新的请求身份
 }

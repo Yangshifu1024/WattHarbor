@@ -120,6 +120,7 @@ func TestFeedbackConcurrentSubmitSerializesOriginalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Callback().Query().Remove(gate)
+	// result 传递同一订单并发提交反馈返回的主键与错误，用于区分首次提交和重复拒绝；不持有事务或充电状态锁。
 	type result struct {
 		id  uint64 /* 实际反馈主键 */
 		err error  /* 提交结果 */

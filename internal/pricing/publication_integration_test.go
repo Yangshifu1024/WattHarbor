@@ -222,6 +222,7 @@ func TestConcurrentPublicationReturnsOriginalResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Callback().Query().Remove(key)
+	// answer 传递同一发布请求并发 Publish 的回执与错误，用于比较原规则版本和重放标志；提交行数另查规则、请求及审计表。
 	type answer struct {
 		result PublicationResult /* 发布原结果 */
 		err    error             /* 事务执行结果 */

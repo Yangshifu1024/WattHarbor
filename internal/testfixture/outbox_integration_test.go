@@ -36,6 +36,7 @@ func TestOutboxCleanupDoesNotLockOtherFixtures(t *testing.T) {
 	}
 	first, second := open(), open()
 	target := uuid.NewString()
+	// row 是清理锁测试写入 event_outbox 的私有已发布夹具，回填真实主键并携清理载荷；不进入领取队列或执行投递。
 	type row struct {
 		ID           uint64 `gorm:"primaryKey"` // 实际插入回填的队列主键
 		EventID      string // 本夹具独有事件身份

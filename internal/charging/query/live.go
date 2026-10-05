@@ -65,6 +65,7 @@ func (s LiveService) Fill(ctx context.Context, rows []order.OrderView) {
 	if len(indices) == 0 || s.Gateway == nil || s.Orders == nil || s.Cards == nil {
 		return
 	}
+	// observed 将有效心跳计量关联到输入订单行，供充电中展示回填；它是临时读模型，不写入结束计量或结算金额。
 	type observed struct {
 		index int                  // 本次 rows 下标，保持原页排序
 		meter charging.ActualMeter // 截至最后心跳的实时估算计量，非最终结算依据

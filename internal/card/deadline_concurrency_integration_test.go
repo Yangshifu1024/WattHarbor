@@ -56,6 +56,7 @@ func TestExtensionAndDeadlineSerializePurchasedDuration(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer second.Callback().Query().Remove(wait)
+			// result 传递续购或到期冻结用例返回的结果，用于核对会话锁后的两种执行次序；事务效果另查真实资金与截止记录。
 			type result struct {
 				frozen bool  /* 是否到期冻结 */
 				err    error /* 原用例结果 */
@@ -180,6 +181,7 @@ func TestConcurrentSameCardEventDebitsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Callback().Query().Remove(wait)
+	// result 传递同一刷卡事件两次 Apply 返回的操作及错误，用于比对原操作身份；单次扣款由独立表查询确认。
 	type result struct {
 		operation card.CardOperation /* 原操作 */
 		err       error              /* 用例错误 */
