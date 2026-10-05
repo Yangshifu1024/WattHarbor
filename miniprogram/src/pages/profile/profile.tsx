@@ -34,6 +34,8 @@ return (<><View className="container"><DevelopmentAccount />{!!(needsLogin) && (
 <Text className="text-secondary">{"›"}</Text></View>
 <View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goOrders", {})}><Text>{"我的订单"}</Text>
 <Text className="text-secondary">{"›"}</Text></View>
+<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goBills", {})}><Text>{"我的账单"}</Text>
+<Text className="text-secondary">{"›"}</Text></View>
 <View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goRefunds", {})}><Text>{"我的退款"}</Text>
 <Text className="text-secondary">{"›"}</Text></View>
 <View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goCoupons", {})}><Text>{"🎫 我的优惠券"}</Text>

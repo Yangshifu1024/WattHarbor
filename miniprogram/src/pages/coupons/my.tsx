@@ -30,6 +30,7 @@ return (<><View className="container">{!!(needsLogin) && (<View className="card"
 {statusNames?.[statusIndex]}
 {"的优惠券"}</View>)}
 {!!(items?.length < total && !loading) && (<Button onClick={event("onReachBottom", {})}>{"加载更多"}</Button>)}
+{!!(!needsLogin) && (<Button onClick={event("goAvailable", {})}>{"查看支付前可用券"}</Button>)}
 {!!(!needsLogin) && (<Button onClick={event("goScan", {})}>{"去扫码充电"}</Button>)}</View>
 <TabBar active="home" tabs={HOME_TABS} /></>);
 }

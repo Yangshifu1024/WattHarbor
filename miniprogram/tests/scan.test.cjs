@@ -40,12 +40,12 @@ test('anonymous port browsing requests offers without login',async()=>{
 });
 test('payment checks login after offer selection and submits only the configured offer ID',async()=>{
  const application=app('');let paid=0;const routes=[];
- const p=await selectedPage(application,{showModal:options=>options.success({confirm:true}),requestPayment:options=>{paid++;options.success({});},navigateTo:options=>routes.push(options.url)});
+ const p=await selectedPage(application,{showModal:options=>options.success({confirm:true}),requestPayment:options=>{paid++;options.success({});},navigateTo:options=>routes.push(options.url),reLaunch:options=>routes.push(options.url)});
  await p.pay();assert.equal(paid,1);assert.equal(application._generation,1);
  const start=application.calls.find(call=>call.url.endsWith('/start'));
  assert.equal(start.body.offer_id,7);assert.equal(start.body.port_id,'DEV00001:1');assert.match(start.body.client_request_id,/^[0-9a-f-]{36}$/);
  assert.equal(start.body.estimated_kwh,undefined);assert.equal(start.body.estimated_minutes,undefined);
- assert.equal(routes[0],'/pages/charge/history');assert.equal(p.data.paymentNo,'PAY_TEST');
+ assert.equal(routes[0],'/pages/charge/charging?order_no=PAY_TEST');assert.equal(p.data.paymentNo,'PAY_TEST');
 });
 test('cancelled WeChat UI retries the same payment intent without a second start',async()=>{
  const application=app();let payments=0;

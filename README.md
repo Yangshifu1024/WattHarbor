@@ -92,7 +92,7 @@ node scripts/db/test-integration.mjs
 | `admin-web` | `npm ci`、`npm run dev` | `npm test`、`npm run lint`、`npm run build` |
 | `miniprogram` | `npm ci`、`npm run dev:h5` 或 `npm run dev:weapp` | `npm run typecheck`、`npm test`、`npm run build:h5`、`npm run build:weapp` |
 
-产物为 `admin-web/dist`、`miniprogram/dist/h5` 和 `miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI 当前覆盖 Go 检查、依赖差异、默认及真库测试、gateway/central/worker/migrate 构建和后台构建；用户端检查需单独执行。
+产物为 `admin-web/dist`、`miniprogram/dist/h5` 和 `miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI 当前覆盖 Go 检查、依赖差异、默认及真库测试、gateway/central/worker/migrate 构建和后台构建；用户端检查需单独执行。用户端后续开发与交互优化计划见 [miniprogram-roadmap.md](docs/miniprogram-roadmap.md)。
 
 ## 生产部署与维护
 

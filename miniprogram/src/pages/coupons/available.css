@@ -1,0 +1,3 @@
+/* 支付前可用券样式：与"我的优惠券"卡面保持同一视觉语言。 */
+.coupon .row { display: flex; align-items: center; justify-content: space-between; }
+.coupon .name { font-size: 32rpx; font-weight: 600; color: #1f2329; }

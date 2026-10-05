@@ -12,21 +12,23 @@ export default defineAppConfig({
     "pages/wallet/refund",
     "pages/wallet/recharge",
     "pages/wallet/txns",
+    "pages/wallet/cards",
+    "pages/bills/list",
+    "pages/bills/detail",
     "pages/coupons/my",
+    "pages/coupons/available",
     "pages/invoice/apply",
     "pages/invoice/my",
     "pages/profile/profile",
     "pages/profile/phone",
     "pages/announcement/list",
-    "pages/dev/fault",
-    "pages/wallet/cards"
+    "pages/dev/fault"
   ],
   "window": {
     "backgroundTextStyle": "light",
     "navigationBarBackgroundColor": "#1677ff",
     "navigationBarTitleText": "ChargePilot 充电",
-    "navigationBarTextStyle": "white",
-    "enablePullDownRefresh": true
+    "navigationBarTextStyle": "white"
   },
   "permission": {
     "scope.userLocation": {

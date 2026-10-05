@@ -48,6 +48,7 @@ return (<><View className="container">{!!(loading) && (<View className="card">{"
 {paymentNo}
 {" · "}
 {feeText}</View>)}
+{!!(paymentNo) && (<Button onClick={event("charging", {})} loading={paying} disabled={paying}>{"查看充电状态"}</Button>)}
 <Button onClick={event("history", {})}>{"查看订单记录"}</Button></View>)}
 <Button onClick={event("rescan", {})} disabled={paying || startAttempted}>{"重新扫码"}</Button></View>
 <TabBar active="home" tabs={HOME_TABS} /></>);

@@ -1,0 +1,5 @@
+export default definePageConfig({
+  "navigationBarTitleText": "我的账单",
+  "enablePullDownRefresh": true,
+  "usingComponents": {}
+})

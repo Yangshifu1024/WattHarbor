@@ -1493,6 +1493,26 @@
               "status": {
                 "type": "string",
                 "description": "订单状态；没有进行中订单时为空串"
+              },
+              "device_id": {
+                "type": "string",
+                "description": "设备编号"
+              },
+              "port_no": {
+                "type": "integer",
+                "description": "占用端口号"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "开始充电时间；尚未开始为 null"
+              },
+              "ended_at": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "结束时间；进行中订单为 null"
               }
             }
           }

@@ -17,7 +17,26 @@ const ENTRIES = [
 export default function PageView() {
 const { data, event } = useController(controller);
 const stations = data.stations || [];
+const announcements = data.announcements || [];
 return (<><View className="home">
+  {/* 进行中订单横幅：控制器已拉取 /user/charge/ongoing，无进行中订单时该字段为 null。 */}
+  {!!(data.ongoing) && (<View className="ongoing-banner" onClick={event("goOngoing", {})}>
+    <View className="ongoing-head">
+      <Text className="ongoing-label">{data.ongoing?.statusLabel}</Text>
+      <AtIcon value="chevron-right" className="ongoing-arrow" />
+    </View>
+    <Text className="ongoing-order">{data.ongoing?.order_no}</Text>
+    <Text className="ongoing-meta">{data.ongoing?.device_id}{!!(data.ongoing?.port_no) && (" · 端口 " + data.ongoing?.port_no)}</Text>
+  </View>)}
+
+  {!!(announcements.length) && (<View className="announcement-bar" onClick={event("goAnnouncements", {})}>
+    <AtIcon value="notification" className="announcement-icon" />
+    <View className="announcement-body">
+      <Text className="announcement-title">{announcements[0]?.title}</Text>
+      {!!(announcements.length > 1) && (<Text className="announcement-more">{"等 " + announcements.length + " 条公告 ›"}</Text>)}
+    </View>
+  </View>)}
+
   <View className="home-entries">{ENTRIES.map((entry) => (<View className="entry-card" onClick={event(entry.action, {})} key={entry.key}>
     <View className="entry-body"><Text className="entry-title">{entry.title}</Text>
     <Text className="entry-sub">{entry.sub}</Text></View>

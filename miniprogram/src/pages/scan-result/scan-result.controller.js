@@ -7,7 +7,7 @@ import {paymentParams,newRequestId} from '../../utils/payment';
 export default defineController({
  data:{deviceId:'',deviceStatus:'',deviceStatusLabel:'',deviceNotice:'',ports:[],selected:null,offers:[],selectedOffer:null,loading:false,error:'',paying:false,paymentNotice:'',paymentNo:'',startAttempted:false,canRetryPayment:false,feeText:'',display:{},stopWhenFull:false},
  onLoad(query){try{this._code=decodeURIComponent(query.code || '');}catch(_){this._code='';}this._generation=0;this._gone=false;this._unloaded=false;},
- onShow(){this._gone=false;if(this._openHistoryOnShow){this._openHistoryOnShow=false;this.history();return;}if(this._paying || this.data.startAttempted)return;return this.load();},
+ onShow(){this._gone=false;if(this._openChargingOnShow){this._openChargingOnShow=false;this.charging();return;}if(this._paying || this.data.startAttempted)return;return this.load();},
  onHide(){this._gone=true;this._generation++;},
  onUnload(){this._unloaded=true;this.onHide();},
  async load(){
@@ -91,11 +91,14 @@ export default defineController({
    if(this._unloaded)return;
    if(session!==app._generation){this.setData({canRetryPayment:false,paymentNotice:'登录账号已变化，请登录原账号核实支付。'});return;}
    this.setData({canRetryPayment:false,paymentNotice:'付款操作已完成，正在等待服务端确认支付和设备启动。'});
-   if(this._gone)this._openHistoryOnShow=true;else this.history();
+   if(this._gone)this._openChargingOnShow=true;else this.charging();
   }catch(e){
    if(!this._unloaded)this.setData({paymentNotice:!this.data.startAttempted && (!app.globalData.token || e.status===401) ? '登录已失效，请重新登录后支付。' : /cancel/i.test(e.errMsg || '') ? '已取消付款，可继续支付同一支付单，或查看订单记录。' : (e.message || '支付结果暂不确定，请查看订单记录，避免重复付款。')});
   }finally{this._paying=false;if(!this._unloaded)this.setData({paying:false});}
  },
  history(){wx.navigateTo({url:'/pages/charge/history'});},
+ // 支付受理后直达充电状态页，由快照轮询消化"启动确认中"等过渡状态；
+ // 返回时重新扫码会重建本页并重新解析二维码。
+ charging(){const orderNo=this._checkout?.merchant_order_no;if(!orderNo)return this.history();wx.reLaunch({url:'/pages/charge/charging?order_no='+encodeURIComponent(orderNo)});},
  rescan(){wx.navigateTo({url:'/pages/scan/scan'});},
 });

@@ -9,6 +9,14 @@ function distanceText(km) {
   return "距你" + km.toFixed(1) + "km";
 }
 
+// 进行中订单的服务端状态原文展示；未列出的状态直接回落为"处理中"，
+// 不在客户端推断充电是否真的开始。
+const ONGOING_LABELS = {
+  pending_payment: "等待支付确认",
+  paid: "已支付，设备启动确认中",
+  charging: "正在充电",
+};
+
 export default defineController({
   _locationAttempted: false,
   data: {
@@ -31,12 +39,13 @@ export default defineController({
   async refresh() {
     try {
       const ann = await app.request('GET', '/user/announcement/list', undefined, false);
-      this.setData({ announcements: ann.items || [] });
+      this.setData({ announcements: (ann.items || []).slice(0, 3).map(item => ({ id: item.id, title: item.title || '未命名公告' })) });
     } catch (_error) { this.setData({ announcements: [] }); }
     if (!app.globalData.token) { this.setData({ ongoing: null }); return; }
     try {
       const ong = await app.request('GET', '/user/charge/ongoing');
-      this.setData({ ongoing: ong?.order_no ? ong : null });
+      // 服务端无进行中订单时返回空串而不是 null；两种情况都收起横幅。
+      this.setData({ ongoing: ong?.order_no ? { ...ong, statusLabel: ONGOING_LABELS[ong.status] || "处理中" } : null });
     } catch (_error) { this.setData({ ongoing: null }); }
   },
 

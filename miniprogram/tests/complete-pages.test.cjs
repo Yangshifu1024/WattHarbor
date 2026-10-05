@@ -20,15 +20,31 @@ function loadPage(relativePath, app, wx = {}) {
   return page;
 }
 
+// app.config.ts 是页面清单的唯一来源；defineAppConfig 为 Taro 标识函数，
+// 在此以恒等函数求值，避免再维护一份会与真实配置漂移的副本。
+function registeredPages(root) {
+  const filename = path.join(root, 'src', 'app.config.ts');
+  // 该文件是纯配置字面量，去掉 ESM 导出后即可在 vm 中以 defineAppConfig 求值。
+  const source = fs.readFileSync(filename, 'utf8').replace(/^export default /m, '');
+  let config;
+  vm.runInNewContext(source, { defineAppConfig: value => { config = value; } }, { filename });
+  assert.ok(Array.isArray(config?.pages) && config.pages.length > 0, 'app.config.ts 未声明任何页面');
+  return config.pages;
+}
+
 test('every registered Taro page has a React view, controller, and configuration', () => {
   const root = path.join(__dirname, '..');
-  const app = JSON.parse(fs.readFileSync(path.join(root, 'src/app-manifest.json'), 'utf8'));
-  for (const name of app.pages) {
+  for (const name of registeredPages(root)) {
     const base = path.join(root, 'src', name);
     assert.ok(fs.existsSync(`${base}.tsx`), `${name} React page missing`);
     assert.ok(fs.existsSync(`${base}.config.ts`), `${name} page config missing`);
     assert.ok(fs.existsSync(`${base}.controller.js`) || fs.existsSync(`${base}.controller.js`), `${name} script missing`);
   }
+});
+
+test('the page list has no second copy that can drift from app.config.ts', () => {
+  const root = path.join(__dirname, '..');
+  assert.ok(!fs.existsSync(path.join(root, 'src', 'app-manifest.json')), 'app-manifest.json 应已删除，页面清单只以 app.config.ts 为准');
 });
 
 test('coupon list requests the selected status and paginates without dropping prior rows', async () => {

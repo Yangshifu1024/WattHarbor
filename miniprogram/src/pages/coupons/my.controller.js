@@ -34,5 +34,6 @@ export default defineController({
     } catch (error) { if (!this._gone && generation === this._generation) this.setData({ error: error.message || '优惠券读取失败', needsLogin: !couponApp.globalData.token }); }
     finally { if (!this._gone && generation === this._generation) this.setData({ loading: false }); }
   },
-  goScan() { wx.reLaunch({ url: '/pages/index/index' }); },
+  goAvailable() { wx.navigateTo({ url: '/pages/coupons/available' }); },
+  goScan() { wx.reLaunch({ url: '/pages/scan/scan' }); },
 });
