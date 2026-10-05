@@ -177,3 +177,64 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 控制接口只允许 loopback 监听。`power_deciwatts=2500` 表示 250 W；刷卡使用 `{"type":"card","port":1,"card":100001}`，移卡使用 `{"type":"remove-card","port":1}`。完整事件字段见 [Input](../internal/gateway/simulator/dc589/behavior.go)，场景和参数见 `go run ./cmd/simulator-dc589 -h`。
 
 充电心跳 15 秒，空闲心跳 60 秒，网关读超时为相应周期的三倍。模拟器每秒更新计量。当前使用通用五档参数，不支持特殊双口八档扩展、心跳分片合并和 OTA；完整协议规范仍保留这些内容。
+
+## 隔离栈全链路验收
+
+本节是把充电、计量、计费与退款主流程做成可重复验收的操作清单。验收对象是五个本地进程加真实 TCP 模拟器；模拟支付与模拟器结果不构成真实微信商户、实机设备或监管投递的验收，这些仍须按 [上线验收](#上线验收) 的外部条件单独执行。
+
+### 环境准备
+
+1. 启动隔离实例（3307 为三库 MySQL，6381 为 Redis）：
+
+   ```sh
+   docker compose -f compose.test.yaml up -d
+   ```
+
+2. 全链路验收前必须重建空数据卷并重新执行迁移。集成测试使用显式高位主键，会把 `central_db.charge_order` 的自增序号抬到超出 16 位十进制 BCD 编码的范围，此后 gateway 的启动受理持续返回 409（业务码 2000）；这不是业务缺陷，重建实例自增回 1 即消失。
+3. 构建并启动五个进程（`make build` 产物在 `bin/`），user 与 central 注入 `PAYMENT_MODE=simulation`，user 另注入 `LOGIN_MODE=development`；gateway 监听 9100/TCP。central 8082 不映射宿主机端口。
+4. 执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与「双模拟器测试方案」，随后按需经后台把目标站点的生效方案换成当前场景要压的模式（金额、电量或时长套餐；应用走乐观锁，`expected_version` 须读站点当前生效版本）。
+5. 模拟器经真实 TCP 9100 接入，场景用 `-scenario` 选择（`by-energy`、`by-time`、`stop-on-command`、`reject-start`、`fault`、`silent`、`reconnect`），运行中调功率、插拔、刷卡见上一节控制接口。注意 `-power` 等功率参数单位是分瓦：`1500` 是 150 W，不是 1500 W。
+
+### 场景矩阵
+
+每场景结束后按下一节清单逐表断言；金额、电量、事件链任何一格不符都按缺陷处理，不以最终状态相近豁免。
+
+| # | 场景 | 操作 | 期望持久事实 |
+| --- | --- | --- | --- |
+| 1 | 电量/时长套餐自然结束 | `by-energy` 或 `by-time` 充至套餐耗尽 | 计费任务 `done`；预付与实收相等无退款；回执分段合计等于设备自报电量 |
+| 2 | 用户主动停机 | `stop-on-command` 后用户端停机 | 计费 `done` 加差额自动退；首段起点与 `charge_order.started_at` 逐毫秒对齐 |
+| 3 | 拒绝起充 | `reject-start` | 启动回执 `success=0`；订单转 `refunding`；全额退款 `success`；不建立端口占用 |
+| 4 | 预算封顶 | 小额金额套餐加高功率持续充电 | `charge_billing_cutoff` 落 `budget_exhausted`；电费加服务费精确等于套餐价；无人工复核 |
+| 5 | 掉电零功率 | 拔出或 `fault` 后等待满一分钟 | 截止原因 `automatic_stop`；电量为零全额退；不把断线当零功率提前停机 |
+| 6 | 刷卡全流程 | 绑卡、刷卡首购、移卡重刷续购、用户停机 | 扣款、累计时长、操作凭据同事务；停机后结算与余额退款到账 |
+| 7 | worker 中断恢复 | 充电中 SIGKILL worker，再用户停机，最后重启 worker | worker 缺席期间中央订单保持充电中且无结束回执；重启后数秒内补齐回执、订单完成、事件与 Outbox 同步补发 |
+| 8 | 断线重连 | `reconnect` 场景断网后恢复 | 恢复后证据连续，不因缺口误判零功率停机 |
+
+### 逐表断言清单
+
+```sql
+-- 订单与回执主链（按业务号或订单 ID 过滤）
+SELECT status, started_at, charged_kwh, charged_seconds FROM central_db.charge_order;
+SELECT success, result_code FROM central_db.charge_start_receipt;
+SELECT port_no FROM central_db.active_port_charge;                -- 占用与释放
+SELECT reason, cutoff_at, electric_cents, service_cents FROM central_db.charge_billing_cutoff;
+SELECT meter_json FROM central_db.charge_end_receipt;              -- 段数、合计 Wh、首段起点、每段功率
+SELECT status, attempts FROM central_db.charge_billing_job;
+SELECT total_cents, electric_cents, service_cents FROM central_db.charge_fee_receipt;
+-- 资金
+SELECT amount_cents, refunded_cents, status FROM central_db.payment_order;
+SELECT amount_cents, channel, status FROM central_db.refund_record;
+-- 事件与发布
+SELECT event_type FROM central_db.charge_event_log ORDER BY id;    -- payment_confirmed → start_acked → charge_ended → fee_calculated → bill_issued
+```
+
+`meter_json` 的核对要点：分段首尾相接无空洞、合计等于设备自报总电量、首段起点等于 `charge_order.started_at`、功率分档模式下每段都带可验证功率。最后一跳超过 60 秒的尾段按已接受的精度妥协处理：电量仍归属到段，功率缺失时整单进计量复核，不得沿用旧功率或从电量反推。
+
+### 脚本化执行
+
+场景驱动已落盘为 `scripts/dev/e2e/`：`up.sh` 按上节环境启动五个进程并等待就绪，`scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>` 驱动单个场景并自动完成逐表断言，`down.sh` 停进程并关闭测试实例。`budget` 子命令创建并应用 10 分金额套餐，仅 s4 前执行一次。断言统一取库中最新订单，不得并行运行多个场景；模拟器仍须按各场景以 `-scenario` 手工启动。S6（刷卡全流程）暂未脚本化，按矩阵手工执行。
+
+### 退出
+
+停掉模拟器与五个进程，`docker compose -f compose.test.yaml down`，核对 3307、6381、9100、9190 及五个 HTTP 端口无残留监听。保留场景日志与 SQL 导出作为验收证据；开发栈（3306/6379/6380）全程不得触碰。
+

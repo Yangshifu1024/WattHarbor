@@ -214,3 +214,54 @@ func TestCutoffRequiresReliableEnergyAndClipsTime(t *testing.T) {
 		t.Fatalf("%+v %v", got, err)
 	}
 }
+
+// TestCutoffMeterDurationBranches 补齐时长模式截止的四个分支断言。
+// 时长套餐的截止点是已购时长的耗尽时刻，不依赖分段证据：截止点落在已充
+// 时长之内按秒裁剪；截止点超出已充秒数但早于结束时刻时（设备浮充尾段）
+// 保留实际充电秒数、结束时刻落到截止点；截止点不早于结束时刻原样返回，
+// 早于起充时刻无证据可裁须复核。与上一条测试的电量口径裁剪对照，共同
+// 锁住「功率和时长可直接裁剪、电量不得猜测」的边界。
+func TestCutoffMeterDurationBranches(t *testing.T) {
+	start := time.Date(2026, 9, 30, 9, 0, 0, 0, beijing)
+	duration := Spec{Mode: ModeDeviceDuration}
+	// 设备实际充电 930 秒后停止，截止点按套餐配置落在 600 秒或 1200 秒。
+	m := ActualMeter{StartedAt: start, EndedAt: start.Add(930 * time.Second), ChargedSeconds: 930}
+	t.Run("截止早于起充须复核", func(t *testing.T) {
+		if _, err := CutoffMeter(duration, m, start.Add(-time.Second)); !errors.Is(err, ErrMeterReview) {
+			t.Fatalf("截止点早于起充时刻时应要求复核，得到 %v", err)
+		}
+	})
+	t.Run("截止不早于结束时刻原样返回", func(t *testing.T) {
+		got, err := CutoffMeter(duration, m, start.Add(930*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ChargedSeconds != 930 || !got.EndedAt.Equal(start.Add(930*time.Second)) {
+			t.Fatalf("截止点不早于结束时刻时不得改动计量：%+v", got)
+		}
+	})
+	t.Run("截止在已充时长内按秒裁剪", func(t *testing.T) {
+		got, err := CutoffMeter(duration, m, start.Add(600*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ChargedSeconds != 600 || !got.EndedAt.Equal(start.Add(600*time.Second)) {
+			t.Fatalf("应裁剪到截止点 600 秒：%+v", got)
+		}
+	})
+	t.Run("截止超出已充秒数保留实际秒数", func(t *testing.T) {
+		// 浮充尾段：设备自报已充 900 秒，证据结束时刻含 30 秒浮充尾巴，
+		// 截止点 910 秒落在两者之间，不得把实际充电秒数裁到截止点。
+		float := ActualMeter{StartedAt: start, EndedAt: start.Add(930 * time.Second), ChargedSeconds: 900}
+		got, err := CutoffMeter(duration, float, start.Add(910*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ChargedSeconds != 900 {
+			t.Fatalf("已充秒数小于截止秒数时应保留 900，得到 %d", got.ChargedSeconds)
+		}
+		if !got.EndedAt.Equal(start.Add(910 * time.Second)) {
+			t.Fatalf("结束时刻应落到截止点：%+v", got)
+		}
+	})
+}

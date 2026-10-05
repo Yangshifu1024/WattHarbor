@@ -200,6 +200,90 @@ func startSkewFixture(startOffset int, shape skewShape) (time.Time, devices.Sess
 	return base.Add(time.Duration(startOffset) * time.Second), span, samples
 }
 
+// tailFixture 构造一条每 20 秒上报一次、60 秒后停止上报的充电记录：
+// 前 60 秒充了 3 Wh，其余电量由结束帧自报补齐，模拟心跳丢失后的尾巴。
+// endSeconds 是会话总时长，也决定最后一条心跳到结束帧的间隔（endSeconds − 60）。
+func tailFixture(endSeconds uint32) (time.Time, devices.SessionSpan, []devices.ReadingSample) {
+	base := time.Date(2026, 10, 5, 6, 0, 0, 0, time.UTC)
+	span := devices.SessionSpan{DeviceID: "D-TAIL", Port: 1, StartedAt: base,
+		EndedAt: base.Add(time.Duration(endSeconds) * time.Second), ChargedSeconds: endSeconds, EnergyWh: 6}
+	steps := []struct {
+		seconds uint32
+		wh      uint32
+	}{{0, 0}, {20, 1}, {40, 2}, {60, 3}}
+	samples := make([]devices.ReadingSample, 0, len(steps))
+	for _, s := range steps {
+		at := base.Add(time.Duration(s.seconds) * time.Second)
+		samples = append(samples, devices.ReadingSample{
+			DeviceID:   "D-TAIL",
+			ReceivedAt: at.Add(time.Second),
+			Readings:   []devices.Reading{{Port: 1, At: at, ChargedSeconds: s.seconds, ChargedMWh: s.wh * 1000, PowerW: 600}},
+		})
+	}
+	return base, span, samples
+}
+
+// tailRule 是功率分档计价规则：600 W 落第二档。费率取整除后为整数分的值，
+// 使费用断言不含舍入因素。
+func tailRule() Rule {
+	return Rule{ID: 7, Version: 1, Spec: Spec{Mode: ModeServerMaxPower, Electric: &ElectricLine{
+		Basis: BasisMaxPower, Periods: []Period{{EndMinute: 1440, Tiers: []Tier{
+			{MaxWatts: 200, ElectricCents: 100, ServiceCents: 20},
+			{MaxWatts: 3500, ElectricCents: 180, ServiceCents: 30},
+		}}}}}}
+}
+
+// TestTailSegmentPowerJoinsOnlyWithinWindow 锁住尾段功率的连接窗口语义。
+//
+// powerJoinWindow 规定：最后一条心跳到结束帧不超过 60 秒时，尾段沿用前次
+// 功率计价；超过 60 秒时尾段保留为证据缺失——电量归属由结束帧自报补齐，
+// 但功率不得沿用旧值，也不得从电量反推，功率分档下整单进计量复核。
+// 这是用户已接受的精度妥协（心跳间隔上限 15 秒，尾段代价封顶 60 秒），
+// 本测试防止该语义被无意改动。
+func TestTailSegmentPowerJoinsOnlyWithinWindow(t *testing.T) {
+	t.Run("间隔恰为六十秒时尾段沿用前次功率", func(t *testing.T) {
+		start, span, samples := tailFixture(120)
+		segments := MeasuredSegments(start, span, samples)
+		if len(segments) == 0 {
+			t.Fatal("心跳齐备且尾段间隔等于窗口时，分段不应被拒绝")
+		}
+		tail := segments[len(segments)-1]
+		if tail.PowerW == nil || *tail.PowerW != 600 {
+			t.Fatalf("尾段应沿用前次功率 600 W，得到 %v", tail.PowerW)
+		}
+		if tail.EnergyWh != 3 {
+			t.Fatalf("尾段电量应为设备自报补齐的 3 Wh，得到 %d Wh", tail.EnergyWh)
+		}
+		// 沿用功率的尾段必须能直接计价：120 秒全按 600 W 落第二档，180+30 分/时。
+		fee, err := PriceActual(tailRule(), ActualMeter{StartedAt: start, EndedAt: span.EndedAt,
+			ChargedWh: span.EnergyWh, ChargedSeconds: span.ChargedSeconds, Segments: segments})
+		if err != nil {
+			t.Fatalf("尾段沿用功率后应能自动计价：%v", err)
+		}
+		if fee.ElectricCents != 6 || fee.ServiceCents != 1 || fee.TotalCents != 7 {
+			t.Fatalf("费用 %+v，应为 180+30 分/时下 120 秒计 6+1 分", fee)
+		}
+	})
+	t.Run("间隔超过六十秒时尾段无功率并整单进复核", func(t *testing.T) {
+		start, span, samples := tailFixture(121)
+		segments := MeasuredSegments(start, span, samples)
+		if len(segments) == 0 {
+			t.Fatal("超窗只影响功率不影响电量归属，分段本身不应被拒绝")
+		}
+		tail := segments[len(segments)-1]
+		if tail.PowerW != nil || tail.PeakW != 0 {
+			t.Fatalf("超窗尾段不得沿用功率或从电量反推，得到 PowerW=%v PeakW=%d", tail.PowerW, tail.PeakW)
+		}
+		if tail.EnergyWh != 3 {
+			t.Fatalf("尾段电量仍应由结束帧自报补齐 3 Wh，得到 %d Wh", tail.EnergyWh)
+		}
+		if _, err := PriceActual(tailRule(), ActualMeter{StartedAt: start, EndedAt: span.EndedAt,
+			ChargedWh: span.EnergyWh, ChargedSeconds: span.ChargedSeconds, Segments: segments}); !errors.Is(err, ErrMeterReview) {
+			t.Fatalf("功率分档下超窗尾段缺功率应进计量复核，得到 %v", err)
+		}
+	})
+}
+
 func TestMeasuredSegmentsStartSkewTolerance(t *testing.T) {
 	cases := []struct {
 		name        string

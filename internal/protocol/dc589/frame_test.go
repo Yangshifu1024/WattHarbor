@@ -70,3 +70,40 @@ func TestStartCommandUsesDocumentedPayload(t *testing.T) {
 		t.Fatal(hex.EncodeToString(raw))
 	}
 }
+
+// FuzzDecode 用随机字节流验证 Decode 的接受侧不变量与往返性质：
+// 任何被接受的输入都必须满足起始符、长度域与 XOR 校验和约束，会话六字节
+// 与负载逐字节取自原文，且重新编码必须还原出完全相同的字节序列。
+// 拒绝侧的错误分类已由 TestFrameRejectsCorruptionAndBadLength 锁定，
+// 模糊输入只需不 panic 且不产生畸形 Frame 即可。
+func FuzzDecode(f *testing.F) {
+	valid, err := hex.DecodeString("EE09B900000000000005B5")
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(valid)
+	f.Add([]byte(nil))
+	f.Add([]byte{0xEE})
+	f.Add([]byte{0xEE, 0x08, 0xB9, 1, 2, 3, 4, 5, 6, 0x00})
+	f.Add([]byte{0xEE, 0x07, 0xB9, 1, 2, 3, 4, 5, 6, 7, 8})
+	f.Add([]byte("EE-not-a-frame-but-long-enough-to-pass-trivial-rejections"))
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		frame, err := Decode(raw)
+		if err != nil {
+			return
+		}
+		if raw[0] != StartByte || len(raw) != 2+int(raw[1]) || checksum(raw[1:len(raw)-1]) != raw[len(raw)-1] {
+			t.Fatalf("Decode 接受了不满足帧约束的输入 %x", raw)
+		}
+		if !bytes.Equal(frame.Session[:], raw[3:9]) {
+			t.Fatalf("会话字节未被原样保留：%x", frame.Session)
+		}
+		if len(frame.Data) != len(raw)-2-HeaderSize {
+			t.Fatalf("负载长度 %d 与帧长约束不符（帧长 %d）", len(frame.Data), len(raw))
+		}
+		encoded, err := Encode(frame)
+		if err != nil || !bytes.Equal(encoded, raw) {
+			t.Fatalf("编解码往返改变了字节：入 %x 出 %x 错误 %v", raw, encoded, err)
+		}
+	})
+}
