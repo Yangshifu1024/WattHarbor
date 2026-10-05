@@ -41,7 +41,7 @@ func (a DeviceSummaryAPI) list(c *gin.Context) {
 		httpapi.Write(c, 503, 5001, "设备信息暂不可读取", nil)
 		return
 	}
-	out := contract.DeviceSummaries{Items: make([]contract.DeviceSummary, 0, len(rows))}
+	out := contract.DeviceSummariesReply{Items: make([]contract.DeviceSummary, 0, len(rows))}
 	byDevice := make(map[string]int, len(rows))
 	for i := range rows {
 		row := rows[i]

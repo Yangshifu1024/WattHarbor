@@ -16,16 +16,16 @@ import (
 type EndGateway interface {
 	EndEvents(context.Context) ([]gatewaycontract.SyncEvent, error)
 	ChargeCommand(context.Context, uint64) (*gatewaycontract.SyncCommand, error)
-	MeterSamples(context.Context, gatewaycontract.MeterSamplesQuery) ([]gatewaycontract.SyncEvent, error)
-	FreezeEndDelivery(context.Context, gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryResult, error)
-	ReleasePort(context.Context, gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortResult, error)
+	MeterSamples(context.Context, gatewaycontract.MeterSamplesRequest) ([]gatewaycontract.SyncEvent, error)
+	FreezeEndDelivery(context.Context, gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryReply, error)
+	ReleasePort(context.Context, gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortReply, error)
 	MarkDeviceEventsProcessed(context.Context, []uint64) (int, error)
 }
 
 type EndSynchronizer struct {
 	Gateway EndGateway
 	Central interface {
-		SubmitEndResult(context.Context, centralcontract.EndResult) (centralcontract.ResultAcceptance, error)
+		SubmitEndResult(context.Context, centralcontract.EndResultRequest) (centralcontract.ResultReply, error)
 	}
 }
 
@@ -75,7 +75,7 @@ func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 			}
 			continue
 		}
-		result := centralcontract.EndResult{OrderNo: command.OrderNo, ChargeOrderID: orderID, StartCommandID: command.CommandID, StopCommandID: command.StopCommandID, DeviceID: event.DeviceID, PortNo: event.Port, PortID: uint64(*command.PortID)}
+		result := centralcontract.EndResultRequest{OrderNo: command.OrderNo, ChargeOrderID: orderID, StartCommandID: command.CommandID, StopCommandID: command.StopCommandID, DeviceID: event.DeviceID, PortNo: event.Port, PortID: uint64(*command.PortID)}
 		result.Meter.ChargedWh, result.Meter.ChargedSeconds = event.EnergyMilliKWh, event.ChargedSeconds
 		result.Meter.EndedAt, result.Meter.StopReason = event.EndedAt, event.StopReason
 		result, err = s.freezeEndResult(ctx, s.Gateway, *command, item.ID, event, result)

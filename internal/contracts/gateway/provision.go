@@ -21,13 +21,13 @@ type ProvisionRequest struct {
 	Devices []ProvisionDevice `json:"devices"` /* 同批原设备身份 */
 }
 
-// ProvisionResult 表示 gateway 已提交该批开通身份与端口，未确认物理设备上线。
-type ProvisionResult struct {
+// ProvisionReply 表示 gateway 已提交该批开通身份与端口，未确认物理设备上线。
+type ProvisionReply struct {
 	Provisioned int `json:"provisioned"` /* 已确认批次设备数，含原请求重放 */
 }
 
-// Vendor 是对外公开厂商字典；适配器私有配置和密钥仍留在 gateway。
-type Vendor struct {
+// VendorReply 是对外公开厂商字典；适配器私有配置和密钥仍留在 gateway。
+type VendorReply struct {
 	ID           uint64     `json:"id"`            // 原厂商主键
 	VendorCode   string     `json:"vendor_code"`   // 创建后不可变的厂商编码
 	VendorName   string     `json:"vendor_name"`   // 当前可见名称
@@ -49,8 +49,8 @@ type VendorFailure struct {
 // Error 返回可公开提示，无 IO 或状态变更。
 func (e *VendorFailure) Error() string { return e.Message }
 
-// VendorInput 是完整厂商公开写入字段；服务端负责格式、编码不可变与协议变更准入。
-type VendorInput struct {
+// VendorRequest 是完整厂商公开写入字段；服务端负责格式、编码不可变与协议变更准入。
+type VendorRequest struct {
 	VendorCode   string `json:"vendor_code"`   // 原厂商编码，创建后不可改
 	VendorName   string `json:"vendor_name"`   // 可见名称，服务端去空白并校验
 	AdapterClass string `json:"adapter_class"` // 适配器标签
@@ -58,8 +58,8 @@ type VendorInput struct {
 	Status       string `json:"status"`        // enabled／disabled
 }
 
-// VendorQuery 是厂商列表的具名查询，不允许消费者拼接路径或任意查询参数。
-type VendorQuery struct {
+// VendorListRequest 是厂商列表的具名查询，不允许消费者拼接路径或任意查询参数。
+type VendorListRequest struct {
 	Page     int      // 起始页码，一开始
 	PageSize int      // 每页条数，一至一百
 	Keyword  string   // 原搜索关键词，由客户端转义
@@ -67,10 +67,10 @@ type VendorQuery struct {
 	IDs      []uint64 // 当前账号的厂商范围，空表示不限定厂商
 }
 
-// VendorPage 是网关公开列表响应，不接受上游授予中央账号权限。
-type VendorPage struct {
-	Items    []Vendor `json:"items"`     // 当页公开字典，可为空
-	Total    int64    `json:"total"`     // 当前筛选的总条数
-	Page     int      `json:"page"`      // 原响应页码
-	PageSize int      `json:"page_size"` // 原响应每页条数
+// VendorListReply 是网关公开列表响应，不接受上游授予中央账号权限。
+type VendorListReply struct {
+	Items    []VendorReply `json:"items"`     // 当页公开字典，可为空
+	Total    int64         `json:"total"`     // 当前筛选的总条数
+	Page     int           `json:"page"`      // 原响应页码
+	PageSize int           `json:"page_size"` // 原响应每页条数
 }

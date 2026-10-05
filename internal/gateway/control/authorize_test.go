@@ -10,11 +10,11 @@ import (
 
 type authorizationClientStub struct{ err error }
 
-func (s authorizationClientStub) StartAuthorization(context.Context, string) (centralcontract.StartAuthorization, error) {
-	return centralcontract.StartAuthorization{ChargeOrderID: 9, PaymentOrderID: 7, OrderNo: "C-9", UserID: 42, CardBalanceUnits: 45, ChargeQuantity: 1200}, s.err
+func (s authorizationClientStub) StartAuthorization(context.Context, string) (centralcontract.StartAuthorizationReply, error) {
+	return centralcontract.StartAuthorizationReply{ChargeOrderID: 9, PaymentOrderID: 7, OrderNo: "C-9", UserID: 42, CardBalanceUnits: 45, ChargeQuantity: 1200}, s.err
 }
-func (s authorizationClientStub) StopAuthorization(context.Context, string, uint64) (centralcontract.StopAuthorization, error) {
-	return centralcontract.StopAuthorization{ChargeOrderID: 9, OrderNo: "C-9", UserID: 42, PortID: 3, StartCommandID: "start-1"}, s.err
+func (s authorizationClientStub) StopAuthorization(context.Context, string, uint64) (centralcontract.StopAuthorizationReply, error) {
+	return centralcontract.StopAuthorizationReply{ChargeOrderID: 9, OrderNo: "C-9", UserID: 42, PortID: 3, StartCommandID: "start-1"}, s.err
 }
 func TestCentralAuthorizerMapsOnlyAuthorizationRejection(t *testing.T) {
 	for _, err := range []error{centralcontract.ErrAuthorizationDenied, centralcontract.BusinessError{Code: 2000}} {

@@ -89,7 +89,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 	if !a.internal(c) {
 		return
 	}
-	var in contract.CardSwipe
+	var in contract.CardSwipeRequest
 	if c.ShouldBindJSON(&in) != nil {
 		httpapi.BadRequest(c, "刷卡事件、卡号、端口无效")
 		return
@@ -99,7 +99,7 @@ func (a CardAPI) swipe(c *gin.Context) {
 		swipeFailure(c, err)
 		return
 	}
-	httpapi.OK(c, contract.CardOperation{OperationID: op.OperationID, DeviceID: op.DeviceID, EventID: op.EventID, ChargeOrderID: op.ChargeOrderID, CardID: op.CardID, Kind: op.Kind, PriceCents: op.PriceCents, Minutes: op.Minutes, Status: op.Status})
+	httpapi.OK(c, contract.CardOperationReply{OperationID: op.OperationID, DeviceID: op.DeviceID, EventID: op.EventID, ChargeOrderID: op.ChargeOrderID, CardID: op.CardID, Kind: op.Kind, PriceCents: op.PriceCents, Minutes: op.Minutes, Status: op.Status})
 }
 
 // swipeFailure 将 err 阶段映射为原 c 响应；不足余额字段只在原事务业务冲突分支输出。

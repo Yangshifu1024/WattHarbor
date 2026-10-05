@@ -12,9 +12,9 @@ import (
 // Gateway 是停止用例所需的设备侧能力；实现负责传输与响应契约校验。
 type Gateway interface {
 	// ChargingEvidence 在 context 期限内按请求顺序返回完整页及推进游标；传输或契约失败返回错误。
-	ChargingEvidence(context.Context, []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error)
+	ChargingEvidence(context.Context, []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
 	// RequestStop 在 context 期限内用原订单身份请求持久 STOP；返回受理凭据或错误，不证明设备结束。
-	RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error)
+	RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopReply, error)
 }
 
 // ErrEvidenceIncomplete 表示取证响应身份、分页游标或页数不可信，不能据此停机。
@@ -32,10 +32,10 @@ func (s AutoStopper) evidence(ctx context.Context, orders []AutoStopOrder) (map[
 	out := make(map[uint64][]protocol.Event, len(orders))
 	for start := 0; start < len(orders); start += gatewaycontract.MaxEvidenceBatch {
 		chunk := orders[start:min(start+gatewaycontract.MaxEvidenceBatch, len(orders))]
-		requests := make([]gatewaycontract.EvidenceQuery, len(chunk))
+		requests := make([]gatewaycontract.EvidenceQueryRequest, len(chunk))
 		orderIDs := make([]uint64, len(chunk))
 		for i, order := range chunk {
-			requests[i] = gatewaycontract.EvidenceQuery{DeviceID: order.DeviceID, PortNo: order.PortNo, StartedAt: order.StartedAt}
+			requests[i] = gatewaycontract.EvidenceQueryRequest{DeviceID: order.DeviceID, PortNo: order.PortNo, StartedAt: order.StartedAt}
 			orderIDs[i] = order.ID
 		}
 		for page := 0; page < autoStopEvidenceMaxPages; page++ {
@@ -46,7 +46,7 @@ func (s AutoStopper) evidence(ctx context.Context, orders []AutoStopOrder) (map[
 			if len(pages) != len(requests) {
 				return nil, fmt.Errorf("%w: unexpected page count", ErrEvidenceIncomplete)
 			}
-			pending := make([]gatewaycontract.EvidenceQuery, 0, len(requests))
+			pending := make([]gatewaycontract.EvidenceQueryRequest, 0, len(requests))
 			pendingIDs := make([]uint64, 0, len(requests))
 			for i, entry := range pages {
 				query := requests[i]

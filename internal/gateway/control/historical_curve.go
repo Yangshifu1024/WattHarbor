@@ -72,7 +72,7 @@ func (a TelemetryAPI) historicalCurve(c *gin.Context) {
 			summary["max_temperature_c"] = curveSummaryValue(peak.Peak)
 		}
 	}
-	httpapi.OK(c, gatewaycontract.HistoricalCurveData{OrderNo: orderID, DeviceID: deviceID, PortNo: uint8(portNo), StartedAt: from.UTC(), EndedAt: to.UTC(), Granularity: c.Query("granularity"), Series: series, Count: len(series), Summary: summary, BoundaryApproximate: !from.Equal(startBucket) || !to.Equal(endBucket)})
+	httpapi.OK(c, gatewaycontract.HistoricalCurveReply{OrderNo: orderID, DeviceID: deviceID, PortNo: uint8(portNo), StartedAt: from.UTC(), EndedAt: to.UTC(), Granularity: c.Query("granularity"), Series: series, Count: len(series), Summary: summary, BoundaryApproximate: !from.Equal(startBucket) || !to.Equal(endBucket)})
 }
 
 // curveSummaryValue 将 value 原DECIMAL文本编码为JSON字符串，返回精确原文本载荷，无IO或数值转换。

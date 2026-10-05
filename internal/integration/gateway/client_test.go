@@ -45,7 +45,7 @@ func TestChargingEvidencePreservesWireFieldsAndCursor(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"code":0,"data":{"evidence":[{"device_id":"D-1","port_no":2,"samples":[{"Type":"heartbeat","DeviceID":"D-1","ReceivedAt":"2026-10-04T00:01:00Z","ChargingPorts":[{"Port":2,"ChargedMWh":12000,"ChargedSeconds":60,"PowerDeciWatts":20}]}],"complete":false,"next_after_id":93}]}}`))
 	})
-	pages, err := client.ChargingEvidence(context.Background(), []gatewaycontract.EvidenceQuery{{DeviceID: "D-1", PortNo: 2, StartedAt: started, AfterID: 41}})
+	pages, err := client.ChargingEvidence(context.Background(), []gatewaycontract.EvidenceQueryRequest{{DeviceID: "D-1", PortNo: 2, StartedAt: started, AfterID: 41}})
 	if err != nil || len(pages) != 1 {
 		t.Fatalf("pages=%+v err=%v", pages, err)
 	}
@@ -114,7 +114,7 @@ func TestClientRejectsInvalidResponses(t *testing.T) {
 			if tc.stop {
 				_, err = client.RequestStop(context.Background(), gatewaycontract.StopRequest{})
 			} else {
-				_, err = client.ChargingEvidence(context.Background(), []gatewaycontract.EvidenceQuery{{DeviceID: "D-1", PortNo: 1}})
+				_, err = client.ChargingEvidence(context.Background(), []gatewaycontract.EvidenceQueryRequest{{DeviceID: "D-1", PortNo: 1}})
 			}
 			if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) {
 				t.Fatalf("err=%v want=%v", err, tc.want)
@@ -125,7 +125,7 @@ func TestClientRejectsInvalidResponses(t *testing.T) {
 
 func TestClientPreservesBusinessErrorAndCancellation(t *testing.T) {
 	client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"code":2000,"data":null}`)) })
-	_, err := client.ChargingEvidence(context.Background(), []gatewaycontract.EvidenceQuery{{DeviceID: "D-1", PortNo: 1}})
+	_, err := client.ChargingEvidence(context.Background(), []gatewaycontract.EvidenceQueryRequest{{DeviceID: "D-1", PortNo: 1}})
 	var rejection BusinessError
 	if !errors.As(err, &rejection) || rejection.Code != 2000 {
 		t.Fatalf("lost business rejection: %v", err)
@@ -149,7 +149,7 @@ func TestClientRejectsInvalidConfigurationAndBatchWithoutCallingServer(t *testin
 		}
 	}
 	client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("invalid batch reached server") })
-	for _, queries := range [][]gatewaycontract.EvidenceQuery{nil, make([]gatewaycontract.EvidenceQuery, 21)} {
+	for _, queries := range [][]gatewaycontract.EvidenceQueryRequest{nil, make([]gatewaycontract.EvidenceQueryRequest, 21)} {
 		if _, err := client.ChargingEvidence(context.Background(), queries); err == nil {
 			t.Fatal("invalid batch accepted")
 		}

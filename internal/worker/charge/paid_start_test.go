@@ -131,12 +131,12 @@ type dispatchStub struct {
 	rejection error
 }
 
-func (s *dispatchStub) RequestStart(_ context.Context, request gatewaycontract.StartRequest) (gatewaycontract.StartAcceptance, error) {
+func (s *dispatchStub) RequestStart(_ context.Context, request gatewaycontract.StartRequest) (gatewaycontract.StartReply, error) {
 	s.orders = append(s.orders, request.OrderNo)
 	if request.OrderNo == "C-7" {
-		return gatewaycontract.StartAcceptance{}, s.rejection
+		return gatewaycontract.StartReply{}, s.rejection
 	}
-	return gatewaycontract.StartAcceptance{OrderNo: request.OrderNo, CommandID: "cmd-8", Status: "pending"}, nil
+	return gatewaycontract.StartReply{OrderNo: request.OrderNo, CommandID: "cmd-8", Status: "pending"}, nil
 }
 
 func TestPaidStarterContinuesBatchAfterFailedOrder(t *testing.T) {

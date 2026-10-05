@@ -85,5 +85,5 @@ func (a CompensationAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "compensation send failed", nil)
 		return
 	}
-	httpapi.OK(c, gatewaycontract.CompensationAcceptance{Accepted: true})
+	httpapi.OK(c, gatewaycontract.CompensateStartReply{Accepted: true})
 }

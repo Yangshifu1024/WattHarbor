@@ -30,7 +30,7 @@ func (s EndSynchronizer) meterSegments(ctx context.Context, gateway EndGateway, 
 		return nil, nil
 	}
 	// 以 BB 事件 ID 固定心跳证据范围，排除结束后落库的延迟心跳，保证重放结果一致。
-	items, err := gateway.MeterSamples(ctx, gatewaycontract.MeterSamplesQuery{DeviceID: end.DeviceID, AckAt: *command.AckAt, EndAt: end.ReceivedAt, EndID: endID})
+	items, err := gateway.MeterSamples(ctx, gatewaycontract.MeterSamplesRequest{DeviceID: end.DeviceID, AckAt: *command.AckAt, EndAt: end.ReceivedAt, EndID: endID})
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (s EndSynchronizer) meterSegments(ctx context.Context, gateway EndGateway, 
 // 都不允许改动一份重放出去的结束回执。
 // 冻结与身份校验在 gateway 单库内完成（忽略 segments 后语义一致即可）；
 // 本组件每次重放都重新计算候选 segments，冻结端点保证首写优先。
-func (s EndSynchronizer) freezeEndResult(ctx context.Context, gateway EndGateway, command gatewaycontract.SyncCommand, id uint64, event protocol.Event, candidate centralcontract.EndResult) (centralcontract.EndResult, error) {
+func (s EndSynchronizer) freezeEndResult(ctx context.Context, gateway EndGateway, command gatewaycontract.SyncCommand, id uint64, event protocol.Event, candidate centralcontract.EndResultRequest) (centralcontract.EndResultRequest, error) {
 	segments, err := s.meterSegments(ctx, gateway, command, id, event)
 	if err != nil {
 		return candidate, err
@@ -67,7 +67,7 @@ func (s EndSynchronizer) freezeEndResult(ctx context.Context, gateway EndGateway
 	if err != nil {
 		return candidate, err
 	}
-	var frozen centralcontract.EndResult
+	var frozen centralcontract.EndResultRequest
 	if err := json.Unmarshal([]byte(reply.Payload), &frozen); err != nil {
 		return candidate, err
 	}

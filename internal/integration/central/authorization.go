@@ -28,33 +28,33 @@ func authorizationError(err error) error {
 	return err
 }
 
-func (c *Client) StartAuthorization(ctx context.Context, orderNo string) (centralcontract.StartAuthorization, error) {
+func (c *Client) StartAuthorization(ctx context.Context, orderNo string) (centralcontract.StartAuthorizationReply, error) {
 	path, err := orderPath(centralcontract.StartAuthorizationRoute, orderNo)
 	if err != nil {
-		return centralcontract.StartAuthorization{}, errors.Join(centralcontract.ErrAuthorizationDenied, err)
+		return centralcontract.StartAuthorizationReply{}, errors.Join(centralcontract.ErrAuthorizationDenied, err)
 	}
-	data, err := get[centralcontract.StartAuthorization](ctx, c, path)
+	data, err := get[centralcontract.StartAuthorizationReply](ctx, c, path)
 	if err != nil {
 		return data, authorizationError(err)
 	}
 	if data.OrderNo != orderNo || data.ChargeOrderID == 0 {
-		return centralcontract.StartAuthorization{}, fmt.Errorf("%w: start identity mismatch", centralcontract.ErrAuthorizationDenied)
+		return centralcontract.StartAuthorizationReply{}, fmt.Errorf("%w: start identity mismatch", centralcontract.ErrAuthorizationDenied)
 	}
 	return data, nil
 }
 
-func (c *Client) StopAuthorization(ctx context.Context, orderNo string, userID uint64) (centralcontract.StopAuthorization, error) {
+func (c *Client) StopAuthorization(ctx context.Context, orderNo string, userID uint64) (centralcontract.StopAuthorizationReply, error) {
 	path, err := orderPath(centralcontract.StopAuthorizationRoute, orderNo)
 	if err != nil || userID == 0 {
-		return centralcontract.StopAuthorization{}, centralcontract.ErrAuthorizationDenied
+		return centralcontract.StopAuthorizationReply{}, centralcontract.ErrAuthorizationDenied
 	}
 	path += "?user_id=" + strconv.FormatUint(userID, 10)
-	data, err := get[centralcontract.StopAuthorization](ctx, c, path)
+	data, err := get[centralcontract.StopAuthorizationReply](ctx, c, path)
 	if err != nil {
 		return data, authorizationError(err)
 	}
 	if data.OrderNo != orderNo || data.UserID != userID || data.ChargeOrderID == 0 {
-		return centralcontract.StopAuthorization{}, fmt.Errorf("%w: stop identity mismatch", centralcontract.ErrAuthorizationDenied)
+		return centralcontract.StopAuthorizationReply{}, fmt.Errorf("%w: stop identity mismatch", centralcontract.ErrAuthorizationDenied)
 	}
 	return data, nil
 }

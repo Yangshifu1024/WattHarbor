@@ -21,7 +21,7 @@ type AlertEvidence interface {
 	// MarkDeviceFaults 在ctx下确认ids原事件已成功处理，返回实际首次标记数或调用错误，0允许重放。
 	MarkDeviceFaults(ctx context.Context, ids []uint64) (int64, error)
 	// HeartbeatAfterKey 在ctx下按deviceID与key读取原水印和后续心跳；缺失不补零，返回证据或错误。
-	HeartbeatAfterKey(ctx context.Context, deviceID, key string) (contract.HeartbeatEvidence, error)
+	HeartbeatAfterKey(ctx context.Context, deviceID, key string) (contract.HeartbeatAfterKeyReply, error)
 }
 
 // AlertSyncService 拥有central设备告警同步与恢复，协议翻译归dc589，跨库仅经具名能力。

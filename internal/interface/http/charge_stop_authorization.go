@@ -52,7 +52,7 @@ func (a StopAuthorization) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "order storage unavailable", nil)
 		return
 	}
-	httpapi.OK(c, centralcontract.StopAuthorization{ChargeOrderID: order.ChargeOrderID, OrderNo: order.OrderNo,
+	httpapi.OK(c, centralcontract.StopAuthorizationReply{ChargeOrderID: order.ChargeOrderID, OrderNo: order.OrderNo,
 		UserID: order.UserID, DeviceID: order.DeviceID, PortNo: order.PortNo,
 		PortID: uint64(order.PortID.Int64), StartCommandID: order.StartCommandID})
 }

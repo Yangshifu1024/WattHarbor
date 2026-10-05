@@ -22,5 +22,5 @@ func (a CardAPI) balance(c *gin.Context) {
 		httpapi.Write(c, 503, 5001, "卡状态及余额暂不可读取", nil)
 		return
 	}
-	httpapi.OK(c, contract.CardBalance{Valid: out.Valid, BalanceCents: out.BalanceCents})
+	httpapi.OK(c, contract.CardBalanceReply{Valid: out.Valid, BalanceCents: out.BalanceCents})
 }

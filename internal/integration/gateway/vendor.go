@@ -19,7 +19,7 @@ func vendorUnavailable() *contract.VendorFailure {
 }
 
 // Vendors 在 ctx 下用 q 查询公开字典并传递 requestID；返回分页或原服务错误，无重试或业务写入。
-func (c *Client) Vendors(ctx context.Context, q contract.VendorQuery, requestID string) (contract.VendorPage, error) {
+func (c *Client) Vendors(ctx context.Context, q contract.VendorListRequest, requestID string) (contract.VendorListReply, error) {
 	query := url.Values{"page": {strconv.Itoa(q.Page)}, "page_size": {strconv.Itoa(q.PageSize)}, "keyword": {q.Keyword}, "status": {q.Status}}
 	if len(q.IDs) > 0 {
 		ids := make([]string, len(q.IDs))
@@ -28,14 +28,14 @@ func (c *Client) Vendors(ctx context.Context, q contract.VendorQuery, requestID 
 		}
 		query.Set("ids", strings.Join(ids, ","))
 	}
-	var out contract.VendorPage
+	var out contract.VendorListReply
 	err := c.requestVendor(ctx, http.MethodGet, "", query, nil, &out, requestID)
 	return out, err
 }
 
 // Vendor 在 ctx 下读取 id 的公开字典并传递 requestID；返回原事实或公开错误，错误身份不接受，不重试。
-func (c *Client) Vendor(ctx context.Context, id uint64, requestID string) (contract.Vendor, error) {
-	var out contract.Vendor
+func (c *Client) Vendor(ctx context.Context, id uint64, requestID string) (contract.VendorReply, error) {
+	var out contract.VendorReply
 	err := c.requestVendor(ctx, http.MethodGet, "/"+strconv.FormatUint(id, 10), nil, nil, &out, requestID)
 	if err == nil && out.ID != id {
 		err = vendorUnavailable()
@@ -44,15 +44,15 @@ func (c *Client) Vendor(ctx context.Context, id uint64, requestID string) (contr
 }
 
 // CreateVendor 在 ctx 下原样提交 in 并传递 requestID，返回服务确认的公开字典或原错误；不添加幂等或重试。
-func (c *Client) CreateVendor(ctx context.Context, in contract.VendorInput, requestID string) (contract.Vendor, error) {
-	var out contract.Vendor
+func (c *Client) CreateVendor(ctx context.Context, in contract.VendorRequest, requestID string) (contract.VendorReply, error) {
+	var out contract.VendorReply
 	err := c.requestVendor(ctx, http.MethodPost, "", nil, in, &out, requestID)
 	return out, err
 }
 
 // UpdateVendor 在 ctx 下为 id 原样提交 in 并传递 requestID，返回原公开字典或错误；错误身份不接受，不重试。
-func (c *Client) UpdateVendor(ctx context.Context, id uint64, in contract.VendorInput, requestID string) (contract.Vendor, error) {
-	var out contract.Vendor
+func (c *Client) UpdateVendor(ctx context.Context, id uint64, in contract.VendorRequest, requestID string) (contract.VendorReply, error) {
+	var out contract.VendorReply
 	err := c.requestVendor(ctx, http.MethodPut, "/"+strconv.FormatUint(id, 10), nil, in, &out, requestID)
 	if err == nil && out.ID != id {
 		err = vendorUnavailable()
@@ -101,11 +101,13 @@ func (c *Client) requestVendor(ctx context.Context, method, path string, query u
 	if err != nil || len(raw) > limit {
 		return vendorUnavailable()
 	}
-	var envelope struct {
-		Code    *int            `json:"code"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
+	// vendorEnvelopeReply 保留原信封或数据的字段存在性，仅用于传输解码。
+	type vendorEnvelopeReply struct {
+		Code    *int            `json:"code"`    // 原业务码，nil表示缺失
+		Message string          `json:"message"` // 原公开错误文案，依赖故障不透传
+		Data    json.RawMessage `json:"data"`    // 原端点数据，保留JSON精度
 	}
+	var envelope vendorEnvelopeReply
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return vendorUnavailable()
 	}
@@ -129,13 +131,13 @@ func (c *Client) requestVendor(ctx context.Context, method, path string, query u
 
 // validVendorResponse 核对 out 的厂商身份字段及分页边界；返回合法性，无 IO 或修改。
 func validVendorResponse(out any) bool {
-	validRow := func(row contract.Vendor) bool {
+	validRow := func(row contract.VendorReply) bool {
 		return row.ID > 0 && row.VendorCode != "" && row.VendorName != "" && row.AdapterClass != "" && row.Protocol != "" && (row.Status == "enabled" || row.Status == "disabled")
 	}
 	switch result := out.(type) {
-	case *contract.Vendor:
+	case *contract.VendorReply:
 		return validRow(*result)
-	case *contract.VendorPage:
+	case *contract.VendorListReply:
 		if result.Page < 1 || result.PageSize < 1 || result.PageSize > 100 || result.Total < int64(len(result.Items)) {
 			return false
 		}

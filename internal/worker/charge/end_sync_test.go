@@ -20,7 +20,7 @@ type endSyncScenario struct {
 	fail     string
 	calls    []string
 	frozen   string
-	results  []centralcontract.EndResult
+	results  []centralcontract.EndResultRequest
 	releases []gatewaycontract.ReleasePortRequest
 	marked   []uint64
 }
@@ -32,7 +32,7 @@ func (s *endSyncScenario) EndEvents(context.Context) ([]gatewaycontract.SyncEven
 func (s *endSyncScenario) ChargeCommand(context.Context, uint64) (*gatewaycontract.SyncCommand, error) {
 	return &s.command, nil
 }
-func (s *endSyncScenario) MeterSamples(_ context.Context, q gatewaycontract.MeterSamplesQuery) ([]gatewaycontract.SyncEvent, error) {
+func (s *endSyncScenario) MeterSamples(_ context.Context, q gatewaycontract.MeterSamplesRequest) ([]gatewaycontract.SyncEvent, error) {
 	s.calls = append(s.calls, "samples")
 	if q.EndID != 77 || q.DeviceID != s.event.DeviceID || !q.AckAt.Equal(*s.command.AckAt) || !q.EndAt.Equal(s.event.ReceivedAt) {
 		return nil, errors.New("wrong evidence window")
@@ -42,34 +42,34 @@ func (s *endSyncScenario) MeterSamples(_ context.Context, q gatewaycontract.Mete
 	}
 	return []gatewaycontract.SyncEvent{}, nil
 }
-func (s *endSyncScenario) FreezeEndDelivery(_ context.Context, r gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryResult, error) {
+func (s *endSyncScenario) FreezeEndDelivery(_ context.Context, r gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryReply, error) {
 	s.calls = append(s.calls, "freeze")
 	if s.fail == "freeze" {
-		return gatewaycontract.FreezeEndDeliveryResult{}, errors.New("freeze failed")
+		return gatewaycontract.FreezeEndDeliveryReply{}, errors.New("freeze failed")
 	}
 	if r.DeviceEventID != 77 || r.ChargeOrderID != 9 {
-		return gatewaycontract.FreezeEndDeliveryResult{}, errors.New("wrong frozen identity")
+		return gatewaycontract.FreezeEndDeliveryReply{}, errors.New("wrong frozen identity")
 	}
 	if s.frozen == "" {
 		s.frozen = r.Payload
 	}
-	return gatewaycontract.FreezeEndDeliveryResult{Payload: s.frozen, Frozen: true}, nil
+	return gatewaycontract.FreezeEndDeliveryReply{Payload: s.frozen, Frozen: true}, nil
 }
-func (s *endSyncScenario) SubmitEndResult(_ context.Context, r centralcontract.EndResult) (centralcontract.ResultAcceptance, error) {
+func (s *endSyncScenario) SubmitEndResult(_ context.Context, r centralcontract.EndResultRequest) (centralcontract.ResultReply, error) {
 	s.calls = append(s.calls, "central")
 	s.results = append(s.results, r)
 	if s.fail == "central" {
-		return centralcontract.ResultAcceptance{}, errors.New("central failed")
+		return centralcontract.ResultReply{}, errors.New("central failed")
 	}
-	return centralcontract.ResultAcceptance{Accepted: true, Replayed: len(s.results) > 1}, nil
+	return centralcontract.ResultReply{Accepted: true, Replayed: len(s.results) > 1}, nil
 }
-func (s *endSyncScenario) ReleasePort(_ context.Context, r gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortResult, error) {
+func (s *endSyncScenario) ReleasePort(_ context.Context, r gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortReply, error) {
 	s.calls = append(s.calls, "release")
 	s.releases = append(s.releases, r)
 	if s.fail == "release" {
-		return gatewaycontract.ReleasePortResult{}, errors.New("release failed")
+		return gatewaycontract.ReleasePortReply{}, errors.New("release failed")
 	}
-	return gatewaycontract.ReleasePortResult{Released: true, Already: len(s.releases) > 1}, nil
+	return gatewaycontract.ReleasePortReply{Released: true, Already: len(s.releases) > 1}, nil
 }
 func (s *endSyncScenario) MarkDeviceEventsProcessed(_ context.Context, ids []uint64) (int, error) {
 	s.calls = append(s.calls, "mark")
@@ -108,7 +108,7 @@ func TestEndSyncFailureStopsAtRequiredBoundary(t *testing.T) {
 }
 func TestEndSyncReplaysFrozenEvidenceBeforeReleaseAndMark(t *testing.T) {
 	s := newEndScenario()
-	frozen := centralcontract.EndResult{OrderNo: "C-9", ChargeOrderID: 9, StartCommandID: "start-1", StopCommandID: "stop-1", DeviceID: "D-1", PortNo: 1, PortID: 9007199254740993,
+	frozen := centralcontract.EndResultRequest{OrderNo: "C-9", ChargeOrderID: 9, StartCommandID: "start-1", StopCommandID: "stop-1", DeviceID: "D-1", PortNo: 1, PortID: 9007199254740993,
 		Meter: charging.EndMeter{ChargedWh: 1000, ChargedSeconds: 3600, EndedAt: s.event.EndedAt, Segments: []charging.MeterSegment{{StartedAt: s.event.StartedAt, EndedAt: s.event.EndedAt, EnergyWh: 1000}}}}
 	data, _ := json.Marshal(frozen)
 	s.frozen = string(data)

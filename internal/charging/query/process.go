@@ -23,7 +23,7 @@ type ProcessOrders interface {
 // ProcessReader 提供原网关过程页，授权与规范身份由所属用例确定。
 type ProcessReader interface {
 	// OrderProcess 在 ctx 下按 q 原身份及游标读取，返回原页或输入／调用／契约错误，不修改设备。
-	OrderProcess(ctx context.Context, q contract.OrderProcessQuery) (contract.OrderProcessData, error)
+	OrderProcess(ctx context.Context, q contract.OrderProcessRequest) (contract.OrderProcessReply, error)
 }
 
 // ProcessPoint 是本用例公开过程读模型，保留原单位、精确身份及未上报空值。
@@ -70,7 +70,7 @@ func (s ProcessService) Read(ctx context.Context, actor operations.Profile, id, 
 	if err != nil {
 		return ProcessPage{}, err
 	}
-	data, err := s.Gateway.OrderProcess(ctx, contract.OrderProcessQuery{OrderID: identity.ID, OrderNo: identity.OrderNo, DeviceID: identity.DeviceID, PortNo: identity.PortNo, AfterID: after, Limit: limit})
+	data, err := s.Gateway.OrderProcess(ctx, contract.OrderProcessRequest{OrderID: identity.ID, OrderNo: identity.OrderNo, DeviceID: identity.DeviceID, PortNo: identity.PortNo, AfterID: after, Limit: limit})
 	if err != nil {
 		return ProcessPage{}, fmt.Errorf("%w: %w", ErrProcessUnavailable, err)
 	}

@@ -26,9 +26,9 @@ type UserStateReader interface {
 // UserCurveReader 提供原设备端口的有界观测，不持有业务授权或改变订单状态。
 type UserCurveReader interface {
 	// Telemetry 在 ctx 下读取 q 原设备窗口，返回共享契约或网络／契约错误，无写入。
-	Telemetry(ctx context.Context, q gatewaycontract.TelemetryQuery) (gatewaycontract.TelemetryData, error)
+	Telemetry(ctx context.Context, q gatewaycontract.TelemetryRequest) (gatewaycontract.TelemetryReply, error)
 	// HistoricalCurve 在 ctx 下读取 q 原订单聚合窗口，返回共享契约或网络／契约错误，无写入。
-	HistoricalCurve(ctx context.Context, q gatewaycontract.HistoricalCurveQuery) (gatewaycontract.HistoricalCurveData, error)
+	HistoricalCurve(ctx context.Context, q gatewaycontract.HistoricalCurveRequest) (gatewaycontract.HistoricalCurveReply, error)
 }
 
 // UserService 拥有用户充电详情、状态补充和曲线窗口；原确认金额与遥测展示保持独立。
@@ -266,7 +266,7 @@ func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (U
 	if s.Gateway == nil {
 		return out, nil
 	}
-	data, err := s.Gateway.Telemetry(ctx, gatewaycontract.TelemetryQuery{DeviceID: row.DeviceID, PortNo: row.PortNo, From: from, To: now})
+	data, err := s.Gateway.Telemetry(ctx, gatewaycontract.TelemetryRequest{DeviceID: row.DeviceID, PortNo: row.PortNo, From: from, To: now})
 	if err != nil {
 		if ctx.Err() != nil {
 			return out, ctx.Err()

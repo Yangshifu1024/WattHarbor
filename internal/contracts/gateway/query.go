@@ -12,8 +12,8 @@ const (
 	MaxQueryPoints      = 2000                              // 公开曲线与过程单页点数上限
 )
 
-// TelemetryQuery 是原设备端口的有界观测时间窗，不包含用户身份或授权凭据。
-type TelemetryQuery struct {
+// TelemetryRequest 是原设备端口的有界观测时间窗，不包含用户身份或授权凭据。
+type TelemetryRequest struct {
 	DeviceID string    // 原设备全局身份
 	PortNo   uint8     // 原物理端口，从1开始
 	From     time.Time // 查询下界，UTC时刻
@@ -31,8 +31,8 @@ type CurvePoint struct {
 	MeterKWh     *float64 `json:"meter_kwh"`     // 原累计电量，kWh，未上报为空
 }
 
-// TelemetryData 是网关实际查询窗口及分辨率，网关可在配置上界内缩短请求窗口。
-type TelemetryData struct {
+// TelemetryReply 是网关实际查询窗口及分辨率，网关可在配置上界内缩短请求窗口。
+type TelemetryReply struct {
 	DeviceID    string       `json:"device_id"`   // 原设备全局身份
 	From        time.Time    `json:"from"`        // 实际查询下界
 	To          time.Time    `json:"to"`          // 实际查询上界
@@ -42,8 +42,8 @@ type TelemetryData struct {
 	Bucket      string       `json:"bucket"`      // 实际聚合桶时长文本
 }
 
-// HistoricalCurveQuery 的窗口由已授权订单事实确定，调用者只选择既定聚合粒度。
-type HistoricalCurveQuery struct {
+// HistoricalCurveRequest 的窗口由已授权订单事实确定，调用者只选择既定聚合粒度。
+type HistoricalCurveRequest struct {
 	DeviceID    string    // 原设备全局身份
 	OrderNo     string    // 原业务订单号，对应原 order_id 查询字段
 	PortNo      uint8     // 原物理端口，从1开始
@@ -52,8 +52,8 @@ type HistoricalCurveQuery struct {
 	Granularity string    // 15min或hourly
 }
 
-// HistoricalCurveData 保留原窗口、聚合边界及摘要，不将聚合点当最终结算计量。
-type HistoricalCurveData struct {
+// HistoricalCurveReply 保留原窗口、聚合边界及摘要，不将聚合点当最终结算计量。
+type HistoricalCurveReply struct {
 	OrderNo             string                     `json:"order_id"`             // 原业务单号，内部字段名沿用order_id
 	DeviceID            string                     `json:"device_id"`            // 原设备全局身份
 	PortNo              uint8                      `json:"port_no"`              // 原物理端口
@@ -66,8 +66,8 @@ type HistoricalCurveData struct {
 	BoundaryApproximate bool                       `json:"boundary_approximate"` // 原窗口边界是否与聚合桶不对齐
 }
 
-// OrderProcessQuery 只接受所属订单的规范身份和原游标，不替换请求中的业务单号。
-type OrderProcessQuery struct {
+// OrderProcessRequest 只接受所属订单的规范身份和原游标，不替换请求中的业务单号。
+type OrderProcessRequest struct {
 	OrderID  uint64 // 原中央订单主键
 	OrderNo  string // 原业务订单号
 	DeviceID string // 原设备全局身份
@@ -92,8 +92,8 @@ type ProcessPoint struct {
 	DeviceStatus     *uint8    `json:"device_status"`     // 原设备状态码，扩展块缺失为空
 }
 
-// OrderProcessData 沿用原过程行主键分页；无下一页时next_after_id显式为null。
-type OrderProcessData struct {
+// OrderProcessReply 沿用原过程行主键分页；无下一页时next_after_id显式为null。
+type OrderProcessReply struct {
 	Items       []ProcessPoint `json:"items"`         // 原序过程点，无点为空数组
 	NextAfterID *uint64        `json:"next_after_id"` // 下一页原游标，末页为空
 }

@@ -30,7 +30,7 @@ func (a TelemetryAPI) cardEvents(c *gin.Context) {
 	for _, row := range rows {
 		items = append(items, contract.CardEvent{EventKey: row.EventKey, Payload: string(row.EventJSON), Response: string(row.ResponseJSON)})
 	}
-	httpapi.OK(c, contract.CardEvents{Items: items})
+	httpapi.OK(c, contract.CardEventsReply{Items: items})
 }
 
 // cardDecideBegin 锁定投递行并返回决策输入：已有冻结回复时只回回复；
@@ -101,7 +101,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in contract.CardFreeze
+	var in contract.CardFreezeRequest
 	if err := c.ShouldBindJSON(&in); err != nil || uuid.Validate(in.EventKey) != nil {
 		httpapi.BadRequest(c, "冻结请求无效")
 		return
@@ -112,7 +112,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		return
 	}
 	if stored == 1 {
-		httpapi.OK(c, contract.CardFrozen{Stored: true, ResponseJSON: in.ResponseJSON})
+		httpapi.OK(c, contract.CardFreezeReply{Stored: true, ResponseJSON: in.ResponseJSON})
 		return
 	}
 	frozen, err := store.FindFrozenCardResponse(c.Request.Context(), a.DB, in.EventKey)
@@ -120,7 +120,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复暂不可读取", nil)
 		return
 	}
-	httpapi.OK(c, contract.CardFrozen{Stored: false, ResponseJSON: frozen})
+	httpapi.OK(c, contract.CardFreezeReply{Stored: false, ResponseJSON: frozen})
 }
 
 // cardEventAdvance 在 c 的鉴权及取消范围推进原事件：retry 增加次数并5秒后重排，done 标记完成。
@@ -129,7 +129,7 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var in contract.CardAdvance
+	var in contract.CardAdvanceRequest
 	if err := c.ShouldBindJSON(&in); err != nil || uuid.Validate(in.EventKey) != nil {
 		httpapi.BadRequest(c, "推进请求无效")
 		return
@@ -140,7 +140,7 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡投递状态暂不可用", nil)
 		return
 	}
-	httpapi.OK(c, contract.CardAdvanced{Advanced: affected == 1})
+	httpapi.OK(c, contract.CardAdvanceReply{Advanced: affected == 1})
 }
 
 // resolvePort 在 c 的鉴权及取消范围按设备与端口序号只读取业务码，未开通返回 found:false。
@@ -161,8 +161,8 @@ func (a TelemetryAPI) resolvePort(c *gin.Context) {
 		return
 	}
 	if code == "" {
-		httpapi.OK(c, contract.CardPort{Found: false})
+		httpapi.OK(c, contract.CardPortReply{Found: false})
 		return
 	}
-	httpapi.OK(c, contract.CardPort{Found: true, PortCode: code})
+	httpapi.OK(c, contract.CardPortReply{Found: true, PortCode: code})
 }

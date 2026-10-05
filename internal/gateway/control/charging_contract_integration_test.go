@@ -62,7 +62,7 @@ func TestChargingEvidenceClientMatchesRegisteredGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	device := "CONTRACT-" + rand.Text()
-	pages, err := client.ChargingEvidence(ctx, []gatewaycontract.EvidenceQuery{{DeviceID: device, PortNo: 1, StartedAt: time.Now().UTC().Add(-time.Minute)}})
+	pages, err := client.ChargingEvidence(ctx, []gatewaycontract.EvidenceQueryRequest{{DeviceID: device, PortNo: 1, StartedAt: time.Now().UTC().Add(-time.Minute)}})
 	if err != nil || len(pages) != 1 {
 		t.Fatalf("pages=%+v err=%v", pages, err)
 	}

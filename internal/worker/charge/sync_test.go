@@ -15,7 +15,7 @@ type startSyncScenario struct {
 	rows                               []gatewaycontract.SyncCommand
 	deliverErr, compensateErr, markErr error
 	filter                             string
-	results                            []centralcontract.StartResult
+	results                            []centralcontract.StartResultRequest
 	compensations, reported            []string
 	calls                              []string
 }
@@ -24,10 +24,10 @@ func (s *startSyncScenario) StartResults(_ context.Context, filter string) ([]ga
 	s.filter = filter
 	return s.rows, nil
 }
-func (s *startSyncScenario) SubmitStartResult(_ context.Context, r centralcontract.StartResult) (centralcontract.ResultAcceptance, error) {
+func (s *startSyncScenario) SubmitStartResult(_ context.Context, r centralcontract.StartResultRequest) (centralcontract.ResultReply, error) {
 	s.calls = append(s.calls, "central:"+r.CommandID)
 	s.results = append(s.results, r)
-	return centralcontract.ResultAcceptance{Accepted: s.deliverErr == nil}, s.deliverErr
+	return centralcontract.ResultReply{Accepted: s.deliverErr == nil}, s.deliverErr
 }
 func (s *startSyncScenario) CompensateStart(_ context.Context, orderNo, commandID string) error {
 	s.calls = append(s.calls, "compensate:"+commandID)

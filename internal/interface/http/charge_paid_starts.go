@@ -42,5 +42,5 @@ func (a PaidStartsAPI) list(c *gin.Context) {
 	for i, item := range items {
 		rows[i] = centralcontract.PaidStartOrder{ID: item.ID, OrderNo: item.OrderNo}
 	}
-	httpapi.OK(c, centralcontract.PaidStartsData{Items: rows})
+	httpapi.OK(c, centralcontract.PaidStartsReply{Items: rows})
 }

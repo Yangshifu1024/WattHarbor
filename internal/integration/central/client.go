@@ -36,7 +36,7 @@ func NewClient(transport serviceclient.Client, baseURL, token string) (*Client, 
 // PaidStarts 读取单页待启动订单；游标推进和整轮重扫由消费者负责。
 func (c *Client) PaidStarts(ctx context.Context, afterID uint64) ([]centralcontract.PaidStartOrder, error) {
 	path := centralcontract.PaidStartsPath + "?after_id=" + strconv.FormatUint(afterID, 10)
-	data, err := get[centralcontract.PaidStartsData](ctx, c, path)
+	data, err := get[centralcontract.PaidStartsReply](ctx, c, path)
 	if err != nil {
 		return nil, err
 	}
@@ -53,9 +53,10 @@ func (c *Client) PaidStarts(ctx context.Context, afterID uint64) ([]centralcontr
 	return data.Items, nil
 }
 
-type response[T any] struct {
-	Code *int `json:"code"`
-	Data *T   `json:"data"`
+// envelopeReply 保留原HTTP信封，nil字段明确表达缺失，不把未声明业务码当成功。
+type envelopeReply[T any] struct {
+	Code *int `json:"code"` // 必需业务码，nil表示缺失
+	Data *T   `json:"data"` // 必需原端点数据，nil表示缺失
 }
 
 func get[T any](ctx context.Context, c *Client, path string) (T, error) {
@@ -64,7 +65,7 @@ func get[T any](ctx context.Context, c *Client, path string) (T, error) {
 	if err != nil {
 		return empty, err
 	}
-	var reply response[T]
+	var reply envelopeReply[T]
 	if err := json.Unmarshal(body, &reply); err != nil {
 		return empty, fmt.Errorf("%w: %w", ErrInvalidResponse, err)
 	}
@@ -73,7 +74,7 @@ func get[T any](ctx context.Context, c *Client, path string) (T, error) {
 
 func post[T any](ctx context.Context, c *Client, path string, payload any) (T, error) {
 	var empty T
-	var reply response[T]
+	var reply envelopeReply[T]
 	status, err := c.transport.PostStatus(ctx, c.baseURL, c.token, path, payload, &reply)
 	if err != nil {
 		var rejection *serviceclient.HTTPError
@@ -85,7 +86,7 @@ func post[T any](ctx context.Context, c *Client, path string, payload any) (T, e
 	return decode(status, reply)
 }
 
-func decode[T any](status int, reply response[T]) (T, error) {
+func decode[T any](status int, reply envelopeReply[T]) (T, error) {
 	var empty T
 	if status != http.StatusOK {
 		return empty, fmt.Errorf("%w: returned HTTP %d, want 200", ErrInvalidResponse, status)

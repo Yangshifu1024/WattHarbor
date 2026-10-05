@@ -23,7 +23,7 @@ func get[T any](ctx context.Context, c *Client, path string) (T, error) {
 	if status != http.StatusOK {
 		return empty, fmt.Errorf("%w: HTTP %d, want 200", ErrInvalidResponse, status)
 	}
-	var reply response[T]
+	var reply envelopeReply[T]
 	if err := json.Unmarshal(body, &reply); err != nil {
 		return empty, fmt.Errorf("%w: %w", ErrInvalidResponse, err)
 	}
@@ -44,7 +44,7 @@ func (c *Client) StartResults(ctx context.Context, commandID string) ([]gatewayc
 	if commandID != "" {
 		path += "?command_id=" + url.QueryEscape(commandID)
 	}
-	data, err := get[gatewaycontract.StartResultsData](ctx, c, path)
+	data, err := get[gatewaycontract.StartResultsReply](ctx, c, path)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (c *Client) StartResults(ctx context.Context, commandID string) ([]gatewayc
 }
 
 func (c *Client) EndEvents(ctx context.Context) ([]gatewaycontract.SyncEvent, error) {
-	data, err := get[gatewaycontract.EventsData](ctx, c, gatewaycontract.EndEventsPath)
+	data, err := get[gatewaycontract.EventsReply](ctx, c, gatewaycontract.EndEventsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (c *Client) EndEvents(ctx context.Context) ([]gatewaycontract.SyncEvent, er
 
 func (c *Client) ChargeCommand(ctx context.Context, orderID uint64) (*gatewaycontract.SyncCommand, error) {
 	path := strings.Replace(gatewaycontract.ChargeCommandRoute, ":order_id", strconv.FormatUint(orderID, 10), 1)
-	data, err := get[gatewaycontract.CommandData](ctx, c, path)
+	data, err := get[gatewaycontract.CommandReply](ctx, c, path)
 	if err != nil {
 		return nil, err
 	}
@@ -81,9 +81,11 @@ func (c *Client) ChargeCommand(ctx context.Context, orderID uint64) (*gatewaycon
 }
 
 func mark(ctx context.Context, c *Client, path string, payload any, requested int) (int, error) {
-	data, err := post[struct {
-		Marked *int `json:"marked"`
-	}](ctx, c, path, payload, http.StatusOK)
+	// markWireReply 只校验原进度字段是否存在，不把缺失当正常零值。
+	type markWireReply struct {
+		Marked *int `json:"marked"` // 原实际推进数；nil为缺失，0为合法重放
+	}
+	data, err := post[markWireReply](ctx, c, path, payload, http.StatusOK)
 	if err != nil {
 		return 0, err
 	}
@@ -100,21 +102,21 @@ func (c *Client) MarkDeviceEventsProcessed(ctx context.Context, ids []uint64) (i
 	return mark(ctx, c, gatewaycontract.MarkDeviceEventsPath, gatewaycontract.MarkDeviceEventsRequest{IDs: ids}, len(ids))
 }
 
-func (c *Client) ReleasePort(ctx context.Context, request gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortResult, error) {
-	data, err := post[gatewaycontract.ReleasePortResult](ctx, c, gatewaycontract.ReleasePortPath, request, http.StatusOK)
+func (c *Client) ReleasePort(ctx context.Context, request gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortReply, error) {
+	data, err := post[gatewaycontract.ReleasePortReply](ctx, c, gatewaycontract.ReleasePortPath, request, http.StatusOK)
 	if err != nil {
 		return data, err
 	}
 	if !data.Released {
-		return gatewaycontract.ReleasePortResult{}, fmt.Errorf("%w: port not released", ErrInvalidResponse)
+		return gatewaycontract.ReleasePortReply{}, fmt.Errorf("%w: port not released", ErrInvalidResponse)
 	}
 	return data, nil
 }
 
-func (c *Client) MeterSamples(ctx context.Context, query gatewaycontract.MeterSamplesQuery) ([]gatewaycontract.SyncEvent, error) {
+func (c *Client) MeterSamples(ctx context.Context, query gatewaycontract.MeterSamplesRequest) ([]gatewaycontract.SyncEvent, error) {
 	path := strings.Replace(gatewaycontract.MeterSamplesRoute, ":device_id", url.PathEscape(query.DeviceID), 1)
 	params := url.Values{"ack_at": {query.AckAt.UTC().Format(time.RFC3339Nano)}, "end_at": {query.EndAt.UTC().Format(time.RFC3339Nano)}, "end_id": {strconv.FormatUint(query.EndID, 10)}}
-	data, err := get[gatewaycontract.EventsData](ctx, c, path+"?"+params.Encode())
+	data, err := get[gatewaycontract.EventsReply](ctx, c, path+"?"+params.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -124,13 +126,13 @@ func (c *Client) MeterSamples(ctx context.Context, query gatewaycontract.MeterSa
 	return data.Items, nil
 }
 
-func (c *Client) FreezeEndDelivery(ctx context.Context, request gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryResult, error) {
-	data, err := post[gatewaycontract.FreezeEndDeliveryResult](ctx, c, gatewaycontract.FreezeEndDeliveryPath, request, http.StatusOK)
+func (c *Client) FreezeEndDelivery(ctx context.Context, request gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryReply, error) {
+	data, err := post[gatewaycontract.FreezeEndDeliveryReply](ctx, c, gatewaycontract.FreezeEndDeliveryPath, request, http.StatusOK)
 	if err != nil {
 		return data, err
 	}
 	if data.Payload == "" {
-		return gatewaycontract.FreezeEndDeliveryResult{}, fmt.Errorf("%w: frozen payload missing", ErrInvalidResponse)
+		return gatewaycontract.FreezeEndDeliveryReply{}, fmt.Errorf("%w: frozen payload missing", ErrInvalidResponse)
 	}
 	return data, nil
 }
@@ -140,7 +142,7 @@ func (c *Client) CompensateStart(ctx context.Context, orderNo, commandID string)
 		return errors.New("invalid charge order number")
 	}
 	path := strings.Replace(gatewaycontract.CompensateStartRoute, ":order_no", url.PathEscape(orderNo), 1)
-	data, err := post[gatewaycontract.CompensationAcceptance](ctx, c, path, gatewaycontract.CompensateStartRequest{CommandID: commandID}, http.StatusOK)
+	data, err := post[gatewaycontract.CompensateStartReply](ctx, c, path, gatewaycontract.CompensateStartRequest{CommandID: commandID}, http.StatusOK)
 	if err != nil {
 		return err
 	}

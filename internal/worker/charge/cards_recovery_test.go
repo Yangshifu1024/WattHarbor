@@ -14,11 +14,11 @@ import (
 
 // recoveryCards 仅模拟持久投递接口，不宣称证明真实库的冻结或设备消费。
 type recoveryCards struct {
-	event          gateway.CardEvent     // 原事件及模拟持久冻结值
-	replies        []gateway.CardReply   // 发送的原回复
-	advances       []gateway.CardAdvance // 原事件状态推进
-	freezeCalls    int                   // 冻结请求次数
-	loseFirstReply bool                  // 模拟首个回复发送后响应丢失
+	event          gateway.CardEvent            // 原事件及模拟持久冻结值
+	replies        []gateway.CardReplyRequest   // 发送的原回复
+	advances       []gateway.CardAdvanceRequest // 原事件状态推进
+	freezeCalls    int                          // 冻结请求次数
+	loseFirstReply bool                         // 模拟首个回复发送后响应丢失
 }
 
 // CardEvents 返回 ctx 下同一个待投递原事件 fixture，无 IO。
@@ -27,26 +27,26 @@ func (f *recoveryCards) CardEvents(ctx context.Context) ([]gateway.CardEvent, er
 }
 
 // FreezeCardResponse 在 ctx 下按 in 原号模拟首写，返回权威原 JSON 或身份错误，无真实库 IO。
-func (f *recoveryCards) FreezeCardResponse(ctx context.Context, in gateway.CardFreeze) (gateway.CardFrozen, error) {
+func (f *recoveryCards) FreezeCardResponse(ctx context.Context, in gateway.CardFreezeRequest) (gateway.CardFreezeReply, error) {
 	f.freezeCalls++
 	if in.EventKey != f.event.EventKey {
-		return gateway.CardFrozen{}, errors.New("wrong freeze event")
+		return gateway.CardFreezeReply{}, errors.New("wrong freeze event")
 	}
 	stored := f.event.Response == ""
 	if stored {
 		f.event.Response = in.ResponseJSON
 	}
-	return gateway.CardFrozen{Stored: stored, ResponseJSON: f.event.Response}, nil
+	return gateway.CardFreezeReply{Stored: stored, ResponseJSON: f.event.Response}, nil
 }
 
 // AdvanceCardEvent 记录 ctx 下 in 的原推进；不清除冻结回复，无 IO。
-func (f *recoveryCards) AdvanceCardEvent(ctx context.Context, in gateway.CardAdvance) error {
+func (f *recoveryCards) AdvanceCardEvent(ctx context.Context, in gateway.CardAdvanceRequest) error {
 	f.advances = append(f.advances, in)
 	return nil
 }
 
 // ReplyCard 记录 ctx 下 in，模拟第一次发送后的未知结果，不改变原回复，无真实设备 IO。
-func (f *recoveryCards) ReplyCard(ctx context.Context, in gateway.CardReply) error {
+func (f *recoveryCards) ReplyCard(ctx context.Context, in gateway.CardReplyRequest) error {
 	f.replies = append(f.replies, in)
 	if f.loseFirstReply && len(f.replies) == 1 {
 		return errors.New("reply response lost")
@@ -55,8 +55,8 @@ func (f *recoveryCards) ReplyCard(ctx context.Context, in gateway.CardReply) err
 }
 
 // ResolveCardPort 返回 ctx/device/port 的原端口 fixture，无 IO。
-func (f *recoveryCards) ResolveCardPort(ctx context.Context, device string, port uint8) (gateway.CardPort, error) {
-	return gateway.CardPort{Found: true, PortCode: "original-port"}, nil
+func (f *recoveryCards) ResolveCardPort(ctx context.Context, device string, port uint8) (gateway.CardPortReply, error) {
+	return gateway.CardPortReply{Found: true, PortCode: "original-port"}, nil
 }
 
 // recoveryCentral 记录资金查询次数，模拟明确余额不足和之后改变的余额；无真实资金副作用。
@@ -66,21 +66,21 @@ type recoveryCentral struct {
 }
 
 // SwipeCard 记录 ctx/in 原事件并返回明确不足余额；无真实扣款。
-func (f *recoveryCentral) SwipeCard(ctx context.Context, in central.CardSwipe) (central.CardOperation, error) {
+func (f *recoveryCentral) SwipeCard(ctx context.Context, in central.CardSwipeRequest) (central.CardOperationReply, error) {
 	f.swipes++
-	return central.CardOperation{}, &central.CardDecline{InsufficientBalance: true}
+	return central.CardOperationReply{}, &central.CardDeclineReply{InsufficientBalance: true}
 }
 
 // CardBalance 返回 ctx/card 原卡当前余额 fixture，记录次数，无 IO。
-func (f *recoveryCentral) CardBalance(ctx context.Context, card string) (central.CardBalance, error) {
+func (f *recoveryCentral) CardBalance(ctx context.Context, card string) (central.CardBalanceReply, error) {
 	f.balances++
-	return central.CardBalance{Valid: true, BalanceCents: f.cents}, nil
+	return central.CardBalanceReply{Valid: true, BalanceCents: f.cents}, nil
 }
 
 // TestFrozenCardReplyIsUsedWithoutNewDecision 钉住已经冻结的原设备、会话及余额回复，禁止再次决策。
 func TestFrozenCardReplyIsUsedWithoutNewDecision(t *testing.T) {
 	key := uuid.NewString()
-	original := gateway.CardReply{DeviceID: "original-device", Session: "010203040506", Kind: protocol.CommandCardBalance, CardNumber: 17, BalanceUnits: 88}
+	original := gateway.CardReplyRequest{DeviceID: "original-device", Session: "010203040506", Kind: protocol.CommandCardBalance, CardNumber: 17, BalanceUnits: 88}
 	raw, _ := json.Marshal(original)
 	edge := &recoveryCards{event: gateway.CardEvent{EventKey: key, Payload: "already frozen input must not be reinterpreted", Response: string(raw)}}
 	core := &recoveryCentral{cents: 9000}

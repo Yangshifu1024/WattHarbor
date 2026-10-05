@@ -68,11 +68,11 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := client.Telemetry(context.Background(), contract.TelemetryQuery{DeviceID: device, PortNo: 2, From: from, To: to})
+	data, err := client.Telemetry(context.Background(), contract.TelemetryRequest{DeviceID: device, PortNo: 2, From: from, To: to})
 	if err != nil || data.Count != 1 || data.Series[0].PowerW == nil || *data.Series[0].PowerW != 0 || data.Series[0].MeterKWh == nil || *data.Series[0].MeterKWh != 0.0025 || data.Series[0].VoltageV != nil {
 		t.Fatalf("registered telemetry=%+v %v", data, err)
 	}
-	history, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveQuery{DeviceID: device, OrderNo: no, PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min"})
+	history, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveRequest{DeviceID: device, OrderNo: no, PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min"})
 	if err != nil || history.Count != 1 || !history.BoundaryApproximate || history.Series[0].PowerW == nil || *history.Series[0].PowerW != 150.125 {
 		t.Fatalf("registered history=%+v %v", history, err)
 	}
@@ -87,7 +87,7 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	if value, err := strconv.ParseFloat(average, 64); err != nil || value != 150.125 {
 		t.Fatal("original average column mapping lost", average, err)
 	}
-	q := contract.OrderProcessQuery{OrderID: id, OrderNo: no, DeviceID: device, PortNo: 2, AfterID: id - 1, Limit: 2}
+	q := contract.OrderProcessRequest{OrderID: id, OrderNo: no, DeviceID: device, PortNo: 2, AfterID: id - 1, Limit: 2}
 	page, err := client.OrderProcess(context.Background(), q)
 	if err != nil || len(page.Items) != 2 || page.Items[0].ID != id || page.NextAfterID == nil || *page.NextAfterID != id+1 {
 		t.Fatalf("registered process=%+v %v", page, err)
@@ -110,7 +110,7 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bad.Telemetry(context.Background(), contract.TelemetryQuery{DeviceID: device, PortNo: 2, From: from, To: to}); err == nil {
+	if _, err := bad.Telemetry(context.Background(), contract.TelemetryRequest{DeviceID: device, PortNo: 2, From: from, To: to}); err == nil {
 		t.Fatal("rejected token became empty telemetry")
 	}
 	// 第二个桶的样本数不同，原摘要必须按count加权，不能用桶均值的简单平均。
@@ -118,7 +118,7 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	if err := tx.Table("telemetry_aggregate_15min").Create(map[string]any{"device_id": device, "port_no": 2, "metric": "power_w", "bucket_start": previous, "bucket_month": previous.Format("2006-01") + "-01", "avg_value": "300", "min_value": "200", "max_value": "400", "count": 1}).Error; err != nil {
 		t.Fatal(err)
 	}
-	weighted, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveQuery{DeviceID: device, OrderNo: no, PortNo: 2, StartedAt: previous, EndedAt: to, Granularity: "15min"})
+	weighted, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveRequest{DeviceID: device, OrderNo: no, PortNo: 2, StartedAt: previous, EndedAt: to, Granularity: "15min"})
 	if err != nil || weighted.Count != 2 {
 		t.Fatal("registered weighted summary unavailable", err)
 	}

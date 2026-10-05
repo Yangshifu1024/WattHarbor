@@ -20,7 +20,7 @@ import (
 // ImportGateway 只提供导入所需的厂商公开事实及原身份同步开通，不暴露 URL、令牌或通用 HTTP。
 type ImportGateway interface {
 	// Vendor 返回 id 的公开协议事实或原服务错误，requestID 仅用于服务追踪。
-	Vendor(context.Context, uint64, string) (contract.Vendor, error)
+	Vendor(context.Context, uint64, string) (contract.VendorReply, error)
 	// Provision 同步确认原设备清单已持久开通，失败不得改用新的设备身份。
 	Provision(context.Context, []contract.ProvisionDevice) error
 }

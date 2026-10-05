@@ -29,12 +29,12 @@ func TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision(t *testing.T) {
 				t.Error("telemetry time lost")
 			}
 			zero := float64(0)
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.TelemetryData{DeviceID: device, From: from, To: to, Series: []contract.CurvePoint{{TS: from.Format(time.RFC3339Nano), PowerW: &zero}}, Count: 1, Granularity: "raw", Bucket: "0s"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.TelemetryReply{DeviceID: device, From: from, To: to, Series: []contract.CurvePoint{{TS: from.Format(time.RFC3339Nano), PowerW: &zero}}, Count: 1, Granularity: "raw", Bucket: "0s"}})
 		case "/api/v1/internal/devices/" + device + "/historical-curve":
 			if q.Get("order_id") != "CH&+原单" || q.Get("granularity") != "15min" {
 				t.Error("historical identity lost")
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.HistoricalCurveData{OrderNo: "CH&+原单", DeviceID: device, PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min", Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{"original_id": json.RawMessage("18446744073709551614")}, BoundaryApproximate: true}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.HistoricalCurveReply{OrderNo: "CH&+原单", DeviceID: device, PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min", Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{"original_id": json.RawMessage("18446744073709551614")}, BoundaryApproximate: true}})
 		case "/api/v1/internal/charge-orders/CH&+原单/process":
 			if q.Get("charge_order_id") != "18446744073709551613" || q.Get("device_id") != device || q.Get("after_id") != "18446744073709551612" || q.Get("limit") != "2" {
 				t.Error("process identity precision lost")
@@ -44,15 +44,15 @@ func TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision(t *testing.T) {
 			t.Errorf("unexpected query path %s", r.URL.Path)
 		}
 	})
-	telemetry, err := client.Telemetry(context.Background(), contract.TelemetryQuery{DeviceID: device, PortNo: 2, From: from, To: to})
+	telemetry, err := client.Telemetry(context.Background(), contract.TelemetryRequest{DeviceID: device, PortNo: 2, From: from, To: to})
 	if err != nil || len(telemetry.Series) != 1 || telemetry.Series[0].PowerW == nil || *telemetry.Series[0].PowerW != 0 || telemetry.Series[0].VoltageV != nil {
 		t.Fatalf("nullable telemetry=%+v %v", telemetry, err)
 	}
-	history, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveQuery{DeviceID: device, OrderNo: "CH&+原单", PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min"})
+	history, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveRequest{DeviceID: device, OrderNo: "CH&+原单", PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min"})
 	if err != nil || history.Series == nil || !history.BoundaryApproximate || string(history.Summary["original_id"]) != "18446744073709551614" {
 		t.Fatalf("history summary=%+v %v", history, err)
 	}
-	page, err := client.OrderProcess(context.Background(), contract.OrderProcessQuery{OrderID: 18446744073709551613, OrderNo: "CH&+原单", DeviceID: device, PortNo: 2, AfterID: 18446744073709551612, Limit: 2})
+	page, err := client.OrderProcess(context.Background(), contract.OrderProcessRequest{OrderID: 18446744073709551613, OrderNo: "CH&+原单", DeviceID: device, PortNo: 2, AfterID: 18446744073709551612, Limit: 2})
 	if err != nil || len(page.Items) != 1 || page.NextAfterID == nil || *page.NextAfterID != 18446744073709551614 {
 		t.Fatalf("process cursor=%+v %v", page, err)
 	}
@@ -81,7 +81,7 @@ func TestQueryClientsRejectMalformedDataAndRespectCancellation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := clientForServer(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(tc.body)) })
-			data, err := client.OrderProcess(context.Background(), contract.OrderProcessQuery{OrderID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1, AfterID: 10, Limit: 2})
+			data, err := client.OrderProcess(context.Background(), contract.OrderProcessRequest{OrderID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1, AfterID: 10, Limit: 2})
 			if tc.valid {
 				if err != nil || data.Items == nil || data.NextAfterID != nil {
 					t.Fatal(data, err)
@@ -102,7 +102,7 @@ func TestQueryClientsRejectMalformedDataAndRespectCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q := contract.OrderProcessQuery{OrderID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1, Limit: 1}
+	q := contract.OrderProcessRequest{OrderID: 1, OrderNo: "CH", DeviceID: "board", PortNo: 1, Limit: 1}
 	if _, err := client.OrderProcess(context.Background(), q); err == nil || forwarded {
 		t.Fatal("redirect forwarded service token")
 	}

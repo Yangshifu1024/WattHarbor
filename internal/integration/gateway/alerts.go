@@ -14,7 +14,7 @@ import (
 // DeviceFaults 在ctx下读取原100条待处理批，返回原主键／载荷或传输／契约错误，无重试。
 // 使用受管理Transport、最多5秒且禁止重定向；单条协议解码与处理由所属用例决定。
 func (c *Client) DeviceFaults(ctx context.Context) ([]contract.DeviceFaultReport, error) {
-	data, err := queryData[contract.DeviceFaultData](ctx, c, contract.DeviceFaultsPath+"?limit=100", "reports")
+	data, err := queryData[contract.DeviceFaultsReply](ctx, c, contract.DeviceFaultsPath+"?limit=100", "reports")
 	if err != nil {
 		return nil, err
 	}
@@ -55,9 +55,11 @@ func (c *Client) MarkDeviceFaults(ctx context.Context, ids []uint64) (int64, err
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	transport.HTTP = &httpClient
 	copyClient.transport = transport
-	data, err := post[struct {
+	// markDeviceFaultsWireReply 只校验原进度字段是否存在，不把缺失当正常零值。
+	type markDeviceFaultsWireReply struct {
 		Marked *int64 `json:"marked"` /* 必须存在的实际推进条数 */
-	}](ctx, &copyClient, contract.MarkDeviceFaultsPath, contract.MarkDeviceFaultsRequest{IDs: ids}, http.StatusOK)
+	}
+	data, err := post[markDeviceFaultsWireReply](ctx, &copyClient, contract.MarkDeviceFaultsPath, contract.MarkDeviceFaultsRequest{IDs: ids}, http.StatusOK)
 	if err != nil {
 		return 0, err
 	}
@@ -69,23 +71,23 @@ func (c *Client) MarkDeviceFaults(ctx context.Context, ids []uint64) (int64, err
 
 // HeartbeatAfterKey 在ctx下按deviceID和key原水印取原证据；返回原时刻／载荷或输入／传输／契约错误。
 // 原键缺失明确无水印，无心跳不补正常值；found时强制接收时刻晚于水印，协议与设备身份由用例核对。
-func (c *Client) HeartbeatAfterKey(ctx context.Context, deviceID, key string) (contract.HeartbeatEvidence, error) {
+func (c *Client) HeartbeatAfterKey(ctx context.Context, deviceID, key string) (contract.HeartbeatAfterKeyReply, error) {
 	if deviceID == "" || len(deviceID) > 64 || strings.TrimSpace(deviceID) != deviceID || key == "" || len(key) > 64 {
-		return contract.HeartbeatEvidence{}, fmt.Errorf("invalid heartbeat watermark")
+		return contract.HeartbeatAfterKeyReply{}, fmt.Errorf("invalid heartbeat watermark")
 	}
 	path := contract.LatestHeartbeatPath + url.PathEscape(deviceID) + "/latest-heartbeat?after_key=" + url.QueryEscape(key)
-	data, err := queryData[contract.HeartbeatEvidence](ctx, c, path, "found")
+	data, err := queryData[contract.HeartbeatAfterKeyReply](ctx, c, path, "found")
 	if err != nil {
 		return data, err
 	}
 	if data.AfterReceivedAt != nil && data.AfterReceivedAt.IsZero() {
-		return contract.HeartbeatEvidence{}, fmt.Errorf("%w: zero watermark", ErrInvalidResponse)
+		return contract.HeartbeatAfterKeyReply{}, fmt.Errorf("%w: zero watermark", ErrInvalidResponse)
 	}
 	if data.Found && (data.AfterReceivedAt == nil || data.ReceivedAt == nil || !data.ReceivedAt.After(*data.AfterReceivedAt) || data.Payload == "") {
-		return contract.HeartbeatEvidence{}, fmt.Errorf("%w: incomplete heartbeat", ErrInvalidResponse)
+		return contract.HeartbeatAfterKeyReply{}, fmt.Errorf("%w: incomplete heartbeat", ErrInvalidResponse)
 	}
 	if !data.Found && (data.ReceivedAt != nil || data.Payload != "") {
-		return contract.HeartbeatEvidence{}, fmt.Errorf("%w: contradictory heartbeat", ErrInvalidResponse)
+		return contract.HeartbeatAfterKeyReply{}, fmt.Errorf("%w: contradictory heartbeat", ErrInvalidResponse)
 	}
 	return data, nil
 }

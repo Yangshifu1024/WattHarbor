@@ -35,7 +35,7 @@ const (
 	StopSourceUser         = "user_app"
 )
 
-type EvidenceQuery struct {
+type EvidenceQueryRequest struct {
 	DeviceID  string    `json:"device_id"`  // 网关设备业务标识
 	PortNo    uint8     `json:"port_no"`    // 目标物理端口号，从 1 开始
 	StartedAt time.Time `json:"started_at"` // 订单开始充电的 UTC 时刻，取证窗口下界
@@ -43,7 +43,7 @@ type EvidenceQuery struct {
 }
 
 type EvidenceRequest struct {
-	Requests []EvidenceQuery `json:"requests"` // 按输入顺序批量查询设备端口，最多 20 项
+	Requests []EvidenceQueryRequest `json:"requests"` // 按输入顺序批量查询设备端口，最多 20 项
 }
 
 // EvidenceSample 保留既有遥测 JSON 大小写，只暴露端口级心跳证据。
@@ -55,8 +55,8 @@ type EvidenceSample struct {
 	ChargingPorts []protocol.PortTelemetry `json:"ChargingPorts"` // 仅含目标端口；空集合表示该心跳未上报目标端口，必须中断连续窗口
 }
 
-// EvidencePage 按请求顺序返回；Complete=false 时 NextAfterID 必须推进游标。
-type EvidencePage struct {
+// EvidencePageReply 按请求顺序返回；Complete=false 时 NextAfterID 必须推进游标。
+type EvidencePageReply struct {
 	DeviceID    string           `json:"device_id"`     // 网关设备业务标识
 	PortNo      uint8            `json:"port_no"`       // 目标物理端口号，从 1 开始
 	Samples     []EvidenceSample `json:"samples"`       // 包含目标端口缺失事实的原序心跳样本
@@ -64,8 +64,8 @@ type EvidencePage struct {
 	NextAfterID uint64           `json:"next_after_id"` // 未完成时必须大于请求游标的事件主键
 }
 
-type EvidenceData struct {
-	Evidence []EvidencePage `json:"evidence"` // 按请求顺序对应的证据页
+type EvidenceReply struct {
+	Evidence []EvidencePageReply `json:"evidence"` // 按请求顺序对应的证据页
 }
 
 type StopRequest struct {
@@ -74,8 +74,8 @@ type StopRequest struct {
 	Source  string `json:"source" binding:"required,oneof=user_app admin auto"` // 发起方标签，用于网关授权及审计
 }
 
-// StopAcceptance 只确认停止命令已受理，Stopped 保持 false；设备结束由异步回执确认。
-type StopAcceptance struct {
+// StopReply 只确认停止命令已受理，Stopped 保持 false；设备结束由异步回执确认。
+type StopReply struct {
 	Accepted  bool   `json:"accepted"`   // 网关已持久受理 STOP
 	Stopped   bool   `json:"stopped"`    // 是否设备已停止；受理阶段固定为 false
 	CommandID string `json:"command_id"` // 持久命令标识，用于网关重试与设备回执
@@ -86,9 +86,9 @@ type StartRequest struct {
 	OrderNo string `json:"order_no" binding:"required,min=1,max=64"` // 原充电订单号，不生成新的请求身份
 }
 
-// StartAcceptance 是持久化 START 命令的受理结果。
+// StartReply 是持久化 START 命令的受理结果。
 // DeviceAcknowledged 只表达 gateway 已持有设备回执，不代替 central 的订单状态推进。
-type StartAcceptance struct {
+type StartReply struct {
 	OrderNo            string `json:"order_no"`            // 原充电订单号，不生成新的请求身份
 	CommandID          string `json:"command_id"`          // 持久命令标识，用于网关重试与设备回执
 	Status             string `json:"status"`              // 命令持久化状态

@@ -14,7 +14,7 @@ type PaidStarter struct {
 		PaidStarts(context.Context, uint64) ([]centralcontract.PaidStartOrder, error)
 	}
 	Gateway interface {
-		RequestStart(context.Context, gatewaycontract.StartRequest) (gatewaycontract.StartAcceptance, error)
+		RequestStart(context.Context, gatewaycontract.StartRequest) (gatewaycontract.StartReply, error)
 	}
 	cursor uint64
 }

@@ -90,7 +90,7 @@ func (a API) saveVendor(c *gin.Context, id uint64) {
 		VendorFailure(c, device.VendorNotVisible{})
 		return
 	}
-	var in contract.VendorInput
+	var in contract.VendorRequest
 	if !chargehttp.DecodeResource(c, &in) {
 		return
 	}

@@ -16,7 +16,7 @@ type Synchronizer struct {
 		CompensateStart(context.Context, string, string) error
 	}
 	Central interface {
-		SubmitStartResult(context.Context, centralcontract.StartResult) (centralcontract.ResultAcceptance, error)
+		SubmitStartResult(context.Context, centralcontract.StartResultRequest) (centralcontract.ResultReply, error)
 	}
 	CommandFilter string
 }
@@ -39,7 +39,7 @@ func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 			firstError = errors.New("invalid persisted start result")
 			continue
 		}
-		result := centralcontract.StartResult{CommandID: row.CommandID, ChargeOrderID: row.ChargeOrderID,
+		result := centralcontract.StartResultRequest{CommandID: row.CommandID, ChargeOrderID: row.ChargeOrderID,
 			OrderNo: row.OrderNo, DeviceID: row.DeviceID, PortNo: row.PortNo,
 			PortID: uint64(*row.PortID), Success: row.Status == "acked",
 			ResultCode: uint8(*row.ResultCode), OccurredAt: row.AckAt.UTC()}

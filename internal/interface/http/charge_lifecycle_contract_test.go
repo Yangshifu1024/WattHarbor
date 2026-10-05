@@ -80,12 +80,12 @@ func TestLifecycleClientMatchesRegisteredCentralRoutes(t *testing.T) {
 		t.Fatalf("active=%+v err=%v", active, err)
 	}
 	stamp := time.Date(2026, 10, 5, 4, 0, 0, 123000000, time.UTC)
-	start := centralcontract.StartResult{CommandID: receiptStartID, ChargeOrderID: 9, OrderNo: "C-9", DeviceID: "D-1", PortNo: 1, PortID: active.PortID, Success: true, OccurredAt: stamp}
+	start := centralcontract.StartResultRequest{CommandID: receiptStartID, ChargeOrderID: 9, OrderNo: "C-9", DeviceID: "D-1", PortNo: 1, PortID: active.PortID, Success: true, OccurredAt: stamp}
 	ack, err := client.SubmitStartResult(context.Background(), start)
 	if err != nil || !ack.Accepted || !ack.Replayed || starts.result.CommandID != receiptStartID || starts.result.PortID != active.PortID {
 		t.Fatalf("start ack=%+v result=%+v err=%v", ack, starts.result, err)
 	}
-	end := centralcontract.EndResult{OrderNo: "C-9", ChargeOrderID: 9, StartCommandID: receiptStartID, StopCommandID: receiptStopID, DeviceID: "D-1", PortNo: 1, PortID: active.PortID, Meter: charging.EndMeter{ChargedWh: 1000, ChargedSeconds: 3600, EndedAt: stamp}}
+	end := centralcontract.EndResultRequest{OrderNo: "C-9", ChargeOrderID: 9, StartCommandID: receiptStartID, StopCommandID: receiptStopID, DeviceID: "D-1", PortNo: 1, PortID: active.PortID, Meter: charging.EndMeter{ChargedWh: 1000, ChargedSeconds: 3600, EndedAt: stamp}}
 	ack, err = client.SubmitEndResult(context.Background(), end)
 	if err != nil || !ack.Accepted || !ack.Replayed || ends.result.Meter.ChargedWh != 1000 || ends.result.Meter.ChargedSeconds != 3600 || ends.result.StopCommandID != receiptStopID {
 		t.Fatalf("end ack=%+v result=%+v err=%v", ack, ends.result, err)

@@ -156,7 +156,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	if w := call("POST", centralcontract.CardSwipePath, "{", "", token); w.Code != 400 {
 		t.Fatalf("malformed=%d %s", w.Code, w.Body)
 	}
-	in := centralcontract.CardSwipe{CardNo: number, EventID: uuid.NewString(), PortID: port, OccurredAt: time.Now()}
+	in := centralcontract.CardSwipeRequest{CardNo: number, EventID: uuid.NewString(), PortID: port, OccurredAt: time.Now()}
 	first, err := core.SwipeCard(context.Background(), in)
 	if err != nil || first.EventID != in.EventID || first.DeviceID != deviceID || first.Kind != "start" || first.PriceCents != 100 {
 		t.Fatalf("registered swipe=%+v %v", first, err)
@@ -183,7 +183,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	in.EventID = uuid.NewString()
 	in.PortID = port2
 	_, err = core.SwipeCard(context.Background(), in)
-	var declined *centralcontract.CardDecline
+	var declined *centralcontract.CardDeclineReply
 	if !errors.As(err, &declined) || !declined.InsufficientBalance {
 		t.Fatalf("insufficient=%v", err)
 	}
@@ -239,19 +239,19 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	if !found {
 		t.Fatalf("original event missing: %+v", listed)
 	}
-	reply := gatewaycontract.CardReply{DeviceID: deviceID, Session: "010203040506", Kind: protocol.CommandCardBalance, CardNumber: 17, BalanceUnits: 88}
+	reply := gatewaycontract.CardReplyRequest{DeviceID: deviceID, Session: "010203040506", Kind: protocol.CommandCardBalance, CardNumber: 17, BalanceUnits: 88}
 	replyRaw, _ := json.Marshal(reply)
-	frozen, err := edge.FreezeCardResponse(context.Background(), gatewaycontract.CardFreeze{EventKey: key, ResponseJSON: string(replyRaw)})
+	frozen, err := edge.FreezeCardResponse(context.Background(), gatewaycontract.CardFreezeRequest{EventKey: key, ResponseJSON: string(replyRaw)})
 	if err != nil || !frozen.Stored {
 		t.Fatalf("freeze=%+v %v", frozen, err)
 	}
 	reply.BalanceUnits = 999
 	changed, _ := json.Marshal(reply)
-	again, err := edge.FreezeCardResponse(context.Background(), gatewaycontract.CardFreeze{EventKey: key, ResponseJSON: string(changed)})
+	again, err := edge.FreezeCardResponse(context.Background(), gatewaycontract.CardFreezeRequest{EventKey: key, ResponseJSON: string(changed)})
 	if err != nil || again.Stored || !sameCardJSON(t, again.ResponseJSON, frozen.ResponseJSON) {
 		t.Fatalf("original freeze overwritten=%+v %v", again, err)
 	}
-	if err := edge.AdvanceCardEvent(context.Background(), gatewaycontract.CardAdvance{EventKey: key, Outcome: "retry", Error: "response lost"}); err != nil {
+	if err := edge.AdvanceCardEvent(context.Background(), gatewaycontract.CardAdvanceRequest{EventKey: key, Outcome: "retry", Error: "response lost"}); err != nil {
 		t.Fatal(err)
 	}
 	var delivery struct {
@@ -265,7 +265,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	if resolved, err := edge.ResolveCardPort(context.Background(), deviceID, 1); err != nil || !resolved.Found || resolved.PortCode != port {
 		t.Fatalf("registered port=%+v %v", resolved, err)
 	}
-	if err := edge.AdvanceCardEvent(context.Background(), gatewaycontract.CardAdvance{EventKey: key, Outcome: "done"}); err != nil {
+	if err := edge.AdvanceCardEvent(context.Background(), gatewaycontract.CardAdvanceRequest{EventKey: key, Outcome: "done"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := gateway.Table("card_event_delivery").Where("event_key=?", key).Take(&delivery).Error; err != nil || delivery.Status != "done" || !sameCardJSON(t, delivery.ResponseJSON, frozen.ResponseJSON) {

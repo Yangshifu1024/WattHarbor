@@ -18,21 +18,21 @@ type CardGateway interface {
 	// CardEvents 在 context 下返回原待投递集合及冻结值，失败返回错误；不推进。
 	CardEvents(context.Context) ([]gateway.CardEvent, error)
 	// FreezeCardResponse 在 context 下按原请求首写并返回权威 JSON，失败返回错误。
-	FreezeCardResponse(context.Context, gateway.CardFreeze) (gateway.CardFrozen, error)
+	FreezeCardResponse(context.Context, gateway.CardFreezeRequest) (gateway.CardFreezeReply, error)
 	// AdvanceCardEvent 在 context 下按原事件重排或完成，失败返回错误。
-	AdvanceCardEvent(context.Context, gateway.CardAdvance) error
+	AdvanceCardEvent(context.Context, gateway.CardAdvanceRequest) error
 	// ReplyCard 在 context 下向原设备会话发送原回复，失败返回错误。
-	ReplyCard(context.Context, gateway.CardReply) error
+	ReplyCard(context.Context, gateway.CardReplyRequest) error
 	// ResolveCardPort 在 context 下读取原设备及端口序号的业务码或错误。
-	ResolveCardPort(context.Context, string, uint8) (gateway.CardPort, error)
+	ResolveCardPort(context.Context, string, uint8) (gateway.CardPortReply, error)
 }
 
 // CardCentral 只提供原事件决策和原卡余额，不执行投递或拥有设备连接。
 type CardCentral interface {
 	// SwipeCard 在 context 下执行原事件并返回原操作、明确拒绝或未知结果错误。
-	SwipeCard(context.Context, central.CardSwipe) (central.CardOperation, error)
+	SwipeCard(context.Context, central.CardSwipeRequest) (central.CardOperationReply, error)
 	// CardBalance 在 context 下返回原卡有效性及可花费分值或错误。
-	CardBalance(context.Context, string) (central.CardBalance, error)
+	CardBalance(context.Context, string) (central.CardBalanceReply, error)
 }
 
 // CardDispatcher 编排原卡事件决策和回复；冻结完成后只重发原回复及原 event_key。
@@ -66,12 +66,12 @@ func (d CardDispatcher) Run(ctx context.Context) (int, error) {
 			if len(message) > 255 {
 				message = message[:255]
 			}
-			if aerr := d.Gateway.AdvanceCardEvent(ctx, gateway.CardAdvance{EventKey: item.EventKey, Outcome: "retry", Error: message}); aerr != nil {
+			if aerr := d.Gateway.AdvanceCardEvent(ctx, gateway.CardAdvanceRequest{EventKey: item.EventKey, Outcome: "retry", Error: message}); aerr != nil {
 				return done, aerr
 			}
 			continue
 		}
-		if err := d.Gateway.AdvanceCardEvent(ctx, gateway.CardAdvance{EventKey: item.EventKey, Outcome: "done"}); err != nil {
+		if err := d.Gateway.AdvanceCardEvent(ctx, gateway.CardAdvanceRequest{EventKey: item.EventKey, Outcome: "done"}); err != nil {
 			return done, err
 		}
 		done++
@@ -81,8 +81,8 @@ func (d CardDispatcher) Run(ctx context.Context) (int, error) {
 
 // decisionFor 在 ctx 下恢复 key 对应 frozen 或解析 payload 决策并首写冻结，返回权威回复或错误。
 // 竞争失败使用胜出回复，不根据当前余额重算；本方法不推进投递，发送后未知由原冻结值恢复。
-func (d CardDispatcher) decisionFor(ctx context.Context, key, payload, frozen string) (gateway.CardReply, error) {
-	var reply gateway.CardReply
+func (d CardDispatcher) decisionFor(ctx context.Context, key, payload, frozen string) (gateway.CardReplyRequest, error) {
+	var reply gateway.CardReplyRequest
 	if frozen != "" {
 		return reply, json.Unmarshal([]byte(frozen), &reply)
 	}
@@ -95,7 +95,7 @@ func (d CardDispatcher) decisionFor(ctx context.Context, key, payload, frozen st
 		return reply, err
 	}
 	raw, _ := json.Marshal(reply)
-	finish, err := d.Gateway.FreezeCardResponse(ctx, gateway.CardFreeze{EventKey: key, ResponseJSON: string(raw)})
+	finish, err := d.Gateway.FreezeCardResponse(ctx, gateway.CardFreezeRequest{EventKey: key, ResponseJSON: string(raw)})
 	if err != nil {
 		return reply, err
 	}
@@ -109,8 +109,8 @@ func (d CardDispatcher) decisionFor(ctx context.Context, key, payload, frozen st
 
 // decide 在 ctx 下按原 e 卡事件获取 central 决定或余额，返回原协议回复或未知结果错误。
 // 明确不足余额映射原非无效卡拒绝；协议金额单位和饱和继续复用 dc589 规则，不复制资金逻辑。
-func (d CardDispatcher) decide(ctx context.Context, e protocol.Event) (gateway.CardReply, error) {
-	reply := gateway.CardReply{DeviceID: e.DeviceID, Session: hex.EncodeToString(e.SessionID[:]), CardNumber: e.CardNumber}
+func (d CardDispatcher) decide(ctx context.Context, e protocol.Event) (gateway.CardReplyRequest, error) {
+	reply := gateway.CardReplyRequest{DeviceID: e.DeviceID, Session: hex.EncodeToString(e.SessionID[:]), CardNumber: e.CardNumber}
 	cardNo := strconv.FormatUint(uint64(e.CardNumber), 10)
 	if e.Type == protocol.CardSwipe {
 		if e.Port == 0xFF {
@@ -124,7 +124,7 @@ func (d CardDispatcher) decide(ctx context.Context, e protocol.Event) (gateway.C
 		if !resolved.Found {
 			return reply, errors.New("card port not provisioned")
 		}
-		op, err := d.Central.SwipeCard(ctx, central.CardSwipe{EventID: e.EventID, CardNo: cardNo, PortID: resolved.PortCode, OccurredAt: e.ReceivedAt})
+		op, err := d.Central.SwipeCard(ctx, central.CardSwipeRequest{EventID: e.EventID, CardNo: cardNo, PortID: resolved.PortCode, OccurredAt: e.ReceivedAt})
 		if err == nil {
 			if uuid.Validate(op.OperationID) != nil {
 				return reply, errors.New("card operation response missing identity")
@@ -136,7 +136,7 @@ func (d CardDispatcher) decide(ctx context.Context, e protocol.Event) (gateway.C
 			return reply, err
 		}
 		reply.Kind = protocol.CommandCardDenied
-		var declined *central.CardDecline
+		var declined *central.CardDeclineReply
 		reply.Invalid = !errors.As(err, &declined) || !declined.InsufficientBalance
 	} else if e.Type == protocol.CardBalanceQuery {
 		reply.Kind = protocol.CommandCardBalance

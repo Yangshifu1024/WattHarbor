@@ -75,8 +75,8 @@ func TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff(t *testing.T) {
 
 type failingStopGateway struct{ err error }
 
-func (s failingStopGateway) RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error) {
-	return gatewaycontract.StopAcceptance{}, s.err
+func (s failingStopGateway) RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
+	return gatewaycontract.StopReply{}, s.err
 }
 
 func TestUserStopPreservesGatewayFailureMapping(t *testing.T) {

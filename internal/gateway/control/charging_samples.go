@@ -118,14 +118,14 @@ func (a TelemetryAPI) chargingEvidence(c *gin.Context) {
 			return
 		}
 	}
-	evidence := make([]gatewaycontract.EvidencePage, 0, len(body.Requests))
+	evidence := make([]gatewaycontract.EvidencePageReply, 0, len(body.Requests))
 	for _, req := range body.Requests {
 		samples, nextAfterID, complete, err := a.collectChargingSamples(c.Request.Context(), req.DeviceID, req.PortNo, req.StartedAt, req.AfterID, chargingEvidenceMaxRows)
 		if err != nil {
 			httpapi.Write(c, 503, 5003, "计量证据暂不可读取", nil)
 			return
 		}
-		evidence = append(evidence, gatewaycontract.EvidencePage{DeviceID: req.DeviceID, PortNo: req.PortNo, Samples: samples, Complete: complete, NextAfterID: nextAfterID})
+		evidence = append(evidence, gatewaycontract.EvidencePageReply{DeviceID: req.DeviceID, PortNo: req.PortNo, Samples: samples, Complete: complete, NextAfterID: nextAfterID})
 	}
-	httpapi.OK(c, gatewaycontract.EvidenceData{Evidence: evidence})
+	httpapi.OK(c, gatewaycontract.EvidenceReply{Evidence: evidence})
 }

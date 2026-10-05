@@ -15,19 +15,19 @@ import (
 
 // liveFixture 同时提供可计数读取和故障注入，仅证明组合规则，不替代真实网关／数据库。
 type liveFixture struct {
-	evidenceCalls int                                   // 已发起证据批数
-	snapshotCalls int                                   // 已发起快照批数
-	purchaseCalls int                                   // 已发起卡购买批数
-	sizes         []int                                 // 原请求每批项数
-	raw           []byte                                // 原冻结套餐 JSON
-	cards         map[uint64]charging.OrderCardPurchase // 原卡累计购买
-	fault         string                                // 指定存储／证据故障阶段
-	cancel        context.CancelFunc                    // 首批返回后取消的受管理测试上下文
-	mutate        func([]gatewaycontract.EvidencePage)  // 指定端口、完整性与缺失响应变异
+	evidenceCalls int                                       // 已发起证据批数
+	snapshotCalls int                                       // 已发起快照批数
+	purchaseCalls int                                       // 已发起卡购买批数
+	sizes         []int                                     // 原请求每批项数
+	raw           []byte                                    // 原冻结套餐 JSON
+	cards         map[uint64]charging.OrderCardPurchase     // 原卡累计购买
+	fault         string                                    // 指定存储／证据故障阶段
+	cancel        context.CancelFunc                        // 首批返回后取消的受管理测试上下文
+	mutate        func([]gatewaycontract.EvidencePageReply) // 指定端口、完整性与缺失响应变异
 }
 
 // ChargingEvidence 为 ctx 下 q 生成原身份的60秒心跳，返回页或指定故障，并记录调用次数。
-func (f *liveFixture) ChargingEvidence(ctx context.Context, q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+func (f *liveFixture) ChargingEvidence(ctx context.Context, q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 	f.evidenceCalls++
 	f.sizes = append(f.sizes, len(q))
 	if ctx.Err() != nil {
@@ -36,9 +36,9 @@ func (f *liveFixture) ChargingEvidence(ctx context.Context, q []gatewaycontract.
 	if f.fault == "first_batch" && f.evidenceCalls == 1 {
 		return nil, errors.New("fixture evidence failure")
 	}
-	out := make([]gatewaycontract.EvidencePage, len(q))
+	out := make([]gatewaycontract.EvidencePageReply, len(q))
 	for i, v := range q {
-		out[i] = gatewaycontract.EvidencePage{DeviceID: v.DeviceID, PortNo: v.PortNo, Complete: true, Samples: []gatewaycontract.EvidenceSample{{Type: protocol.Heartbeat, DeviceID: v.DeviceID, ReceivedAt: v.StartedAt.Add(time.Minute), ChargingPorts: []protocol.PortTelemetry{{Port: v.PortNo, ChargedMWh: 4000, ChargedSeconds: 60, PowerDeciWatts: 1500}}}}}
+		out[i] = gatewaycontract.EvidencePageReply{DeviceID: v.DeviceID, PortNo: v.PortNo, Complete: true, Samples: []gatewaycontract.EvidenceSample{{Type: protocol.Heartbeat, DeviceID: v.DeviceID, ReceivedAt: v.StartedAt.Add(time.Minute), ChargingPorts: []protocol.PortTelemetry{{Port: v.PortNo, ChargedMWh: 4000, ChargedSeconds: 60, PowerDeciWatts: 1500}}}}}
 	}
 	if f.mutate != nil {
 		f.mutate(out)
@@ -132,11 +132,11 @@ func TestLiveMissingFactsNeverBecomeConfirmedZero(t *testing.T) {
 		unavailable bool               // 是否应标记整体读取失败
 	}{
 		{"incomplete", func(f *liveFixture) {
-			f.mutate = func(p []gatewaycontract.EvidencePage) { p[0].Complete = false; p[0].NextAfterID = 9 }
+			f.mutate = func(p []gatewaycontract.EvidencePageReply) { p[0].Complete = false; p[0].NextAfterID = 9 }
 		}, true, "计量证据超过范围，费用待结算", false},
-		{"cursor_missing", func(f *liveFixture) { f.mutate = func(p []gatewaycontract.EvidencePage) { p[0].Complete = false } }, false, "", true},
-		{"wrong_port", func(f *liveFixture) { f.mutate = func(p []gatewaycontract.EvidencePage) { p[0].PortNo = 2 } }, false, "", true},
-		{"nil_samples", func(f *liveFixture) { f.mutate = func(p []gatewaycontract.EvidencePage) { p[0].Samples = nil } }, false, "", true},
+		{"cursor_missing", func(f *liveFixture) { f.mutate = func(p []gatewaycontract.EvidencePageReply) { p[0].Complete = false } }, false, "", true},
+		{"wrong_port", func(f *liveFixture) { f.mutate = func(p []gatewaycontract.EvidencePageReply) { p[0].PortNo = 2 } }, false, "", true},
+		{"nil_samples", func(f *liveFixture) { f.mutate = func(p []gatewaycontract.EvidencePageReply) { p[0].Samples = nil } }, false, "", true},
 		{"missing_snapshot", func(f *liveFixture) { f.raw = nil }, true, "缺少订单计费快照", false},
 		{"zero_card_purchase", func(f *liveFixture) { f.cards = map[uint64]charging.OrderCardPurchase{1: {}} }, true, "刷卡购买记录待确认", false},
 		{"snapshot_fault", func(f *liveFixture) { f.fault = "snapshot" }, true, "", true},

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 
+	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -22,7 +23,7 @@ type ScanAPI struct {
 }
 
 func (a ScanAPI) Register(router *gin.Engine) {
-	router.GET("/api/v1/internal/scan/resolve", a.resolve)
+	router.GET(contract.ScanResolvePath, a.resolve)
 }
 
 func (a ScanAPI) resolve(c *gin.Context) {
@@ -44,5 +45,21 @@ func (a ScanAPI) resolve(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "device lookup unavailable", nil)
 		return
 	}
-	httpapi.OK(c, result)
+	out := contract.ScanReply{Kind: result.Kind, DeviceID: result.DeviceID, StationID: result.StationID}
+	if result.Port != nil {
+		p := scanPortReply(*result.Port)
+		out.Port = &p
+	}
+	if result.Ports != nil {
+		out.Ports = make([]contract.ScanPort, len(result.Ports))
+		for i, p := range result.Ports {
+			out.Ports[i] = scanPortReply(p)
+		}
+	}
+	httpapi.OK(c, out)
+}
+
+// scanPortReply 将row所属端口读模型映射为共享子记录，保留原单位与身份，无IO。
+func scanPortReply(row store.ScanPort) contract.ScanPort {
+	return contract.ScanPort{PortID: row.PortID, DeviceID: row.DeviceID, PortNo: row.PortNo, Status: row.Status, Online: row.Online, Available: row.Available}
 }

@@ -30,7 +30,7 @@ func (c *Client) DeviceSummaries(ctx context.Context, ids []string) ([]contract.
 	if err != nil {
 		return nil, err
 	}
-	var reply response[contract.DeviceSummaries]
+	var reply envelopeReply[contract.DeviceSummariesReply]
 	if status != http.StatusOK || json.Unmarshal(body, &reply) != nil || reply.Code == nil || reply.Data == nil {
 		return nil, ErrInvalidResponse
 	}

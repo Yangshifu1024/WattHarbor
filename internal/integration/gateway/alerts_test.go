@@ -24,7 +24,7 @@ func TestAlertClientsKeepOriginalIDsWatermarkAndReplay(t *testing.T) {
 			if r.URL.Query().Get("limit") != "100" {
 				t.Error("batch changed")
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.DeviceFaultData{Reports: []contract.DeviceFaultReport{{ID: 18446744073709551614, DeviceID: "原设备", EventKey: "原键", ReceivedAt: at, Payload: "{}"}}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.DeviceFaultsReply{Reports: []contract.DeviceFaultReport{{ID: 18446744073709551614, DeviceID: "原设备", EventKey: "原键", ReceivedAt: at, Payload: "{}"}}}})
 		case contract.MarkDeviceFaultsPath:
 			var request contract.MarkDeviceFaultsRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.IDs) != 1 || request.IDs[0] != 18446744073709551614 {
@@ -35,7 +35,7 @@ func TestAlertClientsKeepOriginalIDsWatermarkAndReplay(t *testing.T) {
 			if r.URL.Query().Get("after_key") != "原&+键" || r.URL.Query().Get("after") != "" {
 				t.Error("watermark changed")
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.HeartbeatEvidence{Found: true, AfterReceivedAt: &at, ReceivedAt: &later, Payload: "{}"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.HeartbeatAfterKeyReply{Found: true, AfterReceivedAt: &at, ReceivedAt: &later, Payload: "{}"}})
 		default:
 			t.Errorf("path=%s", r.URL)
 		}

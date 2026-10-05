@@ -59,7 +59,7 @@ func (a StartAuthorization) handle(c *gin.Context) {
 	if order.ConsumerType == 3 {
 		balanceUnits = dc589.CardBalanceUnits(order.WalletAfterCents)
 	}
-	httpapi.OK(c, centralcontract.StartAuthorization{ConsumerType: order.ConsumerType, CardNumber: order.CardNumber, CardBalanceUnits: balanceUnits,
+	httpapi.OK(c, centralcontract.StartAuthorizationReply{ConsumerType: order.ConsumerType, CardNumber: order.CardNumber, CardBalanceUnits: balanceUnits,
 		ChargeOrderID: order.ChargeOrderID, OrderNo: order.OrderNo, UserID: order.UserID,
 		DeviceID: order.DeviceID, PortNo: order.PortNo, PaymentOrderID: order.PaymentOrderID,
 		ChargeMode: order.ChargeMode, ChargeQuantity: order.ChargeQuantity,

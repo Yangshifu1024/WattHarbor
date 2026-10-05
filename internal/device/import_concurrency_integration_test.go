@@ -166,14 +166,14 @@ func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 }
 
 // Vendor 在 ctx 下返回 id 的固定公开厂商，requestID 仅为追踪；取消或身份不符返回错误，无写入。
-func (g *concurrentImportGateway) Vendor(ctx context.Context, id uint64, requestID string) (contract.Vendor, error) {
+func (g *concurrentImportGateway) Vendor(ctx context.Context, id uint64, requestID string) (contract.VendorReply, error) {
 	if err := ctx.Err(); err != nil {
-		return contract.Vendor{}, err
+		return contract.VendorReply{}, err
 	}
 	if id != g.vendor {
-		return contract.Vendor{}, errors.New("unknown fixture vendor")
+		return contract.VendorReply{}, errors.New("unknown fixture vendor")
 	}
-	return contract.Vendor{ID: id, Status: "enabled", Protocol: "tcp", AdapterClass: "dc589"}, nil
+	return contract.VendorReply{ID: id, Status: "enabled", Protocol: "tcp", AdapterClass: "dc589"}, nil
 }
 
 // Provision 在 ctx 下确认原 devices，并增加次数；取消返回原错误，不访问网关数据库。

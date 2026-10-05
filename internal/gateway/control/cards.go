@@ -27,7 +27,7 @@ func (a CardReplyAPI) reply(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
-	var in contract.CardReply
+	var in contract.CardReplyRequest
 	if c.ShouldBindJSON(&in) != nil || in.DeviceID == "" || (in.CardNumber == 0 && !(in.Kind == protocol.CommandCardBalance && in.Invalid)) || (in.Kind != protocol.CommandCardDenied && in.Kind != protocol.CommandCardBalance) {
 		httpapi.BadRequest(c, "invalid card reply")
 		return
@@ -43,5 +43,5 @@ func (a CardReplyAPI) reply(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "card reply not delivered", nil)
 		return
 	}
-	httpapi.OK(c, contract.CardReplyAccepted{Accepted: true})
+	httpapi.OK(c, contract.CardDeliveryReply{Accepted: true})
 }

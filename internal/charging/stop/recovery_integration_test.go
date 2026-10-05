@@ -164,22 +164,22 @@ func TestStopRecoversCommittedCutoffWithoutEvidence(t *testing.T) {
 				return q
 			})
 			stopper := AutoStopper{DB: scoped, Gateway: fakeGateway{
-				evidence: func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+				evidence: func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 					if !fail {
 						t.Fatal("frozen decisions requested new evidence")
 					}
-					pages := make([]gatewaycontract.EvidencePage, len(q))
+					pages := make([]gatewaycontract.EvidencePageReply, len(q))
 					for i, r := range q {
-						pages[i] = gatewaycontract.EvidencePage{DeviceID: r.DeviceID, PortNo: r.PortNo, Complete: true}
+						pages[i] = gatewaycontract.EvidencePageReply{DeviceID: r.DeviceID, PortNo: r.PortNo, Complete: true}
 					}
 					return pages, nil
 				},
-				stop: func(r gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error) {
+				stop: func(r gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
 					calls[r.OrderNo]++
 					if fail && r.OrderNo == no {
-						return gatewaycontract.StopAcceptance{}, context.DeadlineExceeded
+						return gatewaycontract.StopReply{}, context.DeadlineExceeded
 					}
-					return gatewaycontract.StopAcceptance{Accepted: true}, nil
+					return gatewaycontract.StopReply{Accepted: true}, nil
 				},
 			}}
 			if n, err := stopper.Run(context.Background()); n != 1 || !errors.Is(err, context.DeadlineExceeded) || calls[no+"-2"] != 1 {

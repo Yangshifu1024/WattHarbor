@@ -22,7 +22,7 @@ type DeviceSummary struct {
 	Ports           []DevicePortSummary `json:"ports"`             // 原端口状态；服务端无端口时返回空数组
 }
 
-// DeviceSummaries 是一次授权设备集合的摘要响应；未命中的设备不补造运行事实。
-type DeviceSummaries struct {
+// DeviceSummariesReply 是一次授权设备集合的摘要响应；未命中的设备不补造运行事实。
+type DeviceSummariesReply struct {
 	Items []DeviceSummary `json:"items"` // 已找到的网关设备，可能少于请求数
 }

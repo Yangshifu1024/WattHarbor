@@ -19,8 +19,8 @@ type DeviceFaultReport struct {
 	Payload    string    `json:"payload"`     // 原protocol.Event JSON，未经业务改写
 }
 
-// DeviceFaultData 是原升序待处理批；空批必须为空数组。
-type DeviceFaultData struct {
+// DeviceFaultsReply 是原升序待处理批；空批必须为空数组。
+type DeviceFaultsReply struct {
 	Reports []DeviceFaultReport `json:"reports"` /* 原待处理事件 */
 }
 
@@ -29,14 +29,14 @@ type MarkDeviceFaultsRequest struct {
 	IDs []uint64 `json:"ids"` /* 1至100个原事件主键 */
 }
 
-// MarkDeviceFaultsData 是本次实际首次推进条数，并发重放可为零。
-type MarkDeviceFaultsData struct {
+// MarkDeviceFaultsReply 是本次实际首次推进条数，并发重放可为零。
+type MarkDeviceFaultsReply struct {
 	Marked int64 `json:"marked"` /* 实际改变的行数，非负 */
 }
 
-// HeartbeatEvidence 保留原found／载荷，增加原故障水印接收时刻用于乱序核对。
+// HeartbeatAfterKeyReply 保留原found／载荷，增加原故障水印接收时刻用于乱序核对。
 // 有水印但无后续心跳时found=false且AfterReceivedAt存在；原键不存在时该时刻缺失。
-type HeartbeatEvidence struct {
+type HeartbeatAfterKeyReply struct {
 	Found           bool       `json:"found"`                       // 有严格晚于水印的原心跳
 	AfterReceivedAt *time.Time `json:"after_received_at,omitempty"` // 原事件键或明确after的时刻，缺失不补造
 	ReceivedAt      *time.Time `json:"received_at,omitempty"`       // 最新心跳时刻，found时必须存在

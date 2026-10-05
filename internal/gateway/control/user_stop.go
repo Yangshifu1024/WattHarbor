@@ -102,5 +102,5 @@ func (a UserStopAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "stop command unavailable", nil)
 		return
 	}
-	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StopAcceptance{Accepted: true, Stopped: false, CommandID: stop.CommandID, Status: stop.Status})
+	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StopReply{Accepted: true, Stopped: false, CommandID: stop.CommandID, Status: stop.Status})
 }

@@ -93,7 +93,7 @@ func (s UserService) Curve(ctx context.Context, userID uint64, raw, window strin
 	if s.Gateway == nil {
 		return out, &UserReadError{Stage: "curve", Cause: errors.New("gateway reader unavailable")}
 	}
-	data, err := s.Gateway.Telemetry(ctx, contract.TelemetryQuery{DeviceID: row.DeviceID, PortNo: row.PortNo, From: from, To: now})
+	data, err := s.Gateway.Telemetry(ctx, contract.TelemetryRequest{DeviceID: row.DeviceID, PortNo: row.PortNo, From: from, To: now})
 	if err != nil {
 		return out, &UserReadError{Stage: "curve", Cause: err}
 	}
@@ -151,7 +151,7 @@ func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, gr
 	if s.Gateway == nil {
 		return out, &UserReadError{Stage: "history_curve", Cause: errors.New("gateway reader unavailable")}
 	}
-	data, err := s.Gateway.HistoricalCurve(ctx, contract.HistoricalCurveQuery{DeviceID: row.DeviceID, OrderNo: row.OrderNo, PortNo: row.PortNo, StartedAt: start, EndedAt: end, Granularity: granularity})
+	data, err := s.Gateway.HistoricalCurve(ctx, contract.HistoricalCurveRequest{DeviceID: row.DeviceID, OrderNo: row.OrderNo, PortNo: row.PortNo, StartedAt: start, EndedAt: end, Granularity: granularity})
 	if err != nil {
 		return out, &UserReadError{Stage: "history_curve", Cause: err}
 	}

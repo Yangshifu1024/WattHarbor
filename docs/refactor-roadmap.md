@@ -644,3 +644,11 @@ make test-integration TEST_MYSQL_URL=...
 4c验证补充：启用站点过滤、公告范围、网关摘要身份三项变异均在指定断言失败并恢复，`.tmp/batch4c-mutant-*.log`与恢复日志保留。首轮完整integration中旧支付准备注册测试偶发503而隔离重复10次通过；原失败日志保留，调试完整运行通过，不将未获得底层原因的失败定性为站点改动。核对发现结算旧fixture仍用可被前次查询消费的Scopes限定意图扫描，改为持续UPDATE回调；两份旧fixture都通过Statement.AddClause明确加入自身用户条件，避免包间扫描他人外层事务，不改生产过期逻辑。
 
 4c退出证据：精确暂存快照`.tmp/batch4c-validation`的`.tmp/batch4c-snapshot-{check,integration,build,tidy}.log`全部通过，862份文件中的638份Go／模块与原blob逐字节一致，tidy无差异，本地文档链接有效。重启user后`.tmp/batch4c-live-station.json`读取原开发站点及两台设备、原null距离和公开公告，无业务写入或新会话。此次未修改前端及公开JSON字段；前端最近完整验收为4b的78／59项及类型检查／构建。最终仅补本退出记录，Request／Reply命名下一批继续。
+
+批次4d（具名客户端DTO命名）实施：按用户补充要求，central／gateway端点请求统一Request，端点响应统一Reply；原Data／Result／Acceptance／Query／Input及卡操作等根DTO直接改名，同步所有客户端、服务端、窄接口和测试，无旧类型转发别名。私有解码信封及字段存在性结构也以Reply命名；集合记录、事件及曲线点保留业务名。扫码增加共享ScanRequest／ScanReply，网关显式映射所属读模型、DiscoveryService显式转为领域结果后合并中央运营状态，客户端不再直接反序列化领域读模型。原HTTP路径、JSON字段、整数／可空／省略、单位与冻结内容保持；补齐触及共享字段的中文语义。
+
+4d验证：`.tmp/batch4d-check.log`默认检查和`.tmp/batch4d-integration.log`完整独立三库通过，包含注册扫码／卡操作、启动结束同步、查询、导入厂商和告警既有契约验证；未加入只对类型名字的镜像测试。最终源码与中文说明仍需精确暂存退出验收，H／X／gateway／worker整体不因此提前完成。
+
+4d退出前纠正：首次命名快照全仓通过，删除HTTP残留StartResult／EndResult别名后的回归发现旧身份并发测试将请求启动顺序当作首次成功提交顺序；实际双方同ID且只有后发请求IsNew=true，原登录允许死锁有界重试，旧断言不适用。只修测试为恰好一个创建者、unionID匹配实际创建者、一用户一钱包及自身清理零残留；新增首次锁后1213故障fixture核对真实事务回滚和原重试，不宣称该fixture是引擎死锁证据。生产登录代码不变，`.tmp/batch4d-login-retry-proof.log`两路径重复5次通过；原失败日志保留为`.tmp/batch4d-login-first-winner-fixture-failure.log`。五个开发服务已重启，`.tmp/batch4d-live-scan.json`验证实际匿名设备／端口扫码保留原设备、两端口和中央运营状态，无资金写入。
+
+4d最终退出证据：`.tmp/batch4d-validation`最终快照的`.tmp/batch4d-snapshot-{check,integration,build,tidy}.log`全部通过，862份暂存文件中的638份Go／模块与原blob逐字节一致，tidy无差异、Markdown本地链接有效。旧HTTP回执别名已删除，所有当前具名客户端根请求／回复与私有解码类型采用Request／Reply；原JSON及冻结载荷不改。最终仅补本退出记录；前端源码／接口形状未改，最近完整前端验收仍为4b。继续OP-01／导出及HTTP／运行时／基础设施／部署评估。

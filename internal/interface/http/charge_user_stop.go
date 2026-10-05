@@ -24,7 +24,7 @@ type UserStopAPI struct {
 		Active(context.Context, uint64) (bool, error)
 	}
 	Gateway interface {
-		RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error)
+		RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopReply, error)
 	}
 }
 

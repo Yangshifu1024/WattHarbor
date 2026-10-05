@@ -38,7 +38,7 @@ func (a StartAPI) start(c *gin.Context) {
 		httpapi.Write(c, startStatusCode(err), 2000, "charge start unavailable", nil)
 		return
 	}
-	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StartAcceptance{
+	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StartReply{
 		OrderNo: command.OrderNo, CommandID: command.CommandID, Status: command.Status,
 		DeviceAcknowledged: command.Status == "acked",
 	})

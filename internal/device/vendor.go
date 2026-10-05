@@ -15,13 +15,13 @@ import (
 // VendorGateway 提供网关所属字典的四个具名操作，不暴露传输配置或数据库。
 type VendorGateway interface {
 	// Vendors 在 context 下按查询及追踪号返回公开分页或原服务错误，无自动重试。
-	Vendors(context.Context, contract.VendorQuery, string) (contract.VendorPage, error)
+	Vendors(context.Context, contract.VendorListRequest, string) (contract.VendorListReply, error)
 	// Vendor 在 context 下按厂商 ID 及追踪号返回原公开字典或错误。
-	Vendor(context.Context, uint64, string) (contract.Vendor, error)
+	Vendor(context.Context, uint64, string) (contract.VendorReply, error)
 	// CreateVendor 在 context 下提交完整输入及追踪号，返回网关确认的字典或错误。
-	CreateVendor(context.Context, contract.VendorInput, string) (contract.Vendor, error)
+	CreateVendor(context.Context, contract.VendorRequest, string) (contract.VendorReply, error)
 	// UpdateVendor 在 context 下按原 ID 提交完整输入及追踪号，返回字典或错误。
-	UpdateVendor(context.Context, uint64, contract.VendorInput, string) (contract.Vendor, error)
+	UpdateVendor(context.Context, uint64, contract.VendorRequest, string) (contract.VendorReply, error)
 }
 
 // VendorService 拥有中央账号对厂商的范围编排；厂商写入事务由网关提供。
@@ -40,8 +40,8 @@ func (VendorNotVisible) Error() string { return "厂商不存在或不在数据�
 var ErrScopeConflict = errors.New("数据范围与现有记录冲突")
 
 // VendorQuery 以 page 及当前 scope 生成具名查询；范围不受限时不转发 ID，不修改输入或执行 IO。
-func VendorQuery(page persist.PageQuery, scope operations.DataScope) contract.VendorQuery {
-	q := contract.VendorQuery{Page: page.Page, PageSize: page.PageSize, Keyword: page.Keyword, Status: page.Status}
+func VendorQuery(page persist.PageQuery, scope operations.DataScope) contract.VendorListRequest {
+	q := contract.VendorListRequest{Page: page.Page, PageSize: page.PageSize, Keyword: page.Keyword, Status: page.Status}
 	if !scope.Unrestricted && len(scope.VendorIDs) > 0 {
 		q.IDs = append([]uint64(nil), scope.VendorIDs...)
 	}
@@ -50,26 +50,26 @@ func VendorQuery(page persist.PageQuery, scope operations.DataScope) contract.Ve
 
 // List 在 ctx 下以 audit 实时权限及 scope 查询 page，options 只返回启用的导入选项。
 // 返回分页及本地权限或权限／服务错误；上游越界或非启用选项按依赖故障处理，不能授予中央权限。
-func (s VendorService) List(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, page persist.PageQuery, options bool) (persist.Page[contract.Vendor], error) {
+func (s VendorService) List(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, page persist.PageQuery, options bool) (persist.Page[contract.VendorReply], error) {
 	permission := "vendor.read"
 	if options {
 		permission = "device.import"
 		page.Status = "enabled"
 	}
 	if !audit.Actor.HasPermission(permission) {
-		return persist.Page[contract.Vendor]{}, operations.ErrForbidden
+		return persist.Page[contract.VendorReply]{}, operations.ErrForbidden
 	}
 	remote, err := s.Gateway.Vendors(ctx, VendorQuery(page, scope), audit.RequestID)
 	if err != nil {
-		return persist.Page[contract.Vendor]{}, err
+		return persist.Page[contract.VendorReply]{}, err
 	}
-	out := persist.Page[contract.Vendor]{Items: remote.Items, Total: remote.Total, Page: remote.Page, PageSize: remote.PageSize}
+	out := persist.Page[contract.VendorReply]{Items: remote.Items, Total: remote.Total, Page: remote.Page, PageSize: remote.PageSize}
 	if out.Items == nil {
-		out.Items = []contract.Vendor{}
+		out.Items = []contract.VendorReply{}
 	}
 	for _, row := range out.Items {
 		if !scope.AllowsVendor(row.ID) || options && row.Status != "enabled" {
-			return persist.Page[contract.Vendor]{}, &contract.VendorFailure{Status: 503, Code: 5003, Message: "厂商服务暂时不可用，请稍后重试"}
+			return persist.Page[contract.VendorReply]{}, &contract.VendorFailure{Status: 503, Code: 5003, Message: "厂商服务暂时不可用，请稍后重试"}
 		}
 	}
 	for _, p := range audit.Actor.Permissions {
@@ -82,12 +82,12 @@ func (s VendorService) List(ctx context.Context, audit ops.AuditContext, scope o
 }
 
 // Get 在 ctx 下以 audit 的实时读取权限查询 scope 内 id；返回公开字典、权限、范围缺失或服务错误，只读。
-func (s VendorService) Get(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id uint64) (contract.Vendor, error) {
+func (s VendorService) Get(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id uint64) (contract.VendorReply, error) {
 	if !audit.Actor.HasPermission("vendor.read") {
-		return contract.Vendor{}, operations.ErrForbidden
+		return contract.VendorReply{}, operations.ErrForbidden
 	}
 	if !scope.AllowsVendor(id) {
-		return contract.Vendor{}, VendorNotVisible{}
+		return contract.VendorReply{}, VendorNotVisible{}
 	}
 	return s.Gateway.Vendor(ctx, id, audit.RequestID)
 }
@@ -95,22 +95,22 @@ func (s VendorService) Get(ctx context.Context, audit ops.AuditContext, scope op
 // Save 在 ctx 下以 audit 实时权限及 scope 提交完整 in；id=0 新建，否则读取原字典后按原 ID 更新。
 // 返回网关确认的公开字典或权限、范围缺失、原服务错误；中央审计沿用提交后尽力记录，不能回滚网关写入。
 // 不添加重试或新业务 ID；网络结果未知时由调用方核对原厂商编码及资料。
-func (s VendorService) Save(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id uint64, in contract.VendorInput) (contract.Vendor, error) {
+func (s VendorService) Save(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id uint64, in contract.VendorRequest) (contract.VendorReply, error) {
 	permission := "vendor.create"
 	if id != 0 {
 		permission = "vendor.update"
 	}
 	if !audit.Actor.HasPermission(permission) {
-		return contract.Vendor{}, operations.ErrForbidden
+		return contract.VendorReply{}, operations.ErrForbidden
 	}
 	if id == 0 && !scope.Unrestricted && len(scope.VendorIDs) > 0 {
-		return contract.Vendor{}, operations.ErrForbidden
+		return contract.VendorReply{}, operations.ErrForbidden
 	}
 	if id != 0 && !scope.AllowsVendor(id) {
-		return contract.Vendor{}, VendorNotVisible{}
+		return contract.VendorReply{}, VendorNotVisible{}
 	}
 	var before any
-	var out contract.Vendor
+	var out contract.VendorReply
 	var err error
 	action := "create"
 	if id == 0 {
@@ -118,7 +118,7 @@ func (s VendorService) Save(ctx context.Context, audit ops.AuditContext, scope o
 	} else {
 		original, readErr := s.Gateway.Vendor(ctx, id, audit.RequestID)
 		if readErr != nil {
-			return contract.Vendor{}, readErr
+			return contract.VendorReply{}, readErr
 		}
 		before, action = original, "update"
 		out, err = s.Gateway.UpdateVendor(ctx, id, in, audit.RequestID)

@@ -11,8 +11,6 @@ import (
 	"net/http"
 )
 
-type StartResult = centralcontract.StartResult
-
 type StartResultAPI struct {
 	Service interface {
 		Apply(context.Context, chargestart.StartResult) (bool, error)
@@ -29,7 +27,7 @@ func (a StartResultAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
-	var request StartResult
+	var request centralcontract.StartResultRequest
 	if err := c.ShouldBindJSON(&request); err != nil || c.Param("order_no") != request.OrderNo {
 		httpapi.BadRequest(c, "invalid start result")
 		return
@@ -43,5 +41,5 @@ func (a StartResultAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "start result persistence failed", nil)
 		return
 	}
-	httpapi.OK(c, centralcontract.ResultAcceptance{Accepted: true, Replayed: replayed})
+	httpapi.OK(c, centralcontract.ResultReply{Accepted: true, Replayed: replayed})
 }

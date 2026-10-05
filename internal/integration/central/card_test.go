@@ -35,11 +35,11 @@ func TestCardServiceFailuresDoNotBecomeBusinessDeclines(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = client.SwipeCard(context.Background(), contract.CardSwipe{EventID: "stable"})
+			_, err = client.SwipeCard(context.Background(), contract.CardSwipeRequest{EventID: "stable"})
 			if err == nil || errors.Is(err, contract.ErrCardDeclined) != tc.declined {
 				t.Fatalf("%v", err)
 			}
-			var declined *contract.CardDecline
+			var declined *contract.CardDeclineReply
 			if tc.declined && (!errors.As(err, &declined) || declined.InsufficientBalance != tc.balance) {
 				t.Fatalf("%+v", err)
 			}
@@ -76,7 +76,7 @@ func TestCardRequestKeepsRedirectAndOversizedResponsesUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.SwipeCard(context.Background(), contract.CardSwipe{}); err == nil || errors.Is(err, contract.ErrCardDeclined) || redirected != 0 {
+	if _, err := client.SwipeCard(context.Background(), contract.CardSwipeRequest{}); err == nil || errors.Is(err, contract.ErrCardDeclined) || redirected != 0 {
 		t.Fatalf("redirected=%d err=%v", redirected, err)
 	}
 	server.Close()
@@ -86,12 +86,12 @@ func TestCardRequestKeepsRedirectAndOversizedResponsesUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.SwipeCard(context.Background(), contract.CardSwipe{}); !errors.Is(err, ErrInvalidResponse) {
+	if _, err := client.SwipeCard(context.Background(), contract.CardSwipeRequest{}); !errors.Is(err, ErrInvalidResponse) {
 		t.Fatalf("oversized=%v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := client.SwipeCard(ctx, contract.CardSwipe{}); !errors.Is(err, context.Canceled) {
+	if _, err := client.SwipeCard(ctx, contract.CardSwipeRequest{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancel=%v", err)
 	}
 }

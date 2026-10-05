@@ -16,7 +16,7 @@ import (
 // EvidenceReader 是实时估算需要的有界网关取证能力，不携带 URL、令牌或通用传输。
 type EvidenceReader interface {
 	// ChargingEvidence 在 ctx 下按 queries 原设备／端口／开始时刻批量取证，返回原序页或调用错误，无业务写入。
-	ChargingEvidence(ctx context.Context, queries []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error)
+	ChargingEvidence(ctx context.Context, queries []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
 }
 
 // SnapshotReader 由订单所属实现提供原冻结 JSON，缺行不能用当前价格替换。
@@ -77,9 +77,9 @@ func (s LiveService) Fill(ctx context.Context, rows []order.OrderView) {
 			break
 		}
 		batch := indices[begin:min(begin+gatewaycontract.MaxEvidenceBatch, len(indices))]
-		queries := make([]gatewaycontract.EvidenceQuery, len(batch))
+		queries := make([]gatewaycontract.EvidenceQueryRequest, len(batch))
 		for j, i := range batch {
-			queries[j] = gatewaycontract.EvidenceQuery{DeviceID: rows[i].DeviceID, PortNo: rows[i].PortNo, StartedAt: rows[i].StartedAt.UTC()}
+			queries[j] = gatewaycontract.EvidenceQueryRequest{DeviceID: rows[i].DeviceID, PortNo: rows[i].PortNo, StartedAt: rows[i].StartedAt.UTC()}
 		}
 		pages, err := s.Gateway.ChargingEvidence(ctx, queries)
 		if err != nil || len(pages) != len(batch) {

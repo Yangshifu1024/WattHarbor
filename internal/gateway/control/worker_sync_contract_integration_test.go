@@ -67,7 +67,7 @@ func TestWorkerSyncClientMatchesRegisteredGatewayAndMySQL(t *testing.T) {
 	if err != nil || command == nil || command.ChargeOrderID != id || command.PortID != nil {
 		t.Fatalf("command=%+v err=%v", command, err)
 	}
-	samples, err := client.MeterSamples(ctx, gatewaycontract.MeterSamplesQuery{DeviceID: device, AckAt: start, EndAt: end, EndID: id + 1})
+	samples, err := client.MeterSamples(ctx, gatewaycontract.MeterSamplesRequest{DeviceID: device, AckAt: start, EndAt: end, EndID: id + 1})
 	if err != nil || len(samples) != 1 || samples[0].ID != id {
 		t.Fatalf("samples=%+v err=%v", samples, err)
 	}
@@ -80,7 +80,7 @@ func TestWorkerSyncClientMatchesRegisteredGatewayAndMySQL(t *testing.T) {
 			t.Fatalf("invalid event: %+v", event)
 		}
 	}
-	frozen := centralcontract.EndResult{OrderNo: orderNo, ChargeOrderID: id, StartCommandID: commandID, StopCommandID: stopID, DeviceID: device, PortNo: 1, PortID: id, Meter: charging.EndMeter{ChargedWh: 1000, ChargedSeconds: 1800, EndedAt: end, Segments: []charging.MeterSegment{{StartedAt: start, EndedAt: end, EnergyWh: 1000}}}}
+	frozen := centralcontract.EndResultRequest{OrderNo: orderNo, ChargeOrderID: id, StartCommandID: commandID, StopCommandID: stopID, DeviceID: device, PortNo: 1, PortID: id, Meter: charging.EndMeter{ChargedWh: 1000, ChargedSeconds: 1800, EndedAt: end, Segments: []charging.MeterSegment{{StartedAt: start, EndedAt: end, EnergyWh: 1000}}}}
 	data, _ := json.Marshal(frozen)
 	request := gatewaycontract.FreezeEndDeliveryRequest{DeviceEventID: id + 1, ChargeOrderID: id, Payload: string(data)}
 	first, err := client.FreezeEndDelivery(ctx, request)
@@ -95,7 +95,7 @@ func TestWorkerSyncClientMatchesRegisteredGatewayAndMySQL(t *testing.T) {
 	if err != nil || !second.Frozen {
 		t.Fatalf("replay freeze=%+v err=%v", second, err)
 	}
-	var original, replayed centralcontract.EndResult
+	var original, replayed centralcontract.EndResultRequest
 	if json.Unmarshal([]byte(first.Payload), &original) != nil || json.Unmarshal([]byte(second.Payload), &replayed) != nil || !reflect.DeepEqual(original, replayed) || len(replayed.Meter.Segments) != 1 {
 		t.Fatalf("frozen evidence changed: %+v %+v", original, replayed)
 	}

@@ -15,8 +15,8 @@ import (
 
 // TestVendorProxyForwardsConfigurationAndTrace 核对具名更新客户端的原配置、服务身份及追踪号，loopback 不验证持久化。
 func TestVendorProxyForwardsConfigurationAndTrace(t *testing.T) {
-	want := contract.Vendor{ID: 7, VendorCode: "vendor_a", VendorName: "厂商 A", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
-	input := contract.VendorInput{VendorCode: "vendor_a", VendorName: "厂商 A", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
+	want := contract.VendorReply{ID: 7, VendorCode: "vendor_a", VendorName: "厂商 A", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
+	input := contract.VendorRequest{VendorCode: "vendor_a", VendorName: "厂商 A", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "PUT" || r.URL.Path != "/api/v1/internal/vendors/7" || r.Header.Get("X-Service-Token") != "test-vendor-token" || r.Header.Get("X-Request-ID") != "vendor-test" {
 			t.Errorf("错误的代理请求：%s %s", r.Method, r.URL)
@@ -24,7 +24,7 @@ func TestVendorProxyForwardsConfigurationAndTrace(t *testing.T) {
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Error("请求格式或查询参数未保留")
 		}
-		var got contract.VendorInput
+		var got contract.VendorRequest
 		if json.NewDecoder(r.Body).Decode(&got) != nil || got != input {
 			t.Errorf("配置未完整传递：%+v", got)
 		}
@@ -116,14 +116,14 @@ func vendorTestClient(t *testing.T, url, token string) *Client {
 // TestVendorClientRejectsUnexpectedIdentity 核对读取与更新不能把请求的原厂商身份替换为其他合法字典。
 func TestVendorClientRejectsUnexpectedIdentity(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.Vendor{ID: 8, VendorCode: "other", VendorName: "其他厂商", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.VendorReply{ID: 8, VendorCode: "other", VendorName: "其他厂商", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}})
 	}))
 	defer server.Close()
 	client := vendorTestClient(t, server.URL, "service")
 	for _, update := range []bool{false, true} {
 		var err error
 		if update {
-			_, err = client.UpdateVendor(context.Background(), 7, contract.VendorInput{}, "request")
+			_, err = client.UpdateVendor(context.Background(), 7, contract.VendorRequest{}, "request")
 		} else {
 			_, err = client.Vendor(context.Background(), 7, "request")
 		}
@@ -141,11 +141,11 @@ func TestVendorListEscapesQueryAndKeepsPage(t *testing.T) {
 		if r.Method != "GET" || q.Get("keyword") != "厂商 A&+" || q.Get("ids") != "7,8" || q.Get("page") != "2" || q.Get("page_size") != "20" || q.Get("status") != "enabled" {
 			t.Errorf("wrong list query: %s", r.URL)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": []contract.Vendor{}, "total": 3, "page": 2, "page_size": 20, "permissions": []string{"untrusted"}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": []contract.VendorReply{}, "total": 3, "page": 2, "page_size": 20, "permissions": []string{"untrusted"}}})
 	}))
 	defer server.Close()
 	client := vendorTestClient(t, server.URL, "service")
-	out, err := client.Vendors(context.Background(), contract.VendorQuery{Page: 2, PageSize: 20, Keyword: "厂商 A&+", Status: "enabled", IDs: []uint64{7, 8}}, "request")
+	out, err := client.Vendors(context.Background(), contract.VendorListRequest{Page: 2, PageSize: 20, Keyword: "厂商 A&+", Status: "enabled", IDs: []uint64{7, 8}}, "request")
 	if err != nil || out.Total != 3 || out.Page != 2 || out.PageSize != 20 {
 		t.Fatalf("list=%+v %v", out, err)
 	}

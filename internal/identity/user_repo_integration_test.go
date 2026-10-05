@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -35,9 +36,17 @@ func identityDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// TestUserRepoConcurrentLoginOpensOneWallet 以两独立连接在原身份锁处控制并发，验证一用户、一开户及首次标志。
-// 提交事实逐项清理；失败开户回滚用户与钱包，但先提交的身份锁行保留供原身份重试。
+// TestUserRepoConcurrentLoginOpensOneWallet 两独立连接在原身份锁处控制并发，验证一用户、一开户及唯一创建者。
+// 普通路径与一次重试错误fixture分别验证；SQL／事务仍用真库，原unionID归实际创建者而非请求启动顺序。
 func TestUserRepoConcurrentLoginOpensOneWallet(t *testing.T) {
+	for _, forceRetry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retry_%t", forceRetry), func(t *testing.T) { concurrentLoginWallet(t, forceRetry) })
+	}
+}
+
+// concurrentLoginWallet 在t管理的两连接中以forceRetry选择首次锁后1213故障fixture。
+// 无返回值；核对完整重试结果、唯一创建者及首次unionID，清理自身提交记录并核对零残留。
+func concurrentLoginWallet(t *testing.T, forceRetry bool) {
 	a, b := identityDB(t), identityDB(t)
 	openid := "identity-concurrent-" + uuid.NewString()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -51,6 +60,10 @@ func TestUserRepoConcurrentLoginOpensOneWallet(t *testing.T) {
 		if len(ids) > 0 {
 			if err := a.Table("wallet_account").Where("user_id IN ?", ids).Delete(map[string]any{}).Error; err != nil {
 				t.Error(err)
+			}
+			var remaining int64
+			if err := a.Table("wallet_account").Where("user_id IN ?", ids).Count(&remaining).Error; err != nil || remaining != 0 {
+				t.Errorf("cleanup wallet count=%d err=%v", remaining, err)
 			}
 		}
 		if err := a.Table("user").Where("openid=?", openid).Delete(map[string]any{}).Error; err != nil {
@@ -77,6 +90,10 @@ func TestUserRepoConcurrentLoginOpensOneWallet(t *testing.T) {
 			case <-release:
 			case <-ctx.Done():
 				db.AddError(ctx.Err())
+			}
+			if forceRetry {
+				// 仅首次锁后注入可重试错误，真实事务必须回滚；后续仍由原Login有界重试。
+				db.AddError(&mysql.MySQLError{Number: 1213, Message: "login retry fixture"})
 			}
 		}
 	}); err != nil {
@@ -129,7 +146,7 @@ func TestUserRepoConcurrentLoginOpensOneWallet(t *testing.T) {
 		}
 	}
 	x, y := get(first), get(second)
-	if x.err != nil || y.err != nil || x.user.ID == 0 || x.user.ID != y.user.ID || !x.user.IsNew || y.user.IsNew {
+	if x.err != nil || y.err != nil || x.user.ID == 0 || x.user.ID != y.user.ID || x.user.IsNew == y.user.IsNew {
 		t.Fatalf("first=%+v err=%v second=%+v err=%v", x.user, x.err, y.user, y.err)
 	}
 	select {
@@ -138,11 +155,18 @@ func TestUserRepoConcurrentLoginOpensOneWallet(t *testing.T) {
 		t.Fatal("second connection did not query original identity")
 	}
 	var count int64
+	if err := a.Table("user").Where("openid=?", openid).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("user count=%d err=%v", count, err)
+	}
 	if err := a.Table("wallet_account").Where("user_id=?", x.user.ID).Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("wallet count=%d err=%v", count, err)
 	}
 	var union string
-	if err := a.Table("user").Where("id=?", x.user.ID).Pluck("unionid", &union).Error; err != nil || union != "original-union" {
+	wantUnion := "original-union"
+	if y.user.IsNew {
+		wantUnion = "later-union"
+	}
+	if err := a.Table("user").Where("id=?", x.user.ID).Pluck("unionid", &union).Error; err != nil || union != wantUnion {
 		t.Fatalf("first union changed %s %v", union, err)
 	}
 	// 故障仅施加于当前连接的新钱包写入，不伪造事务或表；开户失败不得留下用户。

@@ -185,3 +185,5 @@ wallet 不 import payment 或 settlement，payment 不 import settlement；cmd �
 公开站点查询边界：UserStationService只读所属station／device_meta，公告只经StationAnnouncementReader注入ops.AnnouncementQueryService；公告有效期、全局／字符串站点目标和原候选分页窗口归ops，device不访问announcement表。站点按原启用／未删除、DECIMAL字符串坐标和SQL距离排序读取；详情无定位不猜测城市公告。设备运行态复用具名gateway摘要，最多100台一批、整轮5秒顺序执行，失败批及缺失设备为runtime_available=false／心跳null；已取得事实但从未上报仍为runtime_available=true／心跳null，原1小时在线窗口保持。无未管理任务，取消停止后续取证，不写设备或资金。
 
 具名客户端DTO命名：端点请求以Request结尾，端点响应以Reply结尾；子对象用业务记录名。改名同步contracts、integration、服务端、窄接口及测试，不保留旧类型别名，不改JSON字段、路径、单位或身份。
+
+具名客户端命名实施：请求与端点回复已按Request／Reply改名，私有字段存在性解码也遵守Reply后缀，不保留兼容别名。扫码共享传输契约与money.ScanResult分开，gateway所属存储到ScanReply、device收到ScanReply到领域发现结果均显式映射；原端口状态、连接、可用性、主键、nil／omitempty保留，只有中央所属运营读取能补充device_status。

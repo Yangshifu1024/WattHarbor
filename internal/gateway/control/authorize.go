@@ -18,8 +18,8 @@ type PaidOrderAuthorizer interface {
 // CentralAuthorizer 将服务契约转换为网关本地模型；HTTP 配置由 cmd 装配。
 type CentralAuthorizer struct {
 	Central interface {
-		StartAuthorization(context.Context, string) (centralcontract.StartAuthorization, error)
-		StopAuthorization(context.Context, string, uint64) (centralcontract.StopAuthorization, error)
+		StartAuthorization(context.Context, string) (centralcontract.StartAuthorizationReply, error)
+		StopAuthorization(context.Context, string, uint64) (centralcontract.StopAuthorizationReply, error)
 	}
 }
 

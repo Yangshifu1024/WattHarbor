@@ -32,11 +32,11 @@ func NewClient(transport serviceclient.Client, baseURL, token string) (*Client, 
 }
 
 // ChargingEvidence 返回一次批量查询的证据页，分页和证据完整性策略由调用用例决定。
-func (c *Client) ChargingEvidence(ctx context.Context, queries []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+func (c *Client) ChargingEvidence(ctx context.Context, queries []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 	if len(queries) == 0 || len(queries) > gatewaycontract.MaxEvidenceBatch {
 		return nil, errors.New("charging evidence requires 1–20 queries")
 	}
-	data, err := post[gatewaycontract.EvidenceData](ctx, c, gatewaycontract.ChargingEvidencePath, gatewaycontract.EvidenceRequest{Requests: queries}, http.StatusOK)
+	data, err := post[gatewaycontract.EvidenceReply](ctx, c, gatewaycontract.ChargingEvidencePath, gatewaycontract.EvidenceRequest{Requests: queries}, http.StatusOK)
 	if err != nil {
 		return nil, err
 	}
@@ -52,40 +52,41 @@ func (c *Client) ChargingEvidence(ctx context.Context, queries []gatewaycontract
 }
 
 // RequestStop 只确认 gateway 以 202 受理命令，不确认设备已停止。
-func (c *Client) RequestStop(ctx context.Context, request gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error) {
-	data, err := post[gatewaycontract.StopAcceptance](ctx, c, gatewaycontract.StopPath, request, http.StatusAccepted)
+func (c *Client) RequestStop(ctx context.Context, request gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
+	data, err := post[gatewaycontract.StopReply](ctx, c, gatewaycontract.StopPath, request, http.StatusAccepted)
 	if err != nil {
 		return data, err
 	}
 	if !data.Accepted || data.Stopped || data.CommandID == "" || data.Status == "" {
-		return gatewaycontract.StopAcceptance{}, fmt.Errorf("%w: stop acceptance missing or inconsistent", ErrInvalidResponse)
+		return gatewaycontract.StopReply{}, fmt.Errorf("%w: stop acceptance missing or inconsistent", ErrInvalidResponse)
 	}
 	return data, nil
 }
 
-type response[T any] struct {
-	Code *int `json:"code"`
-	Data *T   `json:"data"`
+// envelopeReply 保留原HTTP信封，nil字段明确表达缺失，不把未声明业务码当成功。
+type envelopeReply[T any] struct {
+	Code *int `json:"code"` // 必需业务码，nil表示缺失
+	Data *T   `json:"data"` // 必需原端点数据，nil表示缺失
 }
 
 // RequestStart 确认 gateway 以 202 受理原订单号，不推进 central 的订单状态。
-func (c *Client) RequestStart(ctx context.Context, request gatewaycontract.StartRequest) (gatewaycontract.StartAcceptance, error) {
+func (c *Client) RequestStart(ctx context.Context, request gatewaycontract.StartRequest) (gatewaycontract.StartReply, error) {
 	if request.OrderNo == "" || len(request.OrderNo) > 64 || strings.TrimSpace(request.OrderNo) != request.OrderNo {
-		return gatewaycontract.StartAcceptance{}, errors.New("invalid paid charge order number")
+		return gatewaycontract.StartReply{}, errors.New("invalid paid charge order number")
 	}
-	data, err := post[gatewaycontract.StartAcceptance](ctx, c, gatewaycontract.StartPath, request, http.StatusAccepted)
+	data, err := post[gatewaycontract.StartReply](ctx, c, gatewaycontract.StartPath, request, http.StatusAccepted)
 	if err != nil {
 		return data, err
 	}
 	if data.OrderNo != request.OrderNo || data.CommandID == "" || data.Status == "" || data.DeviceAcknowledged != (data.Status == "acked") {
-		return gatewaycontract.StartAcceptance{}, fmt.Errorf("%w: start acceptance missing or inconsistent", ErrInvalidResponse)
+		return gatewaycontract.StartReply{}, fmt.Errorf("%w: start acceptance missing or inconsistent", ErrInvalidResponse)
 	}
 	return data, nil
 }
 
 func post[T any](ctx context.Context, c *Client, path string, payload any, expectedStatus int) (T, error) {
 	var empty T
-	var reply response[T]
+	var reply envelopeReply[T]
 	status, err := c.transport.PostStatus(ctx, c.baseURL, c.token, path, payload, &reply)
 	if err != nil {
 		var rejection *serviceclient.HTTPError

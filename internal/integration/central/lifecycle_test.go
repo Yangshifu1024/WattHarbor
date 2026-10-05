@@ -104,8 +104,8 @@ func TestResultDeliveryPreservesIdentifiersMeterAndReplay(t *testing.T) {
 		}
 		fmt.Fprint(w, `{"code":0,"data":{"accepted":true,"replayed":true}}`)
 	})
-	start := centralcontract.StartResult{OrderNo: "C-1", ChargeOrderID: 9007199254740993, PortID: 9007199254740994, CommandID: "start-1", Success: true, OccurredAt: stamp}
-	end := centralcontract.EndResult{OrderNo: "C-1", ChargeOrderID: start.ChargeOrderID, PortID: start.PortID, Meter: charging.EndMeter{ChargedWh: 1000, ChargedSeconds: 3600, EndedAt: stamp, Segments: []charging.MeterSegment{{EnergyWh: 1000}}}}
+	start := centralcontract.StartResultRequest{OrderNo: "C-1", ChargeOrderID: 9007199254740993, PortID: 9007199254740994, CommandID: "start-1", Success: true, OccurredAt: stamp}
+	end := centralcontract.EndResultRequest{OrderNo: "C-1", ChargeOrderID: start.ChargeOrderID, PortID: start.PortID, Meter: charging.EndMeter{ChargedWh: 1000, ChargedSeconds: 3600, EndedAt: stamp, Segments: []charging.MeterSegment{{EnergyWh: 1000}}}}
 	a, err := client.SubmitStartResult(context.Background(), start)
 	if err != nil || !a.Accepted || !a.Replayed {
 		t.Fatalf("start ack=%+v err=%v", a, err)
@@ -132,11 +132,11 @@ func TestResultDeliveryRequiresPersistenceAcceptance(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := centralForServer(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.status); fmt.Fprint(w, tc.body) })
-			_, err := client.SubmitStartResult(context.Background(), centralcontract.StartResult{OrderNo: "C-1"})
+			_, err := client.SubmitStartResult(context.Background(), centralcontract.StartResultRequest{OrderNo: "C-1"})
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("start=%v", err)
 			}
-			_, err = client.SubmitEndResult(context.Background(), centralcontract.EndResult{OrderNo: "C-1"})
+			_, err = client.SubmitEndResult(context.Background(), centralcontract.EndResultRequest{OrderNo: "C-1"})
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("end=%v", err)
 			}

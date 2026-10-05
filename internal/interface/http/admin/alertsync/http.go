@@ -26,8 +26,8 @@ func (a DeviceAlertSyncAPI) Register(r *gin.Engine) {
 func (a DeviceAlertSyncAPI) sync(c *gin.Context) {
 	raised, err := a.Sync.Run(c.Request.Context())
 	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "device alert sync incomplete; retry scheduled", contract.DeviceAlertSyncData{Raised: raised})
+		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "device alert sync incomplete; retry scheduled", contract.DeviceAlertSyncReply{Raised: raised})
 		return
 	}
-	httpapi.OK(c, contract.DeviceAlertSyncData{Raised: raised})
+	httpapi.OK(c, contract.DeviceAlertSyncReply{Raised: raised})
 }

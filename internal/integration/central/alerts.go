@@ -25,9 +25,11 @@ func (c *Client) SyncDeviceAlerts(ctx context.Context) (int, error) {
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	transport.HTTP = &httpClient
 	copyClient.transport = transport
-	data, err := post[struct {
+	// deviceAlertSyncWireReply 只校验原进度字段是否存在，不把缺失当正常零值。
+	type deviceAlertSyncWireReply struct {
 		Raised *int `json:"raised"` /* 必需的原新告警数 */
-	}](ctx, &copyClient, contract.DeviceAlertSyncPath, nil)
+	}
+	data, err := post[deviceAlertSyncWireReply](ctx, &copyClient, contract.DeviceAlertSyncPath, nil)
 	if err != nil {
 		return 0, err
 	}

@@ -35,10 +35,12 @@ func queryData[T any](ctx context.Context, c *Client, path string, required ...s
 	if status != http.StatusOK {
 		return empty, fmt.Errorf("%w: HTTP %d, want 200", ErrInvalidResponse, status)
 	}
-	var wire struct {
+	// queryWireReply 保留原信封或数据的字段存在性，仅用于传输解码。
+	type queryWireReply struct {
 		Code *int            `json:"code"` // 必须存在的原业务码
 		Data json.RawMessage `json:"data"` // 原数据JSON，不先转换浮点数字
 	}
+	var wire queryWireReply
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return empty, fmt.Errorf("%w: %w", ErrInvalidResponse, err)
 	}
@@ -85,61 +87,61 @@ func validSeries(points []contract.CurvePoint, count int) bool {
 
 // Telemetry 在 ctx 下读取 q 原端口的有界遥测，返回实际窗口、空值与原单位或输入／传输／契约错误。
 // 参数逐段转义，核对原设备、实际窗口包含关系、点数与分辨率；不将网关故障转换为空曲线。
-func (c *Client) Telemetry(ctx context.Context, q contract.TelemetryQuery) (contract.TelemetryData, error) {
+func (c *Client) Telemetry(ctx context.Context, q contract.TelemetryRequest) (contract.TelemetryReply, error) {
 	if !validQueryDevice(q.DeviceID, q.PortNo) || q.From.IsZero() || !q.From.Before(q.To) || q.To.Sub(q.From) > 24*time.Hour {
-		return contract.TelemetryData{}, fmt.Errorf("invalid telemetry query")
+		return contract.TelemetryReply{}, fmt.Errorf("invalid telemetry query")
 	}
 	values := url.Values{"port_no": {strconv.FormatUint(uint64(q.PortNo), 10)}, "from": {q.From.UTC().Format(time.RFC3339Nano)}, "to": {q.To.UTC().Format(time.RFC3339Nano)}}
-	data, err := queryData[contract.TelemetryData](ctx, c, contract.TelemetryPath+url.PathEscape(q.DeviceID)+"/telemetry?"+values.Encode(), "device_id", "from", "to", "series", "count", "granularity", "bucket")
+	data, err := queryData[contract.TelemetryReply](ctx, c, contract.TelemetryPath+url.PathEscape(q.DeviceID)+"/telemetry?"+values.Encode(), "device_id", "from", "to", "series", "count", "granularity", "bucket")
 	if err != nil {
 		return data, err
 	}
 	if data.DeviceID != q.DeviceID || !data.From.Before(data.To) || data.From.Before(q.From) || data.To.After(q.To) || !validSeries(data.Series, data.Count) || (data.Granularity != "raw" && data.Granularity != "15min" && data.Granularity != "hourly") {
-		return contract.TelemetryData{}, fmt.Errorf("%w: telemetry identity, window or series", ErrInvalidResponse)
+		return contract.TelemetryReply{}, fmt.Errorf("%w: telemetry identity, window or series", ErrInvalidResponse)
 	}
 	return data, nil
 }
 
 // HistoricalCurve 在 ctx 下按 q 的原订单窗口读取聚合曲线，返回原边界标志、摘要及点或输入／调用／契约错误。
 // 核对业务号、设备、端口、时刻及粒度；摘要保持原JSON精度，聚合边界允许落在原窗口相邻桶内，无写入。
-func (c *Client) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveQuery) (contract.HistoricalCurveData, error) {
+func (c *Client) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveRequest) (contract.HistoricalCurveReply, error) {
 	if !validQueryDevice(q.DeviceID, q.PortNo) || q.OrderNo == "" || len(q.OrderNo) > 64 || strings.TrimSpace(q.OrderNo) != q.OrderNo || q.StartedAt.IsZero() || !q.StartedAt.Before(q.EndedAt) || (q.Granularity != "15min" && q.Granularity != "hourly") {
-		return contract.HistoricalCurveData{}, fmt.Errorf("invalid historical curve query")
+		return contract.HistoricalCurveReply{}, fmt.Errorf("invalid historical curve query")
 	}
 	values := url.Values{"order_id": {q.OrderNo}, "port_no": {strconv.FormatUint(uint64(q.PortNo), 10)}, "started_at": {q.StartedAt.UTC().Format(time.RFC3339Nano)}, "ended_at": {q.EndedAt.UTC().Format(time.RFC3339Nano)}, "granularity": {q.Granularity}}
-	data, err := queryData[contract.HistoricalCurveData](ctx, c, contract.HistoricalCurvePath+url.PathEscape(q.DeviceID)+"/historical-curve?"+values.Encode(), "order_id", "device_id", "port_no", "started_at", "ended_at", "granularity", "series", "count", "summary", "boundary_approximate")
+	data, err := queryData[contract.HistoricalCurveReply](ctx, c, contract.HistoricalCurvePath+url.PathEscape(q.DeviceID)+"/historical-curve?"+values.Encode(), "order_id", "device_id", "port_no", "started_at", "ended_at", "granularity", "series", "count", "summary", "boundary_approximate")
 	if err != nil {
 		return data, err
 	}
 	if data.OrderNo != q.OrderNo || data.DeviceID != q.DeviceID || data.PortNo != q.PortNo || !data.StartedAt.Equal(q.StartedAt) || !data.EndedAt.Equal(q.EndedAt) || data.Granularity != q.Granularity || data.Summary == nil || !validSeries(data.Series, data.Count) {
-		return contract.HistoricalCurveData{}, fmt.Errorf("%w: historical curve identity, window or series", ErrInvalidResponse)
+		return contract.HistoricalCurveReply{}, fmt.Errorf("%w: historical curve identity, window or series", ErrInvalidResponse)
 	}
 	return data, nil
 }
 
 // OrderProcess 在 ctx 下按 q 原身份与游标读取过程页，返回原序点及末页空游标或输入／调用／契约错误。
 // 行主键须严格递增且下一游标等于页尾；精确uint64与已上报零值保持原值，不自动重试或换订单。
-func (c *Client) OrderProcess(ctx context.Context, q contract.OrderProcessQuery) (contract.OrderProcessData, error) {
+func (c *Client) OrderProcess(ctx context.Context, q contract.OrderProcessRequest) (contract.OrderProcessReply, error) {
 	if !validQueryDevice(q.DeviceID, q.PortNo) || q.OrderID == 0 || q.OrderNo == "" || len(q.OrderNo) > 64 || strings.TrimSpace(q.OrderNo) != q.OrderNo || q.Limit == 0 || q.Limit > contract.MaxQueryPoints {
-		return contract.OrderProcessData{}, fmt.Errorf("invalid order process query")
+		return contract.OrderProcessReply{}, fmt.Errorf("invalid order process query")
 	}
 	values := url.Values{"charge_order_id": {strconv.FormatUint(q.OrderID, 10)}, "device_id": {q.DeviceID}, "port_no": {strconv.FormatUint(uint64(q.PortNo), 10)}, "after_id": {strconv.FormatUint(q.AfterID, 10)}, "limit": {strconv.FormatUint(uint64(q.Limit), 10)}}
-	data, err := queryData[contract.OrderProcessData](ctx, c, contract.OrderProcessPath+url.PathEscape(q.OrderNo)+"/process?"+values.Encode(), "items", "next_after_id")
+	data, err := queryData[contract.OrderProcessReply](ctx, c, contract.OrderProcessPath+url.PathEscape(q.OrderNo)+"/process?"+values.Encode(), "items", "next_after_id")
 	if err != nil {
 		return data, err
 	}
 	if data.Items == nil || len(data.Items) > int(q.Limit) {
-		return contract.OrderProcessData{}, fmt.Errorf("%w: process page size", ErrInvalidResponse)
+		return contract.OrderProcessReply{}, fmt.Errorf("%w: process page size", ErrInvalidResponse)
 	}
 	last := q.AfterID
 	for _, point := range data.Items {
 		if point.ID <= last || point.TS.IsZero() {
-			return contract.OrderProcessData{}, fmt.Errorf("%w: process ordering or timestamp", ErrInvalidResponse)
+			return contract.OrderProcessReply{}, fmt.Errorf("%w: process ordering or timestamp", ErrInvalidResponse)
 		}
 		last = point.ID
 	}
 	if data.NextAfterID != nil && (len(data.Items) == 0 || *data.NextAfterID != last) {
-		return contract.OrderProcessData{}, fmt.Errorf("%w: process cursor", ErrInvalidResponse)
+		return contract.OrderProcessReply{}, fmt.Errorf("%w: process cursor", ErrInvalidResponse)
 	}
 	return data, nil
 }

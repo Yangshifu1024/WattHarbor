@@ -11,14 +11,14 @@ import (
 )
 
 type fakeGateway struct {
-	evidence func([]gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error)
-	stop     func(gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error)
+	evidence func([]gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
+	stop     func(gatewaycontract.StopRequest) (gatewaycontract.StopReply, error)
 }
 
-func (f fakeGateway) ChargingEvidence(_ context.Context, q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+func (f fakeGateway) ChargingEvidence(_ context.Context, q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 	return f.evidence(q)
 }
-func (f fakeGateway) RequestStop(_ context.Context, r gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error) {
+func (f fakeGateway) RequestStop(_ context.Context, r gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
 	return f.stop(r)
 }
 
@@ -29,13 +29,13 @@ func TestEvidenceContinuesOnlyUnfinishedOrders(t *testing.T) {
 	sample := func(device string, at time.Time) []gatewaycontract.EvidenceSample {
 		return []gatewaycontract.EvidenceSample{{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: at}}
 	}
-	stopper := AutoStopper{Gateway: fakeGateway{evidence: func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+	stopper := AutoStopper{Gateway: fakeGateway{evidence: func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 		pageCalls++
 		if pageCalls == 1 {
 			if len(q) != 2 || q[0].AfterID != 0 || q[1].AfterID != 0 {
 				t.Fatalf("first queries=%+v", q)
 			}
-			return []gatewaycontract.EvidencePage{
+			return []gatewaycontract.EvidencePageReply{
 				{DeviceID: "D-1", PortNo: 1, Samples: sample("D-1", started), Complete: true, NextAfterID: 11},
 				{DeviceID: "D-2", PortNo: 2, Samples: sample("D-2", started), Complete: false, NextAfterID: 22},
 			}, nil
@@ -43,7 +43,7 @@ func TestEvidenceContinuesOnlyUnfinishedOrders(t *testing.T) {
 		if len(q) != 1 || q[0].DeviceID != "D-2" || q[0].PortNo != 2 || q[0].AfterID != 22 || !q[0].StartedAt.Equal(started) {
 			t.Fatalf("continuation queries=%+v", q)
 		}
-		return []gatewaycontract.EvidencePage{{DeviceID: "D-2", PortNo: 2, Samples: sample("D-2", started.Add(time.Minute)), Complete: true, NextAfterID: 33}}, nil
+		return []gatewaycontract.EvidencePageReply{{DeviceID: "D-2", PortNo: 2, Samples: sample("D-2", started.Add(time.Minute)), Complete: true, NextAfterID: 33}}, nil
 	}}}
 	got, err := stopper.evidence(context.Background(), orders)
 	if err != nil || pageCalls != 2 || len(got[1]) != 1 || len(got[2]) != 2 || got[2][1].DeviceID != "D-2" {
@@ -57,11 +57,11 @@ func TestEvidenceBatchesAtGatewayLimit(t *testing.T) {
 		orders[i] = AutoStopOrder{ID: uint64(i + 1), DeviceID: "D-1", PortNo: uint8(i + 1)}
 	}
 	var sizes []int
-	stopper := AutoStopper{Gateway: fakeGateway{evidence: func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+	stopper := AutoStopper{Gateway: fakeGateway{evidence: func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 		sizes = append(sizes, len(q))
-		pages := make([]gatewaycontract.EvidencePage, len(q))
+		pages := make([]gatewaycontract.EvidencePageReply, len(q))
 		for i, query := range q {
-			pages[i] = gatewaycontract.EvidencePage{DeviceID: query.DeviceID, PortNo: query.PortNo, Complete: true}
+			pages[i] = gatewaycontract.EvidencePageReply{DeviceID: query.DeviceID, PortNo: query.PortNo, Complete: true}
 		}
 		return pages, nil
 	}}}
@@ -76,31 +76,33 @@ func TestEvidenceBatchesAtGatewayLimit(t *testing.T) {
 func TestEvidenceRejectsPartialOrInvalidPages(t *testing.T) {
 	cases := []struct {
 		name   string
-		result func([]gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error)
+		result func([]gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
 		want   error
 		calls  int
 	}{
-		{"missing entry", func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) { return nil, nil }, ErrEvidenceIncomplete, 1},
-		{"identity mismatch", func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
-			return []gatewaycontract.EvidencePage{{DeviceID: "other", PortNo: 1, Complete: true}}, nil
+		{"missing entry", func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
+			return nil, nil
 		}, ErrEvidenceIncomplete, 1},
-		{"zero cursor", func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
-			return []gatewaycontract.EvidencePage{{DeviceID: "D-1", PortNo: 1}}, nil
+		{"identity mismatch", func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
+			return []gatewaycontract.EvidencePageReply{{DeviceID: "other", PortNo: 1, Complete: true}}, nil
 		}, ErrEvidenceIncomplete, 1},
-		{"stuck cursor", func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
-			return []gatewaycontract.EvidencePage{{DeviceID: "D-1", PortNo: 1, NextAfterID: 1}}, nil
+		{"zero cursor", func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
+			return []gatewaycontract.EvidencePageReply{{DeviceID: "D-1", PortNo: 1}}, nil
+		}, ErrEvidenceIncomplete, 1},
+		{"stuck cursor", func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
+			return []gatewaycontract.EvidencePageReply{{DeviceID: "D-1", PortNo: 1, NextAfterID: 1}}, nil
 		}, ErrEvidenceIncomplete, 2},
-		{"page limit", func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
-			return []gatewaycontract.EvidencePage{{DeviceID: "D-1", PortNo: 1, NextAfterID: q[0].AfterID + 1}}, nil
+		{"page limit", func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
+			return []gatewaycontract.EvidencePageReply{{DeviceID: "D-1", PortNo: 1, NextAfterID: q[0].AfterID + 1}}, nil
 		}, ErrEvidenceIncomplete, autoStopEvidenceMaxPages},
-		{"gateway failure", func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+		{"gateway failure", func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 			return nil, context.DeadlineExceeded
 		}, context.DeadlineExceeded, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			stopper := AutoStopper{Gateway: fakeGateway{evidence: func(q []gatewaycontract.EvidenceQuery) ([]gatewaycontract.EvidencePage, error) {
+			stopper := AutoStopper{Gateway: fakeGateway{evidence: func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 				calls++
 				return tc.result(q)
 			}}}
@@ -114,11 +116,11 @@ func TestEvidenceRejectsPartialOrInvalidPages(t *testing.T) {
 
 func TestRequestStopUsesOrderIdentityAndReturnsGatewayError(t *testing.T) {
 	want := errors.New("gateway unavailable")
-	stopper := AutoStopper{Gateway: fakeGateway{stop: func(r gatewaycontract.StopRequest) (gatewaycontract.StopAcceptance, error) {
+	stopper := AutoStopper{Gateway: fakeGateway{stop: func(r gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
 		if r.OrderNo != "C-1" || r.UserID != 9007199254740993 || r.Source != "auto" {
 			t.Fatalf("request=%+v", r)
 		}
-		return gatewaycontract.StopAcceptance{}, want
+		return gatewaycontract.StopReply{}, want
 	}}}
 	if err := stopper.requestStop(context.Background(), AutoStopOrder{OrderNo: "C-1", UserID: 9007199254740993}); !errors.Is(err, want) {
 		t.Fatalf("err=%v", err)

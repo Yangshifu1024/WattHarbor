@@ -55,7 +55,7 @@ func TestSyncReadOperationsPreserveNullsAndEvidenceWindow(t *testing.T) {
 	if err != nil || command != nil {
 		t.Fatalf("missing command=%+v err=%v", command, err)
 	}
-	samples, err := client.MeterSamples(context.Background(), gatewaycontract.MeterSamplesQuery{DeviceID: "D-1", AckAt: stamp, EndAt: stamp.Add(time.Hour), EndID: 9007199254740993})
+	samples, err := client.MeterSamples(context.Background(), gatewaycontract.MeterSamplesRequest{DeviceID: "D-1", AckAt: stamp, EndAt: stamp.Add(time.Hour), EndID: 9007199254740993})
 	if err != nil || samples == nil || len(samples) != 0 {
 		t.Fatalf("samples=%+v err=%v", samples, err)
 	}

@@ -79,5 +79,5 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 	for i, row := range items {
 		points[i] = gatewaycontract.ProcessPoint{ID: row.ID, TS: row.TS.UTC(), PowerW: row.PowerW, ChargedKWh: row.ChargedKWh, RemainingKWh: row.RemainingKWh, ChargedSeconds: row.ChargedSeconds, RemainingSeconds: row.RemainingSeconds, SignalStrength: row.SignalStrength, PortStatus: row.PortStatus, VoltageV: row.VoltageV, TemperatureC: row.TemperatureC, DeviceStatus: row.DeviceStatus}
 	}
-	httpapi.OK(c, gatewaycontract.OrderProcessData{Items: points, NextAfterID: next})
+	httpapi.OK(c, gatewaycontract.OrderProcessReply{Items: points, NextAfterID: next})
 }

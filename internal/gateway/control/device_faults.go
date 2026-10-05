@@ -42,7 +42,7 @@ func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "故障事件暂不可读取", nil)
 		return
 	}
-	out := contract.DeviceFaultData{Reports: make([]contract.DeviceFaultReport, 0, len(reports))}
+	out := contract.DeviceFaultsReply{Reports: make([]contract.DeviceFaultReport, 0, len(reports))}
 	for _, r := range reports {
 		out.Reports = append(out.Reports, contract.DeviceFaultReport{ID: r.ID, EventKey: r.EventKey, DeviceID: r.DeviceID, ReceivedAt: r.ReceivedAt, Payload: r.Payload})
 	}
@@ -70,7 +70,7 @@ func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "处理标记暂不可写", nil)
 		return
 	}
-	httpapi.OK(c, contract.MarkDeviceFaultsData{Marked: marked})
+	httpapi.OK(c, contract.MarkDeviceFaultsReply{Marked: marked})
 }
 
 // latestHeartbeat 返回某设备在指定时间之后的最新 dc589 心跳原始载荷；
@@ -92,7 +92,7 @@ func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 		receivedAt, found := store.FindEventReceivedAt(c.Request.Context(), a.DB, device, key)
 		if found != nil {
 			if errors.Is(found, gorm.ErrRecordNotFound) {
-				httpapi.OK(c, contract.HeartbeatEvidence{Found: false})
+				httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: false})
 				return
 			}
 			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "心跳证据暂不可读取", nil)
@@ -113,11 +113,11 @@ func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 	row, err := store.LatestHeartbeatAfter(c.Request.Context(), a.DB, device, after.UTC())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			httpapi.OK(c, contract.HeartbeatEvidence{Found: false, AfterReceivedAt: &after})
+			httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: false, AfterReceivedAt: &after})
 			return
 		}
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "心跳证据暂不可读取", nil)
 		return
 	}
-	httpapi.OK(c, contract.HeartbeatEvidence{Found: true, AfterReceivedAt: &after, ReceivedAt: &row.ReceivedAt, Payload: string(row.Payload)})
+	httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: true, AfterReceivedAt: &after, ReceivedAt: &row.ReceivedAt, Payload: string(row.Payload)})
 }

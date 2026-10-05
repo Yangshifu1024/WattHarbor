@@ -41,7 +41,7 @@ func TestCardClientsRequireDecisionFields(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.freeze {
-				_, err = client.FreezeCardResponse(context.Background(), contract.CardFreeze{EventKey: "e84a43ca-51a0-4bc3-b15f-ef186cf6bf28", ResponseJSON: "{}"})
+				_, err = client.FreezeCardResponse(context.Background(), contract.CardFreezeRequest{EventKey: "e84a43ca-51a0-4bc3-b15f-ef186cf6bf28", ResponseJSON: "{}"})
 			} else {
 				_, err = client.ResolveCardPort(context.Background(), "device/one", 2)
 			}

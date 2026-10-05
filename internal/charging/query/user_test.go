@@ -13,22 +13,22 @@ import (
 
 // userQueryFixture 提供归属与取消闸门，不冒充真实网关或存储验收。
 type userQueryFixture struct {
-	row            order.ChargeOrderRecord       // 本用户原事实
-	ownerError     error                         // 所属读取故障
-	frozen         FrozenState                   // 冻结读模型
-	fees           map[uint64]order.FeeFacts     // 原确认费用
-	funds          DetailFunds                   // 原资金读模型
-	stateError     error                         // 冻结故障
-	feeError       error                         // 回执故障
-	fundsError     error                         // 支付／退款故障
-	gatewayError   error                         // 网络故障
-	telemetry      contract.TelemetryData        // 原观测
-	history        contract.HistoricalCurveData  // 原聚合
-	reads          int                           // 授权后组合调用计数
-	telemetryCalls int                           // 遥测调用计数
-	historyCalls   int                           // 历史调用计数
-	lastTelemetry  contract.TelemetryQuery       // 实际规范遥测窗口
-	lastHistory    contract.HistoricalCurveQuery // 实际规范历史窗口
+	row            order.ChargeOrderRecord         // 本用户原事实
+	ownerError     error                           // 所属读取故障
+	frozen         FrozenState                     // 冻结读模型
+	fees           map[uint64]order.FeeFacts       // 原确认费用
+	funds          DetailFunds                     // 原资金读模型
+	stateError     error                           // 冻结故障
+	feeError       error                           // 回执故障
+	fundsError     error                           // 支付／退款故障
+	gatewayError   error                           // 网络故障
+	telemetry      contract.TelemetryReply         // 原观测
+	history        contract.HistoricalCurveReply   // 原聚合
+	reads          int                             // 授权后组合调用计数
+	telemetryCalls int                             // 遥测调用计数
+	historyCalls   int                             // 历史调用计数
+	lastTelemetry  contract.TelemetryRequest       // 实际规范遥测窗口
+	lastHistory    contract.HistoricalCurveRequest // 实际规范历史窗口
 }
 
 // Resolve 在 ctx 下检查 uid/no 与 f 原用户及单号，返回原事实或取消／fixture准入错误，无写入。
@@ -61,7 +61,7 @@ func (f *userQueryFixture) Fees(ctx context.Context, ids []uint64) (map[uint64]o
 }
 
 // Telemetry 在 ctx 下记录 q 原窗口，返回 f 原观测或取消／注入错误，不启动后台任务。
-func (f *userQueryFixture) Telemetry(ctx context.Context, q contract.TelemetryQuery) (contract.TelemetryData, error) {
+func (f *userQueryFixture) Telemetry(ctx context.Context, q contract.TelemetryRequest) (contract.TelemetryReply, error) {
 	f.telemetryCalls++
 	f.lastTelemetry = q
 	if err := ctx.Err(); err != nil {
@@ -71,7 +71,7 @@ func (f *userQueryFixture) Telemetry(ctx context.Context, q contract.TelemetryQu
 }
 
 // HistoricalCurve 在 ctx 下记录 q 原窗口，返回 f 原聚合或取消／注入错误，不启动后台任务。
-func (f *userQueryFixture) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveQuery) (contract.HistoricalCurveData, error) {
+func (f *userQueryFixture) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveRequest) (contract.HistoricalCurveReply, error) {
 	f.historyCalls++
 	f.lastHistory = q
 	if err := ctx.Err(); err != nil {
@@ -83,7 +83,7 @@ func (f *userQueryFixture) HistoricalCurve(ctx context.Context, q contract.Histo
 // userQueryService 创建固定时刻与原身份 fixture，返回可注入故障源和业务服务，无外部IO。
 func userQueryService() (*userQueryFixture, UserService, time.Time) {
 	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-	f := &userQueryFixture{row: order.ChargeOrderRecord{ID: 19, UserID: 7, OrderNo: "original", DeviceID: "board", PortNo: 2, Status: "charging", StartedAt: sql.NullTime{Time: now.Add(-time.Hour), Valid: true}}, fees: map[uint64]order.FeeFacts{19: {OrderID: 19}}, telemetry: contract.TelemetryData{Series: []contract.CurvePoint{}}, history: contract.HistoricalCurveData{Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{}}}
+	f := &userQueryFixture{row: order.ChargeOrderRecord{ID: 19, UserID: 7, OrderNo: "original", DeviceID: "board", PortNo: 2, Status: "charging", StartedAt: sql.NullTime{Time: now.Add(-time.Hour), Valid: true}}, fees: map[uint64]order.FeeFacts{19: {OrderID: 19}}, telemetry: contract.TelemetryReply{Series: []contract.CurvePoint{}}, history: contract.HistoricalCurveReply{Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{}}}
 	return f, UserService{Orders: f, Fees: f, State: f, Gateway: f, Now: func() time.Time { return now }}, now
 }
 

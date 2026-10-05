@@ -11,8 +11,6 @@ import (
 	"net/http"
 )
 
-type EndResult = centralcontract.EndResult
-
 type EndResultAPI struct {
 	Service interface {
 		Apply(context.Context, chargefinish.EndResult) (bool, error)
@@ -29,7 +27,7 @@ func (a EndResultAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 		return
 	}
-	var request EndResult
+	var request centralcontract.EndResultRequest
 	if c.ShouldBindJSON(&request) != nil || c.Param("order_no") != request.OrderNo {
 		httpapi.BadRequest(c, "invalid end result")
 		return
@@ -43,5 +41,5 @@ func (a EndResultAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "end result persistence failed", nil)
 		return
 	}
-	httpapi.OK(c, centralcontract.ResultAcceptance{Accepted: true, Replayed: replayed})
+	httpapi.OK(c, centralcontract.ResultReply{Accepted: true, Replayed: replayed})
 }

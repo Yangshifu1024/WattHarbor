@@ -111,7 +111,7 @@ func (a TelemetryAPI) curve(c *gin.Context) {
 	case "telemetry_aggregate_hourly":
 		label = "hourly"
 	}
-	httpapi.OK(c, gatewaycontract.TelemetryData{DeviceID: deviceID, From: from, To: to, Series: series, Count: len(series), Granularity: label, Bucket: granularity.String()})
+	httpapi.OK(c, gatewaycontract.TelemetryReply{DeviceID: deviceID, From: from, To: to, Series: series, Count: len(series), Granularity: label, Bucket: granularity.String()})
 }
 
 // read 把长表形式的 telemetry 行转成按时间戳对齐的曲线点。读数在 SQL 里
