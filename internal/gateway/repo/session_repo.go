@@ -10,22 +10,91 @@ import (
 // 设备连接会话先读取候选，再按 id 与 created_month 完整复合主键关闭。
 // created_month 同时用于分区定位，不能只按 id 更新；本操作不处理充电命令会话。
 
-// SessionKey 是设备连接会话的完整复合主键；CreatedMonth 同时定位所属分区。
-type SessionKey struct {
+// IdleSessionRow 是静默阈值筛选所得的设备连接持久投影，只读取原六列，不代表 TCP 已断开。
+type IdleSessionRow struct {
+	// SessionID 原设备连接会话身份，不是 START 或 STOP 命令会话。
+	SessionID string `gorm:"column:session_id"`
+	// DeviceID 原设备业务编号。
+	DeviceID string `gorm:"column:device_id"`
+	// Protocol 原连接协议名称。
+	Protocol string `gorm:"column:protocol"`
+	// RemoteAddr 原连接远端地址。
+	RemoteAddr string `gorm:"column:remote_addr"`
+	// StartedAt 原设备连接开始时刻，保留数据库映射，不转换时区。
+	StartedAt time.Time `gorm:"column:started_at"`
+	// LastActiveAt 原设备连接最后活动时刻，作为静默阈值与列表排序依据。
+	LastActiveAt time.Time `gorm:"column:last_active_at"`
+}
+
+// ListIdleSessions 接收 ctx、db、idleThreshold 与 limit，以调用时当前 UTC 减阈值筛选仍开放的设备连接记录。
+// 按原六列 Scan、last_active_at 升序和 limit 返回记录及 SQL 错误，不检查内存连接或关闭实际 TCP。
+func ListIdleSessions(
+	ctx context.Context,
+	db *gorm.DB,
+	idleThreshold time.Duration,
+	limit int,
+) ([]IdleSessionRow, error) {
+	var rows []IdleSessionRow
+	err := idleSessionsQuery(ctx, db, idleThreshold).
+		Select(
+			"session_id",
+			"device_id",
+			"protocol",
+			"remote_addr",
+			"started_at",
+			"last_active_at",
+		).
+		Order("last_active_at ASC").Limit(limit).Scan(&rows).Error
+	return rows, err
+}
+
+// CloseIdleSessions 接收 ctx、db、idleThreshold、limit 与 at，在原完整事务中读取候选并按完整主键关闭仍开放的记录。
+// 候选截止在事务内另取当前 UTC 减阈值，at 仅作关闭时刻；候选无新增排序，返回累计影响行数及错误。
+// 计数仅在 err=nil 时代表提交结果，任一失败回滚；不检查内存连接、不发送充电命令或断开 TCP。
+func CloseIdleSessions(
+	ctx context.Context,
+	db *gorm.DB,
+	idleThreshold time.Duration,
+	limit int,
+	at time.Time,
+) (int64, error) {
+	// 在同一事务中读取并关闭候选会话；更新再次检查 ended_at IS NULL，避免覆盖并发正常关闭的记录。
+	var closed int64
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var candidates []sessionKey
+		if err := idleSessionsQuery(ctx, tx, idleThreshold).
+			Select("id", "created_month").Limit(limit).Scan(&candidates).Error; err != nil {
+			return err
+		}
+		for _, key := range candidates {
+			affected, err := closeAbandonedSession(tx, key, at)
+			if err != nil {
+				return err
+			}
+			closed += affected
+		}
+		return nil
+	})
+
+	return closed, err
+}
+
+// sessionKey 是设备连接会话的完整复合主键；CreatedMonth 同时定位所属分区。
+type sessionKey struct {
 	// ID device_session 表的原自增 id，与 CreatedMonth 组成完整复合主键。
 	ID uint64 `gorm:"column:id"`
 	// CreatedMonth 原分区日期，与记录身份共同定位所属分区。
 	CreatedMonth time.Time `gorm:"column:created_month"`
 }
 
-// IdleSessionsQuery 接收 ctx、db 与 idleThreshold，构造仍开放且早于当前 UTC 减阈值的设备连接会话查询；不执行查询或检查内存连接注册表。
-func IdleSessionsQuery(ctx context.Context, db *gorm.DB, idleThreshold time.Duration) *gorm.DB {
+// idleSessionsQuery 接收 ctx、db 与 idleThreshold，构造仍开放且早于当前 UTC 减阈值的设备连接会话查询；不执行查询或检查内存连接注册表。
+func idleSessionsQuery(ctx context.Context, db *gorm.DB, idleThreshold time.Duration) *gorm.DB {
 	return db.WithContext(ctx).Table("device_session").
 		Where("ended_at IS NULL AND last_active_at < ?", time.Now().UTC().Add(-idleThreshold))
 }
 
-// CloseAbandonedSession 接收所属 tx、完整 key 与 at，仅关闭原 id/created_month 定位且仍开放的设备连接会话；返回影响行数及 SQL 错误，不提交或关闭 TCP 连接。
-func CloseAbandonedSession(tx *gorm.DB, key SessionKey, at time.Time) (int64, error) {
+// closeAbandonedSession 接收所属 tx、完整 key 与 at，仅关闭原 id/created_month 定位且仍开放的设备连接会话；返回影响行数及 SQL 错误，不提交或关闭 TCP 连接。
+func closeAbandonedSession(tx *gorm.DB, key sessionKey, at time.Time) (int64, error) {
 	month := time.Date(key.CreatedMonth.UTC().Year(), key.CreatedMonth.UTC().Month(), key.CreatedMonth.UTC().Day(), 0, 0, 0, 0, time.UTC)
 	res := tx.Table("device_session").
 		Where("id = ? AND created_month = ? AND ended_at IS NULL", key.ID, month).

@@ -475,7 +475,7 @@ charge-pilot/
 │   ├── internal/gateway/repo/provision_repo.go（迁移前：internal/gateway/store/provision_store.go）
 │   ├── internal/gateway/repo/scan_repo.go（迁移前：internal/gateway/store/scan_store.go）
 │   ├── internal/gateway/repo/session.go（迁移前：internal/gateway/store/session.go）
-│   ├── internal/gateway/repo/session_repo.go（迁移前：internal/gateway/store/session_store.go）
+│   ├── internal/gateway/repo/session_repo.go（迁移前：internal/gateway/store/session_store.go、internal/gateway/control/session.go[完整静默查询与清理事务]）
 │   ├── internal/gateway/repo/sync_models.go（迁移前：internal/gateway/store/sync_models.go）
 │   ├── internal/gateway/repo/telemetry_curve_repo.go（迁移前：internal/gateway/store/telemetry_curve_store.go）
 │   ├── internal/gateway/repo/telemetry_read_repo.go（迁移前：internal/gateway/store/telemetry_read_store.go）

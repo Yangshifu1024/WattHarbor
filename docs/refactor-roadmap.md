@@ -799,3 +799,11 @@ make test-integration TEST_MYSQL_URL=...
 5n退出检查：全仓 .tmp/batch5n-check.log、完整独立三库／Redis .tmp/batch5n-integration.log、gateway构建 .tmp/batch5n-build.log 及无依赖差异 .tmp/batch5n-tidy.log全通过。三份原备份与HEAD相同，.tmp/batch5n-source-comparison.log完整AST确认五份源文件只有已审查的提取、阶段错误适配及注释／格式变化；原SQL、JSON比较和既有纯测试断言按精确原文移动。六份变动Go文件的中文函数／字段／接口说明清单无缺项。没有schema、公开契约或前端变化，前端最近完整验收仍5b；G／WK组合及DEP继续，17组完成15组约88%，接续设备连接会话与其他gateway职责边界。
 
 5n最终暂存核对：.tmp/batch5n-validation的1227份原blob中715份Go／模块与已验证工作区一致，.tmp/batch5n-snapshot-source.log保留，本地Markdown链接有效，不重复运行同一源码全量测试。重启既有开发gateway后 .tmp/batch5n-health-{before,after}.json仅GET核对五进程原就绪均200，未清库、触发新设备命令或资金任务。最终只补本记录，继续设备连接会话的完整读取及候选清理事务；G／WK组合和DEP未提前关闭。
+
+批次5o（G-01 设备连接会话完整操作）：原六列静默查询与整批候选清理事务归 gateway/repo/session_repo，HTTP 仅转换原六字段、保持 [] 空列表并映射原消息。候选阈值仍在事务内取 UTC，关闭时刻仍由 HTTP 在调用前取 UTC；默认十五分钟／五百条、列表升序、清理无排序及完整 id／created_month／ended_at 条件保持，日期不归一为月首。原查询构造器、主键类型与单行更新助手私有化，无跨层包装；摘要和端口查询未动。AGENTS 目录图同步，无 schema、具名客户端或公开字段变化。
+
+5o证据：新增实际 Register 真库回归先在原 HEAD 隔离副本通过 .tmp/batch5o-session-baseline.log；新源码 .tmp/batch5o-session-real.log 通过。核对列表顺序／预算、NULL 地址、同 ID 跨分区近期记录保护、原正常关闭原因、关闭2及重放0、空列表；另一回归在首行写后取消，整批回滚0，恢复2再重放0。夹具先检查无其它合格候选，随机身份及完整主键清理零残留。只在隔离副本忽略日期，.tmp/batch5o-key-mutation.log 稳定失败 closed=3；只在隔离副本去掉整批事务，.tmp/batch5o-atomic-mutation.log 稳定失败 closed=1，均已恢复，生产源码未变异。此证据不代表 TCP 关闭或中央资金流程。
+
+5o退出检查：默认定向 .tmp/batch5o-targeted.log、全仓 .tmp/batch5o-check.log、默认包并行的完整独立三库／Redis .tmp/batch5o-integration.log 和 gateway 构建 .tmp/batch5o-build.log 全部通过。两份原备份与 HEAD 一致，.tmp/batch5o-source-comparison.log 完整 AST 核对只有已审查提取与注释／格式变化，原 SQL 和事务边界保持；三份 Go 文件的函数／字段／接口中文说明清单无缺项。没有依赖或前端变化，最近完整前端验收仍5b；开发重启和最终暂存核对继续，17组完成15组约88%，G／WK及DEP未提前关闭。
+
+5o最终暂存核对：.tmp/batch5o-validation 的1228份原 blob 中716份 Go／模块与已验收工作区一致，本地 Markdown 链接有效，.tmp/batch5o-snapshot-source.log 保留；不重复执行相同源码全量测试。重启既有开发 gateway 后 .tmp/batch5o-health-{before,after}.json 仅 GET 核对五进程原就绪均200，没有开发清库、手动设备命令或资金任务。最终只补本记录，接续刷卡／故障、设备开通及补录边界、运行时与DEP评估；G／WK组合未提前完成。

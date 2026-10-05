@@ -14,14 +14,13 @@ import (
 // SessionAPI 提供设备会话审计及遗留会话清理接口。
 // 正常连接由所属进程关闭，进程退出后遗留的开放记录由运维清理。
 type SessionAPI struct {
-	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，具体事务由原方法管理。
+	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，完整读写和事务由 repo 管理。
 	DB *gorm.DB
 	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
 	// IdleThreshold 是候选会话的最小静默时间，仅按持久 last_active_at 判断。
 	IdleThreshold time.Duration
-	// MaxRows 限制单次清理的规模，避免积压过大时把一个长事务吊住；
-	// 调用方重跑一次就行。
+	// MaxRows 限制单次列表和清理的候选条数，非正值采用五百条默认值。
 	MaxRows int
 }
 
@@ -40,7 +39,7 @@ func (a SessionAPI) authorized(c *gin.Context) bool {
 	return true
 }
 
-// IdleSession 是向运维报告的一条被遗弃的连接。
+// IdleSession 是向运维报告的静默设备连接会话记录，不代表实际 TCP 已断开。
 type IdleSession struct {
 	// SessionID 原设备连接会话身份，不是 START 或 STOP 命令会话。
 	SessionID string `json:"session_id"`
@@ -72,21 +71,32 @@ func (a SessionAPI) limit() int {
 	return 500
 }
 
-// listIdle 只报告被遗弃的会话而不做任何改动，这样运维可以先看清一次清理
-// 会关掉哪些，再决定要不要跑。
+// listIdle 接收 c 中的服务令牌，返回阈值筛选的设备连接会话、条数和阈值秒数，空列表保持 []。
+// 鉴权失败返回 401，读取失败返回原 503；仅转换持久投影，不修改会话记录或实际 TCP 连接。
 func (a SessionAPI) listIdle(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	var sessions []IdleSession
-	if err := gatewayrepo.IdleSessionsQuery(c.Request.Context(), a.DB, a.threshold()).
-		Select("session_id", "device_id", "protocol", "remote_addr", "started_at", "last_active_at").
-		Order("last_active_at ASC").Limit(a.limit()).Scan(&sessions).Error; err != nil {
+	rows, err := gatewayrepo.ListIdleSessions(
+		c.Request.Context(),
+		a.DB,
+		a.threshold(),
+		a.limit(),
+	)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "设备会话查询失败", nil)
 		return
 	}
-	if sessions == nil {
-		sessions = []IdleSession{}
+	sessions := make([]IdleSession, 0, len(rows))
+	for _, row := range rows {
+		sessions = append(sessions, IdleSession{
+			SessionID:    row.SessionID,
+			DeviceID:     row.DeviceID,
+			Protocol:     row.Protocol,
+			RemoteAddr:   row.RemoteAddr,
+			StartedAt:    row.StartedAt,
+			LastActiveAt: row.LastActiveAt,
+		})
 	}
 	httpapi.OK(c, gin.H{
 		"items":              sessions,
@@ -95,8 +105,8 @@ func (a SessionAPI) listIdle(c *gin.Context) {
 	})
 }
 
-// cleanupIdle 接收 c，鉴权后在请求事务中按完整主键关闭超时且仍开放的连接记录。
-// 成功写原 closed 数量；鉴权或 SQL 失败写原 401、503，不关闭实际 TCP 连接。
+// cleanupIdle 接收 c 中的服务令牌，捕获当前 UTC 作为关闭时刻，交由 repo 完整事务关闭静默且仍开放的连接记录。
+// 成功返回 closed 和阈值秒数；鉴权失败返回 401，事务失败返回原 503 且不输出中间计数，不关闭实际 TCP。
 func (a SessionAPI) cleanupIdle(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -104,23 +114,13 @@ func (a SessionAPI) cleanupIdle(c *gin.Context) {
 	ctx := c.Request.Context()
 	now := time.Now().UTC()
 
-	// 在同一事务中读取并关闭候选会话；更新再次检查 ended_at IS NULL，避免覆盖并发正常关闭的记录。
-	var closed int64
-	err := a.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var candidates []gatewayrepo.SessionKey
-		if err := gatewayrepo.IdleSessionsQuery(ctx, tx, a.threshold()).
-			Select("id", "created_month").Limit(a.limit()).Scan(&candidates).Error; err != nil {
-			return err
-		}
-		for _, key := range candidates {
-			affected, err := gatewayrepo.CloseAbandonedSession(tx, key, now)
-			if err != nil {
-				return err
-			}
-			closed += affected
-		}
-		return nil
-	})
+	closed, err := gatewayrepo.CloseIdleSessions(
+		ctx,
+		a.DB,
+		a.threshold(),
+		a.limit(),
+		now,
+	)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "设备会话清理失败", nil)
 		return
