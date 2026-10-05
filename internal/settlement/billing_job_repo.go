@@ -96,7 +96,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 		return Source{}, ErrBillingConflict
 	}
 	var snapshot orderstore.ChargePricingSnapshotRecord
-	var end orderstore.EndReceiptRecord
+	var end endReceiptView
 	if err := db.Where("charge_order_id=?", id).Take(&snapshot).Error; err != nil {
 		return Source{}, err
 	}
@@ -277,7 +277,8 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		surplus := payment.PaidCents - result.TotalCents - payment.RefundedCents - reserved
 		if surplus > 0 {
 			if payment.PayMethod == "balance" {
-				if err := RefundBalanceInTx(tx, order, &wallet, surplus, fmt.Sprintf("CARD-R%020d", order.ID), "刷卡累计付款未使用部分退款"); err != nil {
+				source := BalanceRefundSource{UserID: order.UserID, OrderID: order.ID, PaymentOrderID: order.PaymentOrderID.Int64}
+				if err := RefundBalanceInTx(tx, source, &wallet, surplus, fmt.Sprintf("CARD-R%020d", order.ID), "刷卡累计付款未使用部分退款"); err != nil {
 					return err
 				}
 				if err := orderstore.SetStatusRefunded(tx, order.ID); err != nil {

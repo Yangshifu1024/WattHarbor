@@ -192,6 +192,7 @@ charge-pilot/
 │   │   ├── internal/charging/start/authorization.go（迁移前：internal/charging/authorization.go[启动部分]）
 │   │   ├── internal/charging/start/authorization_repo.go（迁移前：internal/charging/authorization_store.go[启动查询]）
 │   │   ├── internal/charging/start/pending_repo.go（迁移前：internal/charging/paid_start_store.go）
+│   │   ├── internal/charging/start/receipt_schema.go（启动回执与启动阶段端口占用的写模型）
 │   │   └── internal/charging/start/result_repo.go（迁移前：internal/charging/start_result_store.go）
 │   ├── internal/charging/stop                            停止授权、自动停机与计费截止冻结
 │   │   ├── internal/charging/stop/authorization.go（迁移前：internal/charging/authorization.go[停止部分]）
@@ -203,6 +204,7 @@ charge-pilot/
 │   │   ├── internal/charging/stop/gateway.go（迁移前：internal/charging/auto_stop.go[网关调用]）
 │   │   └── internal/charging/stop/meter.go（迁移前：internal/charging/auto_stop.go[计量判断]）
 │   ├── internal/charging/finish                           结束回执、端口释放与结算任务提交
+│   │   ├── internal/charging/finish/receipt_schema.go（结束回执写模型、启动回执只读投影与端口释放模型）
 │   │   └── internal/charging/finish/result_repo.go（迁移前：internal/charging/finish/result_repo.go）
 │   ├── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
 │   │   └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
@@ -218,6 +220,7 @@ charge-pilot/
 │   ├── internal/order/feedback.go（迁移前：internal/interface/http/charge_feedback.go、admin/order/casework.go[反馈业务]）
 │   ├── internal/order/feedback_repo.go（迁移前：internal/device/user_fault_store.go[评价表访问]、internal/infrastructure/database/admin_case_store.go[反馈]）
 │   ├── internal/order/funding_repo.go（新增：资金及开票事务的所属订单能力）
+│   ├── internal/order/lifecycle_repo.go（新增：启动与结束阶段的订单锁读及状态推进能力）
 │   ├── internal/order/card_session_repo.go（迁移前：internal/card/card_store.go[续购订单锁]）
 │   ├── internal/order/order_history_repo.go（迁移前：internal/payment/order_authorization_store.go[历史视图部分]）
 │   ├── internal/order/admin_query_repo.go（迁移前：internal/settlement/order_view_repo.go[订单投影]、internal/ops/admin_projection_store.go[订单事件]）

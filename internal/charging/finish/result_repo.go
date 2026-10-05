@@ -15,7 +15,6 @@ import (
 	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var ErrEndResultConflict = errors.New("charge end result conflicts with order state")
@@ -56,18 +55,18 @@ func (s EndResultService) Apply(ctx context.Context, result EndResult) (bool, er
 		if err := card.LockChargeForOrder(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
-		var order orderstore.ChargeOrderRecord
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND order_no = ? AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).Take(&order).Error
+		var view orderstore.LifecycleView
+		view, err := orderstore.LockForLifecycleInTx(tx, result.ChargeOrderID, result.OrderNo)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrEndResultConflict
 		}
 		if err != nil {
 			return err
 		}
-		if order.DeviceID != result.DeviceID || order.PortNo != result.PortNo {
+		if view.DeviceID != result.DeviceID || view.PortNo != result.PortNo {
 			return ErrEndResultConflict
 		}
-		var existing orderstore.EndReceiptRecord
+		var existing endReceiptRecord
 		err = tx.Where("charge_order_id = ?", result.ChargeOrderID).Take(&existing).Error
 		if err == nil {
 			var previous rules.EndMeter
@@ -80,14 +79,14 @@ func (s EndResultService) Apply(ctx context.Context, result EndResult) (bool, er
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if order.Status != "charging" || !order.StartedAt.Valid || result.Meter.EndedAt.Before(order.StartedAt.Time) {
+		if view.Status != "charging" || !view.StartedAt.Valid || result.Meter.EndedAt.Before(view.StartedAt.Time) {
 			return ErrEndResultConflict
 		}
-		var start orderstore.StartReceiptRecord
+		var start startReceiptView
 		if err := tx.Where("charge_order_id = ?", result.ChargeOrderID).Take(&start).Error; err != nil || !start.Success || start.CommandID != result.StartCommandID || !start.PortID.Valid || start.PortID.Int64 != int64(result.PortID) {
 			return ErrEndResultConflict
 		}
-		if err := tx.Create(&orderstore.EndReceiptRecord{ChargeOrderID: result.ChargeOrderID, StopCommandID: result.StopCommandID, MeterJSON: meterJSON}).Error; err != nil {
+		if err := tx.Create(&endReceiptRecord{ChargeOrderID: result.ChargeOrderID, StopCommandID: result.StopCommandID, MeterJSON: meterJSON}).Error; err != nil {
 			return err
 		}
 		// 经 card 用例释放该订单的卡端口占用。
@@ -95,23 +94,22 @@ func (s EndResultService) Apply(ctx context.Context, result EndResult) (bool, er
 			return err
 		}
 		kwh := decimal.NewFromInt(int64(result.Meter.ChargedWh)).Shift(-3).StringFixed(4)
-		updated := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'charging' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
-			Updates(map[string]any{"status": "completed", "ended_at": result.Meter.EndedAt, "charged_kwh": kwh, "charged_seconds": result.Meter.ChargedSeconds})
-		if updated.Error != nil {
-			return updated.Error
+		// 计量时长在领域内是 uint32 秒，写入订单计量列前按无损方式提升为 int64。
+		if err := orderstore.CompleteInTx(tx, result.ChargeOrderID, result.OrderNo, result.Meter.EndedAt, kwh, int64(result.Meter.ChargedSeconds)); err != nil {
+			if errors.Is(err, orderstore.ErrLifecycleConflict) {
+				return ErrEndResultConflict
+			}
+			return err
 		}
-		if updated.RowsAffected != 1 {
-			return ErrEndResultConflict
-		}
-		port := tx.Where("port_id = ? AND device_id = ? AND port_no = ? AND charge_order_id = ?", result.PortID, result.DeviceID, result.PortNo, result.ChargeOrderID).Delete(&orderstore.ActivePortChargeRecord{})
+		port := tx.Where("port_id = ? AND device_id = ? AND port_no = ? AND charge_order_id = ?", result.PortID, result.DeviceID, result.PortNo, result.ChargeOrderID).Delete(&activePortChargeRecord{})
 		if port.Error != nil {
 			return port.Error
 		}
 		if port.RowsAffected != 1 {
 			return ErrEndResultConflict
 		}
-		if err := tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.StopCommandID,
-			Event: "charge_ended", Actor: "gateway", Detail: "device settlement frame accepted", OccurredAt: result.Meter.EndedAt}).Error; err != nil {
+		if err := orderstore.AppendEventInTx(tx, orderstore.ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.StopCommandID,
+			Event: "charge_ended", Actor: "gateway", Detail: "device settlement frame accepted", OccurredAt: result.Meter.EndedAt}); err != nil {
 			return err
 		}
 		envelope, err := json.Marshal(result)
@@ -121,7 +119,7 @@ func (s EndResultService) Apply(ctx context.Context, result EndResult) (bool, er
 		if err := settlement.EnqueueChargeBilling(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
-		return tx.Create(&ops.EventOutboxRecord{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope}).Error
+		return ops.AppendEventInTx(tx, ops.OutboxEvent{EventID: result.StopCommandID, Stream: "charge_ended_stream", EnvelopeJSON: envelope})
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	return replayed, err
 }

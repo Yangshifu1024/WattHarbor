@@ -32,45 +32,6 @@ type ChargeOrderRecord struct {
 // TableName 返回 ChargeOrderRecord 所属固定表名，无参数、错误或 IO。
 func (ChargeOrderRecord) TableName() string { return "charge_order" }
 
-// StartReceiptRecord 映射原启动命令的幂等回执及可选设备事实，不能替代支付到账。
-type StartReceiptRecord struct {
-	CommandID     string         `gorm:"column:command_id;primaryKey"` // 原启动命令身份，重复回执沿用
-	ChargeOrderID uint64         `gorm:"column:charge_order_id"`       // 原充电订单主键
-	OrderNo       sql.NullString `gorm:"column:order_no"`              // 原业务充电单号；回执缺失时为空
-	DeviceID      sql.NullString `gorm:"column:device_id"`             // 原设备身份；回执缺失时为空
-	PortNo        sql.NullInt16  `gorm:"column:port_no"`               // 原设备端口号，从1开始；回执缺失时为空
-	PortID        sql.NullInt64  `gorm:"column:port_id"`               // 原端口主键，回执未提供为空
-	Success       bool           `gorm:"column:success"`               // 设备原成功标志，不代表资金或结算完成
-	ResultCode    sql.NullInt16  `gorm:"column:result_code"`           // 设备原结果码，未提供为空
-	OccurredAt    sql.NullTime   `gorm:"column:occurred_at"`           // 原事件发生 UTC 时刻，回执未提供为空
-}
-
-// TableName 返回 StartReceiptRecord 所属固定表名，无参数、错误或 IO。
-func (StartReceiptRecord) TableName() string { return "charge_start_receipt" }
-
-// EndReceiptRecord 映射一单一份的原停止命令与结束计量证据，重复结束沿用原身份。
-type EndReceiptRecord struct {
-	ChargeOrderID uint64 `gorm:"column:charge_order_id;primaryKey"` // 原充电订单主键
-	StopCommandID string `gorm:"column:stop_command_id"`            // 原停止命令身份
-	MeterJSON     []byte `gorm:"column:meter_json"`                 // 原结束计量证据 JSON，不重算价格
-}
-
-// TableName 返回 EndReceiptRecord 所属固定表名，无参数、错误或 IO。
-func (EndReceiptRecord) TableName() string { return "charge_end_receipt" }
-
-// ActivePortChargeRecord 映射中央业务端口占用；网关端口与设备会话归 gateway。
-type ActivePortChargeRecord struct {
-	PortID        uint64    `gorm:"column:port_id;primaryKey"` // 原中央业务端口主键
-	DeviceID      string    `gorm:"column:device_id"`          // 原设备全局身份
-	PortNo        uint8     `gorm:"column:port_no"`            // 原设备端口号，从1开始
-	ChargeOrderID uint64    `gorm:"column:charge_order_id"`    // 原充电订单主键
-	UserID        uint64    `gorm:"column:user_id"`            // 原订单所有人
-	StartedAt     time.Time `gorm:"column:started_at"`         // 原端口占用开始 UTC 时刻，持久记录不可空
-}
-
-// TableName 返回 ActivePortChargeRecord 所属固定表名，无参数、错误或 IO。
-func (ActivePortChargeRecord) TableName() string { return "active_port_charge" }
-
 // ChargeEventLogRecord 映射原订单事件身份、来源与发生时刻，提交顺序由所属事务保证。
 type ChargeEventLogRecord struct {
 	ChargeOrderID uint64    `gorm:"column:charge_order_id"` // 原充电订单主键

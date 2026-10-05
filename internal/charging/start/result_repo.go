@@ -19,7 +19,6 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var ErrStartResultConflict = errors.New("charge start result conflicts with order state")
@@ -73,18 +72,18 @@ func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool
 		if err := card.LockChargeForOrder(tx, result.ChargeOrderID); err != nil {
 			return err
 		}
-		var order orderstore.ChargeOrderRecord
-		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND order_no = ? AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).Take(&order).Error
+		var view orderstore.LifecycleView
+		view, err = orderstore.LockForLifecycleInTx(tx, result.ChargeOrderID, result.OrderNo)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrStartResultConflict
 		}
 		if err != nil {
 			return err
 		}
-		if order.DeviceID != result.DeviceID || order.PortNo != result.PortNo {
+		if view.DeviceID != result.DeviceID || view.PortNo != result.PortNo {
 			return ErrStartResultConflict
 		}
-		var existing orderstore.StartReceiptRecord
+		var existing startReceiptRecord
 		err = tx.Where("command_id = ?", result.CommandID).Take(&existing).Error
 		if err == nil {
 			if existing.ChargeOrderID != result.ChargeOrderID || existing.OrderNo.String != result.OrderNo || existing.DeviceID.String != result.DeviceID || existing.PortNo.Int16 != int16(result.PortNo) || existing.PortID.Int64 != int64(result.PortID) || existing.Success != result.Success || existing.ResultCode.Int16 != int16(result.ResultCode) || !existing.OccurredAt.Time.Equal(result.OccurredAt.UTC()) {
@@ -96,10 +95,10 @@ func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if order.Status != "paid" {
+		if view.Status != "paid" {
 			return ErrStartResultConflict
 		}
-		receipt := orderstore.StartReceiptRecord{CommandID: result.CommandID, ChargeOrderID: result.ChargeOrderID,
+		receipt := startReceiptRecord{CommandID: result.CommandID, ChargeOrderID: result.ChargeOrderID,
 			OrderNo: sql.NullString{String: result.OrderNo, Valid: true}, DeviceID: sql.NullString{String: result.DeviceID, Valid: true},
 			PortNo: sql.NullInt16{Int16: int16(result.PortNo), Valid: true}, PortID: sql.NullInt64{Int64: int64(result.PortID), Valid: true},
 			Success: result.Success, ResultCode: sql.NullInt16{Int16: int16(result.ResultCode), Valid: true}, OccurredAt: sql.NullTime{Time: result.OccurredAt.UTC(), Valid: true}}
@@ -117,50 +116,47 @@ func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool
 			if _, err := card.ConfirmStartOperation(tx, result.ChargeOrderID, result.OccurredAt); err != nil {
 				return err
 			}
-			if err := tx.Create(&orderstore.ActivePortChargeRecord{PortID: result.PortID, DeviceID: result.DeviceID, PortNo: result.PortNo,
-				ChargeOrderID: result.ChargeOrderID, UserID: order.UserID, StartedAt: result.OccurredAt.UTC()}).Error; err != nil {
+			if err := tx.Create(&activePortChargeRecord{PortID: result.PortID, DeviceID: result.DeviceID, PortNo: result.PortNo,
+				ChargeOrderID: result.ChargeOrderID, UserID: view.UserID, StartedAt: result.OccurredAt.UTC()}).Error; err != nil {
 				if dbutil.IsMySQLDuplicate(err) {
 					return ErrStartResultConflict
 				}
 				return err
 			}
-			updated := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
-				Updates(map[string]any{"status": "charging", "started_at": result.OccurredAt.UTC()})
-			if updated.Error != nil {
-				return updated.Error
-			}
-			if updated.RowsAffected != 1 {
-				return ErrStartResultConflict
+			if err := orderstore.ActivateInTx(tx, result.ChargeOrderID, result.OrderNo, result.OccurredAt); err != nil {
+				if errors.Is(err, orderstore.ErrLifecycleConflict) {
+					return ErrStartResultConflict
+				}
+				return err
 			}
 		} else {
 			stream, eventName = "charge_start_rejected_stream", "start_rejected"
 			failureReason := fmt.Sprintf("device START rejected: %d", result.ResultCode)
-			updated := tx.Model(&orderstore.ChargeOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", result.ChargeOrderID, result.OrderNo).
-				Updates(map[string]any{"failure_reason": failureReason, "status": "refunding"})
-			if updated.Error != nil {
-				return updated.Error
-			}
-			if updated.RowsAffected != 1 {
-				return ErrStartResultConflict
+			if err := orderstore.MarkStartRejectedInTx(tx, result.ChargeOrderID, result.OrderNo, failureReason); err != nil {
+				if errors.Is(err, orderstore.ErrLifecycleConflict) {
+					return ErrStartResultConflict
+				}
+				return err
 			}
 			if payMethod == "balance" {
-				paid, refunded, err := pays.ReadBalancePaymentAmounts(tx, uint64(order.PaymentOrderID.Int64))
+				paid, refunded, err := pays.ReadBalancePaymentAmounts(tx, uint64(view.PaymentOrderID.Int64))
 				if err != nil {
 					return err
 				}
-				if err := settlement.RefundBalanceInTx(tx, order, &walletRow, paid-refunded, "CSF"+result.CommandID, failureReason); err != nil {
+				source := settlement.BalanceRefundSource{UserID: view.UserID, OrderID: view.ID, PaymentOrderID: view.PaymentOrderID.Int64}
+				if err := settlement.RefundBalanceInTx(tx, source, &walletRow, paid-refunded, "CSF"+result.CommandID, failureReason); err != nil {
 					if errors.Is(err, settlement.ErrBalanceRefundConflict) {
 						return ErrStartResultConflict
 					}
 					return err
 				}
-				if err := orderstore.SetStatusRefunded(tx, order.ID); err != nil {
+				if err := orderstore.SetStatusRefunded(tx, view.ID); err != nil {
 					return err
 				}
-				if err := card.FailStartOperation(tx, order.ID, failureReason, result.OccurredAt); err != nil {
+				if err := card.FailStartOperation(tx, view.ID, failureReason, result.OccurredAt); err != nil {
 					return err
 				}
-				if err := card.ClearActivePort(tx, order.ID); err != nil {
+				if err := card.ClearActivePort(tx, view.ID); err != nil {
 					return err
 				}
 			} else {
@@ -171,7 +167,7 @@ func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool
 				if lookup != nil {
 					return lookup
 				}
-				if payment.UserID != order.UserID || !payment.WechatTransactionID.Valid || payment.WechatTransactionID.String == "" ||
+				if payment.UserID != view.UserID || !payment.WechatTransactionID.Valid || payment.WechatTransactionID.String == "" ||
 					payment.TotalCents <= 0 || payment.PaidCents <= 0 || payment.RefundedCents < 0 || payment.PaidCents > payment.TotalCents-payment.RefundedCents {
 					return ErrStartResultConflict
 				}
@@ -198,24 +194,21 @@ func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool
 				if err != nil {
 					return err
 				}
-				if err := tx.Create(&ops.EventOutboxRecord{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}).Error; err != nil {
+				if err := ops.AppendEventInTx(tx, ops.OutboxEvent{EventID: refundEventID, Stream: "refund_required_stream", EnvelopeJSON: refundEnvelope}); err != nil {
 					return err
 				}
 			}
 		}
-		if err := tx.Create(&orderstore.ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.CommandID,
+		if err := orderstore.AppendEventInTx(tx, orderstore.ChargeEventLogRecord{ChargeOrderID: result.ChargeOrderID, EventID: result.CommandID,
 			Event: eventName, Actor: "gateway", Detail: fmt.Sprintf("device=%s port=%d result=%d", result.DeviceID, result.PortNo, result.ResultCode),
-			OccurredAt: result.OccurredAt.UTC()}).Error; err != nil {
+			OccurredAt: result.OccurredAt.UTC()}); err != nil {
 			return err
 		}
 		envelope, err := json.Marshal(result)
 		if err != nil {
 			return err
 		}
-		if err := tx.Create(&ops.EventOutboxRecord{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope}).Error; err != nil {
-			return err
-		}
-		return nil
+		return ops.AppendEventInTx(tx, ops.OutboxEvent{EventID: result.CommandID, Stream: stream, EnvelopeJSON: envelope})
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	return replayed, err
 }
