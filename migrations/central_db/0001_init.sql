@@ -903,7 +903,8 @@ CREATE TABLE `admin_user` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`,`deleted_at`),
   UNIQUE KEY `uk_active_username` (`active_username`),
-  KEY `idx_mfa_state` (`mfa_enabled`,`mfa_secret`)
+  KEY `idx_mfa_state` (`mfa_enabled`,`mfa_secret`),
+  KEY `idx_role_deleted` (`role_id`,`deleted_at`) COMMENT '按角色当前锁读未删除账号引用，避免扫描无关角色账号'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员账号';
 
 -- alert_event：告警事件
