@@ -1,563 +1,119 @@
 # ChargePilot
 
-ChargePilot 是单客户独立部署的二轮车充电运营平台。后端使用 Go，运营后台使用 React，用户端使用 Taro，同一份用户端源码构建 H5 与微信小程序。设备通过 DC589/TCP 接入。
-
-每个客户独立运行应用、数据库和配置。当前功能包括扫码充电、钱包与在线卡、方案发布、计费与退款、运营后台、报修、告警、导出、审计及外部投递。正式使用前须完成商户、实机和外部平台验收，见[功能边界](#功能边界)。
-
-- [架构与目录](#架构与目录)
-- [本地运行](#本地运行)
-- [模拟器](#模拟器)
-- [业务规则](#业务规则)
-- [接口与权限](#接口与权限)
-- [数据库](#数据库)
-- [异步任务](#异步任务)
-- [开发与验证](#开发与验证)
-- [配置](#配置)
-- [生产部署](#生产部署)
-- [备份与恢复](#备份与恢复)
-- [监控与故障定位](#监控与故障定位)
-- [功能边界](#功能边界)
-
-仓库维护规则见 [AGENTS.md](AGENTS.md)。设备协议完整规范见 [DC589 协议](protocols/dc589.md)。字段、索引和内置权限以初始化 SQL 为准；接口字段以注册路由、DTO 和测试为准。
-
-## 架构与目录
-
-代码按 **use case** 组织：`domain`（纯规则与共享契约）、`protocol`（设备契约）、`platform`、`persist` 保持独立；用例可以引用这些契约与能力，新增跨用例引用须在结构文档说明业务理由并经代码评审核对。业务 SQL 与事务归用例的 `*_store.go` / `*_schema.go`；HTTP 的遗留持久化逐步下沉，新增处理器不承担业务 SQL 或事务；`cmd/*` 做装配。
-
-| 进程 | 暴露面 | 职责 | 数据库 | 监听 |
-| --- | --- | --- | --- | --- |
-| `user` | 对外 | C 端接口：登录、会话、订单、支付、钱包、卡、券、站点 | `central_db` | HTTP `8080` |
-| `admin` | 对外 | 运营后台接口：站点、设备、订单、资金、审计、导出 | `central_db` | HTTP `8081` |
-| `central` | 对内 | 用例编排、跨聚合事务、`/api/v1/internal/*` | `central_db` | HTTP `8082` |
-| `gateway` | 对内 + 设备 | 设备接入：监听、协议适配、端口、指令、遥测、开通 | `gateway_db` | HTTP `8083`、DC589/TCP `9100` |
-| `worker` | 对内 | 事件消费、定时任务、命令同步、外部投递 | 三库（仅 outbox 转发读 `event_outbox`），执行状态存 `worker_db` | HTTP `8085` |
-| `migrate` / `devseed` / `simulator-dc589` | 工具 | schema 初始化、开发数据准备、设备模拟 | 三库 / 无 | 无 |
-
-`user` 与 `admin` 对外，端口由入口网关承接。`central` 的 8082 在两套编排里都不映射，跨服务调用只在容器网络内可达；开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地排查，生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。五个进程共享同一套 use case、`domain` 与持久化实现，差别只在各自注册哪些 `interface` 路由——进程拆开不等于代码复制。
-
-业务数据统一在 `central_db`。后台各业务族显式持有一个 `DB`，不再通过全量依赖包传递三个同库别名。跨服务操作通过持久任务、幂等回执和内部 HTTP 协作。Redis Cache 保存会话，Redis Stream 保存事件，两者独立部署。
-
-完整目录结构、文件职责与分层维护规则见 [AGENTS.md](AGENTS.md#工具与代码风格)。目录、依赖方向和表归属按维护规范评审核对；`make check` 执行 Go 格式化、静态检查和默认测试。
+ChargePilot 是单客户独立部署的二轮车充电运营平台，支持扫码充电、钱包与在线卡、计费退款及运营管理。后端使用 Go，后台使用 React，用户端使用 Taro 构建 H5 和微信小程序，设备通过 DC589/TCP 接入。
 
 ## 本地运行
 
-需要 Docker Compose v2。宿主机开发工具为 Go 1.27、Node.js 24、npm 和 Make；开发 Compose 已提供后端及前端运行环境。以下命令从仓库根目录执行。
+需要 Docker Desktop（或 Docker Engine）及 Compose v2；准备数据需要 Node.js 24。Windows 使用 PowerShell 7，以下命令均从仓库根目录执行：
 
 ```powershell
 ./scripts/dev/start.ps1
+# 等待服务就绪后准备厂商、站点、两台设备和测试方案
 node scripts/dev/prepare.mjs
 ```
 
-其他系统可直接运行 `docker compose -f compose.dev.yaml up -d`。首次启动安装前端依赖、编译后端并初始化空数据库；central 就绪后再运行准备脚本。`start.ps1` 保留已有数据。`prepare.mjs` 通过后台 API 补齐厂商、站点、两台设备和测试方案，不覆盖已有配置。
+其他系统可使用 `docker compose -f compose.dev.yaml up -d`。首次启动会安装前端依赖、编译后端并初始化空库；启动和数据准备均保留已有数据及配置。
 
 | 入口 | 本地地址 |
 | --- | --- |
-| 运营后台 | `http://127.0.0.1:5173/admin/` |
-| 用户 H5 | `http://127.0.0.1:5174/` |
-| central / gateway / worker 就绪检查 | 各 HTTP 端口的 `/health/ready` |
+| 运营后台 | http://127.0.0.1:5173/admin/ |
+| 用户 H5 | http://127.0.0.1:5174/ |
+| user / admin API | `127.0.0.1:8080` / `8081` |
+| gateway / worker HTTP | `127.0.0.1:8083` / `8085` |
+| DC589/TCP | `127.0.0.1:9100` |
 | MySQL | `127.0.0.1:3306` |
 | Redis Cache / Stream | `127.0.0.1:6379` / `6380` |
-| DC589 | `127.0.0.1:9100` |
 
-开发后台账号默认为 `admin / ChangeMe!Admin2026`，H5 测试账号默认为 `tester-1`。后台引导只在账号表为空时执行，已有密码不会被重启覆盖。可通过 `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD` 设置引导账号；准备脚本读取当前进程环境，不自动加载 `.env`，已有账号改密后应传入有效凭证。
+开发后台默认账号为 `admin / ChangeMe!Admin2026`，H5 测试账号为 `tester-1`。后台引导只在账号表为空时执行。准备脚本读取当前进程的 `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD`，不自动加载 `.env`；已有账号改密后须传入有效凭证。
 
-开发环境配套使用 `LOGIN_MODE=development`、`PAYMENT_MODE=simulation` 和 `TARO_APP_LOGIN_MODE=development`。模拟支付仍经过正常订单、设备、结算和退款逻辑。Go 服务没有自动热重载，修改后执行：
+开发栈使用开发登录和模拟支付，模拟支付仍走订单、设备、结算和退款流程。Go 服务没有热重载；修改源码后重建对应进程，例如：
 
 ```powershell
-docker compose -f compose.dev.yaml up -d --no-deps --force-recreate central gateway worker
+docker compose -f compose.dev.yaml up -d --no-deps --force-recreate user admin central gateway worker
 ```
 
-联调顺序：启动开发栈、准备数据、启动两个模拟器，后台确认设备在线；用户端选择端口和套餐并完成模拟支付，再调整模拟器功率、停止充电，核对订单、计量、费用、退款及钱包流水。`cmd/devseed` 可生成后台演示数据，`-clean` 只清理其 `demo_` 数据；它不能替代真实 TCP 联调。
+### 模拟器
 
-模拟器只连接已开通的设备，不负责创建设备；启动前通过准备脚本或后台完成开通。
-
-## 模拟器
-
-在两个终端分别执行：
+准备设备后，在两个终端分别执行：
 
 ```powershell
 ./scripts/dev/simulator.ps1 -Number 1
 ./scripts/dev/simulator.ps1 -Number 2
 ```
 
-| 实例 | 设备编号 | 控制端口 | 状态文件 |
+两个实例对应设备 `5348240514082652`、`5348240514082653`，控制端口为 `9190`、`9191`，状态保存在各自的 `.tmp/` 文件。模拟器只连接已开通设备；端口数须与后台一致。
+
+联调顺序：确认设备在线 → 用户选择端口和套餐 → 模拟付款 → 调整功率或刷卡 → 停止充电 → 核对计量、账单、退款及钱包流水。TUI 用 `m` 打开菜单、`Tab` 切页、`q` 退出；无界面控制和重启恢复说明见 [模拟器操作](docs/operations.md#模拟器操作)。
+
+## 服务与代码
+
+| 进程 | 职责 | 数据库 | HTTP |
 | --- | --- | --- | --- |
-| 1 | `5348240514082652` | `9190` | `.tmp/simulator-1-5348240514082652.json` |
-| 2 | `5348240514082653` | `9191` | `.tmp/simulator-2-5348240514082653.json` |
+| `user` | 用户登录、扫码、订单、支付、钱包与卡券 | `central_db` | `8080` |
+| `admin` | 站点、设备、订单、资金、审计与导出 | `central_db` | `8081` |
+| `central` | 内部用例编排、授权、回执、计费与退款 | `central_db` | `8082` |
+| `gateway` | TCP 接入、设备指令、遥测与端口占用 | `gateway_db` | `8083` |
+| `worker` | 持久任务扫描、结果同步与 Outbox 发布 | 三库；执行状态在 `worker_db` | `8085` |
 
-编号为 16 位十进制数字，须与后台 DC589 设备一致。默认两端口，`-Ports` 支持 1～20，须与后台端口数一致。各实例使用独立编号、控制端口和状态文件。
+central 的 `8082` 在开发和生产编排中都不映射到宿主机，只能从容器网络访问。生产 HTTP 经 Caddy 分流至 user/admin，gateway/worker HTTP 仅内网可达；设备另走 `9100/TCP`。五个服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。
 
-TUI 支持调功率、插拔、刷卡与移卡、余额查询、设备参数、故障、温度、电压、烟雾、校时、断线重连和重启。`Tab` 切页，`m` 打开操作菜单，方向键选择，`Enter` 提交，`Esc` 返回，`q` 退出。卡持续贴住只触发一次刷卡事件，再次刷卡前需移卡。状态文件保存进行中的充电和待确认报告，支持进程重启恢复。
+业务按 `internal/` 下十二个 use case 组织；`cmd/` 负责装配与生命周期，`internal/http/` 负责 HTTP 适配，`domain/` 保存纯规则。服务间 DTO 在 `contracts/`，具名客户端在 `integration/`；请求以 `Request` 结尾，响应以 `Reply` 结尾。完整职责和维护规则见 [AGENTS.md](AGENTS.md) 与 [架构边界](docs/architecture-boundaries.md)。
 
-TUI 的启动信息、控制服务日志与设备通信日志统一显示在“日志”页；无界面模式继续写入 stdout。退出前恢复终端并等待设备循环停止，异常退出原因由命令输出到 stderr。
+## 接口与业务约定
 
-无界面运行及控制示例：
+- 后台接口文档：`GET /api/docs/admin.openapi.json`，源文件为 [admin.openapi.json](internal/http/auth/admin.openapi.json)。该文档端点未由生产 Caddy 对外代理。
+- 用户接口文档：[user.openapi.json](internal/http/user/user.openapi.json)，目前是静态契约文件。两份 OpenAPI 随接口变更维护，测试核对文档中的路由是否注册；实际路由见 [user](cmd/user/routes.go)、[admin](cmd/admin/routes.go)、[central](cmd/central/routes.go)。
+- 普通 JSON 响应使用 `code/message/data/request_id/trace_id`，成功 `code=0`；微信通知、文件、指标和 OpenAPI 使用各自格式。用户与后台会话分开，内部接口使用 `X-Service-Token`。
+- 金额使用整数分；用户 Snowflake ID 为十进制字符串，前端须保留精度。数据库时间按 UTC，计费日界及 DC589 本地时间按北京时间。
+- 下单冻结方案与价格；启动受理、设备启动、充电结束、结算及退款到账分别确认。未知设备结果保留占用，渠道结果未知复用原退款号查询。
 
-```powershell
-go run ./cmd/simulator-dc589 -board-id 5348240514082652 -ports 2 -tui=false -control 127.0.0.1:9190 -state-file .tmp/simulator-headless.json
-Invoke-RestMethod http://127.0.0.1:9190/state
-Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType application/json -Body '{"type":"power","port":1,"power_deciwatts":2500}'
-```
-
-控制接口只允许 loopback 监听。`power_deciwatts=2500` 表示 250 W；刷卡使用 `{"type":"card","port":1,"card":100001}`，移卡使用 `{"type":"remove-card","port":1}`。完整事件字段见 [Input](internal/gateway/simulator/dc589/behavior.go)，场景和参数见 `go run ./cmd/simulator-dc589 -h`。
-
-充电心跳 15 秒，空闲心跳 60 秒，网关读超时为相应周期的三倍。模拟器每秒更新计量。当前使用通用五档参数，不支持特殊双口八档扩展、心跳分片合并和 OTA；完整协议规范仍保留这些内容。
-
-## 业务规则
-
-### 方案与计量
-
-后台发布完整充电方案，模板应用到站点或设备时复制配置。设备独立配置整体覆盖站点配置。付款意图冻结方案、套餐和费率，订单使用该快照；后续改价不影响历史订单。能力由所选协议统一声明，当前 DC589 支持时长、电量、在线卡、满充停止、累计电量和分段功率，最长 4320 分钟；未知协议不能发布方案或新下单。
-
-| 购买模式 | 算法 | 单位与规则 |
-| --- | --- | --- |
-| 金额 | `server_max_power` | 电费、服务费为分/小时；按北京时间自然日、费率时段内最高功率档计费 |
-| 金额 | `server_realtime_power` | 分/小时；按各实际功率片段所在档计费 |
-| 金额 | `server_energy` | 分/kWh；按实测电量计费，跨费率须有边界计量证据 |
-| 时长 | 固定时长套餐 | 购买分钟数，按实际完整分钟折算未用金额 |
-| 电量 | 固定电量套餐 | 整数 1～65 kWh，售价等于度数乘以电费及服务费单价之和 |
-
-套餐 ID 为 1～99 且唯一，每个启用模式必须配置套餐。用户只能选择服务端生成的套餐。金额模式及刷卡累计保护时长默认 600 分钟，可配置 60～4320 分钟；时长套餐为 1～4320 分钟。损耗系数固定为 0，渠道系数固定为 10000 基点。
-
-金额以整数分保存，费率和中间计算使用十进制。服务器金额模式分别累计电费、服务费后四舍五入到分；设备套餐消耗向下取整到分，分项尾差按既有算法协调。`1 kWh = 1000 Wh`，`1 Wh = 1000 mWh = 3600 W·s`。
-
-完整分钟按整次使用计算，再分配到费率边界；不能逐片段向下取整。最大功率算法只回溯同一天、同一费率时段，不回溯其他时段。免费分钟与最低电费只作用于金额模式：免费范围内或无实际使用不收最低电费，超过免费条件后按完整使用计费。跨费率电量缺少实测边界、计量矛盾或证据不足时进入人工计量复核，不按时间均分或插值补造最终读数。
-
-| 例子 | 结果 |
-| --- | --- |
-| 实时功率：低档电费/服务费 80/40 分每小时用 20 分钟，高档 120/60 分每小时用 40 分钟 | 电费 107 分、服务费 53 分，共 160 分；付款 300 分退 140 分 |
-| 最大功率：同一时段低档升为上述高档，共 60 分钟 | 按高档收 180 分；付款 300 分退 120 分 |
-| 300 分购买 120 分钟，实际 61 分 30 秒 | 收 152 分，退 148 分 |
-| 电费/服务费 80/20 分每度，购买 3 度，实际 1375 Wh | 电费 109 分、服务费 28 分，共 137 分，退 163 分 |
-
-计算实现和边界示例见 [scheme.go](internal/domain/charging/scheme.go)。旧兼容计价枚举不表示新方案支持相应模式。
-
-### 支付、启动与结束
-
-扫码发现、端口和套餐查询可匿名访问。下单提交 `client_request_id` UUID、`port_id`、`offer_id`，价格由服务器确定。支付前只保存冻结意图；可信付款回调确认后创建充电订单。相同请求与内容返回原结果，同号不同内容返回冲突。
-
-二维码支持设备码、端口码或带单个 `code` 参数的 HTTPS 链接。裸码为 1～64 位字母、数字、下划线、冒号或连字符；链接禁止用户信息和 fragment。设备码需要继续选择端口，端口码直接定位插口。
-
-微信回调先验签、解密，核对商户、AppID、用户、商户单号、渠道交易号和金额，再同事务写入支付、订单、端口占用及 Outbox。过期付款退款，不启动设备。客户端支付成功不代替渠道回调。
-
-worker 读取持久付款任务，gateway 先保存命令再下发；设备明确回执后推进启动结果。启动超时或回执丢失表示结果未知，保留占用并查询、重试或补偿，不能据此全退或再次启动。设备明确拒绝才按失败处理。
-
-设备结束事件先落库并提交 central；central 保存结束回执、最终计量和计费任务后，gateway 才释放对应占用。首次预算、最长时长、购买时长或用户停止确定计费截止点，迟到的物理停机不增加截止点后的费用。最终实收不超过已付可用额度。实时费用用于展示，超过 30 秒未更新标记为 stale，不作为最终计费证据。
-
-设备 `enabled/disabled` 与 TCP 在线状态独立。禁用阻止新扫码付款、新刷卡启动及加时，已有订单仍可停止、结算和退款。
-
-自动停止还检测持续至少 1 分钟的端口零功率，最新观测须在 30 秒内；缺失目标端口或重新出现正功率会重置判断。离线、缺失读数不能作为拔出或零功率证据。
-
-| 状态轴 | 取值及含义 |
-| --- | --- |
-| `charge_order.status` | `pending_payment/paid/charging/completed/cancelled/failed/refunding/refunded`，内部生命周期 |
-| `business_status` | `pending_start/charging/completed`，由订单状态生成 |
-| `payment_status` | `pending/paid/partial_refunded/refunded`，按实际到账及成功退款更新 |
-| `payment_order.status` | `initiated/paid/closed/refunded/partial_refunded/failed` |
-| `refund_record.status` | `pending/processing/success/failed/rejected`；`execution_policy` 独立决定人工审核或自动执行 |
-
-充电结束、费用结算、退款申请与退款到账是不同事实。`processing` 不表示退款成功。
-
-### 在线卡与钱包
-
-卡号为非零 uint32，规范化为十进制字符串。运营人员核实归属后绑定，同一用户可绑定多卡；用户只能挂失或解绑自己的卡。卡使用钱包余额与方案中的时长套餐，不能作为月卡或年卡。
-
-首次刷卡同事务扣钱包、生成支付单和订单、冻结方案、保存卡操作及业务事件记录。充电中同卡重刷沿用原快照，原子追加付款和分钟数，不下发新的 B7。异卡占用、余额不足、启动未确认、已到截止点或整次追加超保护上限时拒绝，不部分扣款。
-
-DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UUID，投递重试复用该 UUID；已完成操作返回原结果，新事件超过 30 秒不再扣款。实机须保证一次放卡只报告一次，移开重刷才产生新事件。设备余额显示使用 0.1 元并向下取整，钱包始终按分记账。
-
-钱包可用金额为 `balance_cents - frozen_cents`。钱包退款按原充值支付单拆分，预留余额及各支付单可退额度。成功才扣减和释放，明确失败释放，渠道结果未知保持预留。5 分钟内第三次钱包退款请求触发频次风控；审核、解冻权限独立，解除一项冻结不自动解除其他冻结。
-
-### 财务与审核
-
-未用差额按原支付来源返还。累计成功退款与待执行预留共同占用可退额度；渠道超时继续查询同一 `refund_no`，不换号重提。退款成功回执、支付累计已退金额和订单资金状态同事务更新。
-
-人工订单退款限已结束、微信付款且有可退额度的订单。人工退款、计量分段修订和发票通过采用不同人员复核；首签冻结业务内容，第二签核对首签人的实时资格及快照。驳回保存理由，重试权限不能绕过人工审核。分段修订保留原总量及冻结来源；缺失计费截止证据不能用物理结束片段替代。人工最终金额结算由有效财务人员按现有权限执行，受实付上限、原因及审计约束。
-
-
-普通账单由权威计费回执生成；发票申请金额取该回执，同一订单仅允许一份有效申请。导出不提供对账资源；导出使用固定资源白名单生成 CSV、XLSX，限制查询范围、行数和有效期，下载时重新鉴权。
-
-## 接口与权限
-
-普通 JSON 响应为 `code/message/data/request_id/trace_id`，成功 `code=0`，HTTP 状态同时表达结果。`X-Request-ID` 允许 1～128 位字母、数字、下划线或连字符，无效或缺失则生成；响应 trace 与 request 使用同值。微信回调、OpenAPI、文件下载和指标按各自格式响应。
-
-金额为整数分，计量字段注明单位。用户 Snowflake ID 使用十进制字符串，前端不得转成 JavaScript `Number`。数据库时间按 UTC 解析，计费日界和 DC589 本地时间按北京时间。列表常用 `page/page_size`，默认 1/20，上限 100；过程查询另有游标、时间窗及行数限制。
-
-用户与管理员使用不同 kind 的 JWT，用户访问令牌有效期 15 分钟，后台访问令牌有效期 8 小时。后台请求前在本地检查到期时间，剩余 30 秒以内时先刷新，并保留 401 后单次刷新重试。身份资料仅在进入会话时同步，登录和续期直接使用响应中的身份及权限。刷新令牌在 Redis 中轮换，后台会话从登录起最长 7 天，续期不延长此期限。用户操作校验 JWT、Redis 会话及有效用户；后台另查 auth_version 和实时角色权限。后台口令使用 bcrypt，可启用 TOTP；后台登录、MFA、刷新按 IP 限速，Redis 不可用时拒绝相关请求。菜单权限只影响展示。服务间接口使用 `X-Service-Token`。
-
-用户匿名入口为 `/scan/resolve`、`/scan/port`、`/scan/offers`、`/station/nearby`、`/station/:id`、`/announcement/list`，均位于 `/api/v1/user`。订单、钱包、卡、手机号和其他用户操作校验当前会话与资源归属。
-
-`/station/nearby` 的经纬度可选：同时提供时按球面距离升序返回半径内的站点，`distance_km` 为计算值，响应 `located` 为 `true`；缺省时按创建时间倒序返回最近创建的站点，默认 10 条，`distance_km` 为 `null`、`located` 为 `false`，客户端须显示为距离未知，不得按 0 公里处理。只提供一个坐标、格式错误或越界仍按 400 处理。
-
-`/station/:id` 除站点资料外返回 `announcements` 与 `devices`。公告包含全部生效的全局公告，以及 `target_ids` 列入本站的站点维度公告；城市维度公告需要用户位置才能判定归属，该接口不做猜测。设备清单来自 `device_meta`，在线状态依据最后心跳时间是否落在 1 小时内判定：从未上报时 `last_heartbeat_at` 为 `null` 且 `online` 为 `false`；gateway 不可达时 `runtime_available` 为 `false`，表示运行态未知，不得当作离线或已测量。
-
-手机号保存在 `central_db.user.phone` 明文列，未绑定为 `NULL`，唯一索引限制号码归属。正式绑定使用微信授权 code，开发模式允许测试号码。绑定响应返回脱敏号码；后台 `charge_user.read` 可读取完整号码并按号码或片段检索，当前没有独立敏感字段权限。后台站点、设备等资源有数据范围约束；订单和支付查询尚无站点或厂商范围过滤。
-
-### 接口导航
-
-后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件是 `internal/http/auth/admin.openapi.json`；C 端文档源文件为 `internal/http/user/user.openapi.json`。实际路由装配见 `cmd/user/routes.go`、`cmd/admin/routes.go` 与 `cmd/central/routes.go`。
-
-五个服务进程的 `main.go` 处理信号与退出错误，`app.go` 管配置、装配与生命周期，`resources.go` 管资源，`routes.go` 管路由与健康检查。worker 的三个任务循环和 gateway 的设备接入／停止重试在各自 `runtime` 子包，保留现有周期与任务顺序。收到停止信号或任一入口失败后，取消后台循环并等待退出；HTTP 请求有 10 秒排空期，超时后取消请求、关闭连接并等待处理器退出，再释放存储。该等待依赖处理器与任务响应 context。
-
-| 业务 | HTTP 入口 | 用例实现 |
-| --- | --- | --- |
-| 用户身份与会话 | [session.go](internal/http/user/identity/session.go)、[auth.go](internal/http/auth/auth.go) | `identity` |
-| 扫码、支付意图与回调 | [scan.go](internal/http/user/payment/scan.go)、[payment.go](internal/http/user/payment/payment.go) | `payment`、`pricing` |
-| 充电授权与回执 | [order_authorization.go](internal/http/central/order_authorization.go)、[order_start_result.go](internal/http/central/order_start_result.go)、[order_end_result.go](internal/http/central/order_end_result.go) | `charging`；订单读模型在 `order` |
-| 钱包、卡、券与发票 | [wallet](internal/http/user/wallet/api.go)、[card](internal/http/user/card/api.go)、[marketing](internal/http/user/marketing/api.go)、[settlement](internal/http/user/settlement/api.go)；内部刷卡由 [central/card_api.go](internal/http/central/card_api.go) 提供 | `wallet`、`card`、`marketing`、`settlement` |
-| 后台业务族 | [admin](internal/http/admin)、[admin_auth.go](internal/http/auth/admin_auth.go) | 各对应 use case |
-| 设备接入与遥测 | [gateway/control](internal/gateway/control)、[gateway/provision](internal/gateway/provision) | gateway 运行时与 `protocol` |
-| worker 运维与调度 | [worker/internaljob](internal/worker/internaljob)、[worker/schedule](internal/worker/schedule) | worker 编排，业务写入委托 central |
-
-`GET /api/v1/internal/charge-orders/paid-starts?after_id=0` 由 central 提供，使用 `X-Service-Token`。成功响应的 `data.items` 是数组，每项包含整数 `id` 与字符串 `order_no`，按 ID 升序最多 100 项；空结果返回 `[]`。缺省游标为 0，非法游标返回 400，服务令牌错误返回 401，查询失败返回 503。worker 扫描完后从 0 重扫，使用原订单号重试 gateway 的 START 接口。
-
-worker 的待启动查询与 START 派发分别通过 `integration/central.PaidStarts`、`integration/gateway.RequestStart` 执行，客户端由 worker 进程装配。START 必须返回 HTTP 202、code=0、匹配的订单号及非空命令 ID/状态；`device_acknowledged` 仅在状态为 `acked` 时为 true。单笔派发失败仍继续后续订单，游标随扫描推进；查询失败保留游标，空页后从 0 重扫。客户端不自动重试，订单状态仍由 central 接收持久化回执后推进。
-
-用户主动停止复用 `integration/gateway.RequestStop`，身份取自当前 JWT，并保留会话与账号状态检查。网关 409 映射为用户接口 409；其他 HTTP 拒绝、业务失败或无效响应返回 502，网络失败返回 503。成功只返回 `accepted=true`、`stopped=false` 和命令信息。两个入口的 HTTP 客户端均由进程装配，超时为 5 秒并拒绝重定向。
-
-gateway 的启动／停止授权通过 `integration/central` 查询，共享 DTO 不引用网关存储模型；404/409 保持业务拒绝，传输故障与无效响应保留错误。worker 通过具名客户端同步启动／结束回执：central 必须返回 HTTP 200、code=0、accepted=true 后，才能标记启动回执或释放结束端口。成功启动回执被 central 以 409 拒绝时请求补偿停止，不标记已上报，也不据此退款。
-
-结束同步按“固定窗口取证 → 冻结回执 → central 确认 → 释放端口 → 标记事件”执行。重放使用存量冻结内容，释放失败保留结束事件；重复释放和标记仍可成功。冻结身份比较保留大整数的精确值，仅允许候选计量分段差异，不允许订单或端口身份变化。
-
-充电生命周期按 `internal/charging/start`、`stop`、`finish` 和 `measurement` 组织；事务、幂等回执与 Outbox 在对应生命周期子包，回执与授权的 HTTP 处理器只做认证、绑定和错误映射。启动失败与结算共用 `settlement.RefundBalanceInTx`，钱包入账复用 `wallet.Move`；设备协议单位转换留在边缘适配器。
-
-自动停止经 `stop.Gateway` 调用网关；共享端点与 DTO 在 `internal/contracts/gateway`，HTTP 客户端在 `internal/integration/gateway`，地址、服务令牌和超时由 central 装配。取证按最多 20 条分批，只续取未完成的订单；游标不推进或 8 页后仍未取完则返回错误，本次扫描不使用不完整证据。停止响应必须为 HTTP 202、业务 code 为 0 且确认受理，设备结束仍由异步回执推进。
-
-后台用户档案的余额记录通过 `GET /api/v1/admin/charge-users/:id/recharges` 分页读取，要求 `charge_user.read`。数据来自该用户未删除的余额充值支付单，保留待支付、已支付和退款状态；实付与成功退款金额分别展示。仅接受 `page/page_size`，按创建时间及支付单 ID 倒序排列。
-
-### Webhook
-
-订阅地址要求 HTTPS，校验 DNS 和目标 IP，拒绝 loopback、私网、元数据地址及 URL 用户信息。签名为 `HMAC-SHA256(secret, timestamp + "." + raw_body)`。
-
-| Header | 值 |
-| --- | --- |
-| `X-ChargePilot-Timestamp` | 十进制 Unix 秒时间戳 |
-| `X-ChargePilot-Signature` | `sha256=` 加签名十六进制值 |
-| `X-ChargePilot-Event` | 事件类型 |
-| `X-ChargePilot-Event-Id` | 稳定事件 ID |
-
-接收方校验原始请求体签名和时间窗，按事件 ID 去重。投递日志、重试状态和事件发布分别记录；当前消费及游标限制见[异步任务](#异步任务)。
-
-## 数据库
-
-| Schema | 业务表数 | 初始化定义 |
-| --- | --- | --- |
-| `central_db` | 85 | [0001_init.sql](migrations/central_db/0001_init.sql) |
-| `gateway_db` | 15 | [0001_init.sql](migrations/gateway_db/0001_init.sql) |
-| `worker_db` | 5 | [0001_init.sql](migrations/worker_db/0001_init.sql) |
-
-另有各库的 Goose 版本表。表和字段 COMMENT 描述职责、单位、状态、快照及幂等用途。部分表按月分区，查询、更新及唯一性检查须使用实际联合键。表存在不表示对应功能已在主程序接线。
-
-初始化空库需配置 `DATABASE_URL_GATEWAY`、`DATABASE_URL_CENTRAL`、`DATABASE_URL_WORKER`，然后执行：
-
-```sh
-go run ./cmd/migrate -schema all
-```
-
-MySQL init 脚本仅在空数据卷创建三库和授权，表由 Goose 初始化。项目尚未发布，各 schema 仅保留 `0001_init.sql`，结构调整直接修改定义，不新增发布前递增迁移，也不自动建表。已执行版本不会因文件修改重新应用；既有数据需要兼容迁移，不能只删除 Goose 版本表。MySQL DDL 无事务回滚。
-
-充值申请的 `idx_payment_order(payment_order_id)` 是非唯一索引，供支付回调锁定所属申请，避免扫描无关申请。已执行旧版初始化的数据库须先备份该表并核对 `SHOW INDEX FROM central_db.wallet_recharge_request`；没有此索引时执行兼容增量更新，无需重建数据：
-
-```sql
-SET SESSION lock_wait_timeout = 10;
-ALTER TABLE central_db.wallet_recharge_request
-  ADD INDEX idx_payment_order (payment_order_id)
-    COMMENT '支付回调定位并锁定所属充值申请，避免扫描无关申请',
-  ALGORITHM=INPLACE, LOCK=NONE;
-```
-
-更新后核对索引为非唯一、列为 `payment_order_id`；保留已有 NULL 和重复关联，不去重或改为 UNIQUE。索引减少无关申请的扫描争用，同一钱包仍按原行锁串行入账。
-
-明确可丢弃的开发数据可重建：
-
-```powershell
-./scripts/db/reset-dev.ps1 -ResetDevelopmentData
-node scripts/dev/prepare.mjs
-```
-
-该脚本核验本地项目、停止后端、先备份到 `.tmp/`，再重建三库并清空本项目两套 Redis，会清除业务、会话及事件。需要保留数据时不得执行。
-
-<details>
-<summary>全部业务表索引（100 张）</summary>
-
-| 数据库 | 表 | 职责 |
-| --- | --- | --- |
-| central_db | `active_port_charge` | 端口当前充电占用(跨月唯一性兜底) |
-| central_db | `card_charge` | 在线卡充电会话与累计购买时长 |
-| central_db | `card_operation` | 在线卡刷卡操作幂等结果和扣款记录 |
-| central_db | `charge_bill` | 充电账单 |
-| central_db | `charge_bill_read` | 账单已读标记 |
-| central_db | `charge_billing_cutoff` | 订单首次计费截止点 |
-| central_db | `charge_billing_job` | 待结算订单任务及重试状态 |
-| central_db | `charge_end_receipt` | 设备结束事件的幂等回执 |
-| central_db | `charge_event_log` | 订单状态事件及时间线 |
-| central_db | `charge_fee_receipt` | 计费消费事件幂等回执 |
-| central_db | `charge_manual_settlement` | 无法自动计量时的人工最终结算与审计 |
-| central_db | `charge_meter_review` | 充电计量异常核对 |
-| central_db | `charge_order` | 充电订单(内部生命周期及独立业务、支付状态) |
-| central_db | `charge_order_pricing` | 订单冻结的完整方案与计算快照 |
-| central_db | `charge_payment_intent` | 支付前冻结方案及端口预占 |
-| central_db | `charge_prepay` | 预付支付确认结果 |
-| central_db | `charge_start_receipt` | 设备启动确认和幂等摘要 |
-| central_db | `coupon` | 优惠券模板 |
-| central_db | `coupon_activity_rule` | 优惠券活动规则及版本 |
-| central_db | `coupon_grant` | 优惠券发放记录 |
-| central_db | `coupon_grant_request` | 优惠券发放请求幂等回执 |
-| central_db | `coupon_redemption` | 优惠券核销记录 |
-| central_db | `device_fault_report` | 设备报修 |
-| central_db | `device_fault_report_event` | 设备报修状态与巡检处理记录 |
-| central_db | `event_outbox` | 事件 outbox(可靠发布) |
-| central_db | `feedback` | 评价/投诉 |
-| central_db | `invoice_admin_review` | 发票审核记录 |
-| central_db | `invoice_request` | 发票申请 |
-| central_db | `manual_refund_request` | 人工退款申请及审核 |
-| central_db | `online_card` | 用户在线卡绑定和挂失状态 |
-| central_db | `online_card_audit` | 在线卡操作审计 |
-| central_db | `payment_callback_idempotent` | 微信支付回调幂等 |
-| central_db | `payment_order` | 支付订单(支持 charge / wallet_recharge) |
-| central_db | `refund_record` | 退款记录 |
-| central_db | `refund_rejection` | 退款拒绝原因记录 |
-| central_db | `refund_review` | 退款审核过程 |
-| central_db | `refund_success_receipt` | 退款成功的幂等确认 |
-| central_db | `risk_freeze_log` | 风控冻结记录(本期仅频次触发) |
-| central_db | `snowflake_state` | Snowflake 编号分配状态，业务事务内行锁串行分配 |
-| central_db | `user` | 终端用户 |
-| central_db | `user_login_identity` | 用户登录身份关联 |
-| central_db | `wallet_account` | 用户一对一钱包账户 |
-| central_db | `wallet_recharge_request` | 钱包充值请求幂等键 |
-| central_db | `wallet_refund_part` | 钱包退款按原支付渠道拆分明细 |
-| central_db | `wallet_refund_request` | 钱包退款请求及处理结果 |
-| central_db | `wallet_risk_freeze_link` | 钱包风控冻结关联 |
-| central_db | `wallet_risk_release` | 钱包风控解除记录 |
-| central_db | `wallet_risk_review` | 钱包风控审核记录 |
-| central_db | `wallet_txn` | 钱包流水 |
-| central_db | `admin_data_scope` | 后台账号数据范围 |
-| central_db | `admin_field_mask` | 角色字段脱敏规则 |
-| central_db | `admin_user_role` | 管理员账号 |
-| central_db | `alert_event` | 告警事件 |
-| central_db | `announcement` | 公告 |
-| central_db | `audit_log` | 审计日志 |
-| central_db | `device_import` | 设备导入请求及执行重试状态 |
-| central_db | `device_import_identity` | 设备导入时的请求身份和参数校验快照 |
-| central_db | `device_meta` | 设备元数据(冗余自 gateway_db) |
-| central_db | `admin_event_outbox` | 事件 outbox(可靠发布) |
-| central_db | `export_task` | 导出任务 |
-| central_db | `permission` | 权限码 |
-| central_db | `pricing_publication` | 计费规则发布版本和请求幂等摘要 |
-| central_db | `pricing_rule` | 计费规则 |
-| central_db | `pricing_template` | 计费模板 |
-| central_db | `role` | 角色 |
-| central_db | `role_permission` | 角色-权限映射 |
-| central_db | `station` | 充电站点 |
-| central_db | `fee_calculation` | 计费明细 |
-| central_db | `fee_delivery` | 计费结果投递任务 |
-| central_db | `fee_receipt` | 计费事件幂等回执 |
-| central_db | `manual_fee_review` | 人工定价兜底单 |
-| gateway_db | `card_event_delivery` | 原生刷卡事件投递与重试 |
-| gateway_db | `charge_command` | 设备启动命令和确认状态 |
-| gateway_db | `charge_end_delivery` | 设备结束事件投递与重试 |
-| gateway_db | `charge_process` | 已确认充电订单的 A4 心跳过程记录，无自动保留期清理 |
-| gateway_db | `charge_stop_command` | 设备停止命令和确认状态 |
-| gateway_db | `device` | 设备元数据 |
-| gateway_db | `device_event` | 设备事件及原始上下文 |
-| gateway_db | `device_port` | 设备端口(每端口独立二维码) |
-| gateway_db | `device_provision` | 设备开通请求幂等记录 |
-| gateway_db | `device_session` | 设备长连接会话 |
-| gateway_db | `event_outbox` | 与业务事务一起写入的待投递事件 |
-| gateway_db | `telemetry` | 设备遥测原始记录，按 ts 分区 |
-| gateway_db | `telemetry_aggregate_15min` | 遥测 15 分钟聚合 |
-| gateway_db | `telemetry_aggregate_hourly` | 遥测小时聚合 |
-| gateway_db | `vendor` | 硬件厂适配器注册表 |
-| worker_db | `scheduled_task` | 定时任务定义 |
-| worker_db | `task_execution_log` | 定时任务执行日志 |
-
-</details>
-
-## 异步任务
-
-业务状态与自身 Outbox 同事务提交。Redis 写入成功而数据库发布标记未提交时会重复发布，消费者按稳定事件 ID 和业务回执去重。付款后启动、设备结束、计费和退款以数据库任务为依据，不依赖通知流推进。
-
-| 周期 | 任务 |
-| --- | --- |
-| worker 每秒 | 告警同步触发、刷卡投递、付款后启动、启动/结束结果同步、Outbox 发布 |
-| worker 每 10 秒 | 自动停机、计费、退款派发 |
-| worker 调度器每秒扫描 | 当前处理器登记表为空，不执行数据库配置未在代码登记的任务；保留 cron、租约与执行结果机制 |
-| gateway 每 5 秒 | 补偿停止，然后用户停止重试 |
-| admin 启动及每小时 | 到期导出清理 |
-
-| Stream | 当前用途 |
-| --- | --- |
-| `charge_payment_confirmed_stream` | 付款确认事件流，启动另读持久任务；当前无 Webhook 消费者 |
-| `charge_started_stream` | 明确启动事件流；当前无 Webhook 消费者 |
-| `charge_start_rejected_stream` | 明确拒绝事件流，退款另读数据库；当前无 Webhook 消费者 |
-| `charge_ended_stream` | 结束事件流，计费另读 `charge_billing_job` |
-| `charge_settled_stream` | 最终结算通知，当前无业务消费者 |
-| `refund_required_stream` | 退款需求事件流，执行另扫 `refund_record` |
-| `refund_succeeded_stream` | 已成功退款事件流；结算由 central `RefundExecutor` 在退款派发行内完成，无独立结果消费者 |
-| `refund_result_stream` | 兼容输入，当前无生产者 |
-| `wallet_recharge_settled_stream` | 充值通知，当前无消费者，到账已在回调事务完成 |
-| `device_event_stream` | 设备事件流；告警同步由 worker 触发、central 经 gateway 内部端点拉取故障记录 |
-| `charge_events_stream` | 运维统计清单中的流；当前无注册的后台事件重投处理器 |
-
-当前 worker 将 gateway、user、admin 来源的数据库 Outbox 发布至 Redis；gateway 来源读取 gateway_db，user／admin 来源读取 central_db。Redis 接收成功而 MySQL 发布标记未提交时可重复发布，原 event_id 和业务回执仍用于恢复。当前没有 XRANGE Webhook 外投、订阅管理、通用 DLQ 消费或重放端点；运维 streams 端点只读取配置流的 XLen。DefaultBusinessStreams 是运维统计清单，不建立消费者、外投或重放机制。恢复前须检查实际任务及持久回执，不能据未装配组件推定运行恢复完整。
+计价、钱包、卡、审核、权限和异步恢复的完整规则见 [业务与接口契约](docs/business-contracts.md)；设备报文见 [DC589 协议](protocols/dc589.md)。
 
 ## 开发与验证
+
+宿主机需要 Go 1.27、Node.js 24、npm 和 Make。开发 Compose 提供运行环境；后端检查与构建：
 
 ```powershell
 ./scripts/git/install-hooks.ps1
 make check
+make build-all
+# 独立测试 MySQL 3307 / Redis 6381，迁移三库并执行集成测试
+./scripts/db/test-integration.ps1
 ```
 
-```bash
-sh scripts/git/install-hooks.sh
-make check
-```
+其他系统用 `sh scripts/git/install-hooks.sh` 安装钩子。`make check` 顺序运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`；pre-commit 运行 vet 和默认测试。缺少 Make 时可直接运行对应 Go 命令。编译产物在 `bin/`，可用 `make build SERVICE=central` 单独构建。
 
-`make fmt/lint/test` 分别调用 `go fmt ./...`、`go vet ./...`、`go test ./...`，`make check` 顺序执行三项。架构和目录一致性按 AGENTS.md 与结构文档人工核对。格式化后重新暂存。pre-commit 执行 `make lint test`，要求本机有 Go 和 Make。Windows 没有 Make 时可在容器执行 `docker compose -f compose.dev.yaml run --rm --no-deps -T central make check`，或直接运行对应 Go 命令。
+真库测试由 `integration` tag 隔离，不包含在 `make check` 中。直接执行 `make test-integration` 须配置独立三库连接、`TEST_MYSQL_URL` 和 `TEST_REDIS_URL`；角色锁测试还需要 [锁观测只读授权](docker/mysql/test-lock-observer.sql)，测试脚本和 CI 已处理。**集成测试使用独立实例，不能指向开发或生产数据。**
 
-编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部八个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
+前端命令在对应目录执行：
 
-`make check` 执行 Go 格式化、`go vet` 和默认测试；真库测试单独使用 `make test-integration TEST_MYSQL_URL=...`，由 integration build tag 隔离，CI 也运行这一层。
-
-事务原子性、行锁并发、唯一键冲突及幂等重放需要真 MySQL 验证，会话 Lua 原子轮换需要真 Redis。Windows 本地执行 `./scripts/db/test-integration.ps1`，使用 [compose.test.yaml](compose.test.yaml) 的独立 MySQL（`127.0.0.1:3307`）及 Redis（`127.0.0.1:6381`），迁移并测试三库；CI 使用独立服务执行 `make test-integration`。直接运行集成测试还须配置 `TEST_REDIS_URL`，缺配置会失败。测试虽回滚或清理自身数据，显式高位主键仍会抬高 MySQL 自增序号，不能在需要联调的开发库运行。默认测试通过不代表这一层已验证。
-
-确定性角色锁测试通过 `performance_schema.data_lock_waits`、`data_locks`、`threads` 观察两连接的实际等待关系。独立测试栈、上述 PowerShell 入口及 CI 加载 [测试观测授权](docker/mysql/test-lock-observer.sql)，只授予这三张表的 SELECT；共享初始化及开发／生产栈不加载它。使用其他独立测试 MySQL 时须由维护者提供相同只读权限，缺权限明确失败。
-
-| 目录 | 安装与开发 | 检查与构建 |
+| 目录 | 安装 / 开发 | 检查 / 构建 |
 | --- | --- | --- |
 | `admin-web` | `npm ci`、`npm run dev` | `npm test`、`npm run lint`、`npm run build` |
 | `miniprogram` | `npm ci`、`npm run dev:h5` 或 `npm run dev:weapp` | `npm run typecheck`、`npm test`、`npm run build:h5`、`npm run build:weapp` |
 
-用户端 `.npmrc` 已设置依赖兼容选项。后台 build 包含 TypeScript 检查，lint 只做 TypeScript 检查。产物为 `admin-web/dist`、`miniprogram/dist/h5` 和 `miniprogram/dist/weapp`，不提交。微信开发工具导入 `dist/weapp` 并配置真实 AppID；构建本身不需要 AppID。H5 使用 hash 路由。
+产物为 `admin-web/dist`、`miniprogram/dist/h5` 和 `miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI 当前覆盖 Go 检查、依赖差异、默认及真库测试、gateway/central/worker/migrate 构建和后台构建；用户端检查需单独执行。
 
-CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、gateway／central／worker／migrate 四个命令构建、真库集成及后台构建；不检查用户端。验证结论须注明实际覆盖范围。
+## 生产部署与维护
 
-## 配置
+生产入口为 [docker-compose.yml](docker-compose.yml)。复制 [.env.example](.env.example) 为 `.env`，填写实际凭据和域名，先构建后台静态文件，再检查并启动：
 
-以 [config.go](internal/platform/config/config.go)、Compose 和前端构建配置为准。开发 Compose 提供本地值；生产从 `.env` 和显式环境传入。密钥、私钥和真实配置不提交。
-
-| 变量 | 使用方及规则 |
-| --- | --- |
-| `DATABASE_URL` | gateway 的 MySQL URL |
-| `DATABASE_URL_CENTRAL` | user / admin / central / worker / migrate，central schema |
-| `DATABASE_URL_GATEWAY` | worker / migrate，gateway schema |
-| `DATABASE_URL_WORKER` | worker / migrate，worker schema；migrate 同时读取另两库 URL |
-| `USER_HTTP_ADDR`、`ADMIN_HTTP_ADDR`、`CENTRAL_HTTP_ADDR`、`WORKER_HTTP_ADDR` | 对应进程默认 `:8080`、`:8081`、`:8082`、`:8085` |
-| `GATEWAY_HTTP_ADDR`、`DC589_ADDR` | gateway，默认 `:8083`、`:9100` |
-| `REDIS_CACHE_URL`、`REDIS_STREAM_URL` | user / admin 使用 Cache 保存会话，central 使用 Cache 做健康检查；worker 使用 Stream 发布 Outbox。gateway 不使用 Redis |
-| `JWT_SECRET` | 仅 user / admin，至少 32 字节 |
-| `SERVICE_TOKEN` | 五个 Go 服务内部 API 共享令牌 |
-| `GATEWAY_INTERNAL_URL`、`CENTRAL_INTERNAL_URL` | 服务间地址，按 Compose 服务名与内网端口配置 |
-| `DEVICE_MAX_CONNECTIONS` | gateway，正整数，默认 10000 |
-| `GATEWAY_DEBUG_HEARTBEAT` | gateway 心跳日志，默认 false；开发 Compose 固定 true |
-| `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD` | 仅 admin，空后台账号表的引导凭证 |
-| `LOGIN_MODE` | 仅 user，默认 `wechat`；`development` 要求模拟支付 |
-| `WECHAT_APPID`、`WECHAT_SECRET` | AppID 为 user / central 必填；Secret 仅 user 登录与手机号授权使用 |
-| `PAYMENT_MODE` | user / central，`disabled/simulation/wechat_direct`，默认 disabled；生产 Compose 显式注入 |
-| `WECHAT_MCH_ID`、`WECHAT_CERT_SERIAL`、`WECHAT_APIV3_KEY` | user / central 的微信直连商户 ID、证书序列号及 32 字节 API v3 密钥 |
-| `WECHAT_PRIVATE_KEY_PATH`、`WECHAT_NOTIFY_URL` | user / central 容器内私钥路径及对外支付回调地址；路径变量不代替私钥挂载 |
-| `REGULATORY_MODE` | 预留模板／Compose 变量；当前 config 与 worker 不读取，修改值不会启用监管任务 |
-| `REGULATORY_ENDPOINT`、`REGULATORY_SIGNING_SECRET` | 预留对接参数；当前 worker 未装配发送适配器，尚无已接线的平台字段、签名或响应契约 |
-| `EXPORT_DIR` | admin 导出目录，生产已配置持久卷 |
-| `VITE_API_BASE` | 后台 API 地址，构建时使用 |
-| `TARO_APP_API_BASE` | 用户 API 前缀，默认 `/api/v1`；微信发布需绝对 HTTPS 地址 |
-| `TARO_APP_LOGIN_MODE` | 用户构建登录模式，默认 wechat |
-| `DEV_API_PROXY_TARGET` | 后台开发代理指向 admin，H5 开发代理指向 user |
-
-`.env.example` 还含未被当前实现或根 Compose 消费的 `TAG`、`ADMIN_BOOTSTRAP_PHONE`、`WECHAT_REFUND_NOTIFY_URL`、`WECHAT_CUSTOMER_SERVICE_CORP_ID`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`DEFAULT_TIME_OF_USE_JSON`，修改这些值不会启用相应功能。
-
-## 生产部署
-
-根 [docker-compose.yml](docker-compose.yml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
-
-Caddy 公网暴露 `80/443`，`/api/v1/admin/*` 代理 admin，`/api/v1/user/*` 与 `/api/v1/public/*` 代理 user；内部及其余 API 路径返回 404。`/admin/*` 提供后台静态文件，根路径转向后台。gateway 另暴露 `9100/TCP`，gateway/worker HTTP 不公开。后台静态产物必须先构建，H5 和小程序发布另行配置。
-
-```bash
+```powershell
+npm --prefix admin-web ci
+npm --prefix admin-web run build
 node scripts/ops/check-deploy.mjs
 docker compose -f docker-compose.yml up -d --build
-docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.yml logs --tail=100 chargepilot-central chargepilot-gateway chargepilot-worker chargepilot-caddy
 ```
 
-部署检查核对五个应用服务的配置归属、共享业务库、内部端口隔离、Redis 策略与 Caddy 分流，再用无网络临时容器验证 Caddy 语法；不会启动生产应用。`--config-only` 仅跳过凭据值检查，Compose 的必填变量及挂载路径仍须有效。检查器回归使用 `node --test scripts/ops/check-deploy.test.mjs`。模板检查通过不代表真实凭据、支付私钥或生产连通性已经验收。
+默认支付模式为 `disabled`。微信直连需要有效商户参数，并在 user 和 central 容器中只读挂载私钥；仅设置路径变量不会创建文件。生产配置、支付挂载、监控及故障定位见 [运行与数据维护](docs/operations.md)。
 
-检查脚本验证拓扑、镜像、挂载、公开端口、三库 URL 及 schema、Redis 策略、模板凭证和 Caddy 配置，不启动生产栈，也不检查数据库连通性；首次可能拉取 Caddy 镜像。`--config-only` 只跳过模板凭证值检查，仍要求 Compose 必填变量及挂载路径。应用容器当前没有 Compose healthcheck，应主动检查 `/health/ready`。
+三库由 Goose 初始化，定义见 [central](migrations/central_db/0001_init.sql)、[gateway](migrations/gateway_db/0001_init.sql)、[worker](migrations/worker_db/0001_init.sql)。已执行的初始化 SQL 修改后不会自动重跑；保留数据时先备份再做兼容更新。开发重建会清空三库及项目 Redis，操作条件见 [数据库维护](docs/operations.md#数据库)。备份恢复说明见 [运行与数据维护](docs/operations.md#备份与恢复)，恢复前须核对归档和目标环境。
 
-### 微信直连支付
+## 当前边界
 
-根 Compose 已将支付模式及商户参数显式注入 user 与 central；模板默认 `PAYMENT_MODE=disabled`。user 发起支付并接收对外通知，central 执行内部退款。微信登录密钥 `WECHAT_SECRET` 只注入 user，worker 不持有商户凭据。
+- 本地模拟链路不能代替真实微信商户、实机或外部平台验收。H5 支持开发登录和模拟支付；正式微信支付与手机号授权通过微信小程序。
+- 内部 Outbox 和 Redis 发布已运行；Webhook、通用 DLQ、监管投递及其管理端点尚未装配。`REGULATORY_*` 是预留变量，修改值不会启用任务。
+- 微信订阅消息、电子发票签发、汇付天下、自动银行出款、自动渠道账单下载、MQTT、OTA、月卡/年卡及混合支付未接入。多主体分账、提现与对账已移除。
+- 公告列表只返回全局公告；站点详情另包含本站生效公告，城市定向尚未接线。
 
-真实直连部署须在部署侧设置 `PAYMENT_MODE=wechat_direct`、有效商户参数、`WECHAT_NOTIFY_URL` 和容器内 `WECHAT_PRIVATE_KEY_PATH=/run/secrets/wechat-merchant.pem`。根 Compose 未挂载商户私钥；仅传入路径变量不会创建文件。为 user 与 central 增加受控只读挂载 override，例如：
-
-```yaml
-services:
-  chargepilot-user:
-    volumes:
-      - /etc/chargepilot/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
-  chargepilot-central:
-    volumes:
-      - /etc/chargepilot/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
-```
-
-保存部署侧文件为 `compose.payment.yaml` 后，使用 `docker compose -f docker-compose.yml -f compose.payment.yaml config --quiet` 检查合并配置，启动及后续维护也使用这两个 `-f` 文件。`check-deploy.mjs` 只检查根生产 Compose。商户私钥文件权限须允许容器非 root UID 65532 读取；API v3 密钥为 32 字节。配置加载及 Compose 展开通过不证明私钥可读取、渠道可达或真实微信支付已验收。worker 通过 central 的同一支付提供方执行退款和查询。正式用户端须使用真实 AppID、已配置的 API 域名和微信发布环境。
-
-### 上线验收
-
-验证公网 HTTPS、内部 API 隔离、真实登录和手机号授权、真实商户支付及重复回调、原路退款、实机启动及未知结果、停机、断线恢复、刷卡重复行为、最终计量、权限、审计、故障告警、外部投递及备份恢复。模拟链路不能代替真实资金或实机验证。
-
-REGULATORY_* 当前仅为预留变量，config 与 worker 未消费，设置 http 也不会启动监管投递。仓库保留可复用的发送适配器；目标平台的字段、签名、认证、响应与任务装配尚未接线。没有外部合规认证或可据此保证的 SLA、RPO、RTO。
-
-## 备份与恢复
-
-[backup.sh](scripts/db/backup.sh) 和 [restore.sh](scripts/db/restore.sh) 依赖 Bash、gzip 与 MySQL 客户端。输出目录须预先存在；容器客户端回退需设置 `MYSQL_CLIENT_CONTAINER`。连接参数为 `MYSQL_HOST/MYSQL_PORT/MYSQL_USER`；原生客户端用 `MYSQL_PWD`，容器回退从 `MYSQL_PASSWORD` 传入密码。凭证从安全环境加载，避免写入命令历史。
-
-```bash
-mkdir -p .tmp/backups
-bash scripts/db/backup.sh .tmp/backups
-```
-
-备份包含三库的 SQL、例程、触发器、事件及 Goose 历史，逐库使用 single-transaction。跨库不保证同一时点，协调停止写入后备份；DDL 与备份也须避免并行。脚本检查压缩完整性和最低大小，不证明可恢复；定期在隔离环境恢复并核对资金、订单和幂等记录。
-
-SQL 备份不包含 Redis AOF、导出文件、Caddy 状态、密钥和部署配置，须另行备份。已发布 Outbox 不会自动重发事件 Redis 中丢失的全部记录，不能直接清空 Stream 卷后宣称恢复完成。
-
-恢复会先删除归档声明的三库，再重建并导入，失败时可能只完成部分数据。停止业务写入，核对归档及目标环境后执行：
-
-```bash
-RESTORE_CONFIRM="gateway_db central_db worker_db" bash scripts/db/restore.sh "$BACKUP_ARCHIVE"
-```
-
-`BACKUP_ARCHIVE` 须设置为已核对的归档路径。恢复后核对三库、Goose 版本和关键台账；若执行 migrate，必须配置全部三库 URL。开发服务用 `docker compose -f compose.dev.yaml restart central gateway worker`；生产使用实际部署的全部 Compose 文件重启对应服务。更新或恢复不得使用 `docker compose down -v`。
-
-## 监控与故障定位
-
-三服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。live 只说明进程存活，ready 检查服务依赖。HTTP 指标按已注册路由统计，不能作为 TCP 连接数或设备在线率。
-
-```bash
-docker compose -f compose.dev.yaml -f compose.monitoring.yaml up -d prometheus
-```
-
-当前 Prometheus 面向开发内网，端口 9090，抓取间隔 15 秒、保留 7 天。抓取失败持续 1 分钟告警；近 5 分钟至少 20 次请求且 5xx 超 5%，持续 5 分钟告警；排除 `/metrics` 后同样流量条件下 p95 超 2 秒，持续 5 分钟告警。配置和规则测试见 [monitoring](monitoring)，当前没有 Alertmanager 通知链路。
-
-| 现象 | 核对项 |
-| --- | --- |
-| 服务未就绪 | 对应三库 URL、Goose 版本、数据库/Redis 凭证、依赖连通性与日志 |
-| 管理员无法登录 | 引导仅空表执行、账号状态、MFA、Redis 会话、实时权限及限速 |
-| 设备离线 | TCP 9100、设备编号/端口数、开通状态、连接会话与心跳；断线不代表端口已停机 |
-| 已付款未充电 | 支付意图、端口占用、启动命令及回执；先确定结果，不能重复启动或直接退款 |
-| 已停机未结算 | 结束投递、central 回执、计费任务、计量复核和冻结快照 |
-| 退款未到账 | 同一退款号的渠道结果、预留额度、执行策略及双人审核，processing 不等于成功 |
-| Webhook 或消息积压 | Stream 载荷、消费组 pending、投递日志及实际主程序接线限制 |
-| HTTPS 异常 | 域名解析、80/443、服务器时钟、Caddy 日志及持久数据卷 |
-
-## 功能边界
-
-- H5 支持开发登录及模拟支付；正式微信支付和手机号授权通过微信小程序。H5 扫码使用手动输入，定位失败可填写坐标。
-- 微信直连 SDK 已接入，真实商户和实机仍需验收；汇付天下通道未实现。
-- 微信订阅消息、电子发票签发、自动银行出款和自动渠道账单下载未接入。
-- 退款结果 pending 回收仍受上述接线限制。当前未注册 Webhook 订阅、通用 DLQ 或监管投递任务及其管理端点。内部业务 Outbox 与 Redis 流发布仍在运行；事件信封（`internal/delivery/events.go`）与 HMAC 发送适配器保留，但未接入 worker。外部平台对接仍须实现并验收所属契约与受管理任务。
-- MQTT、OTA、月卡/年卡、邀请奖励、混合支付、在线客服和可配置告警订阅不在当前功能范围。已有烟雾、高温和设备故障告警、确认及恢复保留。
-- 用户公告当前只返回全局公告，站点和城市定向未接线。
-- 多主体分账、提现与对账已移除：站点全部自有，不存在把钱按比例拆给不同主体再走提现打款的业务对象。计价与开账单不经分账。
-- 合规认证与外部验收均不能由数据库表或本地测试推定完成。
-
-开源许可见 [LICENSE](LICENSE)，商业授权以签订合同为准。
+重构进度与后续验收见 [refactor-roadmap.md](docs/refactor-roadmap.md#9-进度与交付记录)。许可见 [LICENSE](LICENSE)，商业授权以签订合同为准。

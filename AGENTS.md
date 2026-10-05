@@ -2,10 +2,10 @@
 
 ## 依据与边界
 
-- 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
+- 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。本文件记录维护规则；[README](README.md) 提供项目概览、启动与检查入口；[业务与接口契约](docs/business-contracts.md) 记录计量、资金、权限及异步恢复规则；[运行与数据维护](docs/operations.md) 记录配置、部署、备份恢复、监控及模拟器操作。修改行为或运行方式时同步所属文档，避免在多处复制完整规则。
 - 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
 - `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
-- 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。**`central` 的 8082 在两套编排里都不映射端口**，宿主机打不开，内部调用只在容器网络内可达。开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。
+- 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（持久任务扫描、结果同步与 Outbox 发布，`:8085`）。**`central` 的 8082 在两套编排里都不映射端口**，内部调用只在容器网络内可达。开发栈把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，公网 HTTP 入口为 Caddy，设备另走 `9100/TCP`。
 
 五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
 - 后台进程不取微信与支付凭据：它不替用户登录，也不发起支付。`config.Admin` 与 `config.Central` 分开定义，让"这个进程需要什么凭据"在类型上就是清楚的——多给一份 `WECHAT_SECRET` 就等于多一处泄露面。
@@ -15,6 +15,7 @@
 - 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。具名客户端的请求 DTO 必须以 `Request` 结尾，响应 DTO 必须以 `Reply` 结尾；共享集合中的记录、采样点等子对象保留业务名称，不能用 `Data`、`Result`、`Acceptance` 代替端点响应名。
 - 五个服务进程的入口按职责拆分：`main.go` 处理信号与退出错误，`app.go` 加载配置、装配依赖与等待退出，`resources.go` 打开和释放资源，`routes.go` 注册路由与健康检查。worker/gateway 的定时循环在各自 `runtime` 子包，导出清理在 `internal/export`。资源初始化失败须释放已打开的资源；所有受管理请求和后台任务退出后才能关闭数据库、Redis 与客户端连接池。HTTP 停机使用 `httpapi.Serve`，超时取消请求后仍等待处理器退出；处理器必须响应请求 context，不启动未受管理的后台任务。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
+- 当前 worker 调度器的处理器登记表为空；Webhook、通用 DLQ 和监管投递未装配，`REGULATORY_*` 未被配置加载及 worker 消费。保留的事件与发送适配器不代表任务已运行，不能据表、模板变量或组件存在宣称外部投递可用。
 
 ## Go 技能与使用时机
 
@@ -47,7 +48,7 @@
 | [golang-security](.agents/skills/golang-security/SKILL.md) | 注入、路径穿越、SSRF、密码学、HTTP 安全、认证、凭据与敏感日志；威胁建模和安全发现核验。 | 处理用户输入、鉴权、文件或网络 IO、签名验签、秘密信息，或进行安全审查时。 | 重点核对实时权限、资源归属、服务令牌和支付通知；报告需有可达路径与证据。依赖漏洞扫描用 dependency-management；把扫描接入 CI 用 continuous-integration。 |
 | [golang-structs-interfaces](.agents/skills/golang-structs-interfaces/SKILL.md) | 窄接口、消费方定义接口、组合与嵌入、类型断言、零值、序列化标签、值与指针接收者。 | 定义用例依赖、DTO、仓储接口、适配器，或判断接口拆分与类型组合方式时。 | 用例定义所需窄接口，`cmd` 注入实现；contracts 不依赖 gin/gorm。JSON 标签、数值类型和单位须与双方契约一致；不为每个结构体机械增加接口。 |
 | [golang-lint](.agents/skills/golang-lint/SKILL.md) | 理解 `go vet`、staticcheck 等诊断；选择检查项、配置 golangci-lint、解释或合理抑制告警。 | 处理静态检查失败，讨论检查器或 `nolint`，维护已有检查配置时。 | 本项目 `make lint` 使用 `go vet ./...`，`make check` 不增加架构脚本。通用 golangci-lint 示例不替代既有检查入口；CI job 编排用 continuous-integration。 |
-| [golang-documentation](.agents/skills/golang-documentation/SKILL.md) | godoc、包与接口说明、README、变更记录、示例、配置和 API 文档；保持条件与业务含义准确。 | 编写或审查 Go 项目文档、维护本文件、解释接口约束或增加可运行示例时。 | README 管运行方式与业务契约，本文件管维护规则；架构记录放既有 `docs/`。API 文档核对真实接口；不因通用模板额外创建文档站、`llms.txt` 或重复文档树。 |
+| [golang-documentation](.agents/skills/golang-documentation/SKILL.md) | godoc、包与接口说明、README、变更记录、示例、配置和 API 文档；保持条件与业务含义准确。 | 编写或审查 Go 项目文档、维护本文件、解释接口约束或增加可运行示例时。 | README 保留运行入口，业务规则与运维细节分别维护于 `docs/business-contracts.md`、`docs/operations.md`，本文件管维护规则；架构记录放既有 `docs/`。API 文档核对真实接口；不因通用模板额外创建文档站、`llms.txt` 或重复文档树。 |
 
 ### 设计、并发与数据访问（8 个）
 
@@ -155,7 +156,7 @@
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
 - 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`；`make check` 顺序执行这三项。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
-- **真库集成测试单列一层**：`make test-integration TEST_MYSQL_URL=...` 带 `//go:build integration` 跑真实 MySQL。`make check` 不含它（不依赖 Docker），但 **CI 的 `integration` job 跑它**。行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 这些只��真库语义下存在的东西，单测一律覆盖不到，详见「并发与幂等」。
+- **真库集成测试单列一层**：`make test-integration TEST_MYSQL_URL=...` 带 `//go:build integration` 跑真实 MySQL。`make check` 不含它（不依赖 Docker），但 **CI 的 `integration` job 跑它**。行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 需要真实 MySQL 语义验证，详见「并发与幂等」。
 - 目录结构定稿如下。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
 ```text
@@ -683,7 +684,6 @@ charge-pilot/
     export/                        —— 12 个 use case
     domain/                       纯规则与跨用例契约（零框架依赖）
     platform/  persist/  protocol/  contracts/  integration/  delivery/  http/
-    interface/                     —— user／central适配迁移中
     gateway/  worker/               —— 进程特有编排
   ```
 
@@ -718,7 +718,7 @@ charge-pilot/
   其他用例反过来引它。当前子包见上方目录树：charging / money / devices /
   operations。
 
-- `internal/charging/` 按生命周期分为 `start`、`stop`、`finish`、`measurement` 四个子包，根目录不放业务代码或汇总转发服务。`start` 管启动授权、待启动清单与启动回执；`stop` 管停止授权、自动停机和计费截止；`finish` 管结束回执及提交结算任务；`measurement` 管无 IO 的协议事件转换。
+- `internal/charging/` 包含 `start`、`stop`、`finish`、`measurement` 四个生命周期子包及 `query` 查询组合包，根目录不放业务代码或汇总转发服务。`start` 管启动授权、待启动清单与启动回执；`stop` 管停止授权、自动停机和计费截止；`finish` 管结束回执及提交结算任务；`measurement` 管无 IO 的协议事件转换；`query` 组合订单状态、遥测及过程读模型。
 - `start`、`stop`、`finish` 不相互依赖；需要共享的计量证据转换放 `measurement`，纯业务规则放 `domain`。`measurement` 只引用领域契约与 `protocol` 根契约，不引用数据库、HTTP、设备具体协议或其他用例。子包的数据库代码、业务编排和测试放在一起，不统一再拆 `service/repository/model` 技术目录。
 - 跨聚合事务在对应生命周期子包内编排。付款渠道属于 payment，余额入账属于 wallet，退款事务、计费任务及其状态查询属于 settlement，刷卡操作状态属于 card。新增抽象以实际复用或隔离需求为依据；迁移不切碎既有事务、锁顺序和幂等判定。
 - 停止用例的 `Gateway` 接口只包含取证与停止受理。分页策略在用例中，单次 HTTP 调用、状态码、业务 code 与响应对应关系由专用客户端核对；不完整证据不得用于自动停机判定。wire DTO 显式标记 JSON 字段并保留既有大小写、整数类型与单位，处理器与客户端共用；字段变更需同步核对双方与契约测试。
@@ -764,7 +764,7 @@ charge-pilot/
 - 站点、设备、厂商及配置操作沿用服务端数据范围检查。列表与详情、导出、写入和批量操作使用一致的授权条件；客户端筛选不能扩大范围。
 - 用户资源以当前会话校验归属；无权访问与不存在统一按既有接口返回。服务间接口使用 `X-Service-Token`，前端不得持有服务令牌。
 - 后台导出仅支持 CSV、XLSX，格式留空时默认 CSV；账单导出仍须校验日期范围。
-- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和对应的 OpenAPI 文档：后台是 `internal/http/auth/admin.openapi.json`，C 端源码是 `internal/http/user/user.openapi.json`（不因目录迁移新增提供文档的路由）。两份文档都要求"声明的端点必须真的注册"且"没有悬空的 schema 引用"，修改时逐项核对路由注册与 schema 引用；缺失端点文档另行补全。文档准确性只能靠打真实接口核对：照代码"合理推断"写出来的请求体与响应形状会错，包括把整数写成字符串、给不分页的列表加分页字段。
+- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和对应的 OpenAPI 文档：后台是 `internal/http/auth/admin.openapi.json`，通过 `go:embed` 提供 `GET /api/docs/admin.openapi.json`；C 端是 `internal/http/user/user.openapi.json`，当前为静态文件，不新增文档路由。两份文档直接维护，当前没有自动生成流程；修改时逐项核对声明端点的实际注册、schema 引用及真实请求／响应，不把路由清单检查当作字段、鉴权或行为验证。生产 Caddy 不代理后台文档端点。
 - 维持乐观版本检查和幂等标识。前端刷新令牌不能改变业务请求身份；账号切换后的旧请求不得覆盖新会话状态。
 
 ## 设备协议
@@ -788,7 +788,7 @@ charge-pilot/
 - 验证与联调优先用既有路径：`scripts/dev/start.ps1`（开发栈）、`/health/ready` 判定就绪。**不要为"多验证一点"另造旁路脚本**——自建的临时容器、临时二进制、临时灌库脚本既要自己收拾，又复现不了仓库既有的正确做法。需要新验证手段时先用仓库里已有的，或提出方案经确认后再写。
 - 不得自行在宿主机启动常驻本地服务器或 dev server，也不得为 `dist` 另建静态服务；这两类一律用容器内的地址。确需一次性临时服务时避开容器占用端口，用完立即停止并说明用途。
 - 验证前端渲染访问容器内的后台与用户端 H5 地址，并同时确认页面控制台无报错。
-- 本地地址固定：后台 `5173/admin/`、用户 H5 `5174/`、MySQL `3306`、Redis Cache `6379` 与 Stream `6380`、DC589 `9100`；user、admin、central、gateway、worker 就绪状态查各自 HTTP 端口的 `/health/ready`。
+- 本地地址固定：后台 `5173/admin/`、用户 H5 `5174/`、MySQL `3306`、Redis Cache `6379` 与 Stream `6380`、DC589 `9100`；user、admin、gateway、worker HTTP 分别可从宿主机 `127.0.0.1:8080/8081/8083/8085` 访问，central `8082` 只在容器网络可达。五个进程均提供 `/health/live`、`/health/ready` 和 `/metrics`；检查 central 就绪须从开发栈网络内请求。
 - Go 服务没有热重载。修改后按 README 重建受影响的服务，优先只重建该服务而非整个栈；确需重启整栈时先说明理由。
 - 设备联调的两个模拟器须在独立终端分别执行 `scripts/dev/simulator.ps1 -Number 1` 与 `-Number 2`，属前台交互进程，不得作为后台服务重复拉起。模拟器与模拟支付结果不得当作实机或真实资金验收。
 
@@ -804,7 +804,7 @@ charge-pilot/
   不给变量时退出码 2。跳过的测试在 `go test` 输出里和通过的一模一样，
   CI 没配库就会一路绿灯——护栏最常见的失效正是靠放行通过。
 - 测试写入用事务回滚；确实需要提交的场景（如两个独立事务要看到同一行）
-  由收尾显式清理，跑完开发库必须 0 残留。
+  在独立测试库执行，由收尾按完整主键显式清理并核对 0 残留，不修改共享开发数据。
 - 共享骨架（独立连接、并发闸门、按表名挂载的加锁回调）提取到各包的
   `gorm_integration_test.go`，不要每个文件复制一份。
 
@@ -834,8 +834,7 @@ charge-pilot/
    **还有第二种正确解法：让「已占用额度」本身就是一个在锁内累加的列。**
    `wallet_account.frozen_cents` 就是这样——每笔预占都 `frozen+金额`，
    校验时 `可用 = balance - frozen` 是在钱包行锁内读到的当前值。
-   ���不要求任何聚合读变成当前读，后到的申请自然被已冻结的额度挡下。
-   两者等价，但后者更难被改坏：新增一条扣款路径时忘了加锁也仍然安全。
+   该模式不依赖聚合读，但所有预占、释放及扣减路径仍须在钱包行锁内读取和更新冻结额度。
    `wallet` 用的就是这种，`settlement` 至今仍是前一种。
 
 2. **靠 `sql.LevelReadCommitted` 撑起来的幂等，要写测试钉住隔离级别。**
@@ -844,7 +843,7 @@ charge-pilot/
    已知承重处：`internal/charging/finish/result_repo.go`。
 
 **改完注入变异证伪**（护栏靠放行通过是最常见的失效），至少覆盖：
-去掉行锁、去掉唯一键、去���加锁读、去掉隔离级别声明、去掉幂等凭据比对。
+去掉行锁、去掉唯一键、去掉加锁读、去掉隔离级别声明、去掉幂等凭据比对。
 
 ## 验证与交付
 
@@ -852,8 +851,9 @@ charge-pilot/
 - 交付时报告工作区的未提交改动，不代替用户提交。
 - Go 业务变更运行 `make check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `make build SERVICE=<name>` 或 `make build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
 - `make check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `make test-integration TEST_MYSQL_URL=...`，使用独立测试 MySQL；Windows 本地入口是 `scripts/db/test-integration.ps1` 和 `compose.test.yaml`（3307）。显式测试主键即使回滚仍会抬高自增序号，不得在联调开发库运行；有构建 tag 的真库测试不能用默认测试通过替代。
+- 真实会话测试还须使用独立 Redis（6381），配置 `TEST_REDIS_URL`。确定性角色锁测试需要 `performance_schema.data_lock_waits`、`data_locks`、`threads` 的 SELECT 权限；测试入口及 CI 加载 `docker/mysql/test-lock-observer.sql`，开发／生产及共享初始化不加载这份测试授权。缺少连接或观测权限须明确失败，不跳过或改用模拟锁。
 - 后台逻辑修改运行 `npm test` 与 `npm run build`；用户端逻辑修改运行 `npm run typecheck`、`npm test`，涉及平台适配或构建配置时构建受影响的 H5／微信目标。命令在对应前端目录执行。
 - 纯文档、注释和文案修改检查链接、引用、事实与格式；不为低影响可逆修改增加重复测试。已有验证通过后，仅在新增修改、失败或未决问题需要时扩大检查。
 - 测试覆盖实际契约和故障边界，重点验证并发重放、非法状态、授权范围、金额与计量不一致、外部未知结果和回执丢失；避免照抄实现的测试。
-- 功能、命令、目录或部署契约改变时同步维护 README 与本文件；设备协议完整规范维护于 `protocols/dc589.md`，精确业务字段留在源码、SQL 注释和 OpenAPI，不新增重复文档树。
+- 功能、命令、目录或部署契约改变时同步维护 README、本文件及相应的业务／运行文档；设备协议完整规范维护于 `protocols/dc589.md`，精确业务字段留在源码、SQL 注释和 OpenAPI，不新增重复文档树。保留维护文档引用的 README 锚点，移动内容时更新入口及相对路径。
 - 完成交付前检查差异与失效引用，报告实际修改、验证结果及仍存在的实现边界；不得把模拟器或模拟支付验证称为实机或真实资金验收。
