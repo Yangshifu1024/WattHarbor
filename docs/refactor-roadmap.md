@@ -869,3 +869,11 @@ make test-integration TEST_MYSQL_URL=...
 5x定向证据：原隔离副本 .tmp/batch5x-runtime-baseline.log 与 .tmp/batch5x-runtime-restored.log 均通过四项新回归；标准testing/synctest等待测试goroutine并推进原ticker，不缩短生产间隔。失败后后项及次轮仍执行，补偿取消不进入用户STOP，进入前取消零调用，在途补偿未返回时Runtime不提前退出。仅隔离副本将五秒改一秒，.tmp/batch5x-period-mutation.log检出两轮2秒而应10秒；删除两项之间的取消检查，.tmp/batch5x-cancel-mutation.log检出用户STOP多执行一次，两副本均恢复。实际源码的 .tmp/batch5x-targeted.log 通过gateway runtime、cmd绑定失败、HTTP超时后等待处理器以及worker runtime既有回归；两份Go中文契约清单无缺项。不将窄能力或同步测试时钟当作真实设备／资金／跨库恢复验收。精确暂存退出检查继续，G／WK组合及DEP仍未完成。
 
 5x完整退出：精确暂存 .tmp/batch5x-validation 的 .tmp/batch5x-snapshot-{check,build}.log通过，全仓默认检查及gateway构建包含四项新回归；1239份原blob中727份Go／模块与实际源码一致，.tmp/batch5x-snapshot-source.log及本地Markdown链接核对通过。生产只有注释／格式、新测试不访问数据库，未改变SQL、协议、依赖、资源装配或前端，按8.1不重复相同生产逻辑的资金／真库流程或开发重启；最近完整真库与开发五进程就绪证据为5w。继续实际结束确认／端口释放恢复及DEP评估，不关闭G／WK组合，17组完成15组约88%。
+
+批次5y（G／WK结束确认与释放流程证据）：新增跨接口族真实流程回归，实际注册gateway TelemetryAPI和central EndResultAPI，具名两客户端及EndSynchronizer贯通，中央使用真实finish.EndResultService.Apply，不替换业务结果。私有订单／启动凭据／占用及命令／事件提交在独立3307实例，writer与observer物理CONNECTION_ID不同。gateway事件Scope仅限私有设备，同库另一私有设备事件保持未处理；其它表无Scope。全部夹具按完整主键清理核对零残留，Outbox复用既有主键清理。
+
+5y原源码基线：首次测试观察投影的ChargedKWh缺GORM列标签，.tmp/batch5y-end-initial-fixture-failure.log保留，只修测试标签，生产未改。最新 .tmp/batch5y-end-baseline.log 两项回归通过：central执行前503保留原占用／未处理事件且已冻结；真实Apply提交收到200后传输层丢回包，独立观察中央结束计量、日志、计费任务和Outbox各一，gateway仍未释放。新客户端／消费者对象重建后同身份重放得到真实replayed=true，随后才释放及标记；迟到心跳使候选分段不同仍保留首次冻结。确认后释放前503保留恢复入口；新订单占用后旧回执实际409，中央新占用及网关新owner均保持，原冻结与未处理事件不被改变。不将依赖对象重建称为真实worker进程重启，不将计费排队称为资金入账。隔离变异及精确暂存完整验收继续，组合组不提前关闭。
+
+5y变异证据：仅隔离副本把网关释放移到中央确认前，.tmp/batch5y-early-release-mutation.log 在独立观察端口idle／NULL而应保留原占用时失败；仅删除release原订单归属条件，.tmp/batch5y-owner-mutation.log 在新占用被提前清空时失败。两个生产文件副本恢复原HEAD后 .tmp/batch5y-end-restored.log 两项通过；实际生产无修改。最初从仓库根以嵌套模块包路径启动变异测试为setup failure、未执行数据库操作，改到副本目录后取得上述真实失败，不以编译失败代替变异检出。新测试先核对实际持久状态，再核对HTTP顺序，中文契约清单无缺项；全仓退出验收继续。
+
+5y完整退出：精确暂存 .tmp/batch5y-validation 的 .tmp/batch5y-snapshot-{check,integration}.log 全通过，完整三库／Redis保持默认包并行；1240份原blob中728份Go／模块与最终实际源码一致，.tmp/batch5y-snapshot-source.log及本地Markdown链接核对通过。只有新增integration测试和本记录，没有生产／依赖／路径／公开接口／前端改动；原cmd构建及开发五服务就绪仍由5x／5w最近证据支持，不重复无变动的开发业务流程。端口归属保护两变异已恢复，新实际跨服务回归补强原纯能力测试；不宣称实机、真实worker重启或资金执行。后续补齐最终复核发现的运行时／客户端中文契约与配置消费者，再完成DEP评估和最终报告；G／WK组合仍未关闭。
