@@ -6,40 +6,40 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
 
-// OpsAPI 提供流积压查询接口，要求服务令牌。
-//
-// 死信查询与重放曾在这里（连同 internal/worker/outbox/dlq.go 整个子系统），
-// 已删除：那套代码实现了但从未启用——ConsumeBatch 全仓无调用方，
-// 死信队列从不写入，重放处理器恒定返回「没有注册处理器」。留着它只会
-// 让运维看到一个永远为空的死信查询接口，误以为有死信要处理。
+// OpsAPI 查询配置流的 Redis 长度；服务令牌通过后才允许读取，不提供重放或死信操作。
 type OpsAPI struct {
-	// Stream 是 Redis Stream 客户端。积压量直接读 XLen，不需要死信表。
-	Stream       redis.UniversalClient
-	Streams      []string
+	// Stream 执行带请求 context 的 XLen，不写入流或消费组。
+	Stream redis.UniversalClient
+	// Streams 为按原顺序读取的流名；空列表返回空 pending 对象。
+	Streams []string
+	// ServiceToken 为精确校验的期望令牌，空配置拒绝所有请求。
 	ServiceToken string
 }
 
+// Register 在 router 注册原 GET 路由和鉴权中间件，无 Redis IO；router 必须非 nil。
 func (a OpsAPI) Register(router *gin.Engine) {
 	router.GET("/api/v1/internal/worker/ops/streams", a.authorized(), a.streams)
 }
 
+// authorized 返回服务鉴权处理器：输入请求头，失败写唯一 401 并终止处理链，成功继续后续处理器。
 func (a OpsAPI) authorized() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if a.ServiceToken == "" || a.ServiceToken != c.GetHeader("X-Service-Token") {
+		if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 			httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
+			c.Abort()
 			return
 		}
 		c.Next()
 	}
 }
 
-// streams 报告各业务流的积压条数。XLen 返回的是流长度，不区分已消费与未消费，
-// 排障时用它判断"事件有没有在进来"足够了；要精确未消费数得 XReadGroup，
-// 而消费组此前从未建立。
+// streams 使用 c 的请求 context 依次读取 XLen，输出 pending 长度与 UTC checked_at。
+// 长度不区分已消费与未消费；redis.Nil 跳过该流，其余错误（包括取消）仅写原 503，停止后续读取。
 func (a OpsAPI) streams(c *gin.Context) {
 	pending := map[string]int64{}
 	for _, name := range a.Streams {
