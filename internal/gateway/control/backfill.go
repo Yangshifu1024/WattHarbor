@@ -1,7 +1,6 @@
 package control
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -11,18 +10,11 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
-	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
-
-// backfillMetrics 限定 telemetry 支持的指标集合；未知指标在写入前拒绝，避免形成无法解释的计量。
-var backfillMetrics = map[string]struct{}{
-	"voltage_v": {}, "current_a": {}, "temperature_c": {},
-	"battery_soc": {}, "power_w": {}, "meter_kwh": {},
-}
 
 const (
 	backfillMaxFrames  = 1000
@@ -31,20 +23,6 @@ const (
 	// 补传时间限定在允许的历史窗口内；超期读数拒绝写入，避免进入兜底分区。
 	backfillMaxAge = 365 * 24 * time.Hour
 )
-
-// sample 是一条准备写入 telemetry 表的指标读数。
-type sample struct {
-	// deviceID 原补传设备业务编号。
-	deviceID string
-	// portNo 原补传可空端口号。
-	portNo sql.NullInt16
-	// metric 原补传指标名。
-	metric string
-	// value 原补传十进制数值文本。
-	value string
-	// ts 原补传采样时刻，保持毫秒去重口径。
-	ts time.Time
-}
 
 // backfillFrame 承载原补传 JSON 帧的设备、可空端口、消息类型、采样时刻及指标载荷，由控制层校验。
 type backfillFrame struct {
@@ -60,8 +38,8 @@ type backfillFrame struct {
 	Payload map[string]json.RawMessage `json:"payload"`
 }
 
-// backfill 将离线遥测补入在线链路使用的 telemetry 表，曲线接口可直接读取。
-// (device, port, metric, ts) 标识重复样本，已存在时跳过，保持整批重发幂等。
+// backfill 接收 c，按原服务鉴权、帧数与正文预算解析离线遥测，再将请求 context 和样本交完整补采仓储。
+// 返回原 inserted/skipped；设备、端口及存储失败按原顺序映射 404、400、503，解析失败写 400，不持有事务。
 func (a TelemetryAPI) backfill(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -81,12 +59,12 @@ func (a TelemetryAPI) backfill(c *gin.Context) {
 		httpapi.BadRequest(c, err.Error())
 		return
 	}
-	inserted, skipped, err := a.persistBackfill(c.Request.Context(), deviceID, samples)
-	if errors.Is(err, errUnknownDevice) {
+	inserted, skipped, err := gatewayrepo.PersistBackfill(c.Request.Context(), a.DB, deviceID, samples)
+	if errors.Is(err, gatewayrepo.ErrBackfillUnknownDevice) {
 		httpapi.Write(c, 404, 1004, "设备不存在或已退役", nil)
 		return
 	}
-	if errors.Is(err, errUnknownPort) {
+	if errors.Is(err, gatewayrepo.ErrBackfillUnknownPort) {
 		httpapi.BadRequest(c, "frame port_no is not a port of this device")
 		return
 	}
@@ -97,12 +75,13 @@ func (a TelemetryAPI) backfill(c *gin.Context) {
 	httpapi.OK(c, gin.H{"inserted": inserted, "skipped": skipped})
 }
 
-// parseBackfill 在写入前校验整批数据；任一帧无效时拒绝整批，避免部分写入。
-func parseBackfill(deviceID string, frames []backfillFrame, now time.Time) ([]sample, error) {
+// parseBackfill 接收路径 deviceID、frames 与 now，按原设备、端口、协议、时间窗口和指标规则校验并归一整批样本。
+// 返回原毫秒键去重后的非 nil 列表或任一帧错误；仅解析与纯规则调用，不访问数据库或写响应。
+func parseBackfill(deviceID string, frames []backfillFrame, now time.Time) ([]gatewayrepo.BackfillSample, error) {
 	if !device.ValidDeviceID(deviceID) {
 		return nil, fmt.Errorf("invalid device id")
 	}
-	out := make([]sample, 0, len(frames))
+	out := make([]gatewayrepo.BackfillSample, 0, len(frames))
 	seen := make(map[string]struct{}, len(frames))
 	for _, frame := range frames {
 		if frame.DeviceID != deviceID {
@@ -130,25 +109,25 @@ func parseBackfill(deviceID string, frames []backfillFrame, now time.Time) ([]sa
 			port = sql.NullInt16{Int16: *frame.PortNo, Valid: true}
 		}
 		for metric, raw := range frame.Payload {
-			if _, ok := backfillMetrics[metric]; !ok {
+			if !gatewayrepo.IsBackfillMetric(metric) {
 				return nil, fmt.Errorf("unsupported metric %q", metric)
 			}
 			value, err := decodeBackfillValue(raw)
 			if err != nil {
 				return nil, fmt.Errorf("metric %q is not a decimal number", metric)
 			}
-			key := sampleKey(deviceID, port, metric, ts)
+			key := gatewayrepo.BackfillKey(deviceID, port, metric, ts)
 			if _, dup := seen[key]; dup {
 				continue
 			}
 			seen[key] = struct{}{}
-			out = append(out, sample{deviceID: deviceID, portNo: port, metric: metric, value: value, ts: ts})
+			out = append(out, gatewayrepo.BackfillSample{DeviceID: deviceID, PortNo: port, Metric: metric, Value: value, TS: ts})
 		}
 	}
 	return out, nil
 }
 
-// decodeBackfillValue 接受字符串及 JSON 数字，使用 decimal 解析，避免 float64 精度损失。
+// decodeBackfillValue 接收 raw 字符串或 JSON 数字，返回 decimal 归一的六位小数文本或原解析错误；不经 float64、不执行 IO。
 func decodeBackfillValue(raw json.RawMessage) (string, error) {
 	text := strings.TrimSpace(string(raw))
 	if unquoted, err := strconv.Unquote(text); err == nil {
@@ -159,102 +138,4 @@ func decodeBackfillValue(raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	return value.StringFixed(6), nil
-}
-
-var (
-	errUnknownDevice = errors.New("backfill device is unknown or retired")
-	errUnknownPort   = errors.New("backfill port does not belong to the device")
-)
-
-// persistBackfill 接收 ctx、deviceID 与 samples，核对已开通设备和端口后按原键去重、批量写遥测并更新聚合；返回写入数、跳过数及错误，不额外提供跨步骤事务保证。
-func (a TelemetryAPI) persistBackfill(ctx context.Context, deviceID string, samples []sample) (int, int, error) {
-	if len(samples) == 0 {
-		return 0, 0, nil
-	}
-	// 仅接受已开通设备及其有效端口的补传，防止写入无法关联硬件来源的历史读数。
-	status, err := gatewayrepo.DeviceStatus(ctx, a.DB, deviceID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, 0, errUnknownDevice
-		}
-		return 0, 0, err
-	}
-	// 停用设备可补传停用前缓存的读数；退役设备不接受补传。
-	if status == "retired" {
-		return 0, 0, errUnknownDevice
-	}
-	ports, err := gatewayrepo.DevicePortNumbers(ctx, a.DB, deviceID)
-	if err != nil {
-		return 0, 0, err
-	}
-	known := make(map[int16]struct{}, len(ports))
-	for _, p := range ports {
-		known[p] = struct{}{}
-	}
-	allowed := samples[:0]
-	for _, s := range samples {
-		if !s.portNo.Valid {
-			allowed = append(allowed, s)
-			continue
-		}
-		if _, ok := known[s.portNo.Int16]; !ok {
-			return 0, 0, errUnknownPort
-		}
-		allowed = append(allowed, s)
-	}
-	samples = allowed
-	metrics := make([]string, 0, len(backfillMetrics))
-	for metric := range backfillMetrics {
-		metrics = append(metrics, metric)
-	}
-	from, to := samples[0].ts, samples[0].ts
-	for _, s := range samples[1:] {
-		if s.ts.Before(from) {
-			from = s.ts
-		}
-		if s.ts.After(to) {
-			to = s.ts
-		}
-	}
-	// 批量查询现有读数，避免对最多 6000 条补传逐行查重。
-	stored, err := gatewayrepo.ListExistingTelemetry(ctx, a.DB, deviceID, metrics, from, to)
-	if err != nil {
-		return 0, 0, err
-	}
-	present := make(map[string]struct{}, len(stored))
-	for _, row := range stored {
-		present[sampleKey(deviceID, row.PortNo, row.Metric, row.TS)] = struct{}{}
-	}
-	rows := make([]map[string]any, 0, len(samples))
-	newSamples := make([]gatewayrepo.AggregateSample, 0, len(samples))
-	skipped := 0
-	for _, s := range samples {
-		if _, dup := present[sampleKey(s.deviceID, s.portNo, s.metric, s.ts)]; dup {
-			skipped++
-			continue
-		}
-		rows = append(rows, map[string]any{
-			"device_id": s.deviceID, "port_no": s.portNo, "metric": s.metric,
-			"value_num": s.value, "ts": s.ts,
-		})
-		newSamples = append(newSamples, gatewayrepo.AggregateSample{
-			DeviceID: s.deviceID, Port: s.portNo, Metric: s.metric, Value: s.value, TS: s.ts,
-		})
-	}
-	if len(rows) == 0 {
-		return 0, skipped, nil
-	}
-	if err := gatewayrepo.InsertTelemetryBatch(ctx, a.DB, rows); err != nil {
-		return 0, 0, err
-	}
-	// 补传读数同步更新汇总表，保持原始遥测与聚合曲线一致。
-	if err := gatewayrepo.RefreshAggregates(ctx, a.DB, newSamples); err != nil {
-		return 0, 0, err
-	}
-	return len(rows), skipped, nil
-}
-
-// sampleKey 接收 deviceID、可空 port、metric 与 ts，按原端口整数和毫秒时刻生成去重文本；返回键，无 IO。
-func sampleKey(deviceID string, port sql.NullInt16, metric string, ts time.Time) string {
-	return fmt.Sprintf("%s|%d|%s|%d", deviceID, port.Int16, metric, ts.UnixMilli())
 }
