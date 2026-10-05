@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 遥测与充电过程查询构造器保留原筛选、单位转换和读取预算，调用方执行读取。
+// 遥测与充电过程完整读取保留原筛选、单位转换、排序和读取预算，返回记录及错误。
 // 指定端口时同时保留 port_no 为 NULL 的设备级电压、温度指标。
 
 // Reading 是一条遥测读数。表不同、时间列名不同，统一成 ts / metric / value。
@@ -24,30 +24,60 @@ var deviceLevelMetrics = []string{"voltage_v", "temperature_c"}
 // readingOverfetch 以曲线点上限的八倍限制行数，在按秒合并前容纳同一时刻的多个指标。
 const readingOverfetch = 8
 
-// RawReadingsQuery 接收 ctx、db、deviceID、portNo、from/to 和 limit，构造闭区间原始遥测查询及倒序八倍读取预算；保留设备级指标，不执行查询，错误留在返回的 GORM 链。
-func RawReadingsQuery(ctx context.Context, db *gorm.DB, deviceID string, portNo int, from, to time.Time, limit int) *gorm.DB {
+// ListRawReadings 接收 ctx、db、deviceID、portNo、from/to 和 limit，以原 Find 读取闭区间非 NULL 数值。
+// 保留设备级指标、ts 倒序及八倍行数预算；返回非 nil 记录列表与原 SQL 错误，不写入或新建事务。
+func ListRawReadings(
+	ctx context.Context,
+	db *gorm.DB,
+	deviceID string,
+	portNo int,
+	from, to time.Time,
+	limit int,
+) ([]Reading, error) {
 	query := db.WithContext(ctx).Table("telemetry").
 		Select("ts, metric, value_num").
 		Where("device_id = ? AND ts >= ? AND ts <= ? AND value_num IS NOT NULL", deviceID, from, to)
 	if portNo > 0 {
 		query = query.Where("port_no = ? OR (port_no IS NULL AND metric IN ?)", portNo, deviceLevelMetrics)
 	}
-	return query.Order("ts DESC").Limit(limit * readingOverfetch)
+	rows := []Reading{}
+	err := query.Order("ts DESC").Limit(limit * readingOverfetch).Find(&rows).Error
+	return rows, err
 }
 
-// BucketedReadingsQuery 接收 ctx、db、所属 table、deviceID、portNo、from/to 和 limit，构造聚合闭区间查询及倒序八倍预算；保留设备级指标，不执行查询，错误留在 GORM 链。
-func BucketedReadingsQuery(ctx context.Context, db *gorm.DB, table, deviceID string, portNo int, from, to time.Time, limit int) *gorm.DB {
+// ListBucketedReadings 接收 ctx、db、所属 table、deviceID、portNo、from/to 和 limit，以原 Find 读取闭区间聚合数值。
+// 保留设备级指标、bucket_start 倒序及八倍行数预算，不新增数值筛选；返回非 nil 列表与原 SQL 错误，无写入或新事务。
+func ListBucketedReadings(
+	ctx context.Context,
+	db *gorm.DB,
+	table, deviceID string,
+	portNo int,
+	from, to time.Time,
+	limit int,
+) ([]Reading, error) {
 	query := db.WithContext(ctx).Table(table).
 		Select("bucket_start AS ts, metric, avg_value AS value_num").
 		Where("device_id = ? AND bucket_start >= ? AND bucket_start <= ?", deviceID, from, to)
 	if portNo > 0 {
 		query = query.Where("port_no = ? OR (port_no IS NULL AND metric IN ?)", portNo, deviceLevelMetrics)
 	}
-	return query.Order("bucket_start DESC").Limit(limit * readingOverfetch)
+	rows := []Reading{}
+	err := query.Order("bucket_start DESC").Limit(limit * readingOverfetch).Find(&rows).Error
+	return rows, err
 }
 
-// ChargeProcessQuery 接收 ctx、db、orderNo、chargeOrderID、deviceID、portNo 与 afterID，构造原筛选和单位换算查询；可选身份为零或空时不追加，不执行查询或写入。
-func ChargeProcessQuery(ctx context.Context, db *gorm.DB, orderNo string, chargeOrderID uint64, deviceID string, portNo uint64, afterID uint64) *gorm.DB {
+// ListChargeProcessPoints 接收 ctx、db、orderNo、chargeOrderID、deviceID、portNo、afterID 与 limit，以原 Scan 读取过程点。
+// 保留可选身份筛选、原缩放与 NULL，按 id 升序多取一条供调用方分页；返回非 nil 列表与原 SQL 错误，无写入或新事务。
+func ListChargeProcessPoints(
+	ctx context.Context,
+	db *gorm.DB,
+	orderNo string,
+	chargeOrderID uint64,
+	deviceID string,
+	portNo uint64,
+	afterID uint64,
+	limit int,
+) ([]ChargeProcessPoint, error) {
 	query := db.WithContext(ctx).Table("charge_process").
 		Select("id,ts,power_deciwatts/10.0 AS power_w,"+
 			"charged_mwh/1000000.0 AS charged_kwh,remaining_mwh/1000000.0 AS remaining_kwh,"+
@@ -63,7 +93,9 @@ func ChargeProcessQuery(ctx context.Context, db *gorm.DB, orderNo string, charge
 	if portNo > 0 {
 		query = query.Where("port_no=?", portNo)
 	}
-	return query
+	rows := []ChargeProcessPoint{}
+	err := query.Order("id ASC").Limit(limit + 1).Scan(&rows).Error
+	return rows, err
 }
 
 // MarkSyncEventProcessed 接收所属 tx 与事件 id，仅更新仍未处理事件的处理时刻；返回影响行数及 SQL 错误，不自行提交。
@@ -97,8 +129,7 @@ func InsertFrozenEndDelivery(db *gorm.DB, deviceEventID, chargeOrderID uint64, p
 	}).Error
 }
 
-// ChargeProcessPoint 是充电过程曲线上的一个点。
-// 电量两列的列名与 Go 字段名对不上，tag 写错会让每个点都扫成零值。
+// ChargeProcessPoint 是原充电过程查询投影，保留整数身份、原功率和电量换算以及可空协议扩展证据。
 type ChargeProcessPoint struct {
 	// ID charge_process 表的原自增主键，用作过程曲线游标。
 	ID uint64 `json:"id"`
@@ -114,13 +145,13 @@ type ChargeProcessPoint struct {
 	ChargedSeconds uint32 `json:"charged_seconds"`
 	// RemainingSeconds 原剩余时长秒数。
 	RemainingSeconds uint32 `json:"remaining_seconds"`
-	// SignalStrength 原设备信号强度，保留未知可空映射。
+	// SignalStrength 原设备信号强度整数，零为有效报告，不具有 NULL 标志。
 	SignalStrength uint8 `json:"signal_strength"`
 	// PortStatus 原端口协议状态，nil 表示未提供该证据。
 	PortStatus *uint8 `json:"port_status"`
-	// VoltageV 原设备电压值，保留可空扩展块。
+	// VoltageV 原整机电压，单位伏；nil 表示未提供对应扩展证据。
 	VoltageV *uint16 `json:"voltage_v"`
-	// TemperatureC 原设备温度值，保留可空扩展块。
+	// TemperatureC 原整机温度，单位摄氏度；nil 表示未提供对应扩展证据。
 	TemperatureC *int16 `json:"temperature_c"`
 	// DeviceStatus 原设备协议状态，保留可空扩展块。
 	DeviceStatus *uint8 `json:"device_status"`

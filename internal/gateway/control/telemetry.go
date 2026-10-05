@@ -130,14 +130,31 @@ func (a TelemetryAPI) read(ctx context.Context, deviceID string, from, to time.T
 func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int, from, to time.Time, limit int, table string) ([]gatewaycontract.CurvePoint, error) {
 	// 长窗口使用汇总表，避免原始样本超过行数预算后仅返回窗口尾部。
 	rows := []gatewayrepo.Reading{}
+	var err error
 	if table == "telemetry" {
-		if err := gatewayrepo.RawReadingsQuery(ctx, a.DB, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
-			return nil, err
-		}
+		rows, err = gatewayrepo.ListRawReadings(
+			ctx,
+			a.DB,
+			deviceID,
+			portNo,
+			from,
+			to,
+			limit,
+		)
 	} else {
-		if err := gatewayrepo.BucketedReadingsQuery(ctx, a.DB, table, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
-			return nil, err
-		}
+		rows, err = gatewayrepo.ListBucketedReadings(
+			ctx,
+			a.DB,
+			table,
+			deviceID,
+			portNo,
+			from,
+			to,
+			limit,
+		)
+	}
+	if err != nil {
+		return nil, err
 	}
 	// bucket 保存同一 UTC 秒内按指标合并的曲线值，仅在本次读模型转换中使用，不代表持久聚合桶。
 	type bucket struct {

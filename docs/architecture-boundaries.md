@@ -225,3 +225,7 @@ worker 仓储边界（5i）：worker/store 及两个 *_store.go 迁入 worker/re
 worker 运维准入边界（5j）：OpsAPI 的失败中间件写原401后必须 Abort；返回 Go 函数不等于中止 Gin 处理链。统一用 serviceclient.VerifyServiceToken 保持空配置拒绝与精确比较，成功继续原处理器；失败不能读取 Redis，也不能追加第二个信封。实际 cmd 注册和 API.Register 的零命令／单JSON回归共同验证。原 pending 是 Redis XLen 的流长度，仍不区分已消费与未消费；缺失流真实长度0，redis.Nil 分支跳过，其他错误与取消映射原503并停止后续读取，没有新消费组、死信、重放、SQL或后台任务。请求 context 直接传入 XLen，公开消息不泄漏 Redis 键、类型错误或内部细节。
 
 gateway 命名边界（5k）：原独立 store 包完整归 gateway/repo，*_store.go 改 *_repo.go，模型／schema 文件和 MySQLSink 的设备事件能力名称保持。StartService、Compensation、UserStopService 的具体持久化注入字段为 Repo；ScanAPI 的窄扫码能力字段为 Scanner。所有真实包消费者及原两份仓储测试同步迁移，没有旧路径兼容包，不改变数据库映射、SQL、事务、协议解析、命令／设备会话、stream/source 或重试身份。此机械批次仍保留控制层原完整业务行为，剩余 query builder 与控制层 SQL 的完整操作下沉另行实施；不能把完成命名当作 G-01 职责完成。
+
+gateway 完整遥测读取边界（5l）：ListRawReadings、ListBucketedReadings 和 ListChargeProcessPoints 在 gateway/repo 内完成原 Find／Scan，返回非 nil 记录列表及错误；control 不再持有这三个 GORM 查询链。原有时间闭区间、端口及设备身份筛选、设备级 NULL 端口电压／温度、倒序八倍行预算、过程 id 升序及 limit+1 哨兵、单位换算均保留。HTTP 继续负责参数校验、按 UTC 秒合并与曲线升序、协议可空字段转换及分页；不新增事务、过滤、重试或新身份。SignalStrength 保留 uint8 整数零值；可空扩展电压／温度分别保留伏／摄氏度。
+
+独立真实 MySQL 验收覆盖原始、15分钟和小时表的两端边界、窗口外与其他设备／端口排除、NULL 端口仅两项设备指标、原始 NULL 数值排除、有效零值、最新八倍行预算及曲线点预算；外层事务回滚后核对随机设备零残留。三种完整读操作在已取消 context 下返回 context.Canceled。实际注册查询客户端原回归继续验证64位身份、单位、NULL、摘要和分页。聚合 avg_value 在初始化 SQL 中为 NOT NULL，测试不修改 schema 来构造不存在的 NULL 聚合值。该只读子项完成不代表 worker 同步、端口释放、结束冻结或 gateway 运行时已经收尾。

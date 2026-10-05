@@ -40,7 +40,7 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 			return
 		}
 	}
-	// Validate all identity filters before touching the database.
+	// 在读取数据库前校验全部原身份筛选。
 	var chargeOrderID uint64
 	if values.Has("charge_order_id") {
 		var err error
@@ -64,9 +64,17 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 			return
 		}
 	}
-	query := gatewayrepo.ChargeProcessQuery(c.Request.Context(), a.DB, orderNo, chargeOrderID, deviceID, portNo, afterID)
-	items := []gatewayrepo.ChargeProcessPoint{}
-	if err := query.Order("id ASC").Limit(limit + 1).Scan(&items).Error; err != nil {
+	items, err := gatewayrepo.ListChargeProcessPoints(
+		c.Request.Context(),
+		a.DB,
+		orderNo,
+		chargeOrderID,
+		deviceID,
+		portNo,
+		afterID,
+		limit,
+	)
+	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "充电过程暂不可读取", nil)
 		return
 	}
