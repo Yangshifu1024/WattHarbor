@@ -69,6 +69,7 @@
 - **充值到账**：payment 可以调用 wallet 的事务内到账能力，但 wallet 的充值申请不能因此反向 import payment。wallet 定义所需的支付来源／创建能力，cmd 注入 payment 适配；所有需要同库原子性的调用沿用同一个事务。先确定锁顺序和输入契约，再迁 SQL。
 - **钱包退款预占**：wallet 定义事务内 `RefundRecorder` 能力，cmd 注入 settlement 实现。wallet 保留冻结金额与来源分摊，settlement 创建 refund_record；共同沿用原事务。settlement 已依赖 wallet，因此 wallet 不反向 import settlement，也不搬走钱包自己的资金写入。
 - **结算模型归属**：charge_fee_receipt／refund_record 模型已归 settlement。payment 的迟到退款调用注入能力，钱包请求通过自己的接口注入结算记录；payment 不留结算类型别名。跨模块查询使用各自的投影或所属模块读取函数。
+- **生命周期订单能力**：启动与结束回执事务不再直接写 charge_order、charge_event_log 和 event_outbox。order 以 LockForLifecycleInTx 返回最小只读投影 LifecycleView，并以 ActivateInTx、MarkStartRejectedInTx、CompleteInTx 推进状态；谓词仍要求原状态与 `deleted_at IS NULL`，影响行数不为 1 时返回 ErrLifecycleConflict，由 charging 映射为各自的回执冲突，不当作存储故障重试。订单事件走 order.AppendEventInTx，Outbox 走 ops.AppendEventInTx，两者都是同事务内的所属能力。charge_start_receipt、charge_end_receipt 与 active_port_charge 的写模型留在 charging 各阶段：start 拥有启动回执与启动占用，finish 拥有结束回执、启动回执的私有只读投影和按原订单的端口释放，两个阶段互不引用。settlement 读结束回执使用自己的 endReceiptView，余额退款改收 BalanceRefundSource，不再接收 order 的 ORM 模型。锁顺序、READ COMMITTED 隔离、JSON 载荷与计量单位均未改变。
 - **订单组合查询**：order.QueryService 提供所属用户归属、历史、后台基础档案与事件；结算 query_fee_repo 实现 order.FeeReader 并由 cmd 注入，order 不 import settlement。用户历史固定读取总数、当页与批量费用三次 SQL，缺失或无效费用回执保持 null，有效零费用保留非空零。后台订单沿用 order.read 全局权限及显式站点筛选；站点名称是一次只读跨域投影，明确读取 station 表，原冻结套餐不被当前价格替换。订单金额及退款写入仍属 payment／settlement。charging/query.LiveService 已接管后台实时估算：每20单一批复用 gateway ChargingEvidence 契约，所有有完整观测的订单各一次读取 order.SnapshotRepo 和 card.PurchaseQueryRepo。query → order 只读原冻结 JSON，卡购买通过窄接口注入，查询业务服务不持有 URL、令牌或 GORM；没有反向依赖。原完整性为 false 时保留观测量并隐藏估算费，不翻页假装完整；保持原10080行证据上界。整页受4秒取消期限管理，无未管理任务；一批网关失败使该批不可读，后续独立批仍可执行，同批错误范围最大20单。快照或卡读取故障保留观测量并标记不可读。后台过程已由 charging/query.ProcessService 组合 order.QueryService 的已授权规范身份和具名 gateway.OrderProcess；订单身份投影从 ops/admin_audit_store 归 order/admin_query_repo。公开额外设备／业务号参数不能覆盖原单，order.read 与缺行在网络调用前判定，游标保持原整数精度；网关DTO转换为用例 ProcessPage，再输出原公开形状。HTTP不持有过程代理或连接池，cmd注入现有受管理客户端。queryData为查询强制5秒期限、禁止重定向及完整信封字段校验，复制Client配置但复用Transport；遥测／历史共用DTO已经与实际网关注册端点核对，用户消费者已使用具名能力。charging/query.UserService 的每个组合入口先通过 order.UserOrders 核对当前用户归属，再读取费用与原冻结状态；UserStateRepo 只调用 order、settlement、card、stop、payment 各所属读取函数，不直接访问其他表。只读组合不引入新的写入事务，原卡操作、支付、退款与 cutoff 分别转换为本用例模型；order 基础包不反向引用 query 或 settlement。费用／支付存储故障返回503，无有效回执／无支付记录分别保留原省略；网关故障只使快照遥测不可用，曲线则返回503。确认零费用、DECIMAL电量文本与观测零值保持独立，最终电量优先于聚合摘要。窗口枚举与配置允许集合、三年与2000桶边界在调用前核对；未知或禁用窗口返回400，取消不派生后台任务。公开接口形状与真实注册响应同步到 user OpenAPI；网关平均功率列显式映射 average_value，原count加权规则与DECIMAL字符串保持。
 - **审计与运营**：ops 提供事务内审计能力和通用操作人／范围值；不要让 ops 的账号服务 import 每个业务服务。dashboard 和运维组合操作与基础账号能力分开，跨业务调用采用窄接口，避免「所有模块都依赖 ops，ops 又依赖所有模块」。
 
@@ -117,16 +118,23 @@ identity/user_repo 与 charge_user_repo 的钱包、订单、优惠与报障字�
 
 ### central 的后续评估
 
-最初第四步提出的合并候选是 `user + central`：一个业务 API 进程承载用户接口和受保护的内部用例端点，保留 admin、gateway、worker，形成四个部署单元。这是待比较的方案，本阶段仍保持五个进程。
+**结论：评估完成，保留五进程，不实施合并。** 本节是 DEP-01 的交付记录，比较对象为保留五进程与 `user + central` 四进程两个候选。核对日期 2026-10-05，依据为当时的 `internal/platform/config/config.go`、`cmd/user/routes.go`、`cmd/central/routes.go` 与 `docker-compose.yml`。表中凡未实测的项一律标为未验证，不以推断充当结论。
 
-评估应在用例入口、事务和恢复协议稳定后单独进行：
+需要先纠正一个常见预设：**凭据隔离并不构成 user 与 central 的区分理由。** 按 `config.Central` 与 `config.User` 的实际字段，central 持有 `SERVICE_TOKEN` 与微信支付全套凭据（`WECHAT_APPID`、`WECHAT_MCH_ID`、`WECHAT_CERT_SERIAL`、`WECHAT_APIv3_KEY`、`WECHAT_PRIVATE_KEY_PATH`、`WECHAT_NOTIFY_URL`、`PAYMENT_MODE`），user 持有上述全部字段并另有 `JWT_SECRET`、`WECHAT_SECRET` 与 `LOGIN_MODE`。central 的凭据集是 user 的真子集，合并不会让公网进程多拿到任何一份凭据。真正区分两者的是**网络暴露面与故障域**，不是凭据数量。
 
-1. 核对 central 是否需要独立扩容、发布、资源限制或安全隔离，并比较共享进程后的凭据可见范围与故障影响。存在明确隔离需求时，应保留独立部署。
-2. 逐条列出 central 内部调用、实际调用方、鉴权和重试语义，区分适合改成本地调用的操作与 gateway／worker 仍需远程访问的端点。不能把减少进程理解为取消持久化确认或授权。
-3. 比较两种部署的调用耗时、网络失败与补偿成本、资源使用、发布和排查成本；以实测或明确运维要求作决定，不按代码行数裁决。
-4. 若选择合并，单独制定配置、路由、服务令牌、网络暴露面、资源生命周期及 Compose 的切换与回退方案。内部端点继续受服务令牌和网络入口限制；先验证支付到账、启动与拒绝、断线重试、主动／自动停止、结束重放、计费／退款以及停机排空，再调整部署。
+| 维度 | 保留五进程（现状） | user + central 四进程 | 判定与来源 |
+|---|---|---|---|
+| 凭据／安全隔离 | 两进程凭据不同型：admin 不取微信与支付配置，gateway／worker 只取 `SERVICE_TOKEN` | 不新增凭据暴露（central ⊂ user），但 central 的 11 组内部端点改由公网进程提供，仅靠服务令牌保护 | 现状更清晰。来源：`config.go` 各结构体字段、`cmd/central/routes.go:44-61` |
+| 独立扩容／发布 | 无任何 Go 应用的资源限额或多副本配置，因此不存在按进程差异化扩容的实际依据 | 少一个部署单元，但公网流量与生命周期回执仍无法分别限流 | 均未验证：未做多副本压测，无发布频率数据 |
+| 资源限制 | `docker-compose.yml` 五个 Go 服务均无 `mem_limit`／`cpus`／`deploy.limits`；Redis 已有明确预算：缓存 384mb `allkeys-lru`、流 256mb `noeviction` | 同左，且合并后单进程需同时承载公网与回执写入，峰值叠加无数据支撑 | 限额未配置即未实测；Redis 预算是既有事实，不代表编排整体无限额。来源：`docker-compose.yml:30,40` |
+| 故障范围 | central 崩溃只影响生命周期回执、计费退款派发与告警同步的受理；公网读接口仍可用 | user 崩溃将同时失去公网接口与回执受理面；worker 的持久任务与重试凭据仍在，但回执写入不可用 | 现状故障域更小。**按两进程路由注册推导，未做故障注入实测** |
+| 请求与恢复成本 | 保持现状 | `CENTRAL_INTERNAL_URL` 只配置在 gateway 与 worker（`config.go:20,136`），**user 没有 central 的 HTTP 消费者**；同库事务本就不经 HTTP，合并省下的只是进程数而非现存调用跳数 | 合并的请求成本收益接近零。来源：`config.go`、`cmd/user/routes.go` 无内部端点 |
+| 运维成本 | 五套健康检查、配置与日志来源已就位 | 少一套，但失去按 `process=central` 指标与日志的区分 | 未验证：未做工时或故障定位实测 |
+| 远程协调是否消除 | gateway→central、worker→central 仍在 | 同样保留；user 侧本就没有 | 合并不改变远程拓扑。来源：`config.go` |
 
-部署决策与批量代码迁移分开交付；当前的模块重构计划不执行进程合并。
+保留五进程的决定性理由是暴露面与故障域：central 的 11 组端点（待启动查询、启动／停止授权、启动／结束回执、内部刷卡、自动停机、计费、退款派发、模拟回调、告警同步）当前只在容器网络内可达，`docker-compose.yml` 对 central 只写 `expose: ["8082"]`、不映射宿主端口；合并后这些端点将与公网 C 入口共享进程，网络隔离这一层将只剩服务令牌。凭据维度的理由不成立，已在上文纠正。
+
+本节不实施合并，也不新增候选部署配置。将来若要重新评估，前置条件是：出现按进程的资源限额或多副本部署、user 侧新增对 central 的 HTTP 消费者、或公网与回执写入的资源竞争有实测证据。部署决策与批量代码迁移继续分开交付。
 
 ## 批次 0 的依赖核对
 
