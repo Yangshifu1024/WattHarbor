@@ -417,9 +417,11 @@ make check
 
 编译命令的可执行文件统一落在 `bin/`（已在 `.gitignore` 中）：`make build SERVICE=central` 编译单个服务，`make build-all` 编译 `cmd/` 下全部八个服务，`make clean` 删除该目录。直接执行 `go build` 会在包目录留下产物，需要用 `-o bin/<name>` 指定输出。`.tmp/` 只放运行期状态文件，如模拟器的设备状态 JSON。
 
-`make check` 跑默认单元测试及静态护栏；真库测试单独使用 `make test-integration TEST_MYSQL_URL=...`，由 integration build tag 隔离，CI 也运行这一层。
+`make check` 执行 Go 格式化、`go vet` 和默认测试；真库测试单独使用 `make test-integration TEST_MYSQL_URL=...`，由 integration build tag 隔离，CI 也运行这一层。
 
 事务原子性、行锁并发、唯一键冲突及幂等重放需要真 MySQL 验证，会话 Lua 原子轮换需要真 Redis。Windows 本地执行 `./scripts/db/test-integration.ps1`，使用 [compose.test.yaml](compose.test.yaml) 的独立 MySQL（`127.0.0.1:3307`）及 Redis（`127.0.0.1:6381`），迁移并测试三库；CI 使用独立服务执行 `make test-integration`。直接运行集成测试还须配置 `TEST_REDIS_URL`，缺配置会失败。测试虽回滚或清理自身数据，显式高位主键仍会抬高 MySQL 自增序号，不能在需要联调的开发库运行。默认测试通过不代表这一层已验证。
+
+确定性角色锁测试通过 `performance_schema.data_lock_waits`、`data_locks`、`threads` 观察两连接的实际等待关系。独立测试栈、上述 PowerShell 入口及 CI 加载 [测试观测授权](docker/mysql/test-lock-observer.sql)，只授予这三张表的 SELECT；共享初始化及开发／生产栈不加载它。使用其他独立测试 MySQL 时须由维护者提供相同只读权限，缺权限明确失败。
 
 | 目录 | 安装与开发 | 检查与构建 |
 | --- | --- | --- |
@@ -428,7 +430,7 @@ make check
 
 用户端 `.npmrc` 已设置依赖兼容选项。后台 build 包含 TypeScript 检查，lint 只做 TypeScript 检查。产物为 `admin-web/dist`、`miniprogram/dist/h5` 和 `miniprogram/dist/weapp`，不提交。微信开发工具导入 `dist/weapp` 并配置真实 AppID；构建本身不需要 AppID。H5 使用 hash 路由。
 
-CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、四个服务命令构建及后台构建；不检查用户端。验证结论须注明实际覆盖范围。
+CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、gateway／central／worker／migrate 四个命令构建、真库集成及后台构建；不检查用户端。验证结论须注明实际覆盖范围。
 
 ## 配置
 
