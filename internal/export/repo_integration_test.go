@@ -16,7 +16,7 @@ import (
 func TestSourceQueryCancellation(t *testing.T) {
 	url := os.Getenv("TEST_MYSQL_URL")
 	if url == "" {
-		t.Skip("TEST_MYSQL_URL is required")
+		t.Fatal("TEST_MYSQL_URL is required")
 	}
 	pool, err := dbconn.Open(context.Background(), url)
 	if err != nil {

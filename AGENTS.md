@@ -390,6 +390,11 @@ charge-pilot/
 ├── internal/export                                       后台批量导出
 │   ├── internal/export/cleanup.go（迁移前：cmd/admin/main.go[过期文件清理循环]）
 │   ├── internal/export/format.go（迁移前：internal/interface/http/admin/export/exports_format.go）
+│   ├── internal/export/service.go（迁移前：internal/interface/http/admin/export/exports.go[资源、申请与审计]）
+│   ├── internal/export/generation.go（迁移前：internal/interface/http/admin/export/exports.go[生成与失败恢复]）
+│   ├── internal/export/transaction.go（受管理生成事务，回调退出后释放文件操作锁）
+│   ├── internal/export/artifact.go（迁移前：internal/interface/http/admin/export/exports.go[文件发布与路径]）
+│   ├── internal/export/download.go（迁移前：internal/interface/http/admin/export/exports.go[下载与清理]）
 │   └── internal/export/export_task_repo.go（迁移前：internal/export/export_task_store.go）
 ├── internal/contracts                                    服务间 HTTP 的端点、共享 DTO 与错误契约
 │   ├── internal/contracts/central/alerts.go（迁移前：internal/worker/alerts/sync.go[同步DTO]）

@@ -48,6 +48,8 @@ func TestExportRejectsUnsupportedFormats(t *testing.T) {
 			response := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(response)
 			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/exports", bytes.NewReader(body))
+			// 实际注册路由先注入鉴权档案；非法格式服务校验仍在数据库IO前拒绝。
+			c.Set("admin_profile", operations.Profile{})
 			ExportTask{}.createTask(c)
 			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "导出格式无效") {
 				t.Fatalf("unsupported format was not rejected: %d %s", response.Code, response.Body.String())

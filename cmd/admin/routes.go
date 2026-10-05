@@ -6,6 +6,7 @@ import (
 	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
@@ -79,7 +80,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 	admindashboard.Dashboard{Queries: ops.DashboardQueryService{DB: orm}}.Register(router, authAPI)
 	chargehttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.RegisterRoles(router)
 	chargehttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.Register(router)
-	adminexport.ExportTask{DB: orm, Auth: authAPI, ExportDir: cfg.ExportDir}.Register(router)
+	adminexport.ExportTask{Service: exportpkg.ExportService{DB: orm, ExportDir: cfg.ExportDir}, Auth: authAPI}.Register(router)
 
 	return router
 }

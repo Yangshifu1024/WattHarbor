@@ -19,8 +19,8 @@ var ErrUnknownExportResource = errors.New("未登记的导出资源")
 // 落地文件路径只留在服务端，不随任何响应返回给前端。
 //
 // 本文件所有方法都接收调用方自备的 *gorm.DB，而不是在方法内部取连接：
-// 受理申请时查找重放与插入必须与审计写在同一事务里，由所属服务决定传入 tx 还是
-// 普通连接；ExportRepo 持有 central_db 的读连接。
+// 受理申请的唯一键登记、当前重放读取和审计写在同一事务内；普通连接仅供无锁读取。
+// ExportRepo 持有 central_db 的连接，不拥有连接池生命周期。
 
 // ExportTaskRow 对应 central_db.export_task，保存导出申请和有效期。
 type ExportTaskRow struct {
@@ -54,7 +54,7 @@ type ExportSpec struct {
 	Permission string                                                // 导出该资源所需的读权限
 	Table      string                                                // 数据来源表名
 	Columns    []ExportColumn                                        // 导出列清单,顺序即文件列顺序
-	Builder    func(scope operations.DataScope, q *gorm.DB) *gorm.DB // 追加数据范围等条件的钩子,为空表示不额外过滤
+	builder    func(scope operations.DataScope, q *gorm.DB) *gorm.DB // 追加数据范围等条件的钩子,为空表示不额外过滤
 }
 
 // 允许导出的资源登记表。未登记的资源一律拒绝导出，避免新增表时漏配列或权限。
@@ -68,7 +68,7 @@ var exportRegistry = map[string]ExportSpec{
 			{"状态", "status"}, {"开始时间", "started_at"}, {"结束时间", "ended_at"},
 			{"电费(分)", "electric_cents"}, {"服务费(分)", "service_cents"}, {"合计(分)", "total_cents"},
 		},
-		Builder: func(scope operations.DataScope, q *gorm.DB) *gorm.DB {
+		builder: func(scope operations.DataScope, q *gorm.DB) *gorm.DB {
 			return device.ScopeStations(scope, q, "station_id")
 		},
 	},
@@ -79,7 +79,7 @@ var exportRegistry = map[string]ExportSpec{
 			// 站点已统一用主键 ID，不再有 code 列；早先留着它会让导出恒定多出一列空值。
 			{"名称", "name"}, {"地址", "address"}, {"状态", "status"},
 		},
-		Builder: func(scope operations.DataScope, q *gorm.DB) *gorm.DB {
+		builder: func(scope operations.DataScope, q *gorm.DB) *gorm.DB {
 			return device.ScopeStations(scope, q, "id")
 		},
 	},
@@ -89,8 +89,9 @@ var exportRegistry = map[string]ExportSpec{
 		Columns: []ExportColumn{
 			{"设备号", "device_id"}, {"型号", "model"}, {"站点", "station_id"}, {"厂商", "vendor_id"}, {"状态", "status"},
 		},
-		Builder: func(scope operations.DataScope, q *gorm.DB) *gorm.DB {
-			return device.ScopeStations(scope, q, "station_id")
+		builder: func(scope operations.DataScope, q *gorm.DB) *gorm.DB {
+			// 设备导出与设备列表采用站点、厂商两维交集；仅厂商范围不得退化为全库。
+			return device.ScopeVendors(scope, device.ScopeStations(scope, q, "station_id"), "vendor_id")
 		},
 	},
 	"bills": {
@@ -113,7 +114,7 @@ func ExportResource(name string) (ExportSpec, bool) {
 	return spec, ok
 }
 
-// ExportRepo 持有 central_db 的读连接。
+// ExportRepo 访问central_db自有导出任务及已登记跨模块只读投影，不写业务源表。
 type ExportRepo struct {
 	DB *gorm.DB // central任务及只读投影连接，生命周期由cmd管理
 }
@@ -178,32 +179,6 @@ type ExportTaskInsert struct {
 	ExpiresAt   time.Time // 原24小时UTC下载截止
 }
 
-// InsertExportTask 在携context的db下按in登记原pending任务，返回唯一键／存储错误，不自行提交。
-// 必须与调用方的审计事务同库，
-// 让申请记录与审计写入一起提交。
-func (s ExportRepo) InsertExportTask(db *gorm.DB, in ExportTaskInsert) error {
-	return db.Table("export_task").Create(map[string]any{
-		"task_no": in.TaskNo, "resource": in.Resource, "file_format": in.FileFormat,
-		"status": "pending", "requested_by": in.RequestedBy,
-		"filter_json": in.FilterJSON, "expires_at": in.ExpiresAt,
-	}).Error
-}
-
-// MarkExportCompleted 在db下按taskNo写入rowCount、path和completedAt，返回存储错误，不发布或验证文件。
-func (s ExportRepo) MarkExportCompleted(db *gorm.DB, taskNo string, rowCount int, path string, completedAt time.Time) error {
-	return db.Model(&ExportTaskRow{}).Where("task_no = ?", taskNo).
-		Updates(map[string]any{
-			"status": "completed", "row_count": rowCount, "file_path": path,
-			"completed_at": completedAt,
-		}).Error
-}
-
-// MarkExportFailed 在db下按taskNo写入已截断的reason及failed状态，返回存储错误，不删除文件或吞错。
-func (s ExportRepo) MarkExportFailed(db *gorm.DB, taskNo, reason string) error {
-	return db.Model(&ExportTaskRow{}).Where("task_no = ?", taskNo).
-		Updates(map[string]any{"status": "failed", "error_msg": reason}).Error
-}
-
 // ExpireExportTask 在db下按taskNo写入expired，返回存储错误，不删除文件。
 // 当前SQL仅匹配任务号，调用方应在同任务锁内核对状态，不得把它描述为状态CAS。
 func (s ExportRepo) ExpireExportTask(db *gorm.DB, taskNo string) error {
@@ -218,7 +193,11 @@ func (s ExportRepo) QueryExportSource(ctx context.Context, resource string, scop
 	if !known {
 		return nil, ErrUnknownExportResource
 	}
-	query := s.sourceQuery(ctx, spec.Table)
+	columns := make([]string, 0, len(spec.Columns))
+	for _, column := range spec.Columns {
+		columns = append(columns, column.Column)
+	}
+	query := s.sourceQuery(ctx, spec.Table).Select(columns)
 	// 账单是不可软删的流水表，其余资源统一排除已删除行。
 	if spec.Table != "charge_bill" {
 		query = query.Where(map[string]any{"deleted_at": nil})
@@ -228,8 +207,8 @@ func (s ExportRepo) QueryExportSource(ctx context.Context, resource string, scop
 		// to 是开票日，取次日零点作为开区间上界，含当天。
 		query = query.Where("issued_at >= ? AND issued_at < ?", filters["from"], operations.NextExportDate(filters["to"]))
 	}
-	if spec.Builder != nil {
-		query = spec.Builder(scope, query)
+	if spec.builder != nil {
+		query = spec.builder(scope, query)
 	}
 	records := []map[string]any{}
 	if err := query.Limit(limit).Find(&records).Error; err != nil {
@@ -241,4 +220,54 @@ func (s ExportRepo) QueryExportSource(ctx context.Context, resource string, scop
 // sourceQuery 在ctx下为代码登记的table建立只读查询，不接受HTTP表名，不执行或返回业务数据。
 func (s ExportRepo) sourceQuery(ctx context.Context, table string) *gorm.DB {
 	return s.DB.WithContext(ctx).Table(table)
+}
+
+// ClaimExportTask 在db原事务下按in唯一任务号登记，不覆盖已存在任务；返回首次登记与存储错误。
+// 不先锁缺失行；重复写入等待原提交后由LockExportTaskByNo当前读取完整原申请，不截断UUID。
+func (s ExportRepo) ClaimExportTask(db *gorm.DB, in ExportTaskInsert) (bool, error) {
+	res := db.Exec("INSERT INTO export_task(task_no,resource,file_format,status,requested_by,filter_json,expires_at) VALUES (?,?,?,'pending',?,?,?) ON DUPLICATE KEY UPDATE task_no=task_no", in.TaskNo, in.Resource, in.FileFormat, in.RequestedBy, in.FilterJSON, in.ExpiresAt)
+	return res.RowsAffected == 1, res.Error
+}
+
+// LockExportTaskByNo 在db原事务下当前锁读taskNo，返回原任务或缺失／存储错误，不改变状态。
+func (s ExportRepo) LockExportTaskByNo(db *gorm.DB, taskNo string) (ExportTaskRow, error) {
+	var row ExportTaskRow
+	err := db.Table("export_task").Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_no=?", taskNo).Take(&row).Error
+	return row, err
+}
+
+// Expiration 在db原任务锁内读取id的原可空UTC到期事实，返回时刻或存储错误。
+// SHARE保证旧RR事务也读取当前事实；私有time.Time不经文本猜测，公开原字符串保持兼容。
+func (s ExportRepo) Expiration(db *gorm.DB, id uint64) (*time.Time, error) {
+	var row struct {
+		ExpiresAt *time.Time // 原可空下载截止，驱动按UTC解析
+	}
+	err := db.Table("export_task").Clauses(clause.Locking{Strength: "SHARE"}).Select("expires_at").Where("id=?", id).Take(&row).Error
+	return row.ExpiresAt, err
+}
+
+// CompleteInTx 在db原任务锁内推进taskNo的pending／running，写rowCount、path及now，返回状态冲突／存储错误。
+// 文件与私有范围凭据已发布才调用，不自行提交；未确认SQL提交时不得对外声称文件可下载。
+func (s ExportRepo) CompleteInTx(db *gorm.DB, taskNo string, rowCount int, path string, now time.Time) error {
+	res := db.Model(&ExportTaskRow{}).Where("task_no=? AND status IN ('pending','running')", taskNo).Updates(map[string]any{"status": "completed", "row_count": rowCount, "file_path": path, "completed_at": now, "error_msg": nil})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return operations.ErrConflict
+	}
+	return nil
+}
+
+// FailInTx 在db原任务锁内按taskNo写reason并推进pending／running为failed，返回状态冲突／存储错误。
+// 不覆盖其它请求已完成或已到期的任务，不自行提交或执行文件操作。
+func (s ExportRepo) FailInTx(db *gorm.DB, taskNo, reason string) error {
+	res := db.Model(&ExportTaskRow{}).Where("task_no=? AND status IN ('pending','running')", taskNo).Updates(map[string]any{"status": "failed", "error_msg": reason})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return operations.ErrConflict
+	}
+	return nil
 }

@@ -527,7 +527,7 @@ make test-integration TEST_MYSQL_URL=...
 | M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
-| E-01／N-export | 进行中 | FormatWriter及原格式回归迁入export，任务持久化改ExportRepo；编码及源查询接请求context，取消测试通过。同步任务、下载准入／路径／范围凭据和清理仍待所属服务迁移 |
+| E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
@@ -678,3 +678,14 @@ make test-integration TEST_MYSQL_URL=...
 批次4i（E-01格式／持久命名子项）实施：CSV／XLSX编码及原格式回归归export.FormatWriter，HTTP只调用所属编码，不保留旧编码函数；ExportStore／export_task_store改ExportRepo／export_task_repo并更新全部消费者。FormatWriter按行及输出检查ctx，源取数使用WithContext，取消不能被误报编码成功；中文、空值、公式文本防护、XLSX流式及不支持PDF原行为保持。`.tmp/batch4i-{format,targeted}.log`验证原格式／严格PDF拒绝、输出首写中取消不续写和预取消零输出，真实独立SQL四资源源取数均响应取消。此子项尚未迁入任务事务、下载和清理，E-01不提前完成。技能只读核对确认原首次UUID竞争、失配到期字符串、库路径信任、范围／mask收窄、厂商设备过滤及文件／SQL推进缺口，继续下一服务子批修正；不新增schema或异步worker。
 
 4i退出证据：工作区`.tmp/batch4i-{check,integration,build,tidy}.log`及最终精确暂存快照`.tmp/batch4i-validation`的对应四份`.tmp/batch4i-snapshot-*.log`全部通过；1180份文件中的669份Go／模块与原blob逐字节一致，tidy无差异、文档本地链接有效。无开发数据或凭据操作，无公开字段、依赖、路由和格式清单变更；前端最近验收仍为4g。任务状态维持进行中，下一服务批继续安全准入、恢复和清理。
+
+
+批次4j（E-01／N-export服务）实施：原导出五路由成为薄适配，所属ExportService接管资源、完整UUID受理／原审计、同步生成／恢复、下载和清理，cmd注入同一配置，旧无消费者写入入口及HTTP事务审计包装删除。只写export_task与audit_log，业务投影明确选择注册列；设备源按站点／厂商交集，订单／站点继承原站点语义，账单仅全局日期窗口。新产物在可信根v1保存私有身份／范围／mask／SHA256凭据，缺失不降级旧文件；原根目录历史文件只在当前全局且无需脱敏时兼容。file_path不作为任意IO路径，PDF继续禁止下载，不变schema、公开DTO、路由或清单。
+
+4j指定验收：真实独立两池同UUID只一任务／一审计，旧RR已建立快照后能当前读取任务及期限，范围／mask收窄拒绝旧宽文件；等待锁和生成发布跨截止均拒绝。超限、取消、目录IO失败、完成SQL故障清理并持久failed，失败持久也故障时返回错误且pending能原键恢复；历史无凭据文件兼容、文件已不存在和重复清理、外部路径保留及私有摘要／身份失配均核对。实际注册五路由使用真实SQL／Redis，CSV／XLSX创建及下载、原回执重放、严格输入／PDF拒绝、503不泄漏内部原因、撤权403和版本401通过。日志为`.tmp/batch4j-{owned-all,ownership-final,registered,managed-tx,cancel-lock}.log`。取消闸门在真实文件发布后、SQL完成回调内固定竞争，锁直到同步回调退出；不宣称已中断磁盘中的写。恢复普通期限读、移除范围当前读和恢复请求取消自动事务的三项变异均稳定失败并恢复，日志`.tmp/batch4j-{expiry-current,scope-current,cancel-lock}-mutation.log`。完整工作区、精确暂存快照及开发服务退出证据尚待补齐，E-01仍不提前完成。
+
+
+4j工作区退出：`.tmp/batch4j-{check,integration,build,tidy}.log`全部通过，完整独立三库integration包含上述服务和实际注册回归，tidy无差异。admin已重启，`.tmp/batch4j-live-export.json`及`.tmp/batch4j-live.log`验证CSV／XLSX各一份原站点导出、原键重放、详情与实际下载、MIME／中文／ZIP形状，服务端路径不出响应，会话注销。两份开发导出及其审计保留至原24小时清理，无源业务表、资金、开发安全设置或schema改动；备份保留。精确暂存快照退出仍待核验，任务状态待验收；前端／公开形状未改，最近前端完整验收仍为4g。
+
+
+4j最终退出：精确暂存快照`.tmp/batch4j-validation`的`.tmp/batch4j-snapshot-{check,integration,build,tidy}.log`全部通过；1191份暂存文件中的680份Go／模块与原blob逐字节一致，本地Markdown链接有效、tidy无差异。真库缺配置须明确失败，`.tmp/batch4j-missing-config.log`实际核对，无静默跳过；最终快照包含该修正。只读复核确认当前期限读取及生成事务生命周期，无新增具体阻断问题；历史兼容与资金只读边界已说明。最终仅补本退出记录及任务完成状态，E-01／N-export完成；按17组进度15组完成，继续H-01／X-01／G-01／WK-01及DEP-01，不代表整个目标完成。

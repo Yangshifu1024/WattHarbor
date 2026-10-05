@@ -10,7 +10,6 @@ import (
 	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	adminexport "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/export"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
@@ -64,7 +63,7 @@ func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application
 	}
 	router := newRouter(cfg, r, authAPI, gateway)
 	log.Printf("admin: http=%s gateway=%s export_dir=%s", cfg.HTTPAddr, cfg.GatewayInternalURL, cfg.ExportDir)
-	return &application{Server: &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}, Exports: adminexport.ExportTask{DB: r.ORM, ExportDir: cfg.ExportDir}}, nil
+	return &application{Server: &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}, Exports: exportpkg.ExportService{DB: r.ORM, ExportDir: cfg.ExportDir}}, nil
 }
 
 // Run 在 ctx 下管理 a 的 HTTP 与清理循环，返回首个执行错误；取消后等待两者退出才允许释放资源。

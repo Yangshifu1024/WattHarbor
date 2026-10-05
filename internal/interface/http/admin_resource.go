@@ -84,12 +84,6 @@ func AdminResourceFailure(c *gin.Context, err error) {
 	}
 }
 
-// AdminResourceAudit 在业务事务内保存变更快照、操作人、对象、客户端 IP 和请求号。
-// 快照只记录接口层的入参与返回值，不含口令散列、令牌或密钥。
-func AdminResourceAudit(tx *gorm.DB, p operations.Profile, action, target string, id uint64, before, after any, ip, requestID string) error {
-	return ops.AppendAuditInTx(tx, ops.AuditContext{Actor: p, ClientIP: ip, RequestID: requestID}, ops.AuditChange{Action: action, Target: target, ID: id, Before: before, After: after, RequestID: requestID})
-}
-
 // FirstNonEmpty 依次取参数中第一个非空字符串，全空则返回空串。
 // 用来让业务自己带的请求号优先于框架生成的。
 func FirstNonEmpty(values ...string) string {
