@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
@@ -62,8 +63,8 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		UserDB: orm, AdminDB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken,
 		Gateway: serviceclient.Client{Timeout: 8 * time.Second},
 	}.Register(router)
-	identityhttp.UserQueryAPI{Orders: ordercase.QueryService{DB: orm, Fees: settlement.QueryFeeRepo{DB: orm}}, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		DB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken, Gateway: serviceclient.Client{Timeout: 8 * time.Second}}.Register(router)
+	orderQuery := ordercase.QueryService{DB: orm, Fees: settlement.QueryFeeRepo{DB: orm}}
+	identityhttp.UserQueryAPI{Orders: orderQuery, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Query: chargingquery.UserService{Orders: orderQuery, Fees: settlement.QueryFeeRepo{DB: orm}, State: chargingquery.UserStateRepo{DB: orm}, Gateway: stopGateway}}.Register(router)
 	var phoneSource identity.PhoneSource = identity.WeChatPhoneSource{Exchange: wechat.ExchangePhone}
 	if cfg.LoginMode == "development" {
 		phoneSource = identity.DevelopmentPhoneSource{}

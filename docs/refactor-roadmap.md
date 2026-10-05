@@ -308,8 +308,8 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 - [x] O-01：订单基础 repo 提供状态锁定、编号、定价快照和历史投影；付款／退款金额写入仍调用 payment 能力。
 - [x] O-01：反馈提交、回复状态、订单归属与附件规则迁回 order，拆除通用 case 的表名选择能力；审计同事务。
-- [ ] CQ-01：组合计费进度、cutoff、支付／费用摘要及 gateway 遥测／历史曲线／过程；定义窄 Reader，order 不 import settlement 或 charging。
-- [ ] CQ-01：gateway DTO 转为本用例读模型，再由 HTTP 映射公开字段；不把当前遥测当最终结算，不将缺失值替换为零。
+- [x] CQ-01：组合计费进度、cutoff、支付／费用摘要及 gateway 遥测／历史曲线／过程；定义窄 Reader，order 不 import settlement 或 charging。
+- [x] CQ-01：gateway DTO 转为本用例读模型，再由 HTTP 映射公开字段；不把当前遥测当最终结算，不将缺失值替换为零。
 - [x] N-order：history／state／view／package／snapshot repo 统一名称，纯展示规则与 SQL 投影分清。
 
 验收：用户隔离、后台范围、稳定分页、非法／超限曲线窗口；已结算与待计费明确区分；网关不可用时按现有接口表达缺失／失败；套餐名称从冻结快照读取；反馈状态和重放规则不改变；组合查询无逐行外部调用。
@@ -523,7 +523,7 @@ make test-integration TEST_MYSQL_URL=...
 | D-02／N-device | 待实施 | 导入、设备运营和站点 repo 已改名；报修状态与事件表访问已归 device/fault_repo，并回归实际后台指派／修复／关闭与3条历史。故障业务编排、告警及其余持久文件、用户站点组合查询仍待迁移 |
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
-| O-01／CQ-01／N-order | 进行中 | FeedbackService 接管用户提交及后台回复／关闭审计，反馈与报修表访问分归 order/device，通用 case 表名选择已删除；真库、注册路由及旧 RR 当前读变异通过。订单基础 repo 命名、归属、历史批量费用、后台基础档案／事件已归 QueryService；用户组合详情与 CQ-01 尚待实施 |
+| O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
 | M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，后台会话与 HTTP 事务待迁移 |
@@ -598,3 +598,9 @@ make test-integration TEST_MYSQL_URL=...
 3e 定向验证：`.tmp/batch3e-query-clients.log` 是loopback客户端契约，包含参数转义、原时刻、可空零、原摘要大整数及近uint64上界分页、缺字段／坏游标／业务失败／重定向／取消；不把fixture称为真实网关。`.tmp/batch3e-query-registered.log` 使用真实网关库及实际注册路由，验证原始端口隔离、聚合摘要DECIMAL字符串、过程单位／空值及两页精确主键。`.tmp/batch3e-process-registered.log` 使用真实两库／Redis与后台注册路由，验证规范订单不可被额外输入覆盖、末页、缺单404、依赖503及撤权403。造数外层回滚，Redis只清自身SID。工作区全仓默认检查／integration／全部入口构建及 tidy 无差异均通过；后台78项、用户59项、两端类型检查及后台构建通过，保留已有 Vite 大 chunk 提示。精确暂存快照 `.tmp/batch3e-validation` 的 check／integration／build／tidy 全部通过，604份 Go／模块文件与原暂存 blob 一致，tidy 无差异；日志为 `.tmp/batch3e-snapshot-{check,integration,build,tidy}.log`。
 
 3e 恢复与开发证据：`.tmp/batch3e-mutant-{cursor,canonical-identity}.log` 分别破坏原游标和规范设备，均在预期断言失败；恢复后 `.tmp/batch3e-mutants-restored.log` 通过。实际重启 admin/gateway 后，`.tmp/batch3e-live-process.json` 与日志验证开发订单2的6条原过程记录、3页遍历、60秒／0.06kWh和3600W单位，末页游标null；只读取原持久事实、未创建模拟器或修改资金，测试后台会话已注销。用户查询消费者、其余业务边界及后续批次仍待完成。
+
+批次3f（CQ-01用户组合查询）实施：HTTP中的方案、费用、卡操作、截止及曲线业务删除，UserService先核对原用户／订单再组合所属只读能力；原方案文案归 user_display，卡操作SQL归 card/query_operations_repo，UserStateRepo只调用各所属读取，不新增资金写入或改变事务。私有读模型保持原省略、null、零、数组及金额／计量单位；当前快照网关失败仍保留原确认事实，曲线失败503。修复原窗口未核对AllowedWindows的问题，非法或禁用值明确400；保留三年和2000桶限制。费用、支付存储故障明确503，不再静默视为无回执／无支付。user OpenAPI修正原错误粒度minute/hour、points与快照响应及费用／截止字段，记录原实际形状与上述故障行为。字段、方法及窄接口中文契约已核对。
+
+3f定向证据：`.tmp/batch3f-unit.log`、`.tmp/batch3f-user-registered.log`、`.tmp/batch3f-query-summary.log` 及恢复日志验证取消、先归属再补充、配置窗口、2000允许／2001拒绝、粗粒度、三年、冻结方案、原支付退款／卡操作／截止、确认零费用、缺失省略、遥测端口隔离及零／null、实际存储故障503、网关快照降级和曲线503。注册验证使用3307真实两库、6381真实Redis和实际网关注册；造数外层回滚，Redis只清自身SID。窗口、确认电量和费用故障变异在预期断言失败并恢复；首个窗口变异造成未使用变量的编译失败已排除，修正变异后才计入证据。
+
+3f开发读取还发现网关加权平均功率的average_value未映射到Avg，原摘要为空串；补显式列映射，真实单桶及不同count的两桶187.59375W均通过，移除映射变异稳定失败并恢复。实际重启user读取原开发订单2，最终确认电量是0.0620kWh／62秒（此前实时观测60秒／0.06kWh不等于最终回执），确认费用1分、原退款99分、钱包1999分；初版联调脚本错用钱包路径及把实时观测当最终电量的断言已修正，失败轮次仍执行会话注销。开发读取不改变业务事实，修正摘要后实际重启gateway并核对avg_power_w为3600W；`.tmp/batch3f-live-user-query.json` 与日志保留原最终事实，最新30分钟窗口已无观测时正常返回空数组，原历史仍有聚合点。工作区 `.tmp/batch3f-{check,integration,build,tidy}.log` 全部通过，tidy无差异；后台78项、用户59项及两端typecheck／后台构建通过，保留已有Vite大chunk提示。精确暂存快照 `.tmp/batch3f-validation` 的 `.tmp/batch3f-snapshot-{check,integration,build,tidy}.log` 全部通过，833份暂存文件中的609份Go／模块与原blob完全一致，tidy无差异。O-01／CQ-01／N-order按上述证据完成；营销、故障／运营／导出及后续批次继续实施。

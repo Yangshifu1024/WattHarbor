@@ -143,7 +143,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	liveService := chargingquery.LiveService{Gateway: gatewayClient, Orders: order.SnapshotRepo{DB: tx}, Cards: card.PurchaseQueryRepo{DB: tx}}
 	service := order.QueryService{DB: tx, Fees: settlement.QueryFeeRepo{DB: tx}}
 	router := httpapi.NewRouter()
-	(chargehttp.UserQueryAPI{Orders: service, DB: tx, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
+	(chargehttp.UserQueryAPI{Orders: service, Query: chargingquery.UserService{Orders: service, Fees: settlement.QueryFeeRepo{DB: tx}, State: chargingquery.UserStateRepo{DB: tx}, Gateway: gatewayClient}, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
 	(adminorder.API{Process: chargingquery.ProcessService{Orders: service, Gateway: gatewayClient}, Live: liveService, Query: service, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: adminSessions}}).Register(router)
 	call := func(path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", path, nil)
@@ -258,9 +258,139 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	if w := call("/api/v1/admin/orders/"+strconv.FormatUint(id+99, 10)+"/process", adminToken); w.Code != 404 {
 		t.Fatalf("missing process order=%d", w.Code)
 	}
+
+	// C端组合读取使用真实两库和实际网关注册，原确认零与补充观测保持独立。
+	for _, seed := range []struct {
+		table string         /* 所属表 */
+		row   map[string]any /* 原自身事实 */
+	}{
+		{"payment_order", map[string]any{"id": id, "order_no": "PAY" + tag, "biz_type": "charge", "biz_id": id, "user_id": id, "pay_method": "balance", "total_cents": 100, "paid_cents": 100, "refunded_cents": 99, "status": "partial_refunded", "created_month": month}},
+		{"refund_record", map[string]any{"id": id, "refund_no": "RF" + tag, "payment_order_id": id, "user_id": id, "biz_type": "charge", "biz_id": id, "refund_cents": 99, "status": "success", "reason": "original query refund", "created_month": month}},
+		{"charge_billing_job", map[string]any{"charge_order_id": id, "status": "manual_review"}},
+		{"card_operation", map[string]any{"operation_id": uuid.NewString(), "device_id": "OR" + tag, "event_id": tag + "card", "charge_order_id": id, "card_id": id, "kind": "start", "price_cents": 100, "minutes": 30, "status": "confirmed"}},
+		{"charge_billing_cutoff", map[string]any{"charge_order_id": id, "cutoff_at": liveStart.Add(time.Minute), "reason": "original cutoff"}},
+	} {
+		if err := tx.Table(seed.table).Create(seed.row).Error; err != nil {
+			t.Fatal(seed.table, err)
+		}
+	}
+	if err := tx.Table("charge_order").Where("id=?", id).Update("payment_order_id", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	observation := time.Now().UTC().Truncate(time.Second).Add(-10 * time.Second)
+	for _, metric := range []struct {
+		port  uint8  /* 原端口 */
+		name  string /* 原指标 */
+		value string /* 原DECIMAL */
+	}{{1, "power_w", "0"}, {1, "meter_kwh", "0.0025"}, {2, "power_w", "9999"}} {
+		if err := gatewayTx.Table("telemetry").Create(map[string]any{"device_id": "OR" + tag, "port_no": metric.port, "metric": metric.name, "value_num": metric.value, "ts": observation}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	userDetail := "/api/v1/user/charge/" + no
+	snapshotPath := "/api/v1/user/charge/ongoing/snapshot?order_id=" + no
+	curvePath := "/api/v1/user/charge/ongoing/curve?order_id=" + no + "&window=last_30min"
+	decodeView := func(w *httptest.ResponseRecorder) chargingquery.UserOrderView {
+		t.Helper()
+		var reply struct {
+			Data chargingquery.UserOrderView `json:"data"` /* 本用例公开模型 */
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil || w.Code != 200 {
+			t.Fatalf("user query=%d %s", w.Code, w.Body)
+		}
+		return reply.Data
+	}
+	userView := decodeView(call(userDetail, owner))
+	if userView.TotalCents == nil || *userView.TotalCents != 0 || userView.Payment == nil || userView.Payment.OrderNo != "PAY"+tag || userView.Payment.RefundedCents != 99 || userView.Refunds == nil || len(*userView.Refunds) != 1 || len(userView.CardOperations) != 1 || userView.CardOperations[0].Minutes != 30 || userView.BillingStatus != "manual_review" || userView.BillingCutoff.CutoffAt == nil || userView.BillingCutoff.Reason != "original cutoff" || userView.Offer == nil {
+		t.Fatalf("registered original detail=%+v", userView)
+	}
+	missingFee := decodeView(call("/api/v1/user/charge/"+no+"P", owner))
+	if missingFee.TotalCents != nil || missingFee.Payment != nil || missingFee.Refunds == nil || len(*missingFee.Refunds) != 0 || !missingFee.StartConfirmationPending {
+		t.Fatal("missing fee/payment shape changed")
+	}
+	userView = decodeView(call(snapshotPath, owner))
+	if userView.TotalCents == nil || *userView.TotalCents != 0 || userView.TelemetryAvailable == nil || !*userView.TelemetryAvailable || userView.CurrentPowerW == nil || *userView.CurrentPowerW != 0 || userView.VoltageV != nil || userView.ChargedKWh != 0.0025 || userView.Payment != nil || userView.Refunds != nil {
+		t.Fatalf("registered canonical snapshot=%+v", userView)
+	}
+	w = call(curvePath, owner)
+	var curveReply struct {
+		Data chargingquery.CurveView `json:"data"` /* 原遥测模型 */
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &curveReply); err != nil || w.Code != 200 || curveReply.Data.Count != 1 || curveReply.Data.Series[0].PowerW == nil || *curveReply.Data.Series[0].PowerW != 0 || curveReply.Data.Series[0].VoltageV != nil {
+		t.Fatalf("registered curve=%d %s", w.Code, w.Body)
+	}
+	for _, path := range []string{userDetail, snapshotPath, curvePath, userDetail + "/curve"} {
+		if w := call(path, other); w.Code != 404 {
+			t.Fatalf("other composite=%d %s", w.Code, w.Body)
+		}
+	}
+	if w := call(curvePath+"bad", owner); w.Code != 400 || !strings.Contains(w.Body.String(), "1005") {
+		t.Fatal("illegal window silently replaced")
+	}
+	bucket := liveStart.Truncate(15 * time.Minute)
+	if err := gatewayTx.Table("telemetry_aggregate_15min").Create(map[string]any{"device_id": "OR" + tag, "port_no": 1, "metric": "power_w", "bucket_start": bucket, "bucket_month": month, "avg_value": "150.125", "min_value": "100.25", "max_value": "200.375", "count": 3}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"status": "completed", "ended_at": liveStart.Add(time.Minute), "charged_kwh": "0.2500", "charged_seconds": 60}).Error; err != nil {
+		t.Fatal(err)
+	}
+	w = call(userDetail+"/curve", owner)
+	var historyReply struct {
+		Data chargingquery.HistoricalView `json:"data"` /* 原历史模型 */
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &historyReply); err != nil || w.Code != 200 || historyReply.Data.OrderID != id || historyReply.Data.OrderNo != no || len(historyReply.Data.Series) != 1 || string(historyReply.Data.Summary["total_kwh"]) != `"0.2500"` || !historyReply.Data.BoundaryApproximate {
+		t.Fatalf("registered original history=%d %s", w.Code, w.Body)
+	}
+	var originalAverage string
+	if err := json.Unmarshal(historyReply.Data.Summary["avg_power_w"], &originalAverage); err != nil {
+		t.Fatal("registered original average missing", err)
+	}
+	if value, err := strconv.ParseFloat(originalAverage, 64); err != nil || value != 150.125 {
+		t.Fatal("registered original average lost", originalAverage, err)
+	}
+	if w := call(userDetail+"/curve?granularity=minute", owner); w.Code != 400 {
+		t.Fatal("legacy wrong documentation granularity accepted")
+	}
+	if err := tx.Table("charge_order").Where("id=?", id).Update("started_at", time.Now().UTC().Add(-2000*15*time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if w := call(userDetail+"/curve", owner); w.Code != 400 {
+		t.Fatalf("oversized history=%d %s", w.Code, w.Body)
+	}
+	if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"status": "charging", "started_at": liveStart, "ended_at": nil, "charged_kwh": nil, "charged_seconds": nil}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 真实所属查询故障须逐阶段返回503；不隐藏费用或支付错误为未确认／无记录。
+	for _, failure := range []struct {
+		table   string /* 失败所属表 */
+		message string /* 原公开文案 */
+	}{{"charge_fee_receipt", "费用暂时无法读取"}, {"charge_order_pricing", "订单方案及确认状态暂不可读取"}, {"payment_order", "支付记录暂时无法读取"}, {"refund_record", "退款记录暂时无法读取"}} {
+		name := "registered_user_query_fault_" + failure.table
+		if err := tx.Callback().Query().Before("gorm:query").Register(name, func(q *gorm.DB) {
+			if q.Statement.Table == failure.table {
+				q.AddError(errors.New("query storage failure"))
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		w = call(userDetail, owner)
+		tx.Callback().Query().Remove(name)
+		if w.Code != 503 || !strings.Contains(w.Body.String(), failure.message) {
+			t.Fatalf("%s hidden=%d %s", failure.table, w.Code, w.Body)
+		}
+	}
 	gatewayServer.Close()
 	if w := call(adminPath+"/process", adminToken); w.Code != 503 || !strings.Contains(w.Body.String(), "充电过程暂时无法读取，请稍后重试") {
 		t.Fatalf("registered process dependency error=%d %s", w.Code, w.Body)
+	}
+	userView = decodeView(call(snapshotPath, owner))
+	if userView.TelemetryAvailable == nil || *userView.TelemetryAvailable || userView.TotalCents == nil || *userView.TotalCents != 0 {
+		t.Fatal("offline snapshot discarded confirmed state")
+	}
+	for _, path := range []string{curvePath, userDetail + "/curve"} {
+		if w := call(path, owner); w.Code != 503 {
+			t.Fatalf("offline curve became empty=%d %s", w.Code, w.Body)
+		}
 	}
 	fault := errors.New("registered order fee fault")
 	const callback = "registered_order_fee_fault"

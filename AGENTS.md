@@ -71,6 +71,10 @@ charge-pilot/
 │   ├── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
 │   │   └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
 │   └── internal/charging/query                           只读组合与实时估算（新增充电子包）
+│       ├── internal/charging/query/user.go（迁移前：internal/interface/http/charge_user_query.go[详情与快照组合]）
+│       ├── internal/charging/query/user_curve.go（迁移前：internal/interface/http/charge_user_query.go[窗口与曲线]）
+│       ├── internal/charging/query/user_display.go（迁移前：internal/interface/http/charge_scheme_view.go[冻结资费文案]）
+│       ├── internal/charging/query/user_repo.go（迁移前：internal/interface/http/charge_scheme_view.go[所属读取组合]）
 │       ├── internal/charging/query/process.go（迁移前：internal/interface/http/admin/order/order_process.go[组合读取]）
 │       ├── internal/charging/query/live.go（迁移前：internal/interface/http/charge_live_meter.go[估算]、admin/order/order_live.go[组合]）
 │       └── internal/charging/query/live_evidence.go（迁移前：internal/interface/http/charge_live_meter.go[观测计量]）
@@ -145,6 +149,7 @@ charge-pilot/
 │   ├── internal/card/extension.go（迁移前：internal/card/card_store.go[续购纯规则]）
 │   ├── internal/card/card_schema.go
 │   ├── internal/card/card_repo.go
+│   ├── internal/card/query_operations_repo.go（迁移前：internal/interface/http/charge_scheme_view.go[原操作读取]）
 │   ├── internal/card/query_purchase_repo.go（迁移前：internal/interface/http/charge_live_meter.go[卡购买读取]）
 │   ├── internal/card/charge_repo.go
 │   ├── internal/card/interface_query_repo.go
@@ -250,7 +255,7 @@ charge-pilot/
 │   ├── internal/integration/gateway/summary.go（迁移前：后台设备摘要通用出站 HTTP）
 │   ├── internal/integration/gateway/scan.go（迁移前：internal/interface/http/payment_scan.go[出站 HTTP]）
 │   ├── internal/integration/gateway/card.go（迁移前：internal/worker/charge/cards.go[gateway HTTP]）
-│   ├── internal/integration/gateway/query.go（迁移前：internal/interface/http/admin/order/order_process.go[HTTP代理]；用户曲线消费者待迁）
+│   ├── internal/integration/gateway/query.go（迁移前：internal/interface/http/admin/order/order_process.go[HTTP代理]、charge_user_query.go[用户曲线HTTP]）
 │   ├── internal/integration/gateway/client.go
 │   └── internal/integration/gateway/sync.go（迁移前：internal/worker/charge/sync_client.go[启动/结束同步]）
 ├── internal/delivery                                     对外事件契约与签名投递器
@@ -375,7 +380,6 @@ charge-pilot/
 │   ├── internal/interface/http/charge_auto_stop.go（迁移前：internal/application/auto_stop_http.go）
 │   ├── internal/interface/http/charge_feedback.go
 │   ├── internal/interface/http/charge_paid_starts.go
-│   ├── internal/interface/http/charge_scheme_view.go
 │   ├── internal/interface/http/charge_status.go
 │   ├── internal/interface/http/charge_stop_authorization.go
 │   ├── internal/interface/http/charge_user_account.go

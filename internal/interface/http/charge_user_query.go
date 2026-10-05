@@ -1,48 +1,25 @@
 package http
 
 import (
-	"context"
 	"database/sql"
 	"errors"
-	"fmt"
+	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
-	"net/url"
-	"strings"
-	"time"
-
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"strings"
 )
 
-// UserQueryAPI 提供用户实时状态、遥测曲线及订单历史。
-// 遥测由 gateway_db 管理，通过带服务令牌的网关接口读取。
+// UserQueryAPI 仅适配用户充电查询的凭据、输入与结果，业务隔离及组合读取由所属用例执行。
 type UserQueryAPI struct {
-	Orders         orderstore.QueryService // 所属订单隔离、当前状态及批量历史费用用例
-	Auth           SessionAuthenticator
-	DB             *gorm.DB
-	GatewayURL     string
-	ServiceToken   string
-	Gateway        serviceclient.Client
-	AllowedWindows []string
+	Orders orderstore.QueryService   // 所属正在充电及批量历史查询
+	Query  chargingquery.UserService // 用户详情、状态及有界曲线用例
+	Auth   SessionAuthenticator      // 当前用户会话准入
 }
 
-// CurvePoint 是一次充电的一个遥测采样点。
-// 这些值可为空，因为设备在某一时刻可能只上报其中一部分指标。
-type CurvePoint struct {
-	TS           time.Time `json:"ts"`
-	PowerW       *float64  `json:"power_w"`
-	CurrentA     *float64  `json:"current_a"`
-	VoltageV     *float64  `json:"voltage_v"`
-	TemperatureC *float64  `json:"temperature_c"`
-	BatterySOC   *float64  `json:"battery_soc"`
-	ChargedKWh   *float64  `json:"meter_kwh"`
-}
-
+// Register 将 a 的六个原用户查询路径注册到 r，无存储或网络读取。
 func (a UserQueryAPI) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/charge/ongoing", a.ongoing)
 	r.GET("/api/v1/user/charge/ongoing/snapshot", a.snapshot)
@@ -52,30 +29,133 @@ func (a UserQueryAPI) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/charge/:order_no", a.detail)
 }
 
-// resolveOrder 读取订单并校验用户归属；越权与不存在返回相同错误。
-func (a UserQueryAPI) resolveOrder(c *gin.Context, orderNo string) (orderstore.ChargeOrderRecord, bool) {
-	userID, ok := a.Auth.Authenticate(c)
+// queryUser 核对 c 当前凭据，返回原用户主键或写出401，无业务写入。
+func (a UserQueryAPI) queryUser(c *gin.Context) (uint64, bool) {
+	id, ok := a.Auth.Authenticate(c)
 	if !ok {
 		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
-		return orderstore.ChargeOrderRecord{}, false
 	}
-	order, err := a.Orders.Resolve(c.Request.Context(), userID, orderNo)
+	return id, ok
+}
+
+// queryFailure 将 err 所属业务准入及阶段错误映射到 c 原公开响应，不读取或更改业务数据。
+func queryFailure(c *gin.Context, err error) {
 	var input *orderstore.QueryInputError
 	if errors.As(err, &input) {
 		httpapi.BadRequest(c, input.Message)
-		return orderstore.ChargeOrderRecord{}, false
+		return
+	}
+	var window *chargingquery.UserInputError
+	if errors.As(err, &window) {
+		switch window.Kind {
+		case "conflict":
+			httpapi.Write(c, 409, 2009, window.Message, nil)
+		case "expired":
+			httpapi.Write(c, 422, 2018, window.Message, nil)
+		default:
+			httpapi.BadRequest(c, window.Message)
+		}
+		return
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "充电订单不存在", nil)
-		return orderstore.ChargeOrderRecord{}, false
+		return
 	}
-	if err != nil {
-		httpapi.Write(c, 503, 5003, "订单暂时无法读取", nil)
-		return orderstore.ChargeOrderRecord{}, false
+	message := "订单暂时无法读取"
+	var read *chargingquery.UserReadError
+	if errors.As(err, &read) {
+		switch read.Stage {
+		case "fee":
+			message = "费用暂时无法读取"
+		case "state":
+			message = "订单方案及确认状态暂不可读取"
+		case "payment":
+			message = "支付记录暂时无法读取"
+		case "refund":
+			message = "退款记录暂时无法读取"
+		case "curve":
+			message = "充电曲线暂时无法读取，请稍后重试"
+		case "history_curve":
+			message = "历史充电曲线暂时无法读取"
+		}
 	}
-	return order, true
+	httpapi.Write(c, 503, 5003, message, nil)
 }
 
+// queryOrderNo 从 c 原兼容参数读取业务号，优先order_id；仅适配文本，不校验归属。
+func queryOrderNo(c *gin.Context) string {
+	no := strings.TrimSpace(c.Query("order_id"))
+	if no == "" {
+		no = strings.TrimSpace(c.Query("order_no"))
+	}
+	return no
+}
+
+// snapshot 将 c 原用户与单号传给快照用例，输出原读模型或映射错误，无业务写入。
+func (a UserQueryAPI) snapshot(c *gin.Context) {
+	id, ok := a.queryUser(c)
+	if !ok {
+		return
+	}
+	out, err := a.Query.Snapshot(c.Request.Context(), id, queryOrderNo(c))
+	if err != nil {
+		queryFailure(c, err)
+		return
+	}
+	httpapi.OK(c, out)
+}
+
+// detail 将 c 原用户与路径单号传给详情用例，输出原读模型或映射错误，无业务写入。
+func (a UserQueryAPI) detail(c *gin.Context) {
+	id, ok := a.queryUser(c)
+	if !ok {
+		return
+	}
+	out, err := a.Query.Detail(c.Request.Context(), id, c.Param("order_no"))
+	if err != nil {
+		queryFailure(c, err)
+		return
+	}
+	httpapi.OK(c, out)
+}
+
+// curve 将 c 原用户、单号与回看窗口传给曲线用例，输出原读模型或映射错误，无业务写入。
+func (a UserQueryAPI) curve(c *gin.Context) {
+	id, ok := a.queryUser(c)
+	if !ok {
+		return
+	}
+	out, err := a.Query.Curve(c.Request.Context(), id, queryOrderNo(c), c.Query("window"))
+	if err != nil {
+		queryFailure(c, err)
+		return
+	}
+	httpapi.OK(c, out)
+}
+
+// historyCurve 将 c 原用户、路径单号与粒度传给历史曲线用例，输出原读模型或映射错误，无业务写入。
+func (a UserQueryAPI) historyCurve(c *gin.Context) {
+	id, ok := a.queryUser(c)
+	if !ok {
+		return
+	}
+	out, err := a.Query.HistoricalCurve(c.Request.Context(), id, c.Param("order_no"), c.DefaultQuery("granularity", "15min"))
+	if err != nil {
+		queryFailure(c, err)
+		return
+	}
+	httpapi.OK(c, out)
+}
+
+// nullTime 将 v 原可空时刻转换为公开 UTC 或null，无IO。
+func nullTime(v sql.NullTime) any {
+	if !v.Valid {
+		return nil
+	}
+	return v.Time.UTC()
+}
+
+// ongoing 适配原用户最新正在充电查询；无记录仍返回空状态，读取失败返回503。
 func (a UserQueryAPI) ongoing(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -95,249 +175,6 @@ func (a UserQueryAPI) ongoing(c *gin.Context) {
 		"order_no": order.OrderNo, "status": order.Status, "device_id": order.DeviceID,
 		"port_no": order.PortNo, "started_at": nullTime(order.StartedAt), "ended_at": nullTime(order.EndedAt),
 	})
-}
-
-func (a UserQueryAPI) snapshot(c *gin.Context) {
-	orderNo := strings.TrimSpace(c.Query("order_id"))
-	if orderNo == "" {
-		orderNo = strings.TrimSpace(c.Query("order_no"))
-	}
-	order, ok := a.resolveOrder(c, orderNo)
-	if !ok {
-		return
-	}
-	ctx := c.Request.Context()
-	payload := gin.H{
-		"order_no": order.OrderNo, "status": order.Status, "device_id": order.DeviceID,
-		"port_no": order.PortNo, "started_at": nullTime(order.StartedAt), "ended_at": nullTime(order.EndedAt),
-		"charged_kwh": nullString(order.ChargedKWh), "charged_seconds": nullInt(order.ChargedSeconds),
-		"discount_cents": order.DiscountCents,
-	}
-	if electric, service, total, shortfall, ok := a.fee(ctx, order.ID); ok {
-		payload["electric_cents"] = electric
-		payload["service_cents"] = service
-		payload["total_cents"] = total
-		payload["shortfall_cents"] = shortfall
-	}
-	// 端口状态只是补充信息：网关抖一下不该让整个快照失败。
-	payload["poll_continue"] = order.Status == "paid" || order.Status == "charging"
-	payload["next_poll_after_ms"] = 5000
-	if err := a.schemeView(ctx, order, payload); err != nil {
-		httpapi.Write(c, 503, 5003, "订单方案及确认状态暂不可读取", nil)
-		return
-	}
-	payload["telemetry_available"] = false
-	if order.Status == "charging" && order.StartedAt.Valid {
-		now := time.Now().UTC()
-		payload["elapsed_seconds"] = max(int64(0), int64(now.Sub(order.StartedAt.Time).Seconds()))
-		from := now.Add(-2 * time.Minute)
-		if order.StartedAt.Time.After(from) {
-			from = order.StartedAt.Time
-		}
-		var telemetry gatewayTelemetry
-		path := fmt.Sprintf("/api/v1/internal/devices/%s/telemetry?port_no=%d&from=%s&to=%s", url.PathEscape(order.DeviceID), order.PortNo, url.QueryEscape(from.Format(time.RFC3339Nano)), url.QueryEscape(now.Format(time.RFC3339Nano)))
-		if err := a.Gateway.GetJSON(ctx, a.GatewayURL, a.ServiceToken, path, &telemetry); err == nil {
-			for _, point := range telemetry.Data.Series {
-				ts, err := time.Parse(time.RFC3339Nano, point.TS)
-				if err != nil || ts.Before(from) || ts.After(now) {
-					continue
-				}
-				if point.PowerW != nil || point.MeterKWh != nil {
-					payload["telemetry_available"] = true
-				}
-				payload["telemetry_at"] = ts
-				if point.PowerW != nil {
-					payload["current_power_w"] = *point.PowerW
-				}
-				if point.VoltageV != nil {
-					payload["voltage_v"] = *point.VoltageV
-				}
-				if point.TemperatureC != nil {
-					payload["temperature_c"] = *point.TemperatureC
-				}
-				if point.MeterKWh != nil {
-					payload["charged_kwh"] = *point.MeterKWh
-				}
-			}
-		}
-	}
-	httpapi.OK(c, payload)
-}
-
-// curveWindow 限制曲线请求最多能回看多远，
-// 避免一次调用把某台设备的整段遥测历史都拉出来。
-type curveWindow struct {
-	From  time.Time
-	Label string
-}
-
-func (a UserQueryAPI) window(raw string) curveWindow {
-	allowed := a.AllowedWindows
-	if len(allowed) == 0 {
-		allowed = []string{"last_30min", "last_2h", "last_24h"}
-	}
-	durations := map[string]time.Duration{"last_30min": 30 * time.Minute, "last_2h": 2 * time.Hour, "last_24h": 24 * time.Hour}
-	if raw == "" {
-		raw = allowed[0]
-	}
-	if _, ok := durations[raw]; !ok {
-		raw = allowed[0]
-	}
-	_ = allowed
-	return curveWindow{From: time.Now().UTC().Add(-durations[raw]), Label: raw}
-}
-
-func (a UserQueryAPI) curve(c *gin.Context) {
-	orderNo := strings.TrimSpace(c.Query("order_id"))
-	if orderNo == "" {
-		orderNo = strings.TrimSpace(c.Query("order_no"))
-	}
-	order, ok := a.resolveOrder(c, orderNo)
-	if !ok {
-		return
-	}
-	window := a.window(strings.TrimSpace(c.Query("window")))
-	ctx := c.Request.Context()
-
-	// 网关遥测查询失败时返回错误，不将故障转换为空曲线。
-	var telemetry gatewayTelemetry
-	if err := a.Gateway.GetJSON(ctx, a.GatewayURL, a.ServiceToken,
-		fmt.Sprintf("/api/v1/internal/devices/%s/telemetry?port_no=%d&from=%s&to=%s",
-			url.PathEscape(order.DeviceID), order.PortNo, window.From.UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339)),
-		&telemetry); err != nil {
-		httpapi.Write(c, 503, 5003, "充电曲线暂时无法读取，请稍后重试", nil)
-		return
-	}
-	series := make([]CurvePoint, 0, len(telemetry.Data.Series))
-	for _, item := range telemetry.Data.Series {
-		ts, err := time.Parse(time.RFC3339, item.TS)
-		if err != nil {
-			continue
-		}
-		series = append(series, CurvePoint{
-			TS: ts.UTC(), PowerW: item.PowerW, CurrentA: item.CurrentA, VoltageV: item.VoltageV,
-			TemperatureC: item.TemperatureC, BatterySOC: item.BatterySOC, ChargedKWh: item.MeterKWh,
-		})
-	}
-	httpapi.OK(c, gin.H{
-		"order_no": order.OrderNo, "window": window.Label, "from": window.From.UTC(), "to": time.Now().UTC(),
-		"series": series, "count": len(series),
-	})
-}
-
-// 逐字段转换 sql.Null*，保留 NULL 语义，避免驱动内部结构进入 JSON。
-func nullTime(v sql.NullTime) any {
-	if !v.Valid {
-		return nil
-	}
-	return v.Time.UTC()
-}
-
-func nullString(v sql.NullString) any {
-	if !v.Valid {
-		return nil
-	}
-	return v.String
-}
-
-func nullInt(v sql.NullInt64) any {
-	if !v.Valid {
-		return nil
-	}
-	return v.Int64
-}
-
-// gatewayTelemetry 对应网关返回的内部 API 信封；
-// 载荷在 data 下面，不在顶层。
-type gatewayTelemetry struct {
-	Data struct {
-		Granularity         string         `json:"granularity"`
-		BoundaryApproximate bool           `json:"boundary_approximate"`
-		Summary             map[string]any `json:"summary"`
-		Series              []struct {
-			TS           string   `json:"ts"`
-			PowerW       *float64 `json:"power_w"`
-			CurrentA     *float64 `json:"current_a"`
-			VoltageV     *float64 `json:"voltage_v"`
-			TemperatureC *float64 `json:"temperature_c"`
-			BatterySOC   *float64 `json:"battery_soc"`
-			MeterKWh     *float64 `json:"meter_kwh"`
-		} `json:"series"`
-	} `json:"data"`
-}
-
-func (a UserQueryAPI) historyCurve(c *gin.Context) {
-	order, ok := a.resolveOrder(c, c.Param("order_no"))
-	if !ok {
-		return
-	}
-	if !order.StartedAt.Valid {
-		httpapi.Write(c, 409, 2009, "订单尚未开始充电", nil)
-		return
-	}
-	granularity := c.DefaultQuery("granularity", "15min")
-	if granularity != "15min" && granularity != "hourly" {
-		httpapi.BadRequest(c, "granularity 须为 15min 或 hourly")
-		return
-	}
-	started := order.StartedAt.Time.UTC()
-	ended := time.Now().UTC()
-	if order.EndedAt.Valid {
-		ended = order.EndedAt.Time.UTC()
-	}
-	if !started.Before(ended) {
-		httpapi.Write(c, 409, 2009, "订单时间窗无效", nil)
-		return
-	}
-	if started.Before(time.Now().UTC().AddDate(-3, 0, 0)) {
-		httpapi.Write(c, 422, 2018, "历史遥测已超过三年保留期", nil)
-		return
-	}
-	bucket := 15 * time.Minute
-	if granularity == "hourly" {
-		bucket = time.Hour
-	}
-	if int(ended.Truncate(bucket).Sub(started.Truncate(bucket))/bucket)+1 > 2000 {
-		httpapi.BadRequest(c, "订单时间窗超过当前粒度的最大点数，请使用更粗粒度")
-		return
-	}
-	query := url.Values{}
-	query.Set("order_id", order.OrderNo)
-	query.Set("port_no", fmt.Sprint(order.PortNo))
-	query.Set("started_at", started.Format(time.RFC3339Nano))
-	query.Set("ended_at", ended.Format(time.RFC3339Nano))
-	query.Set("granularity", granularity)
-	var telemetry gatewayTelemetry
-	path := "/api/v1/internal/devices/" + url.PathEscape(order.DeviceID) + "/historical-curve?" + query.Encode()
-	if err := a.Gateway.GetJSON(c.Request.Context(), a.GatewayURL, a.ServiceToken, path, &telemetry); err != nil {
-		httpapi.Write(c, 503, 5003, "历史充电曲线暂时无法读取", nil)
-		return
-	}
-	summary := telemetry.Data.Summary
-	if summary == nil {
-		summary = map[string]any{}
-	}
-	if order.ChargedKWh.Valid {
-		summary["total_kwh"] = order.ChargedKWh.String
-	}
-	httpapi.OK(c, gin.H{
-		"order_id": order.ID, "order_no": order.OrderNo, "granularity": granularity,
-		"series": telemetry.Data.Series, "summary": summary,
-		"boundary_approximate": telemetry.Data.BoundaryApproximate,
-	})
-}
-
-// fee 从已确认的计费回执读取订单费用及未结金额。
-func (a UserQueryAPI) fee(ctx context.Context, orderID uint64) (electric, service, total, shortfall int64, ok bool) {
-	var receipt settlement.ChargeFeeRecord
-	if err := a.DB.WithContext(ctx).Where("charge_order_id = ?", orderID).Take(&receipt).Error; err != nil {
-		return 0, 0, 0, 0, false
-	}
-	electric, service, total, ok = receipt.Fees()
-	if !ok {
-		return 0, 0, 0, 0, false
-	}
-	return electric, service, total, receipt.ShortfallCents, true
 }
 
 // history 按最新优先分页返回客户自己的订单，
@@ -367,43 +204,4 @@ func (a UserQueryAPI) history(c *gin.Context) {
 		return
 	}
 	httpapi.OK(c, gin.H{"items": out.Items, "total": out.Total, "page": page, "page_size": pageSize})
-}
-
-// detail 返回一笔订单及其费用回执和退款汇总，
-// 让客户能看到自己到底被收了多少、退了多少。
-func (a UserQueryAPI) detail(c *gin.Context) {
-	order, ok := a.resolveOrder(c, c.Param("order_no"))
-	if !ok {
-		return
-	}
-	ctx := c.Request.Context()
-	payload := gin.H{
-		"order_no": order.OrderNo, "status": order.Status, "device_id": order.DeviceID, "port_no": order.PortNo,
-		"started_at": nullTime(order.StartedAt), "ended_at": nullTime(order.EndedAt),
-		"charged_kwh": nullString(order.ChargedKWh), "charged_seconds": nullInt(order.ChargedSeconds),
-		"discount_cents": order.DiscountCents,
-	}
-	if electric, service, total, shortfall, ok := a.fee(ctx, order.ID); ok {
-		payload["electric_cents"] = electric
-		payload["service_cents"] = service
-		payload["total_cents"] = total
-		payload["shortfall_cents"] = shortfall
-	}
-	if order.PaymentOrderID.Valid {
-		// 显式映射数据库列名，避免 GORM 名称推导产生零值。
-		if payment, err := payment.FindOrderPaymentBrief(ctx, a.DB, uint64(order.PaymentOrderID.Int64)); err == nil {
-			payload["payment"] = payment
-		}
-	}
-	refunds, err := settlement.ListOrderRefunds(ctx, a.DB, order.ID)
-	if err != nil {
-		httpapi.Write(c, 503, 5003, "退款记录暂时无法读取", nil)
-		return
-	}
-	payload["refunds"] = refunds
-	if err := a.schemeView(ctx, order, payload); err != nil {
-		httpapi.Write(c, 503, 5003, "订单方案及确认状态暂不可读取", nil)
-		return
-	}
-	httpapi.OK(c, payload)
 }

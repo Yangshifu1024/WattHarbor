@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +80,13 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	if err := json.Unmarshal(history.Summary["max_power_w"], &peak); err != nil || !strings.HasPrefix(peak, "200.375") {
 		t.Fatal("summary original DECIMAL string changed", peak, err)
 	}
+	var average string
+	if err := json.Unmarshal(history.Summary["avg_power_w"], &average); err != nil {
+		t.Fatal("original average DECIMAL missing", err)
+	}
+	if value, err := strconv.ParseFloat(average, 64); err != nil || value != 150.125 {
+		t.Fatal("original average column mapping lost", average, err)
+	}
 	q := contract.OrderProcessQuery{OrderID: id, OrderNo: no, DeviceID: device, PortNo: 2, AfterID: id - 1, Limit: 2}
 	page, err := client.OrderProcess(context.Background(), q)
 	if err != nil || len(page.Items) != 2 || page.Items[0].ID != id || page.NextAfterID == nil || *page.NextAfterID != id+1 {
@@ -104,5 +112,20 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	}
 	if _, err := bad.Telemetry(context.Background(), contract.TelemetryQuery{DeviceID: device, PortNo: 2, From: from, To: to}); err == nil {
 		t.Fatal("rejected token became empty telemetry")
+	}
+	// 第二个桶的样本数不同，原摘要必须按count加权，不能用桶均值的简单平均。
+	previous := bucket.Add(-15 * time.Minute)
+	if err := tx.Table("telemetry_aggregate_15min").Create(map[string]any{"device_id": device, "port_no": 2, "metric": "power_w", "bucket_start": previous, "bucket_month": previous.Format("2006-01") + "-01", "avg_value": "300", "min_value": "200", "max_value": "400", "count": 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	weighted, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveQuery{DeviceID: device, OrderNo: no, PortNo: 2, StartedAt: previous, EndedAt: to, Granularity: "15min"})
+	if err != nil || weighted.Count != 2 {
+		t.Fatal("registered weighted summary unavailable", err)
+	}
+	if err := json.Unmarshal(weighted.Summary["avg_power_w"], &average); err != nil {
+		t.Fatal(err)
+	}
+	if value, err := strconv.ParseFloat(average, 64); err != nil || value != 187.59375 {
+		t.Fatal("registered summary lost sample weighting", average, err)
 	}
 }

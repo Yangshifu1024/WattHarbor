@@ -1321,7 +1321,7 @@
       },
       "ChargeOrderDetail": {
         "type": "object",
-        "description": "订单详情。**不是列表行的超集**：详情里没有 order_id，也不带 electric_cents / service_cents / total_cents——费用明细要到计费完成后从账单接口取，列表行给的是当时的估算值。",
+        "description": "原订单详情；仅返回当前用户所属订单。确认费用在有效计费回执存在时输出，确认零值保留，尚无有效回执时省略费用字段。冻结方案、刷卡操作、计费进度和首次截止来自原持久事实。",
         "properties": {
           "order_no": {
             "type": "string"
@@ -1346,12 +1346,21 @@
             "nullable": true
           },
           "charged_kwh": {
-            "type": "number",
-            "description": "已充电量，单位 kWh"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "nullable": true,
+            "description": "原确认电量为DECIMAL文本；快照进行中补充观测时为数值，单位kWh，缺失为null。"
           },
           "charged_seconds": {
             "type": "integer",
-            "description": "已充时长，单位秒"
+            "description": "已充时长，单位秒",
+            "nullable": true
           },
           "discount_cents": {
             "type": "integer",
@@ -1359,14 +1368,21 @@
           },
           "billing_status": {
             "type": "string",
-            "nullable": true,
-            "description": "计费状态；未出账时为 null"
+            "description": "原计费任务状态；无任务为空串。"
           },
           "billing_cutoff": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "计费截止时间"
+            "type": "object",
+            "properties": {
+              "cutoff_at": {
+                "type": "string",
+                "nullable": true,
+                "description": "首次冻结截止的原数据库时刻文本；无记录为null。"
+              },
+              "reason": {
+                "type": "string",
+                "description": "首次冻结原因；无记录为空串。"
+              }
+            }
           },
           "start_confirmation_pending": {
             "type": "boolean",
@@ -1385,6 +1401,73 @@
               "type": "object"
             },
             "description": "随单的刷卡购买记录"
+          },
+          "electric_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "service_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "total_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "shortfall_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "payment": {
+            "type": "object",
+            "description": "原支付摘要；不存在时省略，存储读取失败返回503。",
+            "properties": {
+              "order_no": {
+                "type": "string"
+              },
+              "total_cents": {
+                "type": "integer"
+              },
+              "paid_cents": {
+                "type": "integer"
+              },
+              "refunded_cents": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          "display": {
+            "type": "object",
+            "nullable": false,
+            "description": "原冻结方案字段；缺少方案时省略，未配置套餐或分时规则时保持原null。"
+          },
+          "offer": {
+            "type": "object",
+            "nullable": true,
+            "description": "原冻结方案字段；缺少方案时省略，未配置套餐或分时规则时保持原null。"
+          },
+          "tariff": {
+            "type": "object",
+            "nullable": true,
+            "description": "原冻结方案字段；缺少方案时省略，未配置套餐或分时规则时保持原null。"
+          },
+          "tariff_lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "仅原冻结展示规则启用资费时返回。"
+          },
+          "rule_description": {
+            "type": "string",
+            "description": "仅原冻结展示规则启用规则时返回；允许空串。"
           }
         }
       },
@@ -1418,28 +1501,40 @@
       "ChargeCurvePoint": {
         "type": "object",
         "properties": {
-          "t": {
+          "ts": {
             "type": "string",
             "format": "date-time",
-            "description": "采样时刻"
-          },
-          "kwh": {
-            "type": "number",
-            "description": "累计电量，单位 kWh"
-          },
-          "seconds": {
-            "type": "integer",
-            "description": "累计时长，单位秒"
+            "description": "原观测／桶时刻。"
           },
           "power_w": {
             "type": "number",
             "nullable": true,
-            "description": "瞬时功率，单位 W；无采样时为 null"
+            "description": "原设备读数；未报告为null，已报告零保留。"
           },
-          "fee_cents": {
-            "type": "integer",
+          "current_a": {
+            "type": "number",
             "nullable": true,
-            "description": "按此读数计出的费用，单位分"
+            "description": "原设备读数；未报告为null，已报告零保留。"
+          },
+          "voltage_v": {
+            "type": "number",
+            "nullable": true,
+            "description": "原设备读数；未报告为null，已报告零保留。"
+          },
+          "temperature_c": {
+            "type": "number",
+            "nullable": true,
+            "description": "原设备读数；未报告为null，已报告零保留。"
+          },
+          "battery_soc": {
+            "type": "number",
+            "nullable": true,
+            "description": "原设备读数；未报告为null，已报告零保留。"
+          },
+          "meter_kwh": {
+            "type": "number",
+            "nullable": true,
+            "description": "原设备读数；未报告为null，已报告零保留。"
           }
         }
       },
@@ -1452,11 +1547,30 @@
               "order_no": {
                 "type": "string"
               },
-              "points": {
+              "window": {
+                "type": "string",
+                "enum": [
+                  "last_30min",
+                  "last_2h",
+                  "last_24h"
+                ]
+              },
+              "from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "to": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "series": {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/ChargeCurvePoint"
                 }
+              },
+              "count": {
+                "type": "integer"
               }
             }
           }
@@ -1771,6 +1885,210 @@
           },
           "paySign": {
             "type": "string"
+          }
+        }
+      },
+      "ChargeSnapshot": {
+        "type": "object",
+        "description": "原订单快照；确认费用与补充遥测独立。网关失败时订单快照仍成功且telemetry_available=false；订单、确认费用及冻结状态存储失败返回503。墙钟elapsed_seconds只用于展示，不参加计费。",
+        "properties": {
+          "order_no": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "port_no": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ended_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "charged_kwh": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "nullable": true,
+            "description": "原确认电量为DECIMAL文本；快照进行中补充观测时为数值，单位kWh，缺失为null。"
+          },
+          "charged_seconds": {
+            "type": "integer",
+            "description": "已充时长，单位秒",
+            "nullable": true
+          },
+          "discount_cents": {
+            "type": "integer",
+            "description": "优惠抵扣，单位分"
+          },
+          "billing_status": {
+            "type": "string",
+            "description": "原计费任务状态；无任务为空串。"
+          },
+          "billing_cutoff": {
+            "type": "object",
+            "properties": {
+              "cutoff_at": {
+                "type": "string",
+                "nullable": true,
+                "description": "首次冻结截止的原数据库时刻文本；无记录为null。"
+              },
+              "reason": {
+                "type": "string",
+                "description": "首次冻结原因；无记录为空串。"
+              }
+            }
+          },
+          "start_confirmation_pending": {
+            "type": "boolean",
+            "description": "启动确认尚未回执；此时不要重复下单"
+          },
+          "card_operations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "随单的刷卡购买记录"
+          },
+          "electric_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "service_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "total_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "shortfall_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "原已确认金额，单位分；确认零值输出0，尚无有效回执时省略。"
+          },
+          "display": {
+            "type": "object",
+            "nullable": false,
+            "description": "原冻结方案字段；缺少方案时省略，未配置套餐或分时规则时保持原null。"
+          },
+          "offer": {
+            "type": "object",
+            "nullable": true,
+            "description": "原冻结方案字段；缺少方案时省略，未配置套餐或分时规则时保持原null。"
+          },
+          "tariff": {
+            "type": "object",
+            "nullable": true,
+            "description": "原冻结方案字段；缺少方案时省略，未配置套餐或分时规则时保持原null。"
+          },
+          "tariff_lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "仅原冻结展示规则启用资费时返回。"
+          },
+          "rule_description": {
+            "type": "string",
+            "description": "仅原冻结展示规则启用规则时返回；允许空串。"
+          },
+          "poll_continue": {
+            "type": "boolean"
+          },
+          "next_poll_after_ms": {
+            "type": "integer",
+            "description": "原轮询间隔5000毫秒。"
+          },
+          "telemetry_available": {
+            "type": "boolean",
+            "description": "当前窗口内有原功率或电量报告；缺失不补零。"
+          },
+          "elapsed_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "进行中订单的展示墙钟秒数。"
+          },
+          "telemetry_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "current_power_w": {
+            "type": "number",
+            "description": "原观测W，未报告时省略，已报告零保留。"
+          },
+          "voltage_v": {
+            "type": "number",
+            "description": "原观测V，未报告时省略。"
+          },
+          "temperature_c": {
+            "type": "number",
+            "description": "原摄氏度，未报告时省略。"
+          }
+        }
+      },
+      "ChargeSnapshotResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ChargeSnapshot"
+          }
+        }
+      },
+      "ChargeHistoricalCurveResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "order_id": {
+                "type": "integer",
+                "format": "uint64",
+                "description": "原中央订单主键，保持原整数契约。"
+              },
+              "order_no": {
+                "type": "string"
+              },
+              "granularity": {
+                "type": "string",
+                "enum": [
+                  "15min",
+                  "hourly"
+                ]
+              },
+              "series": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChargeCurvePoint"
+                }
+              },
+              "summary": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "原聚合摘要；total_kwh优先保留原确认DECIMAL文本，其他摘要保持原JSON精度。"
+              },
+              "boundary_approximate": {
+                "type": "boolean",
+                "description": "原开始／结束与聚合桶边界不完全对齐。"
+              }
+            }
           }
         }
       }
@@ -2910,6 +3228,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "原订单、费用、冻结状态、支付或退款读取失败。"
           }
         }
       }
@@ -2941,9 +3262,10 @@
             "schema": {
               "type": "string",
               "enum": [
-                "minute",
-                "hour"
-              ]
+                "15min",
+                "hourly"
+              ],
+              "default": "15min"
             }
           }
         ],
@@ -2953,12 +3275,25 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChargeCurveResponse"
+                  "$ref": "#/components/schemas/ChargeHistoricalCurveResponse"
                 }
               }
             }
+          },
+          "400": {
+            "description": "粒度非法或超过2000桶上限。"
+          },
+          "409": {
+            "description": "订单尚未开始或原时间窗无效。"
+          },
+          "422": {
+            "description": "历史遥测超过三年保留期。"
+          },
+          "503": {
+            "description": "网关不可用，不能当作空曲线。"
           }
-        }
+        },
+        "description": "先核对原订单归属，再使用原开始／结束窗口。三年保留期、2000聚合桶上限在外部读取前校验；超限可选择hourly。"
       }
     },
     "/api/v1/user/charge/ongoing": {
@@ -2989,7 +3324,7 @@
     },
     "/api/v1/user/charge/ongoing/snapshot": {
       "get": {
-        "summary": "查询进行中充电的实时读数与预估费用",
+        "summary": "查询当前用户原订单快照与补充遥测",
         "operationId": "user_charge_snapshot",
         "tags": [
           "charge"
@@ -3005,12 +3340,35 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChargeCurveResponse"
+                  "$ref": "#/components/schemas/ChargeSnapshotResponse"
                 }
               }
             }
+          },
+          "503": {
+            "description": "订单、确认费用或冻结状态读取失败；网关故障仅使遥测不可用。"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "原业务订单号，优先于order_no；两个字段至少提供一个。"
+          },
+          {
+            "name": "order_no",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "兼容原业务订单号字段。"
+          }
+        ]
       }
     },
     "/api/v1/user/charge/ongoing/curve": {
@@ -3035,8 +3393,48 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "订单号或窗口非法／禁用。"
+          },
+          "503": {
+            "description": "网关不可用，不能当作空曲线。"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "原业务订单号，优先于order_no；两个字段至少提供一个。"
+          },
+          {
+            "name": "order_no",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "兼容原业务订单号字段。"
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "last_30min",
+                "last_2h",
+                "last_24h"
+              ],
+              "default": "last_30min"
+            },
+            "description": "仅允许已配置的回看窗口；非法或禁用值返回400，不静默替换。"
+          }
+        ]
       }
     },
     "/api/v1/user/charge/stop": {

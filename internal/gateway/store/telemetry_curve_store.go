@@ -29,12 +29,11 @@ func CurveGranularityFor(granularity string) (CurveGranularity, bool) {
 	return CurveGranularity{}, false
 }
 
-// MetricPeak 是一个指标在窗口内的峰值与均值，以文本返回。
-// 库中是 DECIMAL，CAST 成字符串免去调用方的精度处理。
+// MetricPeak 是窗口原指标摘要；DECIMAL以文本读取，避免浮点转换改变公开精度。
 type MetricPeak struct {
-	Metric string `json:"metric"`
-	Peak   string `json:"peak"`
-	Avg    string `json:"average_value"`
+	Metric string `gorm:"column:metric" json:"metric"`               // 原power_w或temperature_c指标
+	Peak   string `gorm:"column:peak" json:"peak"`                   // 窗口原峰值DECIMAL文本
+	Avg    string `gorm:"column:average_value" json:"average_value"` // 按原样本count加权的均值文本，不按结构体名称推导列
 }
 
 // curveMetrics 是曲线摘要关心的指标。功率与温度是两条主曲线，其余指标
