@@ -3,7 +3,6 @@ package http
 import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -18,9 +17,9 @@ import (
 // AdminAuth 是管理后台的鉴权与会话入口：持有账号存储、JWT 签发器和 Redis 会话，
 // 登录、续期、改密、登出以及所有后台路由的权限校验都从这里出。
 type AdminAuth struct {
-	Store    ops.AdminStore             // 账号与权限的持久化入口
-	Sessions sessionstore.AdminSessions // Redis 会话管理，登录态的存在与撤销都以它为准
-	JWT      *auth.JWT                  // 后台访问令牌的签发与校验
+	Store    ops.AdminStore  // 账号与权限的持久化入口
+	Sessions ops.SessionRepo // Redis 会话管理，登录态的存在与撤销都以它为准
+	JWT      *auth.JWT       // 后台访问令牌的签发与校验
 }
 
 const adminAccessTTL = 8 * time.Hour

@@ -60,6 +60,30 @@ func Digest(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// RotateScript 用KEYS[1]记录和ARGV[1]旧摘要原子竞争，ARGV[2]新摘要首写并保留32个previous及KEEPTTL。
+// ARGV[3:]是调用方代码指定的无符号整数字段名，从旧JSON原十进制文本恢复为字符串；不定义业务字段。
+// 返回轮换前原记录；摘要未命中／无记录／旧整数无法恢复返回false，Redis／JSON错误原样失败。
+var RotateScript = redis.NewScript(`
+local value = redis.call('GET', KEYS[1])
+if not value then return false end
+local record = cjson.decode(value)
+if record.digest ~= ARGV[1] then return false end
+for i = 3, #ARGV do
+  local field = ARGV[i]
+  if type(record[field]) == 'number' then
+    local original = string.match(value, '"' .. field .. '"%s*:%s*(%d+)%s*[,}]')
+    if not original then return false end
+    record[field] = original
+  end
+end
+record.digest = ARGV[2]
+record.previous = record.previous or {}
+table.insert(record.previous, ARGV[1])
+if #record.previous > 32 then table.remove(record.previous, 1) end
+redis.call('SET', KEYS[1], cjson.encode(record), 'KEEPTTL')
+return value
+`)
+
 // RevokeScript 以 KEYS[1] 和 ARGV[1] 原摘要原子注销会话：比对当前散列与 previous 里的旧散列，
 // 命中就删掉整个会话键，不命中返回 0。校验和删除在 Redis 里一次完成。
 var RevokeScript = redis.NewScript(`

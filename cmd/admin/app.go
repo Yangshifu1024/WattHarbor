@@ -8,7 +8,6 @@ import (
 	"time"
 
 	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	adminexport "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/export"
@@ -55,7 +54,7 @@ func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application
 	if err := adminStore.Bootstrap(ctx, cfg.AdminBootstrapUser, cfg.AdminBootstrapPassword); err != nil {
 		return nil, err
 	}
-	authAPI := identityhttp.AdminAuth{Store: adminStore, Sessions: sessionstore.AdminSessions{Redis: r.Cache}, JWT: jwt}
+	authAPI := identityhttp.AdminAuth{Store: adminStore, Sessions: ops.SessionRepo{Redis: r.Cache}, JWT: jwt}
 	gateway, err := gatewayclient.NewClient(serviceclient.Client{HTTP: r.InternalHTTP}, cfg.GatewayInternalURL, cfg.ServiceToken)
 	if err != nil {
 		return nil, err

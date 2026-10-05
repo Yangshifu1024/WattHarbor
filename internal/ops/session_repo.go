@@ -1,4 +1,4 @@
-package redis
+package ops
 
 import (
 	"context"
@@ -19,25 +19,27 @@ const refreshTTL = 7 * 24 * time.Hour
 // adminSessionRecord 是 Redis 中以 JSON 保存的会话或挑战记录。
 // 刷新令牌仅保存摘要，不保存明文。
 type adminSessionRecord struct {
-	AuthVersion uint64   `json:"version"`            // 账号的权限版本号，改密码/改角色后会变，用于让旧会话立刻失效
-	AdminID     uint64   `json:"uid"`                // 后台账号 id
-	Username    string   `json:"username"`           // 登录名，供审计记录操作人
-	Digest      string   `json:"digest"`             // 当前刷新令牌密钥的 sha256 散列，校验用
-	Previous    []string `json:"previous,omitempty"` // 最近 32 个已轮换掉的旧密钥散列，只为让上一枚令牌还能用一次
+	AuthVersion sessiontoken.JSONUint64 `json:"version"`            // 账号的权限版本号，改密码/改角色后会变，用于让旧会话立刻失效
+	AdminID     sessiontoken.JSONUint64 `json:"uid"`                // 后台账号 id
+	Username    string                  `json:"username"`           // 登录名，供审计记录操作人
+	Digest      string                  `json:"digest"`             // 当前刷新令牌密钥的 sha256 散列，校验用
+	Previous    []string                `json:"previous,omitempty"` // 最近 32 个已轮换掉的旧密钥散列，仅允许旧令牌注销，不允许旧令牌再次轮换
 }
 
-// AdminSessions 管理后台会话，底层就是 Redis 里的 admin:session:<sid> 键。
+// SessionRepo 管理后台会话，底层就是 Redis 里的 admin:session:<sid> 键。
 // 结构体只持有 Redis 客户端（字段 Redis），没有本地状态，可以直接按值复制。
-type AdminSessions struct{ Redis *redis.Client }
+type SessionRepo struct {
+	Redis *redis.Client /* 进程拥有的后台会话连接 */
+}
 
-// Create 为一个账号新建会话，返回会话 id（sid）和完整的刷新令牌。
+// Create 在ctx下为account创建会话，返回SID、完整刷新令牌或随机／存储错误。
 // 令牌形如 ART_<sid>.<secret>，完整明文只在这里返回一次，之后客户端凭它换新令牌。
-func (s AdminSessions) Create(ctx context.Context, account operations.AccountIdentity) (string, string, error) {
+func (s SessionRepo) Create(ctx context.Context, account operations.AccountIdentity) (string, string, error) {
 	sid, token, secret, err := adminTokens.Mint()
 	if err != nil {
 		return "", "", err
 	}
-	record, err := json.Marshal(adminSessionRecord{AuthVersion: account.AuthVersion, AdminID: account.ID, Username: account.Username, Digest: sessiontoken.Digest(secret)})
+	record, err := json.Marshal(adminSessionRecord{AuthVersion: sessiontoken.JSONUint64(account.AuthVersion), AdminID: sessiontoken.JSONUint64(account.ID), Username: account.Username, Digest: sessiontoken.Digest(secret)})
 	if err != nil {
 		return "", "", err
 	}
@@ -47,24 +49,10 @@ func (s AdminSessions) Create(ctx context.Context, account operations.AccountIde
 	return sid, token, nil
 }
 
-// adminRotateScript 原子校验并轮换刷新令牌摘要，防止并发操作覆盖会话。
-// 保留最多 32 个旧摘要以支持并发重试，并以 KEEPTTL 保持绝对过期时间。
-var adminRotateScript = redis.NewScript(`
-local value = redis.call('GET', KEYS[1])
-if not value then return false end
-local record = cjson.decode(value)
-if record.digest ~= ARGV[1] then return false end
-record.digest = ARGV[2]
-record.previous = record.previous or {}
-table.insert(record.previous, ARGV[1])
-if #record.previous > 32 then table.remove(record.previous, 1) end
-redis.call('SET', KEYS[1], cjson.encode(record), 'KEEPTTL')
-return value
-`)
-
-// Rotate 校验当前或 previous 中的刷新令牌摘要，返回账号、SID 与新刷新令牌。
+// Rotate 在ctx下校验token当前摘要，返回账号、SID、新刷新令牌或凭据／存储错误。
+// previous仅可注销；数字ID／版本从旧JSON原文本恢复，连续轮换保持精度和绝对TTL。
 // 未匹配任何有效摘要时返回 operations.ErrInvalidRefresh。
-func (s AdminSessions) Rotate(ctx context.Context, token string) (operations.AccountIdentity, string, string, error) {
+func (s SessionRepo) Rotate(ctx context.Context, token string) (operations.AccountIdentity, string, string, error) {
 	sid, oldSecret, ok := adminTokens.Parse(token)
 	if !ok {
 		return operations.AccountIdentity{}, "", "", operations.ErrInvalidRefresh
@@ -73,7 +61,7 @@ func (s AdminSessions) Rotate(ctx context.Context, token string) (operations.Acc
 	if err != nil {
 		return operations.AccountIdentity{}, "", "", err
 	}
-	result, err := adminRotateScript.Run(ctx, s.Redis, []string{adminTokens.Key(sid)}, sessiontoken.Digest(oldSecret), sessiontoken.Digest(newSecret)).Result()
+	result, err := sessiontoken.RotateScript.Run(ctx, s.Redis, []string{adminTokens.Key(sid)}, sessiontoken.Digest(oldSecret), sessiontoken.Digest(newSecret), "uid", "version").Result()
 	if errors.Is(err, redis.Nil) {
 		return operations.AccountIdentity{}, "", "", operations.ErrInvalidRefresh
 	}
@@ -91,12 +79,12 @@ func (s AdminSessions) Rotate(ctx context.Context, token string) (operations.Acc
 	if err := json.Unmarshal([]byte(value), &record); err != nil {
 		return operations.AccountIdentity{}, "", "", err
 	}
-	identity := operations.AccountIdentity{ID: record.AdminID, Username: record.Username, AuthVersion: record.AuthVersion}
+	identity := operations.AccountIdentity{ID: uint64(record.AdminID), Username: record.Username, AuthVersion: uint64(record.AuthVersion)}
 	return identity, sid, adminTokens.TokenPrefix + sid + "." + newSecret, nil
 }
 
-// Revoke 校验令牌格式及当前或 previous 摘要后删除会话；验证失败返回 operations.ErrInvalidRefresh。
-func (s AdminSessions) Revoke(ctx context.Context, token string) error {
+// Revoke 在ctx下校验token格式及当前／previous摘要后原子删除会话，返回凭据／存储错误。
+func (s SessionRepo) Revoke(ctx context.Context, token string) error {
 	sid, secret, ok := adminTokens.Parse(token)
 	if !ok {
 		return operations.ErrInvalidRefresh
@@ -111,8 +99,8 @@ func (s AdminSessions) Revoke(ctx context.Context, token string) error {
 	return nil
 }
 
-// Exists 判断非空 sid 对应的会话是否存在，不加载账号信息。
-func (s AdminSessions) Exists(ctx context.Context, sid string) (bool, error) {
+// Exists 在ctx下核对sid会话存在性，返回事实或Redis错误；空SID为false，只读。
+func (s SessionRepo) Exists(ctx context.Context, sid string) (bool, error) {
 	if sid == "" {
 		return false, nil
 	}
@@ -120,8 +108,9 @@ func (s AdminSessions) Exists(ctx context.Context, sid string) (bool, error) {
 	return n == 1, err
 }
 
-// Matches 校验会话所属账号及权限版本；改密或改角色提升 AuthVersion，使旧会话失效。
-func (s AdminSessions) Matches(ctx context.Context, sid string, id, version uint64) (bool, error) {
+// Matches 在ctx下核对sid原记录的id／version，返回匹配事实或存储／记录错误，只读。
+// 改密或改角色提升AuthVersion使旧会话失效；新字符串及旧数字记录均精确解码。
+func (s SessionRepo) Matches(ctx context.Context, sid string, id, version uint64) (bool, error) {
 	if sid == "" {
 		return false, nil
 	}
@@ -136,12 +125,12 @@ func (s AdminSessions) Matches(ctx context.Context, sid string, id, version uint
 	if err := json.Unmarshal(value, &record); err != nil {
 		return false, err
 	}
-	return record.AdminID == id && record.AuthVersion == version, nil
+	return uint64(record.AdminID) == id && uint64(record.AuthVersion) == version, nil
 }
 
-// RevokeSession 直接按 sid 删除会话，不校验令牌摘要。
+// RevokeSession 在ctx下直接删除sid会话，返回空身份／Redis错误，不校验令牌摘要。
 // 用于用户主动登出：此时调用方持有的是已通过鉴权的 sid，删除后该 sid 签发的令牌立即失效。
-func (s AdminSessions) RevokeSession(ctx context.Context, sid string) error {
+func (s SessionRepo) RevokeSession(ctx context.Context, sid string) error {
 	if sid == "" {
 		return operations.ErrInvalidRefresh
 	}
@@ -151,13 +140,14 @@ func (s AdminSessions) RevokeSession(ctx context.Context, sid string) error {
 // mfaChallengeTTL 限制密码验证通过后完成二次验证的时间窗口。
 const mfaChallengeTTL = 5 * time.Minute
 
-// BeginMFA 创建仅含账号身份的短期登录挑战；挑战不能代替 API 会话。
-func (s AdminSessions) BeginMFA(ctx context.Context, account operations.AccountIdentity) (string, error) {
+// BeginMFA 在ctx下为account保存5分钟挑战，返回随机挑战或随机／编码／存储错误。
+// 挑战只保存原身份和版本，不代替API会话，也不保存密码或验证码。
+func (s SessionRepo) BeginMFA(ctx context.Context, account operations.AccountIdentity) (string, error) {
 	token, err := auth.RandomSecret(32)
 	if err != nil {
 		return "", err
 	}
-	record, err := json.Marshal(adminSessionRecord{AuthVersion: account.AuthVersion, AdminID: account.ID, Username: account.Username})
+	record, err := json.Marshal(adminSessionRecord{AuthVersion: sessiontoken.JSONUint64(account.AuthVersion), AdminID: sessiontoken.JSONUint64(account.ID), Username: account.Username})
 	if err != nil {
 		return "", err
 	}
@@ -167,9 +157,9 @@ func (s AdminSessions) BeginMFA(ctx context.Context, account operations.AccountI
 	return token, nil
 }
 
-// ResolveMFA 仅在校验成功时原子消费登录挑战并返回账号 ID。
+// ResolveMFA 在ctx下读取token原挑战并返回账号ID或格式／缺失／存储错误，不消费记录。
 // 验证码错误时保留挑战以允许重试，不直接创建会话。
-func (s AdminSessions) ResolveMFA(ctx context.Context, token string) (uint64, error) {
+func (s SessionRepo) ResolveMFA(ctx context.Context, token string) (uint64, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return 0, operations.ErrInvalidMFAChallenge
@@ -185,7 +175,7 @@ func (s AdminSessions) ResolveMFA(ctx context.Context, token string) (uint64, er
 	if err := json.Unmarshal(value, &record); err != nil {
 		return 0, operations.ErrInvalidMFAChallenge
 	}
-	return record.AdminID, nil
+	return uint64(record.AdminID), nil
 }
 
 // mfaKey 把二次验证挑战码拼成 Redis 键，与会话键分开存放，

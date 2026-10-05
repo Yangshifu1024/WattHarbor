@@ -232,6 +232,7 @@ charge-pilot/
 │   ├── internal/ops/audit.go（迁移前：internal/interface/http/admin_resource.go[事务内审计]）
 │   ├── internal/ops/announcement_query.go（迁移前：internal/interface/http/user_announcement.go、user_station.go[公告规则]）
 │   ├── internal/ops/announcement_query_repo.go（迁移前：internal/device/interface_query_store.go[公告读取]）
+│   ├── internal/ops/session_repo.go（迁移前：internal/infrastructure/redis/admin_session.go）
 │   ├── internal/ops/admin_account_store.go
 │   ├── internal/ops/admin_audit_store.go
 │   ├── internal/ops/admin_ops_store.go
@@ -437,8 +438,7 @@ charge-pilot/
 │   ├── internal/protocol/router.go
 │   └── internal/protocol/session_audit.go
 ├── internal/infrastructure                               持久化实现
-│   ├── internal/infrastructure/database/admin_dashboard_store.go
-│   └── internal/infrastructure/redis/admin_session.go
+│   └── internal/infrastructure/database/admin_dashboard_store.go
 ├── internal/persist                                      与业务无关的持久化原语
 │   ├── internal/persist/insert_id.go
 │   └── internal/persist/page.go
@@ -490,7 +490,8 @@ charge-pilot/
 │   ├── internal/platform/phone/phone.go
 │   ├── internal/platform/serviceclient/client.go
 │   ├── internal/platform/serviceclient/token.go
-│   ├── internal/platform/sessiontoken/token.go（迁移前：internal/infrastructure/redis/session_token.go[通用编码与注销]）
+│   ├── internal/platform/sessiontoken/token.go（迁移前：internal/infrastructure/redis/session_token.go[通用编码与注销]，共用原子轮换）
+│   ├── internal/platform/sessiontoken/uint64.go（JSON 无符号整数精确编码）
 │   └── internal/platform/snowflake/snowflake.go
 │
 ├── migrations/central_db/0001_init.sql

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -138,7 +137,7 @@ func TestRegisteredSchemeRoutesPreserveAuthorizationAndResults(t *testing.T) {
 	record, _ := json.Marshal(map[string]any{"uid": id, "version": 1})
 	sessions.AddHook(pricingRouteSessionHook{records: map[string]string{"admin:session:" + sid: string(record)}})
 	router := httpapi.NewRouter()
-	API{Queries: pricing.QueryService{DB: tx}, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: sessionstore.AdminSessions{Redis: sessions}}, Schemes: pricing.SchemeService{DB: tx}, Publications: pricing.PublicationService{DB: tx}}.Register(router)
+	API{Queries: pricing.QueryService{DB: tx}, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: ops.SessionRepo{Redis: sessions}}, Schemes: pricing.SchemeService{DB: tx}, Publications: pricing.PublicationService{DB: tx}}.Register(router)
 	base := "/api/v1/admin/settings/charging-schemes"
 	call := func(method, path, body, bearer string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))

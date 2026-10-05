@@ -12,7 +12,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
@@ -112,7 +111,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 		return token
 	}
 	owner, other := userToken(id, tag), userToken(id+1, tag+"-other")
-	adminSessions := sessionstore.AdminSessions{Redis: cache}
+	adminSessions := ops.SessionRepo{Redis: cache}
 	sid, _, err := adminSessions.Create(context.Background(), operations.AccountIdentity{ID: id + 4, AuthVersion: 1, Username: "order-reader-" + tag})
 	if err != nil {
 		t.Fatal(err)

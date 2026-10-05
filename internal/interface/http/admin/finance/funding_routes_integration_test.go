@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -143,7 +142,7 @@ func TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit(t *testing.
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	API{DB: tx, Auth: chargehttp.AdminAuth{Store: store, JWT: jwt, Sessions: sessionstore.AdminSessions{Redis: sessions}}, Invoices: service}.Register(router)
+	API{DB: tx, Auth: chargehttp.AdminAuth{Store: store, JWT: jwt, Sessions: ops.SessionRepo{Redis: sessions}}, Invoices: service}.Register(router)
 	path := "/api/v1/admin/billing/invoices/" + strconv.FormatUint(id, 10) + "/approve"
 	post := func(body, token string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", path, bytes.NewBufferString(body))

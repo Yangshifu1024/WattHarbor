@@ -79,26 +79,6 @@ func (s SessionRepo) Create(ctx context.Context, user User) (string, string, err
 	return sid, token, nil
 }
 
-// rotateScript 用原摘要原子竞争轮换，保留最多32个旧摘要及 KEEPTTL；旧数值身份从原 JSON 文本恢复。
-var rotateScript = redis.NewScript(`
-local value = redis.call('GET', KEYS[1])
-if not value then return false end
-local record = cjson.decode(value)
-if record.digest ~= ARGV[1] then return false end
-if type(record.uid) == 'number' then
-  -- Read the original decimal digits, before cjson can round a legacy ID.
-  local uid = string.match(value, '"uid"%s*:%s*(%d+)%s*[,}]')
-  if not uid then return false end
-  record.uid = uid
-end
-record.digest = ARGV[2]
-record.previous = record.previous or {}
-table.insert(record.previous, ARGV[1])
-if #record.previous > 32 then table.remove(record.previous, 1) end
-redis.call('SET', KEYS[1], cjson.encode(record), 'KEEPTTL')
-return value
-`)
-
 // Rotate 在 ctx 下校验 token 当前摘要并轮换，返回原用户、SID、新刷新令牌或格式／存储错误。
 // 同一旧令牌只允许一个轮换获胜；previous 仅用于注销，不支持重复刷新，不延长会话寿命。
 func (s SessionRepo) Rotate(ctx context.Context, token string) (User, string, string, error) {
@@ -110,7 +90,7 @@ func (s SessionRepo) Rotate(ctx context.Context, token string) (User, string, st
 	if err != nil {
 		return User{}, "", "", err
 	}
-	result, err := rotateScript.Run(ctx, s.Redis, []string{userTokens.Key(sid)}, sessiontoken.Digest(oldSecret), sessiontoken.Digest(newSecret)).Result()
+	result, err := sessiontoken.RotateScript.Run(ctx, s.Redis, []string{userTokens.Key(sid)}, sessiontoken.Digest(oldSecret), sessiontoken.Digest(newSecret), "uid").Result()
 	if errors.Is(err, redis.Nil) {
 		return User{}, "", "", ErrInvalidRefresh
 	}

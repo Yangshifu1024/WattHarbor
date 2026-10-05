@@ -16,7 +16,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
@@ -79,7 +78,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := identityRouteRedis(t)
-	sessions := sessionstore.AdminSessions{Redis: cache}
+	sessions := ops.SessionRepo{Redis: cache}
 	sid, _, err := sessions.Create(context.Background(), operations.AccountIdentity{ID: id, AuthVersion: 1, Username: tag})
 	if err != nil {
 		t.Fatal(err)

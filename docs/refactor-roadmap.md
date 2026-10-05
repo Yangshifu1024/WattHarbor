@@ -352,7 +352,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 - [ ] OP-01：账号创建／修改／删除／解锁／密码重置、角色和数据范围变更、MFA 设置迁入服务；保留最后管理员保护及角色集合的原串行化边界。
 - [ ] OP-01：权限实时读取，不信任 JWT／前端菜单；首签人实时权限查询通过注入回调或窄接口提供，ops 不 import settlement。
 - [ ] OP-01：Redis MFA pending／锁／频次 IO 由实现层提供，规则归 ops；审计和用户返回不得包含密码、token、密钥、验证码。
-- [ ] OP-01：将 infrastructure/redis/admin_session.go 迁入 ops/session_repo.go，后台刷新、撤销与挑战记录由 ops 持有；保留 AuthVersion、ART_／admin:session:、绝对 TTL、轮换／撤销脚本和令牌格式。共用技术能力按第 2 节提取，不让 ops 与 identity 为复用会话实现互相引用。
+- [x] OP-01：将 infrastructure/redis/admin_session.go 迁入 ops/session_repo.go，后台刷新、撤销与挑战记录由 ops 持有；保留 AuthVersion、ART_／admin:session:、绝对 TTL、轮换／撤销脚本和令牌格式。共用技术能力按第 2 节提取，不让 ops 与 identity 为复用会话实现互相引用。
 - [ ] OP-01：公告业务归 ops；dashboard 移成有明确来源的跨模块只读投影，保留北京时间日界。admin/ops 中告警确认转 D-02。
 - [ ] N-ops：业务 repo 统一命名；不要通过泛化“表名 + values”写入接口绕过所属业务模块。
 
@@ -526,7 +526,7 @@ make test-integration TEST_MYSQL_URL=...
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
 | M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
-| OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，后台会话与 HTTP 事务待迁移 |
+| OP-01／N-ops | 进行中 | 后台会话 repo 与真实 Redis 回归已归 ops，共用轮换精确保留旧 ID／版本；实时权限及最后管理员保护保留。HTTP 认证、MFA、账号角色和运营事务继续迁移 |
 | E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
 | INF-01 | 待实施 | dashboard、case、用户与后台会话归位后，删除 infrastructure 及残留引用 |
@@ -652,3 +652,7 @@ make test-integration TEST_MYSQL_URL=...
 4d退出前纠正：首次命名快照全仓通过，删除HTTP残留StartResult／EndResult别名后的回归发现旧身份并发测试将请求启动顺序当作首次成功提交顺序；实际双方同ID且只有后发请求IsNew=true，原登录允许死锁有界重试，旧断言不适用。只修测试为恰好一个创建者、unionID匹配实际创建者、一用户一钱包及自身清理零残留；新增首次锁后1213故障fixture核对真实事务回滚和原重试，不宣称该fixture是引擎死锁证据。生产登录代码不变，`.tmp/batch4d-login-retry-proof.log`两路径重复5次通过；原失败日志保留为`.tmp/batch4d-login-first-winner-fixture-failure.log`。五个开发服务已重启，`.tmp/batch4d-live-scan.json`验证实际匿名设备／端口扫码保留原设备、两端口和中央运营状态，无资金写入。
 
 4d最终退出证据：`.tmp/batch4d-validation`最终快照的`.tmp/batch4d-snapshot-{check,integration,build,tidy}.log`全部通过，862份暂存文件中的638份Go／模块与原blob逐字节一致，tidy无差异、Markdown本地链接有效。旧HTTP回执别名已删除，所有当前具名客户端根请求／回复与私有解码类型采用Request／Reply；原JSON及冻结载荷不改。最终仅补本退出记录；前端源码／接口形状未改，最近完整前端验收仍为4b。继续OP-01／导出及HTTP／运行时／基础设施／部署评估。
+
+批次4e（OP-01后台会话repo）实施与证据：后台SessionRepo及真实Redis测试从infrastructure/redis迁入ops，旧实现和源码消费者删除，cmd和注册HTTP测试直接装配所属repo，无别名。ART_、admin:session:、七天绝对寿命、previous仅注销、五分钟登录挑战及AuthVersion归属保留。真实Redis复现旧数值ID／权限版本经cjson轮换后精度丢失，原失败见`.tmp/batch4e-legacy-precision-before.log`；共用RotateScript从原JSON恢复十进制文本、新记录用JSONUint64字符串编码，identity与ops互不引用。边界编码、原精度连续两轮、KEEPTTL、两真实调用仅一获胜、旧令牌注销、取消、Lua存储故障与挑战隔离通过，日志`.tmp/batch4e-{codec,session-real-redis,mutants-restored}.log`。精度和摘要竞争两项变异在指定断言失败并恢复，`.tmp/batch4e-mutant-{precision,digest}.log`保留；只清理自身测试SID／挑战，未访问开发Redis。
+
+4e退出证据：工作区`.tmp/batch4e-{check,integration,build,tidy}.log`及精确暂存快照`.tmp/batch4e-validation`对应四份`.tmp/batch4e-snapshot-*.log`全部通过；864份暂存文件中的640份Go／模块与原blob逐字节一致，tidy无差异、本地文档链接有效。重启admin后`.tmp/batch4e-live-session.json`验证实际登录、刷新保持原账号／权限、注销后401，不记录令牌，不修改开发账号安全设置或资金。前端代码／公开JSON未改变，最近完整前端验收仍为4b。后台HTTP认证、MFA设置／锁／频次、账号角色与运营事务尚待迁移；现有登录挑战读取不消费，HTTP将挑战当刷新令牌撤销的原错误及挑战版本准入继续下一认证批次纠正，OP-01／INF-01不提前完成。

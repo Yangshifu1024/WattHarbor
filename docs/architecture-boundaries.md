@@ -93,13 +93,13 @@
 
 worker 保留任务顺序、游标、重试与投递编排，计费和退款的金额／状态写入仍由业务用例执行；不把它们搬进 worker。gateway 的协议接入、持久命令、端口占用与会话运行时继续独立；control 中剩余 SQL 逐步改为 gateway/repo 的完整操作，不向控制器返回可继续拼查询的 GORM builder。协议解析不引入数据库。
 
-`infrastructure/database` 当前剩余 dashboard 待迁为 ops 跨模块只读投影；case 文件已拆除，反馈表访问归 order/feedback_repo，报修状态与事件归 device/fault_repo。报修 HTTP 业务编排仍待 D-02，INF-01 不能提前完成。允许明确的跨模块读模型，不以「文件全部搬空」作为正确性证据。
+`infrastructure/database` 当前剩余 dashboard 待迁为 ops 跨模块只读投影；case 文件已拆除，反馈表访问归 order/feedback_repo，报修状态与事件归 device/fault_repo，D-02 已完成。INF-01 仍待 dashboard 归位，允许明确的跨模块读模型，不以「文件全部搬空」作为正确性证据。
 
 FeedbackService 拥有订单评价、后台读取、回复、关闭及审计事务。order → ops 仅使用所属 AppendAuditInTx 能力，ops 不反向依赖 order；反馈原用户与设备身份来自已锁订单。提交按订单锁 → 已有反馈当前读 → 插入，旧 RR 快照不能漏掉另一连接已提交的反馈；重复提交仍为冲突，关闭重放不重复审计。反馈无站点范围列，后台沿用 feedback.read／feedback.reply 全局权限，普通设备范围不能据页面位置改变反馈归属。回复和关闭的状态／审计共用事务，审计失败整体回滚。
 
-**目标结构同样移除 infrastructure 层。** 现有 `infrastructure/redis` 持有用户／后台会话的记录、寿命、刷新、撤销与键布局，按业务归属分别迁到 identity/session_repo.go 与 ops/session_repo.go；MFA 的 Redis 数据访问归 ops。Redis 实现沿用 repo 命名，不另建顶层 redis 业务包，也不把带用户／后台规则的会话实现整体放入 platform。
+**目标结构同样移除 infrastructure 层。** 用户／后台会话的记录、寿命、刷新、撤销与键布局已分别迁到 identity/session_repo.go 与 ops/session_repo.go；后台短期登录挑战由 ops 持有，MFA 设置、锁与频次 IO 仍待 OP-01 后续迁移。旧 infrastructure/redis 源码和消费者已删除。Redis 实现沿用 repo 命名，不另建顶层 redis 业务包，也不把带用户／后台规则的会话实现整体放入 platform。
 
-无 IO 的随机源保留 platform/auth；令牌布局、编码、摘要及共用原子注销集中 platform/sessiontoken，仅接收调用方的前缀、key 与摘要，不引用 identity／ops 模型。RT_／user:session: 留 identity，ART_／admin:session: 留后台会话所属实现。用户／后台令牌与键格式、TTL、Lua 原子性、旧记录兼容和权限版本校验保持原契约。database 与 redis 职责全部迁出、装配和测试通过后删除空的 infrastructure，避免仅换目录名留下混合职责。
+无 IO 的随机源保留 platform/auth；令牌布局、编码、摘要及共用原子轮换／注销集中 platform/sessiontoken，仅接收调用方的前缀、key、摘要与代码指定的整数属性名，不引用 identity／ops 模型。通用 JSONUint64 精确保存无符号整数，不决定身份／版本是否允许零。RT_／user:session: 留 identity，ART_／admin:session: 留后台会话所属实现。后台旧数字 ID 与 AuthVersion 经 Lua 重编码曾丢失精度，现从原 JSON 十进制文本恢复并存字符串；新旧记录连续轮换均精确且 KEEPTTL 不延寿。后台 HTTP 认证业务及挑战成功消费／版本校验继续 OP-01 后续迁移，不以 repo 搬迁宣称已完成。database 职责全部迁出、装配和测试通过后删除空的 infrastructure，避免仅换目录名留下混合职责。
 
 身份用例由 SessionService、PhoneService、UserQueryService 拥有。用户开户通过 identity → wallet 的所属 InTx 能力保持 user 与零余额钱包同事务；openid 唯一锁行先提交以串行恢复，不删除重试所需身份。手机号来源在 cmd 分别注入正式微信交换和开发输入，正式能力拒绝明文号码，唯一键最终仲裁两连接同时绑定。
 

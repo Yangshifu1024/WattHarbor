@@ -15,7 +15,6 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
@@ -90,7 +89,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 	}
 	cache := redis.NewClient(opts)
 	defer cache.Close()
-	sessions := sessionstore.AdminSessions{Redis: cache}
+	sessions := ops.SessionRepo{Redis: cache}
 	sid, _, err := sessions.Create(context.Background(), operations.AccountIdentity{ID: id + 31, AuthVersion: 1, Username: "identity-reader-" + tag})
 	if err != nil {
 		t.Fatal(err)

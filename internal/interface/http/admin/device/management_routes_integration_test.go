@@ -10,7 +10,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/provision"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	stationhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/station"
@@ -171,7 +170,7 @@ func TestRegisteredDeviceAndStationManagementUsesCurrentScope(t *testing.T) {
 	defer cache.Close()
 	record, _ := json.Marshal(map[string]any{"uid": id, "version": 1})
 	cache.AddHook(deviceRouteSessionHook{records: map[string]string{"admin:session:" + sid: string(record)}})
-	authAPI := chargehttp.AdminAuth{Store: ops.AdminStore{DB: central}, JWT: jwt, Sessions: sessionstore.AdminSessions{Redis: cache}}
+	authAPI := chargehttp.AdminAuth{Store: ops.AdminStore{DB: central}, JWT: jwt, Sessions: ops.SessionRepo{Redis: cache}}
 	router := httpapi.NewRouter()
 	API{DB: central, Auth: authAPI, Management: business.ManagementService{DB: central, Summaries: client}, Imports: business.ImportService{DB: central, Gateway: client, Compatibility: pricing.Repo{DB: central}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {
 		return ops.LoadDataScope(ctx, central, p)

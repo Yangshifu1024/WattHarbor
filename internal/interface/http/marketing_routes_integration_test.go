@@ -8,7 +8,6 @@ import (
 	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	adminmarketing "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
@@ -60,7 +59,7 @@ func TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	admins := sessionstore.AdminSessions{Redis: cache}
+	admins := ops.SessionRepo{Redis: cache}
 	sid, _, err := admins.Create(context.Background(), operations.AccountIdentity{ID: id + 2, AuthVersion: 1, Username: tag})
 	if err != nil {
 		t.Fatal(err)

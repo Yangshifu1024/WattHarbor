@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -144,7 +143,7 @@ func TestRegisteredCardManagementPreservesPermissionInputAndAudit(t *testing.T) 
 	defer cache.Close()
 	cache.AddHook(cardAdminSessionHook{records: map[string]string{"admin:session:" + sid: string(record), "admin:session:" + readerSid: string(readerRecord)}})
 	router := httpapi.NewRouter()
-	API{Cards: card.CardAdminService{DB: tx}, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: sessionstore.AdminSessions{Redis: cache}}}.Register(router)
+	API{Cards: card.CardAdminService{DB: tx}, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: ops.SessionRepo{Redis: cache}}}.Register(router)
 	call := func(method, path, body, bearer string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

@@ -10,7 +10,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
@@ -87,7 +86,7 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 		return token
 	}
 	owner, other := userToken(id, tag), userToken(id+1, tag+"-other")
-	adminSessions := sessionstore.AdminSessions{Redis: cache}
+	adminSessions := ops.SessionRepo{Redis: cache}
 	adminSID, _, err := adminSessions.Create(context.Background(), operations.AccountIdentity{ID: id + 3, AuthVersion: 1, Username: "feedback-" + tag})
 	if err != nil {
 		t.Fatal(err)
