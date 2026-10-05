@@ -21,7 +21,7 @@ func TestUserAssemblyRegistersDocumentedRoutes(t *testing.T) {
 			t.Fatalf("user mounted another process's route: %s", route.Path)
 		}
 	}
-	data, err := os.ReadFile("../../internal/interface/http/user.openapi.json")
+	data, err := os.ReadFile("../../internal/http/user/user.openapi.json")
 	if err != nil {
 		t.Fatal(err)
 	}

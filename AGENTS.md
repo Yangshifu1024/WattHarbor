@@ -11,7 +11,7 @@
 - 后台进程不取微信与支付凭据：它不替用户登录，也不发起支付。`config.Admin` 与 `config.Central` 分开定义，让"这个进程需要什么凭据"在类型上就是清楚的——多给一份 `WECHAT_SECRET` 就等于多一处泄露面。
 - C 端充电中的遥测、历史曲线、充电采样与设备摘要，经 `GATEWAY_INTERNAL_URL` 回调 **gateway**（`:8083`）的 `/api/v1/internal/devices/*`，携服务令牌。这些端点由 `internal/gateway/control` 提供，不在 central 进程里——判断回调对象要看代码用的 base URL 字段，不能只看路径里有 `/internal`。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
-- 鉴权、后台及内部 HTTP 适配已归 `internal/http/auth`、`internal/http/admin`、`internal/http/central`，user 暂留 `internal/interface/http`，按 H-01 继续迁移。公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
+- HTTP 适配位于 `internal/http/auth`、`internal/http/admin`、`internal/http/central` 与 `internal/http/user/<业务族>`。跨接口族的集成测试集中在 `internal/http/integration`，该目录只有测试文件。公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
 - 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。具名客户端的请求 DTO 必须以 `Request` 结尾，响应 DTO 必须以 `Reply` 结尾；共享集合中的记录、采样点等子对象保留业务名称，不能用 `Data`、`Result`、`Acceptance` 代替端点响应名。
 - 五个服务进程的入口按职责拆分：`main.go` 处理信号与退出错误，`app.go` 加载配置、装配依赖与等待退出，`resources.go` 打开和释放资源，`routes.go` 注册路由与健康检查。worker/gateway 的定时循环在各自 `runtime` 子包，导出清理在 `internal/export`。资源初始化失败须释放已打开的资源；所有受管理请求和后台任务退出后才能关闭数据库、Redis 与客户端连接池。HTTP 停机使用 `httpapi.Serve`，超时取消请求后仍等待处理器退出；处理器必须响应请求 context，不启动未受管理的后台任务。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
@@ -554,29 +554,36 @@ charge-pilot/
 │   ├── internal/http/central/order_end_result.go（迁移前：internal/interface/http/order_end_result.go）
 │   ├── internal/http/central/order_start_result.go（迁移前：internal/interface/http/order_start_result.go）
 │   ├── internal/http/central/payment_simulation.go（迁移前：internal/interface/http/payment_payment_http.go[内部模拟通知]）
-│   └── internal/http/central/refund_internal_api.go（迁移前：internal/interface/http/refund_internal_api.go）
-├── internal/interface                                    user适配，H-01继续迁移
-│   ├── internal/interface/http/card_api.go
-│   ├── internal/interface/http/charge_feedback.go
-│   ├── internal/interface/http/charge_status.go
-│   ├── internal/interface/http/charge_user_account.go
-│   ├── internal/interface/http/charge_user_query.go
-│   ├── internal/interface/http/charge_user_stop.go
-│   ├── internal/interface/http/coupon_api.go
-│   ├── internal/interface/http/payment_development_payment.go
-│   ├── internal/interface/http/payment_payment_http.go
-│   ├── internal/interface/http/payment_scan.go
-│   ├── internal/interface/http/phone_api.go
-│   ├── internal/interface/http/settlement_bill.go
-│   ├── internal/interface/http/user.openapi.json
-│   ├── internal/interface/http/user_account_helpers.go
-│   ├── internal/interface/http/user_announcement.go
-│   ├── internal/interface/http/user_api.go
-│   ├── internal/interface/http/user_coupon.go
-│   ├── internal/interface/http/user_fault.go
-│   ├── internal/interface/http/user_invoice.go
-│   ├── internal/interface/http/user_station.go
-│   └── internal/interface/http/user_wallet.go
+│   ├── internal/http/central/refund_internal_api.go（迁移前：internal/interface/http/refund_internal_api.go）
+│   ├── internal/http/integration（跨接口族注册路由测试，无生产包）
+│   ├── internal/http/user/card/api.go（迁移前：internal/interface/http/card_api.go）
+│   ├── internal/http/user/charging/stop.go（迁移前：internal/interface/http/charge_user_stop.go）
+│   ├── internal/http/user/device/api.go（所属业务族的服务注入与路由注册）
+│   ├── internal/http/user/device/coordinates.go（迁移前：internal/interface/http/user_account_helpers.go）
+│   ├── internal/http/user/device/fault.go（迁移前：internal/interface/http/user_fault.go）
+│   ├── internal/http/user/device/station.go（迁移前：internal/interface/http/user_station.go）
+│   ├── internal/http/user/errors.go（迁移前：internal/interface/http/user_account_helpers.go）
+│   ├── internal/http/user/identity/phone.go（迁移前：internal/interface/http/phone_api.go）
+│   ├── internal/http/user/identity/session.go（迁移前：internal/interface/http/user_api.go）
+│   ├── internal/http/user/marketing/api.go（所属业务族的服务注入与路由注册）
+│   ├── internal/http/user/marketing/available.go（迁移前：internal/interface/http/coupon_api.go）
+│   ├── internal/http/user/marketing/owned.go（迁移前：internal/interface/http/user_coupon.go）
+│   ├── internal/http/user/ops/announcement.go（迁移前：internal/interface/http/user_announcement.go）
+│   ├── internal/http/user/ops/api.go（所属业务族的服务注入与路由注册）
+│   ├── internal/http/user/order/api.go（所属业务族的服务注入与路由注册）
+│   ├── internal/http/user/order/feedback.go（迁移前：internal/interface/http/charge_feedback.go）
+│   ├── internal/http/user/order/query.go（迁移前：internal/interface/http/charge_user_query.go）
+│   ├── internal/http/user/payment/development.go（迁移前：internal/interface/http/payment_development_payment.go）
+│   ├── internal/http/user/payment/payment.go（迁移前：internal/interface/http/payment_payment_http.go）
+│   ├── internal/http/user/payment/scan.go（迁移前：internal/interface/http/payment_scan.go）
+│   ├── internal/http/user/settlement/api.go（所属业务族的服务注入与路由注册）
+│   ├── internal/http/user/settlement/bill.go（迁移前：internal/interface/http/settlement_bill.go）
+│   ├── internal/http/user/settlement/invoice.go（迁移前：internal/interface/http/user_invoice.go）
+│   ├── internal/http/user/status.go（迁移前：internal/interface/http/charge_status.go）
+│   ├── internal/http/user/user.openapi.json（迁移前：internal/interface/http/user.openapi.json）
+│   ├── internal/http/user/wallet/api.go（所属业务族的服务注入与路由注册）
+│   ├── internal/http/user/wallet/fields.go（迁移前：internal/interface/http/user_account_helpers.go）
+│   └── internal/http/user/wallet/wallet.go（迁移前：internal/interface/http/user_wallet.go）
 ├── internal/protocol                                     设备契约层（与 domain 平行）
 │   ├── internal/protocol/adapter.go
 │   ├── internal/protocol/command.go
@@ -710,7 +717,7 @@ charge-pilot/
 - 跨聚合事务在对应生命周期子包内编排。付款渠道属于 payment，余额入账属于 wallet，退款事务、计费任务及其状态查询属于 settlement，刷卡操作状态属于 card。新增抽象以实际复用或隔离需求为依据；迁移不切碎既有事务、锁顺序和幂等判定。
 - 停止用例的 `Gateway` 接口只包含取证与停止受理。分页策略在用例中，单次 HTTP 调用、状态码、业务 code 与响应对应关系由专用客户端核对；不完整证据不得用于自动停机判定。wire DTO 显式标记 JSON 字段并保留既有大小写、整数类型与单位，处理器与客户端共用；字段变更需同步核对双方与契约测试。
 
-- 后台业务适配位于 `internal/http/admin`，central内部端点位于 `internal/http/central`，共享鉴权适配位于 `internal/http/auth`；用户端点暂留 `internal/interface/http`，按真实路由继续迁入 `internal/http/user`。内部刷卡与用户卡是分别装配的类型，模拟内部支付通知只按central原模式注册，对外支付回调仍由user提供。gateway／worker 的进程特有端点保持运行职责。业务HTTP结构体只持有所需服务、鉴权器与协议配置，不持有数据库、仓储、服务地址或通用出站客户端。后台范围通过消费方 `ScopeReader` 读取，由cmd注入 `ops.ScopeQueryService`；不改变无范围记录表示不受限的既有规则。
+- 后台业务适配位于 `internal/http/admin`，central内部端点位于 `internal/http/central`，共享鉴权适配位于 `internal/http/auth`；用户端点按所属业务族位于 `internal/http/user`，由cmd逐族装配，不再使用全量UserAccountAPI容器。user父包只提供无数据库依赖的错误映射和状态筛选；跨族注册回归在只有测试文件的 `internal/http/integration`。内部刷卡与用户卡是分别装配的类型，模拟内部支付通知只按central原模式注册，对外支付回调仍由user提供。gateway／worker 的进程特有端点保持运行职责。业务HTTP结构体只持有所需服务、鉴权器与协议配置，不持有数据库、仓储、服务地址或通用出站客户端。后台范围通过消费方 `ScopeReader` 读取，由cmd注入 `ops.ScopeQueryService`；不改变无范围记录表示不受限的既有规则。
 - HTTP处理器只做认证、输入绑定、用例调用和响应映射，不实现业务SQL或事务。查询和账单已读操作也由所属服务提供；`settlement.UserBillService` 保持原归属查询后幂等保存顺序，查询阶段404与保存阶段503仍由HTTP映射。`charging` 不依赖 gin、HTTP 层或具体设备协议；worker 的充电编排只经 central 内部接口取业务数据。评审核对写入归属：card_charge/card_operation 属于 card，charge_billing_cutoff 属于 charging/stop，charge_billing_job 属于 settlement。
 
 - `internal/protocol/` 是 gateway 与 central 共享的设备契约层，与 `domain` 平级，既不属于 `domain` 也不属于 `infrastructure`：
@@ -751,7 +758,7 @@ charge-pilot/
 - 站点、设备、厂商及配置操作沿用服务端数据范围检查。列表与详情、导出、写入和批量操作使用一致的授权条件；客户端筛选不能扩大范围。
 - 用户资源以当前会话校验归属；无权访问与不存在统一按既有接口返回。服务间接口使用 `X-Service-Token`，前端不得持有服务令牌。
 - 后台导出仅支持 CSV、XLSX，格式留空时默认 CSV；账单导出仍须校验日期范围。
-- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和对应的 OpenAPI 文档：后台是 `internal/interface/http/admin.openapi.json`，C 端是 `user.openapi.json`（由 user 进程承载）。两份文档都要求"声明的端点必须真的注册"且"没有悬空的 schema 引用"，修改时逐项核对路由注册与 schema 引用；缺失端点文档另行补全。文档准确性只能靠打真实接口核对：照代码"合理推断"写出来的请求体与响应形状会错，包括把整数写成字符串、给不分页的列表加分页字段。
+- 修改 API 时同步检查调用方、DTO、输入约束、错误状态和对应的 OpenAPI 文档：后台是 `internal/http/auth/admin.openapi.json`，C 端源码是 `internal/http/user/user.openapi.json`（不因目录迁移新增提供文档的路由）。两份文档都要求"声明的端点必须真的注册"且"没有悬空的 schema 引用"，修改时逐项核对路由注册与 schema 引用；缺失端点文档另行补全。文档准确性只能靠打真实接口核对：照代码"合理推断"写出来的请求体与响应形状会错，包括把整数写成字符串、给不分页的列表加分页字段。
 - 维持乐观版本检查和幂等标识。前端刷新令牌不能改变业务请求身份；账号切换后的旧请求不得覆盖新会话状态。
 
 ## 设备协议

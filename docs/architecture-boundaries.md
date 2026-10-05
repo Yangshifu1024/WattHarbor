@@ -210,3 +210,6 @@ HTTP目录实施边界（5a）：后台业务族已在internal/http/admin，账�
 HTTP查询及范围边界（5c）：剩余10个查询／账单入口由wallet、settlement、payment、device各所属服务提供，HTTP不持有DB／UserDB、Repo或直接仓储函数。后台16处范围读取通过admin.ScopeReader，由cmd注入ops.ScopeQueryService；导入执行前仍再次读取范围，不新增事务或锁，也不把范围读取当作权限授予。原站点分页、支付关联及可空值、退款／发票列表、最近100条导入任务查询保持；导入列表沿用device.import准入，不额外增加原来未执行的数据范围过滤。UserBillService先按用户归属查询，再幂等保存已读记录，查询失败保留404、保存失败保留503；错误原因仅供errors.Is，不公开内部故障。已读补查失败时原列表展示未读的规则保持。所有SQL仍在所属repo，未新增跨用例依赖、资金写入或后台任务；user／central目录拆分继续下一批。
 
 内部HTTP目录边界（5d）：实际由central注册的启动／停止授权、待启动、启动／结束回执、自动停止、内部刷卡／余额、计费、退款、模拟通知和告警同步统一归internal/http/central。原CardAPI的用户卡与内部刷卡分别持有所需字段，不共享包含两种鉴权方式的容器；业务规则仍唯一归card。内部SimulationCallbackAPI不与对外WeChat回调同文件；user仍拥有渠道验签及公开通知。告警同步只由central注册，从admin目录迁出；唯一消费的服务令牌中间件归http/auth，central不依赖admin或旧HTTP根包。各处理器原方法／路径、服务身份、超时、回执及错误顺序保持，不增加路由汇总、兼容包装或业务事务；用户目录仍待下一批。
+
+
+用户HTTP目录边界（5e）：internal/http/user按十个实际业务族注册，cmd逐族注入原所属服务；wallet、device、marketing、ops、order反馈与settlement发票不再共用全量UserAccountAPI。订单读取与反馈、账单与发票、会话与手机号、扫码／支付受理／开发确认／微信通知仍各持有所需依赖。营销两组原优惠券路由由同一API提供，原查询参数与不同响应保持。共享父包只有错误映射和原状态筛选，金额校验归wallet、坐标归device，分页与认证助手直接调用原能力；stop保留独立鉴权分支。所有业务查询、幂等和写入仍归所属用例，没有新SQL、事务、schema、服务地址或未管理任务。跨接口族测试集中在只含_test.go的internal/http/integration，私有适配单测留所属包，纯卡规则回到card；旧internal/interface和零消费者fixture删除，无兼容转发。user OpenAPI只移动原文件，未新增承载地址，完整三模式装配回归与处理器绑定逐项核对。

@@ -38,7 +38,7 @@ type TokenVerifier interface {
 
 // Authenticator 校验一份访问令牌，返回令牌所属的用户 ID。
 //
-// 它不认识 HTTP：失败一律以哨兵错误返回，由 interface/http 的适配器翻译成
+// 它不认识 HTTP：失败一律以哨兵错误返回，由 http/auth 的适配器翻译成
 // 状态码与响应体。这样业务包可以依赖本包而不必依赖 gin。
 type Authenticator struct {
 	Tokens   TokenVerifier     // 用户类型的访问令牌校验器

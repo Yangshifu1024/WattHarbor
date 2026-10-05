@@ -228,7 +228,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.3 payment：F-01／PAY-01／PAY-02／N-payment
 
-来源：[扫码支付入口](../internal/interface/http/payment_payment_http.go)、[支付意图](../internal/payment/payment_intent_repo.go)、[支付回调](../internal/payment/payment_callback_repo.go)、[设备运营读取](../internal/device/operation_repo.go)、[支付模型](../internal/payment/money_schema.go)。
+来源：[扫码支付入口](../internal/http/user/payment/payment.go)、[支付意图](../internal/payment/payment_intent_repo.go)、[支付回调](../internal/payment/payment_callback_repo.go)、[设备运营读取](../internal/device/operation_repo.go)、[支付模型](../internal/payment/money_schema.go)。
 
 目标：CheckoutService.Offers／Start、CallbackService.Apply；payment_intent_repo.go、payment_callback_repo.go、payment_order_repo.go 等支付数据能力。保留渠道验签／解密边界。
 
@@ -243,7 +243,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.4 wallet：W-01／N-wallet
 
-来源：[钱包 HTTP](../internal/interface/http/user_wallet.go)、[账户能力](../internal/wallet/wallet_account_repo.go)、[退款预占](../internal/wallet/wallet_reservation_repo.go)、[后台风控入口](../internal/http/admin/finance/wallet_risks.go)。
+来源：[钱包 HTTP](../internal/http/user/wallet/wallet.go)、[账户能力](../internal/wallet/wallet_account_repo.go)、[退款预占](../internal/wallet/wallet_reservation_repo.go)、[后台风控入口](../internal/http/admin/finance/wallet_risks.go)。
 
 目标：RechargeService.Create／CreditInTx、RefundService.Request、RiskService.Review／Release；wallet_account_repo.go、wallet_ledger_repo.go、wallet_refund_repo.go、wallet_reservation_repo.go 和 risk repo。
 
@@ -258,7 +258,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.5 device：D-01／D-02／N-device
 
-来源：[导入编排](../internal/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_repo.go)（原 alert_sync_store）。
+来源：[导入编排](../internal/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/http/user/device/fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_repo.go)（原 alert_sync_store）。
 
 目标：ImportService.Create／Retry、OperationReader、StationService、FaultService.Report／Dispatch／Resolve／History、AlertService.Sync／Acknowledge；import_repo.go、operation_repo.go、fault_repo.go 等。
 
@@ -288,7 +288,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.7 card：CA-01／N-card
 
-来源：[刷卡 HTTP](../internal/interface/http/card_api.go)、[主事务](../internal/card/card_repo.go)、[后台在线卡](../internal/http/admin/user/online_cards.go)、worker/charge/cards.go。
+来源：[刷卡 HTTP](../internal/http/user/card/api.go)、[主事务](../internal/card/card_repo.go)、[后台在线卡](../internal/http/admin/user/online_cards.go)、worker/charge/cards.go。
 
 目标：SwipeService.Apply、CardStatusService.Change、CardAdminService.Bind／ChangeStatus；card_repo.go、charge_repo.go、start_result_repo.go 与窄读取能力。
 
@@ -302,7 +302,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.8 order 与 charging/query：O-01／CQ-01／N-order
 
-来源：[用户订单查询](../internal/interface/http/charge_user_query.go)、[反馈提交](../internal/interface/http/charge_feedback.go)、[后台 casework](../internal/http/admin/order/casework.go)、order 的 history／view／package repo，以及后台 order_live／order_process。
+来源：[用户订单查询](../internal/http/user/order/query.go)、[反馈提交](../internal/http/user/order/feedback.go)、[后台 casework](../internal/http/admin/order/casework.go)、order 的 history／view／package repo，以及后台 order_live／order_process。
 
 目标：order.QueryService.History／Detail、FeedbackService.Submit／Reply；charging/query.Service.Ongoing／Snapshot／Curve／Process。身份、范围及窗口作为业务输入。
 
@@ -329,7 +329,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.10 identity：I-01／N-identity
 
-来源：[认证适配](../internal/http/auth/auth.go)、[登录接口](../internal/interface/http/user_api.go)、phone_api.go、admin/user/charge_users.go、identity 的用户与微信能力、infrastructure/redis 的会话实现。
+来源：[认证适配](../internal/http/auth/auth.go)、[登录接口](../internal/http/user/identity/session.go)、phone_api.go、admin/user/charge_users.go、identity 的用户与微信能力、infrastructure/redis 的会话实现。
 
 目标：SessionService.Login／Refresh／Logout／Authenticate、PhoneService.Bind、UserQueryService；用户 repo 与 session_repo.go 的 Redis 实现。HTTP auth 子包只提取凭据、调用身份能力及写入请求上下文。
 
@@ -528,7 +528,7 @@ make test-integration TEST_MYSQL_URL=...
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
-| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | auth／admin／central已拆出，查询与范围归所属服务、认证单次响应已验收；剩余user分包、具名客户端及runtime／repo继续实施 |
+| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面与薄适配已验收，查询与范围归所属服务、认证单次响应保持；剩余具名客户端及runtime／repo继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
@@ -728,3 +728,12 @@ make test-integration TEST_MYSQL_URL=...
 5d开发验收：重启central／user后，在现有Compose容器网络核对central原12路由24次坏凭据及4条合法只读查询，`.tmp/batch5d-live-central-{before,after}.json`中空待启动、无效卡零余额、原缺失订单409及单信封401一致；没有映射8082到宿主机。`.tmp/batch5d-live-user-admin.json`及日志保留7条后台／3条用户原查询、既有tester-1零余额及两类会话注销。未新增用户或资金写入；登录按原规则更新SQL登录元数据和Redis会话，已补明5c同一验收边界。没有触发合法的central写入路由，不把该联调当作真实支付或实机验收。精确暂存退出检查继续，用户分包与X／G／WK及DEP仍待完成。
 
 5d最终退出：精确暂存快照`.tmp/batch5d-validation`的`.tmp/batch5d-snapshot-{check,integration,build,tidy}.log`全部通过；1199份文件中的688份Go／模块与原blob及工作区一致，tidy无差异、本地Markdown链接有效。最终仅补本退出记录、状态及README实际入口说明；H-01组合组仍进行中，下一批按用户接口族拆除UserAccountAPI全量容器及旧根包。17组仍完成15组，继续X／G／WK和DEP评估，不代表整个目标完成。
+
+
+批次5e（H-01用户目录）实施：用户接口按card、charging、device、identity、marketing、ops、order、payment、settlement、wallet十个实际业务族归internal/http/user，cmd直接装配各所属服务。删除全量UserAccountAPI与旧internal/interface目录，不保留类型别名或转发包。跨族注册回归集中在只有测试文件的internal/http/integration；纯卡文档规则测试回归card。父包只保留错误映射和原ASCII空格状态筛选，坐标与金额校验归其消费者；分页及认证助手直接内联原能力，孤立fixture与无消费者mustJSON删除。user.openapi.json原字节随迁，不增加文档服务地址。
+
+5e安全网与语法核对：迁移前捕获cmd/user实际newRouter在disabled／simulation／wechat_direct三模式的完整42／43／43条路由，固化testdata/routes-before-user-split.json，记录工具已删除；新增装配测试逐项核对。`.tmp/batch5e-move-proof.log`覆盖72个原生产函数，65个函数语法匹配及7个明确路由拆分／助手内联／删除，并核对全部41个原方法／路径到处理器的绑定；只规范化移动类型、原分页／鉴权助手及字段命名，不忽略请求或响应值。`.tmp/batch5e-live-user-before.json`记录开发栈原3条公开和13条所属查询；测试用户为既有tester-1、零余额，登录元数据及会话按原规则更新，注销完成。全仓、精确暂存和开发迁移后退出核验继续，不提前关闭组合组。
+
+5e工作区及开发退出：`.tmp/batch5e-{check,integration,build,tidy}.log`全部通过，完整集成只使用既有独立三库3307／Redis6381；迁移后的跨族实际注册回归和29×9单信封认证拒绝均通过。`.tmp/batch5e-test-move-proof.log`核对原55个测试／fixture及cmd装配函数，除明确的业务族消费者改名和装配拆分外，断言、造数及清理语法保持；函数／字段中文注释清单无缺项。重启user后首次连接在进程就绪前失败，读取启动日志及ready后重跑通过，未把首次失败记为验收成功。`.tmp/batch5e-live-user-after.json`与迁移前全部3条公开、13条所属查询逐项一致，既有用户仍零余额、注销完成；未新增用户或资金写入，登录元数据仍按原规则更新。OpenAPI原内容保持，公开字段、前端、schema及依赖未改，最近完整前端验收仍为5b。精确暂存退出核验待补，H-01所在组合组继续X／G／WK，不提前标记整个目标完成。
+
+5e最终退出：精确暂存快照`.tmp/batch5e-validation`的`.tmp/batch5e-snapshot-{check,integration,build,tidy}.log`全部通过；1207份暂存文件中的695份Go／模块与原blob及工作区一致，tidy无差异、本地Markdown链接有效。user OpenAPI原HEAD与新暂存blob相同，跨族测试的编译标签与业务断言保留。最终只读复核未发现本批具体阻断，旧HTTP根包／别名／全量容器已移除；H-01的目录和薄适配子项完成。最终仅补本退出记录及状态，不重复无源码变化的业务测试。17组维持15组完成约88%，继续X-01／G-01／WK-01／N-gateway／N-worker及DEP-01评估，不代表整个目标完成。用户授权的46个Go技能及锁文件仍在独立提交295f5c4，并包含在本快照中。
