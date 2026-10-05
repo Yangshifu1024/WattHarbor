@@ -167,8 +167,7 @@ func (s Repo) CurrentRuleVersion(tx *gorm.DB, stationID uint64, deviceID string)
 // 版本号由调用方按 expectedVersion + 1 决定，这里只负责状态迁移与写入。
 // tx 已锁 stationID，deviceID 空为整站，in 为完整快照；返回新主键或存储错误，失败需整体回滚。
 func (s Repo) PublishPricingRule(tx *gorm.DB, stationID uint64, deviceID string, version uint32, in PublishRuleInput) (uint64, error) {
-	if err := RuleScope(stationID, deviceID)(tx.Table("pricing_rule")).
-		Where("status='active'").Update("status", "disabled").Error; err != nil {
+	if err := s.disableActivePricingRules(tx, stationID, deviceID); err != nil {
 		return 0, err
 	}
 	row := map[string]any{
@@ -195,6 +194,23 @@ type PublishRuleInput struct {
 // 站点规则自然对设备生效，这里只需要把该设备自己历史上的 active 规则停用。
 // tx 已锁 stationID，deviceID 为目标覆盖规则；返回写入错误，不删除历史记录或冻结快照。
 func (s Repo) InheritStationRule(tx *gorm.DB, stationID uint64, deviceID string) error {
-	return RuleScope(stationID, deviceID)(tx.Table("pricing_rule")).
-		Where("status='active'").Update("status", "disabled").Error
+	return s.disableActivePricingRules(tx, stationID, deviceID)
+}
+
+// disableActivePricingRules 在已锁 stationID 的 tx 中停用 deviceID 对应的现有 active 规则。
+// 先按调用方事务视图非锁读取主键，再按主键顺序保留原作用域及状态逐行更新；空目标不执行范围 UPDATE。
+// 返回查询或更新错误，不提交或重试；沿用原 context 和事务视图，不刷新调用方已有 RR 快照。
+func (s Repo) disableActivePricingRules(tx *gorm.DB, stationID uint64, deviceID string) error {
+	var ids []uint64
+	if err := RuleScope(stationID, deviceID)(tx.Table("pricing_rule")).
+		Where("status='active'").Order("id").Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := RuleScope(stationID, deviceID)(tx.Table("pricing_rule")).
+			Where("id=? AND status='active'", id).Update("status", "disabled").Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
