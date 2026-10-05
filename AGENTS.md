@@ -389,7 +389,8 @@ charge-pilot/
 │   └── internal/ops/audit_repo.go（迁移前：internal/ops/interface_query_store.go）
 ├── internal/export                                       后台批量导出
 │   ├── internal/export/cleanup.go（迁移前：cmd/admin/main.go[过期文件清理循环]）
-│   └── internal/export/export_task_store.go
+│   ├── internal/export/format.go（迁移前：internal/interface/http/admin/export/exports_format.go）
+│   └── internal/export/export_task_repo.go（迁移前：internal/export/export_task_store.go）
 ├── internal/contracts                                    服务间 HTTP 的端点、共享 DTO 与错误契约
 │   ├── internal/contracts/central/alerts.go（迁移前：internal/worker/alerts/sync.go[同步DTO]）
 │   ├── internal/contracts/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP 授权响应]）
@@ -497,7 +498,6 @@ charge-pilot/
 │   ├── internal/interface/http/admin/device/devices.go
 │   ├── internal/interface/http/admin/device/meter_reviews.go
 │   ├── internal/interface/http/admin/export/exports.go
-│   ├── internal/interface/http/admin/export/exports_format.go
 │   ├── internal/interface/http/admin/finance/api.go
 │   ├── internal/interface/http/admin/finance/invoices.go
 │   ├── internal/interface/http/admin/finance/refunds.go

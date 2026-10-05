@@ -47,8 +47,8 @@ func (t ExportTask) exportDir() string {
 }
 
 // store 返回导出专用的读写入口，使用同一个 central_db 连接池。
-func (t ExportTask) store() exportpkg.ExportStore {
-	return exportpkg.ExportStore{DB: t.DB}
+func (t ExportTask) store() exportpkg.ExportRepo {
+	return exportpkg.ExportRepo{DB: t.DB}
 }
 
 // CleanupExpired 每批清理最多 1000 个过期任务，删除文件并更新状态为 expired。
@@ -267,7 +267,7 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportpkg.Expor
 		filters = map[string]any{}
 	}
 	// 多取一行，用来判断是否超出单次行数上限。
-	records, err := t.store().QueryExportSource(row.Resource, scope, filters, t.maxRows()+1)
+	records, err := t.store().QueryExportSource(ctx, row.Resource, scope, filters, t.maxRows()+1)
 	if err != nil {
 		return t.fail(ctx, taskNo, err)
 	}
@@ -306,7 +306,7 @@ func (t ExportTask) run(ctx context.Context, taskNo string, spec exportpkg.Expor
 		}
 		lines = append(lines, line)
 	}
-	if err := writeExport(file, format, headers, lines); err != nil {
+	if err := (exportpkg.FormatWriter{}).Write(ctx, file, format, headers, lines); err != nil {
 		file.Close()
 		os.Remove(pending)
 		return t.fail(ctx, taskNo, err)

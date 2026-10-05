@@ -360,7 +360,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.12 export：E-01／N-export
 
-来源：[任务与清理／下载](../internal/interface/http/admin/export/exports.go)、[CSV／XLSX 格式实现](../internal/interface/http/admin/export/exports_format.go)、export_task_store.go、export/cleanup.go。
+来源：[任务与清理／下载](../internal/interface/http/admin/export/exports.go)、[CSV／XLSX 格式实现](../internal/export/format.go)、export_task_repo.go、export/cleanup.go。
 
 现状基线：PDF 生成、字体目录与 fpdf 依赖已移除，当前仅支持 CSV、XLSX。PDF 创建请求返回参数错误，历史 PDF 任务不再提供下载；资源清单、OpenAPI 和初始化 SQL 已同步。本任务以这一实现为准，不再安排字体迁移或恢复 PDF。现有数据库未因初始化 SQL 修改自动变更。
 
@@ -369,7 +369,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 - [ ] E-01：迁入资源选择、范围快照、行数限制、生成、成功／失败推进与清理；数据源使用明确只读 repo，避免复制业务写入。
 - [ ] E-01：首批保持当前同步执行／受管理生命周期，不添加脱离请求 context 的后台 goroutine，也不默认把导出搬给 worker。
 - [ ] E-01：下载用例复查当前权限、申请人、范围与有效期；文件路径由可信目录与任务编号推导，不信任库中任意路径。
-- [ ] E-01：迁入 CSV、XLSX 格式实现，保留转义、中文、缺失字段表达与 XLSX 流式写入；资源清单、格式校验、MIME、文件扩展名和 OpenAPI 保持一致。
+- [x] E-01：迁入 CSV、XLSX 格式实现，保留转义、中文、缺失字段表达与 XLSX 流式写入；资源清单、格式校验、MIME、文件扩展名和 OpenAPI 保持一致。
 - [ ] N-export：任务和清理数据访问改 repo；Cleaner 的实现也回 export，不由 HTTP 实现业务清理。
 
 验收：多取一行判超限并失败、文件 IO 失败／取消后的任务状态、24 小时下载窗口、重复清理和文件已不存在、路径越界拒绝、权限撤销后下载拒绝；CSV／XLSX 格式回归通过，PDF 与未知格式请求仍被拒绝，历史 PDF 下载仍返回格式不可用。历史任务及文件的保留／清理按现有生命周期执行，不借重构修改现有库枚举或删除历史数据。
@@ -527,7 +527,7 @@ make test-integration TEST_MYSQL_URL=...
 | M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
-| E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
+| E-01／N-export | 进行中 | FormatWriter及原格式回归迁入export，任务持久化改ExportRepo；编码及源查询接请求context，取消测试通过。同步任务、下载准入／路径／范围凭据和清理仍待所属服务迁移 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
@@ -674,3 +674,7 @@ make test-integration TEST_MYSQL_URL=...
 4h定向验证：`.tmp/batch4h-operations-{targeted,registered}.log`、`.tmp/batch4h-admission.log`及`.tmp/batch4h-mutants-restored.log`使用独立真实MySQL／Redis及实际注册路由，覆盖当日两端边界、七格补零、软删、原公告及审计空值、严格输入、审计回滚、取消、当前撤权及版本变化的403／401，任一看板查询失败只503而无部分数据。注册审计筛选暴露原LikePattern用!转义但SQL未声明的问题，已显式ESCAPE，含下划线账号原筛选回归通过。公告审计、未计费条件和转义声明三项变异均在指定断言失败并恢复，日志`.tmp/batch4h-mutant-*.log`；fixture仅自身账号和随机SID，业务造数外层回滚，不修改开发事实。初版站点fixture缺必填坐标已补齐，不改生产schema。数据库技能只读审查发现看板二次准入误映射503，已修正并以首次鉴权后实际撤权／提升版本的SQL闸门验证；其余未发现新可达问题，过时描述及字段中文说明已清理。用户技能及锁文件另行授权提交295f5c4，后续精确验证快照包含其已提交原blob，不混入本批业务改动。
 
 4h退出证据：工作区与最终精确暂存快照`.tmp/batch4h-validation`的check、完整三库integration、全部入口build及tidy全部通过，日志`.tmp/batch4h-{check,integration,build,tidy}.log`与`.tmp/batch4h-snapshot-*.log`。快照包含用户已提交技能，1177份文件中的666份Go／模块与原blob逐字节一致，tidy无差异、本地Markdown链接有效。admin已重启，`.tmp/batch4h-live-operations.json`核对原公告、审计和看板七格趋势读取，会话注销；无公告发布、开发安全设置或资金修改。前端及公开字段未改，最近前端完整验收为4g的78／59项、两端类型检查及后台构建，原chunk提示保留。最终仅更新任务完成及本退出记录，下一批继续导出。
+
+批次4i（E-01格式／持久命名子项）实施：CSV／XLSX编码及原格式回归归export.FormatWriter，HTTP只调用所属编码，不保留旧编码函数；ExportStore／export_task_store改ExportRepo／export_task_repo并更新全部消费者。FormatWriter按行及输出检查ctx，源取数使用WithContext，取消不能被误报编码成功；中文、空值、公式文本防护、XLSX流式及不支持PDF原行为保持。`.tmp/batch4i-{format,targeted}.log`验证原格式／严格PDF拒绝、输出首写中取消不续写和预取消零输出，真实独立SQL四资源源取数均响应取消。此子项尚未迁入任务事务、下载和清理，E-01不提前完成。技能只读核对确认原首次UUID竞争、失配到期字符串、库路径信任、范围／mask收窄、厂商设备过滤及文件／SQL推进缺口，继续下一服务子批修正；不新增schema或异步worker。
+
+4i退出证据：工作区`.tmp/batch4i-{check,integration,build,tidy}.log`及最终精确暂存快照`.tmp/batch4i-validation`的对应四份`.tmp/batch4i-snapshot-*.log`全部通过；1180份文件中的669份Go／模块与原blob逐字节一致，tidy无差异、文档本地链接有效。无开发数据或凭据操作，无公开字段、依赖、路由和格式清单变更；前端最近验收仍为4g。任务状态维持进行中，下一服务批继续安全准入、恢复和清理。
