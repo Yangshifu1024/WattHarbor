@@ -4,33 +4,28 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 )
 
-// AutoStopper 不再做停机判定：它只把扫描触发转发给 central。
-// 判定、计费截止点冻结与停机下发都在 central 完成（P0-1），
-// worker 不读订单计费快照、不写 charge_billing_cutoff、不直读 gateway 库。
-type AutoStopper struct {
-	CentralURL, ServiceToken string
-	Client                   serviceclient.Client
+// AutoStopClient 是 worker 停机触发所需的窄能力，网络配置及回执验证由注入实现负责。
+type AutoStopClient interface {
+	// AutoStop 在 ctx 下以无业务参数的 request 触发一次扫描，返回验证后的进度 reply 与错误。
+	// 未完成回执可有部分进度；未知结果不推断设备状态，不自动重试或创建命令身份。
+	AutoStop(ctx context.Context, request centralcontract.AutoStopRequest) (reply centralcontract.AutoStopReply, err error)
 }
 
-// Run 触发一轮 central 停机扫描，返回本轮下发停机的订单数。
+// AutoStopper 只触发 central 扫描；停机判定、计费截止点冻结和下发由 central 所属用例完成。
+// worker 不读订单计费快照、不写 charge_billing_cutoff、不直读 gateway 库。
+type AutoStopper struct {
+	Central AutoStopClient // 注入的停机触发能力；不持有 URL、令牌或通用 HTTP 客户端。
+}
+
+// Run 在 ctx 下触发一轮扫描，返回已验证的处理数量和原调用错误；数量不表示设备已停电。
+// 未配置返回零值和明确错误，未完成保留合法部分进度；不重试、不更换业务身份或写入资金。
 func (s AutoStopper) Run(ctx context.Context) (int, error) {
-	if s.CentralURL == "" || s.ServiceToken == "" {
+	if s.Central == nil {
 		return 0, errors.New("auto stop is not configured")
 	}
-	var response struct {
-		Code int
-		Data struct {
-			Stopped int
-		}
-	}
-	if err := s.Client.Post(ctx, s.CentralURL, s.ServiceToken, "/api/v1/internal/charge-orders/auto-stop", nil, &response); err != nil {
-		return 0, err
-	}
-	if response.Code != 0 {
-		return 0, errors.New("auto stop sweep rejected")
-	}
-	return response.Data.Stopped, nil
+	reply, err := s.Central.AutoStop(ctx, centralcontract.AutoStopRequest{})
+	return reply.Stopped, err
 }

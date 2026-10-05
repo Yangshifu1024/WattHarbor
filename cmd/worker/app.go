@@ -22,6 +22,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// run 在 ctx 下加载 worker 配置、打开资源并等待应用退出，返回启动、运行及关闭错误。
+// 装配失败或所有受管理任务退出后才关闭资源，不启动脱离生命周期的任务。
 func run(ctx context.Context) (err error) {
 	cfg, err := config.LoadWorker()
 	if err != nil {
@@ -39,11 +41,14 @@ func run(ctx context.Context) (err error) {
 	return app.Run(ctx)
 }
 
+// application 持有 worker 已装配的 HTTP 服务及受管理任务，不拥有独立资源关闭流程。
 type application struct {
-	Server *http.Server
-	Jobs   workerruntime.Runtime
+	Server *http.Server          // 受 httpapi.Serve 管理的监听服务。
+	Jobs   workerruntime.Runtime // 同一生命周期下的调度、资金及同步任务。
 }
 
+// assemble 以 cfg 和已打开的 r 装配应用，返回应用或客户端配置错误；不执行业务请求或启动循环。
+// 原 internalHTTP 用于查询及同步，jobHTTP 单独注入资金任务客户端，资源关闭仍由 run 管理。
 func assemble(cfg config.Worker, r *resources) (*application, error) {
 	internalHTTP, jobHTTP := r.InternalHTTP, r.JobHTTP
 	central, err := centralclient.NewClient(serviceclient.Client{HTTP: internalHTTP}, cfg.CentralInternalURL, cfg.ServiceToken)
@@ -54,13 +59,17 @@ func assemble(cfg config.Worker, r *resources) (*application, error) {
 	if err != nil {
 		return nil, err
 	}
+	jobs, err := centralclient.NewClient(serviceclient.Client{HTTP: jobHTTP}, cfg.CentralInternalURL, cfg.ServiceToken)
+	if err != nil {
+		return nil, err
+	}
 	paidStarts := charge.PaidStarter{Orders: central, Gateway: gateway}
 	startResults := charge.Synchronizer{Gateway: gateway, Central: central}
 	endResults := charge.EndSynchronizer{Gateway: gateway, Central: central}
 	cardEvents := charge.CardDispatcher{Gateway: gateway, Central: central}
-	autoStops := charge.AutoStopper{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: serviceclient.Client{HTTP: jobHTTP}}
-	billingJobs := billing.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}
-	refunds := refund.Dispatcher{CentralURL: cfg.CentralInternalURL, ServiceToken: cfg.ServiceToken, Client: jobHTTP}
+	autoStops := charge.AutoStopper{Central: jobs}
+	billingJobs := billing.Dispatcher{Central: jobs}
+	refunds := refund.Dispatcher{Central: jobs}
 	deviceAlerts := alerts.Sync{Central: central}
 	scheduler := schedule.Scheduler{DB: r.WorkerDB.ORM, Handlers: map[string]schedule.Handler{}}
 
@@ -77,6 +86,9 @@ func assemble(cfg config.Worker, r *resources) (*application, error) {
 			DeviceAlerts: deviceAlerts, CardEvents: cardEvents, PaidStarts: &paidStarts, StartResults: startResults, EndResults: endResults, Publishers: publishers},
 	}, nil
 }
+
+// Run 在 ctx 下并发执行 HTTP、调度、资金和同步循环，任一错误取消其余任务并等待全部退出。
+// 返回组内原错误；数据库、Redis 及客户端资源由外层在本方法退出后关闭。
 func (a *application) Run(ctx context.Context) error {
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error { return httpapi.Serve(groupCtx, a.Server, 10*time.Second) })

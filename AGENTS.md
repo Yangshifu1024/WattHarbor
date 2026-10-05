@@ -420,7 +420,7 @@ charge-pilot/
 │   ├── internal/integration/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP]）
 │   ├── internal/integration/central/card.go（迁移前：internal/worker/charge/cards.go[central HTTP]）
 │   ├── internal/integration/central/client.go（迁移前：internal/worker/charge/paid_start.go[待启动 HTTP 查询]）
-│   ├── internal/integration/central/jobs.go（central资金任务具名客户端；消费者迁移继续下一批）
+│   ├── internal/integration/central/jobs.go（迁移前：worker资金任务通用HTTP；由cmd注入三个消费者窄接口）
 │   ├── internal/integration/central/results.go（迁移前：internal/worker/charge/*sync.go[回执 HTTP]）
 │   ├── internal/integration/gateway/provision.go（迁移前：后台设备导入出站 HTTP）
 │   ├── internal/integration/gateway/vendor.go（迁移前：后台厂商通用出站 HTTP）
@@ -488,8 +488,6 @@ charge-pilot/
 │   ├── internal/worker/charge/meter_segments.go
 │   ├── internal/worker/charge/paid_start.go
 │   ├── internal/worker/charge/sync.go
-│   ├── internal/worker/charge/sync_client.go
-│   ├── internal/worker/internaljob/http.go
 │   ├── internal/worker/internaljob/ops.go
 │   ├── internal/worker/outbox/publisher.go
 │   ├── internal/worker/refund/dispatch.go

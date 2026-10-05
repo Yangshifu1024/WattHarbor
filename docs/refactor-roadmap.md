@@ -528,7 +528,7 @@ make test-integration TEST_MYSQL_URL=...
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
-| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面与薄适配已验收，查询与范围归所属服务、认证单次响应保持；剩余具名客户端及runtime／repo继续实施 |
+| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面与薄适配已验收；worker资金具名客户端消费者及旧通用调用删除已验收，查询与范围归所属服务、认证单次响应保持；剩余gateway／worker的runtime／repo整理继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
@@ -753,3 +753,11 @@ make test-integration TEST_MYSQL_URL=...
 5h指定证据：`.tmp/batch5h-publication-isolation.log`四种真实RR双写连接闸门场景通过：发布／继承及空／已有目标，第一停用阶段后仍持原事务，第二站点必须先提交原version1规则。旧范围UPDATE变异四场景均在第二站点期限断言失败，`.tmp/batch5h-publication-gap-mutant.log`保留，恢复后pricing及实际后台注册路由两完整包通过`.tmp/batch5h-publication-restored.log`。造数提交属于自身站点／设备／请求，退出放行并等待第一事务，再完整主键清理并核对零残留；不改既有并发、公开JSON或审计断言。worker的5g改动继续保留未暂存，5h单独暂存pricing两文件及文档，最终全仓快照只使用已提交旧worker实现验证本修复；消费者完成须等下一批自己的完整退出验收，不提前关闭组合组。
 
 5h最终快照验收：`.tmp/batch5h-validation`的`.tmp/batch5h-snapshot-{check,integration,build,tidy}.log`全部通过，完整integration保留默认包并行及独立三库／Redis；tidy无差异、快照本地Markdown链接有效。1216份暂存文件中的704份Go／模块与原blob一致；pricing改动与工作区一致，9份未暂存worker批次改动明确排除并以原暂存blob验证，3份未跟踪5g新增测试也未纳入本修复快照。两份pricing源码中文函数／字段注释清单无缺项。最终仅补本记录，公开字段、前端、schema及依赖不变，最近完整前端验收仍为5b；开发资金循环联调属于下一5g批次，不将其计为方案发布或真支付验收。17组仍完成15组约88%，继续消费者、G／WK和DEP评估。
+
+批次5g（X-01资金任务消费者，5h修复后继续）：自动停机、计费、退款派发注入各自消费方窄接口，cmd用原受管理JobHTTP独立构造具名central客户端，原InternalHTTP查询／同步及资源退出保持。停机保留合法部分计数及原错误，两个派发保持Run(error)，未配置明确失败，不重试或换身份。已无消费者的worker/charge/sync_client.go、internaljob/http.go及platform/serviceclient旧Gin中间件删除，原worker运维API和实际HTTP鉴权适配保留；没有真实后台worker调用不新增虚构contracts/worker。原任务顺序、间隔和游标未修改。
+
+5g指定证据：`.tmp/batch5g-targeted.log`原四默认包、`.tmp/batch5g-assembly.log`实际cmd装配均通过，三资金任务确实用JobHTTP Transport、query pool无调用且原Client配置不变。消费者回环测试保留原无正文／null形状、503部分数量与HTTP／业务错误、取消context及未配置；旧退款只含code0的空数据回执现在明确拒绝。`.tmp/batch5g-finance-registered.log`实际Register三端点、真实BillingService和独立MySQL原fee_delivery验证停机及计费失败仍到退款、停机合法部分2保留、原任务到期前不重投、推进同一到期身份后恢复及完成重放不再Apply。取消在实际停机边界触发，两个后续消费者入口计数0，不只依靠没有HTTP请求作证。停机和资金Apply是窄fixture，退款走真实禁用分支，不将此编排证据当作扣款或实机验收；原造数及推进外层回滚。原全仓pricing失败先独立提交77fdca4修复，消费者仍需自己最终完整验收。
+
+5g开发循环证据：重启既有worker加载源码，只通过容器网络GET health／metrics观察新进程uptime约2.65→14.66秒内的自动轮次，central三个任务200指标各增1、非200没有增量，未手动POST。`.tmp/batch5g-worker-finance-{before,after}.json`保留；只读`.tmp/batch5g-dev-finance-{before,after}.log`核对充电／计费／费用投递／到期退款均0，钱包合计1999／冻结0、账单1相同。首次只读查询误用不存在billing_job表后已按真实repo改为charge_billing_job重跑；只将完整成功读取作为证据。没有映射8082、新建用户／订单／会话或触发模拟支付，空队列指标验证不代表资金或设备执行。公开字段、前端、schema及依赖不变，最近完整前端验收仍为5b；最终精确暂存验收继续，G／WK及DEP不提前完成。
+
+5g最终快照验收：`.tmp/batch5g-validation`的`.tmp/batch5g-snapshot-{check,integration,build,tidy}.log`全部通过，完整integration使用独立三库／Redis并保留默认包并行，包含5h修复及两类新增资金装配／注册循环回归。1217份暂存文件中的705份Go／模块与原blob及工作区一致，tidy无差异、Markdown本地链接有效；10份本批Go源码中文函数／字段／接口注释清单无缺项。旧通用HTTP符号全仓零消费者；worker生产源码仅HTTP准入适配仍持服务令牌，三个业务派发不持有通用客户端或URL。最终仅补本记录及表中子项状态，不关闭G／WK组合组或DEP，17组仍完成15组约88%；继续gateway／worker持久化及运行时整理。
