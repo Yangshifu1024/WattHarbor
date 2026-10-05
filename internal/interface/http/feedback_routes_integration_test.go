@@ -103,7 +103,7 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 	service := order.FeedbackService{DB: tx}
 	router := httpapi.NewRouter()
 	(chargehttp.UserAccountAPI{Feedback: service, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
-	(adminorder.API{Faults: device.FaultService{DB: tx}, Feedback: service, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
+	(adminorder.API{Faults: device.FaultService{DB: tx}, Feedback: service, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	call := func(method, path, body, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

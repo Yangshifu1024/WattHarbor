@@ -526,7 +526,7 @@ make test-integration TEST_MYSQL_URL=...
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
 | M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
-| OP-01／N-ops | 进行中 | 后台SessionService／MFAService及会话、频次、设置repo归位，锁后原版本／挑战CAS及实时权限完成定向验证。最后管理员保护保留，账号角色、公告写入和dashboard继续迁移 |
+| OP-01／N-ops | 进行中 | 后台SessionService／MFAService及会话、频次、设置repo归位，锁后原版本／挑战CAS及实时权限完成定向验证。AccountService／RoleService及所属repo已迁入并定向验收当前权限、引用及最后管理员；公告写入、dashboard和剩余ops命名继续 |
 | E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
 | H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
 | INF-01 | 待实施 | dashboard、case、用户与后台会话归位后，删除 infrastructure 及残留引用 |
@@ -662,3 +662,9 @@ make test-integration TEST_MYSQL_URL=...
 4f定向证据：`.tmp/batch4f-security-{flow,registered,all}.log`及`.tmp/batch4f-mutants-restored.log`使用真实MySQL／Redis，验证实时权限删除、改密及刷新失效、旧挑战版本、锁定准入、成功消费后重放、原公开回执和敏感证明不进入审计。两个独立连接在两个原Redis读取后固定放行，恰好一个会话／成功审计；旧RR快照早于版本提交时，当前锁读拒绝且不消费。消费后注入审计故障回滚SQL，挑战／设置凭据保持已消费、须重新登录／登记，不宣称Redis与SQL跨存储原子提交。挑战消费、版本、当前锁读及设置审计四项变异均在指定断言失败并恢复，`.tmp/batch4f-mutant-*.log`保留；去掉当前锁读时会在后续档案阶段拒绝但已错误消费挑战，针对该事实的断言失败，不把它描述为成功签发。提交fixture创建自己的自定义角色／账号并清理表、随机SID／挑战；注册设置造数外层回滚，缓存只清理本测试键，不触碰bootstrap或开发安全设置。
 
 4f退出证据：工作区与精确暂存快照`.tmp/batch4f-validation`的check／完整三库integration／全部入口build／tidy全部通过，日志`.tmp/batch4f-{check,integration,build,tidy}.log`及`.tmp/batch4f-snapshot-*.log`；870份暂存文件中的646份Go／模块与原blob逐字节一致，tidy无差异，本地Markdown链接有效。新增用户技能目录及skills-lock.json保留在工作区，已从本批暂存与最终验证快照移出，不混入重构提交。后台78项／用户59项、两端typecheck及后台构建通过，保留原Vite大chunk提示。重启admin后`.tmp/batch4f-live-session.json`验证新服务实际登录、原档案／权限、刷新和注销后401，未修改开发密码、MFA或资金；真实设置流程由独立测试库及注册路由覆盖。OP-01尚余账号角色、公告写入、dashboard及剩余ops持久命名，后续任务仍按表中状态实施。
+
+批次4g（OP-01账号／角色）实施与定向证据：账号创建、更新、软删、解锁、重置及目标MFA迁入AccountService，角色字典及创建／修改／删除迁入RoleService；旧HTTP事务及角色授予校验删除，cmd注入所属服务。三个旧账号／角色store改为AccountRepo／RoleRepo对应repo，无旧别名；安全快照明确排除散列／密钥，身份不经浮点转换。所有管理写入先锁角色集合再锁当前操作者、角色和目标；实际权限及引用当前读。修正普通账号删除误受零客户管理员阻挡，状态变更提升版本防止旧会话复活，重置恢复locked但保留disabled，目标MFA必须匹配服务器原登记；原受授权登记材料回执保留而不进入审计。数据范围未发现已有写路由，不凭目标文档新增API。
+
+4g定向验证：`.tmp/batch4g-management-{flow,concurrency,registered,restored}.log`通过真实独立MySQL／Redis及实际注册账号、角色、运营创建路由，覆盖原字段／状态／严格输入、实时撤权、旧RR权限与新引用、最后管理员三个移除路径、停用再启用、目标MFA原材料、敏感快照和审计503整体回滚。两真实连接按实际集合锁查询闸门固定撤权先提交、分配后当前读取，只拒绝旧权限且没有新账号。四项当前权限／引用／剩余管理员／原MFA密钥变异在指定断言失败并恢复，`.tmp/batch4g-mutant-*.log`保留；提交造数按自身身份清理零残留，注册造数外层回滚，不修改bootstrap、开发安全设置或资金。仓库新增Go技能规则本轮已加载；gopls／govulncheck及C编译器未发现可用命令，采用源码引用核对、编译／vet和真库闸门证据，不声称完成语言服务或race验收。完整退出验收继续，OP-01整体仍进行中。
+
+4g退出证据：工作区默认检查、完整独立三库integration、全部入口构建与tidy通过；最终精确暂存快照`.tmp/batch4g-validation`的`.tmp/batch4g-snapshot-{check,integration,build,tidy}.log`全部通过，875份文件中的651份Go／模块与原blob逐字节一致，tidy无差异，文档本地链接有效。首次快照中既有发布并发测试失败但旧日志未展开error；已仅改善失败诊断，不改业务，原日志保留`.tmp/batch4g-snapshot-publication-original-failure.log`。隔离5次及完整工作区诊断回归、最终快照回归通过，未复现原底层原因，不宣称已定位修复；后续若重现以新诊断跟进。后台78项、用户59项及两端typecheck／后台构建通过，保留已有Vite大chunk提示。admin已重启，`.tmp/batch4g-live-management.json`核对实际原账号、角色和权限公开读取、无敏感列且会话注销；未更改开发安全设置或资金。只读技能审查未发现新的可达功能问题，补齐repo中文事务前提与错误契约；用户技能目录和锁文件仍未提交。OP-01继续公告、审计查询组合、dashboard及剩余持久命名，下一批不提前完成。

@@ -32,12 +32,15 @@ type AdminAccount struct {
 // TableName 指明 AdminAccount 映射到 admin_user（表名与模型名不一致，必须显式指定）。
 func (AdminAccount) TableName() string { return "admin_user" }
 
-type AdminStore struct{ DB *gorm.DB }
+// AccountRepo 访问后台认证与账号自有表，凭据材料只用于认证判定。
+type AccountRepo struct {
+	DB *gorm.DB /* 所属账号与审计数据库 */
+}
 
 // Bootstrap 在全新安装时创建第一个后台账号。
 // 用户名与密码都为空表示不初始化；用户名与密码只给一半、或密码不在 12–72 字节之间，一律报错。
 // 只在库里还没有任何账号时才创建，绝不覆盖已有账号的口令。
-func (s AdminStore) Bootstrap(ctx context.Context, username, password string) error {
+func (s AccountRepo) Bootstrap(ctx context.Context, username, password string) error {
 	if username == "" && password == "" {
 		return nil
 	}
@@ -49,7 +52,9 @@ func (s AdminStore) Bootstrap(ctx context.Context, username, password string) er
 		return err
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var role struct{ ID uint64 }
+		var role struct {
+			ID uint64 /* 初始化角色的原主键 */
+		}
 		if err := tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = 'customer_admin' AND deleted_at IS NULL").Take(&role).Error; err != nil {
 			return err
 		}
@@ -73,7 +78,7 @@ func (s AdminStore) Bootstrap(ctx context.Context, username, password string) er
 // 连续 5 次失败即锁定 30 分钟，锁定到期后失败计数自动清零。
 // 账号启用双因素认证时，口令正确也只返回账号、不写成功状态，由调用方接着走 MFA 流程。
 // 用户名不存在与口令错误返回同一个错误，不给暴力破解区分线索。
-func (s AdminStore) Login(ctx context.Context, username, password, ip string) (AdminAccount, error) {
+func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (AdminAccount, error) {
 	var account AdminAccount
 	var denied error
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -132,7 +137,7 @@ func (s AdminStore) Login(ctx context.Context, username, password, ip string) (A
 // CompleteMFA 在ctx下锁identity原账号，核对原版本及code；ip用于审计，consume原子消费已验证挑战。
 // 锁定／版本失效不消费；坏码计数与审计同事务提交，好码先消费后记录成功。
 // 消费后SQL失败会回滚SQL但不恢复Redis挑战，失败关闭且须重新密码登录。
-func (s AdminStore) CompleteMFA(ctx context.Context, identity operations.AccountIdentity, code, ip string, consume func(context.Context) error) (AdminAccount, error) {
+func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.AccountIdentity, code, ip string, consume func(context.Context) error) (AdminAccount, error) {
 	var account AdminAccount
 	var denied error
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -192,11 +197,11 @@ func (s AdminStore) CompleteMFA(ctx context.Context, identity operations.Account
 
 // Profile 读取一个账号的登录身份与权限清单：先联表取角色编码，再按角色展开权限码。
 // 只接受 active 且未删除的账号；查不到与被停用都返回凭据错误，避免泄漏账号是否存在。
-func (s AdminStore) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
+func (s AccountRepo) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
 	var row struct {
 		AdminAccount
-		Role     string
-		RoleName string
+		Role     string // 当前有效角色编码
+		RoleName string // 当前角色展示名称
 	}
 	err := s.DB.WithContext(ctx).Table("admin_user AS a").Select("a.*, r.code AS role,r.name AS role_name").Joins("JOIN role AS r ON r.id=a.role_id AND r.deleted_at IS NULL").Where("a.id = ? AND a.status='active' AND a.deleted_at IS NULL", id).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -211,7 +216,7 @@ func (s AdminStore) Profile(ctx context.Context, id uint64) (operations.Profile,
 	return p, err
 }
 
-// audit 写一条认证类审计（登录成功、失败、MFA、改密、初始化），
+// WriteAuthAudit 在tx下按a最小身份写action及ip，返回存储错误，不记录口令、密钥或挑战。
 // 固定记在 auth 模块和 admin_user 对象上。created_month 是该表按月分区的键，必须一并写入。
 func WriteAuthAudit(tx *gorm.DB, a AdminAccount, action, ip string) error {
 	now := time.Now().UTC()
@@ -221,7 +226,7 @@ func WriteAuthAudit(tx *gorm.DB, a AdminAccount, action, ip string) error {
 // ChangePassword 校验旧口令后改新口令，并把 auth_version 自增一，
 // 使该账号已签发的令牌立即失效。旧口令错误返回凭据错误；
 // 新口令必须与旧口令不同且在 12–72 字节之间（bcrypt 的上限）。
-func (s AdminStore) ChangePassword(ctx context.Context, id uint64, oldPassword, newPassword, ip string) error {
+func (s AccountRepo) ChangePassword(ctx context.Context, id uint64, oldPassword, newPassword, ip string) error {
 	if len(newPassword) < 12 || len(newPassword) > 72 || newPassword == oldPassword {
 		return errors.New("new password must differ and contain 12–72 bytes")
 	}

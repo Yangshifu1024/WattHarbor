@@ -50,7 +50,7 @@ func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application
 	if err != nil {
 		return nil, err
 	}
-	adminStore := ops.AdminStore{DB: r.ORM}
+	adminStore := ops.AccountRepo{DB: r.ORM}
 	if err := adminStore.Bootstrap(ctx, cfg.AdminBootstrapUser, cfg.AdminBootstrapPassword); err != nil {
 		return nil, err
 	}

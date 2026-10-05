@@ -62,7 +62,7 @@ func faultFixture(t *testing.T, db *gorm.DB) (uint64, string, operations.Profile
 			t.Fatal(err)
 		}
 	}
-	actor, err := (ops.AdminStore{DB: db}).Profile(context.Background(), id)
+	actor, err := (ops.AccountRepo{DB: db}).Profile(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}

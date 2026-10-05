@@ -103,7 +103,7 @@ func securityFixture(t *testing.T) (*gorm.DB, *gorm.DB, SessionRepo, AdminAccoun
 func TestSecuritySessionLiveVersionAndMFAAdmission(t *testing.T) {
 	db, _, repo, account, password, jwt := securityFixture(t)
 	ctx := context.Background()
-	service := SessionService{Accounts: AdminStore{DB: db}, Sessions: repo, Tokens: JWTAccess{JWT: jwt}}
+	service := SessionService{Accounts: AccountRepo{DB: db}, Sessions: repo, Tokens: JWTAccess{JWT: jwt}}
 	var permissionID uint64
 	if err := db.Table("permission").Where("code='order.read'").Pluck("id", &permissionID).Error; err != nil || permissionID == 0 {
 		t.Fatalf("permission fixture %d %v", permissionID, err)
@@ -264,7 +264,7 @@ func TestSecurityMFAChallengeVersionUsesLockedCurrentRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := SessionService{Accounts: AdminStore{DB: tx}, Sessions: repo, Tokens: JWTAccess{JWT: jwt}}
+	service := SessionService{Accounts: AccountRepo{DB: tx}, Sessions: repo, Tokens: JWTAccess{JWT: jwt}}
 	reply, err := service.VerifyMFA(ctx, challenge, code, "fixture")
 	if reply.AccessToken != "" {
 		_, sid, parseErr := (JWTAccess{JWT: jwt}).Verify(reply.AccessToken)
@@ -322,7 +322,7 @@ func TestSecuritySigningFailureCleanupBoundaries(t *testing.T) {
 			if canceled {
 				signer.cancel = cancel
 			}
-			service := SessionService{Accounts: AdminStore{DB: db}, Sessions: tracked, Tokens: signer}
+			service := SessionService{Accounts: AccountRepo{DB: db}, Sessions: tracked, Tokens: signer}
 			reply, err := service.Login(ctx, account.Username, password, "fixture")
 			if !errors.Is(err, failure) || reply.Access.AccessToken != "" || tracked.createdSID == "" {
 				t.Fatalf("sign failure retained result %v", err)
@@ -393,7 +393,7 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 	results := make(chan result, 2)
 	for _, db := range []*gorm.DB{first, second} {
 		go func() {
-			s := SessionService{Accounts: AdminStore{DB: db}, Sessions: gated, Tokens: JWTAccess{JWT: jwt}}
+			s := SessionService{Accounts: AccountRepo{DB: db}, Sessions: gated, Tokens: JWTAccess{JWT: jwt}}
 			reply, err := s.VerifyMFA(ctx, challenge, code, "concurrent")
 			results <- result{reply, err}
 		}()
@@ -462,7 +462,7 @@ func TestSecurityMFASQLFailureAfterConsumeClosesLogin(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	service := SessionService{Accounts: AdminStore{DB: db}, Sessions: repo, Tokens: JWTAccess{JWT: jwt}}
+	service := SessionService{Accounts: AccountRepo{DB: db}, Sessions: repo, Tokens: JWTAccess{JWT: jwt}}
 	reply, err := service.VerifyMFA(ctx, challenge, code, "fixture")
 	db.Callback().Create().Remove(name)
 	if !errors.Is(err, failure) || reply.AccessToken != "" {

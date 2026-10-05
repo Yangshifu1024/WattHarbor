@@ -37,12 +37,14 @@ type PermissionRow struct {
 	Description string `json:"description" gorm:"column:description"` // 权限说明，库中为 NULL 时由 SQL 补空串
 }
 
-// RoleStore 是角色与权限字典的读写入口。
-type RoleStore struct{ DB *gorm.DB }
+// RoleRepo 是角色与权限字典的读写入口。
+type RoleRepo struct {
+	DB *gorm.DB /* 所属角色与权限数据库 */
+}
 
 // PermissionCodesForRoles 取出这些角色合起来持有的权限编码（去重）。
 // 被软删除的角色不参与：删掉的角色不该继续给人授权。
-func (s RoleStore) PermissionCodesForRoles(ctx context.Context, codes ...string) ([]string, error) {
+func (s RoleRepo) PermissionCodesForRoles(ctx context.Context, codes ...string) ([]string, error) {
 	var result []string
 	err := s.DB.WithContext(ctx).Table("permission AS p").
 		Joins("JOIN role_permission rp ON rp.permission_id = p.id").
@@ -54,8 +56,8 @@ func (s RoleStore) PermissionCodesForRoles(ctx context.Context, codes ...string)
 	return operations.WithoutRetiredPermissions(result), nil
 }
 
-// ListRoles 按 ID 升序返回未删除角色，并回填每个角色的权限编码与账号数。
-func (s RoleStore) ListRoles(ctx context.Context) ([]RoleRow, error) {
+// ListRoles 在ctx下按ID升序读取未删除角色及权限／账号数，返回原列表或取消／存储错误，不写入。
+func (s RoleRepo) ListRoles(ctx context.Context) ([]RoleRow, error) {
 	rows := []RoleRow{}
 	if err := s.DB.WithContext(ctx).Table("role AS r").Where("r.deleted_at IS NULL").Order("r.id").Find(&rows).Error; err != nil {
 		return nil, err
@@ -73,8 +75,8 @@ func (s RoleStore) ListRoles(ctx context.Context) ([]RoleRow, error) {
 	return rows, nil
 }
 
-// RolePermissionCodes 返回单个角色持有的权限编码，按字典序。
-func (s RoleStore) RolePermissionCodes(ctx context.Context, roleID uint64) ([]string, error) {
+// RolePermissionCodes 在ctx下读取roleID权限，返回按字典序的未退役集合或取消／存储错误，不加写锁。
+func (s RoleRepo) RolePermissionCodes(ctx context.Context, roleID uint64) ([]string, error) {
 	codes := []string{}
 	err := s.DB.WithContext(ctx).Table("permission AS p").
 		Joins("JOIN role_permission rp ON rp.permission_id = p.id").
@@ -85,8 +87,28 @@ func (s RoleStore) RolePermissionCodes(ctx context.Context, roleID uint64) ([]st
 	return operations.WithoutRetiredPermissions(codes), nil
 }
 
-// CountRoleUsers 数出仍挂在这个角色上的未删除账号。大于 0 时不允许删除该角色。
-func (s RoleStore) CountRoleUsers(ctx context.Context, roleID uint64) (int64, error) {
+// RolePermissionCodesInTx 在tx下当前读roleID实际权限并过滤退役码，返回排序集合或存储错误。
+// 调用方先持角色集合与角色行锁；SHARE避免旧RR快照将已撤销权限当作可授予集合。
+func (s RoleRepo) RolePermissionCodesInTx(tx *gorm.DB, roleID uint64) ([]string, error) {
+	codes := []string{}
+	err := tx.Table("permission AS p").Joins("JOIN role_permission rp ON rp.permission_id=p.id").Where("rp.role_id=?", roleID).Clauses(clause.Locking{Strength: "SHARE"}).Order("p.code").Pluck("p.code", &codes).Error
+	if err != nil {
+		return nil, err
+	}
+	return operations.WithoutRetiredPermissions(codes), nil
+}
+
+// CountRoleUsersInTx 在tx下当前读roleID未删除账号数，返回事实或存储错误，不依赖旧RR快照。
+// 所有分配和角色删除必须先持同一角色集合锁，不能在事务外检查后直接删除。
+func (s RoleRepo) CountRoleUsersInTx(tx *gorm.DB, roleID uint64) (int64, error) {
+	var count int64
+	err := tx.Table("admin_user").Where("role_id=? AND deleted_at IS NULL", roleID).Clauses(clause.Locking{Strength: "UPDATE"}).Count(&count).Error
+	return count, err
+}
+
+// CountRoleUsers 在ctx下统计roleID未删除账号，返回数量或取消／存储错误，只供列表展示。
+// 删除准入必须使用持集合锁的CountRoleUsersInTx，不以本方法的快照数量授权。
+func (s RoleRepo) CountRoleUsers(ctx context.Context, roleID uint64) (int64, error) {
 	var count int64
 	err := s.DB.WithContext(ctx).Table("admin_user").
 		Where("role_id = ? AND deleted_at IS NULL", roleID).Count(&count).Error
@@ -95,7 +117,7 @@ func (s RoleStore) CountRoleUsers(ctx context.Context, roleID uint64) (int64, er
 
 // ListPermissions 按模块、编码排序返回权限列表，分组由前端处理。
 // feedback.% 归到 device 分组：那些权限实际管的是设备侧。
-func (s RoleStore) ListPermissions(ctx context.Context) ([]PermissionRow, error) {
+func (s RoleRepo) ListPermissions(ctx context.Context) ([]PermissionRow, error) {
 	rows := []PermissionRow{}
 	err := s.DB.WithContext(ctx).Table("permission").
 		Select("id, code, name, CASE WHEN code LIKE 'feedback.%' THEN 'device' ELSE module END AS module, " +
@@ -104,8 +126,9 @@ func (s RoleStore) ListPermissions(ctx context.Context) ([]PermissionRow, error)
 	return rows, err
 }
 
-// InsertRole 落一个角色，返回新角色 ID。自定义角色的 is_builtin 恒为 false。
-func (s RoleStore) InsertRole(tx *gorm.DB, code, name string, description *string) (uint64, error) {
+// InsertRole 在tx下插入code／name／description自定义角色，返回原自增ID或存储错误，不自行提交。
+// 调用方先持角色集合锁，完成当前赋权准入，并将关联及审计保留在同一事务。
+func (s RoleRepo) InsertRole(tx *gorm.DB, code, name string, description *string) (uint64, error) {
 	if err := tx.Table("role").Create(map[string]any{
 		"code": code, "name": name, "description": description, "is_builtin": false,
 	}).Error; err != nil {
@@ -114,20 +137,22 @@ func (s RoleStore) InsertRole(tx *gorm.DB, code, name string, description *strin
 	return persist.LastInsertID(tx)
 }
 
-// FindRole 取一个未删除角色，取不到返回 gorm.ErrRecordNotFound。
-func (s RoleStore) FindRole(ctx context.Context, db *gorm.DB, id uint64) (RoleRow, error) {
+// FindRole 在ctx与db下读取id未删除角色，返回原行或缺失／取消／存储错误，不加写锁。
+func (s RoleRepo) FindRole(ctx context.Context, db *gorm.DB, id uint64) (RoleRow, error) {
 	var row RoleRow
 	err := db.WithContext(ctx).Table("role").Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error
 	return row, err
 }
 
-// UpdateRoleName 只改名称与说明。内置角色也只能改这两项。
-func (s RoleStore) UpdateRoleName(tx *gorm.DB, id uint64, name string, description *string) error {
+// UpdateRoleName 在tx下将id名称及说明写为name／description，返回存储错误，不自行提交。
+// 调用方先持角色集合和原角色行锁并同事务审计；编码与内置权限不在该写入范围。
+func (s RoleRepo) UpdateRoleName(tx *gorm.DB, id uint64, name string, description *string) error {
 	return tx.Table("role").Where("id = ?", id).
 		Updates(map[string]any{"name": name, "description": description}).Error
 }
 
-// ReplaceRolePermissions 用给定集合整体替换角色的权限。
+// ReplaceRolePermissions 在tx下按codes整体替换roleID权限，返回存储错误，不自行提交。
+// 调用方先持集合／角色锁并核对当前可授予权限，审计与替换同事务。
 // 整体替换而非增删：权限集合的最终状态由入参决定，重放同一次提交不会
 // 留下半截的中间状态。role_permission 存的是 permission_id，所以按编码
 // 子查询换取；空白编码直接跳过。
@@ -147,32 +172,35 @@ func ReplaceRolePermissions(tx *gorm.DB, roleID uint64, codes []string) error {
 	return nil
 }
 
-// LockRole 在行锁下取一个未删除角色，返回更新前快照供审计留痕。
-func (s RoleStore) LockRole(tx *gorm.DB, id uint64) (RoleRow, error) {
+// LockRole 在tx下当前锁读id未删除角色，返回原角色行或缺失／存储错误，不自行提交。
+// 管理写入先持角色集合锁；Permissions另由RolePermissionCodesInTx取得当前集合。
+func (s RoleRepo) LockRole(tx *gorm.DB, id uint64) (RoleRow, error) {
 	var row RoleRow
 	err := tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error
 	return row, err
 }
 
-// SoftDeleteRole 软删除角色。仍挂有账号时返回 0——调用方据此拒绝删除。
+// SoftDeleteRole 在tx下软删id未删除角色，返回实际影响行数及存储错误，不自行检查账号引用。
 // 软删除而非物理删除：审计记录要靠它追溯谁在什么时候还能拿到这个角色。
-func (s RoleStore) SoftDeleteRole(tx *gorm.DB, id uint64) (int64, error) {
+func (s RoleRepo) SoftDeleteRole(tx *gorm.DB, id uint64) (int64, error) {
 	res := tx.Table("role").Where("id = ? AND deleted_at IS NULL", id).
 		Updates(map[string]any{"deleted_at": gorm.Expr("UTC_TIMESTAMP(3)")})
 	return res.RowsAffected, res.Error
 }
 
-// SoftDeleteRoleAndPermissions 停用角色并清空它的权限关联，两步必须同事务。
+// SoftDeleteRoleAndPermissions 在tx下软删id角色及全部权限关联，返回存储错误，不自行提交。
+// 调用方先持集合／角色锁，当前确认非内置、非本人及无账号引用，并同事务审计。
 // 分开调用的话，角色已停用但权限还在的空窗期里，某个请求可能按旧权限通过。
-func (s RoleStore) SoftDeleteRoleAndPermissions(tx *gorm.DB, id uint64) error {
+func (s RoleRepo) SoftDeleteRoleAndPermissions(tx *gorm.DB, id uint64) error {
 	if _, err := s.SoftDeleteRole(tx, id); err != nil {
 		return err
 	}
 	return DeleteRolePermissions(tx, id)
 }
 
-// DeleteRolePermissions 清空一个角色的全部权限关联。
+// DeleteRolePermissions 在tx下清空roleID权限关联，返回存储错误，不自行提交。
+// 调用方先持集合／角色锁并完成当前准入，与角色变更和审计同事务。
 func DeleteRolePermissions(tx *gorm.DB, roleID uint64) error {
 	return tx.Exec("DELETE FROM role_permission WHERE role_id = ?", roleID).Error
 }

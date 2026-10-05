@@ -143,7 +143,7 @@ func TestRegisteredCardManagementPreservesPermissionInputAndAudit(t *testing.T) 
 	defer cache.Close()
 	cache.AddHook(cardAdminSessionHook{records: map[string]string{"admin:session:" + sid: string(record), "admin:session:" + readerSid: string(readerRecord)}})
 	router := httpapi.NewRouter()
-	API{Cards: card.CardAdminService{DB: tx}, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: ops.SessionRepo{Redis: cache}, Tokens: ops.JWTAccess{JWT: jwt}}}}.Register(router)
+	API{Cards: card.CardAdminService{DB: tx}, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: ops.SessionRepo{Redis: cache}, Tokens: ops.JWTAccess{JWT: jwt}}}}.Register(router)
 	call := func(method, path, body, bearer string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

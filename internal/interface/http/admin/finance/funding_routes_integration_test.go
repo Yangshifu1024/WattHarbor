@@ -133,7 +133,7 @@ func TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit(t *testing.
 		tokens = append(tokens, token)
 	}
 	sessions.AddHook(routeSessionHook{records: records})
-	store := ops.AdminStore{DB: tx}
+	store := ops.AccountRepo{DB: tx}
 	service := settlement.InvoiceReviewService{DB: tx, ReviewRepo: settlement.InvoiceReviewRepo{LookupReviewer: func(ctx context.Context, reviewerID uint64) (settlement.ReviewerStatus, error) {
 		p, err := store.Profile(ctx, reviewerID)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, err

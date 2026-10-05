@@ -99,7 +99,7 @@ func (s FaultService) Dispatch(ctx context.Context, audit ops.AuditContext, id u
 		if err := checkFaultScope(ctx, tx, scope, row); err != nil {
 			return err
 		}
-		assignee, err := (ops.AdminStore{DB: tx}).Profile(ctx, in.AssignedTo)
+		assignee, err := (ops.AccountRepo{DB: tx}).Profile(ctx, in.AssignedTo)
 		if errors.Is(err, operations.ErrCredentials) {
 			return &FaultInputError{"指派账号不存在、未启用或无故障处理权限"}
 		}

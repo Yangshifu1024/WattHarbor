@@ -116,7 +116,7 @@ func (s MFAService) Apply(ctx context.Context, profile operations.Profile, sid s
 func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string, in MFASettingsInput, ip string) (MFASettingsReply, error) {
 	var result MFASettingsReply
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		account, err := (AdminStore{DB: tx}).LockActiveAdmin(tx, p.ID)
+		account, err := (AccountRepo{DB: tx}).LockActiveAdmin(tx, p.ID)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return operations.ErrCredentials

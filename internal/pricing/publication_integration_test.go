@@ -252,7 +252,7 @@ func TestConcurrentPublicationReturnsOriginalResult(t *testing.T) {
 	pass()
 	one, two := <-a, <-b
 	if one.err != nil || two.err != nil || one.result.Replayed || !two.result.Replayed || one.result.ID != two.result.ID || one.result.Version != two.result.Version {
-		t.Fatalf("first=%+v second=%+v", one, two)
+		t.Fatalf("first=%+v err=%v second=%+v err=%v", one.result, one.err, two.result, two.err)
 	}
 	for _, q := range []struct {
 		table string /* 本次规则及审计所属表 */

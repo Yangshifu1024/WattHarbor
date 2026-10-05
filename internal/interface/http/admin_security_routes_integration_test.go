@@ -56,7 +56,7 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := ops.SessionRepo{Redis: cache}
-	service := ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: repo, Tokens: ops.JWTAccess{JWT: jwt}, Limits: ops.AuthRateRepo{Redis: cache}}
+	service := ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: repo, Tokens: ops.JWTAccess{JWT: jwt}, Limits: ops.AuthRateRepo{Redis: cache}}
 	router := httpapi.NewRouter()
 	(chargehttp.AdminAuth{Sessions: service, MFA: ops.MFAService{DB: tx, Repo: ops.MFARepo{Redis: cache}}}).Register(router)
 	prefix := fmt.Sprintf("admin:mfa-settings:")

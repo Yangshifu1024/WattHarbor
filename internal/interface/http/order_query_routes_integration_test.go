@@ -143,7 +143,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	service := order.QueryService{DB: tx, Fees: settlement.QueryFeeRepo{DB: tx}}
 	router := httpapi.NewRouter()
 	(chargehttp.UserQueryAPI{Orders: service, Query: chargingquery.UserService{Orders: service, Fees: settlement.QueryFeeRepo{DB: tx}, State: chargingquery.UserStateRepo{DB: tx}, Gateway: gatewayClient}, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
-	(adminorder.API{Process: chargingquery.ProcessService{Orders: service, Gateway: gatewayClient}, Live: liveService, Query: service, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AdminStore{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
+	(adminorder.API{Process: chargingquery.ProcessService{Orders: service, Gateway: gatewayClient}, Live: liveService, Query: service, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	call := func(path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", path, nil)
 		if token != "" {

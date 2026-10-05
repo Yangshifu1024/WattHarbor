@@ -8,11 +8,8 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"regexp"
 	"time"
-	"unicode/utf8"
 )
 
 // 本族用 admin.ErrConflict 表示记录当前状态不接受这次写入
@@ -84,59 +81,15 @@ func (a API) adminWrite(c *gin.Context, table, action string, id uint64, values 
 	return id, true
 }
 
-// createUser 校验用户名长度 3–64、密码长度 12–72 字节及角色权限。
-// 角色须存在且权限非空，授予的权限不得超出调用者权限。
-// 密码以 bcrypt 散列保存；审计仅记录用户名和角色。
+// createUser 从c严格提取原账号输入及审计事实，输出所属创建事务的ID，不计算散列或校验角色集合。
 func (a API) createUser(c *gin.Context) {
-	// in 是新建后台账号的请求体，全部字段必填。
-	var in struct {
-		Username    string `json:"username"`     // 登录名，3–64 位英文、数字、下划线、点或连字符
-		DisplayName string `json:"display_name"` // 姓名或昵称，最多 64 字符
-		Password    string `json:"password"`     // 初始密码，12–72 字节，入库前做 bcrypt
-		RoleID      uint64 `json:"role_id"`      // 角色 id，0 视为无效
-		Phone       string `json:"phone"`        // 联系电话，可空，最长 32 字符
-	}
-	if !chargehttp.DecodeResource(c, &in) {
+	var input ops.AccountCreateInput
+	if !chargehttp.DecodeResource(c, &input) {
 		return
 	}
-	if !regexp.MustCompile(`^[A-Za-z0-9_.-]{3,64}$`).MatchString(in.Username) || len(in.Password) < 12 || len(in.Password) > 72 || utf8.RuneCountInString(in.DisplayName) > 64 || len(in.Phone) > 32 || in.RoleID == 0 {
-		httpapi.BadRequest(c, "用户名须为 3–64 位英文/数字，密码须为 12–72 字节，并选择有效角色")
-		return
-	}
-	p := c.MustGet("admin_profile").(operations.Profile)
-	codes, err := (ops.AdminOpsStore{DB: a.DB}).RolePermissionCodes(a.DB, in.RoleID)
+	id, err := a.Accounts.Create(c.Request.Context(), chargehttp.AdminAuditContext(c), input)
 	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	codes = operations.WithoutRetiredPermissions(codes)
-	if len(codes) == 0 {
-		httpapi.BadRequest(c, "角色不存在或没有任何权限")
-		return
-	}
-	for _, code := range codes {
-		if !p.HasPermission(code) {
-			httpapi.Write(c, 403, 1003, "不能授予自己未拥有的权限", nil)
-			return
-		}
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
-	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
-		return
-	}
-	var id uint64
-	err = a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		row := map[string]any{"username": in.Username, "display_name": in.DisplayName, "password_hash": string(hash), "phone": in.Phone, "role_id": in.RoleID, "status": "active"}
-		created, err := (ops.AdminOpsStore{DB: tx}).CreateAdminUser(tx, row)
-		if err != nil {
-			return err
-		}
-		id = created
-		return chargehttp.AdminResourceAudit(tx, p, "create", "admin_user", id, nil, gin.H{"username": in.Username, "role_id": in.RoleID}, c.ClientIP(), c.GetHeader("X-Request-ID"))
-	})
-	if err != nil {
-		chargehttp.AdminResourceFailure(c, err)
+		chargehttp.AdminManagementFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})

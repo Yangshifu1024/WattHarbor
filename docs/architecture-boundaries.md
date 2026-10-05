@@ -97,11 +97,11 @@ worker 保留任务顺序、游标、重试与投递编排，计费和退款的�
 
 FeedbackService 拥有订单评价、后台读取、回复、关闭及审计事务。order → ops 仅使用所属 AppendAuditInTx 能力，ops 不反向依赖 order；反馈原用户与设备身份来自已锁订单。提交按订单锁 → 已有反馈当前读 → 插入，旧 RR 快照不能漏掉另一连接已提交的反馈；重复提交仍为冲突，关闭重放不重复审计。反馈无站点范围列，后台沿用 feedback.read／feedback.reply 全局权限，普通设备范围不能据页面位置改变反馈归属。回复和关闭的状态／审计共用事务，审计失败整体回滚。
 
-**目标结构同样移除 infrastructure 层。** 用户／后台会话的记录、寿命、刷新、撤销与键布局已分别迁到 identity/session_repo.go 与 ops/session_repo.go；后台短期登录挑战由 ops 持有。后台SessionService拥有登录、刷新、注销、实时授权、改密及签发顺序，MFAService拥有当前账号安全设置、SQL状态与审计事务，MFARepo／AuthRateRepo提供短期凭据、租锁与频次IO。HTTP不持有Redis、SQL事务或JWT声明。旧 infrastructure/redis 源码和消费者已删除；账号角色管理、公告写入和dashboard仍待OP-01后续迁移。Redis实现沿用repo命名，不另建顶层redis业务包，也不把带用户／后台规则的会话实现整体放入platform。
+**目标结构同样移除 infrastructure 层。** 用户／后台会话的记录、寿命、刷新、撤销与键布局已分别迁到 identity/session_repo.go 与 ops/session_repo.go；后台短期登录挑战由 ops 持有。后台SessionService拥有登录、刷新、注销、实时授权、改密及签发顺序，MFAService拥有当前账号安全设置、SQL状态与审计事务，MFARepo／AuthRateRepo提供短期凭据、租锁与频次IO。HTTP不持有Redis、SQL事务或JWT声明。旧 infrastructure/redis 源码和消费者已删除；AccountService／RoleService已接管账号与角色管理，AccountRepo／RoleRepo归位；公告写入和dashboard仍待OP-01后续迁移。Redis实现沿用repo命名，不另建顶层redis业务包，也不把带用户／后台规则的会话实现整体放入platform。
 
 无 IO 的随机源保留 platform/auth；令牌布局、编码、摘要及共用原子轮换／注销集中 platform/sessiontoken，仅接收调用方的前缀、key、摘要与代码指定的整数属性名，不引用 identity／ops 模型。通用 JSONUint64 精确保存无符号整数，不决定身份／版本是否允许零。RT_／user:session: 留 identity，ART_／admin:session: 留后台会话所属实现。后台旧数字 ID 与 AuthVersion 经 Lua 重编码曾丢失精度，现从原 JSON 十进制文本恢复并存字符串；新旧记录连续轮换均精确且 KEEPTTL 不延寿。database 职责全部迁出、装配和测试通过后删除空的 infrastructure，避免仅换目录名留下混合职责。
 
-后台MFA登录挑战保留密码验证时原账号／AuthVersion和私有CAS文本。两个原读取后的请求先锁账号当前行，核对原版本、实时锁定和验证码，再原子消费原挑战，只有消费赢家记录成功审计并创建会话；坏码计数和审计同SQL事务，坏码、锁定和旧版本不消费挑战。设置凭据额外绑定原SID、原标识与绝对期限，坏码不消费；同账号通过30秒租锁串行，整个操作10秒截止且同步释放只比较自己的租锁值。两类成功消费均早于SQL提交，Redis／MySQL不具有跨存储原子性：消费后SQL／审计失败回滚SQL，不签发或启用，须重新密码登录／登记；不恢复旧凭据制造重放入口。签发失败尽力用原请求context撤销新会话，已取消时清理可能失败，保留原TTL并明确错误。原登录／刷新凭据只由对应回执返回，登记密钥只在当前口令通过的新登记回执返回，其余查询与审计不得包含敏感证明。
+后台MFA登录挑战保留密码验证时原账号／AuthVersion和私有CAS文本。两个原读取后的请求先锁账号当前行，核对原版本、实时锁定和验证码，再原子消费原挑战，只有消费赢家记录成功审计并创建会话；坏码计数和审计同SQL事务，坏码、锁定和旧版本不消费挑战。设置凭据额外绑定原SID、原标识与绝对期限，坏码不消费；同账号通过30秒租锁串行，整个操作10秒截止且同步释放只比较自己的租锁值。两类成功消费均早于SQL提交，Redis／MySQL不具有跨存储原子性：消费后SQL／审计失败回滚SQL，不签发或启用，须重新密码登录／登记；不恢复旧凭据制造重放入口。签发失败尽力用原请求context撤销新会话，已取消时清理可能失败，保留原TTL并明确错误。原登录／刷新凭据只由对应回执返回，个人登记密钥只在当前口令通过的新登记回执返回；原后台目标账号登记端点在实时admin_user.update准入后保留secret／otpauth_uri／code登记材料，确认必须匹配服务器锁后原密钥。其他查询及全部审计不得包含敏感证明。
 
 身份用例由 SessionService、PhoneService、UserQueryService 拥有。用户开户通过 identity → wallet 的所属 InTx 能力保持 user 与零余额钱包同事务；openid 唯一锁行先提交以串行恢复，不删除重试所需身份。手机号来源在 cmd 分别注入正式微信交换和开发输入，正式能力拒绝明文号码，唯一键最终仲裁两连接同时绑定。
 
@@ -189,3 +189,5 @@ wallet 不 import payment 或 settlement，payment 不 import settlement；cmd �
 具名客户端DTO命名：端点请求以Request结尾，端点响应以Reply结尾；子对象用业务记录名。改名同步contracts、integration、服务端、窄接口及测试，不保留旧类型别名，不改JSON字段、路径、单位或身份。
 
 具名客户端命名实施：请求与端点回复已按Request／Reply改名，私有字段存在性解码也遵守Reply后缀，不保留兼容别名。扫码共享传输契约与money.ScanResult分开，gateway所属存储到ScanReply、device收到ScanReply到领域发现结果均显式映射；原端口状态、连接、可用性、主键、nil／omitempty保留，只有中央所属运营读取能补充device_status。
+
+账号／角色管理边界：AccountService拥有创建、资料／角色／状态更新、软删、解锁、重置和目标MFA；RoleService拥有字典读取及角色集合变更，HTTP只提取严格输入、原审计事实和映射原回执。所有管理写入按customer_admin角色集合锁→操作者当前账号→其当前角色及权限→目标账号／角色执行；分配与角色删除共用集合串行点。角色权限使用SHARE当前读，角色引用及最后有效客户管理员数量使用UPDATE当前读，锁行不意味着旧RR快照刷新。操作者原AuthVersion和当前权限在锁后核对，不能利用旧菜单授予已撤销项。删除／停用／改派最后有效customer_admin均拒绝；普通账号删除不受无关客户管理员数量阻挡。账号快照显式列选且使用uint64／可空uint64，密码散列和MFA密钥不作为管理审计。状态或角色实际变化提升版本，停用再启用不能复活旧令牌；同角色回传及纯资料更新不撤销。重置清除失败与临时锁，locked恢复active而disabled仍停用。目标MFA确认只能核对服务端原登记材料，启用／关闭或替换已启用材料提升版本，审计和SQL状态同事务。现有data_scope无后台写入注册路由，本批不新增接口或改变其读取归属。

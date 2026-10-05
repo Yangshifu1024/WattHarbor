@@ -102,7 +102,7 @@ func itoa(v uint64) string {
 
 // deleteOne 复现 deleteAdminUser 事务体的关键两步：锁角色行 → 在锁内判断 → 软删。
 // lockRole=false 时跳过角色行锁，用来验证那道锁确实是承重的。
-func deleteOne(db *gorm.DB, store AdminStore, id uint64, lockRole bool) error {
+func deleteOne(db *gorm.DB, store AccountRepo, id uint64, lockRole bool) error {
 	return db.WithContext(context.Background()).Transaction(func(tx *gorm.DB) error {
 		if lockRole {
 			if err := store.LockCustomerAdminRole(tx); err != nil {
@@ -155,8 +155,8 @@ func TestConcurrentAdminDeletionKeepsOneActive(t *testing.T) {
 	p2, close2 := testConn(t)
 	defer close2()
 
-	store1 := AdminStore{DB: p1}
-	store2 := AdminStore{DB: p2}
+	store1 := AccountRepo{DB: p1}
+	store2 := AccountRepo{DB: p2}
 	errs := make([]error, 2)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -222,8 +222,8 @@ func TestRoleLockBlocksConcurrentDeletion(t *testing.T) {
 	}
 	defer gate.pass()
 
-	store1 := AdminStore{DB: p1}
-	store2 := AdminStore{DB: p2}
+	store1 := AccountRepo{DB: p1}
+	store2 := AccountRepo{DB: p2}
 
 	tx1 := p1.Begin()
 	if tx1.Error != nil {

@@ -1,260 +1,80 @@
 package http
 
 import (
-	"context"
-	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-	"net/http"
-	"regexp"
-	"strings"
 )
 
-// 本文件实现角色管理与权限字典查询。
-// 写操作仅允许授予操作者已持有的权限，防止通过角色编辑或账号分配提升权限。
-
-// roleCodePattern 约束角色编码：小写字母开头，后接小写字母、数字或下划线，共 3–64 位。
-var roleCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{2,63}$`)
-
-// RoleRow 是角色列表投影，包含权限编码、绑定账号数量及内置角色标记。
-type RoleRow struct {
-	ID          uint64   `json:"id"`                   // 角色主键
-	Code        string   `json:"code"`                 // 角色编码，小写字母开头 3–64 位；账号记录的是 id，这里用于展示与自检
-	Name        string   `json:"name"`                 // 角色名称，必填，最多 128 字符
-	Description *string  `json:"description"`          // 角色说明，可空，最多 255 字符
-	IsBuiltin   bool     `json:"is_builtin"`           // 是否内置角色：内置角色的权限集合锁定，不可改也不可删
-	ActiveCode  *string  `json:"active_code"`          // 未删除时的角色编码（由 code 派生的生成列），软删除后为 NULL
-	Permissions []string `json:"permissions" gorm:"-"` // 该角色持有的权限编码，按字典序；无权限时返回 [] 而不是 null
-	UserCount   int64    `json:"user_count"`           // 仍挂在这个角色上的未删除账号数，大于 0 时不允许删除该角色
-}
-
-// PermissionRow 是权限字典的一行，定义在持久化层。
-type PermissionRow = ops.PermissionRow
-
-// registerRoles 挂载角色与权限字典的接口：角色增删改查，权限字典只读。
+// RegisterRoles 在r挂载原角色及权限字典路径，HTTP只按原权限注册处理器。
 func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
-	// 角色列表使用 admin_user.read，供后台账号表单和角色管理界面读取。
 	r.GET("/api/v1/admin/roles", a.Auth.Require("admin_user.read"), a.listRoles)
-	// 权限字典使用 admin_user.read，仅返回可选权限，不授予权限。
 	r.GET("/api/v1/admin/permissions", a.Auth.Require("admin_user.read"), a.listPermissions)
 	r.POST("/api/v1/admin/roles", a.Auth.Require("role.create"), a.createRole)
 	r.PUT("/api/v1/admin/roles/:id", a.Auth.Require("role.update"), a.updateRole)
 	r.DELETE("/api/v1/admin/roles/:id", a.Auth.Require("role.delete"), a.deleteRole)
 }
 
-// permissionCodesFor 取出给定
-// 的这些角色合起来持有的权限编码（去重）。被软
-// 删除的角色不参与：删掉的角色不该继续给人授权。
-func (a AdminAccounts) permissionCodesFor(ctx context.Context, codes ...string) ([]string, error) {
-	return (ops.RoleStore{DB: a.DB}).PermissionCodesForRoles(ctx, codes...)
-}
-
-// listRoles 按 ID 升序返回未删除角色，附带权限编码及关联账号数。
+// listRoles 将c原当前档案交给所属列表，返回原items形状或错误。
 func (a AdminAccounts) listRoles(c *gin.Context) {
-	rows, err := (ops.RoleStore{DB: a.DB}).ListRoles(c.Request.Context())
+	rows, err := a.Roles.List(c.Request.Context(), AdminAuditContext(c).Actor)
 	if err != nil {
-		AdminResourceFailure(c, err)
+		AdminManagementFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// listPermissions 按模块、编码排序返回权限列表，分组由前端处理。
+// listPermissions 将c原当前档案交给所属字典，返回原排序／分组items，不在HTTP过滤业务权限。
 func (a AdminAccounts) listPermissions(c *gin.Context) {
-	rows, err := (ops.RoleStore{DB: a.DB}).ListPermissions(c.Request.Context())
+	rows, err := a.Roles.Permissions(c.Request.Context(), AdminAuditContext(c).Actor)
 	if err != nil {
-		AdminResourceFailure(c, err)
+		AdminManagementFailure(c, err)
 		return
 	}
-	visible := make([]PermissionRow, 0, len(rows))
-	for _, row := range rows {
-		if !operations.RetiredPermission(row.Code) {
-			visible = append(visible, row)
-		}
-	}
-	httpapi.OK(c, gin.H{"items": visible})
+	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// roleInput 是角色新增与更新共用的请求体，字段与 RoleRow 对应。
-type roleInput struct {
-	Code        string   `json:"code"`        // 角色编码，小写字母开头的 3–64 位
-	Name        string   `json:"name"`        // 角色名称，必填，最多 128 字符
-	Description *string  `json:"description"` // 角色说明，可空，最多 255 字符
-	Permissions []string `json:"permissions"` // 要授予的权限编码，必须非空、不重复，且只能来自调用者自己已持有的权限
-}
-
-// validate 要求角色权限非空、不重复，且全部属于调用者已持有的权限。
-// 内置角色更新时仅允许修改名称和说明，权限集合保持固定。
-func (in roleInput) validate(codes []string) error {
-	if !roleCodePattern.MatchString(in.Code) || in.Name == "" || len([]rune(in.Name)) > 128 {
-		return errRoleInput
-	}
-	if in.Description != nil && len([]rune(*in.Description)) > 255 {
-		return errRoleInput
-	}
-	if len(in.Permissions) == 0 {
-		return errRoleInput
-	}
-	known := make(map[string]bool, len(codes))
-	for _, code := range codes {
-		known[code] = true
-	}
-	seen := make(map[string]bool, len(in.Permissions))
-	for _, code := range in.Permissions {
-		code = strings.TrimSpace(code)
-		if !known[code] || seen[code] {
-			return errRoleInput
-		}
-		seen[code] = true
-	}
-	return nil
-}
-
-// errRoleInput 表示角色参数不合法（编码格式、名称长度、权限为空或超出自己持有的范围）。
-var errRoleInput = errors.New("invalid role")
-
-// createRole 新建自定义角色，初始版本号固定为 1，权限按请求整体替换。
-// 权限集合在事务提交后单独写审计，避免审计写失败把角色回滚成"建了但没权限"的中间态。
+// createRole 从c严格提取原角色输入及审计事实，返回所属完整创建事务的ID或错误。
 func (a AdminAccounts) createRole(c *gin.Context) {
-	var in roleInput
-	if !DecodeResource(c, &in) {
+	var input ops.RoleInput
+	if !DecodeResource(c, &input) {
 		return
 	}
-	profile := c.MustGet("admin_profile").(operations.Profile)
-	held, err := a.permissionCodesFor(c.Request.Context(), profile.Role)
+	id, err := a.Roles.Create(c.Request.Context(), AdminAuditContext(c), input)
 	if err != nil {
-		AdminResourceFailure(c, err)
-		return
-	}
-	if err := in.validate(held); err != nil {
-		httpapi.BadRequest(c, "角色无效：编码须为小写字母开头的 3–64 位，名称必填，权限须非空且只能从自己已持有的权限中选择")
-		return
-	}
-	var id uint64
-	var auditPending []AuditEntry
-	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		created, err := (ops.RoleStore{DB: tx}).InsertRole(tx, in.Code, in.Name, in.Description)
-		if err != nil {
-			return err
-		}
-		id = created
-		if err := ops.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
-			return err
-		}
-		auditPending = []AuditEntry{{Action: "create", Target: "role", ID: id, Before: nil, After: in, RequestID: ""}}
-		return nil
-	})
-	if err != nil {
-		AdminResourceFailure(c, err)
+		AdminManagementFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// updateRole 更新角色。内置角色只改名称和说明，权限集合锁定；自定义角色按请求整体替换权限。
-// 响应里的 permissions_locked 告诉前端权限这一栏这次是不是只读的。
+// updateRole 从c提取原id、输入和审计事实，返回所属更新的内置权限锁定标识或错误。
 func (a AdminAccounts) updateRole(c *gin.Context) {
 	id, ok := AdminPathID(c)
 	if !ok {
 		return
 	}
-	var in roleInput
-	if !DecodeResource(c, &in) {
+	var input ops.RoleInput
+	if !DecodeResource(c, &input) {
 		return
 	}
-	profile := c.MustGet("admin_profile").(operations.Profile)
-	held, err := a.permissionCodesFor(c.Request.Context(), profile.Role)
+	locked, err := a.Roles.Update(c.Request.Context(), AdminAuditContext(c), id, input)
 	if err != nil {
-		AdminResourceFailure(c, err)
+		AdminManagementFailure(c, err)
 		return
 	}
-	if err := in.validate(held); err != nil {
-		httpapi.BadRequest(c, "角色无效：只能从自己已持有的权限中选择")
-		return
-	}
-	store := ops.RoleStore{DB: a.DB}
-	before, err := store.FindRole(c.Request.Context(), a.DB, id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			httpapi.Write(c, http.StatusNotFound, 1004, "角色不存在", nil)
-			return
-		}
-		AdminResourceFailure(c, err)
-		return
-	}
-	// 内置角色仅允许修改名称和说明，其权限集合固定，避免破坏基础管理权限。
-	var auditPending []AuditEntry
-	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		// 内置角色仅允许修改名称与说明，权限集合固定。
-		if err := store.UpdateRoleName(tx, id, in.Name, in.Description); err != nil {
-			return err
-		}
-		if !before.IsBuiltin {
-			if err := ops.ReplaceRolePermissions(tx, id, in.Permissions); err != nil {
-				return err
-			}
-		}
-		auditPending = []AuditEntry{{Action: "update", Target: "role", ID: id, Before: before, After: in, RequestID: ""}}
-		return nil
-	})
-	if err != nil {
-		AdminResourceFailure(c, err)
-		return
-	}
-	httpapi.OK(c, gin.H{"id": id, "permissions_locked": before.IsBuiltin})
+	httpapi.OK(c, gin.H{"id": id, "permissions_locked": locked})
 }
 
-// replaceRolePermissions 整体替换某个角色的权限绑定：先清空旧绑定，再按编码逐个
-// 查 permission 的 id 插入。只在调用方已校验过编码的前提下调用。
-// deleteRole 软删除角色，保留历史审计引用。
-// 内置角色、仍有关联账号的角色及调用者当前角色均不可删除。
+// deleteRole 将c原id和审计事实交给所属角色删除事务，返回原ID或状态拒绝。
 func (a AdminAccounts) deleteRole(c *gin.Context) {
 	id, ok := AdminPathID(c)
 	if !ok {
 		return
 	}
-	profile := c.MustGet("admin_profile").(operations.Profile)
-	store := ops.RoleStore{DB: a.DB}
-	role, err := store.FindRole(c.Request.Context(), a.DB, id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			httpapi.Write(c, http.StatusNotFound, 1004, "角色不存在", nil)
-			return
-		}
-		AdminResourceFailure(c, err)
-		return
-	}
-	if role.IsBuiltin {
-		httpapi.Write(c, http.StatusConflict, 2009, "内置角色不可删除：它承载运营自身的访问权限", nil)
-		return
-	}
-	if role.Code == profile.Role {
-		httpapi.Write(c, http.StatusConflict, 2009, "不能删除自己正在使用的角色", nil)
-		return
-	}
-	held, err := store.CountRoleUsers(c.Request.Context(), id)
-	if err != nil {
-		AdminResourceFailure(c, err)
-		return
-	}
-	if held > 0 {
-		httpapi.Write(c, http.StatusConflict, 2009,
-			"该角色下仍有账号，请先改派后再删除", nil)
-		return
-	}
-	var auditPending []AuditEntry
-	err = AuditedTransaction(c, a.DB, &auditPending, func(tx *gorm.DB) error {
-		if err := store.SoftDeleteRoleAndPermissions(tx, id); err != nil {
-			return err
-		}
-		auditPending = []AuditEntry{{Action: "delete", Target: "role", ID: id, Before: role, After: nil, RequestID: ""}}
-		return nil
-	})
-	if err != nil {
-		AdminResourceFailure(c, err)
+	if err := a.Roles.Delete(c.Request.Context(), AdminAuditContext(c), id); err != nil {
+		AdminManagementFailure(c, err)
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id})
