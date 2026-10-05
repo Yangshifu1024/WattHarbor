@@ -107,7 +107,8 @@ func TestPaidStartsPreservesHTTPBusinessAndCancellationErrors(t *testing.T) {
 
 // TestCentralClientRejectsInvalidConfiguration 使用 t验证原地址与令牌构造边界，失败不发网络请求，不配置进程资源。
 func TestCentralClientRejectsInvalidConfiguration(t *testing.T) {
-	for _, tc := range []struct { // base,token 原客户端地址和服务令牌配置边界，用于构造校验，不访问真实服务。
+	for _, tc := range []struct {
+		// base,token 分别为待校验的原服务地址和服务令牌；组合用于构造拒绝边界，不向真实服务发请求。
 		base, token string
 	}{
 		{"", "token"}, {"ftp://central", "token"}, {"http://", "token"},

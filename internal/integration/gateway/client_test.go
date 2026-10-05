@@ -155,7 +155,8 @@ func TestClientPreservesBusinessErrorAndCancellation(t *testing.T) {
 
 // TestClientRejectsInvalidConfigurationAndBatchWithoutCallingServer 使用 t验证原地址／令牌和证据批次数边界；非法批次不得到达本地服务，无数据库或设备 IO。
 func TestClientRejectsInvalidConfigurationAndBatchWithoutCallingServer(t *testing.T) {
-	for _, tc := range []struct { // base,token 原客户端地址和服务令牌配置边界，用于构造校验，不访问真实服务。
+	for _, tc := range []struct {
+		// base,token 分别为待校验的原服务地址和服务令牌；组合用于构造拒绝边界，不向真实服务发请求。
 		base, token string
 	}{
 		{"", "token"}, {"ftp://gateway", "token"}, {"http://", "token"},

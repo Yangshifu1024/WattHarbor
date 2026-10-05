@@ -10,11 +10,16 @@ import (
 	"testing"
 )
 
+// TestCardServiceFailuresDoNotBecomeBusinessDeclines 使用 t 与本地 HTTP 服务核对原刷卡错误分类，只有明确业务拒绝携带 CardDeclineReply；服务不可用或坏回复不转成业务拒绝。验证服务令牌和余额不足标志，失败由 t 报告；关闭本地服务，不调用真实中央用例、设备或资金。
 func TestCardServiceFailuresDoNotBecomeBusinessDeclines(t *testing.T) {
 	for _, tc := range []struct {
-		name              string
-		status            int
-		body              string
+		// name 原错误分类场景名，用于子测试定位。
+		name string
+		// status 本地服务返回的原 HTTP 状态，用于区分业务拒绝及服务失败。
+		status int
+		// body 本地服务返回的原响应正文，保留余额不足、空数据、服务失败及非 JSON 形状。
+		body string
+		// declined,balance 分别表示预期是否能分类为 ErrCardDeclined，以及有效业务拒绝回复的原余额不足标志；不是实际卡状态。
 		declined, balance bool
 	}{
 		{"insufficient", 409, `{"code":2009,"data":{"insufficient_balance":true}}`, true, true},
