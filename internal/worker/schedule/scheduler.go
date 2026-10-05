@@ -9,30 +9,35 @@ import (
 
 	"github.com/google/uuid"
 
-	workerstore "github.com/ChargePilot2026/charge-pilot/internal/worker/store"
+	workerrepo "github.com/ChargePilot2026/charge-pilot/internal/worker/repo"
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
 
-// Handler 仅允许代码中登记的处理函数；数据库配置仅控制调度参数。
+// Handler 接收受管理 context，返回处理行数及执行错误；数据库配置仅控制调度参数。
+// 处理器必须在返回前结束自身工作，运行期限及 panic 收尾由调度用例管理。
 type Handler func(context.Context) (uint64, error)
 
+// Scheduler 拥有处理器登记、租约与执行收尾编排，完整表操作交由 worker repo。
 type Scheduler struct {
-	DB       *gorm.DB
-	Handlers map[string]Handler
+	DB       *gorm.DB           // worker 定时任务及执行日志的受管理连接。
+	Handlers map[string]Handler // 代码中登记的处理器，配置不能新增业务实现。
 }
 
-// Task 与 executionLog 是调度记录的行类型，定义在持久化层。
-type Task = workerstore.Task
+// Task 是调度用例消费的仓储行投影，原字段映射由 worker repo 定义。
+type Task = workerrepo.Task
 
-// CleanupHistory retains empty successful polls for one day and other finished
-// executions for 30 days. Running executions are recovered by execute, not deleted.
+// CleanupHistory 在 ctx 下调用原历史清理，返回仓储错误；成功零行保留一天，其余结束记录保留30天。
+// running 记录由 execute 恢复，不在本方法删除。
 func (s Scheduler) CleanupHistory(ctx context.Context) error {
-	return workerstore.CleanupExecutionHistory(ctx, s.DB)
+	return workerrepo.CleanupExecutionHistory(ctx, s.DB)
 }
 
+// parser 保留原可选秒字段和描述式 UTC cron 语法，不接受每行时区覆盖。
 var parser = cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
+// RunDue 在 ctx 下读取已登记的到期任务并逐个执行，返回配置、读取或各任务执行错误的合并。
+// 任务领取及原租约在 execute 内处理，不因单任务失败跳过本轮其他已读取任务。
 func (s Scheduler) RunDue(ctx context.Context) error {
 	if s.DB == nil {
 		return errors.New("scheduler database unavailable")
@@ -43,7 +48,7 @@ func (s Scheduler) RunDue(ctx context.Context) error {
 	for code := range s.Handlers {
 		codes = append(codes, code)
 	}
-	due, err := workerstore.ListDueTasks(ctx, s.DB, codes, now)
+	due, err := workerrepo.ListDueTasks(ctx, s.DB, codes, now)
 	if err != nil {
 		return err
 	}
@@ -59,6 +64,8 @@ func (s Scheduler) RunDue(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
+// Trigger 在 ctx 下按 code 手动执行登记任务，reason 为原触发原因，force 允许执行暂停任务。
+// 返回是否已领取并开始执行，以及未登记、配置、暂停或执行错误；竞争未领取返回 false/nil。
 func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool) (bool, error) {
 	if s.Handlers[code] == nil {
 		return false, gorm.ErrRecordNotFound
@@ -66,7 +73,7 @@ func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool)
 	if s.DB == nil {
 		return false, errors.New("scheduler database unavailable")
 	}
-	task, err := workerstore.FindTaskByCode(ctx, s.DB, code)
+	task, err := workerrepo.FindTaskByCode(ctx, s.DB, code)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, gorm.ErrRecordNotFound
 	}
@@ -79,10 +86,12 @@ func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool)
 	return s.execute(ctx, task, force, "admin_api", reason)
 }
 
+// ErrPaused 表示原任务暂停且未使用强制手动触发，HTTP 适配层保留其失败语义。
 var ErrPaused = errors.New("scheduled task paused")
 
-// execute 在调用 handler 前获取数据库租约，防止多副本或手动触发与定时执行重叠。
-// 租约过期后允许其他执行者接管。
+// execute 在 ctx 下按 task 原快照领取两分钟租约，force、triggeredBy 和 reason 保留原触发规则。
+// 领取后恢复过期 running 日志，创建本次日志并以30秒 context 执行处理器，独立5秒保存终态和推进任务。
+// 返回是否领取及原处理器、日志、任务错误的合并；租约竞争未领取为 false/nil，不重试或延长租约。
 func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggeredBy, reason string) (bool, error) {
 	handler := s.Handlers[task.Code]
 	if handler == nil {
@@ -94,22 +103,21 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	}
 	now := time.Now().UTC()
 	lease := uuid.NewString()
-	claimed, err := workerstore.ClaimTaskLease(ctx, s.DB, task, force, triggeredBy == "cron", lease, now)
+	claimed, err := workerrepo.ClaimTaskLease(ctx, s.DB, task, force, triggeredBy == "cron", lease, now)
 	if err != nil || claimed == 0 {
 		return false, err
 	}
 	// 新尝试开始前，将过期租约遗留的 running 日志标记为结束。
-	if err := workerstore.FailStaleRunningLogs(ctx, s.DB, task.Code, now.Add(-2*time.Minute), now); err != nil {
-		_ = workerstore.ReleaseLease(s.DB.WithContext(context.Background()), task.ID, lease)
+	if err := workerrepo.FailStaleRunningLogs(ctx, s.DB, task.Code, now.Add(-2*time.Minute), now); err != nil {
+		_ = workerrepo.ReleaseLease(s.DB.WithContext(context.Background()), task.ID, lease)
 		return true, err
 	}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	log := workerstore.ExecutionLog{TaskCode: task.Code, StartedAt: now, CreatedMonth: month,
+	log := workerrepo.ExecutionLog{TaskCode: task.Code, StartedAt: now, CreatedMonth: month,
 		Status: "running", TriggeredBy: triggeredBy, TriggerReason: reason}
-	insert := s.DB.WithContext(ctx).Create(&log)
-	if insert.Error != nil {
-		_ = workerstore.ReleaseLease(s.DB.WithContext(context.Background()), task.ID, lease)
-		return true, insert.Error
+	if err := workerrepo.CreateExecutionLog(ctx, s.DB, &log); err != nil {
+		_ = workerrepo.ReleaseLease(s.DB.WithContext(context.Background()), task.ID, lease)
+		return true, err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	rows, runErr := runSafely(runCtx, handler)
@@ -130,24 +138,18 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	// 使用独立的 5 秒 context 保存执行结果，避免任务取消中断日志写入；租约仍按到期时间释放。
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
-	logErr := workerstore.FinishExecutionLog(finishCtx, s.DB, log.ID, month, status, rows, finished, message)
-	updates := map[string]any{"last_run_at": finished, "next_run_at": spec.Next(finished), "consecutive_fail_count": failures,
-		"lease_token": nil, "lease_until": nil}
-	if failures >= 5 {
-		updates["enabled"] = false
-	}
-	advanced, taskErr := workerstore.FinishTask(s.DB.WithContext(finishCtx), task.ID, lease, updates)
+	logErr := workerrepo.FinishExecutionLog(finishCtx, s.DB, log.ID, month, status, rows, finished, message)
+	advanced, taskErr := workerrepo.FinishTask(finishCtx, s.DB, task.ID, lease, finished, spec.Next(finished), failures)
 	if taskErr == nil && advanced == 0 {
 		taskErr = errors.New("scheduled task lease lost before completion")
 	}
 	return true, errors.Join(runErr, logErr, taskErr)
 }
 
+// parseSpec 将 raw 按原 UTC cron 语法解析，返回计划或格式／panic 错误；无 IO。
+// 保留64字节上限及 TZ= 拒绝，不在解析失败时执行任务。
 func parseSpec(raw string) (spec cron.Schedule, err error) {
-	// 所有 worker 计划都按 UTC 跑。
-	// 拒绝逐行的时区前缀，
-	// 这样一次手滑的数据库改动既不会让 cron 解析器 panic，
-	// 也不会改变某个任务的时基。
+	// 所有 worker 计划保留 UTC，拒绝逐行时区覆盖，不改变原解析时基。
 	if strings.Contains(raw, "TZ=") || len(raw) > 64 {
 		return nil, errors.New("timezone override or oversized cron expression")
 	}
@@ -159,6 +161,8 @@ func parseSpec(raw string) (spec cron.Schedule, err error) {
 	return parser.Parse(raw)
 }
 
+// runSafely 在 ctx 下执行 handler，返回其原行数及错误；panic 转为原调度错误并用于日志收尾。
+// 不创建后台协程或改变处理器副作用，取消由 handler 响应。
 func runSafely(ctx context.Context, handler Handler) (rows uint64, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {

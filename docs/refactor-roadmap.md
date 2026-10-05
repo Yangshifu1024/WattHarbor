@@ -528,7 +528,7 @@ make test-integration TEST_MYSQL_URL=...
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
-| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面与薄适配已验收；worker资金具名客户端消费者及旧通用调用删除已验收，查询与范围归所属服务、认证单次响应保持；剩余gateway／worker的runtime／repo整理继续实施 |
+| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面与薄适配已验收；worker资金具名消费者和N-worker持久命名／完整repo操作已验收，查询与范围归所属服务、认证单次响应保持；剩余gateway repo与两进程runtime收尾继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
@@ -761,3 +761,9 @@ make test-integration TEST_MYSQL_URL=...
 5g开发循环证据：重启既有worker加载源码，只通过容器网络GET health／metrics观察新进程uptime约2.65→14.66秒内的自动轮次，central三个任务200指标各增1、非200没有增量，未手动POST。`.tmp/batch5g-worker-finance-{before,after}.json`保留；只读`.tmp/batch5g-dev-finance-{before,after}.log`核对充电／计费／费用投递／到期退款均0，钱包合计1999／冻结0、账单1相同。首次只读查询误用不存在billing_job表后已按真实repo改为charge_billing_job重跑；只将完整成功读取作为证据。没有映射8082、新建用户／订单／会话或触发模拟支付，空队列指标验证不代表资金或设备执行。公开字段、前端、schema及依赖不变，最近完整前端验收仍为5b；最终精确暂存验收继续，G／WK及DEP不提前完成。
 
 5g最终快照验收：`.tmp/batch5g-validation`的`.tmp/batch5g-snapshot-{check,integration,build,tidy}.log`全部通过，完整integration使用独立三库／Redis并保留默认包并行，包含5h修复及两类新增资金装配／注册循环回归。1217份暂存文件中的705份Go／模块与原blob及工作区一致，tidy无差异、Markdown本地链接有效；10份本批Go源码中文函数／字段／接口注释清单无缺项。旧通用HTTP符号全仓零消费者；worker生产源码仅HTTP准入适配仍持服务令牌，三个业务派发不持有通用客户端或URL。最终仅补本记录及表中子项状态，不关闭G／WK组合组或DEP，17组仍完成15组约88%；继续gateway／worker持久化及运行时整理。
+
+批次5i（N-worker／WK-01 repo 子项）：worker/store 两个生产文件及原 Outbox 并发测试迁入 worker/repo，三个调用方更新路径和别名；完整日志创建及任务完成列归 repo，Outbox 原表选择移入 repo。删除未消费 ReplayCursor、ListExecutionLogs，不保留旧包；不增加订单／资金表访问，不改变调度器、发布事务、来源／流／幂等身份、任务顺序或资源生命周期。AGENTS 目录图同步。N-worker 命名子项完成，WK／G 组合组仍需运行时与 gateway 收尾。
+
+5i 定向证据：.tmp/batch5i-targeted.log 默认 worker repo／outbox／schedule 与 cmd 装配通过；.tmp/batch5i-scheduler-real.log 使用独立 worker 真库与实际注册 trigger 路由验证原成功回执、日志 ID 回填、NULL 错误、UTC 下轮及失败清零。有效租约期间另一次 force 不能进入处理器；取消后独立收尾持久 failed，原令牌失配不能覆盖 fixture 模拟接管后的新租约；第五次失败停用，force 执行后仍停用。fixture 只提交随机任务编码及其日志，所有触发先退出，再按自身完整主键清理并核对零残留；不触发已有业务处理器、不读写资金或开发数据。完整退出验收继续，17 组仍完成 15 组约 88%。
+
+5i 退出证据：.tmp/batch5i-{check,integration,build,tidy}.log 全部通过，真实完整三库 integration 保留默认包并行，迁移后的 SKIP LOCKED／批次顺序／退避原回归与新增调度测试通过。最终暂存快照 .tmp/batch5i-validation 共1218份文件，其中706份 Go／模块与已通过上述检查的工作区源码及原 Git blob 一致，本地 Markdown 链接有效、tidy 无差异；本轮不重复执行同一份已核对源码的全量测试。七份变动 Go 文件的中文函数／字段／接口说明清单无缺项。重启既有 worker 后，.tmp/batch5i-worker-live.json 仅经健康／指标 GET 观察 uptime 9.04→21.05秒，原三个资金任务成功指标各增2、原失败指标未增加，手动任务POST为0；该空队列联调不代表资金或设备执行。没有开发清库、schema、公开形状、依赖或前端改动；前端最近完整验收仍为5b。最终只补退出记录及任务子项状态，G／WK 组合与 DEP 不提前完成。

@@ -494,8 +494,8 @@ charge-pilot/
 │   ├── internal/worker/runtime/runtime.go（迁移前：cmd/worker/main.go[三个定时循环]）
 │   ├── internal/worker/schedule/http.go
 │   ├── internal/worker/schedule/scheduler.go
-│   ├── internal/worker/store/outbox_store.go
-│   └── internal/worker/store/schedule_store.go
+│   ├── internal/worker/repo/outbox_repo.go（迁移前：internal/worker/store/outbox_store.go）
+│   └── internal/worker/repo/schedule_repo.go（迁移前：internal/worker/store/schedule_store.go）
 ├── internal/http                                         已迁移的鉴权、后台及central HTTP适配
 │   ├── internal/http/admin/account/admin_accounts.go（迁移前：internal/interface/http/admin_accounts.go）
 │   ├── internal/http/admin/account/admin_accounts_api.go（迁移前：internal/interface/http/admin_accounts_api.go）
