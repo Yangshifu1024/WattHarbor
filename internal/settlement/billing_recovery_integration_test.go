@@ -3,6 +3,8 @@
 package settlement
 
 import (
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -57,7 +59,7 @@ func TestDeliveredFeeCanRecoverMissingBill(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	no := "C-BILL-" + rand.Text()
 	at := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	source := feeSource(id, no)

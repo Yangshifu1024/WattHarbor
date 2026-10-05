@@ -21,6 +21,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -35,7 +36,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	tag := uuid.NewString()
 	now := time.Now().UTC()
 	month := now.Format("2006-01") + "-01"

@@ -14,6 +14,7 @@ import (
 	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -43,7 +44,7 @@ func stopTestDB(t *testing.T) *gorm.DB {
 // 第一条事务先写入且持锁，第二条在首次提交后只能复用原时间、原因和费用。
 func TestConcurrentCutoffKeepsFirstSnapshot(t *testing.T) {
 	firstDB, secondDB := stopTestDB(t), stopTestDB(t)
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	t.Cleanup(func() {
 		if err := firstDB.Table("charge_billing_cutoff").Where("charge_order_id=?", id).Delete(nil).Error; err != nil {
 			t.Error(err)
@@ -151,7 +152,7 @@ func TestStopRecoversCommittedCutoffWithoutEvidence(t *testing.T) {
 				t.Fatal(tx.Error)
 			}
 			defer tx.Rollback()
-			id := uint64(time.Now().UnixNano())
+			id := testfixture.NewID()
 			no := "C-STOP-" + rand.Text()
 			seedStopOrder(t, tx, id, no, withCard)
 			seedStopOrder(t, tx, id+1, no+"-2", withCard)

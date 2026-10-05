@@ -22,6 +22,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -34,7 +35,7 @@ func TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	cache := identityRouteRedis(t)
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	tag := uuid.NewString()
 	for _, seed := range []struct {
 		// table 本断言写入、读取或清理的真实表名。

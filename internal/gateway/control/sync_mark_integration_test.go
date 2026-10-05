@@ -16,6 +16,7 @@ import (
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -27,7 +28,7 @@ func TestSyncMarkBatchRollsBackAfterCancellation(t *testing.T) {
 		t.Run(table, func(t *testing.T) {
 			db := gatewayContractDB(t)
 			device := "MARK-" + uuid.NewString()
-			ids := []uint64{uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()) + 1}
+			ids := []uint64{testfixture.NewID(), testfixture.NewID() + 1}
 			commands := []string{uuid.NewString(), uuid.NewString()}
 			key, filter := "id", "processed_at IS NOT NULL"
 			var identities any = ids
@@ -122,7 +123,7 @@ func TestLateReleaseCannotFreeNewOrder(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	device, oldOrder, newOrder := "PORT-"+uuid.NewString(), "OLD-"+uuid.NewString(), "NEW-"+uuid.NewString()
 	if err := tx.Table("device_port").Create(map[string]any{"id": id, "device_id": device, "port_no": 1, "port_code": device, "status": "charging", "current_order_id": oldOrder}).Error; err != nil {
 		t.Fatal(err)

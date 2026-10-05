@@ -18,6 +18,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -33,7 +34,7 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 	defer tx.Rollback()
 	cache := identityRouteRedis(t)
 	ctx := context.Background()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	tag := uuid.NewString()
 	password := "Test!RegisteredSecurity2026"
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)

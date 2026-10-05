@@ -33,6 +33,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -92,7 +93,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	if central.Error != nil || gateway.Error != nil {
 		t.Fatalf("begin: %v %v", central.Error, gateway.Error)
 	}
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	number := strconv.FormatUint(id%4000000000+1, 10)
 	deviceID := "CR" + strings.ReplaceAll(uuid.NewString(), "-", "")[:24]
 	port := deviceID + "-1"

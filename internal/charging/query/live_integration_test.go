@@ -20,6 +20,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -58,7 +59,7 @@ func TestLiveUsesRegisteredGatewayAndTwoOwnedQueries(t *testing.T) {
 	now := start.Add(90 * time.Second)
 	tag := uuid.NewString()
 	device := "LQ" + tag
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	raw := durationSnapshot(t)
 	rows := liveRows(21, start)
 	for i := range rows {

@@ -4,6 +4,7 @@ package payment
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"os"
 	"strings"
 	"sync"
@@ -143,7 +144,13 @@ func cleanupWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 		{"wallet_account", "user_id = ?", []any{rechargeUserID}},
 		{"user", "id = ?", []any{rechargeUserID}},
 	} {
-		if err := db.Table(q.table).Where(q.where, q.args...).Delete(nil).Error; err != nil {
+		var err error
+		if q.table == "event_outbox" {
+			err = testfixture.DeleteOutbox(db, q.where, q.args...)
+		} else {
+			err = db.Table(q.table).Where(q.where, q.args...).Delete(nil).Error
+		}
+		if err != nil {
 			t.Errorf("清理 %s 失败：%v", q.table, err)
 		}
 	}

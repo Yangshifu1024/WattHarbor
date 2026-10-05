@@ -12,6 +12,7 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -25,7 +26,7 @@ func TestConcurrentInvoiceApplicationsSerializeOnOwnedOrder(t *testing.T) {
 	defer closeFirst()
 	second, closeSecond := testConn(t)
 	defer closeSecond()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	no := "C-IV-" + rand.Text()
 	defer func() {
 		for _, q := range []struct{ table, where string }{{"invoice_request", "biz_type='charge' AND biz_id=?"}, {"charge_fee_receipt", "charge_order_id=?"}, {"charge_order", "id=?"}} {
@@ -155,7 +156,7 @@ func TestInvoiceReviewAuditFailureRollsBackAndRevocationBlocksSecondSignature(t 
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	if err := tx.Table("invoice_request").Create(map[string]any{"id": id, "invoice_no": "IV-" + rand.Text(), "user_id": id, "biz_type": "charge", "biz_id": id, "total_cents": 400, "title": "测试单位"}).Error; err != nil {
 		t.Fatal(err)
 	}

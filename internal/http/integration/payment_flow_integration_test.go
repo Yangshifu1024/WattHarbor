@@ -21,6 +21,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -90,7 +91,7 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	deviceID := "ROUTE-" + rand.Text()
 	portID := deviceID + ":1"
 	if err := tx.Table("user").Create(map[string]any{"id": id, "openid": "route-" + rand.Text(), "status": "active"}).Error; err != nil {
@@ -203,7 +204,7 @@ func TestRegisteredRechargeNotificationRejectsForeignPayerAndReplaysOnce(t *test
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	no := "PR" + rand.Text()
 	openid := "payer-" + rand.Text()
 	requestID := uuid.NewString()

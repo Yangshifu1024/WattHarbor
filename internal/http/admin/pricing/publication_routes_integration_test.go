@@ -22,6 +22,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 )
 
@@ -104,7 +105,7 @@ func TestRegisteredSchemeRoutesPreserveAuthorizationAndResults(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	device := "HP" + strings.ReplaceAll(uuid.NewString(), "-", "")[:26]
 	sid := uuid.NewString()
 	var role uint64

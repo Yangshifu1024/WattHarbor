@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"gorm.io/gorm/clause"
 )
@@ -21,7 +22,7 @@ func TestWalletRefundSourcesDoNotLockPendingRecharge(t *testing.T) {
 	defer closeReader()
 	writer, closeWriter := testConn(t)
 	defer closeWriter()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	defer func() {
 		for _, q := range []struct {
 			table string // 本测试已提交的来源及钱包表

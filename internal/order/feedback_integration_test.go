@@ -9,6 +9,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"os"
@@ -39,7 +40,7 @@ func feedbackDB(t *testing.T) *gorm.DB {
 // seedFeedbackOrder 为 t 用 db 创建自身已完成订单，返回订单与所有人身份；测试退出删除自身反馈和订单并核对零残留。
 func seedFeedbackOrder(t *testing.T, db *gorm.DB) (uint64, uint64) {
 	t.Helper()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	userID := id + 1
 	if err := db.Table("charge_order").Create(map[string]any{"id": id, "order_no": "FB" + uuid.NewString(), "user_id": userID, "device_id": "feedback-proof", "port_no": 1, "created_month": time.Now().UTC().Format("2006-01") + "-01", "status": "completed"}).Error; err != nil {
 		t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -25,7 +26,7 @@ func TestConcurrentRechargeRequestsReplayAfterIdentityRead(t *testing.T) {
 	defer closeFirst()
 	second, closeSecond := testConn(t)
 	defer closeSecond()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	request := uuid.NewString()
 	if err := setup.Table("user").Create(map[string]any{"id": id, "openid": "same-recharge-" + rand.Text(), "status": "active"}).Error; err != nil {
 		t.Fatal(err)

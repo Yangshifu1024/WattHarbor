@@ -14,6 +14,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/persist"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ import (
 // faultFixture 提供所属账号、角色和范围；提交造数只按本测试身份清理，资金表不参与。
 func faultFixture(t *testing.T, db *gorm.DB) (uint64, string, operations.Profile) {
 	t.Helper()
-	id, tag := uint64(time.Now().UnixNano()), uuid.NewString()
+	id, tag := testfixture.NewID(), uuid.NewString()
 	board := "FT" + tag
 	t.Cleanup(func() {
 		for _, item := range []struct {

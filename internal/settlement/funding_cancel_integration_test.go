@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -20,7 +21,7 @@ import (
 func TestRechargeCancellationAfterBalanceWriteRollsBackAllFunds(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	request := uuid.NewString()
 	no := "CANCEL" + rand.Text()
 	openid := "cancel-" + rand.Text()
@@ -31,7 +32,13 @@ func TestRechargeCancellationAfterBalanceWriteRollsBackAllFunds(t *testing.T) {
 			where string // 当前测试独占的身份筛选
 			arg   any    // 与筛选对应的用户、请求或通知身份
 		}{{"event_outbox", "envelope_json LIKE ?", "%" + request + "%"}, {"wallet_txn", "user_id=?", id}, {"payment_callback_idempotent", "wechat_transaction_id=?", transaction}, {"wallet_recharge_request", "request_id=?", request}, {"payment_order", "id=?", id}, {"wallet_account", "id=?", id}, {"user", "id=?", id}} {
-			if err := db.Table(q.table).Where(q.where, q.arg).Delete(nil).Error; err != nil {
+			var err error
+			if q.table == "event_outbox" {
+				err = testfixture.DeleteOutbox(db, q.where, q.arg)
+			} else {
+				err = db.Table(q.table).Where(q.where, q.arg).Delete(nil).Error
+			}
+			if err != nil {
 				t.Error(err)
 			}
 			var n int64

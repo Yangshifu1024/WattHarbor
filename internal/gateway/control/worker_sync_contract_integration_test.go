@@ -19,6 +19,7 @@ import (
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 )
 
@@ -30,7 +31,7 @@ func TestWorkerSyncClientMatchesRegisteredGatewayAndMySQL(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	t.Cleanup(func() { _ = tx.Rollback().Error })
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	device := "SYNC-CONTRACT-" + rand.Text()
 	orderNo := "C-SYNC-" + rand.Text()
 	commandID, stopID := uuid.NewString(), uuid.NewString()

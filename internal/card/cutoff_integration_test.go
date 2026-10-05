@@ -17,6 +17,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -122,7 +123,7 @@ func TestSwipeReadsCutoffCommittedAfterRRSnapshot(t *testing.T) {
 // seedCutoffCard 为 t 在 db 提交独立身份的真实续购数据并注册逐表清理；返回订单、卡号、端口和设备身份。
 func seedCutoffCard(t *testing.T, db *gorm.DB) (uint64, string, string, string) {
 	t.Helper()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	no := strconv.FormatUint(id, 10)
 	cardNo := strconv.FormatUint(id%4000000000+1, 10)
 	port := "CUT" + no

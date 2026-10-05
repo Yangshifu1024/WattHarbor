@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm/clause"
@@ -17,7 +18,7 @@ import (
 func TestRechargePaymentLookupDoesNotLockOtherRequests(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	key := uuid.NewString()
 	other, target := "A"+key[:35], "Z"+key[:35]

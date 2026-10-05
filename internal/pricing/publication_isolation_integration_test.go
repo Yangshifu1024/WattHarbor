@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -91,7 +92,7 @@ func TestPricingPublicationDoesNotBlockAnotherStation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setup, first, second := pricingConn(t), pricingConn(t), pricingConn(t)
-			station := uint64(time.Now().UnixNano())
+			station := testfixture.NewID()
 			stations := []uint64{station, station + 1}
 			devices := []string{"PA" + rand.Text(), "PB" + rand.Text()}
 			requests := []string{uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()}

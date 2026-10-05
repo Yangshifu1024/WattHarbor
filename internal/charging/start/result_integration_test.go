@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"gorm.io/gorm"
 )
 
@@ -23,7 +24,7 @@ func TestBalanceStartRejectionRefundsOnce(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	orderNo := "C-START-" + rand.Text()
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	for _, seed := range []struct {

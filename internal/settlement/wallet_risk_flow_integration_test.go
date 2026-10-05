@@ -14,6 +14,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -28,7 +29,7 @@ func TestRiskApprovalSeesRechargeCommittedDuringWalletLockWait(t *testing.T) {
 	defer closeFirst()
 	second, closeSecond := testConn(t)
 	defer closeSecond()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	request := uuid.NewString()
 	recharge := uuid.NewString()
 	openid := "risk-wait-" + rand.Text()
@@ -39,7 +40,13 @@ func TestRiskApprovalSeesRechargeCommittedDuringWalletLockWait(t *testing.T) {
 			where string // 唯一业务身份，避免删除已有开发数据
 			arg   any    // 筛选用户或原请求号
 		}{{"wallet_refund_part", "request_id=?", request}, {"wallet_risk_review", "request_id=?", request}, {"wallet_risk_freeze_link", "request_id=?", request}, {"wallet_refund_request", "request_id=?", request}, {"risk_freeze_log", "user_id=?", id}, {"refund_record", "user_id=?", id}, {"event_outbox", "envelope_json LIKE ?", "%" + recharge + "%"}, {"audit_log", "request_id=?", request}, {"wallet_txn", "user_id=?", id}, {"wallet_recharge_request", "request_id=?", recharge}, {"payment_callback_idempotent", "wechat_transaction_id=?", "TX-" + no}, {"payment_order", "id=?", id}, {"wallet_account", "id=?", id}, {"user", "id=?", id}} {
-			if err := setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error; err != nil {
+			var err error
+			if q.table == "event_outbox" {
+				err = testfixture.DeleteOutbox(setup, q.where, q.arg)
+			} else {
+				err = setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error
+			}
+			if err != nil {
 				t.Error(err)
 			}
 			var n int64
@@ -138,7 +145,7 @@ func TestWalletRiskServiceKeepsReservationReviewReleaseAndAuditAtomic(t *testing
 	}
 	defer tx.Rollback()
 	ctx := context.Background()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	request := uuid.NewString()
 	if err := tx.Table("user").Create(map[string]any{"id": id, "openid": "risk-" + rand.Text(), "status": "active"}).Error; err != nil {
 		t.Fatal(err)

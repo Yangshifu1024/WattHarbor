@@ -17,6 +17,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"gorm.io/gorm"
 )
 
@@ -60,7 +61,7 @@ func TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery(t *testi
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	first := uint64(time.Now().UnixNano())
+	first := testfixture.NewID()
 	second := first + 1
 	at := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	for _, id := range []uint64{first, second} {

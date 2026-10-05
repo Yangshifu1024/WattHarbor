@@ -13,6 +13,7 @@ import (
 	userwallet "github.com/ChargePilot2026/charge-pilot/internal/http/user/wallet"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 )
@@ -27,7 +28,7 @@ func TestRegisteredWalletRefundQueryPreservesApprovalAndJSON(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	request := uuid.NewString()
 	if err := tx.Table("wallet_refund_request").Create(map[string]any{"request_id": request, "user_id": id, "amount_cents": 100, "reason": "验证"}).Error; err != nil {
 		t.Fatal(err)

@@ -15,6 +15,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -106,7 +107,7 @@ func TestSwipeOwnsReplayFrozenExtensionCutoffAndFunds(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	user := uint64(time.Now().UnixNano())
+	user := testfixture.NewID()
 	seedCardUser(t, tx, user, 5000)
 	cardNo := strconv.FormatUint(user%4000000000+1, 10)
 	card := OnlineCard{CardNo: cardNo, UserID: user, Status: "active"}
@@ -183,7 +184,7 @@ func TestCardManagementPreservesOwnershipReplayAndAtomicAudit(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	user := uint64(time.Now().UnixNano())
+	user := testfixture.NewID()
 	seedCardUser(t, tx, user, 1000)
 	seedCardUser(t, tx, user+1, 1000)
 	actor := operations.Profile{ID: user, Permissions: []string{"online_card.manage", "user.read"}}

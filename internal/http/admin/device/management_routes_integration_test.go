@@ -29,6 +29,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 
 	"gorm.io/gorm"
@@ -121,7 +122,7 @@ func TestRegisteredDeviceAndStationManagementUsesCurrentScope(t *testing.T) {
 	if central.Error != nil || gateway.Error != nil {
 		t.Fatalf("begin: %v %v", central.Error, gateway.Error)
 	}
-	id, sid := uint64(time.Now().UnixNano()), uuid.NewString()
+	id, sid := testfixture.NewID(), uuid.NewString()
 	visible := "MV" + strings.ReplaceAll(uuid.NewString(), "-", "")[:26]
 	hidden := "MH" + strings.ReplaceAll(uuid.NewString(), "-", "")[:26]
 	at := time.Date(2026, 10, 1, 0, 0, 0, 123000000, time.UTC)

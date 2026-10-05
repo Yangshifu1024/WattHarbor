@@ -23,6 +23,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/billing"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/charge"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/refund"
@@ -160,7 +161,7 @@ func TestFinanceConsumersUseRegisteredJobsAndOriginalRecovery(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	at := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	payload, err := json.Marshal(settlement.Result{Source: settlement.Source{ChargeOrderID: id, OrderNo: fmt.Sprintf("C-W-%d", id)}})
 	if err != nil {

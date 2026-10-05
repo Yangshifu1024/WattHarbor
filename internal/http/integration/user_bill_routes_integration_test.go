@@ -18,6 +18,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"gorm.io/gorm"
 )
 
@@ -30,7 +31,7 @@ func TestRegisteredUserBillServicePreservesOwnershipAndRead(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	for i, userID := range []uint64{17, 18, 17} {

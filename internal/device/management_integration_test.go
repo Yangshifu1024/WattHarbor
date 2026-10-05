@@ -13,6 +13,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ import (
 // 真库提交只清理自身设备与请求号并核对零残留；身份权限为 fixture，版本及审计使用真实 SQL。
 func TestConcurrentDeviceMetadataKeepsOneVersion(t *testing.T) {
 	setup, first, second := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
-	id, board := uint64(time.Now().UnixNano()), "ME"+uuid.NewString()
+	id, board := testfixture.NewID(), "ME"+uuid.NewString()
 	requests := []string{uuid.NewString(), uuid.NewString()}
 	at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	defer func() {

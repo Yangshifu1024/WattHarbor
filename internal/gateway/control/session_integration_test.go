@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -69,7 +70,7 @@ func TestIdleSessionEndpointsKeepCompositeIdentity(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	previous := month.AddDate(0, -1, 0)
-	id, device := uint64(time.Now().UnixNano()), "SESSION-"+uuid.NewString()
+	id, device := testfixture.NewID(), "SESSION-"+uuid.NewString()
 	oldSession, oldestSession := uuid.NewString(), uuid.NewString()
 	for _, seed := range []struct {
 		id      uint64    // 原审计主键，跨日期可相同。
@@ -139,7 +140,7 @@ func TestIdleSessionCleanupRollsBackCanceledBatch(t *testing.T) {
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	id, device := uint64(time.Now().UnixNano()), "SESSION-CANCEL-"+uuid.NewString()
+	id, device := testfixture.NewID(), "SESSION-CANCEL-"+uuid.NewString()
 	t.Cleanup(func() {
 		if err := db.Table("device_session").Where("id IN ? AND created_month = ?", []uint64{id, id + 1}, month).Delete(map[string]any{}).Error; err != nil {
 			t.Error(err)

@@ -25,6 +25,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -38,7 +39,7 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 	}
 	defer tx.Rollback()
 	cache := identityRouteRedis(t)
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	tag := uuid.NewString()
 	orderNo := "RF" + tag
 	month := time.Now().UTC().Format("2006-01") + "-01"

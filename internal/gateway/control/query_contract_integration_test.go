@@ -16,6 +16,7 @@ import (
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 )
 
@@ -30,7 +31,7 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	tag := uuid.NewString()
 	device := "QC" + tag
 	no := "QO" + tag
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	to := time.Now().UTC().Truncate(time.Millisecond).Add(-time.Minute)
 	from := to.Add(-10 * time.Minute)
 	for _, metric := range []struct {

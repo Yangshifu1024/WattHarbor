@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -202,7 +203,7 @@ func concurrentLoginWallet(t *testing.T, forceRetry bool) {
 // 一次绑定成功、一次返回归属冲突；原用户解绑使用 SQL NULL，提交造数按自身 ID 清理。
 func TestPhoneServiceConcurrentUniqueOwnership(t *testing.T) {
 	a, b := identityDB(t), identityDB(t)
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	tag := uuid.NewString()
 	for i := range 2 {
 		if err := a.Table("user").Create(map[string]any{"id": id + uint64(i), "openid": fmt.Sprintf("phone-%s-%d", tag, i), "status": "active"}).Error; err != nil {

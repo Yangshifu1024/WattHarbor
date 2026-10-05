@@ -14,6 +14,7 @@ import (
 
 	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -46,7 +47,7 @@ func callFaultEndpoint(t *testing.T, db *gorm.DB, method, path, body string, ctx
 // 私有原主键清理并检查零残留，不触发中央告警、资金或设备操作。
 func TestFaultMarkKeepsTransactionAndReplay(t *testing.T) {
 	db := gatewayContractDB(t)
-	id, board := uint64(time.Now().UnixNano()), "FAULT-MARK-"+uuid.NewString()
+	id, board := testfixture.NewID(), "FAULT-MARK-"+uuid.NewString()
 	ids := []uint64{id, id + 1, id + 2, id + 3}
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	old := at.Add(-time.Hour)
@@ -126,7 +127,7 @@ func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id, board, key := uint64(time.Now().UnixNano()), "HEARTBEAT-"+uuid.NewString(), uuid.NewString()
+	id, board, key := testfixture.NewID(), "HEARTBEAT-"+uuid.NewString(), uuid.NewString()
 	at := time.Now().UTC().Truncate(time.Millisecond).Add(-time.Hour)
 	latest := at.Add(time.Minute)
 	for i, seed := range []struct {

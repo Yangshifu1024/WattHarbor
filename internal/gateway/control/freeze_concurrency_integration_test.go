@@ -21,6 +21,7 @@ import (
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -30,7 +31,7 @@ import (
 // 同一身份的不同计量片段只能保留首写事实，1062后重读；高位整数身份冲突仍拒绝，夹具按自身主键清理。
 func TestConcurrentEndFreezeKeepsFirstEvidence(t *testing.T) {
 	db := gatewayContractDB(t)
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	t.Cleanup(func() {
 		if err := db.Table("charge_end_delivery").Where("device_event_id = ?", id).Delete(map[string]any{}).Error; err != nil {
 			t.Error(err)
@@ -178,7 +179,7 @@ func TestEndFreezeKeepsReadAndWriteFailureMessages(t *testing.T) {
 		{"invalid-json-write", "not-json", false, "结束回执冻结失败"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			id := uint64(time.Now().UnixNano())
+			id := testfixture.NewID()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			if tc.canceled {

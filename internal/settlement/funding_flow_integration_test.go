@@ -15,6 +15,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -32,7 +33,7 @@ func TestWalletRefundQueryUsesStoredApprovalAndBoundedReads(t *testing.T) {
 	}
 	defer tx.Rollback()
 	ctx := context.Background()
-	user := uint64(time.Now().UnixNano())
+	user := testfixture.NewID()
 	wanted := map[string]bool{}
 	for i := 0; i < 12; i++ {
 		request := uuid.NewString()
@@ -150,7 +151,7 @@ func TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	openid := "checkout-" + rand.Text()
 	device := "CHECK-" + rand.Text()
 	port := device + ":1"
@@ -259,7 +260,7 @@ func TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	openid := "fund-" + rand.Text()
 	if err := tx.Table("user").Create(map[string]any{"id": id, "openid": openid, "status": "active"}).Error; err != nil {
 		t.Fatal(err)

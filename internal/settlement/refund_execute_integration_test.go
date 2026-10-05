@@ -4,6 +4,7 @@ package settlement
 
 import (
 	"context"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"testing"
 	"time"
 
@@ -68,7 +69,7 @@ func seedExecutableRefund(t *testing.T, db *gorm.DB) {
 func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 	t.Helper()
 	// 仅清理由本测试退款身份生成的事件，避免删除其他包的开发或并发测试数据。
-	if err := db.Table("event_outbox").Where("stream=? AND JSON_EXTRACT(envelope_json,'$.payment_order_id')=?", "refund_succeeded_stream", execPayOrdID).Delete(nil).Error; err != nil {
+	if err := testfixture.DeleteOutbox(db, "stream=? AND JSON_EXTRACT(envelope_json,'$.payment_order_id')=?", "refund_succeeded_stream", execPayOrdID); err != nil {
 		t.Errorf("清理本测试发件箱失败：%v", err)
 	}
 	for _, id := range refundIDs {

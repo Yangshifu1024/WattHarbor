@@ -603,6 +603,10 @@ charge-pilot/
 │   ├── internal/protocol/endpoint.go
 │   ├── internal/protocol/router.go
 │   └── internal/protocol/session_audit.go
+├── internal/testfixture                                  仅 integration 编译的真库测试夹具，不参与服务构建
+│   ├── internal/testfixture/id.go                         随机大整数身份基址（替代测试中的时间主键）
+│   ├── internal/testfixture/outbox.go                     按主键清理自身事件，保留原归属条件
+│   └── internal/testfixture/outbox_integration_test.go     无关夹具锁隔离回归
 ├── internal/persist                                      与业务无关的持久化原语
 │   ├── internal/persist/insert_id.go
 │   └── internal/persist/page.go

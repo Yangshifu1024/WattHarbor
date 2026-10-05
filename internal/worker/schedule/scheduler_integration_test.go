@@ -16,6 +16,7 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -38,7 +39,7 @@ func scheduleFixture(t *testing.T, failures uint32) (*gorm.DB, string, uint64) {
 		t.Fatal(err)
 	}
 	code := "schedule_" + uuid.NewString()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	t.Cleanup(func() {
 		var rows []struct {
 			ID    uint64    // 本测试执行日志主键。

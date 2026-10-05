@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 )
 
 // TestImportCompatibilityCachesAbsentRuleAndChecksWholeScheme 使用真实规则表及外层回滚。
@@ -21,7 +21,7 @@ func TestImportCompatibilityCachesAbsentRuleAndChecksWholeScheme(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	station := uint64(time.Now().UnixNano())
+	station := testfixture.NewID()
 	devices := []device.ImportDevice{{DeviceID: "IMPORTCOMPAT1", StationID: station, ProtocolAdapter: "dc589"}, {DeviceID: "IMPORTCOMPAT2", StationID: station, ProtocolAdapter: "dc589"}}
 	repo := Repo{DB: tx}
 	if err := repo.CheckImportAgainstStation(tx, devices); err != nil {

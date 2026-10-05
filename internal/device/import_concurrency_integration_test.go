@@ -17,6 +17,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -32,7 +33,7 @@ type concurrentImportGateway struct {
 // 真库持有第一台行锁后才放行另一事务；网关为 fixture，原请求数组不改写，已提交造数仅按本测试身份清理。
 func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 	setup, first, second := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	boards := []string{"AO" + strings.ReplaceAll(uuid.NewString(), "-", "")[:26], "ZO" + strings.ReplaceAll(uuid.NewString(), "-", "")[:26]}
 	requests := []string{uuid.NewString(), uuid.NewString()}
 	defer func() {
@@ -195,7 +196,7 @@ func (g *concurrentImportGateway) Provision(ctx context.Context, devices []contr
 // 首次插入持锁时第二连接已尝试原 SQL；不使用延时。中央真实提交，网关为明确 fixture，造数清理为零。
 func TestConcurrentFirstImportClaimsOriginalIdentity(t *testing.T) {
 	setup, first, second := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
-	id, board, request := uint64(time.Now().UnixNano()), "IC"+strings.ReplaceAll(uuid.NewString(), "-", "")[:26], uuid.NewString()
+	id, board, request := testfixture.NewID(), "IC"+strings.ReplaceAll(uuid.NewString(), "-", "")[:26], uuid.NewString()
 	defer func() {
 		for _, q := range []struct {
 			table string /* 原提交所属表 */

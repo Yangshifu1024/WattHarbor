@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"testing"
@@ -23,7 +24,7 @@ func TestBillingMarketingStorageFailureRollsBackFunds(t *testing.T) {
 	if tx.Error != nil {
 		t.Fatal(tx.Error)
 	}
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	no := "C-BR-" + rand.Text()
 	at := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	rule := charging.Rule{ID: 1, StationID: 1, Version: 1, Spec: charging.Spec{Scheme: &charging.Scheme{}}}

@@ -17,6 +17,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -39,7 +40,7 @@ func exportFixture(t *testing.T) (ExportService, ops.AuditContext, uint64, uint6
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	name := "export_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	t.Cleanup(func() {
 		if err := cleanupExportAudits(db, id); err != nil {

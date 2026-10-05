@@ -22,6 +22,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -38,7 +39,7 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 	if central.Error != nil || gw.Error != nil {
 		t.Fatalf("begin %v %v", central.Error, gw.Error)
 	}
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	tag := uuid.NewString()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	for i, status := range []string{"active", "active", "disabled", "construction", "active"} {

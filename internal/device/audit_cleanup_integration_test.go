@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -60,7 +61,7 @@ func TestDeviceAuditCleanupDoesNotWaitForOtherRequest(t *testing.T) {
 		}
 	}()
 	now := time.Now().UTC()
-	actor := uint64(now.UnixNano())
+	actor := testfixture.NewID()
 	for _, request := range requests {
 		entry := ops.AuditEntryInput{
 			ActorID: actor, Module: "fixture", Action: "cleanup", RequestID: request,

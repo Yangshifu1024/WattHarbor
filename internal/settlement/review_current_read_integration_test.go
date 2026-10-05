@@ -10,6 +10,7 @@ import (
 	"time"
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 )
@@ -21,7 +22,7 @@ func TestActiveWalletFreezeCountUsesCurrentReadAfterOldSnapshot(t *testing.T) {
 	defer closeReader()
 	writer, closeWriter := testConn(t)
 	defer closeWriter()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	defer func() {
 		if err := writer.Table("risk_freeze_log").Where("user_id=?", id).Delete(nil).Error; err != nil {
 			t.Error(err)
@@ -59,7 +60,7 @@ func TestReviewExistenceUsesCurrentReadAfterOldSnapshot(t *testing.T) {
 	defer closeReader()
 	writer, closeWriter := testConn(t)
 	defer closeWriter()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	request := uuid.NewString()
 	segments := []charging.MeterSegment{{StartedAt: time.Now().UTC().Truncate(time.Millisecond), EnergyWh: 10}}
 	segments[0].EndedAt = segments[0].StartedAt.Add(time.Minute)

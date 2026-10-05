@@ -9,6 +9,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/persist"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"testing"
@@ -39,7 +40,7 @@ func TestMarketingAuditFailureRollsBackOwnedChanges(t *testing.T) {
 	ctx := context.Background()
 	audit := marketingAudit()
 	coupon := insertServiceCoupon(t, db, tag, 3)
-	uid := uint64(time.Now().UnixNano())
+	uid := testfixture.NewID()
 	if err := db.Table("user").Create(map[string]any{"id": uid, "openid": tag, "status": "active"}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestManualGrantCurrentBudgetAndReplay(t *testing.T) {
 	setup := testConn(t).orm
 	tag := "marketing-manual-" + uuid.NewString()
 	coupon := insertServiceCoupon(t, setup, tag, 1)
-	uid := uint64(time.Now().UnixNano())
+	uid := testfixture.NewID()
 	for offset := uint64(0); offset < 2; offset++ {
 		if err := setup.Table("user").Create(map[string]any{"id": uid + offset, "openid": fmt.Sprint(tag, offset), "status": "active"}).Error; err != nil {
 			t.Fatal(err)
@@ -158,7 +159,7 @@ func TestActivitySharedTemplateSerializesDifferentRules(t *testing.T) {
 	setup := testConn(t).orm
 	tag := "marketing-shared-" + uuid.NewString()
 	coupon := insertServiceCoupon(t, setup, tag, 0)
-	ids := []uint64{uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()) + 1}
+	ids := []uint64{testfixture.NewID(), testfixture.NewID() + 1}
 	now := time.Now().UTC()
 	for i, trigger := range []string{TriggerFirstRecharge, TriggerHoliday} {
 		if err := setup.Table("coupon_activity_rule").Create(map[string]any{"id": ids[i], "name": tag, "trigger_type": trigger, "coupon_id": coupon, "max_grants": 1, "per_user_limit": 2, "status": "active", "start_at": now.Add(-time.Hour), "end_at": now.Add(time.Hour)}).Error; err != nil {
@@ -218,7 +219,7 @@ func TestCouponRedemptionFrozenMoneyReplayCancelAndRollback(t *testing.T) {
 	tx := txRollback(t, testDB(t))
 	tag := uuid.NewString()
 	coupon := insertServiceCoupon(t, tx, tag, 0)
-	uid := uint64(time.Now().UnixNano())
+	uid := testfixture.NewID()
 	if err := tx.Table("coupon").Where("id=?", coupon).Updates(map[string]any{"discount_type": "percentage", "discount_value_cents": nil, "discount_percent": 75}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +282,7 @@ func TestCouponRedemptionFrozenMoneyReplayCancelAndRollback(t *testing.T) {
 func TestMarketingQueriesKeepUserExpiryAndNulls(t *testing.T) {
 	tx := txRollback(t, testDB(t))
 	coupon := insertServiceCoupon(t, tx, uuid.NewString(), 0)
-	uid := uint64(time.Now().UnixNano())
+	uid := testfixture.NewID()
 	now := time.Now().UTC()
 	for i, row := range []struct {
 		user    uint64
@@ -368,7 +369,7 @@ func TestActivityUsesLockedConfiguration(t *testing.T) {
 			tag := uuid.NewString()
 			a := insertServiceCoupon(t, writer, tag+"a", 0)
 			b := insertServiceCoupon(t, writer, tag+"b", 0)
-			id := uint64(time.Now().UnixNano())
+			id := testfixture.NewID()
 			now := time.Now().UTC()
 			if err := writer.Table("coupon_activity_rule").Create(map[string]any{"id": id, "name": tag, "trigger_type": TriggerHoliday, "coupon_id": a, "status": "active", "start_at": now.Add(-time.Hour), "end_at": now.Add(time.Hour)}).Error; err != nil {
 				t.Fatal(err)

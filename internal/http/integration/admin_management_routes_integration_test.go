@@ -20,6 +20,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -34,7 +35,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	defer tx.Rollback()
 	cache := identityRouteRedis(t)
 	ctx := context.Background()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	tag := strings.ReplaceAll(uuid.NewString(), "-", "_")
 	for _, seed := range []struct {
 		// table 本断言写入、读取或清理的真实表名。

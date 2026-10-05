@@ -26,6 +26,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/ChargePilot2026/charge-pilot/internal/worker/alerts"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -41,7 +42,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 	if tx.Error != nil || gw.Error != nil {
 		t.Fatal(tx.Error, gw.Error)
 	}
-	id, tag := uint64(time.Now().UnixNano()), uuid.NewString()
+	id, tag := testfixture.NewID(), uuid.NewString()
 	board, outside, syncBoard := "AL"+tag, "AO"+tag, "SY"+tag
 	randomID := uuid.New()
 	alertID := binary.LittleEndian.Uint64(randomID[:8])%(1<<54) + (1 << 54)

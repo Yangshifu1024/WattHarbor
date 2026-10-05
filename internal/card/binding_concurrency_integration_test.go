@@ -5,6 +5,7 @@ package card
 import (
 	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"gorm.io/gorm"
 	"strconv"
 	"strings"
@@ -18,7 +19,7 @@ import (
 func TestFirstCardBindingUsesUniqueClaimAndCurrentLockedIdentity(t *testing.T) {
 	first := cardConn(t)
 	second := cardConn(t)
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	seedCardUser(t, first, id, 1000)
 	cardNo := strconv.FormatUint(id%4000000000+1, 10)
 	t.Cleanup(func() {

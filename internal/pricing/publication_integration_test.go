@@ -15,6 +15,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -67,7 +68,7 @@ func TestSchemePublicationPreservesReplayScopeVersionsAndAudit(t *testing.T) {
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	device := "PR" + rand.Text()
 	request := uuid.NewString()
 	if err := seedPricingTarget(tx, id, device); err != nil {
@@ -173,7 +174,7 @@ func TestConcurrentPublicationReturnsOriginalResult(t *testing.T) {
 	setup := pricingConn(t)
 	first := pricingConn(t)
 	second := pricingConn(t)
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	device := "PC" + rand.Text()
 	request := uuid.NewString()
 	defer func() {

@@ -21,6 +21,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -109,7 +110,7 @@ func TestRegisteredCardManagementPreservesPermissionInputAndAudit(t *testing.T) 
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	sid, readerSid := uuid.NewString(), uuid.NewString()
 	var role, readPermission uint64
 	if err := tx.Table("role").Where("code='customer_admin' AND deleted_at IS NULL").Pluck("id", &role).Error; err != nil || role == 0 {

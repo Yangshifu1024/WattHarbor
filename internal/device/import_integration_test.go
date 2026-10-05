@@ -23,6 +23,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -54,7 +55,7 @@ func importDB(t *testing.T, env string) *gorm.DB {
 func TestImportRecoversGatewayCommitAndCommittedFailure(t *testing.T) {
 	central := importDB(t, "TEST_MYSQL_URL")
 	gateway := importDB(t, "DATABASE_URL_GATEWAY")
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	request, secondRequest := uuid.NewString(), uuid.NewString()
 	one, two := "IM"+rand.Text(), "IN"+rand.Text()
 	defer func() {

@@ -22,6 +22,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 )
 
@@ -104,7 +105,7 @@ func TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit(t *testing.
 		t.Fatal(tx.Error)
 	}
 	defer tx.Rollback()
-	id := uint64(time.Now().UnixNano())
+	id := testfixture.NewID()
 	var roleID uint64
 	if err := tx.Table("role").Where("code='customer_finance' AND deleted_at IS NULL").Pluck("id", &roleID).Error; err != nil || roleID == 0 {
 		t.Fatalf("finance role=%d err=%v", roleID, err)
