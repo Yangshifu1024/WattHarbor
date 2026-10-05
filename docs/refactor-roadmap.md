@@ -851,3 +851,9 @@ make test-integration TEST_MYSQL_URL=...
 5t首次全仓验收：默认检查和构建通过，完整真库在ops角色删除遇1213，原失败日志已另存，未计为通过。锁循环采样、两连接稳定复现及索引修复作为5u独立提交e75db5c并完成全仓验收；开通生产源码未随修复变更。接续包含5u后的5t精确暂存完整验收。
 
 5t完整退出：包含5u修复后的精确暂存 .tmp/batch5t-validation 通过 .tmp/batch5t-snapshot-{check,integration,build}.log，完整三库／Redis保持默认包并行。1236份暂存原blob中724份Go／模块与已验收工作区一致，.tmp/batch5t-snapshot-source.log 保存；本地Markdown链接有效，三份Go中文契约清单无缺项。重启现有开发gateway后实际日志确认HTTP／TCP监听，只经GET核对 .tmp/batch5t-health-{before,after}.json 五进程均200；未清库、创建开发设备、调用设备TCP或资金流程。原失败日志单独保留，不计为通过。最后仅补本退出记录，公开字段、前端和依赖未改，最近完整前端验收仍5b；厂商完整操作、补录、运行时与DEP继续，17组完成15组约88%。
+
+批次5v（G-01厂商完整操作）：GetVendor／CreateVendor／UpdateVendor 接管原数据访问、UTC毫秒及EnabledAt列、完整更新事务与锁后回读；原编码／设备／适配器规则和全部公开错误不变。固定列清单、锁读、更新与设备计数助手私有，旧未用wasEnabled删除；原关键词转义搬repo，HTTP不构造列／SQL／事务。绑定原共享VendorRequest并显式五字段转换，九字段VendorReply及VendorListReply保持原公开形状、NULL时间和空列表[]；更新原unit类型／符号及中文说明，AGENTS目录图同步。
+
+5v基线证据：原源码 .tmp/batch5v-vendor-baseline.log 新真实注册路由／具名客户端回归通过。仅隔离原源码副本去更新外层事务，.tmp/batch5v-vendor-mutation.log 稳定检出取消后名称／状态／更新时间部分持久化，503错误形状仍原样；恢复副本 .tmp/batch5v-vendor-restored.log 通过。原回归核对重复编码1062映射、创建／连续启用／停用／再启用的原时间事实、字面%/_/!关键词及ID范围、软删404、不可改编码409、退役且软删除设备仍限制协议变更409、无设备的不支持组合400；真实UPDATE完成后取消须全部列回滚。私有厂商／设备清理并核对零残留，不触发开发或中央资金。新源码及全仓精确暂存验收继续，17组完成15组约88%。
+
+5v完整退出：新源码及设备导入／后台实际路由三完整包 .tmp/batch5v-vendor-real.log 通过；补充空列表[]回归在原恢复副本及最终完整快照通过。四份原文与HEAD994639c一致，.tmp/batch5v-source-comparison.log 完整Go解析重放核对仅已审查提取、原SQL转义迁移、助手／错误／DTO符号和五／九字段转换及注释；未改变开通方法、协议、隔离或锁。五份Go中文函数／字段／接口说明清单无缺项。精确暂存 .tmp/batch5v-validation 的 .tmp/batch5v-snapshot-{check,integration,build}.log 全通过，完整独立三库／Redis保留默认包并行；1237份原blob中725份Go／模块与已验收工作区一致，Markdown本地链接有效。重启现有开发gateway，实际HTTP／TCP启动日志及 .tmp/batch5v-health-{before,after}.json 只读核对五进程均200；没有开发厂商／设备／资金写入或清库。最终只补本退出记录，不重复同一源码全量测试；前端、schema及依赖在本批未改，最近完整前端验收仍5b。gateway剩余补录完整操作和运行时收尾、DEP评估及最终报告继续，17组完成15组约88%。

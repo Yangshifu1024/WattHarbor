@@ -62,7 +62,7 @@ type VendorRequest struct {
 type VendorListRequest struct {
 	Page     int      // 起始页码，一开始
 	PageSize int      // 每页条数，一至一百
-	Keyword  string   // 原搜索关键词，由客户端转义
+	Keyword  string   // 原普通关键词；客户端仅 URL 编码，SQL LIKE 转义由 gateway 仓储处理
 	Status   string   // 空、enabled 或 disabled
 	IDs      []uint64 // 当前账号的厂商范围，空表示不限定厂商
 }

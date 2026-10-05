@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -17,8 +18,14 @@ import (
 // ErrProvisionConflict 表示设备已存在但参数不同，或厂商不可用。
 var ErrProvisionConflict = errors.New("provision conflict")
 
-// ErrVendorAdapterImmutable 表示厂商的适配器或协议不允许在有设备时更改。
-var ErrVendorAdapterImmutable = errors.New("vendor adapter is immutable once devices exist")
+// ErrVendorCodeImmutable 保留厂商编码不可变的原公开冲突消息。
+var ErrVendorCodeImmutable = errors.New("厂商编码创建后不可修改")
+
+// ErrVendorAdapterImmutable 保留已有设备时禁止更改适配器或协议的原公开冲突消息。
+var ErrVendorAdapterImmutable = errors.New("厂商已有设备，适配器和连接协议不可修改")
+
+// ErrVendorUnsupportedAdapter 保留厂商适配器与传输组合不支持的原公开输入消息。
+var ErrVendorUnsupportedAdapter = errors.New("当前网关仅支持 dc589 适配器与 TCP 连接")
 
 // ProvisionDevice 是一台待开通设备的参数。
 type ProvisionDevice struct {
@@ -119,8 +126,8 @@ func sameProvisionIdentity(registeredJSON string, want ProvisionDevice) (bool, e
 	return string(a) == string(b), nil
 }
 
-// CountVendorDevices 接收所属 tx 与 vendorID，统计厂商下设备记录（不追加软删过滤）；返回数量及 SQL 错误，无写入。
-func CountVendorDevices(tx *gorm.DB, vendorID uint64) (int64, error) {
+// countVendorDevices 接收所属 tx 与 vendorID，统计厂商下设备记录（不追加软删过滤）；返回数量及 SQL 错误，无写入。
+func countVendorDevices(tx *gorm.DB, vendorID uint64) (int64, error) {
 	var count int64
 	err := tx.Table("device").Where("vendor_id = ?", vendorID).Count(&count).Error
 	return count, err
@@ -151,13 +158,12 @@ type Vendor struct {
 // TableName 返回原固定表名 vendor，供 GORM 定位模型；无数据库 IO。
 func (Vendor) TableName() string { return "vendor" }
 
-// VendorColumns 是厂商的完整列清单，查询时显式列出避免 gorm 按字段名推导。
-const VendorColumns = "id,vendor_code,vendor_name,adapter_class,protocol,status,enabled_at,created_at,updated_at"
+// vendorColumns 是厂商的完整列清单，查询时显式列出避免 gorm 按字段名推导。
+const vendorColumns = "id,vendor_code,vendor_name,adapter_class,protocol,status,enabled_at,created_at,updated_at"
 
 // VendorQuery 是厂商列表的筛选条件。
 type VendorQuery struct {
-	Keyword string   // 编码或名称的模糊关键字
-	Pattern string   // 转义并加好通配符的关键字，直接用于 LIKE
+	Keyword string   // 普通编码或名称关键词，LIKE 转义由本仓储完成
 	Status  string   // 状态过滤，空表示不限
 	IDs     []uint64 // 指定厂商范围，空表示不限
 	// Page 原从一开始的页码。
@@ -166,11 +172,16 @@ type VendorQuery struct {
 	PageSize int
 }
 
-// ListVendors 接收 ctx、db 与 q，按原范围、状态和已用 ! 转义的 Pattern 读取未删除厂商，倒序分页；返回记录、总数及 SQL 错误，无写入。
+// ListVendors 接收 ctx、db 与 q，将普通 Keyword 按原 !/%/_ 规则转义后筛选未删除厂商；返回原倒序页、总数或 SQL／取消错误，无写入。
 func ListVendors(ctx context.Context, db *gorm.DB, q VendorQuery) ([]Vendor, int64, error) {
+	pattern := ""
+	if q.Keyword != "" {
+		// 通配符转义：用户输入里的 % 与 _ 不该被当成模式，否则搜 "a%" 会列出全部厂商。
+		pattern = "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(q.Keyword) + "%"
+	}
 	query := db.WithContext(ctx).Table("vendor").Where("deleted_at IS NULL")
 	if q.Keyword != "" {
-		query = query.Where("(vendor_code LIKE ? ESCAPE '!' OR vendor_name LIKE ? ESCAPE '!')", q.Pattern, q.Pattern)
+		query = query.Where("(vendor_code LIKE ? ESCAPE '!' OR vendor_name LIKE ? ESCAPE '!')", pattern, pattern)
 	}
 	if q.Status != "" {
 		query = query.Where("status = ?", q.Status)
@@ -183,25 +194,25 @@ func ListVendors(ctx context.Context, db *gorm.DB, q VendorQuery) ([]Vendor, int
 		return nil, 0, err
 	}
 	items := []Vendor{}
-	err := query.Select(VendorColumns).Order("id DESC").
+	err := query.Select(vendorColumns).Order("id DESC").
 		Offset((q.Page - 1) * q.PageSize).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
 
-// LockVendor 接收所属 tx 与 id，以 UPDATE 锁读取未删除厂商完整公开列；返回记录或缺失、SQL 错误，不自行提交。
-func LockVendor(tx *gorm.DB, id uint64) (Vendor, error) {
+// lockVendor 接收所属 tx 与 id，以 UPDATE 锁读取未删除厂商完整公开列；返回记录或缺失、SQL 错误，不自行提交。
+func lockVendor(tx *gorm.DB, id uint64) (Vendor, error) {
 	var row Vendor
-	err := tx.Select(VendorColumns).Clauses(clause.Locking{Strength: "UPDATE"}).
+	err := tx.Select(vendorColumns).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error
 	return row, err
 }
 
-// UpdateVendor 接收所属 tx、id、wasEnabled 与 values，按调用方列值更新未删除厂商并锁定回读；wasEnabled 保留原签名但不参与列构造，返回记录或 SQL 错误，不提交。
-func UpdateVendor(tx *gorm.DB, id uint64, wasEnabled bool, values map[string]any) (Vendor, error) {
+// updateVendor 接收所属 tx、id 与 values，更新未删除厂商并锁定回读；返回原记录或 SQL 错误，不自行提交。
+func updateVendor(tx *gorm.DB, id uint64, values map[string]any) (Vendor, error) {
 	if err := tx.Model(&Vendor{}).Where("id = ? AND deleted_at IS NULL", id).Updates(values).Error; err != nil {
 		return Vendor{}, err
 	}
-	return LockVendor(tx, id)
+	return lockVendor(tx, id)
 }
 
 // ProvisionBatch 在 ctx 下按 devices 输入顺序执行原整批开通事务，返回首个厂商、身份冲突或 SQL／取消错误。
@@ -258,4 +269,83 @@ func provisionOne(tx *gorm.DB, d ProvisionDevice) error {
 		return err
 	}
 	return createDevicePorts(tx, d.DeviceID, d.PortCount)
+}
+
+// VendorInput 是已由 HTTP 校验并规范名称的厂商写入参数；不包含私有适配配置或任意数据库列。
+type VendorInput struct {
+	// VendorCode 原厂商业务编码。
+	VendorCode string `json:"vendor_code"`
+	// VendorName 原非空厂商名称，HTTP已去除两侧空白并校验长度与控制字符。
+	VendorName string `json:"vendor_name"`
+	// AdapterClass 原厂商设备适配器类型。
+	AdapterClass string `json:"adapter_class"`
+	// Protocol 原厂商传输协议；支持组合由所属开通规则核对。
+	Protocol string `json:"protocol"`
+	// Status 所属记录的原状态值。
+	Status string `json:"status"`
+}
+
+// SupportedVendorAdapter 接收 adapterClass 与 protocol，仅原 dc589/tcp 组合返回 true，其余 false；无 IO 或状态变更。
+func SupportedVendorAdapter(adapterClass, protocol string) bool {
+	return adapterClass == "dc589" && protocol == "tcp"
+}
+
+// GetVendor 在 ctx 下读取 id 未删除厂商的原公开列，返回原记录或缺失、SQL／取消错误，不加锁或写入。
+func GetVendor(ctx context.Context, db *gorm.DB, id uint64) (Vendor, error) {
+	var row Vendor
+	err := db.WithContext(ctx).Select(vendorColumns).Where("id = ? AND deleted_at IS NULL", id).Take(&row).Error
+	return row, err
+}
+
+// CreateVendor 在 ctx 下将已校验 in 写入厂商，返回含自增 ID 的原记录或唯一键、SQL／取消错误。
+// 创建与更新时间沿用当前 UTC 毫秒，初始启用时设置 EnabledAt；不创建设备、不开额外批次事务或重试。
+func CreateVendor(ctx context.Context, db *gorm.DB, in VendorInput) (Vendor, error) {
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	row := Vendor{VendorCode: in.VendorCode, VendorName: in.VendorName, AdapterClass: in.AdapterClass, Protocol: in.Protocol, Status: in.Status, CreatedAt: now, UpdatedAt: now}
+	if in.Status == "enabled" {
+		row.EnabledAt = &now
+	}
+	// 数据库唯一索引限制有效厂商编码，覆盖并发写入。
+	err := db.WithContext(ctx).Create(&row).Error
+	return row, err
+}
+
+// UpdateVendor 在 ctx 下执行 id 与 in 的原完整更新事务，锁定厂商后核对编码、设备引用及适配器组合。
+// 原列与 UTC 毫秒更新时间、首次／再次启用时间及锁后回读保持；返回记录或原冲突、缺失、SQL／取消错误，失败整体回滚。
+func UpdateVendor(ctx context.Context, db *gorm.DB, id uint64, in VendorInput) (Vendor, error) {
+	var row Vendor
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		locked, err := lockVendor(tx, id)
+		if err != nil {
+			return err
+		}
+		row = locked
+		if in.VendorCode != row.VendorCode {
+			return ErrVendorCodeImmutable
+		}
+		if in.AdapterClass != row.AdapterClass || in.Protocol != row.Protocol {
+			devices, err := countVendorDevices(tx, row.ID)
+			if err != nil {
+				return err
+			}
+			if devices > 0 {
+				return ErrVendorAdapterImmutable
+			}
+			if !SupportedVendorAdapter(in.AdapterClass, in.Protocol) {
+				return ErrVendorUnsupportedAdapter
+			}
+		}
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		updates := map[string]any{"vendor_name": in.VendorName, "adapter_class": in.AdapterClass, "protocol": in.Protocol, "status": in.Status, "updated_at": now}
+		if in.Status == "enabled" && row.Status != "enabled" {
+			updates["enabled_at"] = now
+		}
+		updated, err := updateVendor(tx, row.ID, updates)
+		if err != nil {
+			return err
+		}
+		row = updated
+		return nil
+	})
+	return row, err
 }

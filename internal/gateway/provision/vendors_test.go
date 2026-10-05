@@ -9,14 +9,18 @@ import (
 	"strings"
 	"testing"
 
+	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 )
 
+// vendorTestToken 是默认测试的非生产服务鉴权期望值。
 const vendorTestToken = "vendor-test-secret"
 
+// vendorTestRouter 按 a 实际注册厂商与开通路由，返回默认测试路由；不启动监听或连接数据库。
 func vendorTestRouter(a API) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := httpapi.NewRouter()
@@ -24,6 +28,7 @@ func vendorTestRouter(a API) *gin.Engine {
 	return router
 }
 
+// callVendor 按 method/path/token/body 构造 JSON 请求并调用实际 router，返回记录器；只使用已注入 API 的业务能力。
 func callVendor(router *gin.Engine, method, path, token, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -35,14 +40,18 @@ func callVendor(router *gin.Engine, method, path, token, body string) *httptest.
 	return rec
 }
 
-func validVendorInput() vendorInput {
-	return vendorInput{VendorCode: "TEST_DC589", VendorName: "测试厂商", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
+// validVendorInput 返回原合法 dc589/tcp 厂商请求，用于边界修改；不生成数据库记录。
+func validVendorInput() contract.VendorRequest {
+	return contract.VendorRequest{VendorCode: "TEST_DC589", VendorName: "测试厂商", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
 }
 
+// TestVendorsRequireExactNonemptyServiceToken 使用 t 核对真实注册路由拒绝空配置／坏凭据及合法凭据后的缺库响应，不访问数据库。
 func TestVendorsRequireExactNonemptyServiceToken(t *testing.T) {
 	for _, expected := range []string{"", vendorTestToken} {
 		router := vendorTestRouter(API{ServiceToken: expected})
-		for _, route := range []struct{ method, path string }{
+		for _, route := range []struct {
+			method, path string // 实际注册的 HTTP 方法与对应路由路径。
+		}{
 			{http.MethodGet, "/api/v1/internal/vendors"},
 			{http.MethodGet, "/api/v1/internal/vendors/1"},
 			{http.MethodPost, "/api/v1/internal/vendors"},
@@ -65,10 +74,11 @@ func TestVendorsRequireExactNonemptyServiceToken(t *testing.T) {
 	}
 }
 
+// TestVendorInputBoundsAndSupportedTransport 使用 t 核对原字段边界、名称规范化及单一支持适配器规则，无数据库 IO。
 func TestVendorInputBoundsAndSupportedTransport(t *testing.T) {
 	valid := validVendorInput()
 	valid.VendorName = "  测试厂商  "
-	if err := validateVendorInput(&valid); err != nil || valid.VendorName != "测试厂商" || !supportedVendorAdapter(valid) {
+	if err := validateVendorInput(&valid); err != nil || valid.VendorName != "测试厂商" || !gatewayrepo.SupportedVendorAdapter(valid.AdapterClass, valid.Protocol) {
 		t.Fatalf("valid input rejected or not normalized: %+v, %v", valid, err)
 	}
 	for _, code := range []string{"", "contains space", "dc589::Adapter", "厂家", strings.Repeat("a", 65)} {
@@ -88,7 +98,7 @@ func TestVendorInputBoundsAndSupportedTransport(t *testing.T) {
 	for _, pair := range [][2]string{{"dc589", "mqtt"}, {"dc589", "hybrid"}, {"unknown", "tcp"}} {
 		in := validVendorInput()
 		in.AdapterClass, in.Protocol = pair[0], pair[1]
-		if supportedVendorAdapter(in) {
+		if gatewayrepo.SupportedVendorAdapter(in.AdapterClass, in.Protocol) {
 			t.Errorf("unsupported adapter accepted: %+v", in)
 		}
 	}
@@ -99,6 +109,7 @@ func TestVendorInputBoundsAndSupportedTransport(t *testing.T) {
 	}
 }
 
+// TestVendorListQueryBoundsAndFailClosedScope 使用 t 核对原分页／关键词／ID范围解析、去重与拒绝边界，不声明真实数据库过滤证据。
 func TestVendorListQueryBoundsAndFailClosedScope(t *testing.T) {
 	parse := func(query string) (vendorListQuery, error) {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -125,6 +136,7 @@ func TestVendorListQueryBoundsAndFailClosedScope(t *testing.T) {
 	}
 }
 
+// TestVendorHandlersRejectMalformedAndUnsupportedInputsBeforeDatabase 使用 t 核对实际路由的严格 JSON、正文预算及先于数据库的拒绝顺序。
 func TestVendorHandlersRejectMalformedAndUnsupportedInputsBeforeDatabase(t *testing.T) {
 	router := vendorTestRouter(API{ServiceToken: vendorTestToken})
 	valid := `{"vendor_code":"V1","vendor_name":"测试厂商","adapter_class":"dc589","protocol":"tcp","status":"enabled"}`
@@ -140,17 +152,18 @@ func TestVendorHandlersRejectMalformedAndUnsupportedInputsBeforeDatabase(t *test
 	}
 }
 
+// TestVendorFailureEnvelopes 使用 t 核对原错误分类、状态及公开信封不泄露内部消息；数据库故障由窄错误值表示。
 func TestVendorFailureEnvelopes(t *testing.T) {
 	for _, tc := range []struct {
-		err    error
-		status int
-		code   int
+		err    error // 原业务或存储故障值。
+		status int   // 原预期 HTTP 状态。
+		code   int   // 原预期公开业务码。
 	}{
 		{gorm.ErrRecordNotFound, 404, 1004},
-		{errVendorCodeImmutable, 409, 2009},
-		{errVendorAdapterImmutable, 409, 2009},
+		{gatewayrepo.ErrVendorCodeImmutable, 409, 2009},
+		{gatewayrepo.ErrVendorAdapterImmutable, 409, 2009},
 		{&mysql.MySQLError{Number: 1062, Message: "private database content"}, 409, 2009},
-		{errVendorUnsupportedAdapter, 400, 1005},
+		{gatewayrepo.ErrVendorUnsupportedAdapter, 400, 1005},
 		{errors.New("private database credentials"), 503, 5003},
 	} {
 		rec := httptest.NewRecorder()
