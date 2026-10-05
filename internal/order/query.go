@@ -146,3 +146,12 @@ func IsFeeQueryError(err error) bool {
 	var e *QueryError
 	return errors.As(err, &e) && e.Stage == "fee"
 }
+
+// ProcessIdentity 在 ctx 下核对 actor 的原 order.read 权限，再按 id 读取规范订单身份。
+// 返回原身份或禁止／缺行／存储错误，不加载价格、改变订单或调用网关。
+func (s QueryService) ProcessIdentity(ctx context.Context, actor operations.Profile, id uint64) (ProcessIdentity, error) {
+	if !actor.HasPermission("order.read") {
+		return ProcessIdentity{}, operations.ErrForbidden
+	}
+	return findProcessIdentity(ctx, s.DB, id)
+}

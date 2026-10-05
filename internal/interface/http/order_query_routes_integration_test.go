@@ -144,7 +144,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	service := order.QueryService{DB: tx, Fees: settlement.QueryFeeRepo{DB: tx}}
 	router := httpapi.NewRouter()
 	(chargehttp.UserQueryAPI{Orders: service, DB: tx, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
-	(adminorder.API{Live: liveService, Query: service, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: adminSessions}}).Register(router)
+	(adminorder.API{Process: chargingquery.ProcessService{Orders: service, Gateway: gatewayClient}, Live: liveService, Query: service, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: adminSessions}}).Register(router)
 	call := func(path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", path, nil)
 		if token != "" {
@@ -236,6 +236,32 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	if !ok || confirmed != 0 {
 		t.Fatal("live estimate changed confirmed receipt")
 	}
+
+	// 过程只使用已授权订单身份；额外公开设备参数不能覆盖原设备与端口。
+	for n := range 2 {
+		if err := gatewayTx.Table("charge_process").Create(map[string]any{"id": id + 50 + uint64(n), "event_key": tag + "process" + strconv.Itoa(n), "charge_order_id": id, "order_no": no, "device_id": "OR" + tag, "port_no": 1, "ts": liveStart.Add(time.Duration(n) * time.Second), "power_deciwatts": 1485, "charged_seconds": 30 + n, "remaining_seconds": 120 - n, "charged_mwh": 2500, "remaining_mwh": 1250000, "signal_strength": 0, "port_status": 0, "temperature_c": -2}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	processPath := adminPath + "/process?limit=1&device_id=other&order_no=other"
+	w = call(processPath, adminToken)
+	var processReply struct {
+		Data chargingquery.ProcessPage `json:"data"` /* 原过程页 */
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &processReply); err != nil || w.Code != 200 || len(processReply.Data.Items) != 1 || processReply.Data.Items[0].ID != id+50 || processReply.Data.NextAfterID == nil || *processReply.Data.NextAfterID != id+50 || processReply.Data.Items[0].ChargedKWh != 0.0025 || processReply.Data.Items[0].PortStatus == nil || *processReply.Data.Items[0].PortStatus != 0 {
+		t.Fatalf("registered canonical process=%d %s", w.Code, w.Body)
+	}
+	w = call(adminPath+"/process?limit=1&after_id="+strconv.FormatUint(*processReply.Data.NextAfterID, 10), adminToken)
+	if err := json.Unmarshal(w.Body.Bytes(), &processReply); err != nil || w.Code != 200 || len(processReply.Data.Items) != 1 || processReply.Data.Items[0].ID != id+51 || processReply.Data.NextAfterID != nil {
+		t.Fatalf("registered last process page=%d %s", w.Code, w.Body)
+	}
+	if w := call("/api/v1/admin/orders/"+strconv.FormatUint(id+99, 10)+"/process", adminToken); w.Code != 404 {
+		t.Fatalf("missing process order=%d", w.Code)
+	}
+	gatewayServer.Close()
+	if w := call(adminPath+"/process", adminToken); w.Code != 503 || !strings.Contains(w.Body.String(), "充电过程暂时无法读取，请稍后重试") {
+		t.Fatalf("registered process dependency error=%d %s", w.Code, w.Body)
+	}
 	fault := errors.New("registered order fee fault")
 	const callback = "registered_order_fee_fault"
 	if err := tx.Callback().Query().Before("gorm:query").Register(callback, func(q *gorm.DB) {
@@ -255,5 +281,8 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	if w := call(adminPath, adminToken); w.Code != 403 {
 		t.Fatalf("revoked order permission=%d", w.Code)
+	}
+	if w := call(adminPath+"/process", adminToken); w.Code != 403 {
+		t.Fatalf("revoked process permission=%d", w.Code)
 	}
 }

@@ -15,6 +15,22 @@ type OrderTimelineRow struct {
 	Detail  string    `json:"detail"`                       /* 原业务说明 */
 }
 
+// ProcessIdentity 是所属订单提供给充电过程读取的规范身份，不包含网关或权限配置。
+type ProcessIdentity struct {
+	ID       uint64 // 原中央订单主键
+	OrderNo  string // 原业务订单号
+	DeviceID string // 原设备全局身份
+	PortNo   uint8  // 原物理端口，从1开始
+}
+
+// findProcessIdentity 在 ctx 下用 db 按 id 读取未删除原订单，返回身份或缺失／存储错误，无写入。
+// 授权由 QueryService.ProcessIdentity 在读取前执行，不信任公开输入的设备或业务号。
+func findProcessIdentity(ctx context.Context, db *gorm.DB, id uint64) (ProcessIdentity, error) {
+	var row ProcessIdentity
+	err := db.WithContext(ctx).Table("charge_order").Select("id,order_no,device_id,port_no").Where("id=? AND deleted_at IS NULL", id).Take(&row).Error
+	return row, err
+}
+
 // OrderExists 确认订单存在且未软删除。时间线接口先确认订单存在，
 // 免得对不存在的订单返回一份空时间线。
 // ctx 取消 db 查询，id 为订单主键；返回 nil 或缺行／存储错误，不修改状态，授权由调用方负责。

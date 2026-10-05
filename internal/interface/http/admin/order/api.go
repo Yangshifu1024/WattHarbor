@@ -10,12 +10,12 @@ import (
 
 // API 持有本业务族所需的数据库、鉴权与外部调用依赖。
 type API struct {
-	Live                     chargingquery.LiveService // 所属实时估算用例，批量取证和冻结计价读取
-	Query                    ordercase.QueryService    // 原订单页、详情与事件的所属只读用例
-	Feedback                 ordercase.FeedbackService // 原订单反馈列表、回复与审计事务
-	DB                       *gorm.DB
-	Auth                     chargehttp.AdminAuth
-	GatewayURL, ServiceToken string
+	Process  chargingquery.ProcessService // 订单授权身份与具名网关过程的完整读取
+	Live     chargingquery.LiveService    // 所属实时估算用例，批量取证和冻结计价读取
+	Query    ordercase.QueryService       // 原订单页、详情与事件的所属只读用例
+	Feedback ordercase.FeedbackService    // 原订单反馈列表、回复与审计事务
+	DB       *gorm.DB
+	Auth     chargehttp.AdminAuth
 }
 
 // Register 把订单与工单的全部路由挂到引擎上。

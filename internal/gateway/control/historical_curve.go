@@ -1,6 +1,8 @@
 package control
 
 import (
+	"encoding/json"
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"net/http"
 	"strconv"
@@ -60,20 +62,19 @@ func (a TelemetryAPI) historicalCurve(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "历史遥测摘要暂时无法读取", nil)
 		return
 	}
-	summary := gin.H{}
+	summary := map[string]json.RawMessage{}
 	for _, peak := range peaks {
 		switch peak.Metric {
 		case "power_w":
-			summary["max_power_w"] = peak.Peak
-			summary["avg_power_w"] = peak.Avg
+			summary["max_power_w"] = curveSummaryValue(peak.Peak)
+			summary["avg_power_w"] = curveSummaryValue(peak.Avg)
 		case "temperature_c":
-			summary["max_temperature_c"] = peak.Peak
+			summary["max_temperature_c"] = curveSummaryValue(peak.Peak)
 		}
 	}
-	httpapi.OK(c, gin.H{
-		"order_id": orderID, "device_id": deviceID, "port_no": portNo,
-		"started_at": from.UTC(), "ended_at": to.UTC(), "granularity": c.Query("granularity"),
-		"series": series, "count": len(series), "summary": summary,
-		"boundary_approximate": !from.Equal(startBucket) || !to.Equal(endBucket),
-	})
+	httpapi.OK(c, gatewaycontract.HistoricalCurveData{OrderNo: orderID, DeviceID: deviceID, PortNo: uint8(portNo), StartedAt: from.UTC(), EndedAt: to.UTC(), Granularity: c.Query("granularity"), Series: series, Count: len(series), Summary: summary, BoundaryApproximate: !from.Equal(startBucket) || !to.Equal(endBucket)})
 }
+
+// curveSummaryValue 将 value 原DECIMAL文本编码为JSON字符串，返回精确原文本载荷，无IO或数值转换。
+// 字符串编码不会失败；摘要保持原公开字符串类型，不替换成浮点数。
+func curveSummaryValue(value string) json.RawMessage { raw, _ := json.Marshal(value); return raw }

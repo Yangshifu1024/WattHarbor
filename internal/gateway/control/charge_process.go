@@ -1,6 +1,7 @@
 package control
 
 import (
+	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"net/http"
 	"strconv"
@@ -9,9 +10,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
-
-// ChargeProcessPoint 是充电过程曲线上的一个点，定义在持久化层。
-type ChargeProcessPoint = gatewaystore.ChargeProcessPoint
 
 func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 	if !a.authorized(c) {
@@ -66,7 +64,7 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 		}
 	}
 	query := gatewaystore.ChargeProcessQuery(c.Request.Context(), a.DB, orderNo, chargeOrderID, deviceID, portNo, afterID)
-	items := []ChargeProcessPoint{}
+	items := []gatewaystore.ChargeProcessPoint{}
 	if err := query.Order("id ASC").Limit(limit + 1).Scan(&items).Error; err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "充电过程暂不可读取", nil)
 		return
@@ -77,8 +75,9 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 		last := items[len(items)-1].ID
 		next = &last
 	}
-	for i := range items {
-		items[i].TS = items[i].TS.UTC()
+	points := make([]gatewaycontract.ProcessPoint, len(items))
+	for i, row := range items {
+		points[i] = gatewaycontract.ProcessPoint{ID: row.ID, TS: row.TS.UTC(), PowerW: row.PowerW, ChargedKWh: row.ChargedKWh, RemainingKWh: row.RemainingKWh, ChargedSeconds: row.ChargedSeconds, RemainingSeconds: row.RemainingSeconds, SignalStrength: row.SignalStrength, PortStatus: row.PortStatus, VoltageV: row.VoltageV, TemperatureC: row.TemperatureC, DeviceStatus: row.DeviceStatus}
 	}
-	httpapi.OK(c, gin.H{"items": items, "next_after_id": next})
+	httpapi.OK(c, gatewaycontract.OrderProcessData{Items: points, NextAfterID: next})
 }

@@ -78,20 +78,3 @@ func ListAudits(ctx context.Context, db *gorm.DB, q AuditQuery, page, pageSize i
 		Offset((page - 1) * pageSize).Limit(pageSize).Scan(&out.Items).Error
 	return out, err
 }
-
-// OrderProcessIdentity 是订单处理视图需要的订单身份字段。
-type OrderProcessIdentity struct {
-	ID       uint64
-	OrderNo  string
-	DeviceID string
-	PortNo   uint8
-}
-
-// FindOrderIdentity 按主键取订单身份，订单不存在或已软删除时返回 gorm.ErrRecordNotFound。
-func FindOrderIdentity(ctx context.Context, db *gorm.DB, id uint64) (OrderProcessIdentity, error) {
-	var row OrderProcessIdentity
-	err := db.WithContext(ctx).Table("charge_order").
-		Select("id, order_no, device_id, port_no").
-		Where("id=? AND deleted_at IS NULL", id).Take(&row).Error
-	return row, err
-}

@@ -71,6 +71,7 @@ charge-pilot/
 │   ├── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
 │   │   └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
 │   └── internal/charging/query                           只读组合与实时估算（新增充电子包）
+│       ├── internal/charging/query/process.go（迁移前：internal/interface/http/admin/order/order_process.go[组合读取]）
 │       ├── internal/charging/query/live.go（迁移前：internal/interface/http/charge_live_meter.go[估算]、admin/order/order_live.go[组合]）
 │       └── internal/charging/query/live_evidence.go（迁移前：internal/interface/http/charge_live_meter.go[观测计量]）
 ├── internal/order                                        订单表模型、编号分配与读模型
@@ -236,6 +237,7 @@ charge-pilot/
 │   ├── internal/contracts/gateway/summary.go（迁移前：后台设备 HTTP 摘要 DTO）
 │   ├── internal/contracts/gateway/scan.go（新增：扫码端点与缺失错误契约）
 │   ├── internal/contracts/gateway/card.go（迁移前：internal/worker/charge/cards.go、gateway/control/card_delivery.go[服务 DTO]）
+│   ├── internal/contracts/gateway/query.go（迁移前：gateway/control/telemetry.go[DTO]、HTTP/user与admin/order[重复查询DTO]）
 │   ├── internal/contracts/gateway/charging.go（START、STOP 与计量证据契约）
 │   └── internal/contracts/gateway/sync.go（迁移前：internal/worker/charge/*sync.go、meter_segments.go[同步 DTO]）
 ├── internal/integration                                  服务间 HTTP 的专用客户端
@@ -248,6 +250,7 @@ charge-pilot/
 │   ├── internal/integration/gateway/summary.go（迁移前：后台设备摘要通用出站 HTTP）
 │   ├── internal/integration/gateway/scan.go（迁移前：internal/interface/http/payment_scan.go[出站 HTTP]）
 │   ├── internal/integration/gateway/card.go（迁移前：internal/worker/charge/cards.go[gateway HTTP]）
+│   ├── internal/integration/gateway/query.go（迁移前：internal/interface/http/admin/order/order_process.go[HTTP代理]；用户曲线消费者待迁）
 │   ├── internal/integration/gateway/client.go
 │   └── internal/integration/gateway/sync.go（迁移前：internal/worker/charge/sync_client.go[启动/结束同步]）
 ├── internal/delivery                                     对外事件契约与签名投递器

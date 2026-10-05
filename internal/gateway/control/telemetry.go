@@ -23,13 +23,13 @@ type TelemetryAPI struct {
 }
 
 func (a TelemetryAPI) Register(router *gin.Engine) {
-	router.GET("/api/v1/internal/devices/:device_id/telemetry", a.curve)
+	router.GET(gatewaycontract.TelemetryPath+":device_id/telemetry", a.curve)
 	router.GET("/api/v1/internal/devices/:device_id/charging-samples", a.chargingSamples)
 	// 批量取证挂在 /internal 根下：/devices 下已存在 :device_id 通配，
 	// 静态段 charging-evidence 会与其在 gin 基数树上冲突。
 	router.POST(gatewaycontract.ChargingEvidencePath, a.chargingEvidence)
-	router.GET("/api/v1/internal/charge-orders/:order_no/process", a.chargeProcess)
-	router.GET("/api/v1/internal/devices/:device_id/historical-curve", a.historicalCurve)
+	router.GET(gatewaycontract.OrderProcessPath+":order_no/process", a.chargeProcess)
+	router.GET(gatewaycontract.HistoricalCurvePath+":device_id/historical-curve", a.historicalCurve)
 	router.POST("/api/v1/internal/devices/:device_id/backfill", a.backfill)
 	a.registerDeviceFaults(router)
 	a.registerWorkerSync(router)
@@ -41,17 +41,6 @@ func (a TelemetryAPI) authorized(c *gin.Context) bool {
 		return false
 	}
 	return true
-}
-
-// CurvePoint 的指标允许 NULL，表示设备未上报；调用方应保留曲线缺口，不补零。
-type CurvePoint struct {
-	TS           string   `json:"ts"`
-	PowerW       *float64 `json:"power_w"`
-	CurrentA     *float64 `json:"current_a"`
-	VoltageV     *float64 `json:"voltage_v"`
-	TemperatureC *float64 `json:"temperature_c"`
-	BatterySOC   *float64 `json:"battery_soc"`
-	MeterKWh     *float64 `json:"meter_kwh"`
 }
 
 func (a TelemetryAPI) curve(c *gin.Context) {
@@ -122,19 +111,16 @@ func (a TelemetryAPI) curve(c *gin.Context) {
 	case "telemetry_aggregate_hourly":
 		label = "hourly"
 	}
-	httpapi.OK(c, gin.H{
-		"device_id": deviceID, "from": from, "to": to, "series": series, "count": len(series),
-		"granularity": label, "bucket": granularity.String(),
-	})
+	httpapi.OK(c, gatewaycontract.TelemetryData{DeviceID: deviceID, From: from, To: to, Series: series, Count: len(series), Granularity: label, Bucket: granularity.String()})
 }
 
 // read 把长表形式的 telemetry 行转成按时间戳对齐的曲线点。读数在 SQL 里
 // 分组，这样无论采样率多高，响应体积都是有界的。
-func (a TelemetryAPI) read(ctx context.Context, deviceID string, from, to time.Time, limit int, table string) ([]CurvePoint, error) {
+func (a TelemetryAPI) read(ctx context.Context, deviceID string, from, to time.Time, limit int, table string) ([]gatewaycontract.CurvePoint, error) {
 	return a.readPort(ctx, deviceID, 0, from, to, limit, table)
 }
 
-func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int, from, to time.Time, limit int, table string) ([]CurvePoint, error) {
+func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int, from, to time.Time, limit int, table string) ([]gatewaycontract.CurvePoint, error) {
 	// 长窗口使用汇总表，避免原始样本超过行数预算后仅返回窗口尾部。
 	rows := []gatewaystore.Reading{}
 	if table == "telemetry" {
@@ -169,13 +155,13 @@ func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int,
 	}
 	// 先取最新的，再整体反转，曲线就能从左往右读。
 	sortDesc(order)
-	out := make([]CurvePoint, 0, len(order))
+	out := make([]gatewaycontract.CurvePoint, 0, len(order))
 	for i, key := range order {
 		if i >= limit {
 			break
 		}
 		b := buckets[key]
-		point := CurvePoint{TS: b.ts.Format(time.RFC3339)}
+		point := gatewaycontract.CurvePoint{TS: b.ts.Format(time.RFC3339)}
 		point.PowerW = value(b.values, "power_w")
 		point.CurrentA = value(b.values, "current_a")
 		point.VoltageV = value(b.values, "voltage_v")
