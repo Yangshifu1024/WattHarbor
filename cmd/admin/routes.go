@@ -56,7 +56,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 
 	authAPI.Register(router)
 	// 后台业务按族注册：每个族是一个独立包，进程只挂自己提供的那些。
-	adminops.API{DB: orm, Auth: authAPI}.Register(router)
+	adminops.API{Alerts: device.AlertService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
 	adminpricing.API{Queries: pricing.QueryService{DB: orm}, DB: orm, Auth: authAPI, Schemes: pricing.SchemeService{DB: orm}, Publications: pricing.PublicationService{DB: orm}}.Register(router)
 	adminstation.API{Stations: device.StationService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
 	admindevice.API{Management: device.ManagementService{DB: orm, Summaries: gateway}, Imports: device.ImportService{DB: orm, Gateway: gateway, Compatibility: pricing.Repo{DB: orm}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {

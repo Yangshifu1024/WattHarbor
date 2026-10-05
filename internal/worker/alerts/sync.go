@@ -1,37 +1,26 @@
-// Package alerts 只保留设备告警同步的触发转发。
-// 故障码翻译（协议语义）在 protocol/dc589；告警去重、写入与恢复判定
-// 在 central/admin（alert_event 是 central 的表，device_event 证据经
-// gateway 内部 HTTP）。本包不做任何业务判定，不接触两个库。
+// Package alerts 只保留设备告警同步的触发编排；所属状态与恢复在device，证据由gateway提供。
 package alerts
 
 import (
 	"context"
 	"errors"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 )
 
-// Sync 把每秒的同步节奏转发给 central，返回本轮新告警数。
-type Sync struct {
-	CentralURL, ServiceToken string
-	Client                   serviceclient.Client
+// CentralAlerts 是worker原每秒触发所需的窄能力，不暴露URL、令牌或数据库。
+type CentralAlerts interface {
+	// SyncDeviceAlerts 在ctx下执行一次受管理同步，返回新告警数或调用／业务错误，不替worker重试。
+	SyncDeviceAlerts(ctx context.Context) (int, error)
 }
 
+// Sync 只按原节奏调用所属central能力，无设备规则或两个库的IO。
+type Sync struct {
+	Central CentralAlerts /* cmd装配的具名central客户端 */
+}
+
+// Run 在ctx下触发一次同步，返回原新告警数或未配置／调用错误，不启动后台任务。
 func (s Sync) Run(ctx context.Context) (int, error) {
-	if s.CentralURL == "" || s.ServiceToken == "" {
+	if s.Central == nil {
 		return 0, errors.New("device alert sync is not configured")
 	}
-	var response struct {
-		Code int
-		Data struct {
-			Raised int
-		}
-	}
-	if err := s.Client.Post(ctx, s.CentralURL, s.ServiceToken, "/api/v1/internal/device-alerts/sync", nil, &response); err != nil {
-		return 0, err
-	}
-	if response.Code != 0 {
-		return 0, errors.New("device alert sync rejected")
-	}
-	return response.Data.Raised, nil
+	return s.Central.SyncDeviceAlerts(ctx)
 }

@@ -42,7 +42,7 @@ func (a API) registerOperations(r *gin.Engine) {
 			httpapi.OK(c, gin.H{"items": rows})
 		})
 	}
-	get("alerts", "alert.read", "alerts")
+	r.GET("/api/v1/admin/alerts", a.Auth.Require("alert.read"), a.listAlerts)
 	get("announcements", "announcement.read", "announcements")
 	r.POST("/api/v1/admin/admin-users", a.Auth.Require("admin_user.create"), a.createUser)
 	r.POST("/api/v1/admin/alerts/:id/ack", a.Auth.Require("alert.ack"), a.ackAlert)
@@ -142,32 +142,24 @@ func (a API) createUser(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// ackAlert 认领一条告警：只允许 active（未处理）→ acknowledged（已认领），
-// 对已认领的告警重复提交按幂等返回成功，其它状态报冲突。认领人取当前登录者。
+// listAlerts 将c原当前身份传给设备所属范围查询，输出原归一化items，无SQL或告警事务。
+func (a API) listAlerts(c *gin.Context) {
+	rows, err := a.Alerts.List(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile))
+	if err != nil {
+		chargehttp.AdminResourceFailure(c, err)
+		return
+	}
+	admin.NormalizeRows(rows)
+	httpapi.OK(c, gin.H{"items": rows})
+}
+
+// ackAlert 将c原身份、路径和审计值传给设备所属认领事务，输出原acknowledged，不写表。
 func (a API) ackAlert(c *gin.Context) {
 	id, ok := chargehttp.AdminPathID(c)
 	if !ok {
 		return
 	}
-	p := c.MustGet("admin_profile").(operations.Profile)
-	store := ops.AdminOpsStore{DB: a.DB}
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		row, err := store.LockAlertStatus(tx, id)
-		if err != nil {
-			return err
-		}
-		if row.Status == "acknowledged" {
-			return nil
-		}
-		if row.Status != "active" {
-			return admin.ErrConflict
-		}
-		if err := store.AckAlert(tx, id, p.ID, time.Now()); err != nil {
-			return err
-		}
-		return chargehttp.AdminResourceAudit(tx, p, "ack", "alert", id, gin.H{"status": row.Status}, gin.H{"status": "acknowledged"}, c.ClientIP(), "")
-	})
-	if err != nil {
+	if err := a.Alerts.Acknowledge(c.Request.Context(), chargehttp.AdminAuditContext(c), id); err != nil {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}

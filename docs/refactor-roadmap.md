@@ -258,7 +258,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.5 device：D-01／D-02／N-device
 
-来源：[导入编排](../internal/interface/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_sync_store.go)。
+来源：[导入编排](../internal/interface/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_repo.go)（原 alert_sync_store）。
 
 目标：ImportService.Create／Retry、OperationReader、StationService、FaultService.Report／Dispatch／Resolve／History、AlertService.Sync／Acknowledge；import_repo.go、operation_repo.go、fault_repo.go 等。
 
@@ -266,7 +266,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 - [x] D-01：迁入导入创建、任务锁、范围核对、gateway 预置、metadata 更新、失败／完成及审计；保留有界请求和失败状态可提交的原行为。
 - [x] D-01：站点／设备新增、更新、启停、导入身份冲突检查迁回 device；厂商 CRUD 仍由 gateway 提供具名能力。
 - [x] D-02：从 casework 与通用 CaseStore 拆出设备工单；参数不再收任意表名。状态机沿用 device/fault.go，历史事件和用户可见字段与状态变更同事务。
-- [ ] D-02：告警同步与确认归 device，用例调用 typed gateway 读取；后台 ops 目录中 ackAlert 只是 HTTP 路由位置，不拥有 alert_event。
+- [x] D-02：告警同步与确认归 device，用例调用 typed gateway 读取；后台 ops 目录中 ackAlert 只是 HTTP 路由位置，不拥有 alert_event。
 - [ ] N-device：统一 repo 命名并消除接口／payment 包里的设备表写入。
 
 验收：同导入内容重放、不同归属冲突、网关成功后中央失败可原任务恢复、网关失败留下可重试状态；不能默认为异步导入。用户／后台工单列表、详情、历史和状态变更范围一致；缺失设备证据不伪造故障恢复；告警重复同步无重复活动事件。
@@ -520,7 +520,7 @@ make test-integration TEST_MYSQL_URL=...
 | F-01／PAY-01／PAY-02／N-payment | 完成 | checkout／回调及归属注入完成，支付模型与渠道中文契约已核对；注册路由覆盖原号恢复、严格输入、付款人／商户／应用／金额／交易号冲突；完整回调取消回滚通过。全仓及独立暂存快照验收通过，tidy 无差异 |
 | W-01／N-wallet | 完成 | 充值／退款／风险入口及 repo 归位；11 笔申请固定 5 次 SQL；两连接验证原请求重放、频次、来源额度、待付行锁隔离、审核等锁后新到账及原成功重放；流水余额使用当前资金事实，取消与审计故障整体回滚；全仓及快照验收通过 |
 | D-01 | 完成 | 导入、站点、设备运营及厂商编排已归 device，普通归属／能力和站点锁由所属 repo 提供；真实注册后台及 gateway 覆盖范围、原号重放、旧版本、未知值、提交后恢复及审计。两连接验证首次申请唯一键及反向清单统一锁序，变异稳定失败并恢复；工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
-| D-02／N-device | 进行中 | 工单提交、查询和流转归 FaultService，状态／事件／审计同事务，后台范围一致及实时处理人准入已定向验证；告警及其余持久文件、用户站点组合查询继续迁移 |
+| D-02／N-device | 进行中 | 工单提交、查询和流转归 FaultService，状态／事件／审计同事务，后台范围一致及实时处理人准入已定向验证；告警同步与确认已归所属服务并验收；最后持久文件、用户站点组合查询继续迁移 |
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
@@ -622,3 +622,17 @@ make test-integration TEST_MYSQL_URL=...
 4a开发验收：重启user／admin后，`.tmp/batch4a-live-fault.json`及日志记录原开发用户在原设备提交工单1，重复指派、跳级409、重复修复和关闭后状态closed，后台／用户各4条原可见事件，无重复；钱包仍1999分，会话已注销。保留一份已关闭开发报告，不等于实机故障和修复。工作区默认检查、完整三库integration、全部入口构建与tidy通过；后台78项、用户59项测试及两端typecheck／后台构建通过，保留既有Vite大chunk提示。告警同步／确认继续4b，D-02整体仍进行中。
 
 4a退出证据：精确暂存快照`.tmp/batch4a-validation`的`.tmp/batch4a-snapshot-{check,integration,build,tidy}.log`全部通过，847份暂存文件中的623份Go／模块与原blob逐字节一致，tidy无差异，Markdown本地链接有效。最终仅补本段退出记录；已关闭开发工单和前三份数据库备份保留。
+
+批次4b（D-02告警）实施：HTTP同步与确认事务迁入device，alert_sync_store改alert_repo，删除ops告警表访问；worker及用例通过共享DTO、具名gateway／central能力调用。修复after_key被先解析after拒绝及最近故障水印倒退；原设备／协议／时刻和状态存在性核对避免伪恢复，确认列表与修改使用同一范围。用户站点组合与最后device持久文件继续下一子批，N-device不提前完成。
+
+4b定向证据：`.tmp/batch4b-{client,unit,sync-integration,registered}.log`验证原64位身份、参数转义、缺失／矛盾响应、重定向／取消、真实两库与注册gateway、标记实际提交后丢弃响应及下一轮重扫、原证据重放、持续／乱序／恢复后新故障、旧水印CAS与单条坏载荷不阻塞另一故障。两独立central连接在首次缺行后固定并发，RR仲裁只一条活动告警，冲突返回错误并由原扫描恢复；真实提交造数按原身份清理并核对零残留。注册后台真Redis验证列表／认领范围404、审计503整体回滚、重复一审计、撤权403，以及worker→central→gateway实际触发链路。设备源为协议fixture，不代表实机。
+
+4b验证纠正：初版真库fixture重复扫描未清空目标结构主键，GORM自动附加旧ID条件；修正后最新告警与CAS测试通过，原失败日志保留。增加存在性验证时初版把PortStates视为数值数组，真实protocol.Event的[]uint8实际为base64字符串；两库原载荷发现错误后修正并加入原Marshal回归。该轮同设备变异因编码错误失败，未计为变异证据。修正后水印、同设备、恢复CAS、首次缺行锁、显式状态及认领审计六项变异均在预期断言失败并恢复，日志`.tmp/batch4b-mutant-*.log`。
+
+4b全仓纠正：首次完整integration中的旧worker同步测试因新fixture自增事件ID碰撞其显式高位预留主键而失败，原日志保留为`.tmp/batch4b-fixture-auto-id-collision.log`。新源fixture及后台告警fixture改用独立较低显式ID，仍大于JS安全整数以验证原精度；各测试连接持续限定自身设备，避免跨包扫描他人提交证据。工作区完整三库回归重新通过，不修改生产主键分配或清空数据库。
+
+4b开发证据：重启admin／gateway／central／worker后，`.tmp/batch4b-live-alert.json`及日志使用原DC589模拟器实际TCP上报端口故障3／4、后台两次确认和完整故障心跳，同一告警1保持acknowledged且只有一条活动记录；清除故障并实际心跳后变auto_resolved。钱包仍1999分，无充电订单或资金写入，测试会话已注销；保留已恢复告警及原设备证据，不等于实机验收。后台78项、用户59项及两端typecheck／后台构建通过，保留已有Vite大chunk提示。补齐原后台告警GET缺失OpenAPI并登记范围／事务故障契约。
+
+4b最终复核补充：worker共享HTTP池原5秒超时会先于central受管理25秒轮次截止；具名同步客户端复制请求Client并设30秒，复用原Transport且不修改共享池。新增原池1纳秒／处理器20毫秒的实际loopback回归，核对触发成功、原池配置不变、取消及缺失进度／重定向拒绝；`.tmp/batch4b-central-client.log`通过。最终源码仍需完整快照验收后提交。
+
+4b退出证据：最终精确暂存快照`.tmp/batch4b-validation`的`.tmp/batch4b-snapshot-{check,integration,build,tidy}.log`全部通过，857份暂存文件中的633份Go／模块与原blob逐字节一致，tidy无差异。复核发现旧告警存储文档链接已失效，改指向所属repo；最终仅补文档记录。admin／worker已重启加载最终客户端与OpenAPI，原告警恢复和钱包事实继续保留。

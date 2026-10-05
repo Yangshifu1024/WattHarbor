@@ -161,7 +161,9 @@ charge-pilot/
 │   ├── internal/device/fault_repo.go（迁移前：internal/infrastructure/database/admin_case_store.go[报修表访问]）
 │   ├── internal/device/discovery.go（迁移前：internal/interface/http/payment_scan.go[事实组合]）
 │   ├── internal/device/operation_repo.go（迁移前：internal/payment/payment_device_store.go）
-│   ├── internal/device/alert_sync_store.go
+│   ├── internal/device/alert.go（迁移前：internal/interface/http/admin/ops/operations.go[告警查询与认领]）
+│   ├── internal/device/alert_sync.go（迁移前：internal/interface/http/admin/alertsync/sync.go[完整同步与恢复]）
+│   ├── internal/device/alert_repo.go（迁移前：internal/device/alert_sync_store.go、internal/ops/admin_ops_store.go[告警表访问]）
 │   ├── internal/device/admin_repo.go（迁移前：internal/device/device_admin_store.go）
 │   ├── internal/device/device_import.go
 │   ├── internal/device/import.go（迁移前：internal/interface/http/admin/device/device_imports.go[导入受理与执行]）
@@ -240,6 +242,7 @@ charge-pilot/
 │   ├── internal/export/cleanup.go（迁移前：cmd/admin/main.go[过期文件清理循环]）
 │   └── internal/export/export_task_store.go
 ├── internal/contracts                                    服务间 HTTP 的端点、共享 DTO 与错误契约
+│   ├── internal/contracts/central/alerts.go（迁移前：internal/worker/alerts/sync.go[同步DTO]）
 │   ├── internal/contracts/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP 授权响应]）
 │   ├── internal/contracts/central/card.go（迁移前：internal/interface/http/card_api.go、worker/charge/cards.go[服务 DTO]）
 │   ├── internal/contracts/central/charging.go（迁移前：internal/worker/charge/paid_start.go[待启动响应]）
@@ -250,9 +253,11 @@ charge-pilot/
 │   ├── internal/contracts/gateway/scan.go（新增：扫码端点与缺失错误契约）
 │   ├── internal/contracts/gateway/card.go（迁移前：internal/worker/charge/cards.go、gateway/control/card_delivery.go[服务 DTO]）
 │   ├── internal/contracts/gateway/query.go（迁移前：gateway/control/telemetry.go[DTO]、HTTP/user与admin/order[重复查询DTO]）
+│   ├── internal/contracts/gateway/alerts.go（迁移前：internal/interface/http/admin/alertsync/sync.go、internal/gateway/control/device_faults.go[证据DTO]）
 │   ├── internal/contracts/gateway/charging.go（START、STOP 与计量证据契约）
 │   └── internal/contracts/gateway/sync.go（迁移前：internal/worker/charge/*sync.go、meter_segments.go[同步 DTO]）
 ├── internal/integration                                  服务间 HTTP 的专用客户端
+│   ├── internal/integration/central/alerts.go（迁移前：internal/worker/alerts/sync.go[触发HTTP]）
 │   ├── internal/integration/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP]）
 │   ├── internal/integration/central/card.go（迁移前：internal/worker/charge/cards.go[central HTTP]）
 │   ├── internal/integration/central/client.go（迁移前：internal/worker/charge/paid_start.go[待启动 HTTP 查询]）
@@ -263,6 +268,7 @@ charge-pilot/
 │   ├── internal/integration/gateway/scan.go（迁移前：internal/interface/http/payment_scan.go[出站 HTTP]）
 │   ├── internal/integration/gateway/card.go（迁移前：internal/worker/charge/cards.go[gateway HTTP]）
 │   ├── internal/integration/gateway/query.go（迁移前：internal/interface/http/admin/order/order_process.go[HTTP代理]、charge_user_query.go[用户曲线HTTP]）
+│   ├── internal/integration/gateway/alerts.go（迁移前：internal/interface/http/admin/alertsync/sync.go[证据HTTP]）
 │   ├── internal/integration/gateway/client.go
 │   └── internal/integration/gateway/sync.go（迁移前：internal/worker/charge/sync_client.go[启动/结束同步]）
 ├── internal/delivery                                     对外事件契约与签名投递器
@@ -335,7 +341,6 @@ charge-pilot/
 ├── internal/interface                                    HTTP 接口层
 │   ├── internal/interface/http/admin/admin_actor.go
 │   ├── internal/interface/http/admin/alertsync/http.go
-│   ├── internal/interface/http/admin/alertsync/sync.go
 │   ├── internal/interface/http/admin/contracts.go（迁移前：internal/interface/http/admin/deps.go[共享契约部分]）
 │   ├── internal/interface/http/admin/dashboard/dashboard.go
 │   ├── internal/interface/http/admin/device/api.go

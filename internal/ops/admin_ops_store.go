@@ -3,13 +3,12 @@ package ops
 import (
 	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// 运营后台的通用表读写：告警、公告、Webhook 订阅、白标配置与后台账号。
+// 运营后台的通用表读写：公告与后台账号（告警归device）。
 // 这些表结构简单、没有跨聚合不变量，各自有专门的仓储；这里提供的是它们
 // 共用的表级原语，以及"按 id 倒序列出整表"这种无过滤列表。
 
@@ -27,7 +26,7 @@ type AdminListSpec struct {
 
 // adminListRegistry 登记允许整表列出的运营资源。新增资源必须显式登记并给出列清单。
 var adminListRegistry = map[string]AdminListSpec{
-	"alerts":        {Table: "alert_event", Columns: "id,device_id,severity,metric,status,created_at"},
+
 	"announcements": {Table: "announcement", Columns: "id,title,content,scope,target_ids,status,start_at,end_at", Soft: true},
 }
 
@@ -82,23 +81,4 @@ func (s AdminOpsStore) RolePermissionCodes(db *gorm.DB, roleID uint64) ([]string
 // CreateAdminUser 落一条后台账号，返回新账号 ID。密码散列由调用方算好传入。
 func (s AdminOpsStore) CreateAdminUser(tx *gorm.DB, row map[string]any) (uint64, error) {
 	return s.InsertRow(tx, "admin_user", row)
-}
-
-// AlertStatus 是在行锁下读出的告警状态。状态机规则在 operations，这里只报告事实。
-type AlertStatus struct {
-	Status string // active 未认领 / acknowledged 已认领 / 其余终态不可再认领
-}
-
-// LockAlertStatus 在行锁下读出告警的当前状态。
-func (s AdminOpsStore) LockAlertStatus(tx *gorm.DB, id uint64) (AlertStatus, error) {
-	var row struct{ Status string }
-	err := tx.Table("alert_event").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&row).Error
-	return AlertStatus{Status: row.Status}, err
-}
-
-// AckAlert 把一条 active 告警置为 acknowledged 并记下认领人与时刻。
-func (s AdminOpsStore) AckAlert(tx *gorm.DB, id, actorID uint64, at time.Time) error {
-	return s.UpdateRow(tx, "alert_event", id, map[string]any{
-		"status": "acknowledged", "acked_by": actorID, "acked_at": at,
-	})
 }

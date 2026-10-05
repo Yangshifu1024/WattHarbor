@@ -16,7 +16,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
@@ -58,7 +57,7 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 	}
 
 	// 设备告警同步。
-	adminalertsync.DeviceAlertSyncAPI{Sync: adminalertsync.DeviceAlertSync{AdminDB: orm, Gateway: serviceclient.Client{HTTP: r.InternalHTTP}, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken}, ServiceToken: cfg.ServiceToken}.Register(router)
+	adminalertsync.DeviceAlertSyncAPI{Sync: device.AlertSyncService{DB: orm, Gateway: gateway}, ServiceToken: cfg.ServiceToken}.Register(router)
 
 	return router
 }
