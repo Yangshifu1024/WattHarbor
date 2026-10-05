@@ -42,11 +42,14 @@ func exportFixture(t *testing.T) (ExportService, ops.AuditContext, uint64, uint6
 	id := uint64(time.Now().UnixNano())
 	name := "export_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	t.Cleanup(func() {
+		if err := cleanupExportAudits(db, id); err != nil {
+			t.Error(err)
+		}
 		for _, query := range []struct {
 			table, where string // 自有数据的表与删除条件
 			arg          any    // fixture精确身份
 		}{
-			{"export_task", "requested_by=?", id}, {"audit_log", "actor_id=?", id}, {"admin_data_scope", "admin_user_id=?", id}, {"admin_field_mask", "role_id=?", id}, {"role_permission", "role_id=?", id}, {"admin_user", "id=?", id}, {"role", "id=?", id},
+			{"export_task", "requested_by=?", id}, {"admin_data_scope", "admin_user_id=?", id}, {"admin_field_mask", "role_id=?", id}, {"role_permission", "role_id=?", id}, {"admin_user", "id=?", id}, {"role", "id=?", id},
 		} {
 			if err := db.Table(query.table).Where(query.where, query.arg).Delete(map[string]any{}).Error; err != nil {
 				t.Error(err)

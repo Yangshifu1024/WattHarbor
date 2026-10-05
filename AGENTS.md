@@ -405,6 +405,7 @@ charge-pilot/
 │   ├── internal/contracts/central/card.go（迁移前：internal/interface/http/card_api.go、worker/charge/cards.go[服务 DTO]）
 │   ├── internal/contracts/central/charging.go（迁移前：internal/worker/charge/paid_start.go[待启动响应]）
 │   ├── internal/contracts/central/errors.go
+│   ├── internal/contracts/central/jobs.go（迁移前：central计费／退款／停机原HTTP回执；无业务参数Request及原进度Reply）
 │   ├── internal/contracts/central/results.go（迁移前：internal/interface/http/order_*_result.go、internal/worker/charge/*sync.go[回执 DTO]）
 │   ├── internal/contracts/gateway/provision.go（迁移前：后台导入／厂商 HTTP DTO）
 │   ├── internal/contracts/gateway/summary.go（迁移前：后台设备 HTTP 摘要 DTO）
@@ -419,6 +420,7 @@ charge-pilot/
 │   ├── internal/integration/central/authorization.go（迁移前：internal/gateway/control/authorize.go[HTTP]）
 │   ├── internal/integration/central/card.go（迁移前：internal/worker/charge/cards.go[central HTTP]）
 │   ├── internal/integration/central/client.go（迁移前：internal/worker/charge/paid_start.go[待启动 HTTP 查询]）
+│   ├── internal/integration/central/jobs.go（central资金任务具名客户端；消费者迁移继续下一批）
 │   ├── internal/integration/central/results.go（迁移前：internal/worker/charge/*sync.go[回执 HTTP]）
 │   ├── internal/integration/gateway/provision.go（迁移前：后台设备导入出站 HTTP）
 │   ├── internal/integration/gateway/vendor.go（迁移前：后台厂商通用出站 HTTP）

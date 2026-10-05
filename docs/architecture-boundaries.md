@@ -213,3 +213,5 @@ HTTP查询及范围边界（5c）：剩余10个查询／账单入口由wallet、
 
 
 用户HTTP目录边界（5e）：internal/http/user按十个实际业务族注册，cmd逐族注入原所属服务；wallet、device、marketing、ops、order反馈与settlement发票不再共用全量UserAccountAPI。订单读取与反馈、账单与发票、会话与手机号、扫码／支付受理／开发确认／微信通知仍各持有所需依赖。营销两组原优惠券路由由同一API提供，原查询参数与不同响应保持。共享父包只有错误映射和原状态筛选，金额校验归wallet、坐标归device，分页与认证助手直接调用原能力；stop保留独立鉴权分支。所有业务查询、幂等和写入仍归所属用例，没有新SQL、事务、schema、服务地址或未管理任务。跨接口族测试集中在只含_test.go的internal/http/integration，私有适配单测留所属包，纯卡规则回到card；旧internal/interface和零消费者fixture删除，无兼容转发。user OpenAPI只移动原文件，未新增承载地址，完整三模式装配回归与处理器绑定逐项核对。
+
+资金任务HTTP契约边界（5f）：central原计费、退款、自动停止三个端点共享contracts/central/jobs，触发Request无业务参数，进度Reply保持completed／processed／stopped及原退款enabled形状。退款失败允许缺enabled，成功必须明确true或false，禁用只允许零进度。具名客户端使用原受管理HTTP Transport、30秒请求及HTTP上限，复制Client后禁重定向，不修改原连接池；计费／退款保留无正文，停机保留null JSON。仅200／code0为完整成功，原503／code5003未完成回执返回合法部分进度与错误；未知结果或失配不猜进度、不重试或换业务身份。回复4096字节上限、单JSON、必需非负整数和可空／缺失字段按实端点核对。原所属业务服务、服务器20／25秒context、权限顺序、状态、消息及JSON字段不改。此子批先建立契约及客户端，worker旧消费者仍保留，下一独立批次注入窄能力后删除通用调用。

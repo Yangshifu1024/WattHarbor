@@ -2,12 +2,14 @@ package central
 
 import (
 	"context"
+	"net/http"
+	"time"
+
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"time"
 )
 
 // RefundAPI 适配worker的退款派发触发，资金及渠道执行由所属退款用例拥有。
@@ -20,22 +22,24 @@ type RefundAPI struct {
 // 处理器先校验服务令牌；未配置渠道返回enabled=false，否则以请求派生的20秒context执行批次。
 // 批次成功返回原processed／enabled，失败503保留已处理数量，不在HTTP重建资金事务或更换请求身份。
 func (a RefundAPI) Register(r *gin.Engine) {
-	r.POST("/api/v1/internal/refunds/dispatch", func(c *gin.Context) {
+	r.POST(centralcontract.RefundDispatchPath, func(c *gin.Context) {
 		if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 			httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
 			return
 		}
 		if a.Executor.Provider == nil {
-			httpapi.OK(c, gin.H{"processed": 0, "enabled": false})
+			enabled := false
+			httpapi.OK(c, centralcontract.RefundDispatchReply{Processed: 0, Enabled: &enabled})
 			return
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 		defer cancel()
 		n, err := a.Executor.Batch(ctx)
 		if err != nil {
-			httpapi.Write(c, 503, 5003, "refund dispatch incomplete; retry scheduled", gin.H{"processed": n})
+			httpapi.Write(c, 503, 5003, "refund dispatch incomplete; retry scheduled", centralcontract.RefundDispatchReply{Processed: n})
 			return
 		}
-		httpapi.OK(c, gin.H{"processed": n, "enabled": true})
+		enabled := true
+		httpapi.OK(c, centralcontract.RefundDispatchReply{Processed: n, Enabled: &enabled})
 	})
 }

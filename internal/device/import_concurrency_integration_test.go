@@ -43,7 +43,13 @@ func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 		}{
 			{"audit_log", "request_id IN ?", requests}, {"device_import", "import_id IN ?", requests}, {"device_import_identity", "device_id IN ?", boards}, {"device_meta", "device_id IN ?", boards}, {"station", "id=?", id},
 		} {
-			if err := setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error; err != nil {
+			var cleanupErr error
+			if q.table == "audit_log" {
+				cleanupErr = cleanupDeviceAudits(context.Background(), setup, requests)
+			} else {
+				cleanupErr = setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error
+			}
+			if err := cleanupErr; err != nil {
 				t.Error(err)
 			}
 			var n int64
@@ -198,7 +204,13 @@ func TestConcurrentFirstImportClaimsOriginalIdentity(t *testing.T) {
 		}{
 			{"audit_log", "request_id=?", request}, {"device_import", "import_id=?", request}, {"device_import_identity", "device_id=?", board}, {"device_meta", "device_id=?", board}, {"station", "id=?", id},
 		} {
-			if err := setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error; err != nil {
+			var cleanupErr error
+			if q.table == "audit_log" {
+				cleanupErr = cleanupDeviceAudits(context.Background(), setup, []string{request})
+			} else {
+				cleanupErr = setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error
+			}
+			if err := cleanupErr; err != nil {
 				t.Error(err)
 			}
 			var n int64

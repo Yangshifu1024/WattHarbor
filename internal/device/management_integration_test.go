@@ -32,7 +32,13 @@ func TestConcurrentDeviceMetadataKeepsOneVersion(t *testing.T) {
 		}{
 			{"audit_log", "request_id IN ?", requests}, {"device_meta", "device_id=?", board},
 		} {
-			if err := setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error; err != nil {
+			var cleanupErr error
+			if q.table == "audit_log" {
+				cleanupErr = cleanupDeviceAudits(context.Background(), setup, requests)
+			} else {
+				cleanupErr = setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error
+			}
+			if err := cleanupErr; err != nil {
 				t.Error(err)
 			}
 			var n int64

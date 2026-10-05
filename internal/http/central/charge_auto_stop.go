@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,7 @@ type AutoStopAPI struct {
 
 // Register 在r挂载原自动停机POST路径，无返回值或后台任务。
 func (a AutoStopAPI) Register(r *gin.Engine) {
-	r.POST("/api/v1/internal/charge-orders/auto-stop", a.autoStop)
+	r.POST(centralcontract.AutoStopPath, a.autoStop)
 }
 
 // autoStop 核对c服务令牌后，以请求派生的25秒context执行一轮所属停机扫描。
@@ -36,8 +37,8 @@ func (a AutoStopAPI) autoStop(c *gin.Context) {
 	defer cancel()
 	stopped, err := a.Stopper.Run(ctx)
 	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "auto stop sweep incomplete; retry scheduled", gin.H{"stopped": stopped})
+		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "auto stop sweep incomplete; retry scheduled", centralcontract.AutoStopReply{Stopped: stopped})
 		return
 	}
-	httpapi.OK(c, gin.H{"stopped": stopped})
+	httpapi.OK(c, centralcontract.AutoStopReply{Stopped: stopped})
 }

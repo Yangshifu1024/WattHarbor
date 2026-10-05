@@ -69,7 +69,13 @@ func TestImportRecoversGatewayCommitAndCommittedFailure(t *testing.T) {
 			{gateway, "device_port", "device_id IN ?", []string{one, two}}, {gateway, "device_provision", "device_id IN ?", []string{one, two}},
 			{gateway, "device", "device_id IN ?", []string{one, two}}, {gateway, "vendor", "id=?", id},
 		} {
-			if err := q.db.Table(q.table).Where(q.where, q.arg).Delete(nil).Error; err != nil {
+			var cleanupErr error
+			if q.table == "audit_log" {
+				cleanupErr = cleanupDeviceAudits(context.Background(), q.db, []string{request, secondRequest})
+			} else {
+				cleanupErr = q.db.Table(q.table).Where(q.where, q.arg).Delete(nil).Error
+			}
+			if err := cleanupErr; err != nil {
 				t.Error(err)
 			}
 			var n int64
