@@ -12,24 +12,36 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
-// EndGateway 是结束同步所需的网关操作；冻结、释放与处理标记顺序由消费者负责。
+// EndGateway 是消费方结束同步窄接口，提供取证、首写冻结、原占用释放及处理标记；执行顺序由 EndSynchronizer拥有。
 type EndGateway interface {
+	// EndEvents 接收 ctx，返回原未处理结束事件页或读取错误；不修改事件。
 	EndEvents(context.Context) ([]gatewaycontract.SyncEvent, error)
+	// ChargeCommand 接收 ctx 与原订单 ID，返回关联 START命令、nil缺失或错误；不补造启动凭据。
 	ChargeCommand(context.Context, uint64) (*gatewaycontract.SyncCommand, error)
+	// MeterSamples 接收 ctx 与固定原设备／UTC窗口／事件ID上界请求，返回原心跳载荷或取证错误；无写入。
 	MeterSamples(context.Context, gatewaycontract.MeterSamplesRequest) ([]gatewaycontract.SyncEvent, error)
+	// FreezeEndDelivery 接收 ctx 与原事件／订单／候选载荷，返回首写或既有冻结 Reply及错误；冻结与身份比较由网关执行。
 	FreezeEndDelivery(context.Context, gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryReply, error)
+	// ReleasePort 接收 ctx 与原端口／订单释放请求，返回释放或已释放 Reply及错误；占用条件保护由网关执行。
 	ReleasePort(context.Context, gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortReply, error)
+	// MarkDeviceEventsProcessed 接收 ctx 与原事件 ID集合，返回实际处理标记数或错误；持久标记由网关事务拥有。
 	MarkDeviceEventsProcessed(context.Context, []uint64) (int, error)
 }
 
+// EndSynchronizer 编排原设备结束证据向中央确认并推进网关投递状态；依赖由 cmd注入，不持数据库、服务URL或进程资源。
 type EndSynchronizer struct {
+	// Gateway 原结束同步所需网关窄能力，执行者由 cmd注入；不在 worker持网关数据库或 URL。
 	Gateway EndGateway
+	// Central 原中央结束回执确认能力，事务及结束计量／计费排队由中央用例拥有。
 	Central interface {
+		// SubmitEndResult 接收 ctx 与原冻结结束请求，返回接受／重放 Reply或错误；不代表计费、扣款或退款已完成。
 		SubmitEndResult(context.Context, centralcontract.EndResultRequest) (centralcontract.ResultReply, error)
 	}
 }
 
-// SyncBatch 先冻结回执，central 确认后释放端口，再标记结束事件；失败保留重放入口。
+// SyncBatch 接收 ctx，逐个核对结束事件与已 acked START身份，先获取并冻结原计量请求，再提交中央，确认后释放原端口，最后批量标记事件。
+// 返回已获释放或已释放确认的条数与原错误；解析、取证、冻结及中央失败继续其它事件，释放失败立即返回并不提交已收集标记。
+// 标记失败仍返回已有计数，计数不表示事件标记已提交；所有调用复用 ctx、原事件和命令身份，不直接计费或自动创建恢复身份。
 func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 	if s.Gateway == nil || s.Central == nil {
 		return 0, errors.New("charge end synchronizer is not configured")

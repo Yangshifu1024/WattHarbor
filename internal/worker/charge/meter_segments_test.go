@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// TestMeasuredSegmentsUseElapsedCumulativeMeter 使用 t与固定协议读数验证按设备累计时长／毫瓦时生成Wh分段、纯费率计算及异常证据拒绝，保持全部原边界；无SQL、网络、资金入账或真实设备。
 func TestMeasuredSegmentsUseElapsedCumulativeMeter(t *testing.T) {
 	start := time.Date(2026, 9, 28, 3, 30, 0, 0, time.UTC)
 	end := protocol.Event{DeviceID: "meter-test", Port: 1, StartedAt: start, EndedAt: start.Add(time.Hour), ChargedSeconds: 3600, EnergyMilliKWh: 1000}
@@ -34,7 +35,9 @@ func TestMeasuredSegmentsUseElapsedCumulativeMeter(t *testing.T) {
 		t.Fatalf("a flat tariff must settle an unsegmented meter: %v", err)
 	}
 	tests := []struct {
-		name   string
+		// name 原计量异常场景名，供子测试定位。
+		name string
+		// change 该场景修改私有协议事件副本的原函数，构造异常读数而不改生产规则。
 		change func(*protocol.Event, *protocol.Event)
 	}{
 		{"missing device start", func(e, r *protocol.Event) { e.StartedAt = time.Time{} }},

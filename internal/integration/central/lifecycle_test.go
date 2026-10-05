@@ -14,6 +14,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 )
 
+// TestAuthorizationWireIdentityAndNullableAbsence 使用 t与本地 HTTP夹具验证原授权路径、服务令牌、大整数身份及设备参数解码；不证明真实权限、数据库占用或设备启动。
 func TestAuthorizationWireIdentityAndNullableAbsence(t *testing.T) {
 	client := centralForServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" || r.Header.Get("X-Service-Token") != "secret" {
@@ -41,12 +42,17 @@ func TestAuthorizationWireIdentityAndNullableAbsence(t *testing.T) {
 	}
 }
 
+// TestAuthorizationRejectsConflictAndWrongIdentity 使用 t验证本地404／409准入拒绝、身份失配、缺字段及401分类，保留原断言；不执行真实授权用例。
 func TestAuthorizationRejectsConflictAndWrongIdentity(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
+		// name 原子测试场景名，用于定位对应输入及错误断言。
+		name string
+		// status 该场景模拟服务实际返回的 HTTP 状态，用于原成功／失败契约核对。
 		status int
-		body   string
-		want   error
+		// body 该场景原响应 JSON正文，不修改测试值或业务断言。
+		body string
+		// want 该场景预期错误分类，nil时仅要求原测试指定的失败条件。
+		want error
 	}{
 		{"not found", 404, `{}`, centralcontract.ErrAuthorizationDenied},
 		{"conflict", 409, `{}`, centralcontract.ErrAuthorizationDenied},
@@ -76,6 +82,7 @@ func TestAuthorizationRejectsConflictAndWrongIdentity(t *testing.T) {
 	}
 }
 
+// TestResultDeliveryPreservesIdentifiersMeterAndReplay 使用 t验证原JSON请求身份、UTC毫秒时刻、Wh／秒及分段原值和接受／重放 Reply；夹具不证明真实持久事务。
 func TestResultDeliveryPreservesIdentifiersMeterAndReplay(t *testing.T) {
 	stamp := time.Date(2026, 10, 5, 4, 0, 0, 123000000, time.UTC)
 	client := centralForServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -116,12 +123,17 @@ func TestResultDeliveryPreservesIdentifiersMeterAndReplay(t *testing.T) {
 	}
 }
 
+// TestResultDeliveryRequiresPersistenceAcceptance 使用 t验证客户端拒绝缺字段、未接受、202、冲突及非法JSON；本地回复只用于wire边界，不确认数据库提交。
 func TestResultDeliveryRequiresPersistenceAcceptance(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
+		// name 原子测试场景名，用于定位对应输入及错误断言。
+		name string
+		// status 该场景模拟服务实际返回的 HTTP 状态，用于原成功／失败契约核对。
 		status int
-		body   string
-		want   error
+		// body 该场景原响应 JSON正文，不修改测试值或业务断言。
+		body string
+		// want 该场景预期错误分类，nil时仅要求原测试指定的失败条件。
+		want error
 	}{
 		{"missing code", 200, `{"data":{"accepted":true}}`, ErrInvalidResponse},
 		{"missing data", 200, `{"code":0}`, ErrInvalidResponse},
