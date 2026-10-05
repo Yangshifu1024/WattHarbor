@@ -6,7 +6,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/gin-gonic/gin"
@@ -28,7 +27,7 @@ type UserAccountAPI struct {
 	WalletRefund   wallet.RefundService   // 钱包退款业务能力，由 cmd 装配
 }
 
-// Register 注册原用户路由；站点／公告保持公开，账户处理器验证会话，失效返回401。
+// Register 在r注册原用户路由；站点／公告保持公开，账户处理器按401／403／503映射认证失败。
 func (a UserAccountAPI) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/wallet/balance", a.walletBalance)
 	r.GET("/api/v1/user/wallet/txns", a.walletTxns)
@@ -48,13 +47,10 @@ func (a UserAccountAPI) Register(r *gin.Engine) {
 	r.POST("/api/v1/user/charge/:order_id/feedback", a.submitFeedback)
 }
 
+// userID 从c取得当前用户主键；失败为0／false且鉴权适配已写响应，调用方立即返回。
+// 原认证服务拒绝零用户主键，本助手不重新写入或覆盖其错误。
 func (a UserAccountAPI) userID(c *gin.Context) (uint64, bool) {
-	id, ok := a.Auth.Authenticate(c)
-	if !ok || id == 0 {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
-		return 0, false
-	}
-	return id, true
+	return a.Auth.Authenticate(c)
 }
 
 // ---- 钱包 ----

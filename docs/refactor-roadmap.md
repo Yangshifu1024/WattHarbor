@@ -702,3 +702,13 @@ make test-integration TEST_MYSQL_URL=...
 
 
 5a最终退出：`.tmp/batch5a-validation`精确暂存版本的`.tmp/batch5a-snapshot-{check,integration,build,tidy}.log`全部通过；1190份文件中的679份Go／模块与原blob逐字节核对，本地Markdown链接有效，tidy无差异。最终补充8份迁移文件的范围、失败映射及所属服务中文注释，经Go词法token（包含go编译指令）与已测试版本完全一致，证据`.tmp/batch5a-comments-only.log`；按8.1纯注释不重复业务测试。补注释及本退出记录纳入最终索引后再次核对原blob、工作区Go／模块与文档链接。只读复核未发现本批迁移改变接口、权限、错误或事务的具体阻断问题；原双写错误响应已明确待下一行为批次修正。H-01及组合组仍进行中，17组维持15组完成，继续剩余HTTP查询／范围及user／central、X／G／WK和DEP评估。
+
+
+批次5b（H-01用户认证单次响应）行为修复：SessionAuthenticator已负责错误信封，UserAccountAPI.userID、UserQueryAPI.queryUser／ongoing／history、BillHTTP三个入口及CouponAPI失败后仅返回，不再追加401。原零主键已由identity.Authenticator拒绝；保留凭据／会话401、冻结403、认证存储或取消503及原业务码、消息、请求号，不改变成功业务查询或账单写入。此批与5a结构迁移分开提交。
+
+5b定向证据：user_auth_failure_test.go通过真实Register挂载29个受保护端点，窄身份fixture覆盖缺头、坏格式、坏签名、零主键、过期、冻结、会话／用户读取故障和取消九类；261个指定失败请求只输出一个JSON信封，业务依赖不装配也不继续执行。修复前23个端点共207项单信封断言失败，`.tmp/batch5b-auth-before.log`；修复后`.tmp/batch5b-auth-after.log`通过。这是HTTP适配及错误契约fixture，不作为JWT密码学或SQL／Redis故障实测。重启user后`.tmp/batch5b-live-auth.json`覆盖实际29路由共87次缺凭据、注销真实会话、无效签名，全部单JSON401；既有tester-1读取零余额／空进行中，注销完成，未新建用户、充值或扣款。
+
+5b工作区四项`.tmp/batch5b-{check,integration,build,tidy}.log`通过，三库集成仍在独立测试栈。前端沿package.json命令直接调用已安装Node／TypeScript／Vite，因为本机npm脚本误指向不存在的全局npm-cli.js；不安装或修改环境。后台／用户测试、两端类型检查及后台构建记录`.tmp/batch5b-{admin-test,admin-typecheck,admin-build,user-typecheck,user-test}.log`，最终结果待核对；精确暂存及只读复核待补。H-01仍需10处仓储／查询入口、16处范围读取及user／central目录，组合组不提前完成。
+
+
+5b最终退出：精确暂存快照`.tmp/batch5b-validation`的`.tmp/batch5b-snapshot-{check,integration,build,tidy}.log`全部通过；1191份文件中的680份Go／模块与原blob及工作区一致，tidy无差异、本地Markdown链接有效。只读复核确认所有共享鉴权消费者失败立即返回、29个方法／路径真实注册、单信封断言可识别双写，未发现新增阻断问题；独立鉴权的charge/stop未纳入新fixture，其原分支均已有单写后返回。后台78／用户59项、两端类型检查及后台构建通过，保留已有Vite大chunk提示。最终仅补此退出记录，H-01仍进行中，继续所属查询及范围能力、user／central目录、X／G／WK和DEP评估，17组仍完成15组。

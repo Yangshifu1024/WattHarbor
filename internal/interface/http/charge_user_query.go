@@ -31,13 +31,10 @@ func (a UserQueryAPI) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/charge/:order_no", a.detail)
 }
 
-// queryUser 核对 c 当前凭据，返回原用户主键或写出401，无业务写入。
+// queryUser 核对c当前凭据，成功返回用户主键／true；失败返回0／false且鉴权适配已写原错误。
+// 调用方立即返回，不覆盖401／403／503或执行后续查询。
 func (a UserQueryAPI) queryUser(c *gin.Context) (uint64, bool) {
-	id, ok := a.Auth.Authenticate(c)
-	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
-	}
-	return id, ok
+	return a.Auth.Authenticate(c)
 }
 
 // queryFailure 将 err 所属业务准入及阶段错误映射到 c 原公开响应，不读取或更改业务数据。
@@ -161,7 +158,6 @@ func nullTime(v sql.NullTime) any {
 func (a UserQueryAPI) ongoing(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
 	order, err := a.Orders.Ongoing(c.Request.Context(), userID)
@@ -184,7 +180,6 @@ func (a UserQueryAPI) ongoing(c *gin.Context) {
 func (a UserQueryAPI) history(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
 	page, pageSize, paged := httpapi.ReadPaging(c, 20, httpapi.DefaultPageLimit)

@@ -203,3 +203,6 @@ wallet 不 import payment 或 settlement，payment 不 import settlement；cmd �
 
 
 HTTP目录实施边界（5a）：后台业务族已在internal/http/admin，账号与角色在admin/account，用户及后台鉴权适配在internal/http/auth；admin OpenAPI随go:embed归auth，仍由admin进程提供原地址。父包只提供后台请求／错误／Actor等适配，不引用旧HTTP根包，分页直接使用persist，严格JSON解码在platform/httpapi。user与central暂留internal/interface/http，10处仓储／查询入口及16处后台范围读取继续归所属服务后拆目录，当前不宣称HTTP已全部移除SQL依赖。此批只改变源码归属与无消费者包装，不改变业务事务、权限、公开请求和响应。
+
+
+用户认证响应边界（5b）：http/auth.SessionAuthenticator在原凭据、会话、状态读取失败时唯一写入错误信封并返回0／false，消费者立即返回；不得再附加401覆盖冻结403或存储503。零用户身份由identity.Authenticator拒绝，HTTP助手直接传递结果。原成功读取、归属和写入服务不因此改变；注册路由单信封回归与真实注销会话路径共同核对，认证故障fixture不宣称真实存储故障注入。

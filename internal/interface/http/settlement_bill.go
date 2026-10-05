@@ -9,22 +9,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// BillHTTP 把账单视图暴露给客户。
+// BillHTTP 适配所属用户的账单列表、详情及已读记录；确认金额来自原结算账单。
 type BillHTTP struct {
-	Auth  authhttp.SessionAuthenticator
-	Bills settlement.BillRepo
+	Auth  authhttp.SessionAuthenticator // 用户凭据、会话及当前状态；失败已写原错误响应。
+	Bills settlement.BillRepo           // 所属账单查询和已读记录能力，连接生命周期由cmd管理。
 }
 
+// Register 在r挂载原三个账单端点，不打开资源或执行业务IO。
 func (a BillHTTP) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/bills", a.list)
 	r.GET("/api/v1/user/bills/:id", a.detail)
 	r.POST("/api/v1/user/bills/:id/read", a.markRead)
 }
 
+// list 在c下认证并读取本用户原账单分页；认证失败立即返回，列表失败保持原503。
 func (a BillHTTP) list(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
 	page, pageSize, ok := httpapi.ReadPaging(c, 20, httpapi.DefaultPageLimit)
@@ -39,10 +40,10 @@ func (a BillHTTP) list(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows, "total": total, "page": page, "page_size": pageSize})
 }
 
+// detail 从c验证原路径ID并按用户归属读取账单；认证失败只保留原错误，查询错误沿用404。
 func (a BillHTTP) detail(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -59,10 +60,11 @@ func (a BillHTTP) detail(c *gin.Context) {
 	httpapi.OK(c, bill)
 }
 
+// markRead 在c下先按本用户读取原账单，再保存已读凭据，沿用查不到404及保存失败503。
+// 认证失败不读取或写入账单，鉴权适配负责唯一错误响应。
 func (a BillHTTP) markRead(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

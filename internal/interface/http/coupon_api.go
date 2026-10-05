@@ -20,7 +20,6 @@ func (a CouponAPI) Register(r *gin.Engine) { r.GET("/api/v1/user/coupons", a.lis
 func (a CouponAPI) list(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
-		httpapi.Write(c, 401, 1001, "登录已失效，请重新登录", nil)
 		return
 	}
 	rows, err := a.Query.Available(c.Request.Context(), userID)
