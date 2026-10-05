@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"context"
@@ -19,22 +19,29 @@ import (
 
 var ErrDeviceNotProvisioned = errors.New("device is not provisioned for this protocol")
 
-type MySQLSink struct{ DB *gorm.DB }
+// MySQLSink 实现原设备注册、事件与连接终态持久能力，并提供网关命令和读模型操作；连接池由装配方管理，事务边界以各方法约定为准。
+type MySQLSink struct {
+	// DB 装配方提供的 gateway GORM 连接句柄；连接池由资源装配方管理，事务边界以具体方法为准。
+	DB *gorm.DB
+}
 
-// Resume the charging cadence immediately after gateway/device reconnection;
-// do not wait for an idle heartbeat to rediscover an already running port.
+// HasChargingPorts 接收 ctx 与 deviceID，查询未删除且 charging 的端口是否存在，返回布尔值和 SQL 错误，无写入。
 func (s MySQLSink) HasChargingPorts(ctx context.Context, deviceID string) (bool, error) {
 	var count int64
 	err := s.DB.WithContext(ctx).Model(&devicePortRow{}).Where("device_id=? AND status='charging' AND deleted_at IS NULL", deviceID).Count(&count).Error
 	return count > 0, err
 }
 
+// cardDeliveryRow 仅映射 card_event_delivery 原事件键，供持久设备卡事件时幂等建立投递记录。
 type cardDeliveryRow struct {
+	// EventKey 原持久事件幂等键。
 	EventKey string `gorm:"column:event_key;primaryKey"`
 }
 
+// TableName 返回原固定表名 card_event_delivery，供 GORM 定位模型；无数据库 IO。
 func (cardDeliveryRow) TableName() string { return "card_event_delivery" }
 
+// Register 接收 ctx 与设备注册事实，核对启用设备及厂商适配器后写入固件与登记时间；缺配置、未开通或 SQL 失败返回错误，不发送协议报文。
 func (s MySQLSink) Register(ctx context.Context, registration protocol.Registration) error {
 	if s.DB == nil {
 		return errors.New("gateway database is unavailable")
@@ -63,6 +70,7 @@ func (s MySQLSink) Register(ctx context.Context, registration protocol.Registrat
 	return nil
 }
 
+// Record 接收 ctx 与协议 event，以原事件身份在 READ COMMITTED 事务中保存事件、Outbox、命令回执及遥测；返回校验、编码或 SQL 错误，不执行 TCP 确认。
 func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	if s.DB == nil {
 		return errors.New("gateway database is unavailable")
@@ -139,10 +147,10 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
-// stopAckAccepted 判断停止是否已达到终态：0x10 为停止成功，0x01 为端口已空闲。
-// 0x00 表示端口不存在，0x04 表示故障，不作为成功处理。
+// stopAckAccepted 接收协议结果 code，仅 0x10 和 0x01 返回停止终态 true；其余返回 false，无 IO。
 func stopAckAccepted(code uint8) bool { return code == 0x10 || code == 0x01 }
 
+// applyUserStopAck 接收 ctx、所属 tx 和 STOP event，按设备、端口与命令会话锁定用户停机命令；写入确认或拒绝状态，未匹配返回 nil，SQL 失败返回错误，不提交事务。
 func applyUserStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	var command chargeStopCommandRow
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -172,6 +180,7 @@ func applyUserStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) er
 	return nil
 }
 
+// applyStartAck 接收 ctx、所属 tx 和 START event，锁定匹配命令并按原状态推进确认或拒绝与端口归属；未匹配返回 nil，身份或 SQL 失败返回错误，不提交事务。
 func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	var command chargeCommandRow
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -209,6 +218,7 @@ func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error
 	return nil
 }
 
+// applyStopAck 接收 ctx、所属 tx 和补偿 STOP event，仅匹配 stopping 命令且结果为停止终态时拒绝原启动并释放原归属端口；返回身份或 SQL 错误，不提交事务。
 func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	var command chargeCommandRow
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -240,6 +250,7 @@ func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error 
 	return nil
 }
 
+// insertMeasurements 接收 ctx、所属 tx 和 event，将原协议单位转为十进制遥测并维护两种聚合；返回 SQL 错误，不自行提交事务。
 func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	// 收集本批样本，按汇总粒度批量更新，避免逐指标执行 SQL。
 	rollup := make([]AggregateSample, 0, 8)
@@ -280,6 +291,7 @@ func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) 
 	return refreshAggregates(ctx, tx, rollup)
 }
 
+// requireOne 接收 GORM result，保留原 SQL 错误，影响行数不为一时返回记录缺失，否则返回 nil，无额外 IO。
 func requireOne(result *gorm.DB) error {
 	if result.Error != nil {
 		return result.Error
@@ -290,6 +302,7 @@ func requireOne(result *gorm.DB) error {
 	return nil
 }
 
+// eventKey 接收 event，刷卡复用有效 UUID、独立遥测生成新 UUID，其余按原协议载荷及适用接收时刻生成摘要；返回事件键，不访问存储。
 func eventKey(event protocol.Event) string {
 	if (event.Type == protocol.CardSwipe || event.Type == protocol.CardBalanceQuery) && uuid.Validate(event.EventID) == nil {
 		return event.EventID

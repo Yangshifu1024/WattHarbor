@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"context"
@@ -11,11 +11,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 设备开通。开通是不可逆的：设备一旦建出来，它的端口与身份就固定了，
-// 后续改厂商或站点会让历史报文对不上。所以这里的每一步都先判冲突再写。
-//
-// 两条幂等凭据：device_provision 存首次开通的请求原文，同一设备号再次提交
-// 必须内容一致；device 表本身存已开通的归属，与请求不符同样判冲突。
+// 开通按 device_provision 首次请求原文与 device 已存归属分别核对幂等身份。
+// 重放保留原设备、端口和归属，不覆盖首次登记内容。
 
 // ErrProvisionConflict 表示设备已存在但参数不同，或厂商不可用。
 var ErrProvisionConflict = errors.New("provision conflict")
@@ -25,18 +22,24 @@ var ErrVendorAdapterImmutable = errors.New("vendor adapter is immutable once dev
 
 // ProvisionDevice 是一台待开通设备的参数。
 type ProvisionDevice struct {
-	DeviceID  string  `json:"device_id"`
-	VendorID  uint64  `json:"vendor_id"`
-	StationID uint64  `json:"station_id"`
-	PortCount uint8   `json:"port_count"`
-	Model     *string `json:"model"`
+	// DeviceID 原设备业务编号。
+	DeviceID string `json:"device_id"`
+	// VendorID 原所属厂商身份。
+	VendorID uint64 `json:"vendor_id"`
+	// StationID 原所属站点身份，保留可空映射。
+	StationID uint64 `json:"station_id"`
+	// PortCount 原开通端口数量。
+	PortCount uint8 `json:"port_count"`
+	// Model 原可空设备型号。
+	Model *string `json:"model"`
 }
 
-// LockVendorForProvision 以共享锁取厂商。它与厂商编辑的排他锁互斥：
-// 厂商编辑改协议的同时这里正在建设备，两者会各自看到对方的前一个状态。
+// LockVendorForProvision 接收所属 tx 与 vendorID，以 SHARE 当前读取得未删除厂商状态及适配器；返回两字段和缺失或 SQL 错误，锁由调用事务释放。
 func LockVendorForProvision(tx *gorm.DB, vendorID uint64) (status, adapterClass string, err error) {
 	var row struct {
-		Status       string
+		// Status 所属记录的原状态值。
+		Status string
+		// AdapterClass 原厂商设备适配器类型。
 		AdapterClass string
 	}
 	err = tx.Table("vendor").Clauses(clause.Locking{Strength: "SHARE"}).
@@ -44,13 +47,13 @@ func LockVendorForProvision(tx *gorm.DB, vendorID uint64) (status, adapterClass 
 	return row.Status, row.AdapterClass, err
 }
 
-// maxDC589Ports 是 dc589 协议允许的端口数上限。超出时设备接不上去，
-// 与其建成一个永远不在线的设备，不如在开通时拒��。
+// maxDC589Ports 是原 dc589 开通端口数上限。
 const maxDC589Ports = 20
 
-// LockProvisionIdentity 在行锁下取设备首次开通时登记的请求原文。
+// LockProvisionIdentity 接收所属 tx 与 deviceID，以 UPDATE 锁读取首次开通请求原文；返回原文或缺失、SQL 错误，锁由调用事务释放。
 func LockProvisionIdentity(tx *gorm.DB, deviceID string) (string, error) {
 	var row struct {
+		// RequestJSON 设备首次开通请求的原 JSON 文本。
 		RequestJSON string
 	}
 	err := tx.Table("device_provision").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -58,29 +61,33 @@ func LockProvisionIdentity(tx *gorm.DB, deviceID string) (string, error) {
 	return row.RequestJSON, err
 }
 
-// RecordProvisionIdentity 以 INSERT IGNORE 登记设备编号与请求原文。
-// 已有登记的行不会被覆盖——内容比对由调用方做，覆盖了就无从判断改没改。
+// RecordProvisionIdentity 接收所属 tx、deviceID 与 requestJSON，以 INSERT IGNORE 登记原身份，已有原文不覆盖；返回 SQL 错误，不自行提交。
 func RecordProvisionIdentity(tx *gorm.DB, deviceID, requestJSON string) error {
 	return tx.Exec("INSERT IGNORE INTO device_provision(device_id,request_json) VALUES (?,?)", deviceID, requestJSON).Error
 }
 
 // ProvisionedDevice 是已开通设备的归属信息。
 type ProvisionedDevice struct {
-	ID        uint64
-	VendorID  uint64
+	// ID device 表的原自增主键。
+	ID uint64
+	// VendorID 原所属厂商身份。
+	VendorID uint64
+	// StationID 原所属站点身份，保留可空映射。
 	StationID uint64
+	// PortCount 原开通端口数量。
 	PortCount uint8
-	Model     *string
+	// Model 原可空设备型号。
+	Model *string
 }
 
-// FindProvisionedDevice 取已开通的设备。取不到返回 gorm.ErrRecordNotFound。
+// FindProvisionedDevice 接收所属 tx 与 deviceID，读取已开通设备归属；返回记录或 gorm.ErrRecordNotFound、SQL 错误，无写入。
 func FindProvisionedDevice(tx *gorm.DB, deviceID string) (ProvisionedDevice, error) {
 	var row ProvisionedDevice
 	err := tx.Table("device").Where("device_id=?", deviceID).Take(&row).Error
 	return row, err
 }
 
-// CreateProvisionedDevice 建设备主记录。
+// CreateProvisionedDevice 接收所属 tx 与 d，插入启用设备及原厂商、站点、端口数、可空型号；返回 SQL 错误，不自行提交。
 func CreateProvisionedDevice(tx *gorm.DB, d ProvisionDevice) error {
 	return tx.Table("device").Create(map[string]any{
 		"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID,
@@ -88,8 +95,7 @@ func CreateProvisionedDevice(tx *gorm.DB, d ProvisionDevice) error {
 	}).Error
 }
 
-// CreateDevicePorts 按端口数建端口。端口编码是"设备号-端口号"，
-// 心跳与历史数据都按它寻址，建错之后没法补救。
+// CreateDevicePorts 接收所属 tx、deviceID 与 portCount，按一到端口数插入原设备号-端口号编码的空闲端口；首次 SQL 错误返回，不自行回滚或提交。
 func CreateDevicePorts(tx *gorm.DB, deviceID string, portCount uint8) error {
 	for port := 1; port <= int(portCount); port++ {
 		if err := tx.Table("device_port").Create(map[string]any{
@@ -102,8 +108,7 @@ func CreateDevicePorts(tx *gorm.DB, deviceID string, portCount uint8) error {
 	return nil
 }
 
-// SameProvisionRequest 比对首次登记的请求原文与当前请求。
-// 任一侧解析失败都判冲突：宁可让运营重来一次，也不要放行一台参数不明的设备。
+// SameProvisionIdentity 接收 registeredJSON 与 want，将首次请求解码后按原 JSON 编码结果比较；返回是否相同，原文无效返回 ErrProvisionConflict，无 IO。
 func SameProvisionIdentity(registeredJSON string, want ProvisionDevice) (bool, error) {
 	var existing ProvisionDevice
 	if json.Unmarshal([]byte(registeredJSON), &existing) != nil {
@@ -114,7 +119,7 @@ func SameProvisionIdentity(registeredJSON string, want ProvisionDevice) (bool, e
 	return string(a) == string(b), nil
 }
 
-// CountVendorDevices 统计厂商名下的设备数。
+// CountVendorDevices 接收所属 tx 与 vendorID，统计厂商下设备记录（不追加软删过滤）；返回数量及 SQL 错误，无写入。
 func CountVendorDevices(tx *gorm.DB, vendorID uint64) (int64, error) {
 	var count int64
 	err := tx.Table("device").Where("vendor_id = ?", vendorID).Count(&count).Error
@@ -123,36 +128,45 @@ func CountVendorDevices(tx *gorm.DB, vendorID uint64) (int64, error) {
 
 // Vendor 是设备厂商的记录类型。
 type Vendor struct {
-	ID           uint64     `json:"id"`
-	VendorCode   string     `json:"vendor_code"`
-	VendorName   string     `json:"vendor_name"`
-	AdapterClass string     `json:"adapter_class"`
-	Protocol     string     `json:"protocol"`
-	Status       string     `json:"status"`
-	EnabledAt    *time.Time `json:"enabled_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	// ID vendor 表的原自增主键。
+	ID uint64 `json:"id"`
+	// VendorCode 原厂商业务编码。
+	VendorCode string `json:"vendor_code"`
+	// VendorName 原厂商名称，读取时保留可空映射。
+	VendorName string `json:"vendor_name"`
+	// AdapterClass 原厂商设备适配器类型。
+	AdapterClass string `json:"adapter_class"`
+	// Protocol 所属设备或连接的原协议名称。
+	Protocol string `json:"protocol"`
+	// Status 所属记录的原状态值。
+	Status string `json:"status"`
+	// EnabledAt 原厂商最近启用时刻，可空。
+	EnabledAt *time.Time `json:"enabled_at"`
+	// CreatedAt 原记录创建时刻。
+	CreatedAt time.Time `json:"created_at"`
+	// UpdatedAt 原记录更新时刻。
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName 返回原固定表名 vendor，供 GORM 定位模型；无数据库 IO。
 func (Vendor) TableName() string { return "vendor" }
 
-// vendorColumns 是厂商的完整列清单，查询时显式列出避免 gorm 按字段名推导。
 // VendorColumns 是厂商的完整列清单，查询时显式列出避免 gorm 按字段名推导。
 const VendorColumns = "id,vendor_code,vendor_name,adapter_class,protocol,status,enabled_at,created_at,updated_at"
 
 // VendorQuery 是厂商列表的筛选条件。
 type VendorQuery struct {
-	Keyword  string   // 编码或名称的模糊关键字
-	Pattern  string   // 转义并加好通配符的关键字，直接用于 LIKE
-	Status   string   // 状态过滤，空表示不限
-	IDs      []uint64 // 指定厂商范围，空表示不限
-	Page     int
+	Keyword string   // 编码或名称的模糊关键字
+	Pattern string   // 转义并加好通配符的关键字，直接用于 LIKE
+	Status  string   // 状态过滤，空表示不限
+	IDs     []uint64 // 指定厂商范围，空表示不限
+	// Page 原从一开始的页码。
+	Page int
+	// PageSize 原每页记录上限。
 	PageSize int
 }
 
-// ListVendors 分页返回未删除的厂商，按 ID 倒序。
-// pattern 必须已转义：用户输入里的 % 与 _ 不该被当成通配符，
-// 否则搜 "a%" 会列出全部厂商。
+// ListVendors 接收 ctx、db 与 q，按原范围、状态和已用 ! 转义的 Pattern 读取未删除厂商，倒序分页；返回记录、总数及 SQL 错误，无写入。
 func ListVendors(ctx context.Context, db *gorm.DB, q VendorQuery) ([]Vendor, int64, error) {
 	query := db.WithContext(ctx).Table("vendor").Where("deleted_at IS NULL")
 	if q.Keyword != "" {
@@ -174,8 +188,7 @@ func ListVendors(ctx context.Context, db *gorm.DB, q VendorQuery) ([]Vendor, int
 	return items, total, err
 }
 
-// LockVendor 在行锁下取一个未删除的厂商。它与设备开通时的共享锁互斥，
-// 保证"厂商改协议"与"按协议建设备"不会交错。
+// LockVendor 接收所属 tx 与 id，以 UPDATE 锁读取未删除厂商完整公开列；返回记录或缺失、SQL 错误，不自行提交。
 func LockVendor(tx *gorm.DB, id uint64) (Vendor, error) {
 	var row Vendor
 	err := tx.Select(VendorColumns).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -183,7 +196,7 @@ func LockVendor(tx *gorm.DB, id uint64) (Vendor, error) {
 	return row, err
 }
 
-// UpdateVendor 写入厂商字段并回读最新行。enabled_at 只在从非启用变为启用时更新。
+// UpdateVendor 接收所属 tx、id、wasEnabled 与 values，按调用方列值更新未删除厂商并锁定回读；wasEnabled 保留原签名但不参与列构造，返回记录或 SQL 错误，不提交。
 func UpdateVendor(tx *gorm.DB, id uint64, wasEnabled bool, values map[string]any) (Vendor, error) {
 	if err := tx.Model(&Vendor{}).Where("id = ? AND deleted_at IS NULL", id).Updates(values).Error; err != nil {
 		return Vendor{}, err
@@ -191,8 +204,7 @@ func UpdateVendor(tx *gorm.DB, id uint64, wasEnabled bool, values map[string]any
 	return LockVendor(tx, id)
 }
 
-// ProvisionOne 开通一台设备：校验厂商、比对首次登记的内容、创建设备与端口。
-// 已是同一台且参数一致的设备按幂等处理直接返回。
+// ProvisionOne 接收所属 tx 与 d，核对厂商及原开通身份后插入设备、端口；相同归属重放返回 nil，失配或不可用返回冲突，SQL 失败原样返回，不自行提交。
 func ProvisionOne(tx *gorm.DB, d ProvisionDevice) error {
 	status, adapterClass, err := LockVendorForProvision(tx, d.VendorID)
 	if err != nil {

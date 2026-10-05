@@ -20,7 +20,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	centralhttp "github.com/ChargePilot2026/charge-pilot/internal/http/central"
 	usercard "github.com/ChargePilot2026/charge-pilot/internal/http/user/card"
@@ -119,7 +119,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	}
 	const token = "registered-card-service"
 	edgeRouter := httpapi.NewRouter()
-	(control.ScanAPI{Store: store.MySQLSink{DB: gateway}, ServiceToken: token}).Register(edgeRouter)
+	(control.ScanAPI{Scanner: repo.MySQLSink{DB: gateway}, ServiceToken: token}).Register(edgeRouter)
 	(control.TelemetryAPI{DB: gateway, ServiceToken: token}).Register(edgeRouter)
 	edgeServer := httptest.NewServer(edgeRouter)
 	defer edgeServer.Close()

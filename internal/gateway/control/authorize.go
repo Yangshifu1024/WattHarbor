@@ -5,50 +5,57 @@ import (
 	"errors"
 
 	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 )
 
 var ErrUnpaid = errors.New("charge order is not fully paid or has no device limit")
 var ErrNotCharging = errors.New("charge order is not charging for this user")
 
+// PaidOrderAuthorizer 启动用例消费的中央已支付订单授权能力，仅返回原授权事实及错误，不在网关写中央订单或资金。
 type PaidOrderAuthorizer interface {
-	PaidOrder(context.Context, string) (store.PaidOrder, error)
+	// PaidOrder 接收 ctx 与 orderNo，调用中央启动授权并转换原本地模型；业务拒绝映射 ErrUnpaid，其余错误保留，不写网关或中央数据库。
+	PaidOrder(context.Context, string) (repo.PaidOrder, error)
 }
 
 // CentralAuthorizer 将服务契约转换为网关本地模型；HTTP 配置由 cmd 装配。
 type CentralAuthorizer struct {
+	// Central 由装配方注入的具名中央授权客户端。
 	Central interface {
+		// StartAuthorization 接收请求 context 与原订单号，返回中央启动授权事实或错误；由具名客户端执行原服务调用，不创建新身份。
 		StartAuthorization(context.Context, string) (centralcontract.StartAuthorizationReply, error)
+		// StopAuthorization 接收请求 context、原订单号与用户身份，返回中央停机授权事实或错误；不在网关写中央业务状态。
 		StopAuthorization(context.Context, string, uint64) (centralcontract.StopAuthorizationReply, error)
 	}
 }
 
-func (a CentralAuthorizer) PaidOrder(ctx context.Context, orderNo string) (store.PaidOrder, error) {
+// PaidOrder 接收 ctx 与 orderNo，调用中央启动授权并转换原本地模型；业务拒绝映射 ErrUnpaid，其余错误保留，不写网关或中央数据库。
+func (a CentralAuthorizer) PaidOrder(ctx context.Context, orderNo string) (repo.PaidOrder, error) {
 	if a.Central == nil {
-		return store.PaidOrder{}, errors.New("central authorizer is not configured")
+		return repo.PaidOrder{}, errors.New("central authorizer is not configured")
 	}
 	data, err := a.Central.StartAuthorization(ctx, orderNo)
 	var business centralcontract.BusinessError
 	if errors.Is(err, centralcontract.ErrAuthorizationDenied) || errors.As(err, &business) {
-		return store.PaidOrder{}, ErrUnpaid
+		return repo.PaidOrder{}, ErrUnpaid
 	}
 	if err != nil {
-		return store.PaidOrder{}, err
+		return repo.PaidOrder{}, err
 	}
-	return store.PaidOrder(data), nil
+	return repo.PaidOrder(data), nil
 }
 
-func (a CentralAuthorizer) ActiveStop(ctx context.Context, orderNo string, userID uint64) (store.ActiveOrder, error) {
+// ActiveStop 接收 ctx、orderNo 与 userID，获取中央原停机授权事实；业务拒绝映射 ErrNotCharging，其余错误保留，不写数据库。
+func (a CentralAuthorizer) ActiveStop(ctx context.Context, orderNo string, userID uint64) (repo.ActiveOrder, error) {
 	if a.Central == nil {
-		return store.ActiveOrder{}, errors.New("central authorizer is not configured")
+		return repo.ActiveOrder{}, errors.New("central authorizer is not configured")
 	}
 	data, err := a.Central.StopAuthorization(ctx, orderNo, userID)
 	var business centralcontract.BusinessError
 	if errors.Is(err, centralcontract.ErrAuthorizationDenied) || errors.As(err, &business) {
-		return store.ActiveOrder{}, ErrNotCharging
+		return repo.ActiveOrder{}, ErrNotCharging
 	}
 	if err != nil {
-		return store.ActiveOrder{}, err
+		return repo.ActiveOrder{}, err
 	}
-	return store.ActiveOrder(data), nil
+	return repo.ActiveOrder(data), nil
 }

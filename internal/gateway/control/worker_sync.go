@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
@@ -149,7 +149,7 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 	marked := 0
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		for _, id := range in.IDs {
-			affected, err := gatewaystore.MarkSyncEventProcessed(tx, id)
+			affected, err := gatewayrepo.MarkSyncEventProcessed(tx, id)
 			if err != nil {
 				return err
 			}
@@ -249,7 +249,7 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 		return
 	}
 	if stored == "" {
-		err = gatewaystore.InsertFrozenEndDelivery(a.DB.WithContext(c.Request.Context()), in.DeviceEventID, in.ChargeOrderID, in.Payload)
+		err = gatewayrepo.InsertFrozenEndDelivery(a.DB.WithContext(c.Request.Context()), in.DeviceEventID, in.ChargeOrderID, in.Payload)
 		if err == nil {
 			httpapi.OK(c, gatewaycontract.FreezeEndDeliveryReply{Payload: in.Payload, Frozen: false})
 			return
@@ -273,8 +273,9 @@ func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.FreezeEndDeliveryReply{Payload: stored, Frozen: true})
 }
 
+// frozenEndPayload 接收 c 与 deviceEventID，用原请求 context 读取冻结结束载荷；返回原文或 SQL 错误，无写入。
 func (a TelemetryAPI) frozenEndPayload(c *gin.Context, deviceEventID uint64) (string, error) {
-	return gatewaystore.FrozenEndPayload(c.Request.Context(), a.DB, deviceEventID)
+	return gatewayrepo.FrozenEndPayload(c.Request.Context(), a.DB, deviceEventID)
 }
 
 // sameEndIdentity 比较两份结束回执是否同一事实：忽略 meter.segments 后

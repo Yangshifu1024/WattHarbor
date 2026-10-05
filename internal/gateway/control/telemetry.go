@@ -2,7 +2,7 @@ package control
 
 import (
 	"context"
-	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"net/http"
 	"strconv"
 	"time"
@@ -16,12 +16,17 @@ import (
 
 // TelemetryAPI 提供设备读数查询；telemetry 按 ts 分区，所有查询必须包含有界时间窗口。
 type TelemetryAPI struct {
-	DB           *gorm.DB
+	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，具体事务由原方法管理。
+	DB *gorm.DB
+	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
-	MaxWindow    time.Duration
-	MaxPoints    int
+	// MaxWindow 原允许的最大曲线查询窗口。
+	MaxWindow time.Duration
+	// MaxPoints 原曲线响应点数预算。
+	MaxPoints int
 }
 
+// Register 接收非 nil router，注册本类型原路由与处理器，无数据库或设备 IO，不启动 HTTP 监听。
 func (a TelemetryAPI) Register(router *gin.Engine) {
 	router.GET(gatewaycontract.TelemetryPath+":device_id/telemetry", a.curve)
 	router.GET("/api/v1/internal/devices/:device_id/charging-samples", a.chargingSamples)
@@ -35,6 +40,7 @@ func (a TelemetryAPI) Register(router *gin.Engine) {
 	a.registerWorkerSync(router)
 }
 
+// authorized 接收 c，精确验证服务请求头；成功返回 true，失败写原 401 并返回 false，调用方据此退出，不读取数据库。
 func (a TelemetryAPI) authorized(c *gin.Context) bool {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
@@ -43,6 +49,7 @@ func (a TelemetryAPI) authorized(c *gin.Context) bool {
 	return true
 }
 
+// curve 接收 c，鉴权并校验设备、端口和时间窗，选择原遥测粒度及点数预算后写曲线；失败写原 400、401 或 503，不改变采样证据。
 func (a TelemetryAPI) curve(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -114,26 +121,29 @@ func (a TelemetryAPI) curve(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.TelemetryReply{DeviceID: deviceID, From: from, To: to, Series: series, Count: len(series), Granularity: label, Bucket: granularity.String()})
 }
 
-// read 把长表形式的 telemetry 行转成按时间戳对齐的曲线点。读数在 SQL 里
-// 分组，这样无论采样率多高，响应体积都是有界的。
+// read 接收 ctx、deviceID、from/to、limit 与 table，委托 readPort 读取全部端口原遥测并在 Go 按秒合并；返回曲线或 SQL 错误，无写入。
 func (a TelemetryAPI) read(ctx context.Context, deviceID string, from, to time.Time, limit int, table string) ([]gatewaycontract.CurvePoint, error) {
 	return a.readPort(ctx, deviceID, 0, from, to, limit, table)
 }
 
+// readPort 接收 ctx、deviceID、portNo、from/to、limit 与 table，读取原行后在 Go 按 UTC 秒合并指标并保留最新预算点、反转为升序；返回曲线或 SQL 错误，无法解析数值跳过。
 func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int, from, to time.Time, limit int, table string) ([]gatewaycontract.CurvePoint, error) {
 	// 长窗口使用汇总表，避免原始样本超过行数预算后仅返回窗口尾部。
-	rows := []gatewaystore.Reading{}
+	rows := []gatewayrepo.Reading{}
 	if table == "telemetry" {
-		if err := gatewaystore.RawReadingsQuery(ctx, a.DB, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
+		if err := gatewayrepo.RawReadingsQuery(ctx, a.DB, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
 			return nil, err
 		}
 	} else {
-		if err := gatewaystore.BucketedReadingsQuery(ctx, a.DB, table, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
+		if err := gatewayrepo.BucketedReadingsQuery(ctx, a.DB, table, deviceID, portNo, from, to, limit).Find(&rows).Error; err != nil {
 			return nil, err
 		}
 	}
+	// bucket 保存同一 UTC 秒内按指标合并的曲线值，仅在本次读模型转换中使用，不代表持久聚合桶。
 	type bucket struct {
-		ts     time.Time
+		// ts 原时间桶时刻。
+		ts time.Time
+		// values 原时间桶内按指标保存的数值。
 		values map[string]float64
 	}
 	order := []time.Time{}
@@ -176,6 +186,7 @@ func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int,
 	return out, nil
 }
 
+// value 接收 values 与 key，存在时返回原浮点数指针，缺失返回 nil；不修改映射，无 IO。
 func value(values map[string]float64, key string) *float64 {
 	if v, present := values[key]; present {
 		return &v
@@ -183,6 +194,7 @@ func value(values map[string]float64, key string) *float64 {
 	return nil
 }
 
+// sortDesc 接收 times，原地按时刻倒序排列，无返回值或外部 IO。
 func sortDesc(times []time.Time) {
 	for i := 1; i < len(times); i++ {
 		for j := i; j > 0 && times[j].After(times[j-1]); j-- {
@@ -191,8 +203,10 @@ func sortDesc(times []time.Time) {
 	}
 }
 
+// maxWindow 返回配置 MaxWindow，由调用方处理非正默认值，无 IO。
 func (a TelemetryAPI) maxWindow() time.Duration { return a.MaxWindow }
 
+// maxPoints 返回正值 MaxPoints，否则返回两千点，无 IO。
 func (a TelemetryAPI) maxPoints() int {
 	if a.MaxPoints > 0 {
 		return a.MaxPoints

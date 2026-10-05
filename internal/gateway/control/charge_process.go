@@ -2,7 +2,7 @@ package control
 
 import (
 	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// chargeProcess 接收 c 中的原订单及可选身份、游标和 limit，先鉴权校验，再读取过程点并用多取一条生成下一游标；写 200、400、401 或 503，无业务状态写入。
 func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -63,8 +64,8 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 			return
 		}
 	}
-	query := gatewaystore.ChargeProcessQuery(c.Request.Context(), a.DB, orderNo, chargeOrderID, deviceID, portNo, afterID)
-	items := []gatewaystore.ChargeProcessPoint{}
+	query := gatewayrepo.ChargeProcessQuery(c.Request.Context(), a.DB, orderNo, chargeOrderID, deviceID, portNo, afterID)
+	items := []gatewayrepo.ChargeProcessPoint{}
 	if err := query.Order("id ASC").Limit(limit + 1).Scan(&items).Error; err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "充电过程暂不可读取", nil)
 		return

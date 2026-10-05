@@ -6,35 +6,40 @@ import (
 	"net/http"
 
 	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 
+// Compensation 编排原启动补偿的持久状态与设备 STOP 下发，复用原命令及会话，不重新生成 START。
 type Compensation struct {
-	Store   store.MySQLSink
+	// Repo 原 MySQLSink 持久能力，保留命令身份与事务规则。
+	Repo repo.MySQLSink
+	// Devices 原设备连接注册表，查询在线状态并发送原补偿 STOP。
 	Devices *session.Registry
 }
 
+// Request 接收 ctx、orderNo 与 commandID，先持久化原启动补偿事实，连接在线时标记发送并下发原 STOP；返回持久化或下发错误，不创建第二条 START。
 func (c Compensation) Request(ctx context.Context, orderNo, commandID string) error {
-	job, needsStop, err := c.Store.CompensateStart(ctx, orderNo, commandID)
+	job, needsStop, err := c.Repo.CompensateStart(ctx, orderNo, commandID)
 	if err != nil || !needsStop {
 		return err
 	}
 	if !c.Devices.Connected(job.DeviceID) {
 		return nil
 	}
-	if err := c.Store.MarkStopSent(ctx, job.CommandID); err != nil {
+	if err := c.Repo.MarkStopSent(ctx, job.CommandID); err != nil {
 		return err
 	}
 	return c.Devices.Send(ctx, job.DeviceID, job.Wire)
 }
 
-// RetryStopping 在进程重启或 START 结果不确定后的设备重连时重试停止，不创建第二条 START。
+// RetryStopping 接收 ctx，读取原到期补偿任务，为在线设备依次标记发送并下发同一 STOP。
+// 返回首次持久化或发送错误，继续其它任务，不创建第二条 START 或新会话。
 func (c Compensation) RetryStopping(ctx context.Context) error {
-	jobs, err := c.Store.StoppingJobs(ctx)
+	jobs, err := c.Repo.StoppingJobs(ctx)
 	if err != nil {
 		return err
 	}
@@ -43,7 +48,7 @@ func (c Compensation) RetryStopping(ctx context.Context) error {
 		if !c.Devices.Connected(job.DeviceID) {
 			continue
 		}
-		if err := c.Store.MarkStopSent(ctx, job.CommandID); err != nil {
+		if err := c.Repo.MarkStopSent(ctx, job.CommandID); err != nil {
 			if first == nil {
 				first = err
 			}
@@ -56,17 +61,23 @@ func (c Compensation) RetryStopping(ctx context.Context) error {
 	return first
 }
 
+// CompensationAPI 适配内部启动补偿请求，负责服务鉴权、输入和错误映射，业务操作交由 Request 能力执行。
 type CompensationAPI struct {
+	// Service 所属命令用例能力，保留原返回事实及错误。
 	Service interface {
+		// Request 接收 ctx、orderNo 与 commandID，先持久化原启动补偿事实，连接在线时标记发送并下发原 STOP；返回持久化或下发错误，不创建第二条 START。
 		Request(context.Context, string, string) error
 	}
+	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
 }
 
+// Register 接收非 nil router，注册本类型原路由与处理器，无数据库或设备 IO，不启动 HTTP 监听。
 func (a CompensationAPI) Register(router *gin.Engine) {
 	router.POST(gatewaycontract.CompensateStartRoute, a.handle)
 }
 
+// handle 接收 c，鉴权并校验原补偿请求后调用 Service；成功返回 accepted，失配写 409，输入、鉴权或执行失败写原 400、401、503。
 func (a CompensationAPI) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
@@ -78,7 +89,7 @@ func (a CompensationAPI) handle(c *gin.Context) {
 		return
 	}
 	if err := a.Service.Request(c.Request.Context(), c.Param("order_no"), body.CommandID); err != nil {
-		if errors.Is(err, store.ErrOrderConflict) {
+		if errors.Is(err, repo.ErrOrderConflict) {
 			httpapi.Write(c, http.StatusConflict, 2000, "command does not match order", nil)
 			return
 		}

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
@@ -21,7 +21,7 @@ func (a TelemetryAPI) cardEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
-	rows, err := store.ListPendingCardDeliveries(c.Request.Context(), a.DB)
+	rows, err := repo.ListPendingCardDeliveries(c.Request.Context(), a.DB)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡事件暂不可读取", nil)
 		return
@@ -40,6 +40,7 @@ func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 		return
 	}
 	var in struct {
+		// EventKey 原持久事件幂等键。
 		EventKey string `json:"event_key" binding:"required,max=64"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil || uuid.Validate(in.EventKey) != nil {
@@ -48,14 +49,14 @@ func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 	}
 	var eventJSON string
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		frozen, err := store.LockCardDelivery(tx, in.EventKey)
+		frozen, err := repo.LockCardDelivery(tx, in.EventKey)
 		if err != nil {
 			return err
 		}
 		if frozen != "" {
 			return errResponseFrozen(frozen)
 		}
-		raw, err := store.FindDeviceEvent(c.Request.Context(), tx, in.EventKey)
+		raw, err := repo.FindDeviceEvent(c.Request.Context(), tx, in.EventKey)
 		if err != nil {
 			return err
 		}
@@ -106,7 +107,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		httpapi.BadRequest(c, "冻结请求无效")
 		return
 	}
-	stored, err := store.FreezeCardResponse(c.Request.Context(), a.DB, in.EventKey, in.ResponseJSON)
+	stored, err := repo.FreezeCardResponse(c.Request.Context(), a.DB, in.EventKey, in.ResponseJSON)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复冻结暂不可用", nil)
 		return
@@ -115,7 +116,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		httpapi.OK(c, contract.CardFreezeReply{Stored: true, ResponseJSON: in.ResponseJSON})
 		return
 	}
-	frozen, err := store.FindFrozenCardResponse(c.Request.Context(), a.DB, in.EventKey)
+	frozen, err := repo.FindFrozenCardResponse(c.Request.Context(), a.DB, in.EventKey)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复暂不可读取", nil)
 		return
@@ -134,7 +135,7 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 		httpapi.BadRequest(c, "推进请求无效")
 		return
 	}
-	affected, err := store.AdvanceCardDelivery(c.Request.Context(), a.DB, in.EventKey,
+	affected, err := repo.AdvanceCardDelivery(c.Request.Context(), a.DB, in.EventKey,
 		in.Outcome == "retry", in.Error, time.Now().UTC().Add(5*time.Second))
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡投递状态暂不可用", nil)
@@ -155,7 +156,7 @@ func (a TelemetryAPI) resolvePort(c *gin.Context) {
 		httpapi.BadRequest(c, "设备或端口无效")
 		return
 	}
-	code, err := store.PortCodeByNumber(c.Request.Context(), a.DB, device, uint8(port))
+	code, err := repo.PortCodeByNumber(c.Request.Context(), a.DB, device, uint8(port))
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口暂不可解析", nil)
 		return

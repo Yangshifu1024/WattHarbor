@@ -6,7 +6,7 @@
 
 ## 数据访问命名
 
-项目自定义的数据访问组件统一使用 `repo`，表示 Repository。下列名称是目标约定，现有源码随对应模块迁移；引用当前源码时仍使用真实文件名和类型名。
+项目自定义的数据访问组件统一使用 `repo`，表示 Repository。数据访问文件、类型及独立包的命名迁移已完成，下表用于后续新增和核对迁移来源；控制层完整表操作的归位仍按任务验收。
 
 | 对象 | 目标命名 | 迁移示例 |
 |---|---|---|
@@ -223,3 +223,5 @@ HTTP查询及范围边界（5c）：剩余10个查询／账单入口由wallet、
 worker 仓储边界（5i）：worker/store 及两个 *_store.go 迁入 worker/repo 的 outbox_repo.go、schedule_repo.go，调用方与真实并发测试同步改名，不保留旧包或 ReplayCursor。调度器保留 cron 解析、处理器登记、租约编排和原失败计数；CreateExecutionLog 接收原 typed pointer 并回填复合主键中的 ID，FinishTask 接收完成时间、下次计划和失败次数，由 repo 拥有完整列更新及令牌条件。取消后的原独立五秒收尾、两分钟租约、第五次失败停用和 force 不绕过有效租约均保持；旧令牌完成不能释放接管者。零消费者的 ListExecutionLogs 删除，实际 last-run 投影保留。Outbox 表选择归 repo：仅 admin 使用原后台事件表，其余原非空来源保持 event_outbox；发布器仍在 RC 事务持锁到 Redis 确认和状态推进，原 stream/source、事件身份、100 条 ID 顺序、SKIP LOCKED、三秒单次期限与退避不变。仓储不增加订单或资金访问，任务 runtime 与 HTTP 准入行为没有在此命名批次改写。
 
 worker 运维准入边界（5j）：OpsAPI 的失败中间件写原401后必须 Abort；返回 Go 函数不等于中止 Gin 处理链。统一用 serviceclient.VerifyServiceToken 保持空配置拒绝与精确比较，成功继续原处理器；失败不能读取 Redis，也不能追加第二个信封。实际 cmd 注册和 API.Register 的零命令／单JSON回归共同验证。原 pending 是 Redis XLen 的流长度，仍不区分已消费与未消费；缺失流真实长度0，redis.Nil 分支跳过，其他错误与取消映射原503并停止后续读取，没有新消费组、死信、重放、SQL或后台任务。请求 context 直接传入 XLen，公开消息不泄漏 Redis 键、类型错误或内部细节。
+
+gateway 命名边界（5k）：原独立 store 包完整归 gateway/repo，*_store.go 改 *_repo.go，模型／schema 文件和 MySQLSink 的设备事件能力名称保持。StartService、Compensation、UserStopService 的具体持久化注入字段为 Repo；ScanAPI 的窄扫码能力字段为 Scanner。所有真实包消费者及原两份仓储测试同步迁移，没有旧路径兼容包，不改变数据库映射、SQL、事务、协议解析、命令／设备会话、stream/source 或重试身份。此机械批次仍保留控制层原完整业务行为，剩余 query builder 与控制层 SQL 的完整操作下沉另行实施；不能把完成命名当作 G-01 职责完成。

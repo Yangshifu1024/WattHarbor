@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"context"
@@ -10,8 +10,7 @@ import (
 // 设备事件的读取与处理标记。这些事件由 central 侧的告警同步与停机判定消费，
 // 事件本身仍由 gateway 落库——设备接入的事实只有它有。
 //
-// 处理标记是幂等的：条件带 processed_at IS NULL，重复标记同一批事件只影响
-// 一次。否则两个消费者各标一次，attempts 之类的计数会被重复累加。
+// 处理标记保留 processed_at IS NULL 条件，重放不重复推进已处理记录。
 
 // DeviceFaultEvent 是一条未处理的设备故障事件。
 type DeviceFaultEvent struct {
@@ -22,7 +21,7 @@ type DeviceFaultEvent struct {
 	Payload    string    `json:"payload"`     // 原协议事件JSON
 }
 
-// ListUnprocessedFaults 在ctx下使用db读取limit原未处理dc589故障，返回升序证据或SQL错误，无标记写入。
+// ListUnprocessedFaults 接收 ctx、db 与 limit，按 id 升序读取未处理 dc589 故障原证据；返回列表与 SQL 错误，无标记写入。
 func ListUnprocessedFaults(ctx context.Context, db *gorm.DB, limit int) ([]DeviceFaultEvent, error) {
 	rows := []DeviceFaultEvent{}
 	err := db.WithContext(ctx).Table("device_event").
@@ -32,13 +31,15 @@ func ListUnprocessedFaults(ctx context.Context, db *gorm.DB, limit int) ([]Devic
 	return rows, err
 }
 
-// MarkEventsProcessed 在tx下标记ids原未处理主键，返回实际首次推进数或SQL错误，不自行提交。
-// UPDATE使用当前条件；并发已标记或回复丢失重放返回0，不把原证据替换为新身份。
+// MarkEventsProcessed 接收所属 tx 与 ids，读取仍未处理候选并按原 IS NULL 条件更新处理时刻；返回首次推进数量或 SQL 错误，空输入及重放零行，不自行提交。
 func MarkEventsProcessed(tx *gorm.DB, ids []uint64) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	var pending []struct{ ID uint64 }
+	var pending []struct {
+		// ID device_event 表的原自增主键。
+		ID uint64
+	}
 	if err := tx.Table("device_event").Select("id").
 		Where("id IN ? AND processed_at IS NULL", ids).Find(&pending).Error; err != nil {
 		return 0, err
@@ -51,9 +52,10 @@ func MarkEventsProcessed(tx *gorm.DB, ids []uint64) (int64, error) {
 	return res.RowsAffected, res.Error
 }
 
-// FindEventReceivedAt 在ctx下使用db按deviceID／eventKey读原接收时刻，返回事实、缺失或SQL错误，无写入。
+// FindEventReceivedAt 接收 ctx、db、deviceID 与 eventKey，读取原持久接收时刻；返回时刻或缺失、SQL 错误，无写入。
 func FindEventReceivedAt(ctx context.Context, db *gorm.DB, deviceID, eventKey string) (time.Time, error) {
 	var row struct {
+		// ReceivedAt 原事件接收时刻。
 		ReceivedAt time.Time `gorm:"column:received_at"`
 	}
 	err := db.WithContext(ctx).Table("device_event").Select("received_at").
@@ -67,10 +69,7 @@ type HeartbeatAfter struct {
 	Payload    []byte    `gorm:"column:event_json"`  // 原协议载荷字节
 }
 
-// LatestHeartbeatAfter 在ctx下用db读取deviceID严格晚于after的最新dc589心跳，返回原时刻／载荷、缺失或SQL错误，无写入。
-//
-// 这条查询是恢复判定的证据来源：告警自动核销要拿它和故障时刻比对，早于故障
-// 的心跳不构成"设备已恢复"的证据。
+// LatestHeartbeatAfter 接收 ctx、db、deviceID 与 after，读取严格晚于该时刻的最新 dc589 心跳，按时刻及 id 倒序；返回原证据或缺失、SQL 错误，无写入。
 func LatestHeartbeatAfter(ctx context.Context, db *gorm.DB, deviceID string, after time.Time) (HeartbeatAfter, error) {
 	var row HeartbeatAfter
 	err := db.WithContext(ctx).Table("device_event").

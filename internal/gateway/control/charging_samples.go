@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"strconv"
 	"time"
 
@@ -27,7 +27,7 @@ const chargingEvidenceWindow = 7 * 24 * time.Hour
 // nextAfterID 继续取下一段。单段行数上限 chargingEvidenceMaxRows。
 func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string, port uint8, from time.Time, afterID uint64, limit int) ([]gatewaycontract.EvidenceSample, uint64, bool, error) {
 	now := time.Now().UTC()
-	rows, err := gatewaystore.ListHeartbeatsInWindow(ctx, a.DB, device, from, now, afterID, limit)
+	rows, err := gatewayrepo.ListHeartbeatsInWindow(ctx, a.DB, device, from, now, afterID, limit)
 	if err != nil {
 		return nil, 0, false, err
 	}

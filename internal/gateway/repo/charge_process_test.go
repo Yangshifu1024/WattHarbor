@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"testing"
@@ -7,6 +7,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
+// TestHeartbeatEventKeyIdentifiesReceiptAndStructuredMeasurements 通过 t 核对同次心跳重放、不同接收时刻及无原帧结构化测量的原事件键；不覆盖数据库持久化。
 func TestHeartbeatEventKeyIdentifiesReceiptAndStructuredMeasurements(t *testing.T) {
 	e := protocol.Event{Protocol: "dc589", DeviceID: "board", Type: protocol.Heartbeat,
 		ReceivedAt:    time.Date(2026, 10, 1, 0, 0, 0, 1000000, time.UTC),

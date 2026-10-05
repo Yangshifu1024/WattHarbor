@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"context"
@@ -7,18 +7,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// 历史遥测的曲线读取。原始 telemetry 保留期短，长期查询走按粒度预聚合的
-// 两张表——粒度由时间窗决定，表名与桶宽的对应关系只在这里维护，
-// 免得两处各写一份、改了一处忘了另一处。
+// 历史曲线按原接口粒度选择聚合表，表名与桶宽在本包对应。
 
 // CurveGranularity 是一条时间窗对应的聚合粒度。
 type CurveGranularity struct {
+	// Bucket 原聚合桶宽。
 	Bucket time.Duration
-	Table  string
+	// Table 原所属聚合表名。
+	Table string
 }
 
-// CurveGranularityFor 返回调用方指定的聚合粒度对应的表。
-// 粒度由接口参数给出而不是按窗口自动选：调用方知道自己要多少个点。
+// CurveGranularityFor 接收 granularity，仅为 15min 或 hourly 返回原桶宽、表名和 true；其它返回零值与 false，无 IO。
 func CurveGranularityFor(granularity string) (CurveGranularity, bool) {
 	switch granularity {
 	case "15min":
@@ -40,8 +39,7 @@ type MetricPeak struct {
 // 在摘要里没有展示价值。
 var curveMetrics = []string{"power_w", "temperature_c"}
 
-// MetricPeaksInRange 返回窗口内各指标的峰值与加权均值。
-// 均值按 count 加权，不是简单平均——桶内样本数不同时简单平均会被空桶拉偏。
+// MetricPeaksInRange 接收 ctx、db、所属 table、deviceID、portNo 与 start/end，读取闭区间 power_w、temperature_c 的峰值和按 count 加权均值文本；返回摘要及 SQL 错误，无写入。
 func MetricPeaksInRange(ctx context.Context, db *gorm.DB, table, deviceID string, portNo uint16, start, end time.Time) ([]MetricPeak, error) {
 	rows := []MetricPeak{}
 	err := db.WithContext(ctx).Table(table).
@@ -55,13 +53,13 @@ func MetricPeaksInRange(ctx context.Context, db *gorm.DB, table, deviceID string
 
 // HeartbeatSample 是一条心跳事件的原始载荷。
 type HeartbeatSample struct {
-	ID        uint64 `gorm:"column:id"`
+	// ID device_event 表的原自增主键，用作心跳取证游标。
+	ID uint64 `gorm:"column:id"`
+	// EventJSON 原持久协议事件 JSON 字节。
 	EventJSON []byte `gorm:"column:event_json"`
 }
 
-// ListHeartbeatsInWindow 返回设备在 [from, to] 窗口内的心跳证据，按 id 升序。
-// afterID 大于 0 时只取更大的 id，用于游标翻页；多取一条（limit+1）由调用方
-// 据此判断窗口内是否还有下一页。
+// ListHeartbeatsInWindow 接收 ctx、db、device、from/to、afterID 与 limit，读取闭区间心跳证据，按 id 升序且多取一条；返回原载荷或 SQL 错误，无写入。
 func ListHeartbeatsInWindow(ctx context.Context, db *gorm.DB, device string, from, to time.Time, afterID uint64, limit int) ([]HeartbeatSample, error) {
 	query := db.WithContext(ctx).Table("device_event").Select("id, event_json").
 		Where("device_id=? AND event_type='heartbeat' AND received_at>=? AND received_at<=?", device, from.UTC(), to.UTC())

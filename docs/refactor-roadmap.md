@@ -528,7 +528,7 @@ make test-integration TEST_MYSQL_URL=...
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
-| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面与薄适配已验收；worker资金具名消费者和N-worker持久命名／完整repo操作已验收，查询与范围归所属服务、认证单次响应保持；剩余gateway repo与两进程runtime收尾继续实施 |
+| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | H-01四个HTTP接口面、具名客户端与N-gateway／N-worker命名已验收；worker完整repo和运维准入已验收，查询与范围归所属服务、认证单次响应保持；剩余gateway完整repo操作与运行时收尾继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
@@ -773,3 +773,9 @@ make test-integration TEST_MYSQL_URL=...
 5j 实施与定向验收：失败中间件使用既有 VerifyServiceToken 并 Abort；空配置与精确令牌语义、成功200、原 XLen 长度、redis.Nil 跳过和其他错误／取消503保持。修复后的 .tmp/batch5j-targeted.log、.tmp/batch5j-cmd-denial-restored.log 都通过，实际 cmd 原五种拒绝均零 Redis 命令、仅一个401 JSON。独立 Redis .tmp/batch5j-redis-registered.log 验证实际注册端点读取私有流两条、缺失流0、真实类型错误503且无内部细节泄漏；随机键 DEL 后 EXISTS=0，未写开发或默认业务流。四份变动 Go 文件中文说明清单无缺项，未改变 SQL、租约、调度、事件身份、默认流清单或资源生命周期。
 
 5j 退出验收：全仓默认 .tmp/batch5j-check.log 与受影响 worker 构建 .tmp/batch5j-build.log 通过；相关真实 Redis、API 与 cmd 注册回归已如上验收，SQL／任务状态及依赖没有变化，本批不重复无关资金流程或前端测试。最终暂存快照 .tmp/batch5j-validation 的1221份文件中709份 Go／模块与已验证工作区及原 blob 一致，.tmp/batch5j-snapshot-source.log 保留，本地 Markdown 链接有效。重启既有开发 worker 后 .tmp/batch5j-worker-denial-live.json 只读核对健康，以及缺失／错误令牌均唯一401、code1001、data null；没有有效身份流写入、开发清库或资金修改。G／WK 组合仍进行中，17组完成15组约88%；下一批继续 gateway 仓储与控制层完整操作，之后部署评估及最终工作报告。
+
+批次5k（N-gateway 命名子项）实施：43份实际受影响 Go 文件经可审查 AST 工具迁移原 gateway/store 包、持久文件、导入／别名与三个具体 Repo／一个 Scanner 注入字段；模型文件和真实 MySQLSink 能力保留，原测试随包移动。AGENTS 实际目录图注明迁移来源。首次忽略注释的完整语法 token 核对 .tmp/batch5k-body-comparison.log 确认只改允许的名称，其余代码与原文一致；完整验收及注释复核继续，不提前关闭 G／WK 组合组。
+
+5k 退出验收：.tmp/batch5k-{check,integration,build,tidy}.log 全通过；默认检查、默认包并行的完整独立三库／Redis integration、受影响 gateway 构建和无依赖差异共同核对。实际 gateway 注册取证、查询和同步客户端真库回归保持原单位、NULL、分页哨兵、冻结身份及端口归属，旧测试标签及断言保留；TCP 绑定失败取消其它受管理任务、协议及现有 DC589 模拟器默认测试仍通过。43份原文与原 HEAD 一致，编译指令未变，63个变更 Go 路径都被映射；.tmp/batch5k-backup-proof.log 与 .tmp/batch5k-body-comparison.log 证明除指定命名与注释／格式外，完整 AST 保持，不以编译成功代替 SQL 一致性。命名类型、函数、字段和接口方法中文说明清单均无缺项；校正曲线 Go 按秒合并、设备会话完整复合主键、START／STOP会话与设备连接会话、卡余额0.1元及聚合端口／UTC时刻等说明。重启既有开发 gateway 后，.tmp/batch5k-health-{before,after}.json 只读核对五进程原就绪均200，没有清库、手动设备／资金操作或公开／schema改动；健康证据不声称完成实机或新增充电流程。N-gateway与全仓数据访问命名完成，G-01仍需控制层完整操作归repo，最终暂存源码核对继续，17组仍完成15组约88%。
+
+5k 最终暂存核对：.tmp/batch5k-validation 共1221份原 Git blob，其中709份 Go／模块与已验收工作区一致，.tmp/batch5k-snapshot-source.log 保留；本地 Markdown 链接有效。没有新增 Go 源码或依赖，机械迁移后的完整 AST、编译指令与上述一次全量检查共同作为提交证据，不重复运行相同源码测试。最终只补退出记录与子项状态，下一批下沉原遥测／过程查询链，G／WK组合与DEP继续。

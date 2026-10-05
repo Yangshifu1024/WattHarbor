@@ -4,7 +4,7 @@
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
 - 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
-- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`（未迁移模块暂保留 `*_store.go`），进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
+- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。**`central` 的 8082 在两套编排里都不映射端口**，宿主机打不开，内部调用只在容器网络内可达。开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。
 
 五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
@@ -461,24 +461,24 @@ charge-pilot/
 │   ├── internal/gateway/simulator/dc589/behavior.go
 │   ├── internal/gateway/simulator/dc589/simulator.go
 │   ├── internal/gateway/simulator/dc589/tui.go
-│   ├── internal/gateway/store/aggregate_store.go
-│   ├── internal/gateway/store/backfill_store.go
-│   ├── internal/gateway/store/card_delivery_store.go
-│   ├── internal/gateway/store/charge_process_store.go
-│   ├── internal/gateway/store/charge_start_store.go
-│   ├── internal/gateway/store/compensation_store.go
-│   ├── internal/gateway/store/device_event_store.go
-│   ├── internal/gateway/store/gorm_models.go
-│   ├── internal/gateway/store/mysql.go
-│   ├── internal/gateway/store/port_store.go
-│   ├── internal/gateway/store/provision_store.go
-│   ├── internal/gateway/store/scan_store.go
-│   ├── internal/gateway/store/session.go
-│   ├── internal/gateway/store/session_store.go
-│   ├── internal/gateway/store/sync_models.go
-│   ├── internal/gateway/store/telemetry_curve_store.go
-│   ├── internal/gateway/store/telemetry_read_store.go
-│   └── internal/gateway/store/user_stop_store.go
+│   ├── internal/gateway/repo/aggregate_repo.go（迁移前：internal/gateway/store/aggregate_store.go）
+│   ├── internal/gateway/repo/backfill_repo.go（迁移前：internal/gateway/store/backfill_store.go）
+│   ├── internal/gateway/repo/card_delivery_repo.go（迁移前：internal/gateway/store/card_delivery_store.go）
+│   ├── internal/gateway/repo/charge_process_repo.go（迁移前：internal/gateway/store/charge_process_store.go）
+│   ├── internal/gateway/repo/charge_start_repo.go（迁移前：internal/gateway/store/charge_start_store.go）
+│   ├── internal/gateway/repo/compensation_repo.go（迁移前：internal/gateway/store/compensation_store.go）
+│   ├── internal/gateway/repo/device_event_repo.go（迁移前：internal/gateway/store/device_event_store.go）
+│   ├── internal/gateway/repo/gorm_models.go（迁移前：internal/gateway/store/gorm_models.go）
+│   ├── internal/gateway/repo/mysql.go（迁移前：internal/gateway/store/mysql.go）
+│   ├── internal/gateway/repo/port_repo.go（迁移前：internal/gateway/store/port_store.go）
+│   ├── internal/gateway/repo/provision_repo.go（迁移前：internal/gateway/store/provision_store.go）
+│   ├── internal/gateway/repo/scan_repo.go（迁移前：internal/gateway/store/scan_store.go）
+│   ├── internal/gateway/repo/session.go（迁移前：internal/gateway/store/session.go）
+│   ├── internal/gateway/repo/session_repo.go（迁移前：internal/gateway/store/session_store.go）
+│   ├── internal/gateway/repo/sync_models.go（迁移前：internal/gateway/store/sync_models.go）
+│   ├── internal/gateway/repo/telemetry_curve_repo.go（迁移前：internal/gateway/store/telemetry_curve_store.go）
+│   ├── internal/gateway/repo/telemetry_read_repo.go（迁移前：internal/gateway/store/telemetry_read_store.go）
+│   └── internal/gateway/repo/user_stop_repo.go（迁移前：internal/gateway/store/user_stop_store.go）
 ├── internal/worker                                       事件消费、定时与投递编排
 │   ├── internal/worker/alerts/sync.go
 │   ├── internal/worker/billing/dispatch.go
@@ -689,14 +689,14 @@ charge-pilot/
   persist      →  无（分页、自增主键等原语）
   platform     →  无（无业务语义的通用能力）
   use case     →  domain + contracts + platform + persist + 其它 use case（在结构文档说明业务理由并经评审）
-  use case     →  所属repo（表名与列映射仅在 *_repo.go / *_schema.go / *_model*.go；未迁移模块暂保留store）
+  use case     →  所属repo（表名与列映射仅在 *_repo.go / *_schema.go / *_model*.go）
   ```
 
   以下三条由实现者和评审者逐项核对：
 
   1. **domain 零框架**：不出现 gorm / gin / redis，不出现列映射与表名映射，
      不 import 任何实现层。
-  2. **表访问集中**：SQL、列映射和数据库写入位于所属用例的 `*_repo.go`（未迁移模块暂保留 `*_store.go`） /
+  2. **表访问集中**：SQL、列映射和数据库写入位于所属用例的 `*_repo.go` /
      `*_schema.go` / `*_model*.go`。函数签名收 `*gorm.DB` 传递事务是正常用法。
      同一回执的状态、幂等凭据、资金和 Outbox 保持完整事务边界。
   3. **use case 之间单向**：新增跨用例引用须在 `docs/architecture-boundaries.md`

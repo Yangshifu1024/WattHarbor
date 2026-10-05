@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 )
 
 // registerDeviceFaults 把 device_event 故障证据暴露给 central 的告警同步：
@@ -37,7 +37,7 @@ func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 		}
 		limit = parsed
 	}
-	reports, err := store.ListUnprocessedFaults(c.Request.Context(), a.DB, limit)
+	reports, err := repo.ListUnprocessedFaults(c.Request.Context(), a.DB, limit)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "故障事件暂不可读取", nil)
 		return
@@ -62,7 +62,7 @@ func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 	}
 	marked := int64(0)
 	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		count, err := store.MarkEventsProcessed(tx, body.IDs)
+		count, err := repo.MarkEventsProcessed(tx, body.IDs)
 		marked = count
 		return err
 	})
@@ -89,7 +89,7 @@ func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 	var after time.Time
 	var err error
 	if key := c.Query("after_key"); key != "" {
-		receivedAt, found := store.FindEventReceivedAt(c.Request.Context(), a.DB, device, key)
+		receivedAt, found := repo.FindEventReceivedAt(c.Request.Context(), a.DB, device, key)
 		if found != nil {
 			if errors.Is(found, gorm.ErrRecordNotFound) {
 				httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: false})
@@ -110,7 +110,7 @@ func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "故障水印暂不可读取", nil)
 		return
 	}
-	row, err := store.LatestHeartbeatAfter(c.Request.Context(), a.DB, device, after.UTC())
+	row, err := repo.LatestHeartbeatAfter(c.Request.Context(), a.DB, device, after.UTC())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			httpapi.OK(c, contract.HeartbeatAfterKeyReply{Found: false, AfterReceivedAt: &after})

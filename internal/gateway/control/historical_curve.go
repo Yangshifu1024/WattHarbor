@@ -3,7 +3,7 @@ package control
 import (
 	"encoding/json"
 	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,7 +40,7 @@ func (a TelemetryAPI) historicalCurve(c *gin.Context) {
 		httpapi.Write(c, http.StatusUnprocessableEntity, 2018, "历史遥测已超过三年保留期", nil)
 		return
 	}
-	granularity, ok := gatewaystore.CurveGranularityFor(c.Query("granularity"))
+	granularity, ok := gatewayrepo.CurveGranularityFor(c.Query("granularity"))
 	if !ok {
 		httpapi.BadRequest(c, "granularity 须为 15min 或 hourly")
 		return
@@ -57,7 +57,7 @@ func (a TelemetryAPI) historicalCurve(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "历史遥测暂时无法读取", nil)
 		return
 	}
-	peaks, err := gatewaystore.MetricPeaksInRange(c.Request.Context(), a.DB, table, deviceID, uint16(portNo), startBucket, endBucket)
+	peaks, err := gatewayrepo.MetricPeaksInRange(c.Request.Context(), a.DB, table, deviceID, uint16(portNo), startBucket, endBucket)
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "历史遥测摘要暂时无法读取", nil)
 		return

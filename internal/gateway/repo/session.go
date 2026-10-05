@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"context"
@@ -11,27 +11,40 @@ import (
 
 // deviceSessionRow 映射 device_session；created_month 为分区键和联合主键的一部分，读写必须保留。
 type deviceSessionRow struct {
-	ID           uint64    `gorm:"column:id;primaryKey"`
-	SessionID    string    `gorm:"column:session_id"`
-	DeviceID     string    `gorm:"column:device_id"`
-	Protocol     string    `gorm:"column:protocol"`
-	RemoteAddr   string    `gorm:"column:remote_addr"`
-	StartedAt    time.Time `gorm:"column:started_at"`
+	// ID device_session 表的原自增 id，与 CreatedMonth 组成库内完整复合主键。
+	ID uint64 `gorm:"column:id;primaryKey"`
+	// SessionID 原设备连接会话身份，与开始日期对应的 CreatedMonth 定位连接审计记录。
+	SessionID string `gorm:"column:session_id"`
+	// DeviceID 原设备业务编号。
+	DeviceID string `gorm:"column:device_id"`
+	// Protocol 所属设备或连接的原协议名称。
+	Protocol string `gorm:"column:protocol"`
+	// RemoteAddr 原设备连接远端地址。
+	RemoteAddr string `gorm:"column:remote_addr"`
+	// StartedAt 原设备连接开始时刻。
+	StartedAt time.Time `gorm:"column:started_at"`
+	// LastActiveAt 原设备连接最后活动时刻。
 	LastActiveAt time.Time `gorm:"column:last_active_at"`
-	EndedAt      time.Time `gorm:"column:ended_at"`
-	CloseReason  string    `gorm:"column:close_reason"`
-	BytesIn      int64     `gorm:"column:bytes_in"`
-	BytesOut     int64     `gorm:"column:bytes_out"`
-	FramesIn     int64     `gorm:"column:frames_in"`
-	FramesOut    int64     `gorm:"column:frames_out"`
+	// EndedAt 原设备连接结束时刻。
+	EndedAt time.Time `gorm:"column:ended_at"`
+	// CloseReason 原设备连接关闭原因。
+	CloseReason string `gorm:"column:close_reason"`
+	// BytesIn 原连接累计接收字节数。
+	BytesIn int64 `gorm:"column:bytes_in"`
+	// BytesOut 原连接累计发送字节数。
+	BytesOut int64 `gorm:"column:bytes_out"`
+	// FramesIn 原连接累计接收帧数。
+	FramesIn int64 `gorm:"column:frames_in"`
+	// FramesOut 原连接累计发送帧数。
+	FramesOut int64 `gorm:"column:frames_out"`
 	// created_month 为 DATE，查询得到时间值，写入时格式化为日期。
 	CreatedMonth time.Time `gorm:"column:created_month"`
 }
 
+// TableName 返回原固定表名 device_session，供 GORM 定位模型；无数据库 IO。
 func (deviceSessionRow) TableName() string { return "device_session" }
 
-// RecordSession 保存连接终态，以 session_id 和开始时间对应的 created_month 寻址。
-// 跨月结束不改变分区归属；同会话重复写入更新已有记录，保持关闭操作幂等。
+// RecordSession 接收 ctx 与 record，按连接 session_id 和开始日期对应分区更新或插入终态；返回缺配置、身份或 SQL 错误，跨月不重建身份，不提供并发首写事务保证。
 func (s MySQLSink) RecordSession(ctx context.Context, record protocol.SessionRecord) error {
 	if s.DB == nil {
 		return errors.New("gateway database is unavailable")

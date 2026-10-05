@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"context"
@@ -7,26 +7,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// 设备会话的空闲回收。回收分两步：先读出候选，再用 id + 分区月份逐条关闭。
-// 分两步不是为了事务好看，而是因为 device_session 按 created_month 分区——
-// 读的时候必须带上分区月份，回去更新时也必须用同一对键，只按 id 更新的话
-// 扫全部分区且可能命中同名 id。
+// 设备连接会话先读取候选，再按 id 与 created_month 完整复合主键关闭。
+// created_month 同时用于分区定位，不能只按 id 更新；本操作不处理充电命令会话。
 
-// SessionKey 是一条会话的定位键。CreatedMonth 是分区列，不是主键的一部分。
+// SessionKey 是设备连接会话的完整复合主键；CreatedMonth 同时定位所属分区。
 type SessionKey struct {
-	ID           uint64    `gorm:"column:id"`
+	// ID device_session 表的原自增 id，与 CreatedMonth 组成完整复合主键。
+	ID uint64 `gorm:"column:id"`
+	// CreatedMonth 原分区日期，与记录身份共同定位所属分区。
 	CreatedMonth time.Time `gorm:"column:created_month"`
 }
 
-// IdleSessionsQuery 返回"超过静默阈值且仍未结束"的会话查询。
-// ended_at IS NULL 是硬条件：已经正常关闭的记录一律不碰，哪怕它很久没活动。
+// IdleSessionsQuery 接收 ctx、db 与 idleThreshold，构造仍开放且早于当前 UTC 减阈值的设备连接会话查询；不执行查询或检查内存连接注册表。
 func IdleSessionsQuery(ctx context.Context, db *gorm.DB, idleThreshold time.Duration) *gorm.DB {
 	return db.WithContext(ctx).Table("device_session").
 		Where("ended_at IS NULL AND last_active_at < ?", time.Now().UTC().Add(-idleThreshold))
 }
 
-// CloseAbandonedSession 关闭一条仍开放的会话，返回是否真的关掉了。
-// 返回 0 表示并发中已被正常关闭——那不是错误，调用方跳过即可。
+// CloseAbandonedSession 接收所属 tx、完整 key 与 at，仅关闭原 id/created_month 定位且仍开放的设备连接会话；返回影响行数及 SQL 错误，不提交或关闭 TCP 连接。
 func CloseAbandonedSession(tx *gorm.DB, key SessionKey, at time.Time) (int64, error) {
 	month := time.Date(key.CreatedMonth.UTC().Year(), key.CreatedMonth.UTC().Month(), key.CreatedMonth.UTC().Day(), 0, 0, 0, 0, time.UTC)
 	res := tx.Table("device_session").
@@ -37,16 +35,21 @@ func CloseAbandonedSession(tx *gorm.DB, key SessionKey, at time.Time) (int64, er
 
 // DeviceSummaryRow 是设备摘要的一行，联表带出厂商名。
 type DeviceSummaryRow struct {
-	DeviceID        string     `json:"device_id" gorm:"column:device_id"`
-	VendorName      *string    `json:"vendor_name" gorm:"column:vendor_name"`
+	// DeviceID 原设备业务编号。
+	DeviceID string `json:"device_id" gorm:"column:device_id"`
+	// VendorName 原厂商名称，读取时保留可空映射。
+	VendorName *string `json:"vendor_name" gorm:"column:vendor_name"`
+	// LastHeartbeatAt 原最后心跳时刻，可空。
 	LastHeartbeatAt *time.Time `json:"last_heartbeat_at" gorm:"column:last_heartbeat_at"`
-	SignalStrength  *uint8     `json:"signal_strength" gorm:"column:signal_strength"`
-	SignalAt        *time.Time `json:"signal_at" gorm:"column:signal_at"`
+	// SignalStrength 原设备信号强度，保留未知可空映射。
+	SignalStrength *uint8 `json:"signal_strength" gorm:"column:signal_strength"`
+	// SignalAt 原信号上报时刻，可空。
+	SignalAt *time.Time `json:"signal_at" gorm:"column:signal_at"`
 	// Ports 是该设备下各端口的上报状态，由 ListDevicePortStatuses 取回后回填。
 	Ports []DevicePortStatusRow `json:"ports" gorm:"-"`
 }
 
-// ListDeviceSummaries 批量取设备摘要。厂商已软删的设备厂商名为空而不是整个设备消失。
+// ListDeviceSummaries 接收 ctx、db 与 deviceIDs，读取未删除设备及未删除厂商名称，保留可空遥测事实；返回记录及 SQL 错误，无写入。
 func ListDeviceSummaries(ctx context.Context, db *gorm.DB, deviceIDs []string) ([]DeviceSummaryRow, error) {
 	rows := []DeviceSummaryRow{}
 	err := db.WithContext(ctx).Table("device d").
@@ -58,16 +61,18 @@ func ListDeviceSummaries(ctx context.Context, db *gorm.DB, deviceIDs []string) (
 
 // DevicePortStatusRow 是设备一个端口的上报状态。
 type DevicePortStatusRow struct {
+	// DeviceID 原设备业务编号。
 	DeviceID string `json:"-" gorm:"column:device_id"`
-	PortNo   uint8  `json:"port_no" gorm:"column:port_no"`
+	// PortNo 原协议端口序号。
+	PortNo uint8 `json:"port_no" gorm:"column:port_no"`
 	// StatusCode 是端口上报的协议状态码，nil 表示设备还没上报过——
 	// 那是"未知"，不能当成"空闲"。
-	StatusCode *uint8     `json:"status_code" gorm:"column:reported_status"`
-	StatusAt   *time.Time `json:"status_at" gorm:"column:reported_status_at"`
+	StatusCode *uint8 `json:"status_code" gorm:"column:reported_status"`
+	// StatusAt 原端口状态上报时刻，可空。
+	StatusAt *time.Time `json:"status_at" gorm:"column:reported_status_at"`
 }
 
-// ListDevicePortStatuses 批量取端口上报状态，按设备与端口序排列便于前端直接铺开。
-// reported_status 为空表示设备还没上报过，不等于"空闲"。
+// ListDevicePortStatuses 接收 ctx、db 与 deviceIDs，按设备和端口读取未删除端口的可空协议状态及时间；返回记录与 SQL 错误，不把未知状态变为空闲。
 func ListDevicePortStatuses(ctx context.Context, db *gorm.DB, deviceIDs []string) ([]DevicePortStatusRow, error) {
 	rows := []DevicePortStatusRow{}
 	err := db.WithContext(ctx).Table("device_port").

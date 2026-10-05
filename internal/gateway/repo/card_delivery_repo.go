@@ -1,4 +1,4 @@
-package store
+package repo
 
 import (
 	"context"
@@ -16,8 +16,11 @@ import (
 
 // CardDeliveryEvent 是一条待投递的刷卡事件，含原始事件与已冻结的回复。
 type CardDeliveryEvent struct {
-	EventKey     string `gorm:"column:event_key"`
-	EventJSON    []byte `gorm:"column:event_json"`
+	// EventKey 原持久事件幂等键。
+	EventKey string `gorm:"column:event_key"`
+	// EventJSON 原持久协议事件 JSON 字节。
+	EventJSON []byte `gorm:"column:event_json"`
+	// ResponseJSON 原首次冻结的设备回复 JSON 字节。
 	ResponseJSON []byte `gorm:"column:response_json"`
 }
 
@@ -25,7 +28,7 @@ type CardDeliveryEvent struct {
 // 上限与控制层保持一致，避免两边分页口径不同。
 const cardDeliveryBatch = 100
 
-// ListPendingCardDeliveries 返回到期待投递的刷卡事件，按事件 id 升序。
+// ListPendingCardDeliveries 接收 ctx 与 db，按原事件 id 升序读取最多一百条到期待投递卡事件及冻结回复；返回列表和 SQL 错误，无状态推进。
 func ListPendingCardDeliveries(ctx context.Context, db *gorm.DB) ([]CardDeliveryEvent, error) {
 	rows := []CardDeliveryEvent{}
 	err := db.WithContext(ctx).Table("card_event_delivery x").
@@ -36,10 +39,10 @@ func ListPendingCardDeliveries(ctx context.Context, db *gorm.DB) ([]CardDelivery
 	return rows, err
 }
 
-// LockCardDelivery 在行锁下取一条投递记录。冻结与读取回复都要先拿它，
-// 免得两个并发请求都看到"还没冻结"然后各写一份。
+// LockCardDelivery 接收所属 tx 与 eventKey，以 UPDATE 锁读取原投递回复；返回文本或缺失、SQL 错误，锁由调用事务释放。
 func LockCardDelivery(tx *gorm.DB, eventKey string) (string, error) {
 	var stored struct {
+		// ResponseJSON 原首次冻结的设备回复 JSON 字节。
 		ResponseJSON []byte `gorm:"column:response_json"`
 	}
 	err := tx.Table("card_event_delivery").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -47,19 +50,17 @@ func LockCardDelivery(tx *gorm.DB, eventKey string) (string, error) {
 	return string(stored.ResponseJSON), err
 }
 
-// FindDeviceEvent 取设备的原始事件。冻结回复前要核对事件确实存在且事件键对得上。
+// FindDeviceEvent 接收 ctx、db 与 eventKey，读取原协议事件 JSON；返回字节或缺失、SQL 错误，无写入。
 func FindDeviceEvent(ctx context.Context, db *gorm.DB, eventKey string) ([]byte, error) {
 	var row struct {
+		// EventJSON 原持久协议事件 JSON 字节。
 		EventJSON []byte `gorm:"column:event_json"`
 	}
 	err := db.WithContext(ctx).Table("device_event").Where("event_key=?", eventKey).Take(&row).Error
 	return row.EventJSON, err
 }
 
-// FreezeCardResponse 冻结一条事件的设备回复。
-//
-// 条件带 "response_json 为空"，因此只首写生效：已冻结的事件更新影响 0 行，
-// 调用方据此回报 stored:false 而不是谎称保存成功。
+// FreezeCardResponse 接收 ctx、db、eventKey 与 responseJSON，仅对未冻结回复首写；返回影响行数和 SQL 错误，重放零行不覆盖原文。
 func FreezeCardResponse(ctx context.Context, db *gorm.DB, eventKey string, responseJSON string) (int64, error) {
 	res := db.WithContext(ctx).Table("card_event_delivery").
 		Where("event_key=? AND (response_json IS NULL OR response_json='')", eventKey).
@@ -67,7 +68,7 @@ func FreezeCardResponse(ctx context.Context, db *gorm.DB, eventKey string, respo
 	return res.RowsAffected, res.Error
 }
 
-// FindFrozenCardResponse 读回已冻结的回复。
+// FindFrozenCardResponse 接收 ctx、db 与 eventKey，读取原冻结设备回复；返回文本或缺失、SQL 错误，无写入。
 func FindFrozenCardResponse(ctx context.Context, db *gorm.DB, eventKey string) (string, error) {
 	var stored string
 	err := db.WithContext(ctx).Table("card_event_delivery").Select("response_json").
@@ -75,8 +76,7 @@ func FindFrozenCardResponse(ctx context.Context, db *gorm.DB, eventKey string) (
 	return stored, err
 }
 
-// AdvanceCardDelivery 推进投递状态。retry 累加尝试次数并推迟重试，
-// 其余情况标记完成。推迟而不是立刻重投，给设备侧留出回话的时间。
+// AdvanceCardDelivery 接收 ctx、db、eventKey、retry、lastError 与 retryAt；重试累加原尝试次数并延后，成功标记 done 清除错误；返回影响行数及 SQL 错误，不重建事件身份。
 func AdvanceCardDelivery(ctx context.Context, db *gorm.DB, eventKey string, retry bool, lastError string, retryAt time.Time) (int64, error) {
 	var res *gorm.DB
 	if retry {

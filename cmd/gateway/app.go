@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	gatewayruntime "github.com/ChargePilot2026/charge-pilot/internal/gateway/runtime"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
 	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// run 接收进程 ctx，加载配置、打开并装配资源、等待应用退出后关闭资源；返回启动、运行与清理的合并错误。
 func run(ctx context.Context) (err error) {
 	cfg, err := config.LoadGateway()
 	if err != nil {
@@ -38,21 +39,25 @@ func run(ctx context.Context) (err error) {
 	return app.Run(ctx)
 }
 
+// application 持有已装配的 HTTP 服务与设备运行编排，负责受管理启动和等待退出，资源关闭仍由 run 执行。
 type application struct {
-	Server  *http.Server
+	// Server 原受管理 HTTP 服务器。
+	Server *http.Server
+	// Devices 已装配的设备运行编排，持有原监听、事件 sink 及停止恢复能力。
 	Devices gatewayruntime.Runtime
 }
 
+// assemble 接收 cfg 与已打开 r，注入中央客户端、同一命令 repo 和连接注册表，返回应用或配置错误；仅装配，不启动监听或循环。
 func assemble(cfg config.Gateway, r *resources) (*application, error) {
 	central, err := centralclient.NewClient(serviceclient.Client{HTTP: r.InternalHTTP}, cfg.CentralInternalURL, cfg.ServiceToken)
 	if err != nil {
 		return nil, err
 	}
 	connections := &session.Registry{}
-	sink := store.MySQLSink{DB: r.ORM}
+	sink := repo.MySQLSink{DB: r.ORM}
 	orders := control.CentralAuthorizer{Central: central}
-	compensation := control.Compensation{Store: sink, Devices: connections}
-	userStops := control.UserStopService{Orders: orders, Store: sink, Devices: connections}
+	compensation := control.Compensation{Repo: sink, Devices: connections}
+	userStops := control.UserStopService{Orders: orders, Repo: sink, Devices: connections}
 	router := newRouter(cfg, r, connections, orders, compensation, userStops)
 	zone, offset := time.Now().Zone()
 	log.Printf("gateway starting http=%s dc589=%s max_connections=%d idle_heartbeat_seconds=%d charging_heartbeat_seconds=%d debug_heartbeat=%t timezone=%s offset_seconds=%d", cfg.HTTPAddr, cfg.DC589Addr, cfg.MaxConnections, dc589.DefaultHeartbeatSeconds, dc589.ChargingHeartbeatSeconds, cfg.DebugHeartbeat, zone, offset)
@@ -61,6 +66,8 @@ func assemble(cfg config.Gateway, r *resources) (*application, error) {
 		Devices: gatewayruntime.Runtime{Endpoints: []protocol.Endpoint{{Address: cfg.DC589Addr, Adapter: dc589.TCPAdapter{Registry: connections, DebugHeartbeat: cfg.DebugHeartbeat}}}, Sink: sink, MaxConnections: cfg.MaxConnections, Compensation: compensation, UserStops: userStops},
 	}, nil
 }
+
+// Run 接收 ctx，受管理地启动 HTTP、设备服务与停止恢复，任一失败取消同组并等待全部退出；返回运行错误，不关闭装配方资源。
 func (a *application) Run(ctx context.Context) error {
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error { return httpapi.Serve(groupCtx, a.Server, 10*time.Second) })

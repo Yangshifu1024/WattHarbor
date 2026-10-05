@@ -2,7 +2,7 @@ package control
 
 import (
 	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewaystore "github.com/ChargePilot2026/charge-pilot/internal/gateway/store"
+	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -11,6 +11,7 @@ import (
 
 // DeviceSummaryAPI 将所属网关 repo 的事实映射为共享摘要 DTO，只有服务令牌可读取。
 type DeviceSummaryAPI struct {
+	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，具体事务由原方法管理。
 	DB           *gorm.DB // gateway 运行事实连接
 	ServiceToken string   // 由进程注入的服务鉴权令牌
 }
@@ -36,7 +37,7 @@ func (a DeviceSummaryAPI) list(c *gin.Context) {
 			return
 		}
 	}
-	rows, err := gatewaystore.ListDeviceSummaries(c.Request.Context(), a.DB, ids)
+	rows, err := gatewayrepo.ListDeviceSummaries(c.Request.Context(), a.DB, ids)
 	if err != nil {
 		httpapi.Write(c, 503, 5001, "设备信息暂不可读取", nil)
 		return
@@ -49,7 +50,7 @@ func (a DeviceSummaryAPI) list(c *gin.Context) {
 		byDevice[rows[i].DeviceID] = i
 	}
 	if len(rows) > 0 {
-		ports, err := gatewaystore.ListDevicePortStatuses(c.Request.Context(), a.DB, ids)
+		ports, err := gatewayrepo.ListDevicePortStatuses(c.Request.Context(), a.DB, ids)
 		if err != nil {
 			httpapi.Write(c, 503, 5001, "设备端口状态暂不可读取", nil)
 			return
