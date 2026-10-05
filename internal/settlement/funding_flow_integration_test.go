@@ -18,6 +18,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // TestWalletRefundQueryUsesStoredApprovalAndBoundedReads 使用真实申请、退款及审核行验证批量组合。
@@ -156,13 +157,17 @@ func TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity(t *testing.T) {
 	if err := tx.Table("user").Create(map[string]any{"id": id, "openid": openid, "status": "active"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// 原 repo 的过期扫描在外层回滚事务内只触及本测试用户，不锁住并行测试的历史意图。
-	scoped := tx.Scopes(func(q *gorm.DB) *gorm.DB {
+	// 原repo过期扫描持续限定本测试用户；Scopes会被前次重放查询消费，不能隔离后续UPDATE。
+	const expiryScope = "funding_checkout_expiry_scope"
+	if err := tx.Callback().Update().Before("gorm:update").Register(expiryScope, func(q *gorm.DB) {
 		if q.Statement.Table == "charge_payment_intent" {
-			return q.Where("user_id=?", id)
+			q.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.Eq{Column: "user_id", Value: id}}})
 		}
-		return q
-	}).Session(&gorm.Session{})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Callback().Update().Remove(expiryScope)
+	scoped := tx.Session(&gorm.Session{})
 	fixture := &checkoutFixture{port: money.ScanResult{Kind: "port", DeviceID: device, StationID: 1, DeviceStatus: "enabled", Port: &money.ScanPort{PortID: port, DeviceID: device, PortNo: 1, Online: true, Available: true, DeviceStatus: "enabled"}}, rule: charging.Rule{ID: 42, StationID: 1, Version: 1, Spec: charging.Spec{Scheme: &charging.Scheme{Name: "支付恢复", Packages: []charging.Package{{ID: 1, Name: "时长套餐", Mode: "duration", PriceCents: 400, Minutes: 60}}}}}}
 	provider := &recoverablePrepay{fail: true}
 	service := payment.CheckoutService{Ports: fixture, Pricing: fixture, Intents: payment.PaymentIntentRepo{DB: scoped}, Provider: provider}

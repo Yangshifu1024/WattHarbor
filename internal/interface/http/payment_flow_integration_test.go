@@ -21,6 +21,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // routeCheckoutFixture 仅替换准入事实与渠道响应，支付请求及参数持久化使用实际 MySQL。
@@ -99,7 +100,7 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 	const expiryScope = "route_checkout_expiry_scope"
 	if err := tx.Callback().Update().Before("gorm:update").Register(expiryScope, func(q *gorm.DB) {
 		if q.Statement.Table == "charge_payment_intent" {
-			q.Where("user_id=?", id)
+			q.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.Eq{Column: "user_id", Value: id}}})
 		}
 	}); err != nil {
 		t.Fatal(err)

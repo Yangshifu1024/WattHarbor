@@ -181,3 +181,7 @@ wallet 不 import payment 或 settlement，payment 不 import settlement；cmd �
 网关原心跳端点先处理after_key，再兼容明确after，修复旧消费者仅带key被400拒绝的问题。响应增加after_received_at原持久水印：键缺失不补时刻，有键无后续心跳保留水印。持续故障在原告警行锁下经具名客户端读取最近键的真实时刻，不用首次created_at或中央墙钟代替；此只读HTTP在锁内最多5秒，整轮25秒，未知水印保留错误及原待处理源事件，不自动重试。首次缺行仍使用RR间隙锁仲裁，并发冲突由下一轮原事件重扫；指定双连接证据不宣称没有其它死锁。后台认领先锁告警再读取范围，状态／处理人／时间与审计同事务。
 
 故障与恢复核对持久设备身份、协议、类型和原时刻，DATETIME(3)与载荷原高精度时刻的差必须小于1毫秒；写入使用持久时刻。缺失状态字段或null不能当正常零值，保留protocol.Event中PortStates原base64数组编码并兼容数值数组。无端口状态不恢复；核销条件包含原键，期间新故障不能被旧心跳覆盖。标记响应只报告实际首次推进数，并发或回复丢失重放的0是合法结果。单条源故障／恢复错误不阻塞本批其它独立条目，取消停止后续任务。
+
+公开站点查询边界：UserStationService只读所属station／device_meta，公告只经StationAnnouncementReader注入ops.AnnouncementQueryService；公告有效期、全局／字符串站点目标和原候选分页窗口归ops，device不访问announcement表。站点按原启用／未删除、DECIMAL字符串坐标和SQL距离排序读取；详情无定位不猜测城市公告。设备运行态复用具名gateway摘要，最多100台一批、整轮5秒顺序执行，失败批及缺失设备为runtime_available=false／心跳null；已取得事实但从未上报仍为runtime_available=true／心跳null，原1小时在线窗口保持。无未管理任务，取消停止后续取证，不写设备或资金。
+
+具名客户端DTO命名：端点请求以Request结尾，端点响应以Reply结尾；子对象用业务记录名。改名同步contracts、integration、服务端、窄接口及测试，不保留旧类型别名，不改JSON字段、路径、单位或身份。

@@ -12,7 +12,7 @@
 - C 端充电中的遥测、历史曲线、充电采样与设备摘要，经 `GATEWAY_INTERNAL_URL` 回调 **gateway**（`:8083`）的 `/api/v1/internal/devices/*`，携服务令牌。这些端点由 `internal/gateway/control` 提供，不在 central 进程里——判断回调对象要看代码用的 base URL 字段，不能只看路径里有 `/internal`。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
 - 公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
-- 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。
+- 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。具名客户端的请求 DTO 必须以 `Request` 结尾，响应 DTO 必须以 `Reply` 结尾；共享集合中的记录、采样点等子对象保留业务名称，不能用 `Data`、`Result`、`Acceptance` 代替端点响应名。
 - 五个服务进程的入口按职责拆分：`main.go` 处理信号与退出错误，`app.go` 加载配置、装配依赖与等待退出，`resources.go` 打开和释放资源，`routes.go` 注册路由与健康检查。worker/gateway 的定时循环在各自 `runtime` 子包，导出清理在 `internal/export`。资源初始化失败须释放已打开的资源；所有受管理请求和后台任务退出后才能关闭数据库、Redis 与客户端连接池。HTTP 停机使用 `httpapi.Serve`，超时取消请求后仍等待处理器退出；处理器必须响应请求 context，不启动未受管理的后台任务。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
 
@@ -174,7 +174,8 @@ charge-pilot/
 │   ├── internal/device/vendor.go（迁移前：internal/interface/http/admin/vendor/[范围、字典编排与审计]）
 │   ├── internal/device/fault.go
 │   ├── internal/device/identity.go
-│   ├── internal/device/interface_query_store.go
+│   ├── internal/device/user_station.go（迁移前：internal/interface/http/user_station.go[公开查询与运行态组合]）
+│   ├── internal/device/user_station_repo.go（迁移前：internal/device/interface_query_store.go[站点／设备读取]）
 │   ├── internal/device/scope.go
 │   ├── internal/device/station.go（迁移前：internal/interface/http/admin/station/stations.go[新建与更新]）
 │   ├── internal/device/station_repo.go（迁移前：internal/device/station_store.go）
@@ -229,6 +230,8 @@ charge-pilot/
 │   └── internal/payment/recharge_history_repo.go（迁移前：internal/payment/user_recharge_repo.go[支付历史投影]）
 ├── internal/ops                                          后台账号、角色、审计与事件发件箱
 │   ├── internal/ops/audit.go（迁移前：internal/interface/http/admin_resource.go[事务内审计]）
+│   ├── internal/ops/announcement_query.go（迁移前：internal/interface/http/user_announcement.go、user_station.go[公告规则]）
+│   ├── internal/ops/announcement_query_repo.go（迁移前：internal/device/interface_query_store.go[公告读取]）
 │   ├── internal/ops/admin_account_store.go
 │   ├── internal/ops/admin_audit_store.go
 │   ├── internal/ops/admin_ops_store.go

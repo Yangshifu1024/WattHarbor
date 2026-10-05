@@ -15,11 +15,11 @@ import (
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/gin-gonic/gin"
 )
@@ -58,10 +58,9 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		identityhttp.WechatCallbackAPI{Verifier: channel.Prepay.(identityhttp.NotificationVerifier), Store: payment.CallbackService{Refunds: settlement.RefundRecorder{},
 			DB: orm, ExpectedProvider: "wechat_direct", ExpectedMerchantID: cfg.WechatMchID, ExpectedAppID: cfg.WeChatAppID}}.Register(router)
 	}
-	identityhttp.UserAccountAPI{Faults: device.FaultService{DB: orm}, CouponQuery: marketing.CouponQueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, WalletQuery: wallet.QueryService{Repo: wallet.UserWalletRepo{DB: orm}}, Invoices: settlement.InvoiceService{DB: orm}, WalletRecharge: wallet.RechargeService{DB: orm, Payments: payment.RechargePaymentRepo{DB: orm, Provider: channel.Prepay}}, WalletRefund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}},
+	identityhttp.UserAccountAPI{Stations: device.UserStationService{DB: orm, Announcements: ops.AnnouncementQueryService{DB: orm}, Summaries: stopGateway}, Announcements: ops.AnnouncementQueryService{DB: orm}, Faults: device.FaultService{DB: orm}, CouponQuery: marketing.CouponQueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, WalletQuery: wallet.QueryService{Repo: wallet.UserWalletRepo{DB: orm}}, Invoices: settlement.InvoiceService{DB: orm}, WalletRecharge: wallet.RechargeService{DB: orm, Payments: payment.RechargePaymentRepo{DB: orm, Provider: channel.Prepay}}, WalletRefund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}},
 		Auth:   identityhttp.SessionAuthenticator{Auth: cEndAuth},
-		UserDB: orm, AdminDB: orm, GatewayURL: cfg.GatewayInternalURL, ServiceToken: cfg.ServiceToken,
-		Gateway: serviceclient.Client{Timeout: 8 * time.Second},
+		UserDB: orm,
 	}.Register(router)
 	orderQuery := ordercase.QueryService{DB: orm, Fees: settlement.QueryFeeRepo{DB: orm}}
 	identityhttp.UserQueryAPI{Orders: orderQuery, Auth: identityhttp.SessionAuthenticator{Auth: cEndAuth}, Query: chargingquery.UserService{Orders: orderQuery, Fees: settlement.QueryFeeRepo{DB: orm}, State: chargingquery.UserStateRepo{DB: orm}, Gateway: stopGateway}}.Register(router)

@@ -3,17 +3,19 @@ package http
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// UserAccountAPI 提供钱包、优惠券、发票、公告、附近站点、手机号绑定及用户故障上报接口。
+// UserAccountAPI 适配所属账户能力及公开站点／公告查询；手机号由PhoneAPI单独注册。
 type UserAccountAPI struct {
+	Stations       device.UserStationService    // 所属公开站点和运行态组合
+	Announcements  ops.AnnouncementQueryService // 所属公开公告读取
 	Faults         device.FaultService          // 原用户工单提交、所属查询及可见历史
 	CouponQuery    marketing.CouponQueryService // 所属持券状态、筛选及分页
 	Feedback       order.FeedbackService        // 所属订单评价准入与提交事务
@@ -21,15 +23,11 @@ type UserAccountAPI struct {
 	Invoices       settlement.InvoiceService    // 订单开票申请用例
 	Auth           SessionAuthenticator
 	UserDB         *gorm.DB
-	AdminDB        *gorm.DB
-	GatewayURL     string
-	ServiceToken   string
-	Gateway        serviceclient.Client
 	WalletRecharge wallet.RechargeService // 充值申请及提交后预支付业务能力
 	WalletRefund   wallet.RefundService   // 钱包退款业务能力，由 cmd 装配
 }
 
-// Register 注册用户账户路由；各处理器先验证会话，缺失或无效时返回 401。
+// Register 注册原用户路由；站点／公告保持公开，账户处理器验证会话，失效返回401。
 func (a UserAccountAPI) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/wallet/balance", a.walletBalance)
 	r.GET("/api/v1/user/wallet/txns", a.walletTxns)
