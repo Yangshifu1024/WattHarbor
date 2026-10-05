@@ -1,6 +1,7 @@
 package order
 
 import (
+	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/gin-gonic/gin"
@@ -9,6 +10,7 @@ import (
 
 // API 持有本业务族所需的数据库、鉴权与外部调用依赖。
 type API struct {
+	Live                     chargingquery.LiveService // 所属实时估算用例，批量取证和冻结计价读取
 	Query                    ordercase.QueryService    // 原订单页、详情与事件的所属只读用例
 	Feedback                 ordercase.FeedbackService // 原订单反馈列表、回复与审计事务
 	DB                       *gorm.DB

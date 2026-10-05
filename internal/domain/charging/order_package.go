@@ -13,19 +13,19 @@ import (
 
 // OrderPackage 是订单在创建支付意图时冻结下来的完整计费口径。
 type OrderPackage struct {
-	Offer       Offer              `json:"offer"`
-	Scheme      *Scheme            `json:"scheme,omitempty"`
-	BillingMode ChargeMode         `json:"billing_mode"`
-	RuleVersion uint32             `json:"rule_version"`
-	Card        *OrderCardPurchase `json:"card,omitempty"`
+	Offer       Offer              `json:"offer"`            // 原购买套餐及冻结价格，不能由当前模板替换
+	Scheme      *Scheme            `json:"scheme,omitempty"` // 原完整冻结计价方案，旧口径可能缺失
+	BillingMode ChargeMode         `json:"billing_mode"`     // 原规则的计费执行方式
+	RuleVersion uint32             `json:"rule_version"`     // 原冻结规则版本
+	Card        *OrderCardPurchase `json:"card,omitempty"`   // 原卡累计购买事实，非刷卡订单为空
 }
 
 // OrderCardPurchase 是随单冻结的刷卡购买信息。首次刷卡之后仍可能续时，
 // 因此原始单价档保持不变，累计时长单独记在 PurchasedMinutes。
 type OrderCardPurchase struct {
-	PaidCents        int64  `json:"paid_cents"`
-	PurchasedMinutes uint16 `json:"purchased_minutes"`
-	MaxMinutes       uint16 `json:"max_minutes"`
+	PaidCents        int64  `json:"paid_cents"`        // 累计实际购买金额，分
+	PurchasedMinutes uint16 `json:"purchased_minutes"` // 累计购买分钟，续购后可增加
+	MaxMinutes       uint16 `json:"max_minutes"`       // 原冻结允许购买分钟上限
 }
 
 // PackageFromSnapshot 从订单的定价快照还原冻结口径。
@@ -34,7 +34,7 @@ type OrderCardPurchase struct {
 func PackageFromSnapshot(raw []byte) *OrderPackage {
 	var frozen struct {
 		Rule  Rule   `json:"rule"`
-		Offer *Offer `json:"offer"`
+		Offer *Offer `json:"offer"` // 原购买套餐及冻结价格，不能由当前模板替换
 	}
 	if json.Unmarshal(raw, &frozen) != nil || frozen.Offer == nil || !frozen.Offer.Valid() {
 		return nil

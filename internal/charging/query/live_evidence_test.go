@@ -1,4 +1,4 @@
-package http
+package query
 
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/charging/measurement"

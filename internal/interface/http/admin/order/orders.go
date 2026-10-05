@@ -55,7 +55,7 @@ func (a API) orders(c *gin.Context) {
 		chargehttp.AdminResourceFailure(c, err)
 		return
 	}
-	a.orderLive(c.Request.Context(), out.Items)
+	a.Live.Fill(c.Request.Context(), out.Items)
 	httpapi.OK(c, out)
 }
 
@@ -73,7 +73,7 @@ func (a API) order(c *gin.Context) {
 		return
 	}
 	rows := []orderstore.OrderView{row}
-	a.orderLive(ctx, rows)
+	a.Live.Fill(ctx, rows)
 	httpapi.OK(c, rows[0])
 }
 

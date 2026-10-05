@@ -4,7 +4,7 @@
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。README 记录运行方式与业务契约；本文件记录维护规则。
 - 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
-- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 按生命周期分为四个子包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`（未迁移模块暂保留 `*_store.go`） 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
+- `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`（未迁移模块暂保留 `*_store.go`） 与 `internal/infrastructure/database`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（事件消费、定时任务、外部投递，`:8085`）。对内端口不对外映射。**`central` 的 8082 在两套编排里都不映射端口**，宿主机打不开，内部调用只在容器网络内可达。开发栈另把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，对外入口仅 Caddy。
 
 五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
@@ -51,7 +51,7 @@ charge-pilot/
 │   ├── cmd/worker/app.go（迁移前：cmd/worker/main.go[装配与生命周期]）
 │   ├── cmd/worker/resources.go（迁移前：cmd/worker/main.go[资源]）
 │   └── cmd/worker/routes.go（迁移前：cmd/worker/main.go[路由]）
-├── internal/charging                                     充电生命周期：按业务步骤组织子包
+├── internal/charging                                     充电生命周期与只读组合：按业务步骤组织子包
 │   ├── internal/charging/start                           启动授权、待启动查询与启动回执
 │   │   ├── internal/charging/start/authorization.go（迁移前：internal/charging/authorization.go[启动部分]）
 │   │   ├── internal/charging/start/authorization_repo.go（迁移前：internal/charging/authorization_store.go[启动查询]）
@@ -68,8 +68,11 @@ charge-pilot/
 │   │   └── internal/charging/stop/meter.go（迁移前：internal/charging/auto_stop.go[计量判断]）
 │   ├── internal/charging/finish                           结束回执、端口释放与结算任务提交
 │   │   └── internal/charging/finish/result_repo.go（迁移前：internal/charging/finish/result_repo.go）
-│   └── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
-│       └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
+│   ├── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
+│   │   └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
+│   └── internal/charging/query                           只读组合与实时估算（新增充电子包）
+│       ├── internal/charging/query/live.go（迁移前：internal/interface/http/charge_live_meter.go[估算]、admin/order/order_live.go[组合]）
+│       └── internal/charging/query/live_evidence.go（迁移前：internal/interface/http/charge_live_meter.go[观测计量]）
 ├── internal/order                                        订单表模型、编号分配与读模型
 │   ├── internal/order/feedback.go（迁移前：internal/interface/http/charge_feedback.go、admin/order/casework.go[反馈业务]）
 │   ├── internal/order/feedback_repo.go（迁移前：internal/device/user_fault_store.go[评价表访问]、internal/infrastructure/database/admin_case_store.go[反馈]）
@@ -78,6 +81,7 @@ charge-pilot/
 │   ├── internal/order/order_history_repo.go（迁移前：internal/payment/order_authorization_store.go[历史视图部分]）
 │   ├── internal/order/admin_query_repo.go（迁移前：internal/settlement/order_view_repo.go[订单投影]、internal/ops/admin_projection_store.go[订单事件]）
 │   ├── internal/order/query.go（迁移前：internal/interface/http/charge_user_query.go[归属与历史]、admin/order/orders.go[基础查询]）
+│   ├── internal/order/query_snapshot_repo.go（新增：实时估算所需冻结快照批量读取）
 │   ├── internal/order/query_repo.go（迁移前：internal/interface/http/charge_user_query.go[订单读取]）
 │   ├── internal/order/order_number_repo.go（迁移前：internal/order/order_number.go[编号分配]）
 │   ├── internal/order/order_number.go
@@ -140,6 +144,7 @@ charge-pilot/
 │   ├── internal/card/extension.go（迁移前：internal/card/card_store.go[续购纯规则]）
 │   ├── internal/card/card_schema.go
 │   ├── internal/card/card_repo.go
+│   ├── internal/card/query_purchase_repo.go（迁移前：internal/interface/http/charge_live_meter.go[卡购买读取]）
 │   ├── internal/card/charge_repo.go
 │   ├── internal/card/interface_query_repo.go
 │   ├── internal/card/start_result_repo.go（迁移前：internal/payment/order_start_repo.go[刷卡写入部分]）
@@ -337,8 +342,6 @@ charge-pilot/
 │   ├── internal/interface/http/admin/ops/operations.go
 │   ├── internal/interface/http/admin/order/api.go
 │   ├── internal/interface/http/admin/order/casework.go
-│   ├── internal/interface/http/admin/order/order_live.go
-│   ├── internal/interface/http/admin/order/order_package.go
 │   ├── internal/interface/http/admin/order/order_process.go
 │   ├── internal/interface/http/admin/order/orders.go
 │   ├── internal/interface/http/admin/order/payment_orders.go
@@ -368,7 +371,6 @@ charge-pilot/
 │   ├── internal/interface/http/card_balance.go
 │   ├── internal/interface/http/charge_auto_stop.go（迁移前：internal/application/auto_stop_http.go）
 │   ├── internal/interface/http/charge_feedback.go
-│   ├── internal/interface/http/charge_live_meter.go
 │   ├── internal/interface/http/charge_paid_starts.go
 │   ├── internal/interface/http/charge_scheme_view.go
 │   ├── internal/interface/http/charge_status.go

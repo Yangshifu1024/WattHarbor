@@ -6,17 +6,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/ChargePilot2026/charge-pilot/internal/card"
+	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	sessionstore "github.com/ChargePilot2026/charge-pilot/internal/infrastructure/redis"
+	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
+	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -68,7 +74,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	snapshot, err := json.Marshal(struct {
 		Rule  charging.Rule  `json:"rule"`  /* 原规则 */
 		Offer charging.Offer `json:"offer"` /* 原套餐 */
-	}{Rule: charging.Rule{Version: 1, Spec: charging.Spec{Scheme: &charging.Scheme{Name: "Registered frozen scheme"}}}, Offer: charging.Offer{ID: 1, StationID: id, Name: "Registered frozen package", Mode: "duration", PriceCents: 100, DurationMinutes: 30}})
+	}{Rule: charging.Rule{Version: 1, Spec: charging.Spec{Mode: charging.ModeDeviceDuration, Scheme: &charging.Scheme{Name: "Registered frozen scheme", Packages: []charging.Package{{ID: 1, Name: "Registered frozen package", Mode: "duration", PriceCents: 100, Minutes: 30}}}}}, Offer: charging.Offer{ID: 1, PackageID: 1, StationID: id, Name: "Registered frozen package", Mode: "duration", PriceCents: 100, DurationMinutes: 30}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,10 +126,25 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	gatewayTx := cardRouteDB(t, "DATABASE_URL_GATEWAY").Begin()
+	if gatewayTx.Error != nil {
+		t.Fatal(gatewayTx.Error)
+	}
+	defer gatewayTx.Rollback()
+	gatewayRouter := httpapi.NewRouter()
+	control.TelemetryAPI{DB: gatewayTx, ServiceToken: "registered-live-query"}.Register(gatewayRouter)
+	gatewayServer := httptest.NewServer(gatewayRouter)
+	defer gatewayServer.Close()
+	gatewayClient, err := gatewayclient.NewClient(serviceclient.Client{HTTP: gatewayServer.Client()}, gatewayServer.URL, "registered-live-query")
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveService := chargingquery.LiveService{Gateway: gatewayClient, Orders: order.SnapshotRepo{DB: tx}, Cards: card.PurchaseQueryRepo{DB: tx}}
 	service := order.QueryService{DB: tx, Fees: settlement.QueryFeeRepo{DB: tx}}
 	router := httpapi.NewRouter()
 	(chargehttp.UserQueryAPI{Orders: service, DB: tx, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
-	(adminorder.API{Query: service, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: adminSessions}}).Register(router)
+	(adminorder.API{Live: liveService, Query: service, DB: tx, Auth: chargehttp.AdminAuth{Store: ops.AdminStore{DB: tx}, JWT: jwt, Sessions: adminSessions}}).Register(router)
 	call := func(path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", path, nil)
 		if token != "" {
@@ -178,6 +199,42 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	if w := call("/api/v1/admin/orders/"+strconv.FormatUint(id+99, 10)+"/timeline", adminToken); w.Code != 404 {
 		t.Fatalf("missing timeline=%d", w.Code)
+	}
+
+	// 实际已注册后台详情必须输出补充后的实时行；原确认费用回执不能被实时估算覆盖。
+	liveStart := time.Now().UTC().Truncate(time.Second).Add(-2 * time.Minute)
+	if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"status": "charging", "started_at": liveStart}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for n := 1; n <= 4; n++ {
+		at := liveStart.Add(time.Duration(n*15) * time.Second)
+		event := protocol.Event{Type: protocol.Heartbeat, DeviceID: "OR" + tag, ReceivedAt: at, ChargingPorts: []protocol.PortTelemetry{{Port: 1, ChargedSeconds: uint32(n * 15), ChargedMWh: uint32(n * 1000), PowerDeciWatts: 1500}, {Port: 2, ChargedSeconds: 3600, ChargedMWh: 1000000}}}
+		raw, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := gatewayTx.Table("device_event").Create(map[string]any{"event_key": tag + strconv.Itoa(n), "protocol_name": "dc589", "device_id": "OR" + tag, "event_type": "heartbeat", "event_json": string(raw), "received_at": at}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	w = call(adminPath, adminToken)
+	var liveReply struct {
+		Data order.OrderView `json:"data"` /* 原后台档案与实时估算 */
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &liveReply); err != nil || w.Code != 200 || liveReply.Data.Live == nil || liveReply.Data.Live.Seconds != 60 || liveReply.Data.Live.Fee == nil || liveReply.Data.Live.Fee.TotalCents != 3 || liveReply.Data.LiveUnavailable != "" {
+		t.Fatalf("registered live detail=%d %s", w.Code, w.Body)
+	}
+	w = call("/api/v1/admin/orders?order_no="+no, adminToken)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "\"seconds\":60") || !strings.Contains(w.Body.String(), "\"total_cents\":3") {
+		t.Fatalf("registered live list=%d %s", w.Code, w.Body)
+	}
+	var receipt settlement.ChargeFeeRecord
+	if err := tx.Where("charge_order_id=?", id).Take(&receipt).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, _, confirmed, ok := receipt.Fees()
+	if !ok || confirmed != 0 {
+		t.Fatal("live estimate changed confirmed receipt")
 	}
 	fault := errors.New("registered order fee fault")
 	const callback = "registered_order_fee_fault"

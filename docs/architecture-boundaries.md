@@ -69,7 +69,7 @@
 - **充值到账**：payment 可以调用 wallet 的事务内到账能力，但 wallet 的充值申请不能因此反向 import payment。wallet 定义所需的支付来源／创建能力，cmd 注入 payment 适配；所有需要同库原子性的调用沿用同一个事务。先确定锁顺序和输入契约，再迁 SQL。
 - **钱包退款预占**：wallet 定义事务内 `RefundRecorder` 能力，cmd 注入 settlement 实现。wallet 保留冻结金额与来源分摊，settlement 创建 refund_record；共同沿用原事务。settlement 已依赖 wallet，因此 wallet 不反向 import settlement，也不搬走钱包自己的资金写入。
 - **结算模型归属**：charge_fee_receipt／refund_record 模型已归 settlement。payment 的迟到退款调用注入能力，钱包请求通过自己的接口注入结算记录；payment 不留结算类型别名。跨模块查询使用各自的投影或所属模块读取函数。
-- **订单组合查询**：order.QueryService 提供所属用户归属、历史、后台基础档案与事件；结算 query_fee_repo 实现 order.FeeReader 并由 cmd 注入，order 不 import settlement。用户历史固定读取总数、当页与批量费用三次 SQL，缺失或无效费用回执保持 null，有效零费用保留非空零。后台订单沿用 order.read 全局权限及显式站点筛选；站点名称是一次只读跨域投影，明确读取 station 表，原冻结套餐不被当前价格替换。订单金额及退款写入仍属 payment／settlement。实时计量、用户组合详情与曲线由 CQ-01 后续迁入 charging/query；本子批未宣称完成这些入口。
+- **订单组合查询**：order.QueryService 提供所属用户归属、历史、后台基础档案与事件；结算 query_fee_repo 实现 order.FeeReader 并由 cmd 注入，order 不 import settlement。用户历史固定读取总数、当页与批量费用三次 SQL，缺失或无效费用回执保持 null，有效零费用保留非空零。后台订单沿用 order.read 全局权限及显式站点筛选；站点名称是一次只读跨域投影，明确读取 station 表，原冻结套餐不被当前价格替换。订单金额及退款写入仍属 payment／settlement。charging/query.LiveService 已接管后台实时估算：每20单一批复用 gateway ChargingEvidence 契约，所有有完整观测的订单各一次读取 order.SnapshotRepo 和 card.PurchaseQueryRepo。query → order 只读原冻结 JSON，卡购买通过窄接口注入，query 不持有 URL、令牌或 GORM；没有反向依赖。原完整性为 false 时保留观测量并隐藏估算费，不翻页假装完整；保持原10080行证据上界。整页受4秒取消期限管理，无未管理任务；一批网关失败使该批不可读，后续独立批仍可执行，同批错误范围最大20单。快照或卡读取故障保留观测量并标记不可读。用户组合详情、遥测／曲线和后台过程仍待 CQ-01，不能将实时估算子项称为整体完成。
 - **审计与运营**：ops 提供事务内审计能力和通用操作人／范围值；不要让 ops 的账号服务 import 每个业务服务。dashboard 和运维组合操作与基础账号能力分开，跨业务调用采用窄接口，避免「所有模块都依赖 ops，ops 又依赖所有模块」。
 
 这些接口只用于反向依赖风险或可替换的 IO 边界。单向且有业务理由的事务内函数调用继续保留，不给每个 repo 套一层同形接口。
