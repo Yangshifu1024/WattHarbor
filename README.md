@@ -477,6 +477,8 @@ docker compose -f docker-compose.yml ps
 docker compose -f docker-compose.yml logs --tail=100 chargepilot-central chargepilot-gateway chargepilot-worker chargepilot-caddy
 ```
 
+部署检查核对五个应用服务的配置归属、共享业务库、内部端口隔离、Redis 策略与 Caddy 分流，再用无网络临时容器验证 Caddy 语法；不会启动生产应用。`--config-only` 仅跳过凭据值检查，Compose 的必填变量及挂载路径仍须有效。检查器回归使用 `node --test scripts/ops/check-deploy.test.mjs`。模板检查通过不代表真实凭据、支付私钥或生产连通性已经验收。
+
 检查脚本验证拓扑、镜像、挂载、公开端口、三库 URL 及 schema、Redis 策略、模板凭证和 Caddy 配置，不启动生产栈，也不检查数据库连通性；首次可能拉取 Caddy 镜像。`--config-only` 只跳过模板凭证值检查，仍要求 Compose 必填变量及挂载路径。应用容器当前没有 Compose healthcheck，应主动检查 `/health/ready`。
 
 ### 微信直连支付
