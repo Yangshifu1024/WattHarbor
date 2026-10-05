@@ -156,6 +156,8 @@ charge-pilot/
 │   ├── internal/card/start_result_repo.go（迁移前：internal/payment/order_start_repo.go[刷卡写入部分]）
 │   └── internal/card/user_card_repo.go
 ├── internal/device                                       设备接入、遥测、会话、故障
+│   ├── internal/device/fault_report.go（迁移前：internal/interface/http/user_fault.go[提交与所属查询]）
+│   ├── internal/device/fault_casework.go（迁移前：internal/interface/http/admin/order/casework.go[流转事务]）
 │   ├── internal/device/fault_repo.go（迁移前：internal/infrastructure/database/admin_case_store.go[报修表访问]）
 │   ├── internal/device/discovery.go（迁移前：internal/interface/http/payment_scan.go[事实组合]）
 │   ├── internal/device/operation_repo.go（迁移前：internal/payment/payment_device_store.go）
@@ -174,7 +176,7 @@ charge-pilot/
 │   ├── internal/device/scope.go
 │   ├── internal/device/station.go（迁移前：internal/interface/http/admin/station/stations.go[新建与更新]）
 │   ├── internal/device/station_repo.go（迁移前：internal/device/station_store.go）
-│   └── internal/device/user_fault_store.go
+│   └── internal/device/user_fault_repo.go（迁移前：internal/device/user_fault_store.go）
 ├── internal/identity                                     用户、会话、登录与手机号
 │   ├── internal/identity/auth.go
 │   ├── internal/identity/card_user_repo.go（迁移前：internal/card/card_admin_store.go[用户事实]）

@@ -12,18 +12,17 @@ import (
 
 // FaultReportInput 是一次用户报障的提交内容。
 type FaultReportInput struct {
-	DeviceID    string  `json:"device_id"`
-	UserID      uint64  `json:"-"`
-	FaultType   string  `json:"fault_type"`
-	Description *string `json:"description"`
-	ImagesJSON  string  `json:"-"`
+	DeviceID    string  `json:"device_id"`   // 原用户报告设备身份
+	UserID      uint64  `json:"-"`           // 原持久化事实，不对用户返回
+	FaultType   string  `json:"fault_type"`  // 原故障类型
+	Description *string `json:"description"` // 原可空描述
+	ImagesJSON  string  `json:"-"`           // 原图片数组JSON，nil为null
 }
 
 // InsertFaultReport 落一张报障单并追加首条流转事件，返回新单主键。
 //
-// 首条事件的 assigned_to 填提交者自己：assigned_to 是非空必填列，而用户
-// 报障尚未指派运营人员，填提交者既满足约束又符合语义——用户是此刻唯一的
-// 参与者。用户可见的流转因此从第一步就接得上。
+// 首条事件沿用原 assigned_to 为提交用户；报告主状态仍未指派。
+// 这是既有历史形状，不据此推断用户具有运营处理人身份。
 func InsertFaultReport(tx *gorm.DB, in FaultReportInput) (uint64, error) {
 	if err := tx.Table("device_fault_report").Create(map[string]any{
 		"device_id": in.DeviceID, "user_id": in.UserID, "report_source": "user",

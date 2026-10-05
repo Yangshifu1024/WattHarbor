@@ -1,82 +1,60 @@
 package http
 
 import (
-	"encoding/json"
+	"errors"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"strconv"
 )
 
-// 设备报障的提交与查询。
+// reportFault 绑定 c 原用户与报修输入并调用所属完整事务，输出原自增主键／open或错误，不写表。
 func (a UserAccountAPI) reportFault(c *gin.Context) {
-	userID, ok := a.userID(c)
+	id, ok := a.userID(c)
 	if !ok {
 		return
 	}
-	var in struct {
-		DeviceID    string   `json:"device_id"`
-		PortNo      uint8    `json:"port_no"`
-		FaultType   string   `json:"fault_type"`
-		Description *string  `json:"description"`
-		Images      []string `json:"images"`
-	}
+	var in device.FaultSubmission
 	if c.ShouldBindJSON(&in) != nil {
 		httpapi.BadRequest(c, "报修请求无效")
 		return
 	}
-	if in.DeviceID == "" || len(in.DeviceID) > 64 || !oneOfStatus(in.FaultType, "mechanical electrical communication display other") {
-		httpapi.BadRequest(c, "设备或故障类型无效")
-		return
-	}
-	if in.Description != nil && len([]rune(*in.Description)) > 2000 {
-		httpapi.BadRequest(c, "故障描述过长")
-		return
-	}
-	if len(in.Images) > 9 {
-		httpapi.BadRequest(c, "图片最多 9 张")
-		return
-	}
-	images, _ := json.Marshal(in.Images)
-	var id uint64
-	err := a.UserDB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		created, err := device.InsertFaultReport(tx, device.FaultReportInput{
-			DeviceID: in.DeviceID, UserID: userID, FaultType: in.FaultType,
-			Description: in.Description, ImagesJSON: string(images),
-		})
-		if err != nil {
-			return err
-		}
-		id = created
-		return nil
-	})
+	out, err := a.Faults.Report(c.Request.Context(), id, in)
 	if err != nil {
-		resourceWriteFailure(c, err)
+		var input *device.FaultInputError
+		if errors.As(err, &input) {
+			httpapi.BadRequest(c, input.Message)
+		} else {
+			resourceWriteFailure(c, err)
+		}
 		return
 	}
-	httpapi.OK(c, gin.H{"id": id, "status": "open"})
+	httpapi.OK(c, out)
 }
 
+// myFaultReports 适配 c 原用户及分页并调用所属查询，输出原页或读取错误，无存储写入。
 func (a UserAccountAPI) myFaultReports(c *gin.Context) {
-	userID, ok := a.userID(c)
+	id, ok := a.userID(c)
 	if !ok {
 		return
 	}
-	page, pageSize, ok := readPaging(c)
+	page, size, ok := readPaging(c)
 	if !ok {
 		return
 	}
-	out, err := device.ListUserFaultReports(c.Request.Context(), a.UserDB, userID, page, pageSize)
+	out, err := a.Faults.UserReports(c.Request.Context(), id, persist.PageQuery{Page: page, PageSize: size})
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "报修记录暂时无法读取", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"items": out.Items, "total": out.Total, "page": page, "page_size": pageSize})
+	httpapi.OK(c, out)
 }
 
+// myFaultHistory 适配 c 原用户及路径后调用归属和可见性查询，不把数据库故障当作缺失报告。
 func (a UserAccountAPI) myFaultHistory(c *gin.Context) {
-	userID, ok := a.userID(c)
+	uid, ok := a.userID(c)
 	if !ok {
 		return
 	}
@@ -85,18 +63,14 @@ func (a UserAccountAPI) myFaultHistory(c *gin.Context) {
 		httpapi.BadRequest(c, "报修编号无效")
 		return
 	}
-	owned, err := device.OwnsFaultReport(c.Request.Context(), a.UserDB, id, userID)
-	if err != nil || !owned {
-		// 别人的报障单与不存在的报障单返回完全一样。
+	rows, err := a.Faults.UserHistory(c.Request.Context(), uid, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "报修记录不存在", nil)
 		return
 	}
-	rows, err := device.ListUserVisibleFaultEvents(c.Request.Context(), a.UserDB, id)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "处理进度暂时无法读取", nil)
 		return
 	}
 	httpapi.OK(c, gin.H{"items": rows})
 }
-
-// ---- 发票 ----

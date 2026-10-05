@@ -65,7 +65,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 		p, err := authAPI.Store.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err
 	}}, DB: orm, Auth: authAPI}.Register(router)
-	adminorder.API{Process: chargingquery.ProcessService{Orders: ordercase.QueryService{DB: orm}, Gateway: gateway}, Live: chargingquery.LiveService{Gateway: gateway, Orders: ordercase.SnapshotRepo{DB: orm}, Cards: card.PurchaseQueryRepo{DB: orm}}, Query: ordercase.QueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
+	adminorder.API{Faults: device.FaultService{DB: orm}, Process: chargingquery.ProcessService{Orders: ordercase.QueryService{DB: orm}, Gateway: gateway}, Live: chargingquery.LiveService{Gateway: gateway, Orders: ordercase.SnapshotRepo{DB: orm}, Cards: card.PurchaseQueryRepo{DB: orm}}, Query: ordercase.QueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
 	adminfinance.API{Refunds: settlement.RefundAdminService{DB: orm, ReviewRepo: settlement.RefundReviewRepo{DB: orm, LookupSigner: func(ctx context.Context, id uint64) (settlement.SignerStatus, error) {
 		p, err := authAPI.Store.Profile(ctx, id)
 		return settlement.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, err

@@ -265,7 +265,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 - [x] D-01：先提供设备操作状态、站点／端口归属与能力事实，支撑 payment、card、pricing；接管 payment_device_store 中业务元数据读取。
 - [x] D-01：迁入导入创建、任务锁、范围核对、gateway 预置、metadata 更新、失败／完成及审计；保留有界请求和失败状态可提交的原行为。
 - [x] D-01：站点／设备新增、更新、启停、导入身份冲突检查迁回 device；厂商 CRUD 仍由 gateway 提供具名能力。
-- [ ] D-02：从 casework 与通用 CaseStore 拆出设备工单；参数不再收任意表名。状态机沿用 device/fault.go，历史事件和用户可见字段与状态变更同事务。
+- [x] D-02：从 casework 与通用 CaseStore 拆出设备工单；参数不再收任意表名。状态机沿用 device/fault.go，历史事件和用户可见字段与状态变更同事务。
 - [ ] D-02：告警同步与确认归 device，用例调用 typed gateway 读取；后台 ops 目录中 ackAlert 只是 HTTP 路由位置，不拥有 alert_event。
 - [ ] N-device：统一 repo 命名并消除接口／payment 包里的设备表写入。
 
@@ -520,7 +520,7 @@ make test-integration TEST_MYSQL_URL=...
 | F-01／PAY-01／PAY-02／N-payment | 完成 | checkout／回调及归属注入完成，支付模型与渠道中文契约已核对；注册路由覆盖原号恢复、严格输入、付款人／商户／应用／金额／交易号冲突；完整回调取消回滚通过。全仓及独立暂存快照验收通过，tidy 无差异 |
 | W-01／N-wallet | 完成 | 充值／退款／风险入口及 repo 归位；11 笔申请固定 5 次 SQL；两连接验证原请求重放、频次、来源额度、待付行锁隔离、审核等锁后新到账及原成功重放；流水余额使用当前资金事实，取消与审计故障整体回滚；全仓及快照验收通过 |
 | D-01 | 完成 | 导入、站点、设备运营及厂商编排已归 device，普通归属／能力和站点锁由所属 repo 提供；真实注册后台及 gateway 覆盖范围、原号重放、旧版本、未知值、提交后恢复及审计。两连接验证首次申请唯一键及反向清单统一锁序，变异稳定失败并恢复；工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
-| D-02／N-device | 待实施 | 导入、设备运营和站点 repo 已改名；报修状态与事件表访问已归 device/fault_repo，并回归实际后台指派／修复／关闭与3条历史。故障业务编排、告警及其余持久文件、用户站点组合查询仍待迁移 |
+| D-02／N-device | 进行中 | 工单提交、查询和流转归 FaultService，状态／事件／审计同事务，后台范围一致及实时处理人准入已定向验证；告警及其余持久文件、用户站点组合查询继续迁移 |
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
@@ -614,3 +614,11 @@ make test-integration TEST_MYSQL_URL=...
 3g开发验收：重启user／admin／central／worker，`.tmp/batch3g-live-marketing.json` 和日志核对原开发用户模板1／发放1、同号同ID、新号单人额度409、两条用户原查询和后台统计一致、活动1保持disabled、钱包仍1999分。保留一份开发模板／权益及停用活动，无充值、订单或资金写入；测试会话均注销。工作区完整检查、三库integration、全部入口构建与tidy通过，后台78项、用户59项、两端typecheck及后台构建通过；保留原Vite大chunk提示。精确暂存快照 `.tmp/batch3g-validation` 的 `.tmp/batch3g-snapshot-{check,integration,build,tidy}.log` 全部通过，842份暂存文件中的618份Go／模块与原blob一致，tidy无差异；最终仅补文档退出记录。M-01／N-marketing完成，D-02／运营／导出及HTTP、worker／gateway和部署任务继续。
 
 3g提交后复核纠正：`c71f143` 的营销精确暂存快照完整通过，提交钩子默认检查通过。随后工作区最终integration出现上一批注册历史边界测试偶发失败：原结束时间为当前前一分钟，却用当前墙钟减2000桶构造开始时间；尾桶可能比当前桶早一桶，实际只有2000桶，200响应正确。测试已改为以原结束桶构造包含首尾的2000／2001桶，先验200允许再验2001拒绝；不修改曲线业务。已扩展到桶内0／8分钟／14分59秒三种相位；初版第三相位构造未来结束而被网关正常拒绝503，改用完整过去桶后定向`.tmp/batch3g-history-boundary-phases.log`通过。精确暂存快照 `.tmp/batch3g-boundary-validation` 的默认检查和完整三库日志 `.tmp/batch3g-boundary-snapshot-{check,integration}.log` 均通过，618份Go／模块原blob一致；工作区 `.tmp/batch3g-integration.log` 全量通过。此修正只改带integration标签的测试与记录，业务与全部入口构建产物来源不变。失败原日志保留为`.tmp/batch3g-integration-history-boundary-failure.log`。
+
+批次4a（D-02设备工单）开始：已有FaultRepo的表归属保持，从user_fault与admin/order/casework迁入完整提交／指派／处理事务与只读查询；下一步统一后台列表、历史和写入的实时数据范围。用户只能查询自己提交且user_visible的事件；兼容原报告未保存port_no及允许未知设备号的历史行为，不凭缺失元数据补造设备事实。告警同步／确认留4b同一D-02任务继续，暂不勾选完成。
+
+4a定向证据：`.tmp/batch4a-targeted.log`验证真实MySQL／Redis及注册用户／后台接口，报告首事件失败回滚、指派／修复审计失败整体回滚、线性状态与同人／同状态重放、原null及用户可见性、范围外列表空页／历史与修改404、归属存储故障503和实时撤权403。两独立连接固定工单锁顺序，重放仅一条指派事件；事务先读取范围再停用处理人，等待后的当前账号准入拒绝。`.tmp/batch4a-mutant-{current-assignee,write-scope,audit-atomicity}.log`三项变异均在预期断言失败并恢复。提交造数按自身身份清理并核对零残留，其余造数外层回滚；未访问开发数据库或更改资金事实。
+
+4a开发验收：重启user／admin后，`.tmp/batch4a-live-fault.json`及日志记录原开发用户在原设备提交工单1，重复指派、跳级409、重复修复和关闭后状态closed，后台／用户各4条原可见事件，无重复；钱包仍1999分，会话已注销。保留一份已关闭开发报告，不等于实机故障和修复。工作区默认检查、完整三库integration、全部入口构建与tidy通过；后台78项、用户59项测试及两端typecheck／后台构建通过，保留既有Vite大chunk提示。告警同步／确认继续4b，D-02整体仍进行中。
+
+4a退出证据：精确暂存快照`.tmp/batch4a-validation`的`.tmp/batch4a-snapshot-{check,integration,build,tidy}.log`全部通过，847份暂存文件中的623份Go／模块与原blob逐字节一致，tidy无差异，Markdown本地链接有效。最终仅补本段退出记录；已关闭开发工单和前三份数据库备份保留。
