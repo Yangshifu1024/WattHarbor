@@ -463,7 +463,7 @@ charge-pilot/
 │   ├── internal/gateway/simulator/dc589/tui.go
 │   ├── internal/gateway/repo/aggregate_repo.go（迁移前：internal/gateway/store/aggregate_store.go）
 │   ├── internal/gateway/repo/backfill_repo.go（迁移前：internal/gateway/store/backfill_store.go）
-│   ├── internal/gateway/repo/card_delivery_repo.go（迁移前：internal/gateway/store/card_delivery_store.go）
+│   ├── internal/gateway/repo/card_delivery_repo.go（迁移前：internal/gateway/store/card_delivery_store.go、control/card_delivery.go[决策读取事务与冻结操作]）
 │   ├── internal/gateway/repo/charge_process_repo.go（迁移前：internal/gateway/store/charge_process_store.go）
 │   ├── internal/gateway/repo/charge_start_repo.go（迁移前：internal/gateway/store/charge_start_store.go）
 │   ├── internal/gateway/repo/compensation_repo.go（迁移前：internal/gateway/store/compensation_store.go）

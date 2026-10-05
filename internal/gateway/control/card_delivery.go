@@ -9,7 +9,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"time"
@@ -33,8 +32,9 @@ func (a TelemetryAPI) cardEvents(c *gin.Context) {
 	httpapi.OK(c, contract.CardEventsReply{Items: items})
 }
 
-// cardDecideBegin 锁定投递行并返回决策输入：已有冻结回复时只回回复；
-// 否则校验事件身份后返回原始事件。锁在事务内释放，回复由 decide-finish 首写冻结。
+// cardDecideBegin 接收 c 中的服务令牌及 UUID 事件键，交由 repo 锁投递行并在原事务中按需读取事件。
+// 协议与事件身份验证仍由本层回调在持锁期间执行；已有冻结回复跳过验证并保持原正常回滚出口。
+// 成功返回原事件或冻结回复；鉴权失败 401，输入无效 400，身份不符 409，持久/取消失败为原 503。
 func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -47,31 +47,18 @@ func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 		httpapi.BadRequest(c, "event_key 无效")
 		return
 	}
-	var eventJSON string
-	err := a.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		frozen, err := repo.LockCardDelivery(tx, in.EventKey)
-		if err != nil {
-			return err
-		}
-		if frozen != "" {
-			return errResponseFrozen(frozen)
-		}
-		raw, err := repo.FindDeviceEvent(c.Request.Context(), tx, in.EventKey)
-		if err != nil {
-			return err
-		}
-		var e protocol.Event
-		if json.Unmarshal(raw, &e) != nil || e.EventID != in.EventKey || uuid.Validate(e.EventID) != nil {
-			return errCardIdentity
-		}
-		eventJSON = string(raw)
-		return nil
-	})
-	var frozen *frozenResponse
-	if errors.As(err, &frozen) {
-		httpapi.OK(c, gin.H{"event_json": "", "response_json": frozen.response})
-		return
-	}
+	evidence, err := repo.ReadCardDecision(
+		c.Request.Context(),
+		a.DB,
+		in.EventKey,
+		func(raw []byte) error {
+			var e protocol.Event
+			if json.Unmarshal(raw, &e) != nil || e.EventID != in.EventKey || uuid.Validate(e.EventID) != nil {
+				return errCardIdentity
+			}
+			return nil
+		},
+	)
 	if errors.Is(err, errCardIdentity) {
 		httpapi.Write(c, http.StatusConflict, 2009, "card event identity mismatch", nil)
 		return
@@ -80,24 +67,15 @@ func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡决策输入暂不可读取", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"event_json": eventJSON, "response_json": ""})
+	httpapi.OK(c, gin.H{"event_json": string(evidence.RawEvent), "response_json": evidence.FrozenResponse})
 }
 
+// errCardIdentity 表示原协议事件无法解码或其 UUID 身份与请求键不一致，供 HTTP 映射原冲突响应。
 var errCardIdentity = errors.New("card event identity mismatch")
 
-// frozenResponse 是 decide-begin 发现已有冻结回复时的正常出口。
-type frozenResponse struct {
-	response string /* 原已冻结 JSON */
-}
-
-// Error 返回已冻结提示，不读写持久状态。
-func (e *frozenResponse) Error() string { return "card response already frozen" }
-
-// errResponseFrozen 包装 response 原 JSON 为已有决定出口；无 IO。
-func errResponseFrozen(response string) error { return &frozenResponse{response: response} }
-
-// cardDecideFinish 在 c 的鉴权及取消范围首写原事件回复；并发输掉返回已存决定。
-// 参数错误400、存储失败503，不重算金额或生成新事件。
+// cardDecideFinish 接收 c 中的服务令牌、UUID 事件键及候选回复，交由 repo 完成原条件首写和未首写时的存量读取。
+// 返回原 stored 标志及权威回复；鉴权失败 401，输入无效 400，更新/读取失败分别映射原两种 503。
+// 本层不重算金额、创建新事件、重试或覆盖已有决定。
 func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -107,21 +85,21 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 		httpapi.BadRequest(c, "冻结请求无效")
 		return
 	}
-	stored, err := repo.FreezeCardResponse(c.Request.Context(), a.DB, in.EventKey, in.ResponseJSON)
+	frozen, stored, err := repo.FreezeCardResponse(
+		c.Request.Context(),
+		a.DB,
+		in.EventKey,
+		in.ResponseJSON,
+	)
 	if err != nil {
+		if errors.Is(err, repo.ErrCardResponseReadFailed) {
+			httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复暂不可读取", nil)
+			return
+		}
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复冻结暂不可用", nil)
 		return
 	}
-	if stored == 1 {
-		httpapi.OK(c, contract.CardFreezeReply{Stored: true, ResponseJSON: in.ResponseJSON})
-		return
-	}
-	frozen, err := repo.FindFrozenCardResponse(c.Request.Context(), a.DB, in.EventKey)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡回复暂不可读取", nil)
-		return
-	}
-	httpapi.OK(c, contract.CardFreezeReply{Stored: false, ResponseJSON: frozen})
+	httpapi.OK(c, contract.CardFreezeReply{Stored: stored, ResponseJSON: frozen})
 }
 
 // cardEventAdvance 在 c 的鉴权及取消范围推进原事件：retry 增加次数并5秒后重排，done 标记完成。
