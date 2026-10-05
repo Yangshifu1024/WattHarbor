@@ -380,26 +380,26 @@ node scripts/dev/prepare.mjs
 | 周期 | 任务 |
 | --- | --- |
 | worker 每秒 | 告警同步触发、刷卡投递、付款后启动、启动/结束结果同步、Outbox 发布 |
-| worker 每 10 秒 | 自动停机、计费、退款派发、可选监管投递 |
-| worker 调度器每秒扫描 | 当前白名单只有 `webhook_dispatch`；数据库记录 cron、租约和执行结果 |
-| gateway 每 5 秒 | 用户停止和补偿停止重试 |
-| central 每小时 | 到期导出清理 |
+| worker 每 10 秒 | 自动停机、计费、退款派发 |
+| worker 调度器每秒扫描 | 当前处理器登记表为空，不执行数据库配置未在代码登记的任务；保留 cron、租约与执行结果机制 |
+| gateway 每 5 秒 | 补偿停止，然后用户停止重试 |
+| admin 启动及每小时 | 到期导出清理 |
 
 | Stream | 当前用途 |
 | --- | --- |
-| `charge_payment_confirmed_stream` | 付款确认的 Webhook 候选流，启动另读持久任务 |
-| `charge_started_stream` | 明确启动的 Webhook 候选流 |
-| `charge_start_rejected_stream` | 明确拒绝的 Webhook 候选流，退款另读数据库 |
-| `charge_ended_stream` | 结束的 Webhook 候选流，计费另读 `charge_billing_job` |
-| `charge_settled_stream` | 最终结算通知，当前无消费者且不在 Webhook 默认流中 |
-| `refund_required_stream` | 退款需求的 Webhook 候选流，执行另扫 `refund_record` |
-| `refund_succeeded_stream` | 已成功退款，Webhook 候选流；结算由 central `RefundExecutor` 在退款派发行内完成，无独立结果消费者 |
+| `charge_payment_confirmed_stream` | 付款确认事件流，启动另读持久任务；当前无 Webhook 消费者 |
+| `charge_started_stream` | 明确启动事件流；当前无 Webhook 消费者 |
+| `charge_start_rejected_stream` | 明确拒绝事件流，退款另读数据库；当前无 Webhook 消费者 |
+| `charge_ended_stream` | 结束事件流，计费另读 `charge_billing_job` |
+| `charge_settled_stream` | 最终结算通知，当前无业务消费者 |
+| `refund_required_stream` | 退款需求事件流，执行另扫 `refund_record` |
+| `refund_succeeded_stream` | 已成功退款事件流；结算由 central `RefundExecutor` 在退款派发行内完成，无独立结果消费者 |
 | `refund_result_stream` | 兼容输入，当前无生产者 |
 | `wallet_recharge_settled_stream` | 充值通知，当前无消费者，到账已在回调事务完成 |
-| `device_event_stream` | 设备 Webhook 候选流；告警同步由 worker 触发、central 经 gateway 内部端点拉取故障记录 |
-| `charge_events_stream` | 后台指定 Webhook 事件重投 |
+| `device_event_stream` | 设备事件流；告警同步由 worker 触发、central 经 gateway 内部端点拉取故障记录 |
+| `charge_events_stream` | 运维统计清单中的流；当前无注册的后台事件重投处理器 |
 
-当前 Webhook 使用 `XRANGE` 扫描各默认流前 100 条，投递完成后删除已处理条目，因此不会重复外投；积压超过窗口时分多轮排空。缺少 `event_type/data` 格式的事件会跳过并保留给属主消费者，不阻塞投递。订阅清单与投递日志经 central 内部端点读写，worker 不直接访问 central_db。通用 DLQ 组件有实现，worker 主程序未启用 `ConsumeBatch`；DLQ 重放接口仅做查询与登记，重放处理器按流注册，未注册的流显式报错。恢复操作前须检查实际任务、消费组及持久回执，不能据组件测试推定运行恢复完整。
+当前 worker 将 gateway、user、admin 来源的数据库 Outbox 发布至 Redis；gateway 来源读取 gateway_db，user／admin 来源读取 central_db。Redis 接收成功而 MySQL 发布标记未提交时可重复发布，原 event_id 和业务回执仍用于恢复。当前没有 XRANGE Webhook 外投、订阅管理、通用 DLQ 消费或重放端点；运维 streams 端点只读取配置流的 XLen。DefaultBusinessStreams 是运维统计清单，不建立消费者、外投或重放机制。恢复前须检查实际任务及持久回执，不能据未装配组件推定运行恢复完整。
 
 ## 开发与验证
 
@@ -454,8 +454,8 @@ CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、四
 | `PAYMENT_MODE` | user / central，`disabled/simulation/wechat_direct`，默认 disabled；生产 Compose 显式注入 |
 | `WECHAT_MCH_ID`、`WECHAT_CERT_SERIAL`、`WECHAT_APIV3_KEY` | user / central 的微信直连商户 ID、证书序列号及 32 字节 API v3 密钥 |
 | `WECHAT_PRIVATE_KEY_PATH`、`WECHAT_NOTIFY_URL` | user / central 容器内私钥路径及对外支付回调地址；路径变量不代替私钥挂载 |
-| `REGULATORY_MODE` | worker，`disabled/simulation/http` |
-| `REGULATORY_ENDPOINT`、`REGULATORY_SIGNING_SECRET` | http 监管发送配置，签名密钥至少 16 字节 |
+| `REGULATORY_MODE` | 预留模板／Compose 变量；当前 config 与 worker 不读取，修改值不会启用监管任务 |
+| `REGULATORY_ENDPOINT`、`REGULATORY_SIGNING_SECRET` | 预留对接参数；当前 worker 未装配发送适配器，尚无已接线的平台字段、签名或响应契约 |
 | `EXPORT_DIR` | admin 导出目录，生产已配置持久卷 |
 | `VITE_API_BASE` | 后台 API 地址，构建时使用 |
 | `TARO_APP_API_BASE` | 用户 API 前缀，默认 `/api/v1`；微信发布需绝对 HTTPS 地址 |
@@ -503,7 +503,7 @@ services:
 
 验证公网 HTTPS、内部 API 隔离、真实登录和手机号授权、真实商户支付及重复回调、原路退款、实机启动及未知结果、停机、断线恢复、刷卡重复行为、最终计量、权限、审计、故障告警、外部投递及备份恢复。模拟链路不能代替真实资金或实机验证。
 
-监管默认 disabled；http 模式只表示具备发送适配器，目标监管平台的字段、签名、认证和响应契约仍需实际对接。仓库没有外部合规认证或可据此保证的 SLA、RPO、RTO。
+REGULATORY_* 当前仅为预留变量，config 与 worker 未消费，设置 http 也不会启动监管投递。仓库保留可复用的发送适配器；目标平台的字段、签名、认证、响应与任务装配尚未接线。没有外部合规认证或可据此保证的 SLA、RPO、RTO。
 
 ## 备份与恢复
 
@@ -552,7 +552,7 @@ docker compose -f compose.dev.yaml -f compose.monitoring.yaml up -d prometheus
 - H5 支持开发登录及模拟支付；正式微信支付和手机号授权通过微信小程序。H5 扫码使用手动输入，定位失败可填写坐标。
 - 微信直连 SDK 已接入，真实商户和实机仍需验收；汇付天下通道未实现。
 - 微信订阅消息、电子发票签发、自动银行出款和自动渠道账单下载未接入。
-- 退款结果 pending 回收仍受上述接线限制。Webhook 订阅机制、通用 DLQ 与监管上报已移除：站点自有、无加盟商，也没有任何业务代码在产生对外事件，留着只会让人误以为有死信或待投递要处理。事件信封（`internal/delivery/events.go`）与 HMAC 签名投递器保留，将来接入方对接时直接用。
+- 退款结果 pending 回收仍受上述接线限制。当前未注册 Webhook 订阅、通用 DLQ 或监管投递任务及其管理端点。内部业务 Outbox 与 Redis 流发布仍在运行；事件信封（`internal/delivery/events.go`）与 HMAC 发送适配器保留，但未接入 worker。外部平台对接仍须实现并验收所属契约与受管理任务。
 - MQTT、OTA、月卡/年卡、邀请奖励、混合支付、在线客服和可配置告警订阅不在当前功能范围。已有烟雾、高温和设备故障告警、确认及恢复保留。
 - 用户公告当前只返回全局公告，站点和城市定向未接线。
 - 多主体分账、提现与对账已移除：站点全部自有，不存在把钱按比例拆给不同主体再走提现打款的业务对象。计价与开账单不经分账。

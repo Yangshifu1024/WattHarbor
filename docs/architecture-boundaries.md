@@ -1,12 +1,12 @@
 # 架构边界与组织约束
 
-依据：2026-10-05 的源码检查。五个部署进程及 charging 的生命周期拆分已经落地；本文关于业务入口下沉、剩余表访问与服务调用收敛的内容是后续实施约束。
+依据：2026-10-05 的源码检查。五个部署进程、所属用例入口、HTTP 接口族、具名服务客户端与 gateway／worker 运行时已落地。本文记录当前代码边界及维护规则；剩余归属修复、验证与任务是否关闭以 refactor-roadmap.md 的进度和交付记录为准。
 
 配套文档：[charging 检查结果](charging-review.md)、[模块重构计划](refactor-roadmap.md)。
 
 ## 数据访问命名
 
-项目自定义的数据访问组件统一使用 `repo`，表示 Repository。数据访问文件、类型及独立包的命名迁移已完成，下表用于后续新增和核对迁移来源；控制层完整表操作的归位仍按任务验收。
+项目自定义的数据访问组件统一使用 `repo`，表示 Repository。数据访问文件、类型及独立包的命名迁移已完成，下表用于后续新增和核对迁移来源；gateway/control 的完整表操作已归 gateway/repo；命名与职责分别按实际源码和路线图验收记录核对。
 
 | 对象 | 目标命名 | 迁移示例 |
 |---|---|---|
@@ -43,9 +43,9 @@
 
 注释必须与真实实现一致，不能将设计目标、计划修复或未验证假设写成已有保证。修改逻辑、字段、契约或顺序时同步更新注释；迁移时复核原注释。保留 `go:build`、`go:embed`、`go:generate` 等指令和 `Deprecated:` 标记。字段含义与 SQL COMMENT、JSON／服务契约、OpenAPI 保持一致，注释补齐本身不改变运行行为或数据库结构。
 
-## 下一阶段的组织原则
+## 当前组织原则
 
-资金批次已将计费调度、checkout、充值／退款申请、钱包风险及结算审核的事务入口迁入所属模块。仍待迁移的业务包括方案发布、卡前置准入、导入、工单、活动、账号及导出；这些用例仍要求读者跨 HTTP 和模块才能理解完整流程。资金模块的注释、锁图与路由验收继续按路线图完成，不以文件改名代替任务验收。
+计费、checkout、充值／退款申请、钱包风险、结算审核、方案发布、卡准入、设备导入、工单、活动、账号及导出均由所属用例提供业务入口，HTTP 按原接口族装配所需能力。后续维护继续按所属事务、锁顺序、依赖方向与恢复凭据核对；生命周期／订单归属继续按路线图逐项验收；账号查询及角色锁修复已完成对应真库验收，不以入口或文件迁移代替任务关闭。
 
 先让一个用例在所属模块中有可调用的业务入口，再细分目录。默认在现有模块根包中增加按行为命名的用例文件与 repo 文件；只有职责、调用方和依赖已经可以独立说明时才新增子包。不要把所有模块统一切成 service/repo/model，也不要为每张表建一个业务包。
 
@@ -57,13 +57,13 @@
 4. 对外支付、设备调用和文件 IO 与数据库提交的先后次序逐用例保留；需要改变重试或锁持有时间时另列行为变更，不能混入搬文件的提交。
 5. 模型按写入归属定位。跨模块只读视图返回明确的业务投影；带表名和列映射的结构留在所属模块的 schema／model／repo 文件中，不作为跨服务 DTO。
 
-## 必须先处理的依赖交叉
+## 依赖交叉与事务协作
 
-最容易把新结构改出循环的是支付、钱包和退款。当前已有 `settlement → payment/wallet/card/marketing/order/ops`、`card → payment/wallet/order`、`payment → wallet/marketing/order/ops`、`wallet → ops`、`identity → wallet`、`pricing → device` 等单向引用。迁移服务前要把新增箭头与这些关系一起核对。
+最容易把新结构改出循环的是支付、钱包和退款。当前已有 `settlement → payment/wallet/card/marketing/order/ops`、`card → payment/wallet/order`、`payment → wallet/marketing/order/ops`、`wallet → ops`、`identity → wallet`、`pricing → device` 等单向引用。新增依赖或调整用例时，要把新增箭头与这些现有关系一起核对。
 
 计费管理入口由 `pricing.SchemeService`／`PublicationService` 负责，新增 `pricing → ops` 只调用同事务审计能力，ops 不反向引用 pricing。显式 `operations.DataScope` 是实时范围输入，厂商归属经 `device.OperationRepo.VendorID` 单向读取；device 不引用 pricing。发布默认事务先锁站点，随后读取原请求、共享锁模板、核对目标兼容与当前版本，发布规则、原请求凭据及审计一起提交。相同请求恢复原结果，不重新读取当前模板或替换任何订单／支付／刷卡快照；HTTP 输入输出和错误码沿用原约定。
 
-设备导入由 `device.ImportService` 拥有原两段事务。受理冻结从 gateway 厂商公开字典解析的协议及能力，设备身份、任务与受理审计同事务；执行前通过注入的窄范围读取重读当前范围。执行同步保持任务锁，最多十秒等待开通；网关失败提交 failed，中央元数据或完成审计失败回滚执行事务，原 pending／failed 任务可重试。`ImportCompatibility` 由 cmd 注入 `pricing.Repo`，device 无 pricing import；新增 `device → ops` 仅用于所属变更的同事务审计。gateway 的具名 Vendor／Provision 客户端只引用共享契约和通用传输，厂商 CRUD 仍归 gateway。实际两库提交、真实注册 gateway 路由及 loopback 网络证明原身份恢复，测试身份按自身清理为零；部署栈／实机与并发导入验收仍待批次完成。
+设备导入由 `device.ImportService` 拥有原两段事务。受理冻结从 gateway 厂商公开字典解析的协议及能力，设备身份、任务与受理审计同事务；执行前通过注入的窄范围读取重读当前范围。执行同步保持任务锁，最多十秒等待开通；网关失败提交 failed，中央元数据或完成审计失败回滚执行事务，原 pending／failed 任务可重试。`ImportCompatibility` 由 cmd 注入 `pricing.Repo`，device 无 pricing import；新增 `device → ops` 仅用于所属变更的同事务审计。gateway 的具名 Vendor／Provision 客户端只引用共享契约和通用传输，厂商 CRUD 仍归 gateway。实际两库提交、真实注册 gateway 路由及 loopback 网络验证原身份恢复，测试身份按自身清理为零；同请求首次竞争和反向清单重叠的指定并发测试核对中央锁及持久凭据。并发测试中的网关为窄 fixture，不代表真实设备开通；实机及真实外部渠道仍需独立验收。
 
 - **迟到付款退款**：payment 不直接 import settlement，因为 settlement 已 import payment。由 payment 定义 `LateRefundRecorder` 一类的窄能力，方法接受事务和退款业务输入；cmd 注入 settlement 的实现。payment 回调在原事务内调用，settlement 写 refund_record 和相关退款事件；payment 更新支付状态。契约不暴露 `settlement.RefundRecord` 或 HTTP DTO。
 - **充值到账**：payment 可以调用 wallet 的事务内到账能力，但 wallet 的充值申请不能因此反向 import payment。wallet 定义所需的支付来源／创建能力，cmd 注入 payment 适配；所有需要同库原子性的调用沿用同一个事务。先确定锁顺序和输入契约，再迁 SQL。
@@ -83,21 +83,21 @@
 
 卡事件协议位于 contracts/central/card 与 contracts/gateway/card，具名客户端位于 integration 对应服务；worker 只持有所需窄接口，不持有 URL、服务令牌或通用 HTTP。卡回复先按原事件首写冻结，竞争失败采用权威回复，发送后未知结果沿用原冻结 JSON 和 event_key 重试；余额随后改变不能重算回复。明确 HTTP409／2009 才映射业务拒绝，不将网络未知结果或畸形响应映射为卡无效。五秒期限、受管理连接池和禁止重定向由 integration 与 cmd 管理，真实设备消费仍依赖后续流程验收。
 
-**HTTP 目录在业务入口迁出后整理。** 目标直接采用 `internal/http`，移除只有 http 子目录、没有独立职责的 interface 层。用户侧按 `user/payment`、`user/wallet`、`user/order`、`user/card`、`user/identity` 等实际接口族逐批归类；central 内部端点与 admin 接口保持各自注册入口，auth 提供共享 HTTP 鉴权适配。现有 admin 业务子目录继续复用，业务事务移走后结构体只持有所需服务、鉴权器与 HTTP 配置。
+**HTTP 目录已按实际接口族归入 `internal/http`。** 用户侧由 cmd 逐族注册 payment、wallet、order、card、identity 等能力；central 内部端点与 admin 接口保持各自注册入口，auth 提供共享 HTTP 鉴权适配。HTTP 处理器负责身份、绑定、输入与响应映射，所属业务服务负责规则、状态与事务；旧 interface 包没有源码或兼容转发消费者。
 
-通用 HTTP 响应与服务器工具仍归 platform/httpapi，服务间出站客户端归 integration；gateway／worker 的进程特有入口按既定运行职责组织。以后新增入站协议时依据实际职责增加目录，不预建只有分组含义的 interface／transport 层。路径迁移同步 import、cmd、OpenAPI 嵌入资源及测试，当前源码引用在迁移完成前保持真实路径。
+通用 HTTP 响应与服务器工具仍归 platform/httpapi，服务间出站客户端归 integration；gateway／worker 的进程特有入口按既定运行职责组织。以后新增入站协议时依据实际职责增加目录，不预建只有分组含义的 interface／transport 层。路径迁移同步 import、cmd、OpenAPI 嵌入资源及测试，当前 cmd、处理器、测试与 OpenAPI 资源均引用实际新路径，不保留旧路径消费者。
 
 先确定授权上下文和错误映射的公共适配，再移动处理器，避免子包重新 import 一个包含业务实现的巨大 http 父包。仅真正通用的响应／middleware 能力进入 httpapi 或接口层小包，不创建通用 `Deps` 容器。生产路由注册、用户／后台 OpenAPI 和前端请求形状一起核对。
 
-**服务间调用延续已经落地的 contracts／integration 方式。** 下一批是用户充电状态、历史曲线、采样、设备摘要的 gateway 读取，以及刷卡同步、计费／退款派发、告警与后台调用。按实际 base URL 判断目标服务；用户遥测端点属于 gateway。每条端点先核对真实注册和响应，再迁共享 DTO、具名客户端、窄消费者接口和 cmd 注入；逐条消除剩余通用 `sync_client` 与业务代码持有 URL／令牌的情况。
+**服务间调用使用 contracts／integration 的共享端点与具名客户端。** 用户充电状态、历史曲线、采样、设备摘要、刷卡同步、计费／退款派发、告警及厂商调用已通过消费者窄接口由 cmd 注入；旧 sync_client 已删除。按实际 base URL 判断目标服务，用户遥测属于 gateway；告警先由 worker 调 central，再由所属用例读取 gateway。URL、服务令牌与通用 HTTP 传输保留在 cmd、integration 及入站鉴权适配，业务派发不持有这些配置。新增调用继续逐条核对真实注册、共享 Request／Reply、身份/受理、错误/取消与消费者契约。
 
-worker 保留任务顺序、游标、重试与投递编排，计费和退款的金额／状态写入仍由业务用例执行；不把它们搬进 worker。gateway 的协议接入、持久命令、端口占用与会话运行时继续独立；control 中剩余 SQL 逐步改为 gateway/repo 的完整操作，不向控制器返回可继续拼查询的 GORM builder。协议解析不引入数据库。
+worker 保留任务顺序、游标、重试与投递编排，计费和退款的金额／状态写入仍由业务用例执行；不把它们搬进 worker。gateway 的协议接入、持久命令、端口占用与会话运行时继续独立；control 的完整表操作已归 gateway/repo，控制层不接收可继续拼查询的 GORM builder。协议解析不引入数据库。
 
 `infrastructure/database` 的dashboard已归ops/dashboard_repo跨模块只读投影；case文件已拆除，反馈表访问归order/feedback_repo，报修状态与事件归device/fault_repo。旧包无源码及消费者，相关装配与原业务验证继续作为完成依据，不以目录为空代替正确性证据。
 
 FeedbackService 拥有订单评价、后台读取、回复、关闭及审计事务。order → ops 仅使用所属 AppendAuditInTx 能力，ops 不反向依赖 order；反馈原用户与设备身份来自已锁订单。提交按订单锁 → 已有反馈当前读 → 插入，旧 RR 快照不能漏掉另一连接已提交的反馈；重复提交仍为冲突，关闭重放不重复审计。反馈无站点范围列，后台沿用 feedback.read／feedback.reply 全局权限，普通设备范围不能据页面位置改变反馈归属。回复和关闭的状态／审计共用事务，审计失败整体回滚。
 
-**目标结构同样移除 infrastructure 层。** 用户／后台会话的记录、寿命、刷新、撤销与键布局已分别迁到 identity/session_repo.go 与 ops/session_repo.go；后台短期登录挑战由 ops 持有。后台SessionService拥有登录、刷新、注销、实时授权、改密及签发顺序，MFAService拥有当前账号安全设置、SQL状态与审计事务，MFARepo／AuthRateRepo提供短期凭据、租锁与频次IO。HTTP不持有Redis、SQL事务或JWT声明。旧 infrastructure/redis 源码和消费者已删除；AccountService／RoleService已接管账号与角色管理，AccountRepo／RoleRepo归位；公告发布、审计分页和dashboard已归所属服务及repo。Redis实现沿用repo命名，不另建顶层redis业务包，也不把带用户／后台规则的会话实现整体放入platform。
+**infrastructure 的原数据库与会话实现已迁入所属模块。** 用户／后台会话的记录、寿命、刷新、撤销与键布局已分别迁到 identity/session_repo.go 与 ops/session_repo.go；后台短期登录挑战由 ops 持有。后台SessionService拥有登录、刷新、注销、实时授权、改密及签发顺序，MFAService拥有当前账号安全设置、SQL状态与审计事务，MFARepo／AuthRateRepo提供短期凭据、租锁与频次IO。HTTP不持有Redis、SQL事务或JWT声明。旧 infrastructure/redis 源码和消费者已删除；AccountService／RoleService已接管账号与角色管理，AccountRepo／RoleRepo归位；公告发布、审计分页和dashboard已归所属服务及repo。Redis实现沿用repo命名，不另建顶层redis业务包，也不把带用户／后台规则的会话实现整体放入platform。
 
 无 IO 的随机源保留 platform/auth；令牌布局、编码、摘要及共用原子轮换／注销集中 platform/sessiontoken，仅接收调用方的前缀、key、摘要与代码指定的整数属性名，不引用 identity／ops 模型。通用 JSONUint64 精确保存无符号整数，不决定身份／版本是否允许零。RT_／user:session: 留 identity，ART_／admin:session: 留后台会话所属实现。后台旧数字 ID 与 AuthVersion 经 Lua 重编码曾丢失精度，现从原 JSON 十进制文本恢复并存字符串；新旧记录连续轮换均精确且 KEEPTTL 不延寿。database与redis职责均已迁出，旧infrastructure没有源码或兼容包，装配和测试按退出验收核对。
 
@@ -142,7 +142,7 @@ stop 通过 card 的已购时长与会话行锁能力读取 card_charge，通过
 | settlement.BillingService | FeeCalculator 保存计算回执，BillingOrders 原子应用资金与费用回执，BillRepo 按原订单幂等开账单 | 原费用先投递；已入账缺账单由 Missing 有界恢复，不重新扣款 |
 | settlement.InvoiceService／审核服务 | 发票、计量核实、退款及审计归所属完整用例；order 提供开票来源行锁，payment 提供原支付锁与已确认退款更新 | 开票按用户／订单锁串行一单一张，使用 READ COMMITTED；计量核实存在性与原凭据采用当前读，不能假定任务行锁刷新旧 RR 快照 |
 
-wallet 不 import payment 或 settlement，payment 不 import settlement；cmd 注入窄能力。退款输入位于 domain/money，不带 ORM 映射。资金模型按所属模块移动，不保留旧 payment 类型别名。现有跨表只读视图仍留 repo；用户身份表访问将在 I-01 收拢，不能将它们描述为已全部消除。
+wallet 不 import payment 或 settlement，payment 不 import settlement；cmd 注入窄能力。退款输入位于 domain/money，不带 ORM 映射。资金模型按所属模块移动，不保留旧 payment 类型别名。现有跨表只读视图仍留 repo；用户开户、档案、手机号与事务内用户状态读取已由 identity 的所属能力提供。只读投影仍可组合其他模块的既有事实，不能将其描述为已消除全部跨表读取。
 
 本批次单独验证的行为修复包括：账单投递后失败可仅补账单；并发预支付返回首写参数；钱包退款列表读取实际审核结论并按当前页批量补查；发票同请求拒绝不同用户／订单／内容，同订单不同请求串行防止重复申请；计量核实在旧 RR 快照下仍读取已提交的原凭据。验证范围是实际 MySQL、注册 HTTP、具名 loopback 客户端及受控渠道／身份 fixture，尚不代表真实支付或实机验收。
 
@@ -164,7 +164,7 @@ wallet 不 import payment 或 settlement，payment 不 import settlement；cmd �
 
 导入受理先以原 import_id 唯一键登记 pending，再当前读原任务；身份、方案兼容和受理审计失败仍整体回滚登记。两段同步事务继续保留，执行前重读范围。设备身份登记、网关开通批次和中央元数据使用一致设备号顺序取得锁，持久原清单仍保持原数组顺序，重放内容与操作人比对不变。指定两连接证据覆盖同请求首次竞争和反向清单重叠，恢复缺行锁或请求顺序的变异稳定失败；不据此宣称全部导入路径无死锁。
 
-厂商字典仍归 gateway。VendorService 接管中央账号范围、公开查询／写入编排和审计，integration/gateway 的具名四操作保持十秒、一 MiB、禁止重定向与原公开错误映射，并核对详情／更新结果的原厂商身份。写入网络结果未知时不自动重试或更换编码；中央审计仍沿用网关提交后的尽力记录，失败只记录日志，不能回滚网关提交，也没有新增持久审计补偿。注册真库测试明确验证这一继承边界。后台具名客户端复用 cmd 管理的 HTTP 池，受管理请求退出后释放闲置连接；真实支付、实机以及完整模拟器流程仍需后续验收。
+厂商字典仍归 gateway。VendorService 接管中央账号范围、公开查询／写入编排和审计，integration/gateway 的具名四操作保持十秒、一 MiB、禁止重定向与原公开错误映射，并核对详情／更新结果的原厂商身份。写入网络结果未知时不自动重试或更换编码；中央审计仍沿用网关提交后的尽力记录，失败只记录日志，不能回滚网关提交，也没有新增持久审计补偿。注册真库测试明确验证这一继承边界。后台具名客户端复用 cmd 管理的 HTTP 池，受管理请求退出后释放闲置连接。厂商完整操作、身份约束与已注册端点已有对应真库回归；网关提交后中央审计失败仍只记录日志，不新增跨服务回滚或持久审计补偿。真实支付、实机及具体模拟器流程的验证范围分别以最终交付记录为准，不能用厂商配置受理推定外部渠道或物理设备完成。
 
 营销批次边界：CouponService 拥有模板互斥准入、权限、人工发放及审计事务，ActivityService 拥有配置准入和 ApplyInTx；CouponQueryService 拥有当前用户持券状态及原筛选分页。HTTP 只解析原路径、凭据和 DTO，六份持久化文件改为 repo；纯发放、活动规则名保留，优惠计算从核销 repo 移至 rules_coupon_discount。当前套餐仍禁止组合券，时长券的零服务费兜底保持，不引入新的计费算法。
 
