@@ -1,6 +1,7 @@
 package http
 
 import (
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -8,8 +9,8 @@ import (
 
 // CouponAPI 仅适配原用户可用券读取，不发放或核销优惠券。
 type CouponAPI struct {
-	Auth  SessionAuthenticator         // 原当前用户会话准入
-	Query marketing.CouponQueryService // 所属用户券查询
+	Auth  authhttp.SessionAuthenticator // 原当前用户会话准入
+	Query marketing.CouponQueryService  // 所属用户券查询
 }
 
 // Register 将 a 原可用券路径注册到 r，无业务IO。

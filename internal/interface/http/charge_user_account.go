@@ -2,6 +2,7 @@ package http
 
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
@@ -21,7 +22,7 @@ type UserAccountAPI struct {
 	Feedback       order.FeedbackService        // 所属订单评价准入与提交事务
 	WalletQuery    wallet.QueryService          // 余额、充值续付与退款进度查询能力
 	Invoices       settlement.InvoiceService    // 订单开票申请用例
-	Auth           SessionAuthenticator
+	Auth           authhttp.SessionAuthenticator
 	UserDB         *gorm.DB
 	WalletRecharge wallet.RechargeService // 充值申请及提交后预支付业务能力
 	WalletRefund   wallet.RefundService   // 钱包退款业务能力，由 cmd 装配

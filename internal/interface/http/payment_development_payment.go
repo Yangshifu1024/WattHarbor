@@ -2,8 +2,9 @@ package http
 
 import (
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -12,7 +13,7 @@ import (
 // DevelopmentPaymentAPI 仅在 PAYMENT_MODE=simulation 时注册。
 // 通过正常支付回调事务确认当前用户的模拟结算，不接受任意金额或用户身份。
 type DevelopmentPaymentAPI struct {
-	Auth    SessionAuthenticator
+	Auth    authhttp.SessionAuthenticator
 	Service payment.SimulationService // 仅 simulation 模式装配的确认用例
 }
 

@@ -2,24 +2,26 @@ package http
 
 import (
 	"errors"
+	"net/http"
+
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
 	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"net/http"
 )
 
 // CardAPI 适配用户卡和内部刷卡端点；业务准入、查询及完整事务由注入用例拥有。
 type CardAPI struct {
-	Swipe        card.SwipeService      // 设备事件用例；central 注册内部端点时注入
-	Status       card.CardStatusService // 所属卡状态及设备余额读取
-	Auth         SessionAuthenticator   // 用户会话适配；内部路由不使用
-	ServiceToken string                 // 内部端点鉴权值，不传入业务用例
+	Swipe        card.SwipeService             // 设备事件用例；central 注册内部端点时注入
+	Status       card.CardStatusService        // 所属卡状态及设备余额读取
+	Auth         authhttp.SessionAuthenticator // 用户会话适配；内部路由不使用
+	ServiceToken string                        // 内部端点鉴权值，不传入业务用例
 }
 
 // RegisterUser 在 r 注册原用户列表与状态端点；无业务 IO 或返回值。

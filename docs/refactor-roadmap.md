@@ -243,7 +243,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.4 wallet：W-01／N-wallet
 
-来源：[钱包 HTTP](../internal/interface/http/user_wallet.go)、[账户能力](../internal/wallet/wallet_account_repo.go)、[退款预占](../internal/wallet/wallet_reservation_repo.go)、[后台风控入口](../internal/interface/http/admin/finance/wallet_risks.go)。
+来源：[钱包 HTTP](../internal/interface/http/user_wallet.go)、[账户能力](../internal/wallet/wallet_account_repo.go)、[退款预占](../internal/wallet/wallet_reservation_repo.go)、[后台风控入口](../internal/http/admin/finance/wallet_risks.go)。
 
 目标：RechargeService.Create／CreditInTx、RefundService.Request、RiskService.Review／Release；wallet_account_repo.go、wallet_ledger_repo.go、wallet_refund_repo.go、wallet_reservation_repo.go 和 risk repo。
 
@@ -258,7 +258,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.5 device：D-01／D-02／N-device
 
-来源：[导入编排](../internal/interface/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_repo.go)（原 alert_sync_store）。
+来源：[导入编排](../internal/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/interface/http/user_fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_repo.go)（原 alert_sync_store）。
 
 目标：ImportService.Create／Retry、OperationReader、StationService、FaultService.Report／Dispatch／Resolve／History、AlertService.Sync／Acknowledge；import_repo.go、operation_repo.go、fault_repo.go 等。
 
@@ -275,7 +275,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.6 pricing：PR-01／N-pricing
 
-来源：[方案管理 HTTP](../internal/interface/http/admin/pricing/charging_schemes.go)、pricing_admin_repo.go、pricing_scope_repo.go、scheme_target_repo.go、metering_repo.go。
+来源：[方案管理 HTTP](../internal/http/admin/pricing/charging_schemes.go)、pricing_admin_repo.go、pricing_scope_repo.go、scheme_target_repo.go、metering_repo.go。
 
 目标：SchemeService.Save／ChangeStatus、QueryService.List／Effective／Capabilities、PublicationService.Publish／Assign、有效方案只读能力及所属 repo；计算继续留 domain/charging。
 
@@ -288,7 +288,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.7 card：CA-01／N-card
 
-来源：[刷卡 HTTP](../internal/interface/http/card_api.go)、[主事务](../internal/card/card_repo.go)、[后台在线卡](../internal/interface/http/admin/user/online_cards.go)、worker/charge/cards.go。
+来源：[刷卡 HTTP](../internal/interface/http/card_api.go)、[主事务](../internal/card/card_repo.go)、[后台在线卡](../internal/http/admin/user/online_cards.go)、worker/charge/cards.go。
 
 目标：SwipeService.Apply、CardStatusService.Change、CardAdminService.Bind／ChangeStatus；card_repo.go、charge_repo.go、start_result_repo.go 与窄读取能力。
 
@@ -302,7 +302,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.8 order 与 charging/query：O-01／CQ-01／N-order
 
-来源：[用户订单查询](../internal/interface/http/charge_user_query.go)、[反馈提交](../internal/interface/http/charge_feedback.go)、[后台 casework](../internal/interface/http/admin/order/casework.go)、order 的 history／view／package repo，以及后台 order_live／order_process。
+来源：[用户订单查询](../internal/interface/http/charge_user_query.go)、[反馈提交](../internal/interface/http/charge_feedback.go)、[后台 casework](../internal/http/admin/order/casework.go)、order 的 history／view／package repo，以及后台 order_live／order_process。
 
 目标：order.QueryService.History／Detail、FeedbackService.Submit／Reply；charging/query.Service.Ongoing／Snapshot／Curve／Process。身份、范围及窗口作为业务输入。
 
@@ -329,7 +329,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.10 identity：I-01／N-identity
 
-来源：[认证适配](../internal/interface/http/auth.go)、[登录接口](../internal/interface/http/user_api.go)、phone_api.go、admin/user/charge_users.go、identity 的用户与微信能力、infrastructure/redis 的会话实现。
+来源：[认证适配](../internal/http/auth/auth.go)、[登录接口](../internal/interface/http/user_api.go)、phone_api.go、admin/user/charge_users.go、identity 的用户与微信能力、infrastructure/redis 的会话实现。
 
 目标：SessionService.Login／Refresh／Logout／Authenticate、PhoneService.Bind、UserQueryService；用户 repo 与 session_repo.go 的 Redis 实现。HTTP auth 子包只提取凭据、调用身份能力及写入请求上下文。
 
@@ -344,7 +344,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.11 ops：OP-01／N-ops
 
-来源：[账号管理](../internal/interface/http/admin_accounts.go)、[角色管理](../internal/interface/http/admin_roles.go)、[MFA](../internal/interface/http/admin_mfa_settings.go)、[审计辅助](../internal/interface/http/admin_resource.go)、[dashboard](../internal/ops/dashboard_repo.go)、HTTP admin/ops/operations.go。
+来源：[账号管理](../internal/http/admin/account/admin_accounts.go)、[角色管理](../internal/http/admin/account/admin_roles.go)、[MFA](../internal/http/auth/admin_mfa_settings.go)、[审计辅助](../internal/http/admin/request.go)、[dashboard](../internal/ops/dashboard_repo.go)、HTTP admin/ops/operations.go。
 
 目标：AccountService、RoleService、MFAService、AnnouncementService、DashboardQueryService；account／role／audit／projection repo、session_repo.go 的后台会话实现及 mfa_repo.go。审核人实时状态能力供 settlement 使用。
 
@@ -360,7 +360,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.12 export：E-01／N-export
 
-来源：[任务与清理／下载](../internal/interface/http/admin/export/exports.go)、[CSV／XLSX 格式实现](../internal/export/format.go)、export_task_repo.go、export/cleanup.go。
+来源：[任务与清理／下载](../internal/http/admin/export/exports.go)、[CSV／XLSX 格式实现](../internal/export/format.go)、export_task_repo.go、export/cleanup.go。
 
 现状基线：PDF 生成、字体目录与 fpdf 依赖已移除，当前仅支持 CSV、XLSX。PDF 创建请求返回参数错误，历史 PDF 任务不再提供下载；资源清单、OpenAPI 和初始化 SQL 已同步。本任务以这一实现为准，不再安排字体迁移或恢复 PDF。现有数据库未因初始化 SQL 修改自动变更。
 
@@ -528,7 +528,7 @@ make test-integration TEST_MYSQL_URL=...
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
-| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 待实施 | 现有具名客户端、runtime 和资源管理保留 |
+| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | 5a拆出auth及admin适配；剩余user／central、HTTP查询依赖、具名客户端及runtime／repo继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
@@ -689,3 +689,16 @@ make test-integration TEST_MYSQL_URL=...
 
 
 4j最终退出：精确暂存快照`.tmp/batch4j-validation`的`.tmp/batch4j-snapshot-{check,integration,build,tidy}.log`全部通过；1191份暂存文件中的680份Go／模块与原blob逐字节一致，本地Markdown链接有效、tidy无差异。真库缺配置须明确失败，`.tmp/batch4j-missing-config.log`实际核对，无静默跳过；最终快照包含该修正。只读复核确认当前期限读取及生成事务生命周期，无新增具体阻断问题；历史兼容与资金只读边界已说明。最终仅补本退出记录及任务完成状态，E-01／N-export完成；按17组进度15组完成，继续H-01／X-01／G-01／WK-01及DEP-01，不代表整个目标完成。
+
+
+批次5a（H-01鉴权及后台适配目录）实施：后台业务族移至internal/http/admin，认证和MFA适配归internal/http/auth，账号／角色适配归admin/account；cmd及测试直接使用新包，无旧路径别名。原admin/contracts删除，分页直接使用persist，严格JSON解码归platform/httpapi.DecodeResource，后台公共Actor／错误／分页／归一化独立于旧HTTP根包。无消费者的范围解码、校验包装及设备摘要转发删除，保留原有效业务服务。go:embed与源文件一起移动，OpenAPI字节、公开路由、认证、输入及回执不变。迁移函数与字段中文注释已核对。
+
+5a范围边界：user及central仍在internal/interface/http，尚余10个处理器直接调用仓储／查询（包括账单已读写入），后台16处范围读取仍经StationScope的SQL依赖。没有HTTP业务事务不等于薄适配完成；下一子批先把这些入口归所属服务并注入范围读取，再按真实路由拆user／central和跨族测试。H-01及所在组合组仍进行中，17组维持15组完成。全仓、精确暂存快照及开发服务证据待补，不提前标记完成。
+
+
+5a工作区退出证据：`.tmp/batch5a-{check,integration,build,tidy}.log`全部通过，真实集成使用已有独立三库／Redis，公开字段与前端代码未改，最近完整前端验收仍为4g。重启admin及user后，`.tmp/batch5a-live-http.json`核对admin OpenAPI与源文件逐字节相同、账号／角色／权限与运营只读查询，以及C端档案、钱包、空进行中订单、注销401；两类会话均注销。首次开发登录创建development:tester-1测试用户与零余额钱包，SQL创建时刻已只读核对，未充值／扣款，不把此记录写成开发业务数据完全未变。
+
+联调同时复现原UserAccountAPI.userID在SessionAuthenticator已写错误后再次写401，使失效钱包请求包含两个JSON信封；HEAD原代码具有同样双写，5a只迁移保持此行为，下一独立行为批次补注册路由回归并修正其它重复写入调用。用户档案注销后401是单信封。全仓通过不能掩盖这一已知缺口，H-01不提前关闭；精确暂存版本的最终证据待补。
+
+
+5a最终退出：`.tmp/batch5a-validation`精确暂存版本的`.tmp/batch5a-snapshot-{check,integration,build,tidy}.log`全部通过；1190份文件中的679份Go／模块与原blob逐字节核对，本地Markdown链接有效，tidy无差异。最终补充8份迁移文件的范围、失败映射及所属服务中文注释，经Go词法token（包含go编译指令）与已测试版本完全一致，证据`.tmp/batch5a-comments-only.log`；按8.1纯注释不重复业务测试。补注释及本退出记录纳入最终索引后再次核对原blob、工作区Go／模块与文档链接。只读复核未发现本批迁移改变接口、权限、错误或事务的具体阻断问题；原双写错误响应已明确待下一行为批次修正。H-01及组合组仍进行中，17组维持15组完成，继续剩余HTTP查询／范围及user／central、X／G／WK和DEP评估。

@@ -195,17 +195,17 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 
 ### 接口导航
 
-后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件是 `internal/interface/http/admin.openapi.json`；C 端文档是同目录的 `user.openapi.json`。实际路由装配见 `cmd/user/routes.go`、`cmd/admin/routes.go` 与 `cmd/central/routes.go`。
+后台 OpenAPI 为 `GET /api/docs/admin.openapi.json`，源文件是 `internal/http/auth/admin.openapi.json`；C 端文档仍为 `internal/interface/http/user.openapi.json`。实际路由装配见 `cmd/user/routes.go`、`cmd/admin/routes.go` 与 `cmd/central/routes.go`。
 
 五个服务进程的 `main.go` 处理信号与退出错误，`app.go` 管配置、装配与生命周期，`resources.go` 管资源，`routes.go` 管路由与健康检查。worker 的三个任务循环和 gateway 的设备接入／停止重试在各自 `runtime` 子包，保留现有周期与任务顺序。收到停止信号或任一入口失败后，取消后台循环并等待退出；HTTP 请求有 10 秒排空期，超时后取消请求、关闭连接并等待处理器退出，再释放存储。该等待依赖处理器与任务响应 context。
 
 | 业务 | HTTP 入口 | 用例实现 |
 | --- | --- | --- |
-| 用户身份与会话 | [user_api.go](internal/interface/http/user_api.go)、[auth.go](internal/interface/http/auth.go) | `identity` |
+| 用户身份与会话 | [user_api.go](internal/interface/http/user_api.go)、[auth.go](internal/http/auth/auth.go) | `identity` |
 | 扫码、支付意图与回调 | [payment_scan.go](internal/interface/http/payment_scan.go)、[payment_payment_http.go](internal/interface/http/payment_payment_http.go) | `payment`、`pricing` |
 | 充电授权与回执 | [order_authorization.go](internal/interface/http/order_authorization.go)、[order_start_result.go](internal/interface/http/order_start_result.go)、[order_end_result.go](internal/interface/http/order_end_result.go) | `charging`；订单读模型在 `order` |
 | 钱包、卡、券与发票 | [user_api.go](internal/interface/http/user_api.go) 注册各处理器 | `wallet`、`card`、`marketing`、`settlement` |
-| 后台业务族 | [admin](internal/interface/http/admin)、[admin_auth.go](internal/interface/http/admin_auth.go) | 各对应 use case |
+| 后台业务族 | [admin](internal/http/admin)、[admin_auth.go](internal/http/auth/admin_auth.go) | 各对应 use case |
 | 设备接入与遥测 | [gateway/control](internal/gateway/control)、[gateway/provision](internal/gateway/provision) | gateway 运行时与 `protocol` |
 | worker 运维与调度 | [worker/internaljob](internal/worker/internaljob)、[worker/schedule](internal/worker/schedule) | worker 编排，业务写入委托 central |
 

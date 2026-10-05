@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -94,7 +95,7 @@ func TestRegisteredIdentityRoutesUseRealUserWalletAndRedis(t *testing.T) {
 		}
 		return number, ctx.Err()
 	}}
-	(chargehttp.PhoneAPI{Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}, Service: identity.PhoneService{Users: users, Source: source}}).Register(router)
+	(chargehttp.PhoneAPI{Auth: authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, sessions, users)}, Service: identity.PhoneService{Users: users, Source: source}}).Register(router)
 	call := func(method, path, body, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

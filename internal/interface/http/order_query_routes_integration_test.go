@@ -6,15 +6,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
 	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
+	adminorder "github.com/ChargePilot2026/charge-pilot/internal/http/admin/order"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -25,11 +32,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"net/http/httptest"
-	"strconv"
-	"strings"
-	"testing"
-	"time"
 )
 
 // TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail 验证真实注册用户历史／当前状态及后台订单列表／详情／时间线。
@@ -142,8 +144,8 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	liveService := chargingquery.LiveService{Gateway: gatewayClient, Orders: order.SnapshotRepo{DB: tx}, Cards: card.PurchaseQueryRepo{DB: tx}}
 	service := order.QueryService{DB: tx, Fees: settlement.QueryFeeRepo{DB: tx}}
 	router := httpapi.NewRouter()
-	(chargehttp.UserQueryAPI{Orders: service, Query: chargingquery.UserService{Orders: service, Fees: settlement.QueryFeeRepo{DB: tx}, State: chargingquery.UserStateRepo{DB: tx}, Gateway: gatewayClient}, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
-	(adminorder.API{Process: chargingquery.ProcessService{Orders: service, Gateway: gatewayClient}, Live: liveService, Query: service, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
+	(chargehttp.UserQueryAPI{Orders: service, Query: chargingquery.UserService{Orders: service, Fees: settlement.QueryFeeRepo{DB: tx}, State: chargingquery.UserStateRepo{DB: tx}, Gateway: gatewayClient}, Auth: authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
+	(adminorder.API{Process: chargingquery.ProcessService{Orders: service, Gateway: gatewayClient}, Live: liveService, Query: service, DB: tx, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	call := func(path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", path, nil)
 		if token != "" {

@@ -7,11 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	adminorder "github.com/ChargePilot2026/charge-pilot/internal/http/admin/order"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -19,11 +26,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"net/http/httptest"
-	"strconv"
-	"strings"
-	"testing"
-	"time"
 )
 
 // TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit 验证真实注册用户评价及后台列表／回复／关闭。
@@ -102,8 +104,8 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 	}
 	service := order.FeedbackService{DB: tx}
 	router := httpapi.NewRouter()
-	(chargehttp.UserAccountAPI{Feedback: service, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
-	(adminorder.API{Faults: device.FaultService{DB: tx}, Feedback: service, DB: tx, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
+	(chargehttp.UserAccountAPI{Feedback: service, Auth: authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
+	(adminorder.API{Faults: device.FaultService{DB: tx}, Feedback: service, DB: tx, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	call := func(method, path, body, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

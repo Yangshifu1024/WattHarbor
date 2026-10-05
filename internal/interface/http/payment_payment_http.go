@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -12,14 +16,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"io"
-	"net/http"
 )
 
 // PaymentStartAPI 只绑定支付申请、提取用户身份并映射用例结果。
 type PaymentStartAPI struct {
-	Auth     SessionAuthenticator    // 当前用户身份适配
-	Checkout payment.CheckoutService // 匿名报价及登录支付准备用例
+	Auth     authhttp.SessionAuthenticator // 当前用户身份适配
+	Checkout payment.CheckoutService       // 匿名报价及登录支付准备用例
 }
 
 // Register 在 router 上保持匿名报价与登录创建支付的原 URL。

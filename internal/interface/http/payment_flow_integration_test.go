@@ -16,6 +16,7 @@ import (
 
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -64,7 +65,7 @@ func (f *routeCheckoutFixture) Prepay(ctx context.Context, req payment.PrepayReq
 }
 
 // paymentRouteToken 为 userID 签发测试登录令牌；会话和用户准入沿用 fixture，t 报告签发错误。
-func paymentRouteToken(t *testing.T, userID uint64) (SessionAuthenticator, string) {
+func paymentRouteToken(t *testing.T, userID uint64) (authhttp.SessionAuthenticator, string) {
 	t.Helper()
 	jwt, err := auth.NewJWT("payment-route-secret-at-least-32-bytes")
 	if err != nil {
@@ -75,7 +76,7 @@ func paymentRouteToken(t *testing.T, userID uint64) (SessionAuthenticator, strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	return SessionAuthenticator{Auth: NewAuthenticator(jwt, walletSession{}, walletUser{})}, token
+	return authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, walletSession{}, walletUser{})}, token
 }
 
 // TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay 验证实际公开路由的严格输入、原号恢复及金额 JSON。

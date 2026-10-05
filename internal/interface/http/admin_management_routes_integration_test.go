@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/dashboard"
-	adminops "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/ops"
+	adminaccounthttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin/account"
+	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/http/admin/dashboard"
+	adminops "github.com/ChargePilot2026/charge-pilot/internal/http/admin/ops"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -70,11 +71,11 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authAPI := chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: repo, Tokens: ops.JWTAccess{JWT: jwt}}}
+	authAPI := authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: repo, Tokens: ops.JWTAccess{JWT: jwt}}}
 	accounts := ops.AccountService{DB: tx}
 	roles := ops.RoleService{DB: tx}
 	router := httpapi.NewRouter()
-	api := chargehttp.AdminAccounts{Accounts: accounts, Roles: roles, Auth: &authAPI}
+	api := adminaccounthttp.AdminAccounts{Accounts: accounts, Roles: roles, Auth: &authAPI}
 	api.Register(router)
 	api.RegisterRoles(router)
 	(adminops.API{Accounts: accounts, Announcements: ops.AnnouncementService{DB: tx}, Audits: ops.AuditQueryService{DB: tx}, Auth: authAPI}).Register(router)

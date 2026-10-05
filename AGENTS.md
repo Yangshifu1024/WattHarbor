@@ -11,7 +11,7 @@
 - 后台进程不取微信与支付凭据：它不替用户登录，也不发起支付。`config.Admin` 与 `config.Central` 分开定义，让"这个进程需要什么凭据"在类型上就是清楚的——多给一份 `WECHAT_SECRET` 就等于多一处泄露面。
 - C 端充电中的遥测、历史曲线、充电采样与设备摘要，经 `GATEWAY_INTERNAL_URL` 回调 **gateway**（`:8083`）的 `/api/v1/internal/devices/*`，携服务令牌。这些端点由 `internal/gateway/control` 提供，不在 central 进程里——判断回调对象要看代码用的 base URL 字段，不能只看路径里有 `/internal`。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
-- 公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
+- 鉴权与后台 HTTP 适配已归 `internal/http/auth`、`internal/http/admin`，user／central 暂留 `internal/interface/http`，按 H-01 继续迁移。公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
 - 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。具名客户端的请求 DTO 必须以 `Request` 结尾，响应 DTO 必须以 `Reply` 结尾；共享集合中的记录、采样点等子对象保留业务名称，不能用 `Data`、`Result`、`Acceptance` 代替端点响应名。
 - 五个服务进程的入口按职责拆分：`main.go` 处理信号与退出错误，`app.go` 加载配置、装配依赖与等待退出，`resources.go` 打开和释放资源，`routes.go` 注册路由与健康检查。worker/gateway 的定时循环在各自 `runtime` 子包，导出清理在 `internal/export`。资源初始化失败须释放已打开的资源；所有受管理请求和后台任务退出后才能关闭数据库、Redis 与客户端连接池。HTTP 停机使用 `httpapi.Serve`，超时取消请求后仍等待处理器退出；处理器必须响应请求 context，不启动未受管理的后台任务。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
@@ -493,57 +493,58 @@ charge-pilot/
 │   ├── internal/worker/schedule/scheduler.go
 │   ├── internal/worker/store/outbox_store.go
 │   └── internal/worker/store/schedule_store.go
-├── internal/interface                                    HTTP 接口层
-│   ├── internal/interface/http/admin/admin_actor.go
-│   ├── internal/interface/http/admin/alertsync/http.go
-│   ├── internal/interface/http/admin/contracts.go（迁移前：internal/interface/http/admin/deps.go[共享契约部分]）
-│   ├── internal/interface/http/admin/dashboard/dashboard.go
-│   ├── internal/interface/http/admin/device/api.go
-│   ├── internal/interface/http/admin/device/device_imports.go
-│   ├── internal/interface/http/admin/device/devices.go
-│   ├── internal/interface/http/admin/device/meter_reviews.go
-│   ├── internal/interface/http/admin/export/exports.go
-│   ├── internal/interface/http/admin/finance/api.go
-│   ├── internal/interface/http/admin/finance/invoices.go
-│   ├── internal/interface/http/admin/finance/refunds.go
-│   ├── internal/interface/http/admin/finance/wallet_risks.go
-│   ├── internal/interface/http/admin/marketing/api.go
-│   ├── internal/interface/http/admin/marketing/coupon_activity.go
-│   ├── internal/interface/http/admin/marketing/coupons.go
-│   ├── internal/interface/http/admin/normalize.go
-│   ├── internal/interface/http/admin/ops/api.go
-│   ├── internal/interface/http/admin/ops/audit_log.go
-│   ├── internal/interface/http/admin/ops/operations.go
-│   ├── internal/interface/http/admin/order/api.go
-│   ├── internal/interface/http/admin/order/casework.go
-│   ├── internal/interface/http/admin/order/order_process.go
-│   ├── internal/interface/http/admin/order/orders.go
-│   ├── internal/interface/http/admin/order/payment_orders.go
-│   ├── internal/interface/http/admin/pricing/api.go
-│   ├── internal/interface/http/admin/pricing/charging_schemes.go
-│   ├── internal/interface/http/admin/scope.go
-│   ├── internal/interface/http/admin/scope_validate.go
-│   ├── internal/interface/http/admin/service_token.go
-│   ├── internal/interface/http/admin/station/api.go
-│   ├── internal/interface/http/admin/station/stations.go
-│   ├── internal/interface/http/admin/user/api.go
-│   ├── internal/interface/http/admin/user/charge_users.go
-│   ├── internal/interface/http/admin/user/online_cards.go
-│   ├── internal/interface/http/admin/vendor/api.go
-│   ├── internal/interface/http/admin/vendor/vendors.go
-│   ├── internal/interface/http/admin_accounts.go
-│   ├── internal/interface/http/admin_accounts_api.go（迁移前：internal/interface/http/admin_accounts_store.go[适配依赖]）
-│   ├── internal/interface/http/admin_auth.go
-│   ├── internal/interface/http/admin_decode.go
-│   ├── internal/interface/http/admin_mfa_settings.go
-│   ├── internal/interface/http/admin_openapi.go
-│   ├── internal/interface/http/admin_resource.go
-│   ├── internal/interface/http/admin_roles.go
-│   ├── internal/interface/http/auth.go
+├── internal/http                                         已迁移的鉴权与后台HTTP适配
+│   ├── internal/http/admin/account/admin_accounts.go（迁移前：internal/interface/http/admin_accounts.go）
+│   ├── internal/http/admin/account/admin_accounts_api.go（迁移前：internal/interface/http/admin_accounts_api.go）
+│   ├── internal/http/admin/account/admin_roles.go（迁移前：internal/interface/http/admin_roles.go）
+│   ├── internal/http/admin/admin_actor.go（迁移前：internal/interface/http/admin/admin_actor.go）
+│   ├── internal/http/admin/alertsync/http.go（迁移前：internal/interface/http/admin/alertsync/http.go）
+│   ├── internal/http/admin/dashboard/dashboard.go（迁移前：internal/interface/http/admin/dashboard/dashboard.go）
+│   ├── internal/http/admin/device/api.go（迁移前：internal/interface/http/admin/device/api.go）
+│   ├── internal/http/admin/device/device_imports.go（迁移前：internal/interface/http/admin/device/device_imports.go）
+│   ├── internal/http/admin/device/devices.go（迁移前：internal/interface/http/admin/device/devices.go）
+│   ├── internal/http/admin/device/meter_reviews.go（迁移前：internal/interface/http/admin/device/meter_reviews.go）
+│   ├── internal/http/admin/errors.go（迁移前：internal/interface/http/admin/errors.go）
+│   ├── internal/http/admin/export/exports.go（迁移前：internal/interface/http/admin/export/exports.go）
+│   ├── internal/http/admin/finance/api.go（迁移前：internal/interface/http/admin/finance/api.go）
+│   ├── internal/http/admin/finance/invoices.go（迁移前：internal/interface/http/admin/finance/invoices.go）
+│   ├── internal/http/admin/finance/refunds.go（迁移前：internal/interface/http/admin/finance/refunds.go）
+│   ├── internal/http/admin/finance/wallet_risks.go（迁移前：internal/interface/http/admin/finance/wallet_risks.go）
+│   ├── internal/http/admin/marketing/api.go（迁移前：internal/interface/http/admin/marketing/api.go）
+│   ├── internal/http/admin/marketing/coupon_activity.go（迁移前：internal/interface/http/admin/marketing/coupon_activity.go）
+│   ├── internal/http/admin/marketing/coupons.go（迁移前：internal/interface/http/admin/marketing/coupons.go）
+│   ├── internal/http/admin/normalize.go（迁移前：internal/interface/http/admin/normalize.go）
+│   ├── internal/http/admin/ops/api.go（迁移前：internal/interface/http/admin/ops/api.go）
+│   ├── internal/http/admin/ops/audit_log.go（迁移前：internal/interface/http/admin/ops/audit_log.go）
+│   ├── internal/http/admin/ops/operations.go（迁移前：internal/interface/http/admin/ops/operations.go）
+│   ├── internal/http/admin/order/api.go（迁移前：internal/interface/http/admin/order/api.go）
+│   ├── internal/http/admin/order/casework.go（迁移前：internal/interface/http/admin/order/casework.go）
+│   ├── internal/http/admin/order/order_process.go（迁移前：internal/interface/http/admin/order/order_process.go）
+│   ├── internal/http/admin/order/orders.go（迁移前：internal/interface/http/admin/order/orders.go）
+│   ├── internal/http/admin/order/payment_orders.go（迁移前：internal/interface/http/admin/order/payment_orders.go）
+│   ├── internal/http/admin/pricing/api.go（迁移前：internal/interface/http/admin/pricing/api.go）
+│   ├── internal/http/admin/pricing/charging_schemes.go（迁移前：internal/interface/http/admin/pricing/charging_schemes.go）
+│   ├── internal/http/admin/request.go（迁移前：internal/interface/http/admin_resource.go）
+│   ├── internal/http/admin/scope.go（迁移前：internal/interface/http/admin/scope.go）
+│   ├── internal/http/admin/service_token.go（迁移前：internal/interface/http/admin/service_token.go）
+│   ├── internal/http/admin/station/api.go（迁移前：internal/interface/http/admin/station/api.go）
+│   ├── internal/http/admin/station/stations.go（迁移前：internal/interface/http/admin/station/stations.go）
+│   ├── internal/http/admin/user/api.go（迁移前：internal/interface/http/admin/user/api.go）
+│   ├── internal/http/admin/user/charge_users.go（迁移前：internal/interface/http/admin/user/charge_users.go）
+│   ├── internal/http/admin/user/online_cards.go（迁移前：internal/interface/http/admin/user/online_cards.go）
+│   ├── internal/http/admin/vendor/api.go（迁移前：internal/interface/http/admin/vendor/api.go）
+│   ├── internal/http/admin/vendor/vendors.go（迁移前：internal/interface/http/admin/vendor/vendors.go）
+│   ├── internal/http/auth/admin.openapi.json（迁移前：internal/interface/http/admin.openapi.json）
+│   ├── internal/http/auth/admin_auth.go（迁移前：internal/interface/http/admin_auth.go）
+│   ├── internal/http/auth/admin_mfa_settings.go（迁移前：internal/interface/http/admin_mfa_settings.go）
+│   ├── internal/http/auth/admin_openapi.go（迁移前：internal/interface/http/admin_openapi.go）
+│   ├── internal/http/auth/auth.go（迁移前：internal/interface/http/auth.go）
+│   └── internal/http/auth/middleware.go（迁移前：internal/interface/http/middleware.go）
+├── internal/interface                                    user／central适配，H-01继续迁移
 │   ├── internal/interface/http/billing_service.go
 │   ├── internal/interface/http/card_api.go
 │   ├── internal/interface/http/card_balance.go
-│   ├── internal/interface/http/charge_auto_stop.go（迁移前：internal/application/auto_stop_http.go）
+│   ├── internal/interface/http/charge_auto_stop.go
 │   ├── internal/interface/http/charge_feedback.go
 │   ├── internal/interface/http/charge_paid_starts.go
 │   ├── internal/interface/http/charge_status.go
@@ -552,7 +553,6 @@ charge-pilot/
 │   ├── internal/interface/http/charge_user_query.go
 │   ├── internal/interface/http/charge_user_stop.go
 │   ├── internal/interface/http/coupon_api.go
-│   ├── internal/interface/http/middleware.go
 │   ├── internal/interface/http/order_authorization.go
 │   ├── internal/interface/http/order_end_result.go
 │   ├── internal/interface/http/order_start_result.go
@@ -562,6 +562,7 @@ charge-pilot/
 │   ├── internal/interface/http/phone_api.go
 │   ├── internal/interface/http/refund_internal_api.go
 │   ├── internal/interface/http/settlement_bill.go
+│   ├── internal/interface/http/user.openapi.json
 │   ├── internal/interface/http/user_account_helpers.go
 │   ├── internal/interface/http/user_announcement.go
 │   ├── internal/interface/http/user_api.go
@@ -629,6 +630,7 @@ charge-pilot/
 │   ├── internal/platform/config/config.go
 │   ├── internal/platform/dbconn/mysql.go
 │   ├── internal/platform/dbutil/dbutil.go
+│   ├── internal/platform/httpapi/decode.go（迁移前：internal/interface/http/admin_decode.go[严格JSON输入]）
 │   ├── internal/platform/httpapi/codes.go
 │   ├── internal/platform/httpapi/decimal_id.go
 │   ├── internal/platform/httpapi/gin.go
@@ -661,7 +663,8 @@ charge-pilot/
     device/      identity/     marketing/   payment/    ops/
     export/                        —— 12 个 use case
     domain/                       纯规则与跨用例契约（零框架依赖）
-    platform/  persist/  protocol/  contracts/  integration/  delivery/  interface/
+    platform/  persist/  protocol/  contracts/  integration/  delivery/  http/
+    interface/                     —— user／central适配迁移中
     gateway/  worker/               —— 进程特有编排
   ```
 

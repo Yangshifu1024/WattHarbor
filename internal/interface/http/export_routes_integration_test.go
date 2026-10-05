@@ -14,8 +14,8 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
-	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	adminexport "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/export"
+	adminexport "github.com/ChargePilot2026/charge-pilot/internal/http/admin/export"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -71,7 +71,7 @@ func TestRegisteredExportRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authAPI := chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: sessions, Tokens: ops.JWTAccess{JWT: jwt}}}
+	authAPI := authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: sessions, Tokens: ops.JWTAccess{JWT: jwt}}}
 	router := httpapi.NewRouter()
 	service := exportpkg.ExportService{DB: tx, ExportDir: t.TempDir(), MaxRows: 2}
 	(adminexport.ExportTask{Service: service, Auth: authAPI}).Register(router)

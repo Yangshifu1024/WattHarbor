@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
@@ -42,7 +43,7 @@ func TestRegisteredWalletRefundQueryPreservesApprovalAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	UserAccountAPI{Auth: SessionAuthenticator{Auth: NewAuthenticator(jwt, walletSession{}, walletUser{})}, WalletQuery: wallet.QueryService{Repo: wallet.UserWalletRepo{DB: tx}}}.Register(router)
+	UserAccountAPI{Auth: authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, walletSession{}, walletUser{})}, WalletQuery: wallet.QueryService{Repo: wallet.UserWalletRepo{DB: tx}}}.Register(router)
 	unauth := httptest.NewRecorder()
 	router.ServeHTTP(unauth, httptest.NewRequest("GET", "/api/v1/user/wallet/refunds", nil))
 	if unauth.Code != 401 {

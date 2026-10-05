@@ -7,23 +7,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	adminorder "github.com/ChargePilot2026/charge-pilot/internal/http/admin/order"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/identity"
+	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures 验证真实注册用户报修和后台指派／处理／历史。
@@ -99,8 +100,8 @@ func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	}
 	service := device.FaultService{DB: tx}
 	router := httpapi.NewRouter()
-	(chargehttp.UserAccountAPI{Faults: service, Auth: chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
-	(adminorder.API{Faults: service, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
+	(chargehttp.UserAccountAPI{Faults: service, Auth: authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, sessions, users)}}).Register(router)
+	(adminorder.API{Faults: service, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: adminSessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	call := func(method, path, body, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

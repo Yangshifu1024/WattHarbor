@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -58,7 +58,7 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 	repo := ops.SessionRepo{Redis: cache}
 	service := ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: repo, Tokens: ops.JWTAccess{JWT: jwt}, Limits: ops.AuthRateRepo{Redis: cache}}
 	router := httpapi.NewRouter()
-	(chargehttp.AdminAuth{Sessions: service, MFA: ops.MFAService{DB: tx, Repo: ops.MFARepo{Redis: cache}}}).Register(router)
+	(authhttp.AdminAuth{Sessions: service, MFA: ops.MFAService{DB: tx, Repo: ops.MFARepo{Redis: cache}}}).Register(router)
 	prefix := fmt.Sprintf("admin:mfa-settings:")
 	for _, kind := range []string{"pending:", "lock:", "rate:"} {
 		key := prefix + kind + strconv.FormatUint(id, 10)

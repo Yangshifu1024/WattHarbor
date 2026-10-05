@@ -2,42 +2,42 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"time"
+
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
 	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
+	adminaccounthttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin/account"
+	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/http/admin/dashboard"
+	admindevice "github.com/ChargePilot2026/charge-pilot/internal/http/admin/device"
+	adminexport "github.com/ChargePilot2026/charge-pilot/internal/http/admin/export"
+	adminfinance "github.com/ChargePilot2026/charge-pilot/internal/http/admin/finance"
+	adminmarketing "github.com/ChargePilot2026/charge-pilot/internal/http/admin/marketing"
+	adminops "github.com/ChargePilot2026/charge-pilot/internal/http/admin/ops"
+	adminorder "github.com/ChargePilot2026/charge-pilot/internal/http/admin/order"
+	adminpricing "github.com/ChargePilot2026/charge-pilot/internal/http/admin/pricing"
+	adminstation "github.com/ChargePilot2026/charge-pilot/internal/http/admin/station"
+	adminuser "github.com/ChargePilot2026/charge-pilot/internal/http/admin/user"
+	adminvendor "github.com/ChargePilot2026/charge-pilot/internal/http/admin/vendor"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
-	"net/http"
-	"time"
-
-	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/dashboard"
-	admindevice "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/device"
-	adminexport "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/export"
-	adminfinance "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/finance"
-	adminmarketing "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/marketing"
-	adminops "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/ops"
-	adminorder "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/order"
-	adminpricing "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/pricing"
-	adminstation "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/station"
-	adminuser "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/user"
-	adminvendor "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/vendor"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
-func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, gateway *gatewayclient.Client) *gin.Engine {
+func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
 	// 指标端点无需运营会话，只暴露路由模板、状态码与耗时。
@@ -78,8 +78,8 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 	adminuser.API{Users: identity.UserQueryService{DB: orm, Recharges: wallet.RechargeHistoryService{Payments: payment.RechargeHistoryRepo{DB: orm}}}, Auth: authAPI, Cards: card.CardAdminService{DB: orm}}.Register(router)
 	adminvendor.API{Vendors: device.VendorService{DB: orm, Gateway: gateway}, DB: orm, Auth: authAPI}.Register(router)
 	admindashboard.Dashboard{Queries: ops.DashboardQueryService{DB: orm}}.Register(router, authAPI)
-	chargehttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.RegisterRoles(router)
-	chargehttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.Register(router)
+	adminaccounthttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.RegisterRoles(router)
+	adminaccounthttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.Register(router)
 	adminexport.ExportTask{Service: exportpkg.ExportService{DB: orm, ExportDir: cfg.ExportDir}, Auth: authAPI}.Register(router)
 
 	return router

@@ -3,20 +3,22 @@ package http
 import (
 	"database/sql"
 	"errors"
+	"strings"
+
 	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"strings"
 )
 
 // UserQueryAPI 仅适配用户充电查询的凭据、输入与结果，业务隔离及组合读取由所属用例执行。
 type UserQueryAPI struct {
-	Orders orderstore.QueryService   // 所属正在充电及批量历史查询
-	Query  chargingquery.UserService // 用户详情、状态及有界曲线用例
-	Auth   SessionAuthenticator      // 当前用户会话准入
+	Orders orderstore.QueryService       // 所属正在充电及批量历史查询
+	Query  chargingquery.UserService     // 用户详情、状态及有界曲线用例
+	Auth   authhttp.SessionAuthenticator // 当前用户会话准入
 }
 
 // Register 将 a 的六个原用户查询路径注册到 r，无存储或网络读取。

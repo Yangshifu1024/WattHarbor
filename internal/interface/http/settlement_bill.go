@@ -3,15 +3,15 @@ package http
 import (
 	"strconv"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
-
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 )
 
 // BillHTTP 把账单视图暴露给客户。
 type BillHTTP struct {
-	Auth  SessionAuthenticator
+	Auth  authhttp.SessionAuthenticator
 	Bills settlement.BillRepo
 }
 

@@ -200,3 +200,6 @@ wallet 不 import payment 或 settlement，payment 不 import settlement；cmd �
 导出申请使用完整UUID唯一登记，再当前读取原归属、资源、格式及filter内容；原null和空对象不同，同号不更换任务或重复审计，pending／running仍可同步恢复。锁序为角色集合→当前操作者账号／角色权限→原任务；范围、mask及私有UTC有效期使用SHARE当前读，旧RR快照不得覆盖当前事实。生成从原请求取得连接，事务Begin由同步回调结束，不因请求取消提前释放文件操作锁；每条SQL、编码及发布仍使用原ctx，回调错误或取消后回滚。已有外层事务须由调用者保持到回调退出，cmd注入普通连接池。文件发布后的失败恢复同步使用最多5秒收尾context，只清理可信产物与持久失败，不继续取数或编码；恢复失败明确返回错误、保留可重试pending，不假称failed。
 
 新文件和私有范围／mask／身份／SHA256凭据保存于可信根的v1目录，关闭临时文件后发布，再推进completed；文件和SQL不跨存储原子，未知提交时当前重读，已完成竞争者的文件不盲删。下载用os.Root限制路径，数据库file_path仅比对可信表达，不作为打开／删除参数；锁后及摘要复核后检查截止，生成发布后也检查截止。新凭据缺失／失配拒绝；真正历史根目录无凭据文件仅供当前实际全局且无需脱敏的账号读取，其余需重导。原公开文件名、filter_json、日期字符串和CSV／XLSX形状保持；历史PDF继续禁止下载，仅可按可信任务号清理，不改现有库枚举。到期清理按任务当前锁读逐项复核，不新增未受管理任务或worker。同步生成期间持有原管理集合及任务锁，会串行相关管理操作；本批不声明吞吐提升或所有路径无死锁。
+
+
+HTTP目录实施边界（5a）：后台业务族已在internal/http/admin，账号与角色在admin/account，用户及后台鉴权适配在internal/http/auth；admin OpenAPI随go:embed归auth，仍由admin进程提供原地址。父包只提供后台请求／错误／Actor等适配，不引用旧HTTP根包，分页直接使用persist，严格JSON解码在platform/httpapi。user与central暂留internal/interface/http，10处仓储／查询入口及16处后台范围读取继续归所属服务后拆目录，当前不宣称HTTP已全部移除SQL依赖。此批只改变源码归属与无消费者包装，不改变业务事务、权限、公开请求和响应。

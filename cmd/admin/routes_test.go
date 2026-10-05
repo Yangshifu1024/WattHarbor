@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 )
 
 func TestAdminAssemblyRegistersDocumentedRoutes(t *testing.T) {
-	router := newRouter(config.Admin{}, &resources{}, identityhttp.AdminAuth{}, nil)
+	router := newRouter(config.Admin{}, &resources{}, authhttp.AdminAuth{}, nil)
 	actual := map[string]bool{}
 	for _, route := range router.Routes() {
 		actual[route.Method+" "+route.Path] = true
@@ -20,7 +20,7 @@ func TestAdminAssemblyRegistersDocumentedRoutes(t *testing.T) {
 			t.Fatalf("admin mounted another process's route: %s", route.Path)
 		}
 	}
-	data, err := os.ReadFile("../../internal/interface/http/admin.openapi.json")
+	data, err := os.ReadFile("../../internal/http/auth/admin.openapi.json")
 	if err != nil {
 		t.Fatal(err)
 	}

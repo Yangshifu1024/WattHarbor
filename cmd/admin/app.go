@@ -8,8 +8,8 @@ import (
 	"time"
 
 	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
@@ -53,7 +53,7 @@ func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application
 	if err := adminStore.Bootstrap(ctx, cfg.AdminBootstrapUser, cfg.AdminBootstrapPassword); err != nil {
 		return nil, err
 	}
-	authAPI := identityhttp.AdminAuth{
+	authAPI := authhttp.AdminAuth{
 		Sessions: ops.SessionService{Accounts: adminStore, Sessions: ops.SessionRepo{Redis: r.Cache}, Tokens: ops.JWTAccess{JWT: jwt}, Limits: ops.AuthRateRepo{Redis: r.Cache}},
 		MFA:      ops.MFAService{DB: adminStore.DB, Repo: ops.MFARepo{Redis: r.Cache}},
 	}

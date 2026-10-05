@@ -1,0 +1,135 @@
+package device
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+)
+
+// deviceEditPayload 返回包含全部必填字段的设备编辑基准载荷；每次新建map，供非法输入测试独立修改。
+func deviceEditPayload() map[string]any {
+	return map[string]any{"model": nil, "serial_no": nil, "warranty_until": nil, "tags": []string{}, "expected_updated_at": "2026-10-01T01:02:03.456Z"}
+}
+
+// TestDeviceEditingRejectsInvalidRequestsBeforeWriting 验证设备资料必填、类型、长度和受保护字段；无数据库依赖时非法输入仍先返回400。
+func TestDeviceEditingRejectsInvalidRequestsBeforeWriting(t *testing.T) {
+	router := httpapi.NewRouter()
+	router.PUT("/devices/:id", (API{}).updateDevice)
+	invalid := map[string]map[string]any{}
+	for _, field := range []string{"model", "serial_no", "warranty_until", "tags", "expected_updated_at"} {
+		body := deviceEditPayload()
+		delete(body, field)
+		invalid["missing "+field] = body
+	}
+	for name, value := range map[string]any{
+		"model": 1, "serial_no": strings.Repeat("序", 129),
+		"warranty_until": "0999-12-31T23:59:59Z", "tags": nil, "expected_updated_at": nil,
+	} {
+		body := deviceEditPayload()
+		body[name] = value
+		invalid["invalid "+name] = body
+	}
+	for name, tags := range map[string]any{
+		"too many tags": strings.Split(strings.Repeat("tag,", 20)+"end", ","),
+		"long tag":      []string{strings.Repeat("标", 33)}, "empty tag": []string{" "},
+		"duplicate tag": []string{" 烟感 ", "烟感"}, "null tag": []any{nil}, "wrong tag type": "abc",
+	} {
+		body := deviceEditPayload()
+		body["tags"] = tags
+		invalid[name] = body
+	}
+	for name, warranty := range map[string]any{"without timezone": "2026-10-01T09:00:00", "date only": "2026-10-01", "wrong type": 123} {
+		body := deviceEditPayload()
+		body["warranty_until"] = warranty
+		invalid["warranty "+name] = body
+	}
+	for name, installAt := range map[string]any{"null": nil, "timestamp": "2026-10-01T09:00:00+08:00"} {
+		body := deviceEditPayload()
+		body["install_at"] = installAt
+		invalid["removed install_at "+name] = body
+	}
+	for _, field := range []string{"status", "station_id", "vendor_id", "device_id", "protocol_adapter", "charge_mode", "tags_json"} {
+		body := deviceEditPayload()
+		body[field] = "must not change"
+		invalid["protected field "+field] = body
+	}
+	for name, body := range invalid {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/devices/board", bytes.NewReader(encoded)))
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":1005`) {
+				t.Fatalf("invalid request returned %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+	for _, body := range []string{`null`, `{} {}`, `{"tags":[]} {}`} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/devices/board", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("malformed body returned %d: %s", response.Code, response.Body.String())
+		}
+	}
+}
+
+// TestDeviceEditingNormalizesMetadataAndMilliseconds 验证设备文本去空白、可空资料、空标签及UTC毫秒转换，并核对版本时刻递增。
+func TestDeviceEditingNormalizesMetadataAndMilliseconds(t *testing.T) {
+	body := deviceEditPayload()
+	body["model"], body["serial_no"] = "  ", "  "+strings.Repeat("序", 128)+"  "
+	body["warranty_until"] = "2026-10-01T09:00:00.1239+08:00"
+	body["tags"] = []string{"  " + strings.Repeat("标", 32) + "  ", "烟感"}
+	body["expected_updated_at"] = "2026-10-01T09:02:03.4569+08:00"
+	encoded, _ := json.Marshal(body)
+	var input device.DeviceInput
+	if err := json.Unmarshal(encoded, &input); err != nil {
+		t.Fatal(err)
+	}
+	row, expected, err := input.Metadata()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Model != nil || row.SerialNo == nil || *row.SerialNo != strings.Repeat("序", 128) || row.Tags[0] != strings.Repeat("标", 32) {
+		t.Fatalf("text normalization failed: %+v", row)
+	}
+	if row.WarrantyUntil.Format(time.RFC3339Nano) != "2026-10-01T01:00:00.123Z" || expected.Format(time.RFC3339Nano) != "2026-10-01T01:02:03.456Z" {
+		t.Fatalf("timestamp normalization failed: warranty=%s expected=%s", row.WarrantyUntil, expected)
+	}
+	for _, raw := range []*string{nil, stringPointer("null"), stringPointer("[]")} {
+		device := device.Device{TagsJSON: raw, UpdatedAt: expected.In(time.FixedZone("UTC+8", 8*3600))}
+		if err := device.NormalizeMetadata(); err != nil {
+			t.Fatal(err)
+		}
+		result, _ := json.Marshal(device)
+		if device.Tags == nil || !strings.Contains(string(result), `"tags":[]`) || strings.Contains(string(result), "tags_json") || strings.Contains(string(result), "install_at") || device.UpdatedAt.Location() != time.UTC {
+			t.Fatalf("device response normalization: %s", result)
+		}
+	}
+	previous := time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond)
+	if next := device.NextDeviceUpdateTime(previous); !next.Equal(previous.Add(time.Millisecond)) {
+		t.Fatalf("update timestamp did not advance: %s -> %s", previous, next)
+	}
+}
+
+// stringPointer 为value生成独立字符串指针，供历史可空JSON字段测试构造输入。
+func stringPointer(value string) *string { return &value }
+
+// TestDeviceEditingRouteRequiresAuthentication 验证实际注册的设备资料更新路由拒绝未登录请求。
+func TestDeviceEditingRouteRequiresAuthentication(t *testing.T) {
+	router := httpapi.NewRouter()
+	(API{}).Register(router)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/api/v1/admin/devices/board", strings.NewReader(`{}`)))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("device editing route is missing its auth guard: %d %s", response.Code, response.Body.String())
+	}
+}

@@ -6,10 +6,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	adminmarketing "github.com/ChargePilot2026/charge-pilot/internal/http/admin/marketing"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	adminmarketing "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
@@ -17,11 +24,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"net/http/httptest"
-	"strconv"
-	"strings"
-	"testing"
-	"time"
 )
 
 // TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds 使用真实MySQL／Redis与原路由验证营销接口，造数回滚且只删除自身SID。
@@ -89,8 +91,8 @@ func TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	userAuth := chargehttp.SessionAuthenticator{Auth: chargehttp.NewAuthenticator(jwt, sessions, identity.UserRepo{DB: tx})}
-	(adminmarketing.API{Coupons: marketing.CouponService{DB: tx}, Activities: marketing.ActivityService{DB: tx}, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: admins, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
+	userAuth := authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, sessions, identity.UserRepo{DB: tx})}
+	(adminmarketing.API{Coupons: marketing.CouponService{DB: tx}, Activities: marketing.ActivityService{DB: tx}, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: admins, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	(chargehttp.CouponAPI{Auth: userAuth, Query: marketing.CouponQueryService{DB: tx}}).Register(router)
 	(chargehttp.UserAccountAPI{Auth: userAuth, CouponQuery: marketing.CouponQueryService{DB: tx}}).Register(router)
 	call := func(method, path, token, body string) *httptest.ResponseRecorder {

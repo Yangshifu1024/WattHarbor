@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"net/http"
 	"time"
 
@@ -10,9 +9,10 @@ import (
 	chargefinish "github.com/ChargePilot2026/charge-pilot/internal/charging/finish"
 	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
 	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
+	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	adminalertsync "github.com/ChargePilot2026/charge-pilot/internal/http/admin/alertsync"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
 	identityhttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	adminalertsync "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/alertsync"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"

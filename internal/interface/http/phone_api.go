@@ -2,6 +2,8 @@ package http
 
 import (
 	"errors"
+
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -9,8 +11,8 @@ import (
 
 // PhoneAPI 只提取用户及请求，正式／开发来源与号码事务由 identity 拥有。
 type PhoneAPI struct {
-	Auth    SessionAuthenticator  // 原请求身份能力
-	Service identity.PhoneService // cmd 装配来源及所属号码数据能力
+	Auth    authhttp.SessionAuthenticator // 原请求身份能力
+	Service identity.PhoneService         // cmd 装配来源及所属号码数据能力
 }
 
 // Register 在 r 注册原用户绑定／解绑端点，不打开资源。

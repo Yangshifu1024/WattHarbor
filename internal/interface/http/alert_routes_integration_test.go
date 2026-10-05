@@ -16,11 +16,11 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
+	alertsync "github.com/ChargePilot2026/charge-pilot/internal/http/admin/alertsync"
+	adminops "github.com/ChargePilot2026/charge-pilot/internal/http/admin/ops"
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	chargehttp "github.com/ChargePilot2026/charge-pilot/internal/interface/http"
-	alertsync "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/alertsync"
-	adminops "github.com/ChargePilot2026/charge-pilot/internal/interface/http/admin/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
@@ -93,7 +93,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	(adminops.API{Alerts: device.AlertService{DB: tx}, Announcements: ops.AnnouncementService{DB: tx}, Audits: ops.AuditQueryService{DB: tx}, Auth: chargehttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: sessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
+	(adminops.API{Alerts: device.AlertService{DB: tx}, Announcements: ops.AnnouncementService{DB: tx}, Audits: ops.AuditQueryService{DB: tx}, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: sessions, Tokens: ops.JWTAccess{JWT: jwt}}}}).Register(router)
 	call := func(method, path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, nil)
 		req.Header.Set("Authorization", "Bearer "+token)

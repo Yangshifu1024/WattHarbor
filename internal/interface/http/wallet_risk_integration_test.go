@@ -7,9 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,8 +14,12 @@ import (
 	"testing"
 	"time"
 
+	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
+	"github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -146,7 +147,7 @@ func concurrentWalletReplies(t *testing.T, first, second *gorm.DB, jwt *auth.JWT
 	send := func(db *gorm.DB, idx int) <-chan walletRouteReply {
 		ch := make(chan walletRouteReply, 1)
 		router := httpapi.NewRouter()
-		UserAccountAPI{WalletRefund: wallet.RefundService{DB: db, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}, Auth: SessionAuthenticator{Auth: NewAuthenticator(jwt, walletSession{}, walletUser{})}}.Register(router)
+		UserAccountAPI{WalletRefund: wallet.RefundService{DB: db, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}, Auth: authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, walletSession{}, walletUser{})}}.Register(router)
 		go func() {
 			body := fmt.Sprintf(`{"request_id":"%s%04d-3333-4333-8333-333333333333","amount_cents":%d,"reason":"确定顺序并发"}`, prefix, idx, amount)
 			r := httptest.NewRequest("POST", "/api/v1/user/wallet/refund", bytes.NewBufferString(body))
