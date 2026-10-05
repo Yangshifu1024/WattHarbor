@@ -28,7 +28,7 @@ func measuredMeter(order AutoStopOrder, latest meterReading, samples []protocol.
 		DeviceID: order.DeviceID, Port: order.PortNo,
 		StartedAt:      ended.Add(-time.Duration(latest.seconds) * time.Second),
 		EndedAt:        ended,
-		ChargedSeconds: latest.seconds, EnergyMilliKWh: latest.wh,
+		ChargedSeconds: latest.seconds, EnergyWh: latest.wh,
 	}
 	meter.Segments = rules.MeasuredSegments(order.StartedAt, span, measurement.ReadingSamplesOf(samples))
 	return meter

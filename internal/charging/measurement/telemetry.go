@@ -25,7 +25,7 @@ func SessionSpanOf(e protocol.Event) (devices.SessionSpan, bool) {
 		StartedAt:      e.StartedAt,
 		EndedAt:        e.EndedAt,
 		ChargedSeconds: e.ChargedSeconds,
-		EnergyMilliKWh: e.EnergyMilliKWh,
+		EnergyWh:       e.EnergyMilliKWh,
 	}, true
 }
 

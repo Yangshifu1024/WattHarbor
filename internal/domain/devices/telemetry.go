@@ -46,6 +46,13 @@ type SessionSpan struct {
 	// ChargedSeconds 设备侧累计秒数。与 EndedAt-StartedAt 不一致说明
 	// 证据自相矛盾，计费必须拒绝而不是取其一。
 	ChargedSeconds uint32
-	// EnergyMilliKWh 设备侧累计电量，单位 mWh。作为分段求和的校验值。
-	EnergyMilliKWh uint32
+	// EnergyWh 设备侧累计电量，单位 Wh。作为分段求和的校验值。
+	//
+	// 原名 EnergyMilliKWh 是历史遗留，与实际单位不符：三个构造点
+	// （measurement.SessionSpanOf、stop.measuredMeter、query.liveMeterEvidence）
+	// 传入的都是已除过 1000 的 Wh 值。计量侧一律按 Wh 读它。
+	//
+	// 注意不要与 protocol.Event.EnergyMilliKWh 混淆：后者同名字段确实装 Wh，
+	// 但它按 Go 字段名落库到 device_event.event_json，改名会读不出既有行。
+	EnergyWh uint32
 }

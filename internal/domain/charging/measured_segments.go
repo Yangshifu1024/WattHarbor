@@ -59,7 +59,7 @@ func MeasuredSegments(start time.Time, span devices.SessionSpan, samples []devic
 				return nil
 			}
 			wh := reading.ChargedMWh / 1000
-			if wh < previous || wh > span.EnergyMilliKWh {
+			if wh < previous || wh > span.EnergyWh {
 				return nil
 			}
 			if at.Before(cursor) {
@@ -97,11 +97,11 @@ func MeasuredSegments(start time.Time, span devices.SessionSpan, samples []devic
 		return nil
 	}
 	if cursor.Equal(span.EndedAt) {
-		if previous != span.EnergyMilliKWh {
+		if previous != span.EnergyWh {
 			return nil
 		}
 	} else {
-		segment := MeterSegment{StartedAt: cursor, EndedAt: span.EndedAt, EnergyWh: span.EnergyMilliKWh - previous}
+		segment := MeterSegment{StartedAt: cursor, EndedAt: span.EndedAt, EnergyWh: span.EnergyWh - previous}
 		if previousPower != nil && span.EndedAt.Sub(cursor) <= powerJoinWindow {
 			v := *previousPower
 			segment.PowerW = &v

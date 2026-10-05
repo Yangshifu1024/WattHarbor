@@ -34,14 +34,22 @@ const (
 )
 
 type Event struct {
-	EventID        string
-	CardNumber     uint32
-	Protocol       string
-	DeviceID       string
-	Type           EventType
-	Port           uint8
-	ResultCode     uint8
-	FaultCode      uint8
+	EventID    string
+	CardNumber uint32
+	Protocol   string
+	DeviceID   string
+	Type       EventType
+	Port       uint8
+	ResultCode uint8
+	FaultCode  uint8
+	// EnergyMilliKWh 结束事件自报的累计电量。名字里的 Milli 是历史遗留：
+	// 厂商适配器写入的是 end.ChargedMWh/1000，即 Wh，不是 mWh。
+	// 落库换算据此成立——gateway/repo 写 telemetry.meter_kwh 时再 Shift(-3)，
+	// Wh 除以 1000 正好得到 kWh。
+	//
+	// 刻意保持原名：本结构没有 JSON 标签，会按 Go 字段名序列化进
+	// device_event.event_json，worker 取计量采样时再反序列化回来。
+	// 改名会让既有行的 "EnergyMilliKWh" 键读不出值，电量静默变成零并流进计费。
 	EnergyMilliKWh uint32
 	PowerDeciWatts uint32
 	StopReason     uint8

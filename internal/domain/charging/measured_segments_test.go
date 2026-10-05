@@ -83,7 +83,7 @@ func m2Span() devices.SessionSpan {
 		StartedAt:      m2SessionStart,
 		EndedAt:        time.Date(2026, 10, 5, 14, 53, 8, 0, time.UTC),
 		ChargedSeconds: 194,
-		EnergyMilliKWh: 8,
+		EnergyWh:       8,
 	}
 }
 
@@ -118,8 +118,8 @@ func TestMeasuredSegmentsAcceptsDeviceStartOneSecondBeforeRecordedStart(t *testi
 		cursor = s.EndedAt
 	}
 	// 分段求和必须等于设备自报总量，一瓦都不能凭空多出或少掉。
-	if total != m2Span().EnergyMilliKWh {
-		t.Fatalf("分段合计 %d Wh 与设备自报 %d Wh 不符", total, m2Span().EnergyMilliKWh)
+	if total != m2Span().EnergyWh {
+		t.Fatalf("分段合计 %d Wh 与设备自报 %d Wh 不符", total, m2Span().EnergyWh)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestUserStoppedSessionPricesWithoutMeterReview(t *testing.T) {
 	segments := MeasuredSegments(m2RecordedStart, span, m2Samples(m2Heartbeats()))
 
 	withSegments := ActualMeter{StartedAt: m2RecordedStart, EndedAt: span.EndedAt,
-		ChargedWh: span.EnergyMilliKWh, ChargedSeconds: span.ChargedSeconds, Segments: segments}
+		ChargedWh: span.EnergyWh, ChargedSeconds: span.ChargedSeconds, Segments: segments}
 	fee, err := PriceActual(rule, withSegments)
 	if err != nil {
 		t.Fatalf("有分段的用户停机单应能自动计价，却报错：%v", err)
@@ -174,7 +174,7 @@ const (
 func startSkewFixture(startOffset int, shape skewShape) (time.Time, devices.SessionSpan, []devices.ReadingSample) {
 	base := time.Date(2026, 10, 5, 6, 0, 0, 0, time.UTC)
 	span := devices.SessionSpan{DeviceID: "D-SKEW", Port: 1, StartedAt: base,
-		EndedAt: base.Add(60 * time.Second), ChargedSeconds: 60, EnergyMilliKWh: 4}
+		EndedAt: base.Add(60 * time.Second), ChargedSeconds: 60, EnergyWh: 4}
 	type step struct {
 		seconds uint32
 		wh      uint32

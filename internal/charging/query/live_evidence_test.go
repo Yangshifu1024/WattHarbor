@@ -47,7 +47,7 @@ func TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement(t *testin
 		t.Fatal("short gap did not produce a current estimate", meter)
 	}
 	// The shared final-settlement evidence builder must still leave that gap missing.
-	span := devices.SessionSpan{DeviceID: "device", Port: 1, StartedAt: start, EndedAt: start.Add(110 * time.Second), ChargedSeconds: 110, EnergyMilliKWh: 4}
+	span := devices.SessionSpan{DeviceID: "device", Port: 1, StartedAt: start, EndedAt: start.Add(110 * time.Second), ChargedSeconds: 110, EnergyWh: 4}
 	strict := charging.MeasuredSegments(start, span, measurement.ReadingSamplesOf(samples))
 	if len(strict) != 4 || strict[2].PowerW != nil {
 		t.Fatal("live approximation leaked into final settlement", strict)

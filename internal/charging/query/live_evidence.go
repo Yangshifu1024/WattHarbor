@@ -22,7 +22,7 @@ func liveMeterEvidence(device string, port uint8, start time.Time, samples []pro
 			if p.Port == port {
 				view := &charging.LiveMeterView{At: e.ReceivedAt, Stale: now.Sub(e.ReceivedAt) > 30*time.Second, KWh: float64(p.ChargedMWh) / 1e6, Seconds: p.ChargedSeconds}
 				// 实时估算用截至本次上报的累计量作为收口证据。
-				span := devices.SessionSpan{DeviceID: device, Port: port, StartedAt: e.ReceivedAt.Add(-time.Duration(p.ChargedSeconds) * time.Second), EndedAt: e.ReceivedAt, ChargedSeconds: p.ChargedSeconds, EnergyMilliKWh: p.ChargedMWh / 1000}
+				span := devices.SessionSpan{DeviceID: device, Port: port, StartedAt: e.ReceivedAt.Add(-time.Duration(p.ChargedSeconds) * time.Second), EndedAt: e.ReceivedAt, ChargedSeconds: p.ChargedSeconds, EnergyWh: p.ChargedMWh / 1000}
 				meter := charging.ActualMeter{StartedAt: start, EndedAt: e.ReceivedAt, ChargedWh: p.ChargedMWh / 1000, ChargedSeconds: p.ChargedSeconds, Segments: charging.MeasuredSegments(start, span, measurement.ReadingSamplesOf(samples[:i+1]))}
 				// 实时估算以首次观测负载补齐最初不超过 30 秒的心跳区间。
 				// 最终结算仍使用严格的计量证据校验。
