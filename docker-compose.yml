@@ -85,6 +85,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       WECHAT_APPID: ${WECHAT_APPID:?required}
+      PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
+      WECHAT_MCH_ID: ${WECHAT_MCH_ID:-}
+      WECHAT_CERT_SERIAL: ${WECHAT_CERT_SERIAL:-}
+      WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:-}
+      WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
+      WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
       WECHAT_SECRET: ${WECHAT_SECRET:?required}
       GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
     expose: ["8080"]
@@ -102,16 +108,19 @@ services:
     environment:
       DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
       REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
-      REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD}@chargepilot-redis-stream:6379/0
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       WECHAT_APPID: ${WECHAT_APPID:?required}
-      WECHAT_SECRET: ${WECHAT_SECRET:?required}
+      PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
+      WECHAT_MCH_ID: ${WECHAT_MCH_ID:-}
+      WECHAT_CERT_SERIAL: ${WECHAT_CERT_SERIAL:-}
+      WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:-}
+      WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
+      WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
       GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
     expose: ["8082"]
     depends_on:
       chargepilot-migrate: { condition: service_completed_successfully }
       chargepilot-redis-cache: { condition: service_healthy }
-      chargepilot-redis-stream: { condition: service_healthy }
 
   # 运营后台。只暴露 8081，且不映射到宿主机——对外只有 Caddy 一个入口。
   # 不取微信与支付凭据：后台不替用户登录，也不发起支付。

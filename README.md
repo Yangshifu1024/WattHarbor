@@ -436,31 +436,31 @@ CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、四
 
 | 变量 | 使用方及规则 |
 | --- | --- |
-| `DATABASE_URL` | gateway 的 MySQL DSN |
-| `DATABASE_URL_CENTRAL` | central / worker，central schema |
-| `DATABASE_URL_GATEWAY` | worker，gateway schema |
+| `DATABASE_URL` | gateway 的 MySQL URL |
+| `DATABASE_URL_CENTRAL` | user / admin / central / worker / migrate，central schema |
+| `DATABASE_URL_GATEWAY` | worker / migrate，gateway schema |
 | `DATABASE_URL_WORKER` | worker / migrate，worker schema；migrate 同时读取另两库 URL |
-| `CENTRAL_HTTP_ADDR`、`WORKER_HTTP_ADDR` | central / worker，默认 `:8080`、`:8085` |
+| `USER_HTTP_ADDR`、`ADMIN_HTTP_ADDR`、`CENTRAL_HTTP_ADDR`、`WORKER_HTTP_ADDR` | 对应进程默认 `:8080`、`:8081`、`:8082`、`:8085` |
 | `GATEWAY_HTTP_ADDR`、`DC589_ADDR` | gateway，默认 `:8083`、`:9100` |
-| `REDIS_CACHE_URL`、`REDIS_STREAM_URL` | central 连接 Cache，Stream URL 仍为其必填配置；worker 连接 Stream 并发布 Outbox |
-| `JWT_SECRET` | central，至少 32 字节 |
-| `SERVICE_TOKEN` | 三服务内部 API 共享令牌 |
+| `REDIS_CACHE_URL`、`REDIS_STREAM_URL` | user / admin 使用 Cache 保存会话，central 使用 Cache 做健康检查；worker 使用 Stream 发布 Outbox。gateway 不使用 Redis |
+| `JWT_SECRET` | 仅 user / admin，至少 32 字节 |
+| `SERVICE_TOKEN` | 五个 Go 服务内部 API 共享令牌 |
 | `GATEWAY_INTERNAL_URL`、`CENTRAL_INTERNAL_URL` | 服务间地址，按 Compose 服务名与内网端口配置 |
 | `DEVICE_MAX_CONNECTIONS` | gateway，正整数，默认 10000 |
 | `GATEWAY_DEBUG_HEARTBEAT` | gateway 心跳日志，默认 false；开发 Compose 固定 true |
-| `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD` | 空后台账号表的引导凭证 |
-| `LOGIN_MODE` | central，默认 `wechat`；`development` 要求模拟支付 |
-| `WECHAT_APPID`、`WECHAT_SECRET` | central 微信应用配置，必填 |
-| `PAYMENT_MODE` | `disabled/simulation/wechat_direct`，默认 disabled |
-| `WECHAT_MCH_ID`、`WECHAT_CERT_SERIAL`、`WECHAT_APIV3_KEY` | 微信直连商户 ID、证书序列号及 32 字节 API v3 密钥 |
-| `WECHAT_PRIVATE_KEY_PATH`、`WECHAT_NOTIFY_URL` | central 容器内私钥路径及外部 HTTPS 支付回调地址 |
+| `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD` | 仅 admin，空后台账号表的引导凭证 |
+| `LOGIN_MODE` | 仅 user，默认 `wechat`；`development` 要求模拟支付 |
+| `WECHAT_APPID`、`WECHAT_SECRET` | AppID 为 user / central 必填；Secret 仅 user 登录与手机号授权使用 |
+| `PAYMENT_MODE` | user / central，`disabled/simulation/wechat_direct`，默认 disabled；生产 Compose 显式注入 |
+| `WECHAT_MCH_ID`、`WECHAT_CERT_SERIAL`、`WECHAT_APIV3_KEY` | user / central 的微信直连商户 ID、证书序列号及 32 字节 API v3 密钥 |
+| `WECHAT_PRIVATE_KEY_PATH`、`WECHAT_NOTIFY_URL` | user / central 容器内私钥路径及对外支付回调地址；路径变量不代替私钥挂载 |
 | `REGULATORY_MODE` | worker，`disabled/simulation/http` |
 | `REGULATORY_ENDPOINT`、`REGULATORY_SIGNING_SECRET` | http 监管发送配置，签名密钥至少 16 字节 |
-| `EXPORT_DIR` | central 导出目录，生产需持久卷 |
+| `EXPORT_DIR` | admin 导出目录，生产已配置持久卷 |
 | `VITE_API_BASE` | 后台 API 地址，构建时使用 |
 | `TARO_APP_API_BASE` | 用户 API 前缀，默认 `/api/v1`；微信发布需绝对 HTTPS 地址 |
 | `TARO_APP_LOGIN_MODE` | 用户构建登录模式，默认 wechat |
-| `DEV_API_PROXY_TARGET` | 前端开发代理，指向 central |
+| `DEV_API_PROXY_TARGET` | 后台开发代理指向 admin，H5 开发代理指向 user |
 
 `.env.example` 还含未被当前实现或根 Compose 消费的 `TAG`、`ADMIN_BOOTSTRAP_PHONE`、`WECHAT_REFUND_NOTIFY_URL`、`WECHAT_CUSTOMER_SERVICE_CORP_ID`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`DEFAULT_TIME_OF_USE_JSON`，修改这些值不会启用相应功能。
 
@@ -468,7 +468,7 @@ CI 当前检查 Go 格式差异、vet、`go mod tidy -diff`、单元测试、四
 
 根 [docker-compose.yml](docker-compose.yml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
 
-Caddy 公网暴露 `80/443`，`/api/*` 代理 central，`/admin/*` 提供后台静态文件，根路径转向后台；`/api/v1/internal/*` 返回 404。gateway 另暴露 `9100/TCP`，gateway/worker HTTP 不公开。后台静态产物必须先构建，H5 和小程序发布另行配置。
+Caddy 公网暴露 `80/443`，`/api/v1/admin/*` 代理 admin，`/api/v1/user/*` 与 `/api/v1/public/*` 代理 user；内部及其余 API 路径返回 404。`/admin/*` 提供后台静态文件，根路径转向后台。gateway 另暴露 `9100/TCP`，gateway/worker HTTP 不公开。后台静态产物必须先构建，H5 和小程序发布另行配置。
 
 ```bash
 node scripts/ops/check-deploy.mjs
@@ -481,23 +481,21 @@ docker compose -f docker-compose.yml logs --tail=100 chargepilot-central chargep
 
 ### 微信直连支付
 
-根 Compose 没有向 central 传入支付模式和商户参数，支付默认 disabled；只修改 `.env` 不能启用。部署时增加受控 override，例如：
+根 Compose 已将支付模式及商户参数显式注入 user 与 central；模板默认 `PAYMENT_MODE=disabled`。user 发起支付并接收对外通知，central 执行内部退款。微信登录密钥 `WECHAT_SECRET` 只注入 user，worker 不持有商户凭据。
+
+真实直连部署须在部署侧设置 `PAYMENT_MODE=wechat_direct`、有效商户参数、`WECHAT_NOTIFY_URL` 和容器内 `WECHAT_PRIVATE_KEY_PATH=/run/secrets/wechat-merchant.pem`。根 Compose 未挂载商户私钥；仅传入路径变量不会创建文件。为 user 与 central 增加受控只读挂载 override，例如：
 
 ```yaml
 services:
+  chargepilot-user:
+    volumes:
+      - /etc/chargepilot/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
   chargepilot-central:
-    environment:
-      PAYMENT_MODE: wechat_direct
-      WECHAT_MCH_ID: ${WECHAT_MCH_ID:?required}
-      WECHAT_CERT_SERIAL: ${WECHAT_CERT_SERIAL:?required}
-      WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:?required}
-      WECHAT_PRIVATE_KEY_PATH: /run/secrets/wechat-merchant.pem
-      WECHAT_NOTIFY_URL: https://${PUBLIC_DOMAIN}/api/v1/public/payments/wechat/callback
     volumes:
       - /etc/chargepilot/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
 ```
 
-保存部署侧文件为 `compose.payment.yaml` 后，使用 `docker compose -f docker-compose.yml -f compose.payment.yaml config --quiet` 检查合并配置，启动及后续维护也使用这两个 `-f` 文件。`check-deploy.mjs` 只检查根生产 Compose。商户私钥只读挂载，文件权限须允许容器非 root UID 65532 读取；API v3 密钥为 32 字节。worker 通过 central 的同一支付提供方执行退款和查询，不持有商户私钥。正式用户端须使用真实 AppID、已配置的 API 域名和微信发布环境。
+保存部署侧文件为 `compose.payment.yaml` 后，使用 `docker compose -f docker-compose.yml -f compose.payment.yaml config --quiet` 检查合并配置，启动及后续维护也使用这两个 `-f` 文件。`check-deploy.mjs` 只检查根生产 Compose。商户私钥文件权限须允许容器非 root UID 65532 读取；API v3 密钥为 32 字节。配置加载及 Compose 展开通过不证明私钥可读取、渠道可达或真实微信支付已验收。worker 通过 central 的同一支付提供方执行退款和查询。正式用户端须使用真实 AppID、已配置的 API 域名和微信发布环境。
 
 ### 上线验收
 

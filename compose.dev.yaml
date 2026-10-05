@@ -15,18 +15,9 @@ x-go: &go
     # 在中国大陆访问不到 proxy.golang.org，能用的是 goproxy.cn 这个镜像。
     # 等团队统一到可达的代理后删掉这段。
     GOPROXY: https://goproxy.cn,direct
-    JWT_SECRET: local-dev-jwt-secret-do-not-use-in-production
     SERVICE_TOKEN: local-dev-service-token-do-not-use-in-production
-    WECHAT_APPID: wx_local_dev
-    WECHAT_SECRET: local-dev-placeholder
-    PAYMENT_MODE: simulation
-    LOGIN_MODE: development
-    REDIS_CACHE_URL: redis://redis-cache:6379/0
-    REDIS_STREAM_URL: redis://redis-stream:6379/0
   depends_on:
     migrate: { condition: service_completed_successfully }
-    redis-cache: { condition: service_healthy }
-    redis-stream: { condition: service_healthy }
 
 services:
   mysql:
@@ -99,7 +90,16 @@ services:
     command: ["go", "run", "./cmd/user"]
     environment:
       <<: *go-env
+      JWT_SECRET: local-dev-jwt-secret-do-not-use-in-production
+      WECHAT_APPID: wx_local_dev
+      WECHAT_SECRET: local-dev-placeholder
+      PAYMENT_MODE: simulation
+      LOGIN_MODE: development
+      REDIS_CACHE_URL: redis://redis-cache:6379/0
       DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis-cache: { condition: service_healthy }
     ports: ["127.0.0.1:8080:8080"]
 
   # 对内服务间接口。不映射端口：开发栈与生产保持同一隔离策略，
@@ -109,7 +109,13 @@ services:
     command: ["go", "run", "./cmd/central"]
     environment:
       <<: *go-env
+      WECHAT_APPID: wx_local_dev
+      PAYMENT_MODE: simulation
+      REDIS_CACHE_URL: redis://redis-cache:6379/0
       DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis-cache: { condition: service_healthy }
 
   # 运营后台。只暴露 /api/v1/admin/*，与 C 端走不同的进程与端口。
   admin:
@@ -122,10 +128,15 @@ services:
       - export-files:/var/lib/chargepilot/exports
     environment:
       <<: *go-env
+      JWT_SECRET: local-dev-jwt-secret-do-not-use-in-production
+      REDIS_CACHE_URL: redis://redis-cache:6379/0
       DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
       EXPORT_DIR: /var/lib/chargepilot/exports
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-admin}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-ChangeMe!Admin2026}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis-cache: { condition: service_healthy }
     ports: ["127.0.0.1:8081:8081"]
 
   worker:
@@ -133,10 +144,14 @@ services:
     command: ["go", "run", "./cmd/worker"]
     environment:
       <<: *go-env
+      REDIS_STREAM_URL: redis://redis-stream:6379/0
       DATABASE_URL_WORKER: mysql://chargepilot:chargepilot_dev@mysql:3306/worker_db
       DATABASE_URL_GATEWAY: mysql://chargepilot:chargepilot_dev@mysql:3306/gateway_db
       DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
       REGULATORY_MODE: simulation
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis-stream: { condition: service_healthy }
     ports: ["127.0.0.1:8085:8085"]
 
   admin-web:
