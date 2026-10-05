@@ -61,7 +61,7 @@ func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
 
 	event := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9001, EventKey: "recharge:R-1", Now: fixedNow}
 
-	first, err := ApplyActivityRules(tx, event)
+	first, err := (ActivityService{}).ApplyInTx(tx, event)
 	if err != nil {
 		t.Fatalf("首次发放失败：%v", err)
 	}
@@ -73,7 +73,7 @@ func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
 	}
 
 	// 重放：同一个事件再来一次。
-	replay, replayErr := ApplyActivityRules(tx, event)
+	replay, replayErr := (ActivityService{}).ApplyInTx(tx, event)
 	t.Logf("重放结果=%+v 错误=%v", replay, replayErr)
 
 	if replayErr != nil {
@@ -102,11 +102,11 @@ func TestApplyActivityRulesRespectsPerUserLimit(t *testing.T) {
 	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(1002), withPerUserLimit(1))
 
 	first := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9002, EventKey: "recharge:R-A", Now: fixedNow}
-	if got, err := ApplyActivityRules(tx, first); err != nil || len(got) != 1 {
+	if got, err := (ActivityService{}).ApplyInTx(tx, first); err != nil || len(got) != 1 {
 		t.Fatalf("首次参与应发放：%+v %v", got, err)
 	}
 	second := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9002, EventKey: "recharge:R-B", Now: fixedNow}
-	got, err := ApplyActivityRules(tx, second)
+	got, err := (ActivityService{}).ApplyInTx(tx, second)
 	if err != nil {
 		t.Fatalf("第二次参与不应报错：%v", err)
 	}
@@ -128,11 +128,11 @@ func TestApplyActivityRulesRespectsBudget(t *testing.T) {
 	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(1003), withMaxGrants(1))
 
 	one := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9003, EventKey: "recharge:R-1", Now: fixedNow}
-	if got, err := ApplyActivityRules(tx, one); err != nil || len(got) != 1 {
+	if got, err := (ActivityService{}).ApplyInTx(tx, one); err != nil || len(got) != 1 {
 		t.Fatalf("首个用户应发放：%+v %v", got, err)
 	}
 	two := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9004, EventKey: "recharge:R-2", Now: fixedNow}
-	got, err := ApplyActivityRules(tx, two)
+	got, err := (ActivityService{}).ApplyInTx(tx, two)
 	if err != nil {
 		t.Fatalf("预算耗尽属于正常跳过，不该报错：%v", err)
 	}
@@ -159,7 +159,7 @@ func TestApplyActivityRulesSkipsDeletedCoupon(t *testing.T) {
 		t.Fatalf("软删券失败：%v", err)
 	}
 
-	got, err := ApplyActivityRules(tx, ActivityEvent{
+	got, err := (ActivityService{}).ApplyInTx(tx, ActivityEvent{
 		TriggerType: TriggerFirstRecharge, UserID: 9005, EventKey: "recharge:R-1", Now: fixedNow,
 	})
 	if err != nil {
@@ -193,7 +193,7 @@ func TestApplyActivityRulesInviteRewardSkipsOnlyInviter(t *testing.T) {
 		t.Fatalf("预置邀请人已领记录失败：%v", err)
 	}
 
-	got, err := ApplyActivityRules(tx, ActivityEvent{
+	got, err := (ActivityService{}).ApplyInTx(tx, ActivityEvent{
 		TriggerType: TriggerInviteReward, UserID: 9501, InviterID: 9500,
 		EventKey: "invite:I-1", Now: fixedNow,
 	})
@@ -224,7 +224,7 @@ func TestApplyActivityRulesRejectsSelfInvite(t *testing.T) {
 	seedRule(t, tx, 1, TriggerInviteReward, hours(-1), hours(1), 0, withCoupon(1007), withInviterCoupon(1008))
 
 	seedEstablishedUser(t, tx, 9600)
-	got, err := ApplyActivityRules(tx, ActivityEvent{
+	got, err := (ActivityService{}).ApplyInTx(tx, ActivityEvent{
 		TriggerType: TriggerInviteReward, UserID: 9600, InviterID: 9600,
 		EventKey: "invite:I-2", Now: fixedNow,
 	})
@@ -254,11 +254,11 @@ func TestApplyActivityRulesReplayWithPerUserLimitAboveOne(t *testing.T) {
 		withCoupon(1009), withPerUserLimit(3))
 
 	event := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9010, EventKey: "recharge:R-REPLAY", Now: fixedNow}
-	if got, err := ApplyActivityRules(tx, event); err != nil || len(got) != 1 {
+	if got, err := (ActivityService{}).ApplyInTx(tx, event); err != nil || len(got) != 1 {
 		t.Fatalf("首次发放应成功：%+v %v", got, err)
 	}
 
-	replay, replayErr := ApplyActivityRules(tx, event)
+	replay, replayErr := (ActivityService{}).ApplyInTx(tx, event)
 	t.Logf("单人上限 3 时重放：结果=%+v 错误=%v", replay, replayErr)
 
 	if replayErr != nil {

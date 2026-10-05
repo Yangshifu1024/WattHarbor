@@ -33,7 +33,7 @@ type ActivityRule struct {
 	InviterCouponID *uint64 // 邀请人奖励券；邀请有奖必填
 	ThresholdCents  int64   // 触发门槛（分）
 	MaxGrants       int     // 活动总发放上限，0 表示不限
-	PerUserLimit    int     // 单用户可领份数，0 表示不限
+	PerUserLimit    int     // 单用户可领份数，0 沿用默认一份
 	Status          string  // active / disabled；留空时按 active 处理
 	StartAt         string  // RFC3339
 	EndAt           string  // RFC3339
@@ -99,7 +99,7 @@ func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, 
 	return start.UTC(), end.UTC(), status, nil
 }
 
-// 活动发券的资格与到期计算。发放路径（coupon_activity_store.go）里这三项
+// 活动发券的资格与到期计算。发放路径（coupon_activity_repo.go）里这三项
 // 原本直接写在事务中间，夹在锁行、预算计数和插入之间，改错了不会有编译错误，
 // 也不会有测试失败——只会在活动结束后发出一张还能核销的券。
 

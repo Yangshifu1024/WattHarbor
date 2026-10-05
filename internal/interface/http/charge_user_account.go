@@ -1,6 +1,7 @@
 package http
 
 import (
+	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
@@ -12,9 +13,10 @@ import (
 
 // UserAccountAPI 提供钱包、优惠券、发票、公告、附近站点、手机号绑定及用户故障上报接口。
 type UserAccountAPI struct {
-	Feedback       order.FeedbackService     // 所属订单评价准入与提交事务
-	WalletQuery    wallet.QueryService       // 余额、充值续付与退款进度查询能力
-	Invoices       settlement.InvoiceService // 订单开票申请用例
+	CouponQuery    marketing.CouponQueryService // 所属持券状态、筛选及分页
+	Feedback       order.FeedbackService        // 所属订单评价准入与提交事务
+	WalletQuery    wallet.QueryService          // 余额、充值续付与退款进度查询能力
+	Invoices       settlement.InvoiceService    // 订单开票申请用例
 	Auth           SessionAuthenticator
 	UserDB         *gorm.DB
 	AdminDB        *gorm.DB

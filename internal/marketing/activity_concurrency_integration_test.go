@@ -18,7 +18,7 @@ import (
 // 行锁并发：两个独立连接同时抢同一张活动规则。
 //
 // 这是本仓库最没有覆盖的一块。发券的临界区是「FOR UPDATE 锁行 → 数已发放量
-// → 插入发放记录」三步（coupon_activity_store.go:115-130）。锁一旦失效，
+// → 插入发放记录」三步（coupon_activity_repo.go:115-130）。锁一旦失效，
 // 两个事务会同时数到 0 份、同时插入，活动预算 max_grants=1 就会发出 2 张。
 //
 // 真库能验这件事，但**不能靠起 N 个 goroutine 碰运气**——那样的测试要么
@@ -164,7 +164,7 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 	}
 	done1 := make(chan outcome, 1)
 	go func() {
-		res, err := ApplyActivityRules(tx1, ActivityEvent{
+		res, err := (ActivityService{}).ApplyInTx(tx1, ActivityEvent{
 			TriggerType: TriggerFirstRecharge, UserID: 8001,
 			EventKey: "recharge:R-1", Now: fixedNow,
 		})
@@ -184,7 +184,7 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 
 	done2 := make(chan outcome, 1)
 	go func() {
-		res, err := ApplyActivityRules(tx2, ActivityEvent{
+		res, err := (ActivityService{}).ApplyInTx(tx2, ActivityEvent{
 			TriggerType: TriggerFirstRecharge, UserID: 8002,
 			EventKey: "recharge:R-2", Now: fixedNow,
 		})
@@ -270,7 +270,7 @@ func TestConcurrentGrantsBothSucceedWhenBudgetAllows(t *testing.T) {
 	done1 := make(chan outcome, 1)
 	done2 := make(chan outcome, 1)
 	go func() {
-		res, err := ApplyActivityRules(tx1, ActivityEvent{
+		res, err := (ActivityService{}).ApplyInTx(tx1, ActivityEvent{
 			TriggerType: TriggerFirstRecharge, UserID: 8101,
 			EventKey: "recharge:R-A", Now: fixedNow,
 		})
@@ -279,7 +279,7 @@ func TestConcurrentGrantsBothSucceedWhenBudgetAllows(t *testing.T) {
 	gate1.await(t, "事务一")
 
 	go func() {
-		res, err := ApplyActivityRules(tx2, ActivityEvent{
+		res, err := (ActivityService{}).ApplyInTx(tx2, ActivityEvent{
 			TriggerType: TriggerFirstRecharge, UserID: 8102,
 			EventKey: "recharge:R-B", Now: fixedNow,
 		})

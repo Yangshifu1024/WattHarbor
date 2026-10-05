@@ -140,7 +140,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 	// 创建支付记录和占用端口前校验优惠券并计算减免额，失败时不留预占记录。
 	var discount int64
 	if input.CouponGrantID != 0 {
-		coupons := marketing.CouponStore{DB: s.DB}
+		coupons := marketing.CouponService{DB: s.DB}
 		discount, err = coupons.Quote(ctx, input.UserID, input.CouponGrantID, estimate.TotalCents)
 		if err != nil {
 			return PaymentIntent{}, err

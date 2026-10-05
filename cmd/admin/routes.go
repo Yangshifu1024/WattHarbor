@@ -8,6 +8,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/identity"
 	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
+	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/ChargePilot2026/charge-pilot/internal/payment"
@@ -72,7 +73,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI identityhttp.AdminAuth, g
 		p, err := authAPI.Store.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, err
 	}}}, Risks: wallet.RiskService{DB: orm, Refund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}}, DB: orm, Auth: authAPI}.Register(router)
-	adminmarketing.API{DB: orm, Auth: authAPI}.Register(router)
+	adminmarketing.API{Coupons: marketing.CouponService{DB: orm}, Activities: marketing.ActivityService{DB: orm}, Auth: authAPI}.Register(router)
 	adminuser.API{Users: identity.UserQueryService{DB: orm, Recharges: wallet.RechargeHistoryService{Payments: payment.RechargeHistoryRepo{DB: orm}}}, Auth: authAPI, Cards: card.CardAdminService{DB: orm}}.Register(router)
 	adminvendor.API{Vendors: device.VendorService{DB: orm, Gateway: gateway}, DB: orm, Auth: authAPI}.Register(router)
 	admindashboard.Dashboard{DB: orm}.Register(router, authAPI)

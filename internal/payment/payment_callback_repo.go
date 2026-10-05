@@ -169,7 +169,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 
 		// 支付确认到账后才核销优惠券。
 		if intent.CouponGrantID != 0 {
-			if err := marketing.RedeemInTx(tx, marketing.RedeemRef{
+			if err := (marketing.CouponService{}).RedeemInTx(tx, marketing.RedeemRef{
 				UserID:        intent.UserID,
 				CouponGrantID: intent.CouponGrantID,
 				TotalCents:    intent.TotalCents,
@@ -323,7 +323,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 		return err
 	}
 	// 在充值事务内求值首充奖励；事务回滚时奖励一并回滚。规则不适用时跳过，不阻止结算。
-	if _, err := marketing.ApplyActivityRules(tx, marketing.ActivityEvent{
+	if _, err := (marketing.ActivityService{}).ApplyInTx(tx, marketing.ActivityEvent{
 		TriggerType: "first_recharge",
 		UserID:      order.UserID,
 		EventKey:    marketing.ActivityEventKeyForRecharge(request.RequestID),

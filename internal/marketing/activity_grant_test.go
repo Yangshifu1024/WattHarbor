@@ -175,7 +175,7 @@ func TestApplyActivityRulesRejectsIncompleteEvent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// tx 传 nil 是有意的：校验必须发生在任何数据库访问之前，
 			// 一旦这个前提被打破，这里会先 panic 而不是返回业务错误。
-			results, err := ApplyActivityRules(nil, event)
+			results, err := (ActivityService{}).ApplyInTx(nil, event)
 			if err == nil {
 				t.Fatal("入参不完整却通过了校验")
 			}

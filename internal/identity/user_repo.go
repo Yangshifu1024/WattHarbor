@@ -110,6 +110,16 @@ func (s UserRepo) Active(ctx context.Context, id uint64) (bool, error) {
 	return user.Status == "active", nil
 }
 
+// LockStatusInTx 在 tx 原context下以 id 取得未删除用户写锁并返回原status或缺失／存储错误。
+// 供同事务业务准入使用；调用方必须在模板或钱包锁前取得用户锁，不自行提交或修改身份。
+func LockStatusInTx(tx *gorm.DB, id uint64) (string, error) {
+	var user struct {
+		Status string `gorm:"column:status"` /* 原账户状态 */
+	}
+	err := tx.Table("user").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&user).Error
+	return user.Status, err
+}
+
 // Profile 在 ctx 下读取 id 活跃用户的单次联表档案，返回身份、钱包和权益投影或缺失／存储错误。
 // 金额沿用原公开语义，不扣款；跨领域只读投影不创建资金或优惠券。
 func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {

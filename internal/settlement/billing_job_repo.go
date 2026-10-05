@@ -13,7 +13,6 @@ import (
 	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
 	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/wallet"
 
-	"log"
 	"reflect"
 	"time"
 
@@ -263,7 +262,9 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		}
 		// 费用计算完成并写入回执后求值订单活动，确保金额门槛准确。
 		// 重放结算在回执检查时提前返回，不重复发券。
-		applyOrderCampaigns(tx, order, result.TotalCents)
+		if err := applyOrderCampaigns(tx, order, result.TotalCents); err != nil {
+			return err
+		}
 		// 原支付方式的普通读取可能已在支付锁之前建立 RR 快照。
 		// 在途聚合必须使用当前读，否则会遗漏并发已提交退款，高估可退余款。
 		var reserved int64
@@ -326,21 +327,22 @@ func settlementNotice(eventID string, order orderstore.ChargeOrderRecord, displa
 }
 
 // applyOrderCampaigns 根据已结算订单求值门槛券和节日券。
-// 规则不适用时跳过；规则错误仅记录日志，不中止资金结算。订单事件键保证重复求值不重复发券。
-// tx 为原资金事务，order 提供原用户及单号，totalCents 为确定结算金额（分）；无返回值，不自行提交。
-func applyOrderCampaigns(tx *gorm.DB, order orderstore.ChargeOrderRecord, totalCents int64) {
+// 规则不适用时跳过；存储错误返回调用方并整体回滚资金与权益。订单事件键保证重复求值不重复发券。
+// tx 为原资金事务，order 提供原用户及单号，totalCents 为确定结算金额（分）；返回存储错误，不自行提交。
+func applyOrderCampaigns(tx *gorm.DB, order orderstore.ChargeOrderRecord, totalCents int64) error {
 	now := time.Now().UTC()
 	for _, trigger := range []string{"threshold_redeem", "holiday"} {
-		if _, err := marketing.ApplyActivityRules(tx, marketing.ActivityEvent{
+		if _, err := (marketing.ActivityService{}).ApplyInTx(tx, marketing.ActivityEvent{
 			TriggerType: trigger,
 			UserID:      order.UserID,
 			EventKey:    marketing.ActivityEventKeyForOrder(order.OrderNo),
 			AmountCents: totalCents,
 			Now:         now,
 		}); err != nil && !errors.Is(err, marketing.ErrActivityNotApplicable) {
-			log.Printf("ACTIVITY RULE FAILED trigger=%s order=%s user=%d: %v", trigger, order.OrderNo, order.UserID, err)
+			return err
 		}
 	}
+	return nil
 }
 
 // EnqueueManualFeeReview 把一笔算不出费用的订单排进人工核实队列。

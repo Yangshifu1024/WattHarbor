@@ -316,14 +316,14 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.9 marketing：M-01／N-marketing
 
-来源：HTTP admin/marketing/coupons.go、coupon_activity.go、user_coupon.go、coupon_api.go；[核销存储](../internal/marketing/coupon_redeem_store.go)、[活动规则](../internal/marketing/coupon_activity_store.go)。
+来源：HTTP admin/marketing/coupons.go、coupon_activity.go、user_coupon.go、coupon_api.go；[核销存储](../internal/marketing/coupon_redeem_repo.go)、[活动规则](../internal/marketing/coupon_activity_repo.go)。
 
 目标：CouponService.Create／Grant／Redeem、ActivityService.Create／Update／ApplyInTx，保留已有纯规则与同事务发放／核销能力。
 
-- [ ] M-01：迁入管理员活动、券、发放目标／预算／范围、用户领取及核销的业务准入；HTTP 不组合预算判断和写入。
-- [ ] M-01：沿用支付与计费事务中的权益能力，活动不适用与存储失败分别表达；marketing 不 import payment／settlement。
-- [ ] M-01：冻结规则、金额和 event_key，保留确定编号、请求凭据与并发预算当前读。
-- [ ] N-marketing：规则文件保留业务名称，持久化文件和类型改 repo。
+- [x] M-01：迁入管理员活动、券、发放目标／预算／范围、用户领取及核销的业务准入；HTTP 不组合预算判断和写入。
+- [x] M-01：沿用支付与计费事务中的权益能力，活动不适用与存储失败分别表达；marketing 不 import payment／settlement。
+- [x] M-01：冻结规则、金额和 event_key，保留确定编号、请求凭据与并发预算当前读。
+- [x] N-marketing：规则文件保留业务名称，持久化文件和类型改 repo。
 
 验收：预算边界的两独立事务确定性测试；重复事件／领取／核销只生效一次；过期／冻结／不适用拒绝；优惠与实付一致，事务回滚不留下发券或核销结果。
 
@@ -524,7 +524,7 @@ make test-integration TEST_MYSQL_URL=...
 | PR-01／N-pricing | 完成 | SchemeService／PublicationService／QueryService 接管模板、发布、继承及读取组合；五个 repo 改名并核对中文契约。真库覆盖版本、范围、兼容、审计回滚及同请求两连接重放；注册 HTTP 覆盖创建、发布、继承、模板列表、设备能力及空方案原响应。设备普通事实及锁已使用所属能力，工作区及独立暂存快照默认检查、全仓真库、全部 cmd 构建和 tidy 已通过；现有双模拟器实际 TCP／心跳／摘要／扫码及完整方案读取通过 |
 | CA-01／N-card | 完成 | SwipeService、CardStatusService、CardAdminService 接管准入及完整事务；所属 InTx 能力保持资金、订单及回执边界，六个 card store 改为 repo。共享卡契约与具名客户端贯通实际注册端点、worker 及 cmd。两连接绑定、同事件扣款、续费与截止双向竞争、旧 RR 当前读、审计回滚及冻结回复恢复通过；本地 TCP 首购／续购／停机／结算退款走通。工作区及精确暂存快照默认检查、独立三库、全部入口构建与 tidy 已通过 |
 | O-01／CQ-01／N-order | 完成 | 反馈、订单基础与批量历史、后台实时估算／过程、用户详情／快照／遥测／历史曲线已归所属服务；具名网关能力、私有读模型、冻结展示及表归属收敛。非法／配置禁用窗口、三年／2000桶、确认零与缺失、网关降级／503、取消及实际两库／Redis注册验证通过；工作区与精确暂存快照默认检查、独立三库、全部入口构建和tidy通过，本地原订单读取保持最终费用／退款与钱包事实 |
-| M-01／N-marketing | 待实施 | 既有规则／并发证据保留，接口编排待迁移 |
+| M-01／N-marketing | 完成 | CouponService／ActivityService／CouponQueryService及六份repo归位，显式同事务发放／核销保留；当前预算、锁后配置、共享模板与原凭据、审计和资金回滚、注册路由和开发账户通过。工作区及精确暂存快照默认检查、独立三库、全部入口构建和tidy通过 |
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 待实施 | 实时权限及最后管理员保护保留，后台会话与 HTTP 事务待迁移 |
 | E-01／N-export | 待实施 | 清理循环已有；PDF／字体移除已完成，CSV／XLSX 用例与文件生成仍待迁移 |
@@ -604,3 +604,11 @@ make test-integration TEST_MYSQL_URL=...
 3f定向证据：`.tmp/batch3f-unit.log`、`.tmp/batch3f-user-registered.log`、`.tmp/batch3f-query-summary.log` 及恢复日志验证取消、先归属再补充、配置窗口、2000允许／2001拒绝、粗粒度、三年、冻结方案、原支付退款／卡操作／截止、确认零费用、缺失省略、遥测端口隔离及零／null、实际存储故障503、网关快照降级和曲线503。注册验证使用3307真实两库、6381真实Redis和实际网关注册；造数外层回滚，Redis只清自身SID。窗口、确认电量和费用故障变异在预期断言失败并恢复；首个窗口变异造成未使用变量的编译失败已排除，修正变异后才计入证据。
 
 3f开发读取还发现网关加权平均功率的average_value未映射到Avg，原摘要为空串；补显式列映射，真实单桶及不同count的两桶187.59375W均通过，移除映射变异稳定失败并恢复。实际重启user读取原开发订单2，最终确认电量是0.0620kWh／62秒（此前实时观测60秒／0.06kWh不等于最终回执），确认费用1分、原退款99分、钱包1999分；初版联调脚本错用钱包路径及把实时观测当最终电量的断言已修正，失败轮次仍执行会话注销。开发读取不改变业务事实，修正摘要后实际重启gateway并核对avg_power_w为3600W；`.tmp/batch3f-live-user-query.json` 与日志保留原最终事实，最新30分钟窗口已无观测时正常返回空数组，原历史仍有聚合点。工作区 `.tmp/batch3f-{check,integration,build,tidy}.log` 全部通过，tidy无差异；后台78项、用户59项及两端typecheck／后台构建通过，保留已有Vite大chunk提示。精确暂存快照 `.tmp/batch3f-validation` 的 `.tmp/batch3f-snapshot-{check,integration,build,tidy}.log` 全部通过，833份暂存文件中的609份Go／模块与原blob完全一致，tidy无差异。O-01／CQ-01／N-order按上述证据完成；营销、故障／运营／导出及后续批次继续实施。
+
+批次3g（M-01／N-marketing）实施：模板、人工发放、活动配置及用户持券归入所属服务；权限、优惠互斥、有效期、预算、触发不可变及邀请模板准入从HTTP删除，六份store改repo，无兼容转发。发放／核销／活动使用显式同事务能力；私有JSON读模型保持原金额、null、用户精度、双count／total及数组。修复活动repo使用事务外连接导致审计回滚无效的问题；原请求重放优先、用户锁归identity能力，当前计数与凭据覆盖旧RR快照。活动使用锁后配置、按主键锁全部模板，并保留券／来源共享预算与跨来源单人份数口径；旧0单人配置仍默认一份。
+
+3g定向证据：`.tmp/batch3g-service-integration.log`、`.tmp/batch3g-registered.log`、`.tmp/batch3g-billing-atomicity.log` 验证独立连接审计回滚、旧快照额度及原号、不同触发共享模板预算、锁前配置变更／停用、邀请两份真实插入和更新后原模板重放、百分比冻结费用、核销同支付重放／跨支付拒绝／取消／回滚、用户范围与展示过期／null、注册后台准入400／存储503／撤权403及原Snowflake审计。核销原价1001分、折扣75%保持250分优惠，避免从实付再算；时长列改读free_minutes，原零服务费兜底及套餐不组合规则保持。邀请旧65字符事件键超出CHAR(36)，改确定32字符键。营销存储故障返回资金事务并回滚费用；正常不适用仍完成结算，删除旧日志吞错。
+
+3g验证纠正：初版共享模板闸门停在规则读取后，优化器全表锁扫描使去掉模板锁的变异也通过，未计为模板锁证据。改为候选ID后PRIMARY按原ID当前锁定配置，并将闸门停在模板读取返回后；修正测试后，去掉模板锁、去掉当前总量读、使用事务外活动连接、吞掉结算营销错误的四个变异均在预期断言失败，已恢复，日志为`.tmp/batch3g-mutant-*.log`。完整三库真测只使用3307／6381，已把Makefile和旧营销测试说明的开发3306例子改成独立测试栈。
+
+3g开发验收：重启user／admin／central／worker，`.tmp/batch3g-live-marketing.json` 和日志核对原开发用户模板1／发放1、同号同ID、新号单人额度409、两条用户原查询和后台统计一致、活动1保持disabled、钱包仍1999分。保留一份开发模板／权益及停用活动，无充值、订单或资金写入；测试会话均注销。工作区完整检查、三库integration、全部入口构建与tidy通过，后台78项、用户59项、两端typecheck及后台构建通过；保留原Vite大chunk提示。精确暂存快照 `.tmp/batch3g-validation` 的 `.tmp/batch3g-snapshot-{check,integration,build,tidy}.log` 全部通过，842份暂存文件中的618份Go／模块与原blob一致，tidy无差异；最终仅补文档退出记录。M-01／N-marketing完成，D-02／运营／导出及HTTP、worker／gateway和部署任务继续。

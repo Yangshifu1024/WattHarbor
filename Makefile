@@ -18,15 +18,15 @@ test:
 # 只能对着真库验；这些文件由 integration tag 隔离，make check 不依赖 Docker。
 #
 # 起库与迁移：
-#   docker compose -f compose.dev.yaml up -d mysql
-#   docker compose -f compose.dev.yaml run --rm migrate
+#   pwsh -File scripts/db/test-integration.ps1
+# 脚本使用 compose.test.yaml 的独立三库（宿主3307）与Redis（6381）；不要指向开发3306。
 # 跑测试：
 #   make test-integration
 #
 # 刻意没有跳过路径：没配 TEST_MYSQL_URL 就直接失败而不是 skip——
 # 跳过的测试在输出里和通过的一模一样，CI 没配库就会一路绿灯。
 test-integration:
-	@node -e "if (!process.env.TEST_MYSQL_URL) { console.error('请先设置 TEST_MYSQL_URL，例如 mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/central_db'); process.exit(2); }"
+	@node -e "if (!process.env.TEST_MYSQL_URL) { console.error('请先设置 TEST_MYSQL_URL，例如 mysql://chargepilot:chargepilot_dev@127.0.0.1:3307/central_db'); process.exit(2); }"
 	go test -tags=integration -count=1 ./...
 
 # build 编译单个服务，用法：make build SERVICE=central

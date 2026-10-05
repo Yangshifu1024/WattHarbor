@@ -19,9 +19,9 @@ import (
 // `go test` 的输出里长得一样，CI 一旦没配数据库就会一路绿灯，
 // 而护栏最常见的失效正是「靠放行通过」。要么有库真跑，要么直接失败。
 //
-// 起库：docker compose -f compose.dev.yaml up -d mysql
+// 起库：docker compose -f compose.test.yaml up -d mysql
 //       docker compose -f compose.dev.yaml run --rm migrate
-// 跑测试：TEST_MYSQL_URL=mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/central_db \
+// 跑测试：TEST_MYSQL_URL=mysql://chargepilot:chargepilot_dev@127.0.0.1:3307/central_db \
 //         go test -tags=integration ./internal/marketing/
 //
 // build tag 同样是刻意的：`make check` 不依赖 Docker，日常单测不碰真库；
@@ -55,7 +55,7 @@ func testDB(t *testing.T) *gorm.DB {
 
 // txRollback 开一个事务并在测试结束时回滚。
 //
-// 集成测试要写真表，提交就会把开发库弄脏。用事务把改动圈在测试内，
+// 集成测试要写真表，提交就会污染独立测试库。用事务把改动圈在测试内，
 // 测试之间不会互相污染，跑多少次都是同一个初始状态。
 func txRollback(t *testing.T, db *gorm.DB) *gorm.DB {
 	t.Helper()
