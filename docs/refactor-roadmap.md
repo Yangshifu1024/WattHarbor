@@ -1,6 +1,6 @@
 # 模块重构实施路线图
 
-状态：收尾中。源码及验收日期：2026-10-05。当前完成情况与后续步骤统一见第 9 节；未完成任务中的目标路径、类型及隔离准备稿不表示已经合入或验收。
+状态：第 9 节 17 个任务组已全部完成并关闭；收尾第 3 步（支付到重启恢复的完整流程与在途进程恢复证据）仍待补证，详见该步记录。源码及验收日期：2026-10-05。
 
 本文件负责任务、顺序和验收；[架构边界与组织约束](architecture-boundaries.md) 负责长期规则；[charging 检查结果](charging-review.md) 记录两个 P1 的修复及验证。完成任务后原位更新状态与证据，不追加多套“当前状态”或重复的历史结论。
 
@@ -518,7 +518,7 @@ make test-integration TEST_MYSQL_URL=...
 | 任务 | 状态 | 完成证据／剩余边界 |
 |---|---|---|
 | P-01／P-02 | 完成 | AGENTS 失效文档引用已修正；依当前 SQL、路由、锁顺序核对基线。管理员真库测试隔离自身账号，保留 bootstrap 管理员及真实角色锁 |
-| C-01／C-02／C-03／N-charging | 待验收 | cutoff 恢复、首写保留及卡→订单锁归属已实现；gateway 实际取证到判定覆盖 10080 行分页边界；charging 持久化文件改为 repo。生命周期订单归属已收齐：启动／结束不再直接写 charge_order、charge_event_log 与 event_outbox，改用 order 的 LifecycleView 及 ActivateInTx／MarkStartRejectedInTx／CompleteInTx、order.AppendEventInTx 与 ops.AppendEventInTx；回执与端口占用写模型归 start／finish，order 删除三类公共回执记录，settlement 改用私有 endReceiptView 与 BalanceRefundSource。make check、go mod tidy -diff、全部 cmd 构建通过；独立 3307 三库与 6381 Redis 应用 migrations 后全仓 67 个包 integration 通过，启动成功／重放、start 与 finish 各 storage-error 及取消的整体回滚、中央新 owner 条件释放、结束 owner 不匹配回滚及既有拒绝退款与结束重放回归逐条以 -v 确认执行。仅剩按 AGENTS 取得授权后的本地提交，故未改为完成。锁判别变异：移除 LockForLifecycleInTx 的 FOR UPDATE 后 TestConcurrentEndResultAppliesOnce 在闸门断言处失败，恢复后 charging 全包通过，证明行锁随能力迁移保留。详细验证见 charging-review。 |
+| C-01／C-02／C-03／N-charging | 完成 | cutoff 恢复、首写保留及卡→订单锁归属已实现；gateway 实际取证到判定覆盖 10080 行分页边界；charging 持久化文件改为 repo。生命周期订单归属已收齐：启动／结束不再直接写 charge_order、charge_event_log 与 event_outbox，改用 order 的 LifecycleView 及 ActivateInTx／MarkStartRejectedInTx／CompleteInTx、order.AppendEventInTx 与 ops.AppendEventInTx；回执与端口占用写模型归 start／finish，order 删除三类公共回执记录，settlement 改用私有 endReceiptView 与 BalanceRefundSource。make check、go mod tidy -diff、全部 cmd 构建通过；独立 3307 三库与 6381 Redis 应用 migrations 后全仓 67 个包 integration 通过（0 失败、0 跳过），启动成功／重放、start 与 finish 各 storage-error 及取消的整体回滚、中央新 owner 条件释放、结束 owner 不匹配回滚及既有拒绝退款与结束重放回归逐条以 -v 确认执行。锁判别变异：移除 LockForLifecycleInTx 的 FOR UPDATE 后 TestConcurrentEndResultAppliesOnce 在闸门断言处失败，恢复后 charging 全包通过。已本地提交 `f09fa0f`，未推送。详细验证见 charging-review。 |
 | S-01／S-02／N-settlement | 完成 | 计费、缺账单恢复、人工退款／开票／计量审核入口及 repo 归位；审计回滚、首签撤权、并发一单一票及注册后台审核通过。两连接旧 RR 验证原申请、首签、费用与成功回执当前读；全仓及独立暂存快照 make check／integration／cmd 构建通过 |
 | F-01／PAY-01／PAY-02／N-payment | 完成 | checkout／回调及归属注入完成，支付模型与渠道中文契约已核对；注册路由覆盖原号恢复、严格输入、付款人／商户／应用／金额／交易号冲突；完整回调取消回滚通过。全仓及独立暂存快照验收通过，tidy 无差异 |
 | W-01／N-wallet | 完成 | 充值／退款／风险入口及 repo 归位；11 笔申请固定 5 次 SQL；两连接验证原请求重放、频次、来源额度、待付行锁隔离、审核等锁后新到账及原成功重放；流水余额使用当前资金事实，取消与审计故障整体回滚；全仓及快照验收通过 |
@@ -537,7 +537,7 @@ make test-integration TEST_MYSQL_URL=...
 
 ### 当前收尾进度与后续安排（2026-10-05）
 
-按上表的 **17 个任务组，16 组完成，约 94%**；这是验收完成率，不是代码量或剩余工时比例。唯一未关闭的是 C 组，其实现与全部验收检查已通过，仅剩按 AGENTS 取得授权后的本地提交。全局退出已按本轮改动重跑，最终工作报告随本轮交付。此前按最终复核重新打开的 OP 已完成关键词转义及角色间隙死锁修复；H／X／G／WK 组合现按真实源码和6.1–6.4逐条闭合证据关闭，历史阶段记录保留当时状态。
+按上表的 **17 个任务组，17 组完成**；这是验收完成率，不是代码量或剩余工时比例。C 组已完成生命周期订单归属收齐并本地提交 `f09fa0f`（未推送），DEP-01 已以“评估完成，保留五进程”关闭。全局退出已按本轮最终源码重跑；最终工作报告随本轮交付。此前按最终复核重新打开的 OP 已完成关键词转义及角色间隙死锁修复；H／X／G／WK 组合现按真实源码和6.1–6.4逐条闭合证据关闭，历史阶段记录保留当时状态。
 
 当前最近提交：`cfb4226`（README精简与维护规则同步）、`226b926`（收尾进度与详细计划）、`098ca2d`（架构与运行文档纠正）、`f5a1ca4`（生命周期事务安全网）、`bbe4803`（运营关键词及角色锁修复）。核对 `git ls-remote` 与 `git branch -vv`：这些提交已在 `origin/main`，此前「均未推送」的记录已过期。具名端点请求采用 Request、回复采用 Reply；`.agents/skills` 已在 `295f5c4` 提交。
 
@@ -548,11 +548,11 @@ make test-integration TEST_MYSQL_URL=...
 收尾按以下顺序执行；准备与只读审查可并行，正式落地、真库测试及提交顺序保持清楚。
 
 1. ~~**完成C组所属事务内能力（5aj）。**~~ **已落地（2026-10-05）。** 将start／finish中的订单锁读、启动／拒绝／完成状态推进、中央端口建立／四条件释放归到order的窄InTx能力；订单事件使用order既有能力，Outbox使用ops既有能力，均在原事务原位置调用。启动回执写模型归start，结束回执写模型归finish；finish和settlement分别使用完整私有只读投影，删除order旧公共回执类型，不留别名或反向生命周期引用。保留原SQL谓词、列映射、RowsAffected与错误优先级、READ COMMITTED、卡／钱包／订单锁序、JSON、时间和计量单位。逐原文／SHA及完整函数展开对照，不能忽略整个Apply来宣称行为不变；同步第3.1节、架构文档、charging-review及实际目录图，明确共享端口／事件的权威归属和阶段事务责任。实际改动为 `internal/order/lifecycle_repo.go` 新增 LifecycleView 与三个推进能力，两个阶段的 `receipt_schema.go` 接管写模型，`internal/settlement/order_view_repo.go` 增加 endReceiptView，`balance_refund_repo.go` 改收 BalanceRefundSource；原谓词、`status` 前置条件、行数不为 1 的冲突语义、锁序、READ COMMITTED、JSON 与计量单位逐处保留。
-2. **验收并提交C组（验收已通过，待授权提交）。** 在正式源码重跑已提交的5ao启动成功／重放、最终Outbox写入后取消或失败整体回滚、中央新owner保护，以及既有启动拒绝退款、结束并发／顺序重放、计量冲突和卡／截止竞争回归。使用独立3307三库与6381 Redis，真实提交夹具按自身完整身份清理并核对零残留；保留有效变异与恢复证据。通过第8节适用默认／真库／全部受影响cmd构建及精确暂存核对后，才将C组改为完成并本地提交；不清开发库、不改公开接口、不推送。实际：`compose.test.yaml` 启动后由 `cmd/migrate` 应用 `migrations/`（测试栈原为空库），`make check`、`go mod tidy -diff`、`go build -buildvcs=false -trimpath -o bin/ ./cmd/...` 通过，`go test -tags=integration -count=1 ./...` 全仓 67 个包通过且无跳过；四个命名用例及 start／finish 各 storage-error 与取消共四例以 `-v` 确认实际执行。未访问开发库、未改公开接口、未推送。按 AGENTS 的 Git 授权规则，本地提交需用户明确授权后执行，之后再把 C 组改为完成。
-3. **归档完整流程与恢复证据。** 逐项核对支付、起充、停机、结束、计费、退款及重启恢复的已有源码、实际执行记录和持久事实。能复用的已通过证据直接登记；缺失点补定向验证。区分真实进程中断后恢复待处理事实、同进程对象重建及空队列健康，不以5y对象重建或五服务健康替代在途进程恢复；需补证时使用隔离测试实例或既有受控模拟链路，保留原请求、冻结载荷和确认／释放／处理标记顺序，不借验收清空开发数据。
+2. ~~**验收并提交C组（验收已通过，待授权提交）。**~~ **已完成（2026-10-05）。** 在正式源码重跑已提交的5ao启动成功／重放、最终Outbox写入后取消或失败整体回滚、中央新owner保护，以及既有启动拒绝退款、结束并发／顺序重放、计量冲突和卡／截止竞争回归。使用独立3307三库与6381 Redis，真实提交夹具按自身完整身份清理并核对零残留；保留有效变异与恢复证据。通过第8节适用默认／真库／全部受影响cmd构建及精确暂存核对后，才将C组改为完成并本地提交；不清开发库、不改公开接口、不推送。实际：`compose.test.yaml` 启动后由 `cmd/migrate` 应用 `migrations/`（测试栈原为空库），`make check`、`go mod tidy -diff`、`go build -buildvcs=false -trimpath -o bin/ ./cmd/...` 通过，`go test -tags=integration -count=1 ./...` 全仓 67 个包通过且无失败无跳过；四个命名用例及 start／finish 各 storage-error 与取消共四例以 `-v` 确认实际执行。未访问开发库、未改公开接口、未推送。补做锁判别变异：移除 `LockForLifecycleInTx` 的 `FOR UPDATE` 后 `TestConcurrentEndResultAppliesOnce` 在闸门断言处失败，恢复后通过。已按 AGENTS 取得用户授权后本地提交 `f09fa0f`，C 组改为完成。
+3. **归档完整流程与恢复证据。** 逐项核对支付、起充、停机、结束、计费、退款及重启恢复的已有源码、实际执行记录和持久事实。能复用的已通过证据直接登记；缺失点补定向验证。区分真实进程中断后恢复待处理事实、同进程对象重建及空队列健康，不以5y对象重建或五服务健康替代在途进程恢复；需补证时使用隔离测试实例或既有受控模拟链路，保留原请求、冻结载荷和确认／释放／处理标记顺序，不借验收清空开发数据。**状态：仍待补证。** 本轮只覆盖启动成功／重放、start 与 finish 的 Outbox 写入后失败与取消整体回滚、中央新 owner 条件释放和结束 owner 不匹配回滚，均为隔离测试库内的定向用例；真实进程中断后恢复待处理事实、在途 worker 进程重启、支付到账与真实渠道退款仍无本轮证据，按第 8.3 节不以对象重建或五服务健康替代。该项是本目标唯一保留的未验边界，关闭前不得声称流程恢复已验收。
 4. ~~**定稿DEP-01部署比较。**~~ **已定稿（2026-10-05）。** C组及上述流程前置完成后，将保留五进程与user＋central四进程候选的比较原位写入架构文档“central的后续评估”，覆盖凭据／安全隔离、独立扩容／发布、资源限制、故障范围、请求成本、恢复成本、运维成本及来源。当前推荐保留五进程；user没有现有user→central HTTP消费者，gateway／worker的远程协调仍在。五Go应用限额、多副本容量和四进程性能／运维成本未实测，明确标为未验证；Redis已有内存预算不写成整个编排无限额。以“评估完成，保留五进程”关闭DEP，不实施合并或新增候选部署配置。实际交付见架构文档该节，并纠正了一处此前的预设：`config.Central` 的凭据集是 `config.User` 的真子集，凭据隔离不构成分进程理由，决定性理由是 central 内部端点当前只 `expose` 不映射宿主端口。
-5. **执行最终全局退出。** 对最终工作区和精确暂存源码核对单一业务入口、表写入归属、跨模块事务、依赖方向、中文字段／函数／接口契约、repo消费者、Request／Reply、路由／OpenAPI／embed及本地文档链接；删除真实失效消费者，不删除历史来源记录。执行`make check`、`go mod tidy -diff`、完整独立三库／Redis integration和全部cmd构建。前端或公开契约有改动才重跑受影响前端测试／构建；无变动沿用最近完整结果并注明覆盖版本。加载受影响开发进程后只读核对服务就绪及原持久事实，保留失败／修复／恢复日志，检查没有遗留变异或未受管理进程。
-6. **交付并关闭整个目标。** 将本表与第8.4节要求逐项对照，所有显式要求有当前证据后，提交最后适用改动并交付工作报告，说明各模块做了什么、关键正确性修复、测试层次、提交范围及遗留边界。报告保留真实微信／外部退款、实机和监管等未验范围；补采原始样本先提交但聚合取消后去重重放未必修复、Redis接收与MySQL发布标记非原子、厂商提交后中央审计尽力记录等既有语义不冒称已修复。缺证据的要求继续待验收；只有全部要求实际完成才关闭目标，不以百分比、准备稿或默认测试通过提前结束。
+5. **执行最终全局退出。** 对最终工作区和精确暂存源码核对单一业务入口、表写入归属、跨模块事务、依赖方向、中文字段／函数／接口契约、repo消费者、Request／Reply、路由／OpenAPI／embed及本地文档链接；删除真实失效消费者，不删除历史来源记录。执行`make check`、`go mod tidy -diff`、完整独立三库／Redis integration和全部cmd构建。前端或公开契约有改动才重跑受影响前端测试／构建；无变动沿用最近完整结果并注明覆盖版本。加载受影响开发进程后只读核对服务就绪及原持久事实，保留失败／修复／恢复日志，检查没有遗留变异或未受管理进程。**状态：本轮改动已完成（2026-10-05）。** 门禁全部重跑通过：`make check` 0、`go mod tidy -diff` 无差异、全部 cmd 构建 0、`go test -tags=integration -count=1 ./...` 全仓 67 个包通过且 0 失败 0 跳过。只读核对结果：充电生命周期已无 charge_order／charge_event_log／event_outbox 的直接表访问；已删除的三类公共回执记录无任何残留消费者；本轮未改动任何路由、OpenAPI、embed 或 `internal/http`，故公开契约与前端结果沿用 4b／5ap 已有证据并在此注明覆盖版本；`docs/` 相对链接 0 处失效。变异已恢复原实现，开发进程本轮未加载、未改开发数据。历史批次引用的 `.tmp/batch*` 日志已不在工作区，该部分历史证据无法就地复核，已在第 9 节开头说明。
+6. **交付并关闭整个目标。** 将本表与第8.4节要求逐项对照，所有显式要求有当前证据后，提交最后适用改动并交付工作报告，说明各模块做了什么、关键正确性修复、测试层次、提交范围及遗留边界。报告保留真实微信／外部退款、实机和监管等未验范围；补采原始样本先提交但聚合取消后去重重放未必修复、Redis接收与MySQL发布标记非原子、厂商提交后中央审计尽力记录等既有语义不冒称已修复。缺证据的要求继续待验收；只有全部要求实际完成才关闭目标，不以百分比、准备稿或默认测试通过提前结束。**状态：已交付（2026-10-05）。** 17 个任务组全部关闭，工作报告随本轮回复交付并保留上列未验边界。
 
 本轮计划与状态更新不改变上述实现边界，也不新增另一套实施进度表；后续每批仍在本节唯一任务表及原位证据记录中更新。
 
