@@ -155,11 +155,17 @@ func TestSwipeOwnsReplayFrozenExtensionCutoffAndFunds(t *testing.T) {
 	if session.PurchasedMinutes != 60 || session.PaidCents != 600 {
 		t.Fatalf("session=%+v", session)
 	}
-	var payment struct{ PaidCents int64 }
+	var payment struct {
+		// PaidCents 从 payment_order 读取的实付累计金额，单位为分，与刷卡加时后的购买金额比对。
+		PaidCents int64
+	}
 	if err := tx.Table("payment_order").Where("biz_id=?", first.ChargeOrderID).Take(&payment).Error; err != nil || payment.PaidCents != 600 {
 		t.Fatalf("payment=%+v %v", payment, err)
 	}
-	var balance struct{ BalanceCents int64 }
+	var balance struct {
+		// BalanceCents 从 wallet_account 读取的余额，单位为分，用于确认未重复扣款或正确累计扣款。
+		BalanceCents int64
+	}
 	if err := tx.Table("wallet_account").Where("user_id=?", user).Take(&balance).Error; err != nil || balance.BalanceCents != 4400 {
 		t.Fatalf("balance=%+v %v", balance, err)
 	}

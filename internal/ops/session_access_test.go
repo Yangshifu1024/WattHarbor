@@ -14,6 +14,7 @@ import (
 	"time"
 )
 
+// TestIssuedAdminAccessTokenLastsEightHours 使用 t 经真实签发、HTTP 信封与 JWT 验证核对八小时有效期、别名和账号／会话身份；无返回值，失败由 t 报告，不访问数据库、Redis 或执行登录鉴权流程。
 func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 	jwt, err := auth.NewJWT(strings.Repeat("x", 32))
 	if err != nil {
@@ -33,10 +34,14 @@ func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 		t.Fatalf("issue status = %d", reply.Code)
 	}
 	var envelope struct {
+		// Data 签发信封中的访问令牌与期限投影，仅用于 JSON 形状和 JWT 一致性比对。
 		Data struct {
-			Token       string `json:"token"`
+			// Token 签发回复的原 token 别名，预期非空且与 AccessToken 相同。
+			Token string `json:"token"`
+			// AccessToken 签发回复的访问 JWT，携管理员、会话及八小时期限，不是刷新令牌。
 			AccessToken string `json:"access_token"`
-			ExpiresIn   int64  `json:"expires_in"`
+			// ExpiresIn 签发回复的有效期，单位秒，与 JWT 的到期秒减签发秒比对。
+			ExpiresIn int64 `json:"expires_in"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(reply.Body.Bytes(), &envelope); err != nil {
@@ -57,8 +62,11 @@ func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 		t.Fatal("issued token lost account or session identity")
 	}
 	for _, tc := range []struct {
-		name  string
-		at    int64
+		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
+		name string
+		// at JWT 验证所用 Unix 时刻，单位秒，覆盖八小时期限之前、边界及之后。
+		at int64
+		// valid 该时刻预期的 JWT 有效性，仅验证签名及期限，不验证 Redis 会话或数据库权限。
 		valid bool
 	}{
 		{"after_previous_expiry", claims.IssuedAt + 16*60, true},
@@ -75,6 +83,7 @@ func TestIssuedAdminAccessTokenLastsEightHours(t *testing.T) {
 	}
 }
 
+// TestIssuedIdentityIncludesDisplayNameActualRoleAndMFAState 使用 t 核对签发回复保留传入的显示名、角色名称、角色主键及 MFA 状态；无返回值，失败由 t 报告，账号资料由夹具给定，不证明实时数据库权限查询。
 func TestIssuedIdentityIncludesDisplayNameActualRoleAndMFAState(t *testing.T) {
 	jwt, err := auth.NewJWT(strings.Repeat("x", 32))
 	if err != nil {
@@ -92,6 +101,7 @@ func TestIssuedIdentityIncludesDisplayNameActualRoleAndMFAState(t *testing.T) {
 	reply := httptest.NewRecorder()
 	router.ServeHTTP(reply, httptest.NewRequest(http.MethodGet, "/identity", nil))
 	var envelope struct {
+		// Data 签发信封中回显的账号资料；来自本测试提供的 Profile，不证明实时账号查询。
 		Data operations.Profile `json:"data"`
 	}
 	if err := json.Unmarshal(reply.Body.Bytes(), &envelope); err != nil || reply.Code != 200 || envelope.Data.DisplayName != "管理员显示名" || envelope.Data.RoleName != "自定义中文角色" || envelope.Data.RoleID != 8 || !envelope.Data.MFAEnabled {

@@ -33,6 +33,8 @@ type OrderCardPurchase struct {
 // 宁可显式表示"读不出"，也不用当前模板补一个看似合理的值。
 func PackageFromSnapshot(raw []byte) *OrderPackage {
 	var frozen struct {
+		// Rule 购买时冻结的计费规则；套餐恢复从中读取方案、计费模式和规则版本，不取当前模板。
+		// 快照缺少 rule 时保留零值，不因此补读当前规则。
 		Rule  Rule   `json:"rule"`
 		Offer *Offer `json:"offer"` // 原购买套餐及冻结价格，不能由当前模板替换
 	}

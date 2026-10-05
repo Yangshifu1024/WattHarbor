@@ -24,6 +24,8 @@ import (
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 
+// testConn 接收测试句柄 t，从必需的 TEST_MYSQL_URL 以十秒初始化 context 打开真实 SQL 池并包装 GORM。
+// 成功返回 ORM 与关闭函数，由调用方在事务及任务结束后调用；缺配置、连接或包装错误由 t.Fatal 终止，不跳过测试。
 func testConn(t *testing.T) (*gorm.DB, func()) {
 	t.Helper()
 	raw := os.Getenv(testMySQLURLEnv)
@@ -45,16 +47,22 @@ func testConn(t *testing.T) (*gorm.DB, func()) {
 
 // lockGate 把一个事务卡在某条带 FOR UPDATE 的语句返回之后。
 type lockGate struct {
-	locked  chan struct{}
+	// locked 首次取得目标行锁后关闭的通知通道，由数据库回调关闭，控制方只接收。
+	locked chan struct{}
+	// release 控制方关闭后允许锁点回调继续的闸门，不提交数据库事务或自行释放行锁。
 	release chan struct{}
-	once    sync.Once
+	// once 确保首次到达锁点的通知及挂起仅发生一次，后续查询不重复进入同一闸门。
+	once sync.Once
+	// passOne 确保 release 通道最多关闭一次，显式放行与退出清理可重复调用。
 	passOne sync.Once
 }
 
+// newLockGate 无入参，返回尚未通知或放行的测试闸门；分配两个通道及零值同步控制器，不操作数据库或启动任务。
 func newLockGate() *lockGate {
 	return &lockGate{locked: make(chan struct{}), release: make(chan struct{})}
 }
 
+// await 接收测试句柄 t 与诊断名称 what，最多等待十五秒观察 g.locked 关闭；无返回值，超时由 t.Fatal 终止，不放行事务或改变数据库锁。
 func (g *lockGate) await(t *testing.T, what string) {
 	t.Helper()
 	select {
@@ -64,6 +72,7 @@ func (g *lockGate) await(t *testing.T, what string) {
 	}
 }
 
+// pass 无入参或返回值，最多一次关闭 g.release，放行正在等待的测试回调；可重复调用，不提交或释放数据库行锁。
 func (g *lockGate) pass() { g.passOne.Do(func() { close(g.release) }) }
 
 // armOnPaymentOrderLock 装回调：本次执行里第一次锁定 payment_order 行后挂起。
@@ -130,11 +139,15 @@ func seedWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 	}
 }
 
+// cleanupWalletRecharge 接收测试句柄 t、真库句柄 db 与支付单号 orderNo，删除该订单及固定充值用户关联的回执、流水、申请、支付、钱包和用户记录。
+// 发件箱由 DeleteOutbox 按原条件定位后删除；无返回值，逐项 SQL 错误由 t.Errorf 记录并继续，不新建事务，调用方负责固定身份的独占及池关闭。
 func cleanupWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 	t.Helper()
 	for _, q := range []struct {
+		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 		table, where string
-		args         []any
+		// args 原条件占位符对应的参数切片，展开顺序与 where 一致，不拼接参数到 SQL。
+		args []any
 	}{
 		{"event_outbox", "envelope_json LIKE ?", []any{"%" + orderNo + "%"}},
 		{"wallet_txn", "biz_ref LIKE ?", []any{"RC-" + orderNo + "%"}},
@@ -156,6 +169,8 @@ func cleanupWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 	}
 }
 
+// verifiedRecharge 接收商户支付单号 orderNo，返回固定测试渠道、商户、应用、用户、五千分金额及 UTC 支付时刻的 VerifiedPayment。
+// 交易流水号由 orderNo 派生，无错误或 IO；这里只构造已验证事实，不执行渠道验签。
 func verifiedRecharge(orderNo string) VerifiedPayment {
 	return VerifiedPayment{
 		Provider: "wechat", MerchantID: "MCH-TEST", AppID: "wxapp-test",
@@ -196,8 +211,11 @@ func TestConcurrentWalletRechargeCallbacksCreditOnce(t *testing.T) {
 	store1 := CallbackService{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 	store2 := CallbackService{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 
+	// outcome 将一笔真实支付回调的结果与错误传回测试控制方，不增加额外重试或持久化。
 	type outcome struct {
+		// res 当前支付回调返回的结果，供检查订单身份与重放，不重复执行到账。
 		res PaymentCallbackResult
+		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)
@@ -300,8 +318,11 @@ func TestConcurrentRechargesForSameUserDoNotLoseUpdate(t *testing.T) {
 	store1 := CallbackService{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 	store2 := CallbackService{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 
+	// outcome 将一笔真实支付回调的结果与错误传回测试控制方，不增加额外重试或持久化。
 	type outcome struct {
+		// res 当前支付回调返回的结果，供检查订单身份与重放，不重复执行到账。
 		res PaymentCallbackResult
+		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)

@@ -79,8 +79,11 @@ func TestConcurrentCutoffKeepsFirstSnapshot(t *testing.T) {
 				return err
 			}
 			var stored struct {
-				CutoffAt                    time.Time
-				Reason                      string
+				// CutoffAt 从 charge_billing_cutoff 当前读取得的首次冻结截止时刻，重放不得覆盖。
+				CutoffAt time.Time
+				// Reason 首次冻结的截止原因，重放时仍与 budget_exhausted 比对。
+				Reason string
+				// ElectricCents,ServiceCents ElectricCents 为冻结电费、ServiceCents 为冻结服务费，均以分为单位，验证后续截止不能改写首次快照。
 				ElectricCents, ServiceCents int64
 			}
 			if err := tx.Table("charge_billing_cutoff").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&stored).Error; err != nil {
@@ -118,15 +121,19 @@ func seedStopOrder(t *testing.T, tx *gorm.DB, id uint64, no string, withCard boo
 	month := started.Format("2006-01") + "-01"
 	offer := rules.Offer{ID: 1, StationID: 1, Name: "恢复测试", Mode: "duration", PriceCents: 100, DurationMinutes: 1}
 	snapshot, err := json.Marshal(struct {
-		Rule  rules.Rule  `json:"rule"`
+		// Rule 购买时冻结的计费规则；套餐恢复从中读取方案、计费模式和规则版本，不取当前模板。
+		Rule rules.Rule `json:"rule"`
+		// Offer 测试订单的购买档位快照，与冻结规则一起写入 pricing_snapshot，不由当前计费模板替换。
 		Offer rules.Offer `json:"offer"`
 	}{Offer: offer})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, seed := range []struct {
+		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
 		table string
-		row   map[string]any
+		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
+		row map[string]any
 	}{
 		{"charge_order", map[string]any{"id": id, "order_no": no, "user_id": id, "device_id": no, "port_no": 1, "status": "charging", "payment_status": "paid", "started_at": started, "created_month": month}},
 		{"charge_order_pricing", map[string]any{"charge_order_id": id, "payment_intent_id": rand.Text(), "user_id": id, "port_code": no, "pricing_snapshot": string(snapshot)}},

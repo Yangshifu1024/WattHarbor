@@ -44,6 +44,8 @@ func seedRefundableOrder(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// cleanupRefundableOrder 接收测试句柄 t 与真库句柄 db，删除固定支付身份的退款、MR-CONC 请求及充电／支付单，然后按相同条件核对零残留。
+// 无返回值，删除或核验失败由 t.Errorf 报告并继续，不创建事务或关闭池；调用方负责本测试固定身份的独占。
 func cleanupRefundableOrder(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, q := range []struct {
@@ -91,6 +93,7 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 	defer gate.pass()
 
 	store := RefundReviewRepo{}
+	// outcome 将人工退款建单状态、稳定单号与事务结果传回测试控制方。
 	type outcome struct {
 		created bool   // 是否实际新建原退款
 		no      string // 原稳定退款单号

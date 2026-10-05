@@ -26,6 +26,9 @@ import (
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 
+// testConn 接收测试句柄 t，从必需的 TEST_MYSQL_URL 以十秒初始化 context 打开真实 SQL 池并包装 GORM。
+// 成功返回 ORM 与关闭函数，由调用方在事务及任务结束后调用；缺配置、连接或包装错误由 t.Fatal 终止，不跳过测试。
+// 返回的 ORM 只在管理员计数投影上限定账号 99001／99002，真实共享角色行锁与独立连接保留。
 func testConn(t *testing.T) (*gorm.DB, func()) {
 	t.Helper()
 	raw := os.Getenv(testMySQLURLEnv)
@@ -59,6 +62,8 @@ const adminRoleCode = "customer_admin"
 // 测试复用现有那一行，不自己造——造会撞唯一键。
 var adminRoleID uint64
 
+// seedTwoAdmins 接收测试句柄 t 与真库句柄 db，删除固定账号 99001／99002，再读取预置 customer_admin 角色并插入两个 active 账号。
+// 无返回值，SQL 失败由 t.Fatal 终止，并更新共享 adminRoleID；不创建角色或包装事务，调用方负责独占固定身份及清理已提交数据。
 func seedTwoAdmins(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Exec("DELETE FROM admin_user WHERE id IN (99001, 99002)").Error; err != nil {
@@ -76,6 +81,8 @@ func seedTwoAdmins(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// activeAdminCount 接收测试句柄 t 与真库句柄 db，关联有效角色统计未删除、active 的客户管理员，并返回数量。
+// 查询错误由 t.Fatal 终止；db 上既有作用域会限制测试账号，函数不添加锁、不修改账号或事务。
 func activeAdminCount(t *testing.T, db *gorm.DB) int64 {
 	t.Helper()
 	var n int64
@@ -88,6 +95,7 @@ func activeAdminCount(t *testing.T, db *gorm.DB) int64 {
 	return n
 }
 
+// itoa 接收无符号整数 v，返回其十进制字符串；零返回 0，无错误或外部副作用。
 func itoa(v uint64) string {
 	if v == 0 {
 		return "0"
@@ -127,12 +135,17 @@ var errWouldLockOut = errors.New("would lock out")
 
 // roleLockGate 把事务一卡在拿到角色行锁之后，由主控决定何时放行。
 type roleLockGate struct {
-	locked  chan struct{}
+	// locked 首次取得目标行锁后关闭的通知通道，由数据库回调关闭，控制方只接收。
+	locked chan struct{}
+	// release 控制方关闭后允许锁点回调继续的闸门，不提交数据库事务或自行释放行锁。
 	release chan struct{}
-	once    sync.Once
+	// once 确保首次到达锁点的通知及挂起仅发生一次，后续查询不重复进入同一闸门。
+	once sync.Once
+	// passOne 确保 release 通道最多关闭一次，显式放行与退出清理可重复调用。
 	passOne sync.Once
 }
 
+// pass 无入参或返回值，最多一次关闭 g.release，放行正在等待的测试回调；可重复调用，不提交或释放数据库行锁。
 func (g *roleLockGate) pass() { g.passOne.Do(func() { close(g.release) }) }
 
 // TestConcurrentAdminDeletionKeepsOneActive 钉住互删不会把系统锁死。

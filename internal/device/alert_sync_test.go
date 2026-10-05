@@ -10,7 +10,10 @@ import (
 
 // TestRecoveryRequiresExplicitNormalStates 只验证纯协议解码的存在性，缺字段和null不能被零值解码为正常设备或端口。
 func TestRecoveryRequiresExplicitNormalStates(t *testing.T) {
-	for _, input := range []struct{ metric, payload string }{
+	for _, input := range []struct {
+		// metric,payload metric 为待恢复告警指标，payload 为原协议 JSON；组合用于确认缺字段或 null 不得隐式解码为正常状态。
+		metric, payload string
+	}{
 		{"smoke", `{"PortStates":[0]}`}, {"high_temperature", `{"DeviceStatus":null,"PortStates":[0]}`},
 		{"port_fault_1", `{"DeviceStatus":0,"PortStates":[null]}`},
 	} {

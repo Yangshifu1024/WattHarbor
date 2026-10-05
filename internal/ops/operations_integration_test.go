@@ -43,8 +43,10 @@ func TestOperationsAnnouncementAuditAndBeijingDashboard(t *testing.T) {
 	start, end := today.UTC(), today.AddDate(0, 0, 1).UTC()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	seeds := []struct {
+		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
 		table string
-		row   map[string]any
+		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
+		row map[string]any
 	}{
 		{"user", map[string]any{"id": id, "openid": board, "created_at": start}},
 		{"user", map[string]any{"id": id + 1, "openid": board + "deleted", "created_at": start, "deleted_at": start}},
@@ -59,9 +61,12 @@ func TestOperationsAnnouncementAuditAndBeijingDashboard(t *testing.T) {
 		}
 	}
 	orders := []struct {
+		// created,started,ended created 为订单创建时刻，started 为开始时刻，ended 为结束时刻；零结束时间表示尚未结束，用于统计日界限条件。
 		created, started, ended time.Time
-		status                  string
-		fee                     any
+		// status 该测试充电订单状态，与时间范围共同决定统计归属。
+		status string
+		// fee 测试订单的 total_cents，整数金额以分为单位；nil 表示 SQL NULL，用于核对汇总的空值处理。
+		fee any
 	}{
 		{start.Add(-time.Millisecond), start.Add(-time.Millisecond), start.Add(-time.Millisecond), "completed", int64(120)},
 		{start, start, start, "completed", int64(0)},

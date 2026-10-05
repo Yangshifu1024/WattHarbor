@@ -182,7 +182,10 @@ func TestSnapshotReadMissesCommitThatHappenedDuringLockWait(t *testing.T) {
 	}
 
 	// 事务一现在才去拿行锁——它已经晚于事务二的提交。
-	var locked struct{ ID uint64 }
+	var locked struct {
+		// ID 当前锁定支付行的主键扫描投影，仅确认加锁查询命中原支付身份。
+		ID uint64
+	}
 	if err := tx1.Clauses(clause.Locking{Strength: "UPDATE"}).Table("payment_order").
 		Where("id = ?", orderKey).Take(&locked).Error; err != nil {
 		t.Fatalf("加锁读失败：%v", err)

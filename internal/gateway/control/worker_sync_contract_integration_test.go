@@ -38,8 +38,10 @@ func TestWorkerSyncClientMatchesRegisteredGatewayAndMySQL(t *testing.T) {
 	start := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	end := start.Add(30 * time.Minute)
 	for _, seed := range []struct {
+		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
 		table string
-		row   map[string]any
+		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
+		row map[string]any
 	}{
 		{"charge_command", map[string]any{"command_id": commandID, "stop_command_id": stopID, "charge_order_id": id, "payment_order_id": id, "order_no": orderNo, "user_id": id, "device_id": device, "port_no": 1, "port_code": device, "port_id": nil, "status": "acked", "result_code": 0, "ack_at": start}},
 		{"device_port", map[string]any{"id": id, "device_id": device, "port_no": 1, "port_code": device, "status": "charging", "current_order_id": orderNo}},
@@ -137,8 +139,10 @@ func TestWorkerSyncClientMatchesRegisteredGatewayAndMySQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, check := range []struct {
+		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 		table, where string
-		value        any
+		// value 当前条件占位符对应的原卡、订单、设备或用户身份值，保持原类型。
+		value any
 	}{
 		{"charge_command", "command_id = ?", commandID}, {"device_port", "id = ?", id}, {"device_event", "device_id = ?", device}, {"charge_end_delivery", "device_event_id = ?", id + 1},
 	} {

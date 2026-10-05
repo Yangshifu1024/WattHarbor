@@ -61,10 +61,14 @@ func TestGatewayEvidenceReachesNoPowerDecision(t *testing.T) {
 		boundarySeconds[i] = (i-len(boundarySeconds)+1)*15 - 2
 	}
 	for _, tc := range []struct {
-		name    string
+		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
+		name string
+		// seconds 相对本轮检查时刻的心跳接收偏移，单位秒，负数表示过去；顺序用于验证跨页连续证据。
 		seconds []int
+		// missing 应从样本中省略目标端口的索引；负一表示全部样本具有目标端口。
 		missing int
-		want    bool
+		// want 该组完整证据是否应满足连续一分钟零功率的预期结果。
+		want bool
 	}{
 		{"continuous", []int{-70, -55, -40, -25, -10, -2}, -1, true},
 		{"missing", []int{-70, -55, -40, -25, -10, -2}, 2, false},

@@ -226,9 +226,12 @@ func TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity(t *testing.T) {
 		t.Fatalf("late refund=%+v", refund)
 	}
 	for _, q := range []struct {
+		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 		table, where string
-		arg          any
-		want         int64
+		// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
+		arg any
+		// want 原支付或退款身份下预期的持久记录数量，用于核对迟到到账路径。
+		want int64
 	}{
 		{"refund_record", "payment_order_id=?", pay.ID, 1},
 		{"charge_order", "payment_order_id=?", pay.ID, 0},
@@ -315,8 +318,10 @@ func TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet(t *testing.T) {
 		t.Fatalf("account not credited once: %+v", account)
 	}
 	for _, q := range []struct {
+		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 		table, where string
-		arg          any
+		// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
+		arg any
 	}{
 		{"wallet_recharge_request", "request_id=?", in.RequestID},
 		{"payment_order", "id=?", out.PaymentOrderID},

@@ -43,6 +43,8 @@ func execRefund(t *testing.T, db *gorm.DB, id uint64, refundNo string, cents int
 	}
 }
 
+// seedExecutableRefund 接收测试句柄 t 与真库句柄 db，插入固定一万分实付支付单及对应 refunding 充电订单，供退款成功入账验证。
+// 无返回值，写入失败由 t.Fatal 终止；不创建退款单或新事务，调用方负责固定主键独占及已提交数据清理。
 func seedExecutableRefund(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Table("payment_order").Create(map[string]any{
@@ -66,6 +68,8 @@ func seedExecutableRefund(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// cleanupExecutableRefund 接收测试句柄 t、真库句柄 db 与退款主键切片 refundIDs，删除对应成功回执、退款记录及固定充电／支付单。
+// 发件箱只删除原退款来源与支付身份匹配的事件；无返回值，逐项错误由 t.Errorf 记录并继续，不重置数据库或关闭池。
 func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 	t.Helper()
 	// 仅清理由本测试退款身份生成的事件，避免删除其他包的开发或并发测试数据。
@@ -88,6 +92,8 @@ func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 	}
 }
 
+// execRecord 接收退款主键 id、退款单号 refundNo 与分为单位的 cents，返回关联固定支付、用户与充电身份的 processing RefundRecord。
+// 不校验金额或写入数据库，无错误或外部副作用。
 func execRecord(id uint64, refundNo string, cents int64) RefundRecord {
 	return RefundRecord{
 		ID: id, RefundNo: refundNo, PaymentOrderID: execPayOrdID, UserID: execUserID,
@@ -95,6 +101,7 @@ func execRecord(id uint64, refundNo string, cents int64) RefundRecord {
 	}
 }
 
+// execRequest 接收退款单号 refundNo 与分为单位的 cents，返回固定商户单号、渠道流水号及一万分总额的 RefundRequest；不校验额度、调用渠道或创建任务。
 func execRequest(refundNo string, cents int64) pay.RefundRequest {
 	return pay.RefundRequest{
 		RefundNo: refundNo, MerchantOrderNo: "P-EXEC-1",
@@ -102,6 +109,8 @@ func execRequest(refundNo string, cents int64) pay.RefundRequest {
 	}
 }
 
+// execResult 接收退款单号 refundNo、分为单位的 cents 与渠道退款身份 refundID，返回固定 SUCCESS 状态及 UTC 成功时刻的 RefundResult。
+// 不调用渠道或确认到账，只为真实入账事务提供测试事实，无错误或 IO。
 func execResult(refundNo string, cents int64, refundID string) pay.RefundResult {
 	return pay.RefundResult{
 		RefundNo: refundNo, MerchantOrderNo: "P-EXEC-1", TransactionID: "SIM4200000002",

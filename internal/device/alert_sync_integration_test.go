@@ -39,9 +39,12 @@ func TestConcurrentAlertSyncKeepsOneActiveEpisode(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	t.Cleanup(func() {
 		for _, item := range []struct {
-			db           *gorm.DB
+			// db 该清理项所属真库的 GORM 句柄；告警记录位于 central，原协议事件位于 gateway，池由测试管理。
+			db *gorm.DB
+			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 			table, where string
-			arg          any
+			// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
+			arg any
 		}{{setup, "alert_event", "device_id=?", board}, {gw, "device_event", "event_key=?", key}} {
 			if err := item.db.Table(item.table).Where(item.where, item.arg).Delete(nil).Error; err != nil {
 				t.Error(err)
@@ -109,9 +112,12 @@ func TestConcurrentAlertSyncKeepsOneActiveEpisode(t *testing.T) {
 		}
 		t.Cleanup(func() { db.Callback().Query().Remove(callback); db.Callback().Query().Remove(callback + "_scope") })
 	}
+	// result 将真实告警同步用例的新增数量与错误传回测试控制方。
 	type result struct {
+		// raised 真实告警同步调用新增的告警数量，用于核对并发重复事件不重复生成告警。
 		raised int
-		err    error
+		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
+		err error
 	}
 	call := func(db *gorm.DB) chan result {
 		ch := make(chan result, 1)

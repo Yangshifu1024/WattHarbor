@@ -181,9 +181,12 @@ func TestActivitySharedTemplateSerializesDifferentRules(t *testing.T) {
 	tx1, tx2 := p1.orm.Begin(), p2.orm.Begin()
 	defer tx1.Rollback()
 	defer tx2.Rollback()
+	// outcome 将一笔发券调用的结果与错误传回并发测试控制方；外层事务提交或回滚仍由测试负责。
 	type outcome struct {
+		// rows 当前发券调用返回的发放结果，供并发控制方比对，不查询或更新记录。
 		rows []ActivityResult
-		err  error
+		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
+		err error
 	}
 	a, b := make(chan outcome, 1), make(chan outcome, 1)
 	go func() {
@@ -285,7 +288,9 @@ func TestMarketingQueriesKeepUserExpiryAndNulls(t *testing.T) {
 	uid := testfixture.NewID()
 	now := time.Now().UTC()
 	for i, row := range []struct {
-		user    uint64
+		// user 该测试发券记录的用户主键，用于核对查询不会返回另一用户的券。
+		user uint64
+		// expires 该测试发券记录的绝对到期时刻，用于区分可用与过期状态。
 		expires time.Time
 	}{{uid, now.Add(time.Hour)}, {uid, now.Add(-time.Hour)}, {uid + 1, now.Add(time.Hour)}} {
 		if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": coupon, "user_id": row.user, "grant_source": "manual", "status": "unused", "expired_at": row.expires, "source_event_id": uuid.NewString()}).Error; err != nil {

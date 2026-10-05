@@ -26,8 +26,10 @@ func faultFixture(t *testing.T, db *gorm.DB) (uint64, string, operations.Profile
 	board := "FT" + tag
 	t.Cleanup(func() {
 		for _, item := range []struct {
+			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 			table, where string
-			arg          any
+			// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
+			arg any
 		}{
 			{"audit_log", "actor_id=?", id}, {"device_fault_report_event", "report_id IN (SELECT id FROM device_fault_report WHERE device_id=?)", board},
 			{"device_fault_report", "device_id=?", board}, {"device_meta", "device_id=?", board}, {"admin_data_scope", "admin_user_id=?", id},
@@ -43,8 +45,10 @@ func faultFixture(t *testing.T, db *gorm.DB) (uint64, string, operations.Profile
 		}
 	})
 	for _, seed := range []struct {
+		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
 		table string
-		row   map[string]any
+		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
+		row map[string]any
 	}{
 		{"role", map[string]any{"id": id, "code": tag, "name": "fault proof", "is_builtin": false}},
 		{"admin_user", map[string]any{"id": id, "username": tag, "password_hash": "fixture", "role_id": id, "status": "active", "auth_version": 1}},
@@ -107,9 +111,13 @@ func TestFaultTransitionsKeepAtomicAuditAndCurrentScope(t *testing.T) {
 		t.Fatalf("outside assignee=%v", err)
 	}
 	var row struct {
-		Status     string
+		// Status 故障工单当前持久处理状态，用于核对未指派、处理与恢复分支。
+		Status string
+		// AssignedTo 故障工单当前指派账号主键；nil 表示未指派，不与零主键混用。
 		AssignedTo *uint64
+		// 故障工单保存的图片 JSON 文本；本场景比对 null 与后续提供的原图片内容。
 		ImagesJSON string
+		// ResolvedAt 故障工单解决时刻；nil 表示尚未解决，恢复重放不应改写已冻结时刻。
 		ResolvedAt *time.Time
 	}
 	read := func() {

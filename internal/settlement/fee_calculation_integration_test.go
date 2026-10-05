@@ -34,11 +34,15 @@ func feeSource(chargeOrderID uint64, orderNo string) Source {
 	}
 }
 
+// cleanupFee 接收测试句柄 t、真库句柄 db、充电主键 chargeOrderID 与订单号 orderNo，按两种身份删除计价投递、回执及计算记录。
+// 无返回值，逐项 SQL 失败由 t.Errorf 记录并继续；不打开事务或关闭池，调用方负责本测试身份与清理时机。
 func cleanupFee(t *testing.T, db *gorm.DB, chargeOrderID uint64, orderNo string) {
 	t.Helper()
 	for _, q := range []struct {
+		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 		table, where string
-		args         []any
+		// args 原条件占位符对应的参数切片，展开顺序与 where 一致，不拼接参数到 SQL。
+		args []any
 	}{
 		{"fee_delivery", "charge_order_id = ?", []any{chargeOrderID}},
 		{"fee_receipt", "charge_order_id = ?", []any{chargeOrderID}},
@@ -76,8 +80,11 @@ func TestConcurrentCalculateProducesSingleResult(t *testing.T) {
 	defer gate.pass()
 
 	src := feeSource(chargeOrderID, orderNo)
+	// outcome 将真实计价结果与错误传回并发测试控制方，不替计算器创建事务。
 	type outcome struct {
+		// res 当前真实计价返回的结果，包含计算单号与分为单位的金额，供并发唯一结果核对。
 		res Result
+		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)

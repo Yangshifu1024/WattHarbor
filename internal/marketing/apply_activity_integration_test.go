@@ -16,6 +16,8 @@ import (
 // 事务原子性、唯一键冲突与幂等重放。这三样单测一个都覆盖不到：
 // 它们只在真库的约束和真事务的回滚行为下才存在。
 
+// seedCoupon 接收测试句柄 t、调用方事务 tx、固定券主键 id、小时有效期 validHours 与可选结束时间 endAt。
+// 在 tx 插入五百分抵扣券；endAt 非 nil 覆写默认结束时间，nil 保持默认。无返回值，插入失败由 t.Fatal 终止，提交或回滚由调用方负责。
 func seedCoupon(t *testing.T, tx *gorm.DB, id uint64, validHours int, endAt *time.Time) {
 	t.Helper()
 	row := map[string]any{
@@ -33,6 +35,7 @@ func seedCoupon(t *testing.T, tx *gorm.DB, id uint64, validHours int, endAt *tim
 	}
 }
 
+// grantCount 接收测试句柄 t 与调用方句柄 tx，委托 grantCountFor 统计当前可见的全部发券记录并返回数量；不限制用户，查询错误由 t.Fatal 终止，不修改数据。
 func grantCount(t *testing.T, tx *gorm.DB) int64 { return grantCountFor(t, tx, 0) }
 
 // grantCountFor 统计某个用户拿到的券数；userID=0 表示不限用户全表统计。

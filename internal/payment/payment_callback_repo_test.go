@@ -32,9 +32,13 @@ func TestEntryRejectedCoversEveryGuard(t *testing.T) {
 	}
 
 	cases := []struct {
-		name   string
+		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
+		name string
+		// mutate 覆写当前测试输入的回调，用于构造金额或已验证支付事实的非法边界；nil 时保留基准输入。
 		mutate func(*VerifiedPayment)
-		store  func(*CallbackService)
+		// store 覆写支付回调服务所期望渠道身份的可选回调；nil 时保留基准身份，不访问存储。
+		store func(*CallbackService)
+		// reject 预期入口是否拒绝当前已验证支付事实，只针对纯准入函数断言。
 		reject bool
 	}{
 		{"基准：全部合规应放行", nil, nil, false},
@@ -149,6 +153,7 @@ func TestCallbackDigestIgnoresPaidAt(t *testing.T) {
 	}
 }
 
+// longString 接收非负字节长度 n，返回由 n 个 ASCII x 组成的字符串；零返回空串，负数由 make 触发 panic，无错误返回或外部 IO。
 func longString(n int) string {
 	b := make([]byte, n)
 	for i := range b {

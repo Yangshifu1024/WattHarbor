@@ -105,7 +105,10 @@ func TestSwipeReadsCutoffCommittedAfterRRSnapshot(t *testing.T) {
 	if err := tx.Where("charge_order_id=?", id).Take(&session).Error; err != nil || session.PurchasedMinutes != 30 || session.PaidCents != 100 {
 		t.Fatalf("unexpected session debit=%+v %v", session, err)
 	}
-	var balance struct{ BalanceCents int64 }
+	var balance struct {
+		// BalanceCents 从 wallet_account 读取的余额，单位为分，用于确认未重复扣款或正确累计扣款。
+		BalanceCents int64
+	}
 	if err := tx.Table("wallet_account").Where("user_id=?", id).Take(&balance).Error; err != nil || balance.BalanceCents != 1000 {
 		t.Fatalf("unexpected wallet debit=%+v %v", balance, err)
 	}
@@ -129,8 +132,10 @@ func seedCutoffCard(t *testing.T, db *gorm.DB) (uint64, string, string, string) 
 	port := "CUT" + no
 	t.Cleanup(func() {
 		for _, query := range []struct {
+			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 			table, where string
-			args         []any
+			// args 原条件占位符对应的参数切片，展开顺序与 where 一致，不拼接参数到 SQL。
+			args []any
 		}{{"card_operation", "charge_order_id=?", []any{id}}, {"wallet_txn", "user_id=?", []any{id}}, {"card_charge", "charge_order_id=?", []any{id}}, {"charge_billing_cutoff", "charge_order_id=?", []any{id}}, {"charge_event_log", "charge_order_id=?", []any{id}}, {"charge_order", "id=?", []any{id}}, {"payment_order", "id=?", []any{id}}, {"online_card", "id=?", []any{id}}, {"wallet_account", "user_id=?", []any{id}}, {"user", "id=?", []any{id}}} {
 			if err := db.Table(query.table).Where(query.where, query.args...).Delete(map[string]any{}).Error; err != nil {
 				t.Error(err)
@@ -145,8 +150,10 @@ func seedCutoffCard(t *testing.T, db *gorm.DB) (uint64, string, string, string) 
 	raw, _ := json.Marshal(pkg)
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, entry := range []struct {
+			// table 本次刷卡截止夹具的种子目标表，与 row 原列映射配对。
 			table string
-			row   map[string]any
+			// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
+			row map[string]any
 		}{{"user", map[string]any{"id": id, "openid": no, "status": "active"}}, {"wallet_account", map[string]any{"user_id": id, "balance_cents": 1000, "status": "active"}}, {"online_card", map[string]any{"id": id, "user_id": id, "card_no": cardNo, "status": "active"}}, {"payment_order", map[string]any{"id": id, "order_no": "P" + no, "biz_type": "charge", "biz_id": id, "user_id": id, "pay_method": "balance", "total_cents": 100, "paid_cents": 100, "status": "paid", "created_month": time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC)}}, {"charge_order", map[string]any{"id": id, "order_no": "C" + no, "user_id": id, "device_id": no, "port_no": 1, "port_code": port, "payment_order_id": id, "status": "charging", "started_at": time.Now(), "created_month": time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC)}}, {"card_charge", map[string]any{"charge_order_id": id, "card_id": id, "card_no": cardNo, "port_code": port, "active_port": port, "paid_cents": 100, "purchased_minutes": 30, "max_minutes": 180, "package_json": string(raw), "wallet_after_cents": 1000}}} {
 			if err := tx.Table(entry.table).Create(entry.row).Error; err != nil {
 				return err

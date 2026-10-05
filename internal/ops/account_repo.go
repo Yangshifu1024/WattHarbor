@@ -199,6 +199,7 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 // 只接受 active 且未删除的账号；查不到与被停用都返回凭据错误，避免泄漏账号是否存在。
 func (s AccountRepo) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
 	var row struct {
+		// AdminAccount 从当前有效 admin_user 行扫描的账号列，包含主键、角色归属与鉴权版本；与同次联表查询的角色信息组合，不另查缓存。
 		AdminAccount
 		Role     string // 当前有效角色编码
 		RoleName string // 当前角色展示名称

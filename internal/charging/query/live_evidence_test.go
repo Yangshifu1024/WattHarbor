@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort 使用 t 核对在线计量单位、离线时保留最后证据，以及不同端口和订单起点的隔离；无返回值，失败由 t 报告，仅构造内存协议事件。
 func TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort(t *testing.T) {
 	start := time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 	samples := []protocol.Event{}
@@ -34,6 +35,7 @@ func TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort(t *testing.T) {
 	}
 }
 
+// TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement 使用 t 核对实时估算可以连接短采样间隔，而最终结算证据仍把该间隔标记缺失；无返回值，失败由 t 报告，不访问存储或替代真实计量。
 func TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement(t *testing.T) {
 	start := time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 	samples := []protocol.Event{}

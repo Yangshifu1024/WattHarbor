@@ -70,26 +70,32 @@ func txRollback(t *testing.T, db *gorm.DB) *gorm.DB {
 // ruleOpt 是 seedRule 的可选覆写。
 type ruleOpt func(map[string]any)
 
+// withStatus 接收规则状态 s，返回在调用时覆写种子行 status 的 ruleOpt；不校验状态或访问数据库，只修改传入的非 nil 行映射。
 func withStatus(s string) ruleOpt {
 	return func(row map[string]any) { row["status"] = s }
 }
 
+// withDeletedAt 接收软删除时间 ts，返回在调用时覆写种子行 deleted_at 的 ruleOpt；不改变时区或检查零值，只修改传入的非 nil 行映射。
 func withDeletedAt(ts time.Time) ruleOpt {
 	return func(row map[string]any) { row["deleted_at"] = ts }
 }
 
+// withPerUserLimit 接收单用户份数 n，返回覆写种子行 per_user_limit 的 ruleOpt；零值或负数原样保留以测试业务默认规则，不访问数据库。
 func withPerUserLimit(n int) ruleOpt {
 	return func(row map[string]any) { row["per_user_limit"] = n }
 }
 
+// withCoupon 接收券主键 id，返回覆写种子行 coupon_id 的 ruleOpt；不查询券存在性，仅修改传入的非 nil 行映射。
 func withCoupon(id uint64) ruleOpt {
 	return func(row map[string]any) { row["coupon_id"] = id }
 }
 
+// withMaxGrants 接收活动总份数 n，返回覆写种子行 max_grants 的 ruleOpt；不提前转换零值或负数，仅修改种子映射，不访问数据库。
 func withMaxGrants(n int) ruleOpt {
 	return func(row map[string]any) { row["max_grants"] = n }
 }
 
+// withInviterCoupon 接收邀请人奖励券主键 id，返回覆写种子行 inviter_coupon_id 的 ruleOpt；不查询奖励资格或券，仅修改种子映射。
 func withInviterCoupon(id uint64) ruleOpt {
 	return func(row map[string]any) { row["inviter_coupon_id"] = id }
 }
@@ -129,6 +135,7 @@ func ruleIDs(rules []activityRule) []uint64 {
 	return out
 }
 
+// ids 接收规则切片 rules，按原顺序提取主键并用 fmt.Sprint 返回比对字符串；空切片返回 []，不排序、修改输入或访问数据库。
 func ids(rules []activityRule) string { return fmt.Sprint(ruleIDs(rules)) }
 
 // seedEstablishedUser 造一个"已完成充电"的账号。

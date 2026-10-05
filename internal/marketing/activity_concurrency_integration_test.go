@@ -30,7 +30,9 @@ import (
 type lockGate struct {
 	locked  chan struct{} // 事务一到锁点就发信号
 	release chan struct{} // 主控放行后才继续
-	once    sync.Once
+	// once 确保首次到达锁点的通知及挂起仅发生一次，后续查询不重复进入同一闸门。
+	once sync.Once
+	// passOne 确保 release 通道最多关闭一次，显式放行与退出清理可重复调用。
 	passOne sync.Once
 }
 
@@ -104,9 +106,12 @@ func cleanupSeed(t *testing.T, db *gorm.DB, ruleIDs, couponIDs []uint64) {
 	}
 }
 
+// sqlPair 组合独立测试 SQL 池与同池 ORM，供两个真实事务并发；池由创建测试的 Cleanup 关闭。
 type sqlPair struct {
+	// sqlDB 此并发参与者独立打开的 SQL 连接池，与 orm 共用连接资源。
 	sqlDB *sql.DB
-	orm   *gorm.DB
+	// orm 同一 sqlDB 的 GORM 入口，供安装锁点回调和开启真实事务。
+	orm *gorm.DB
 }
 
 // armOnce 装上回调：本次执行里第一次出现带 FOR UPDATE 的查询后，
@@ -158,8 +163,11 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 	}
 	defer tx1.Rollback()
 
+	// outcome 将一笔发券调用的结果与错误传回并发测试控制方；外层事务提交或回滚仍由测试负责。
 	type outcome struct {
+		// res 当前发券调用返回的 ActivityResult 切片，供比对份数与重放，不证明外层事务已提交。
 		res []ActivityResult
+		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)
@@ -263,8 +271,11 @@ func TestConcurrentGrantsBothSucceedWhenBudgetAllows(t *testing.T) {
 	defer tx1.Rollback()
 	defer tx2.Rollback()
 
+	// outcome 将一笔发券调用的结果与错误传回并发测试控制方；外层事务提交或回滚仍由测试负责。
 	type outcome struct {
+		// res 当前发券调用返回的 ActivityResult 切片，供比对份数与重放，不证明外层事务已提交。
 		res []ActivityResult
+		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)

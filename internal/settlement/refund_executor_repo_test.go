@@ -54,10 +54,14 @@ func TestReceiptMatchesRejectsAnyMismatch(t *testing.T) {
 // 两个方向都是资金事故，所以分开钉。
 func TestProviderMatchesChannel(t *testing.T) {
 	cases := []struct {
-		name        string
-		provider    string
+		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
+		name string
+		// provider 本轮退款渠道名，用于和交易流水号的模拟／真实来源比对。
+		provider string
+		// transaction 本轮原渠道交易号；SIM 前缀表示模拟来源，空串作为既有非模拟边界测试。
 		transaction string
-		want        bool
+		// want 渠道与交易来源是否应匹配的预期布尔结果。
+		want bool
 	}{
 		{"模拟器结算模拟交易", "simulation", "SIM20260101", true},
 		{"真实渠道结算真实交易", "wechat", "4200001234", true},
@@ -76,6 +80,7 @@ func TestProviderMatchesChannel(t *testing.T) {
 	}
 }
 
+// longStr 接收非负字节长度 n，返回由 n 个 ASCII x 组成的字符串；零返回空串，负数由 make 触发 panic，无错误返回或外部 IO。
 func longStr(n int) string {
 	b := make([]byte, n)
 	for i := range b {

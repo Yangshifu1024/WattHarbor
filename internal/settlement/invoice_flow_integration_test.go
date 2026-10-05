@@ -29,7 +29,10 @@ func TestConcurrentInvoiceApplicationsSerializeOnOwnedOrder(t *testing.T) {
 	id := testfixture.NewID()
 	no := "C-IV-" + rand.Text()
 	defer func() {
-		for _, q := range []struct{ table, where string }{{"invoice_request", "biz_type='charge' AND biz_id=?"}, {"charge_fee_receipt", "charge_order_id=?"}, {"charge_order", "id=?"}} {
+		for _, q := range []struct {
+			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
+			table, where string
+		}{{"invoice_request", "biz_type='charge' AND biz_id=?"}, {"charge_fee_receipt", "charge_order_id=?"}, {"charge_order", "id=?"}} {
 			if err := setup.Table(q.table).Where(q.where, id).Delete(nil).Error; err != nil {
 				t.Errorf("cleanup %s: %v", q.table, err)
 			}

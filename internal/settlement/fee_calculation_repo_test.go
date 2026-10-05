@@ -27,7 +27,9 @@ func TestPriceSourceRejectsUnauditedFinalFee(t *testing.T) {
 	}
 
 	cases := []struct {
-		name   string
+		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
+		name string
+		// mutate 覆写当前测试输入的回调，用于构造金额或已验证支付事实的非法边界；nil 时保留基准输入。
 		mutate func(*Source)
 	}{
 		{"无复核单号", func(s *Source) { s.ReviewID = "" }},
@@ -64,8 +66,10 @@ func TestPriceSourceRejectsUnauditedFinalFee(t *testing.T) {
 func TestPriceSourceAcceptsBoundaryAmounts(t *testing.T) {
 	offer := &charging.Offer{ID: 1, PriceCents: 1000}
 	cases := []struct {
+		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
-		fee  charging.Fee
+		// fee 复核后费用输入，电费、服务费及合计均以分为单位，用于合法金额边界判断。
+		fee charging.Fee
 	}{
 		{"只有电费", charging.Fee{ElectricCents: 1000, TotalCents: 1000}},
 		{"只有服务费", charging.Fee{ServiceCents: 1000, TotalCents: 1000}},

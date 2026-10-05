@@ -20,11 +20,16 @@ func TestActivityGrantExpiryTakesEarliestOfThreeBounds(t *testing.T) {
 	couponEnd, activityEnd := at(48), at(10)
 
 	cases := []struct {
-		name       string
+		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
+		name string
+		// validHours 券从发放时刻起算的有效期，单位小时；零用来验证立即到期边界。
 		validHours int
-		couponEnd  *time.Time
+		// couponEnd 券模板的可选绝对结束时间；nil 表示无模板结束限制。
+		couponEnd *time.Time
+		// activityEn 活动的绝对结束时间，与券有效期和模板结束时间共同取最早期限。
 		activityEn time.Time
-		want       time.Time
+		// want 当前规则组合预期的最早发券到期时刻。
+		want time.Time
 	}{
 		{"券有效期最短", 24, &couponEnd, at(72), at(24)},
 		{"券结束时间最短", 72, &couponEnd, at(72), at(48)},
@@ -57,7 +62,10 @@ func TestActivityGrantExpiryTakesEarliestOfThreeBounds(t *testing.T) {
 // 0 与负数都必须落到 1 份，不能当成不限量。不限量的语义由总发放上限承担；
 // 若单人额度被当成不限量，一次活动就能把全部预算发给同一个人。
 func TestPerUserAllowanceTreatsUnsetAsOne(t *testing.T) {
-	cases := map[string]struct{ in, want int }{
+	cases := map[string]struct {
+		// in,want in 为配置的单人份数，want 为预期有效份数；零或负数预期使用一份，不当作不限量。
+		in, want int
+	}{
 		"未配置（0）":   {0, 1},
 		"负数":       {-1, 1},
 		"配置 1 份":   {1, 1},

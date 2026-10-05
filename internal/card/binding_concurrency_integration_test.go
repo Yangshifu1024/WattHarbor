@@ -26,8 +26,10 @@ func TestFirstCardBindingUsesUniqueClaimAndCurrentLockedIdentity(t *testing.T) {
 		var row OnlineCard
 		first.Where("card_no=?", cardNo).Find(&row)
 		for _, entry := range []struct {
+			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 			table, where string
-			value        any
+			// value 当前条件占位符对应的原卡、订单、设备或用户身份值，保持原类型。
+			value any
 		}{{"online_card_audit", "card_id=?", row.ID}, {"online_card", "card_no=?", cardNo}, {"wallet_account", "user_id=?", id}, {"user", "id=?", id}} {
 			if err := first.Table(entry.table).Where(entry.where, entry.value).Delete(map[string]any{}).Error; err != nil {
 				t.Error(err)
@@ -69,6 +71,7 @@ func TestFirstCardBindingUsesUniqueClaimAndCurrentLockedIdentity(t *testing.T) {
 	defer second.Callback().Raw().Remove(secondGate)
 	actor := operations.Profile{ID: id, Permissions: []string{"online_card.manage"}}
 	in := CardBindInput{CardNo: cardNo, UserID: id, Reason: "verified first binding"}
+	// result 将真实绑卡用例返回的主键与错误传回测试控制方，不代表 HTTP 响应。
 	type result struct {
 		id  uint64 /* 原卡主键 */
 		err error  /* 用例结果 */
