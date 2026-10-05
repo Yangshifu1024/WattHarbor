@@ -17,11 +17,11 @@ func (a API) stations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
-	out, err := device.ListStations(c.Request.Context(), a.DB, q, scope)
+	out, err := a.Stations.List(c.Request.Context(), q, scope)
 	if err != nil {
 		stationFailure(c, err)
 		return
@@ -36,7 +36,7 @@ func (a API) station(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -70,7 +70,7 @@ func (a API) saveStation(c *gin.Context, id uint64) {
 		httpapi.BadRequest(c, err.Error())
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}

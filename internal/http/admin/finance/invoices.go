@@ -20,7 +20,7 @@ func (a API) registerInvoices(r *gin.Engine) {
 // 的三个字段是汇总后的当前值（优先取审核表，没有再回退到申请单本身），因为审核进度
 // 可能只记在审核表里。审核人 ID 统一转成字符串输出，避免 JS 大整数精度丢失。
 func (a API) invoices(c *gin.Context) {
-	rows, err := settlement.ListInvoiceRequests(c.Request.Context(), a.DB)
+	rows, err := a.Invoices.List(c.Request.Context())
 	if err != nil {
 		admin.AdminResourceFailure(c, err)
 		return

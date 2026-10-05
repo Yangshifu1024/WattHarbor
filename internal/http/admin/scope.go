@@ -6,21 +6,19 @@ import (
 	"strconv"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // RequestIDPattern 校验UUID请求号的文本形状，供发券、人工退款和设备导入的HTTP输入准入。
 // 实际幂等身份及内容比对由所属业务服务执行。
 var RequestIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// StationScope 在c请求取消范围内通过db读取已鉴权账号当前数据范围。
+// StationScope 在c请求取消范围内通过reader读取已鉴权账号当前数据范围。
 // 返回范围与成功标志；读取失败写原资源错误并返回false，调用方立即返回。
 // 沿用无范围记录表示不受限的规则，不将它解释为无权读取所有站点。
-func StationScope(c *gin.Context, db *gorm.DB) (operations.DataScope, bool) {
-	scope, err := ops.LoadDataScope(c.Request.Context(), db, c.MustGet("admin_profile").(operations.Profile))
+func StationScope(c *gin.Context, reader ScopeReader) (operations.DataScope, bool) {
+	scope, err := reader.Load(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
 		AdminResourceFailure(c, err)
 		return scope, false

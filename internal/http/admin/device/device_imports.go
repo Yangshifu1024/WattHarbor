@@ -22,7 +22,7 @@ func (a API) registerImports(r *gin.Engine) {
 
 // imports 在 c 下返回最近一百个原任务或读取失败，不输出存档清单，也不执行任务。
 func (a API) imports(c *gin.Context) {
-	rows, err := (device.ImportRepo{DB: a.DB}).ListImportJobs(c.Request.Context(), 100)
+	rows, err := a.Imports.List(c.Request.Context())
 	if err != nil {
 		admin.AdminResourceFailure(c, err)
 		return
@@ -40,7 +40,7 @@ func (a API) createImport(c *gin.Context) {
 		importFailure(c, err)
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -59,7 +59,7 @@ func (a API) retryImport(c *gin.Context) {
 		httpapi.BadRequest(c, "导入编号无效")
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}

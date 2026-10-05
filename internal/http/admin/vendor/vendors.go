@@ -33,7 +33,7 @@ func (a API) listVendorPage(c *gin.Context, options bool) {
 	if !ok {
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -51,7 +51,7 @@ func (a API) getVendor(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -77,7 +77,7 @@ func (a API) updateVendor(c *gin.Context) {
 
 // saveVendor 读取 c 的实时范围及原输入，以 id 选择新建或更新；用例负责外部调用与提交后审计。
 func (a API) saveVendor(c *gin.Context, id uint64) {
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}

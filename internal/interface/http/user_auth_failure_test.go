@@ -15,8 +15,9 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 )
 
-// deniedUserIdentity 提供指定认证失败的窄能力fixture，不模拟业务查询或写入。
+// deniedUserIdentity 提供指定认证结果的窄能力fixture，不模拟业务查询或写入。
 // 真实SessionAuthenticator和identity.Authenticator仍执行凭据、会话、用户状态的原顺序。
+// 空mode提供用户17的有效身份，供其它注册接口测试核对所属业务IO。
 type deniedUserIdentity struct {
 	mode string // 仅控制指定的签名、会话或用户状态失败；不签发真实JWT，不连接数据库或Redis。
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"gorm.io/gorm"
 )
 
@@ -22,6 +23,12 @@ func (e ManagementInputError) Error() string { return e.Message }
 // StationService 拥有站点资料变更与审计的完整事务；已有站点读写必须核对显式范围。
 type StationService struct {
 	DB *gorm.DB // central 站点连接，由进程管理资源生命周期
+}
+
+// List 在ctx下按原q及已取得scope读取站点，返回原分页或读取／取消错误，不修改站点。
+// 保留站点维度及无范围记录不受限的规则，HTTP只追加原当前权限展示。
+func (s StationService) List(ctx context.Context, q persist.PageQuery, scope operations.DataScope) (persist.Page[Station], error) {
+	return ListStations(ctx, s.DB, q, scope)
 }
 
 // ValidateStationInput 检查 in 的废弃编码和必填资料；返回原公开参数错误，无 IO 或修改。

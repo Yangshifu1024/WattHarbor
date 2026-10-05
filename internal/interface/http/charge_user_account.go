@@ -9,22 +9,20 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // UserAccountAPI 适配所属账户能力及公开站点／公告查询；手机号由PhoneAPI单独注册。
 type UserAccountAPI struct {
-	Stations       device.UserStationService    // 所属公开站点和运行态组合
-	Announcements  ops.AnnouncementQueryService // 所属公开公告读取
-	Faults         device.FaultService          // 原用户工单提交、所属查询及可见历史
-	CouponQuery    marketing.CouponQueryService // 所属持券状态、筛选及分页
-	Feedback       order.FeedbackService        // 所属订单评价准入与提交事务
-	WalletQuery    wallet.QueryService          // 余额、充值续付与退款进度查询能力
-	Invoices       settlement.InvoiceService    // 订单开票申请用例
-	Auth           authhttp.SessionAuthenticator
-	UserDB         *gorm.DB
-	WalletRecharge wallet.RechargeService // 充值申请及提交后预支付业务能力
-	WalletRefund   wallet.RefundService   // 钱包退款业务能力，由 cmd 装配
+	Stations       device.UserStationService     // 所属公开站点和运行态组合
+	Announcements  ops.AnnouncementQueryService  // 所属公开公告读取
+	Faults         device.FaultService           // 原用户工单提交、所属查询及可见历史
+	CouponQuery    marketing.CouponQueryService  // 所属持券状态、筛选及分页
+	Feedback       order.FeedbackService         // 所属订单评价准入与提交事务
+	WalletQuery    wallet.QueryService           // 余额、流水、充值续付与退款进度查询能力
+	Invoices       settlement.InvoiceService     // 所属发票列表及订单开票申请用例
+	Auth           authhttp.SessionAuthenticator // 当前用户会话和状态校验，失败已写原错误。
+	WalletRecharge wallet.RechargeService        // 充值申请及提交后预支付业务能力
+	WalletRefund   wallet.RefundService          // 钱包退款业务能力，由 cmd 装配
 }
 
 // Register 在r注册原用户路由；站点／公告保持公开，账户处理器按401／403／503映射认证失败。

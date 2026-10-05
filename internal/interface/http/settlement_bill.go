@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"strconv"
 
 	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
@@ -12,7 +13,7 @@ import (
 // BillHTTP 适配所属用户的账单列表、详情及已读记录；确认金额来自原结算账单。
 type BillHTTP struct {
 	Auth  authhttp.SessionAuthenticator // 用户凭据、会话及当前状态；失败已写原错误响应。
-	Bills settlement.BillRepo           // 所属账单查询和已读记录能力，连接生命周期由cmd管理。
+	Bills settlement.UserBillService    // 所属账单查询和完整已读操作，连接生命周期由cmd管理。
 }
 
 // Register 在r挂载原三个账单端点，不打开资源或执行业务IO。
@@ -32,7 +33,7 @@ func (a BillHTTP) list(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rows, total, err := a.Bills.ListBills(c.Request.Context(), userID, page, pageSize)
+	rows, total, err := a.Bills.List(c.Request.Context(), userID, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "账单暂时无法读取", nil)
 		return
@@ -52,7 +53,7 @@ func (a BillHTTP) detail(c *gin.Context) {
 		return
 	}
 	// 查询同时限制账单 ID 和用户 ID，使越权访问与记录不存在返回一致错误。
-	bill, err := a.Bills.LoadByID(c.Request.Context(), userID, id)
+	bill, err := a.Bills.Detail(c.Request.Context(), userID, id)
 	if err != nil {
 		httpapi.Write(c, 404, 1004, "账单不存在", nil)
 		return
@@ -72,12 +73,12 @@ func (a BillHTTP) markRead(c *gin.Context) {
 		httpapi.BadRequest(c, "账单编号无效")
 		return
 	}
-	if _, err := a.Bills.LoadByID(c.Request.Context(), userID, id); err != nil {
-		httpapi.Write(c, 404, 1004, "账单不存在", nil)
-		return
-	}
 	if err := a.Bills.MarkRead(c.Request.Context(), userID, id); err != nil {
-		httpapi.Write(c, 503, 5003, "账单状态暂时无法保存", nil)
+		if errors.Is(err, settlement.ErrUserBillLookup) {
+			httpapi.Write(c, 404, 1004, "账单不存在", nil)
+		} else {
+			httpapi.Write(c, 503, 5003, "账单状态暂时无法保存", nil)
+		}
 		return
 	}
 	httpapi.OK(c, gin.H{"id": id, "read": true})

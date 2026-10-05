@@ -20,7 +20,7 @@ func (a UserAccountAPI) myInvoices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	out, err := settlement.ListUserInvoiceRequests(c.Request.Context(), a.UserDB, userID, page, pageSize)
+	out, err := a.Invoices.List(c.Request.Context(), userID, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "发票记录暂时无法读取", nil)
 		return

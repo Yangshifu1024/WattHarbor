@@ -104,7 +104,7 @@ func (a API) applyChargingScheme(c *gin.Context) {
 		httpapi.BadRequest(c, "请选择模板或完整方案，并提供请求编号与站点")
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -123,7 +123,7 @@ func (a API) effectiveChargingScheme(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -149,7 +149,7 @@ func (a API) inheritChargingScheme(c *gin.Context) {
 		httpapi.BadRequest(c, "请选择设备")
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -192,7 +192,7 @@ func (a API) executionCapabilities(c *gin.Context) {
 		httpapi.BadRequest(c, "请选择设备")
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}

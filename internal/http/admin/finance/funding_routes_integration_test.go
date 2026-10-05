@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/redis/go-redis/v9"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -22,7 +23,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
 // routeSessionHook 仅提供测试会话记录；权限、账号及发票审核使用真实 MySQL。
@@ -142,7 +142,7 @@ func TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit(t *testing.
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	API{DB: tx, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: store, Sessions: ops.SessionRepo{Redis: sessions}, Tokens: ops.JWTAccess{JWT: jwt}}}, Invoices: service}.Register(router)
+	API{Refunds: settlement.RefundAdminService{DB: tx}, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: store, Sessions: ops.SessionRepo{Redis: sessions}, Tokens: ops.JWTAccess{JWT: jwt}}}, Invoices: service}.Register(router)
 	path := "/api/v1/admin/billing/invoices/" + strconv.FormatUint(id, 10) + "/approve"
 	post := func(body, token string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", path, bytes.NewBufferString(body))

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	orderrepo "github.com/ChargePilot2026/charge-pilot/internal/order"
+	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"strings"
 
 	"github.com/google/uuid"
@@ -23,6 +24,12 @@ var (
 // InvoiceService 拥有用户订单归属、费用来源与发票申请事务。
 type InvoiceService struct {
 	DB *gorm.DB /* central 订单及发票连接，由进程管理 */
+}
+
+// List 在ctx下按userID及原page／pageSize读取本人发票申请，返回原页或读取／取消错误。
+// 不提交或复核申请，不扩展为其它用户记录，保留原排序及可空字段。
+func (s InvoiceService) List(ctx context.Context, userID uint64, page, pageSize int) (persist.Page[map[string]any], error) {
+	return ListUserInvoiceRequests(ctx, s.DB, userID, page, pageSize)
 }
 
 // InvoiceInput 保持公开申请内容，金额始终由原结算回执提供。

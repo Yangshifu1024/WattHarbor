@@ -21,7 +21,7 @@ func (a API) devices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -41,7 +41,7 @@ func (a API) device(c *gin.Context) {
 		httpapi.BadRequest(c, "设备编号过长")
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -70,7 +70,7 @@ func (a API) setDeviceStatus(c *gin.Context) {
 		httpapi.BadRequest(c, "运营状态只允许启用或禁用")
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}
@@ -97,7 +97,7 @@ func (a API) updateDevice(c *gin.Context) {
 		httpapi.BadRequest(c, err.Error())
 		return
 	}
-	scope, ok := admin.StationScope(c, a.DB)
+	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {
 		return
 	}

@@ -60,8 +60,7 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 			DB: orm, ExpectedProvider: "wechat_direct", ExpectedMerchantID: cfg.WechatMchID, ExpectedAppID: cfg.WeChatAppID}}.Register(router)
 	}
 	identityhttp.UserAccountAPI{Stations: device.UserStationService{DB: orm, Announcements: ops.AnnouncementQueryService{DB: orm}, Summaries: stopGateway}, Announcements: ops.AnnouncementQueryService{DB: orm}, Faults: device.FaultService{DB: orm}, CouponQuery: marketing.CouponQueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, WalletQuery: wallet.QueryService{Repo: wallet.UserWalletRepo{DB: orm}}, Invoices: settlement.InvoiceService{DB: orm}, WalletRecharge: wallet.RechargeService{DB: orm, Payments: payment.RechargePaymentRepo{DB: orm, Provider: channel.Prepay}}, WalletRefund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}},
-		Auth:   authhttp.SessionAuthenticator{Auth: cEndAuth},
-		UserDB: orm,
+		Auth: authhttp.SessionAuthenticator{Auth: cEndAuth},
 	}.Register(router)
 	orderQuery := ordercase.QueryService{DB: orm, Fees: settlement.QueryFeeRepo{DB: orm}}
 	identityhttp.UserQueryAPI{Orders: orderQuery, Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Query: chargingquery.UserService{Orders: orderQuery, Fees: settlement.QueryFeeRepo{DB: orm}, State: chargingquery.UserStateRepo{DB: orm}, Gateway: stopGateway}}.Register(router)
@@ -70,7 +69,7 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		phoneSource = identity.DevelopmentPhoneSource{}
 	}
 	identityhttp.PhoneAPI{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Service: identity.PhoneService{Users: identity.UserRepo{DB: orm}, Source: phoneSource}}.Register(router)
-	identityhttp.BillHTTP{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Bills: settlement.BillRepo{DB: orm}}.Register(router)
+	identityhttp.BillHTTP{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Bills: settlement.UserBillService{Repo: settlement.BillRepo{DB: orm}}}.Register(router)
 	identityhttp.CouponAPI{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Query: marketing.CouponQueryService{DB: orm}}.Register(router)
 	identityhttp.PaymentStartAPI{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth},
 		Checkout: payment.CheckoutService{Ports: discovery, Pricing: pricing.Repo{DB: orm}, Intents: payment.PaymentIntentRepo{DB: orm}, Provider: channel.Prepay}}.Register(router)

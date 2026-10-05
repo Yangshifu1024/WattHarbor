@@ -38,7 +38,7 @@ func (a UserAccountAPI) walletTxns(c *gin.Context) {
 		httpapi.BadRequest(c, "收支方向无效")
 		return
 	}
-	out, err := (walletpkg.UserWalletRepo{DB: a.UserDB}).ListWalletTxns(c.Request.Context(), userID, direction, page, pageSize)
+	out, err := a.WalletQuery.Transactions(c.Request.Context(), userID, direction, page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "资金流水暂时无法读取", nil)
 		return

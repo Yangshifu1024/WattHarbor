@@ -13,6 +13,12 @@ type InvoiceReviewService struct {
 	ReviewRepo InvoiceReviewRepo // 发票状态与实时首签权限能力，由 cmd 装配
 }
 
+// List 在ctx下读取原后台发票申请及双审进度投影，返回原数组或读取／取消错误。
+// 沿用finance.read的全局只读列表，不执行审核，不把列表内容作为当前写入授权。
+func (s InvoiceReviewService) List(ctx context.Context) ([]map[string]any, error) {
+	return ListInvoiceRequests(ctx, s.DB)
+}
+
 // InvoiceReviewInput 保持原公开审核内容，第二签必须核对原链接。
 type InvoiceReviewInput struct {
 	InvoiceURL string `json:"invoice_url"` // HTTPS 发票链接，审核通过时必填

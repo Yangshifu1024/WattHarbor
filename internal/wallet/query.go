@@ -35,6 +35,12 @@ func (s QueryService) Balance(ctx context.Context, userID uint64) (BalanceView, 
 	return BalanceView{w.BalanceCents, w.FrozenCents, w.AvailableCents(), w.Status}, nil
 }
 
+// Transactions 在ctx下按userID、direction及原page／size查询钱包流水，返回原页或读取／取消错误。
+// 空direction不筛选，in／out只读取所属方向；不重算或更新余额，空页保持原数组。
+func (s QueryService) Transactions(ctx context.Context, userID uint64, direction string, page, size int) (persist.Page[map[string]any], error) {
+	return s.Repo.ListWalletTxns(ctx, userID, direction, page, size)
+}
+
 // Recharges 在 ctx 下分页读取 userID 的申请，并以 now 判定未支付且尚未过期的续付资格。
 // 返回页数据或存储错误；不延长有效期，不创建新的支付单。
 func (s QueryService) Recharges(ctx context.Context, userID uint64, page, size int, now time.Time) (persist.Page[WalletRechargeRow], error) {

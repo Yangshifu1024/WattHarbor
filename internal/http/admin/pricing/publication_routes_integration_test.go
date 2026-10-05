@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/redis/go-redis/v9"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -22,7 +23,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
 // pricingRouteSessionHook 仅提供测试会话记录；权限、账号及方案发布使用真实 MySQL。
@@ -137,7 +137,7 @@ func TestRegisteredSchemeRoutesPreserveAuthorizationAndResults(t *testing.T) {
 	record, _ := json.Marshal(map[string]any{"uid": id, "version": 1})
 	sessions.AddHook(pricingRouteSessionHook{records: map[string]string{"admin:session:" + sid: string(record)}})
 	router := httpapi.NewRouter()
-	API{Queries: pricing.QueryService{DB: tx}, DB: tx, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: ops.SessionRepo{Redis: sessions}, Tokens: ops.JWTAccess{JWT: jwt}}}, Schemes: pricing.SchemeService{DB: tx}, Publications: pricing.PublicationService{DB: tx}}.Register(router)
+	API{Queries: pricing.QueryService{DB: tx}, Scopes: ops.ScopeQueryService{DB: tx}, Auth: authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: tx}, Sessions: ops.SessionRepo{Redis: sessions}, Tokens: ops.JWTAccess{JWT: jwt}}}, Schemes: pricing.SchemeService{DB: tx}, Publications: pricing.PublicationService{DB: tx}}.Register(router)
 	base := "/api/v1/admin/settings/charging-schemes"
 	call := func(method, path, body, bearer string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))

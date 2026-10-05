@@ -2,18 +2,18 @@ package device
 
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
 	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-// API 持有本业务族所需的数据库、鉴权与外部调用依赖。
+// API 注入本业务族所需的所属服务、窄查询能力和实时鉴权，不持有数据库连接。
 type API struct {
 	Management device.ManagementService      // 设备范围读取、运营变更及运行摘要，由 cmd 装配
 	Imports    device.ImportService          // 批量导入受理、同步执行及原身份恢复，由 cmd 装配
 	Meters     settlement.MeterReviewService // 计量核实、最终金额裁决及审计用例，由 cmd 装配
-	DB         *gorm.DB                      // 实时数据范围读取连接
+	Scopes     adminhttp.ScopeReader         // 当前已鉴权账号范围的窄读取能力，由cmd注入。
 	Auth       authhttp.AdminAuth            // 实时后台会话及权限
 }
 

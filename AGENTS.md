@@ -240,6 +240,7 @@ charge-pilot/
 │   ├── internal/settlement/money_schema.go（迁移前：internal/payment/money_schema.go[费用与退款模型]）
 │   ├── internal/settlement/balance_refund_repo.go（迁移前：internal/card/card_refund_store.go、internal/interface/http/order_start_result.go[共享退款]）
 │   ├── internal/settlement/bill_repo.go
+│   ├── internal/settlement/user_bill.go（迁移前：internal/interface/http/settlement_bill.go[归属查询与已读编排]）
 │   ├── internal/settlement/billing_job_repo.go
 │   ├── internal/settlement/calculation_number.go
 │   ├── internal/settlement/fee_calculation_repo.go
@@ -362,6 +363,7 @@ charge-pilot/
 │   ├── internal/payment/payment_checkout_repo.go
 │   ├── internal/payment/payment_intent_repo.go
 │   ├── internal/payment/payment_view_repo.go
+│   ├── internal/payment/order_query.go（迁移前：后台支付订单HTTP的查询入口）
 │   └── internal/payment/recharge_history_repo.go（迁移前：internal/payment/user_recharge_repo.go[支付历史投影]）
 ├── internal/ops                                          后台账号、角色、审计与事件发件箱
 │   ├── internal/ops/audit.go（迁移前：internal/interface/http/admin_resource.go[事务内审计]）
@@ -384,6 +386,7 @@ charge-pilot/
 │   ├── internal/ops/dashboard_repo.go（迁移前：internal/infrastructure/database/admin_dashboard_store.go[只读投影]）
 │   ├── internal/ops/role_repo.go（迁移前：internal/ops/admin_role_store.go）
 │   ├── internal/ops/scope_repo.go（迁移前：internal/ops/admin_scope_store.go）
+│   ├── internal/ops/scope_query.go（迁移前：后台HTTP的数据范围读取入口）
 │   ├── internal/ops/account_management_repo.go（迁移前：internal/ops/admin_user_store.go）
 │   ├── internal/ops/event_outbox_repo.go（迁移前：internal/ops/event_outbox_store.go）
 │   └── internal/ops/audit_repo.go（迁移前：internal/ops/interface_query_store.go）
@@ -526,6 +529,7 @@ charge-pilot/
 │   ├── internal/http/admin/pricing/charging_schemes.go（迁移前：internal/interface/http/admin/pricing/charging_schemes.go）
 │   ├── internal/http/admin/request.go（迁移前：internal/interface/http/admin_resource.go）
 │   ├── internal/http/admin/scope.go（迁移前：internal/interface/http/admin/scope.go）
+│   ├── internal/http/admin/scope_reader.go（后台HTTP消费方的数据范围窄接口）
 │   ├── internal/http/admin/service_token.go（迁移前：internal/interface/http/admin/service_token.go）
 │   ├── internal/http/admin/station/api.go（迁移前：internal/interface/http/admin/station/api.go）
 │   ├── internal/http/admin/station/stations.go（迁移前：internal/interface/http/admin/station/stations.go）
@@ -704,10 +708,8 @@ charge-pilot/
 - 跨聚合事务在对应生命周期子包内编排。付款渠道属于 payment，余额入账属于 wallet，退款事务、计费任务及其状态查询属于 settlement，刷卡操作状态属于 card。新增抽象以实际复用或隔离需求为依据；迁移不切碎既有事务、锁顺序和幂等判定。
 - 停止用例的 `Gateway` 接口只包含取证与停止受理。分页策略在用例中，单次 HTTP 调用、状态码、业务 code 与响应对应关系由专用客户端核对；不完整证据不得用于自动停机判定。wire DTO 显式标记 JSON 字段并保留既有大小写、整数类型与单位，处理器与客户端共用；字段变更需同步核对双方与契约测试。
 
-- central/user/admin 的业务 HTTP 适配位于 `internal/interface/http/`：`user_api.go` 与 `charge_*` 系列
-  服务 `/api/v1/user/*`，`admin_*` 与 `admin/` 下的 12 个业务族服务
-  `/api/v1/admin/*`，回执与授权处理器服务 central 的 `/api/v1/internal/*`。gateway/worker 运行时也有各自的 HTTP 端点；`middleware.go` 管鉴权，`admin/scope*.go` 管数据范围。各业务族显式声明 DB、Auth 与所需服务地址，不再继承全量 Deps。
-- HTTP 遗留 SQL/事务逐步下沉；新增处理器只做认证、输入绑定、用例调用和响应映射，不新增业务 SQL 或事务。`charging` 不依赖 gin、HTTP 层或具体设备协议；worker 的充电编排只经 central 内部接口取业务数据。评审核对写入归属：card_charge/card_operation 属于 card，charge_billing_cutoff 属于 charging/stop，charge_billing_job 属于 settlement。
+- 后台业务适配位于 `internal/http/admin`，共享鉴权适配位于 `internal/http/auth`；用户及central内部端点暂留 `internal/interface/http`，按真实路由继续迁入 `internal/http/user` 与 `internal/http/central`。gateway／worker 的进程特有端点保持运行职责。业务HTTP结构体只持有所需服务、鉴权器与协议配置，不持有数据库、仓储、服务地址或通用出站客户端。后台范围通过消费方 `ScopeReader` 读取，由cmd注入 `ops.ScopeQueryService`；不改变无范围记录表示不受限的既有规则。
+- HTTP处理器只做认证、输入绑定、用例调用和响应映射，不实现业务SQL或事务。查询和账单已读操作也由所属服务提供；`settlement.UserBillService` 保持原归属查询后幂等保存顺序，查询阶段404与保存阶段503仍由HTTP映射。`charging` 不依赖 gin、HTTP 层或具体设备协议；worker 的充电编排只经 central 内部接口取业务数据。评审核对写入归属：card_charge/card_operation 属于 card，charge_billing_cutoff 属于 charging/stop，charge_billing_job 属于 settlement。
 
 - `internal/protocol/` 是 gateway 与 central 共享的设备契约层，与 `domain` 平级，既不属于 `domain` 也不属于 `infrastructure`：
   - 根包只放跨进程契约：`Adapter`（`Name` + `ServeConn`）、`Sink`、`Event`、`Command`、`Registry`、`Listener`。

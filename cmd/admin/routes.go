@@ -8,7 +8,6 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/card"
 	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
 	adminaccounthttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin/account"
 	admindashboard "github.com/ChargePilot2026/charge-pilot/internal/http/admin/dashboard"
@@ -58,25 +57,23 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 	authAPI.Register(router)
 	// 后台业务按族注册：每个族是一个独立包，进程只挂自己提供的那些。
 	adminops.API{Accounts: ops.AccountService{DB: orm}, Alerts: device.AlertService{DB: orm}, Announcements: ops.AnnouncementService{DB: orm}, Audits: ops.AuditQueryService{DB: orm}, Auth: authAPI}.Register(router)
-	adminpricing.API{Queries: pricing.QueryService{DB: orm}, DB: orm, Auth: authAPI, Schemes: pricing.SchemeService{DB: orm}, Publications: pricing.PublicationService{DB: orm}}.Register(router)
-	adminstation.API{Stations: device.StationService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
-	admindevice.API{Management: device.ManagementService{DB: orm, Summaries: gateway}, Imports: device.ImportService{DB: orm, Gateway: gateway, Compatibility: pricing.Repo{DB: orm}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {
-		return ops.LoadDataScope(ctx, orm, p)
-	}}, Meters: settlement.MeterReviewService{Orders: settlement.BillingOrders{DB: orm}, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
+	adminpricing.API{Queries: pricing.QueryService{DB: orm}, Scopes: ops.ScopeQueryService{DB: orm}, Auth: authAPI, Schemes: pricing.SchemeService{DB: orm}, Publications: pricing.PublicationService{DB: orm}}.Register(router)
+	adminstation.API{Stations: device.StationService{DB: orm}, Scopes: ops.ScopeQueryService{DB: orm}, Auth: authAPI}.Register(router)
+	admindevice.API{Management: device.ManagementService{DB: orm, Summaries: gateway}, Imports: device.ImportService{DB: orm, Gateway: gateway, Compatibility: pricing.Repo{DB: orm}, LoadScope: (ops.ScopeQueryService{DB: orm}).Load}, Meters: settlement.MeterReviewService{Orders: settlement.BillingOrders{DB: orm}, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
 		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err
-	}}, DB: orm, Auth: authAPI}.Register(router)
-	adminorder.API{Faults: device.FaultService{DB: orm}, Process: chargingquery.ProcessService{Orders: ordercase.QueryService{DB: orm}, Gateway: gateway}, Live: chargingquery.LiveService{Gateway: gateway, Orders: ordercase.SnapshotRepo{DB: orm}, Cards: card.PurchaseQueryRepo{DB: orm}}, Query: ordercase.QueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, DB: orm, Auth: authAPI}.Register(router)
+	}}, Scopes: ops.ScopeQueryService{DB: orm}, Auth: authAPI}.Register(router)
+	adminorder.API{Faults: device.FaultService{DB: orm}, Process: chargingquery.ProcessService{Orders: ordercase.QueryService{DB: orm}, Gateway: gateway}, Live: chargingquery.LiveService{Gateway: gateway, Orders: ordercase.SnapshotRepo{DB: orm}, Cards: card.PurchaseQueryRepo{DB: orm}}, Query: ordercase.QueryService{DB: orm}, Feedback: ordercase.FeedbackService{DB: orm}, Payments: payment.OrderQueryService{DB: orm}, Auth: authAPI}.Register(router)
 	adminfinance.API{Refunds: settlement.RefundAdminService{DB: orm, ReviewRepo: settlement.RefundReviewRepo{DB: orm, LookupSigner: func(ctx context.Context, id uint64) (settlement.SignerStatus, error) {
 		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, err
 	}}}, Invoices: settlement.InvoiceReviewService{DB: orm, ReviewRepo: settlement.InvoiceReviewRepo{DB: orm, LookupReviewer: func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
 		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("invoice.review")}, err
-	}}}, Risks: wallet.RiskService{DB: orm, Refund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}}, DB: orm, Auth: authAPI}.Register(router)
+	}}}, Risks: wallet.RiskService{DB: orm, Refund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}}, Auth: authAPI}.Register(router)
 	adminmarketing.API{Coupons: marketing.CouponService{DB: orm}, Activities: marketing.ActivityService{DB: orm}, Auth: authAPI}.Register(router)
 	adminuser.API{Users: identity.UserQueryService{DB: orm, Recharges: wallet.RechargeHistoryService{Payments: payment.RechargeHistoryRepo{DB: orm}}}, Auth: authAPI, Cards: card.CardAdminService{DB: orm}}.Register(router)
-	adminvendor.API{Vendors: device.VendorService{DB: orm, Gateway: gateway}, DB: orm, Auth: authAPI}.Register(router)
+	adminvendor.API{Vendors: device.VendorService{DB: orm, Gateway: gateway}, Scopes: ops.ScopeQueryService{DB: orm}, Auth: authAPI}.Register(router)
 	admindashboard.Dashboard{Queries: ops.DashboardQueryService{DB: orm}}.Register(router, authAPI)
 	adminaccounthttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.RegisterRoles(router)
 	adminaccounthttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}.Register(router)

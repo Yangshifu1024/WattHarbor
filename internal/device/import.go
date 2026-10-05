@@ -39,6 +39,12 @@ type ImportService struct {
 	LoadScope     func(context.Context, operations.Profile) (operations.DataScope, error) // 执行前重读当前范围，保留受理与执行之间的原二次核对
 }
 
+// List 在ctx下返回最近100个原导入任务或读取／取消错误，保持原全局device.import查询。
+// 不暴露持久清单、不重试或执行任务，不把受理／执行时的数据范围条件扩为新的列表过滤。
+func (s ImportService) List(ctx context.Context) ([]ImportJob, error) {
+	return (ImportRepo{DB: s.DB}).ListImportJobs(ctx, 100)
+}
+
 // ImportInput 是原公开批量请求；协议及能力由厂商字典覆盖，不信任客户端声明。
 type ImportInput struct {
 	ImportID string         `json:"import_id"` // 请求 UUID，原任务及重试身份

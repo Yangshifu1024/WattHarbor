@@ -528,7 +528,7 @@ make test-integration TEST_MYSQL_URL=...
 | I-01／N-identity | 完成 | SessionService、PhoneService、UserQueryService 及用户／会话 repo 归位，旧实现删除；真实三库与 Redis、实际注册路由及两连接开户／唯一号码通过。公开精度、旧记录连续轮换、冻结即时生效、签发失败清理、5次批量查询和充值归属已核对；工作区及精确暂存快照默认检查、全量 integration、全部 cmd 构建、tidy 与前端通过，本地 user/admin 流程通过 |
 | OP-01／N-ops | 完成 | 认证／MFA、账号角色、公告、审计查询和看板所属服务及repo归位；通用表名写入和无消费者审计事务删除。原空值、北京时间日界、未计费、当前准入及审计回滚真库／注册路由通过；最终暂存快照默认检查、完整独立三库、全部入口构建和tidy通过，开发实际读取保持 |
 | E-01／N-export | 完成 | ExportService及Cleaner接管同步任务、文件发布、当前下载准入与清理，ExportRepo命名归位；两池UUID／旧RR、范围／mask、到期、取消锁与故障恢复、注册五路由及开发CSV／XLSX均通过；工作区和精确暂存快照完整检查通过，tidy无差异 |
-| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | 5a拆出auth及admin适配；剩余user／central、HTTP查询依赖、具名客户端及runtime／repo继续实施 |
+| H-01／X-01／G-01／WK-01／N-gateway／N-worker | 进行中 | 5a拆出auth及admin，5b修复用户认证重复响应，5c查询与范围归所属服务；剩余user／central、具名客户端及runtime／repo继续实施 |
 | INF-01 | 完成 | dashboard最后只读投影归ops，case及两类会话已迁完；infrastructure无源码或消费者、无兼容包，AGENTS实际目录图已更新；最终暂存快照相关装配、原会话及完整检查通过 |
 | DEP-01 | 待评估 | 完成代码及流程验收后评估，不承诺执行合并 |
 
@@ -712,3 +712,11 @@ make test-integration TEST_MYSQL_URL=...
 
 
 5b最终退出：精确暂存快照`.tmp/batch5b-validation`的`.tmp/batch5b-snapshot-{check,integration,build,tidy}.log`全部通过；1191份文件中的680份Go／模块与原blob及工作区一致，tidy无差异、本地Markdown链接有效。只读复核确认所有共享鉴权消费者失败立即返回、29个方法／路径真实注册、单信封断言可识别双写，未发现新增阻断问题；独立鉴权的charge/stop未纳入新fixture，其原分支均已有单写后返回。后台78／用户59项、两端类型检查及后台构建通过，保留已有Vite大chunk提示。最终仅补此退出记录，H-01仍进行中，继续所属查询及范围能力、user／central目录、X／G／WK和DEP评估，17组仍完成15组。
+
+批次5c（H-01查询／范围能力）实施：10个HTTP查询／账单入口转接所属业务服务，后台16处范围通过ScopeReader调用ops.ScopeQueryService，cmd只注入同一受管理连接；HTTP移除DB／UserDB和Repo依赖。UserBillService保留按用户归属查询后保存已读凭据的原顺序、分页／可空值及查询404／保存503；导入执行前原范围重读保持。无新增SQL、事务、锁、公开字段或权限解释。
+
+5c定向及工作区证据：实际Register的用户账单三路由在独立真实MySQL验证本人／他人归属、原金额／null、列表、同账单已读重放与两个阶段的错误恢复，`.tmp/batch5c-bill-registered.log`通过。身份为窄能力fixture，指定GORM查询／创建回调故障仅验证原阶段错误映射，不宣称实际数据库故障或并发幂等验收。工作区`.tmp/batch5c-{check,integration,build,tidy}.log`全部通过；完整集成仅使用独立三库3307／Redis6381。迁移辅助工具初版按import路径末段误删版本化包名的有效导入，已恢复全部24份无关源码及7份实际迁移文件的Redis导入；最终检查均在修复后执行，不将初版结果计为通过。
+
+5c开发及复核：admin／user加载本批源码后，`.tmp/batch5c-live-queries.json`验证7条后台及3条用户查询，复用既有tester-1零余额用户，两类会话均注销；没有新增用户、开发业务来源写入或资金变动。只读复核确认原查询、归属及范围语义不变，未发现新增阻断。无前端或公开DTO改动，最近前端完整验收为5b的后台78／用户59项、两端类型检查及后台构建。精确暂存退出检查待补；H-01组合组仍进行中，17组维持15组完成。
+
+5c最终退出：精确暂存快照`.tmp/batch5c-validation`的`.tmp/batch5c-snapshot-{check,integration,build,tidy}.log`全部通过；1196份文件中的685份Go／模块与原blob及工作区一致，tidy无差异，本地Markdown链接有效。最终仅补本退出记录及状态说明；H-01组合组仍进行中，下一批按真实路由拆user／central，再完成X／G／WK及DEP评估。17组仍完成15组，不代表整个目标完成。

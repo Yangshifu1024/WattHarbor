@@ -2,15 +2,15 @@ package station
 
 import (
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
+	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
 	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-// API 持有本业务族所需的数据库、鉴权与外部调用依赖。
+// API 注入本业务族所需的所属服务、窄查询能力和实时鉴权，不持有数据库连接。
 type API struct {
 	Stations device.StationService // 站点范围读取、资料变更与同事务审计，由 cmd 装配
-	DB       *gorm.DB              // 当前范围读取连接
+	Scopes   adminhttp.ScopeReader // 当前已鉴权账号范围的窄读取能力，由cmd注入。
 	Auth     authhttp.AdminAuth    // 实时后台会话与权限鉴权
 }
 

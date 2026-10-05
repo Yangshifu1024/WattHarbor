@@ -65,7 +65,7 @@ func (a API) refunds(c *gin.Context) {
 		httpapi.BadRequest(c, "退款单号过长")
 		return
 	}
-	out, err := settlement.ListRefunds(c.Request.Context(), a.DB, settlement.RefundListQuery{
+	out, err := a.Refunds.List(c.Request.Context(), settlement.RefundListQuery{
 		Status: q.Status, RefundNo: c.Query("refund_no"), Page: q.Page, PageSize: q.PageSize,
 	})
 	if err != nil {

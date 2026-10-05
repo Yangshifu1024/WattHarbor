@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -12,6 +13,12 @@ import (
 type RefundAdminService struct {
 	DB         *gorm.DB         // central 资金及审计连接，由进程管理
 	ReviewRepo RefundReviewRepo // 退款状态能力及实时首签人查询，由 cmd 装配
+}
+
+// List 在ctx下按原q分页读取后台退款及执行进度，返回原页或读取／取消错误。
+// 不执行双审或重投，不改变finance.refund.read的全局列表边界和原可空字段。
+func (s RefundAdminService) List(ctx context.Context, q RefundListQuery) (persist.Page[map[string]any], error) {
+	return ListRefunds(ctx, s.DB, q)
 }
 
 // ManualRefundRequest 是公开提交内容，也是首次审计快照。

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/redis/go-redis/v9"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -29,7 +30,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
+
 	"gorm.io/gorm"
 )
 
@@ -173,11 +174,11 @@ func TestRegisteredDeviceAndStationManagementUsesCurrentScope(t *testing.T) {
 	cache.AddHook(deviceRouteSessionHook{records: map[string]string{"admin:session:" + sid: string(record)}})
 	authAPI := authhttp.AdminAuth{Sessions: ops.SessionService{Accounts: ops.AccountRepo{DB: central}, Sessions: ops.SessionRepo{Redis: cache}, Tokens: ops.JWTAccess{JWT: jwt}}}
 	router := httpapi.NewRouter()
-	API{DB: central, Auth: authAPI, Management: business.ManagementService{DB: central, Summaries: client}, Imports: business.ImportService{DB: central, Gateway: client, Compatibility: pricing.Repo{DB: central}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {
+	API{Scopes: ops.ScopeQueryService{DB: central}, Auth: authAPI, Management: business.ManagementService{DB: central, Summaries: client}, Imports: business.ImportService{DB: central, Gateway: client, Compatibility: pricing.Repo{DB: central}, LoadScope: func(ctx context.Context, p operations.Profile) (operations.DataScope, error) {
 		return ops.LoadDataScope(ctx, central, p)
 	}}}.Register(router)
-	(vendorhttp.API{DB: central, Auth: authAPI, Vendors: business.VendorService{DB: central, Gateway: client}}).Register(router)
-	(stationhttp.API{DB: central, Auth: authAPI, Stations: business.StationService{DB: central}}).Register(router)
+	(vendorhttp.API{Scopes: ops.ScopeQueryService{DB: central}, Auth: authAPI, Vendors: business.VendorService{DB: central, Gateway: client}}).Register(router)
+	(stationhttp.API{Scopes: ops.ScopeQueryService{DB: central}, Auth: authAPI, Stations: business.StationService{DB: central}}).Register(router)
 	call := func(method, path, body, bearer string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
