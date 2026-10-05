@@ -472,7 +472,7 @@ charge-pilot/
 │   ├── internal/gateway/repo/gorm_models.go（迁移前：internal/gateway/store/gorm_models.go）
 │   ├── internal/gateway/repo/mysql.go（迁移前：internal/gateway/store/mysql.go）
 │   ├── internal/gateway/repo/port_repo.go（迁移前：internal/gateway/store/port_store.go）
-│   ├── internal/gateway/repo/provision_repo.go（迁移前：internal/gateway/store/provision_store.go）
+│   ├── internal/gateway/repo/provision_repo.go（迁移前：internal/gateway/store/provision_store.go、provision/http.go[整批开通事务]）
 │   ├── internal/gateway/repo/scan_repo.go（迁移前：internal/gateway/store/scan_store.go）
 │   ├── internal/gateway/repo/session.go（迁移前：internal/gateway/store/session.go）
 │   ├── internal/gateway/repo/session_repo.go（迁移前：internal/gateway/store/session_store.go、internal/gateway/control/session.go[完整静默查询与清理事务]）

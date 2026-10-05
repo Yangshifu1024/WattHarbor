@@ -843,3 +843,11 @@ make test-integration TEST_MYSQL_URL=...
 5u增量核验：独立测试和开发MySQL8.4.11先各备份admin_user表至 .tmp/batch5u-{test,dev}-admin-before.sql，使用INPLACE／LOCK=NONE补同一索引；原表不清空、账号不改写。两库索引／执行计划记录 .tmp/batch5u-{test,dev}-index-{before,after}.log，实际查询由ALL改为idx_role_deleted的ref；.tmp/batch5u-data-proof.log 核对前后INSERT内容一致。新回归只提交自身随机角色／账号，按实际回填PK清理并核对零残留，不修改bootstrap、权限或开发身份。此修复独立于尚未提交的5t开通提取；精确暂存全仓验收继续，17组完成15组约88%。
 
 5u完整退出：精确暂存 .tmp/batch5u-validation 的 .tmp/batch5u-snapshot-{check,integration,build}.log 全通过，完整三库／Redis integration保持默认包并行；1235份原blob中723份Go／模块逐份核对，开通两份待提交生产源码使用原HEAD，其新回归未纳入修复。新测试中文函数／字段清单无缺项，本地Markdown链接有效。修复只有非唯一索引、锁定位回归及本记录；无重试、测试串行化、业务逻辑或前端变化。接续5t最终验收，17组仍完成15组约88%。
+
+批次5t（G-01设备开通完整批次）：ProvisionBatch 接管原HTTP整批事务，依原输入顺序调用私有单设备操作；八项SQL／身份助手及持久投影仅私有化。HTTP删Device别名，使用已有ProvisionRequest并显式转换原五字段，成功ProvisionReply保持原provisioned数量。原校验、64KiB／100设备预算、大小写重复、厂商SHARE与身份UPDATE锁、INSERT IGNORE、原JSON身份及NULL型号、错误消息／409／503保持，不加新事务层级、隔离、锁、重试或规则。厂商方法和其原事务本批未改，AGENTS目录图同步。
+
+5t定向证据：.tmp/batch5t-provision-baseline.log 原生产源码新真实Register回归通过；原隔离副本删除整批事务，.tmp/batch5t-atomic-mutation.log 稳定失败 device_port=1，恢复副本后 .tmp/batch5t-original-restored.log 通过。新源码及设备导入／后台实际路由完整三包 .tmp/batch5t-provision-real.log 通过。新回归在首端口SQL完成后取消，三类持久数据均回滚0；具名客户端恢复两设备三端口，重放2、原首次JSON及NULL／空型号保持；后项身份冲突回滚前项新设备，大小写重复400和二十一端口409不写。随机厂商／设备完整主键清理零残留，不连接TCP或中央资金。两份原备份与HEAD匹配，.tmp/batch5t-source-comparison.log 完整Go解析重放核对只含已审查提取、九符号私有化、Request／Reply替换和五字段转换；三份Go中文契约清单无缺项。默认定向通过，全仓精确暂存及开发恢复继续；17组完成15组约88%，G／WK及DEP不提前完成。
+
+5t首次全仓验收：默认检查和构建通过，完整真库在ops角色删除遇1213，原失败日志已另存，未计为通过。锁循环采样、两连接稳定复现及索引修复作为5u独立提交e75db5c并完成全仓验收；开通生产源码未随修复变更。接续包含5u后的5t精确暂存完整验收。
+
+5t完整退出：包含5u修复后的精确暂存 .tmp/batch5t-validation 通过 .tmp/batch5t-snapshot-{check,integration,build}.log，完整三库／Redis保持默认包并行。1236份暂存原blob中724份Go／模块与已验收工作区一致，.tmp/batch5t-snapshot-source.log 保存；本地Markdown链接有效，三份Go中文契约清单无缺项。重启现有开发gateway后实际日志确认HTTP／TCP监听，只经GET核对 .tmp/batch5t-health-{before,after}.json 五进程均200；未清库、创建开发设备、调用设备TCP或资金流程。原失败日志单独保留，不计为通过。最后仅补本退出记录，公开字段、前端和依赖未改，最近完整前端验收仍5b；厂商完整操作、补录、运行时与DEP继续，17组完成15组约88%。

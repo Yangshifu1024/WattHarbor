@@ -34,8 +34,8 @@ type ProvisionDevice struct {
 	Model *string `json:"model"`
 }
 
-// LockVendorForProvision 接收所属 tx 与 vendorID，以 SHARE 当前读取得未删除厂商状态及适配器；返回两字段和缺失或 SQL 错误，锁由调用事务释放。
-func LockVendorForProvision(tx *gorm.DB, vendorID uint64) (status, adapterClass string, err error) {
+// lockVendorForProvision 接收所属 tx 与 vendorID，以 SHARE 当前读取得未删除厂商状态及适配器；返回两字段和缺失或 SQL 错误，锁由调用事务释放。
+func lockVendorForProvision(tx *gorm.DB, vendorID uint64) (status, adapterClass string, err error) {
 	var row struct {
 		// Status 所属记录的原状态值。
 		Status string
@@ -50,8 +50,8 @@ func LockVendorForProvision(tx *gorm.DB, vendorID uint64) (status, adapterClass 
 // maxDC589Ports 是原 dc589 开通端口数上限。
 const maxDC589Ports = 20
 
-// LockProvisionIdentity 接收所属 tx 与 deviceID，以 UPDATE 锁读取首次开通请求原文；返回原文或缺失、SQL 错误，锁由调用事务释放。
-func LockProvisionIdentity(tx *gorm.DB, deviceID string) (string, error) {
+// lockProvisionIdentity 接收所属 tx 与 deviceID，以 UPDATE 锁读取首次开通请求原文；返回原文或缺失、SQL 错误，锁由调用事务释放。
+func lockProvisionIdentity(tx *gorm.DB, deviceID string) (string, error) {
 	var row struct {
 		// RequestJSON 设备首次开通请求的原 JSON 文本。
 		RequestJSON string
@@ -61,13 +61,13 @@ func LockProvisionIdentity(tx *gorm.DB, deviceID string) (string, error) {
 	return row.RequestJSON, err
 }
 
-// RecordProvisionIdentity 接收所属 tx、deviceID 与 requestJSON，以 INSERT IGNORE 登记原身份，已有原文不覆盖；返回 SQL 错误，不自行提交。
-func RecordProvisionIdentity(tx *gorm.DB, deviceID, requestJSON string) error {
+// recordProvisionIdentity 接收所属 tx、deviceID 与 requestJSON，以 INSERT IGNORE 登记原身份，已有原文不覆盖；返回 SQL 错误，不自行提交。
+func recordProvisionIdentity(tx *gorm.DB, deviceID, requestJSON string) error {
 	return tx.Exec("INSERT IGNORE INTO device_provision(device_id,request_json) VALUES (?,?)", deviceID, requestJSON).Error
 }
 
-// ProvisionedDevice 是已开通设备的归属信息。
-type ProvisionedDevice struct {
+// provisionedDevice 是已开通设备的归属信息。
+type provisionedDevice struct {
 	// ID device 表的原自增主键。
 	ID uint64
 	// VendorID 原所属厂商身份。
@@ -80,23 +80,23 @@ type ProvisionedDevice struct {
 	Model *string
 }
 
-// FindProvisionedDevice 接收所属 tx 与 deviceID，读取已开通设备归属；返回记录或 gorm.ErrRecordNotFound、SQL 错误，无写入。
-func FindProvisionedDevice(tx *gorm.DB, deviceID string) (ProvisionedDevice, error) {
-	var row ProvisionedDevice
+// findProvisionedDevice 接收所属 tx 与 deviceID，读取已开通设备归属；返回记录或 gorm.ErrRecordNotFound、SQL 错误，无写入。
+func findProvisionedDevice(tx *gorm.DB, deviceID string) (provisionedDevice, error) {
+	var row provisionedDevice
 	err := tx.Table("device").Where("device_id=?", deviceID).Take(&row).Error
 	return row, err
 }
 
-// CreateProvisionedDevice 接收所属 tx 与 d，插入启用设备及原厂商、站点、端口数、可空型号；返回 SQL 错误，不自行提交。
-func CreateProvisionedDevice(tx *gorm.DB, d ProvisionDevice) error {
+// createProvisionedDevice 接收所属 tx 与 d，插入启用设备及原厂商、站点、端口数、可空型号；返回 SQL 错误，不自行提交。
+func createProvisionedDevice(tx *gorm.DB, d ProvisionDevice) error {
 	return tx.Table("device").Create(map[string]any{
 		"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID,
 		"port_count": d.PortCount, "model": d.Model, "status": "enabled",
 	}).Error
 }
 
-// CreateDevicePorts 接收所属 tx、deviceID 与 portCount，按一到端口数插入原设备号-端口号编码的空闲端口；首次 SQL 错误返回，不自行回滚或提交。
-func CreateDevicePorts(tx *gorm.DB, deviceID string, portCount uint8) error {
+// createDevicePorts 接收所属 tx、deviceID 与 portCount，按一到端口数插入原设备号-端口号编码的空闲端口；首次 SQL 错误返回，不自行回滚或提交。
+func createDevicePorts(tx *gorm.DB, deviceID string, portCount uint8) error {
 	for port := 1; port <= int(portCount); port++ {
 		if err := tx.Table("device_port").Create(map[string]any{
 			"device_id": deviceID, "port_no": port,
@@ -108,8 +108,8 @@ func CreateDevicePorts(tx *gorm.DB, deviceID string, portCount uint8) error {
 	return nil
 }
 
-// SameProvisionIdentity 接收 registeredJSON 与 want，将首次请求解码后按原 JSON 编码结果比较；返回是否相同，原文无效返回 ErrProvisionConflict，无 IO。
-func SameProvisionIdentity(registeredJSON string, want ProvisionDevice) (bool, error) {
+// sameProvisionIdentity 接收 registeredJSON 与 want，将首次请求解码后按原 JSON 编码结果比较；返回是否相同，原文无效返回 ErrProvisionConflict，无 IO。
+func sameProvisionIdentity(registeredJSON string, want ProvisionDevice) (bool, error) {
 	var existing ProvisionDevice
 	if json.Unmarshal([]byte(registeredJSON), &existing) != nil {
 		return false, ErrProvisionConflict
@@ -204,9 +204,22 @@ func UpdateVendor(tx *gorm.DB, id uint64, wasEnabled bool, values map[string]any
 	return LockVendor(tx, id)
 }
 
-// ProvisionOne 接收所属 tx 与 d，核对厂商及原开通身份后插入设备、端口；相同归属重放返回 nil，失配或不可用返回冲突，SQL 失败原样返回，不自行提交。
-func ProvisionOne(tx *gorm.DB, d ProvisionDevice) error {
-	status, adapterClass, err := LockVendorForProvision(tx, d.VendorID)
+// ProvisionBatch 在 ctx 下按 devices 输入顺序执行原整批开通事务，返回首个厂商、身份冲突或 SQL／取消错误。
+// 任一设备失败会回滚整批首次身份、设备与端口写入；同身份重放沿用原归属，不发送设备命令或自行重试。
+func ProvisionBatch(ctx context.Context, db *gorm.DB, devices []ProvisionDevice) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, d := range devices {
+			if err := provisionOne(tx, d); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// provisionOne 接收所属 tx 与 d，核对厂商及原开通身份后插入设备、端口；相同归属重放返回 nil，失配或不可用返回冲突，SQL 失败原样返回，不自行提交。
+func provisionOne(tx *gorm.DB, d ProvisionDevice) error {
+	status, adapterClass, err := lockVendorForProvision(tx, d.VendorID)
 	if err != nil {
 		return err
 	}
@@ -217,21 +230,21 @@ func ProvisionOne(tx *gorm.DB, d ProvisionDevice) error {
 		return ErrProvisionConflict
 	}
 	raw, _ := json.Marshal(d)
-	if err := RecordProvisionIdentity(tx, d.DeviceID, string(raw)); err != nil {
+	if err := recordProvisionIdentity(tx, d.DeviceID, string(raw)); err != nil {
 		return err
 	}
-	registered, err := LockProvisionIdentity(tx, d.DeviceID)
+	registered, err := lockProvisionIdentity(tx, d.DeviceID)
 	if err != nil {
 		return err
 	}
-	same, err := SameProvisionIdentity(registered, d)
+	same, err := sameProvisionIdentity(registered, d)
 	if err != nil {
 		return err
 	}
 	if !same {
 		return ErrProvisionConflict
 	}
-	existing, err := FindProvisionedDevice(tx, d.DeviceID)
+	existing, err := findProvisionedDevice(tx, d.DeviceID)
 	if err == nil {
 		if existing.VendorID != d.VendorID || existing.StationID != d.StationID || existing.PortCount != d.PortCount {
 			return ErrProvisionConflict
@@ -241,8 +254,8 @@ func ProvisionOne(tx *gorm.DB, d ProvisionDevice) error {
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	if err := CreateProvisionedDevice(tx, d); err != nil {
+	if err := createProvisionedDevice(tx, d); err != nil {
 		return err
 	}
-	return CreateDevicePorts(tx, d.DeviceID, d.PortCount)
+	return createDevicePorts(tx, d.DeviceID, d.PortCount)
 }
