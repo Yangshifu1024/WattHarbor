@@ -11,6 +11,7 @@ import { createGunzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]$/, '');
 const archive = process.argv[2] ?? '';
@@ -104,7 +105,8 @@ for (const schema of schemas) {
 const hasGo = spawnSync('go', ['version'], { stdio: 'ignore' }).status === 0;
 if (hasGo && process.env.DATABASE_URL_CENTRAL) {
   console.error('re-applying migrations after restore');
-  const migrated = spawnSync('go', ['run', './cmd/migrate', '--schema', 'all'], { cwd: ROOT, stdio: 'inherit' });
+  // Go 模块位于 backend/，迁移重放在该目录执行。
+  const migrated = spawnSync('go', ['run', './cmd/migrate', '--schema', 'all'], { cwd: join(ROOT, 'backend'), stdio: 'inherit' });
   if (migrated.status !== 0) fail('migration replay failed after restore');
 } else {
   console.error('skipping migration replay: set DATABASE_URL_* to re-apply migrations');
@@ -120,4 +122,4 @@ for (const schema of schemas) {
 console.log('');
 console.log('restart the services so they reload the restored data:');
 console.log('  docker compose restart central gateway worker   # development stack');
-console.log('  docker compose -f docker-compose.yml up -d      # production stack');
+console.log('  docker compose -f docker/compose.prod.yaml up -d   # production stack');

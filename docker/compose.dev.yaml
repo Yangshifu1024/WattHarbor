@@ -1,12 +1,14 @@
-# 本地 Go 开发栈。保留现有数据；结构重建使用 scripts/db/reset-dev.ps1。
+# 本地 Go 开发栈。Go 模块位于 backend/，go 服务容器在 /workspace/backend 运行。
+# 本文件位于 docker/，该目录即 Compose 项目目录：文件内宿主机相对路径相对 docker/
+# 解析，`..` 指仓库根。保留现有数据；结构重建使用 scripts/db/reset-dev.mjs。
 name: chargepilot-dev
 
 x-go: &go
   image: golang:1.27
-  working_dir: /workspace
+  working_dir: /workspace/backend
   init: true
   volumes:
-    - .:/workspace
+    - ..:/workspace
     - go-modules:/go/pkg/mod
     - go-build:/root/.cache/go-build
   environment: &go-env
@@ -30,7 +32,7 @@ services:
     ports: ["127.0.0.1:3306:3306"]
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./docker/mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-chargepilot.sql:ro
+      - ./mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-chargepilot.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u chargepilot -e 'SELECT 1'"]
       interval: 5s
@@ -61,10 +63,10 @@ services:
 
   migrate:
     image: golang:1.27
-    working_dir: /workspace
+    working_dir: /workspace/backend
     command: ["go", "run", "./cmd/migrate", "--schema", "all"]
     volumes:
-      - .:/workspace
+      - ..:/workspace
       - go-modules:/go/pkg/mod
       - go-build:/root/.cache/go-build
     environment:
@@ -122,7 +124,7 @@ services:
     <<: *go
     command: ["go", "run", "./cmd/admin"]
     volumes:
-      - .:/workspace
+      - ..:/workspace
       - go-modules:/go/pkg/mod
       - go-build:/root/.cache/go-build
       - export-files:/var/lib/chargepilot/exports
@@ -165,7 +167,7 @@ services:
       VITE_API_BASE: ""
     ports: ["127.0.0.1:5173:5173"]
     volumes:
-      - ./admin-web:/workspace/admin-web
+      - ../admin-web:/workspace/admin-web
       - node-modules:/workspace/admin-web/node_modules
       - npm-cache:/root/.npm
     depends_on:
@@ -182,7 +184,7 @@ services:
       TARO_APP_LOGIN_MODE: development
     ports: ["127.0.0.1:5174:5174"]
     volumes:
-      - ./miniprogram:/workspace/miniprogram
+      - ../miniprogram:/workspace/miniprogram
       - user-node-modules:/workspace/miniprogram/node_modules
       - npm-cache:/root/.npm
     depends_on:

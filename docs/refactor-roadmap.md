@@ -1,6 +1,6 @@
 # 模块重构实施路线图
 
-状态：第 9 节 17 个任务组已全部完成并关闭。收尾第 3 步点名的支付、起充、停机、结束、计费、退款与重启恢复均已在隔离栈取得真实进程证据；计费与退款的三条分支已实测并订正先前误判，DC589 按功率分档计价且实际充过电的订单仍只能人工计费，作为已知边界记录在该步。源码及验收日期：2026-10-05。
+状态：第 9 节 17 个任务组已全部完成并关闭。收尾第 3 步点名的支付、起充、停机、结束、计费、退款与重启恢复均已在隔离栈取得真实进程证据；计费与退款的三条分支已实测并订正先前误判，DC589 按功率分档计价且实际充过电的订单仍只能人工计费，作为已知边界记录在该步。源码及验收日期：2026-10-05。2026-10-06 起后端 Go 模块整体迁至仓库 `backend/`，下文源码链接已同步为 `../backend/…`；历史验收命令在当时均相对仓库根执行，现等价于在 `backend/` 下执行（或经仓库根 Makefile）。
 
 本文件负责任务、顺序和验收；[架构边界与组织约束](architecture-boundaries.md) 负责长期规则；[charging 检查结果](charging-review.md) 记录两个 P1 的修复及验证。完成任务后原位更新状态与证据，不追加多套“当前状态”或重复的历史结论。
 
@@ -200,7 +200,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.1 charging：C-01／C-02／C-03／N-charging
 
-来源：[自动停机](../internal/charging/stop/auto_stop.go)、[截止存储](../internal/charging/stop/cutoff_repo.go)、[刷卡到期冻结](../internal/charging/stop/deadline_repo.go)、[零功率判断](../internal/charging/stop/meter.go)、[gateway 取证](../internal/gateway/control/charging_samples.go)。
+来源：[自动停机](../backend/internal/charging/stop/auto_stop.go)、[截止存储](../backend/internal/charging/stop/cutoff_repo.go)、[刷卡到期冻结](../backend/internal/charging/stop/deadline_repo.go)、[零功率判断](../backend/internal/charging/stop/meter.go)、[gateway 取证](../backend/internal/gateway/control/charging_samples.go)。
 
 目标：stop 拥有停机判定与恢复；cutoff_repo.go／deadline_repo.go 持有数据库操作；证据契约由 contracts/gateway 与 integration/gateway 共同维护。
 
@@ -214,7 +214,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.2 settlement：S-01／S-02／N-settlement
 
-来源：[HTTP 计费服务](../internal/http/central/billing_service.go)、[计费入账](../internal/settlement/billing_job_repo.go)、[费用计算](../internal/settlement/fee_calculation_repo.go)、[账单](../internal/settlement/bill_repo.go)，以及 HTTP finance、device/meter_reviews、settlement_bill、user_invoice 的业务编排。
+来源：[HTTP 计费服务](../backend/internal/http/central/billing_service.go)、[计费入账](../backend/internal/settlement/billing_job_repo.go)、[费用计算](../backend/internal/settlement/fee_calculation_repo.go)、[账单](../backend/internal/settlement/bill_repo.go)，以及 HTTP finance、device/meter_reviews、settlement_bill、user_invoice 的业务编排。
 
 目标：billing.go 的 BillingService.Run；billing_job_repo.go、fee_calculation_repo.go、bill_repo.go；refund.go、invoice.go、meter_review.go 与各自 repo／schema。Calculate 等有业务行为的组件按职责命名，不因为原名 Store 就统一改成万能 Repo。
 
@@ -229,7 +229,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.3 payment：F-01／PAY-01／PAY-02／N-payment
 
-来源：[扫码支付入口](../internal/http/user/payment/payment.go)、[支付意图](../internal/payment/payment_intent_repo.go)、[支付回调](../internal/payment/payment_callback_repo.go)、[设备运营读取](../internal/device/operation_repo.go)、[支付模型](../internal/payment/money_schema.go)。
+来源：[扫码支付入口](../backend/internal/http/user/payment/payment.go)、[支付意图](../backend/internal/payment/payment_intent_repo.go)、[支付回调](../backend/internal/payment/payment_callback_repo.go)、[设备运营读取](../backend/internal/device/operation_repo.go)、[支付模型](../backend/internal/payment/money_schema.go)。
 
 目标：CheckoutService.Offers／Start、CallbackService.Apply；payment_intent_repo.go、payment_callback_repo.go、payment_order_repo.go 等支付数据能力。保留渠道验签／解密边界。
 
@@ -244,7 +244,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.4 wallet：W-01／N-wallet
 
-来源：[钱包 HTTP](../internal/http/user/wallet/wallet.go)、[账户能力](../internal/wallet/wallet_account_repo.go)、[退款预占](../internal/wallet/wallet_reservation_repo.go)、[后台风控入口](../internal/http/admin/finance/wallet_risks.go)。
+来源：[钱包 HTTP](../backend/internal/http/user/wallet/wallet.go)、[账户能力](../backend/internal/wallet/wallet_account_repo.go)、[退款预占](../backend/internal/wallet/wallet_reservation_repo.go)、[后台风控入口](../backend/internal/http/admin/finance/wallet_risks.go)。
 
 目标：RechargeService.Create／CreditInTx、RefundService.Request、RiskService.Review／Release；wallet_account_repo.go、wallet_ledger_repo.go、wallet_refund_repo.go、wallet_reservation_repo.go 和 risk repo。
 
@@ -259,7 +259,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.5 device：D-01／D-02／N-device
 
-来源：[导入编排](../internal/http/admin/device/device_imports.go)、[导入任务](../internal/device/import_repo.go)、[用户故障](../internal/http/user/device/fault.go)、[通用 case](../internal/device/fault_repo.go)、[告警存储](../internal/device/alert_repo.go)（原 alert_sync_store）。
+来源：[导入编排](../backend/internal/http/admin/device/device_imports.go)、[导入任务](../backend/internal/device/import_repo.go)、[用户故障](../backend/internal/http/user/device/fault.go)、[通用 case](../backend/internal/device/fault_repo.go)、[告警存储](../backend/internal/device/alert_repo.go)（原 alert_sync_store）。
 
 目标：ImportService.Create／Retry、OperationReader、StationService、FaultService.Report／Dispatch／Resolve／History、AlertService.Sync／Acknowledge；import_repo.go、operation_repo.go、fault_repo.go 等。
 
@@ -276,7 +276,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.6 pricing：PR-01／N-pricing
 
-来源：[方案管理 HTTP](../internal/http/admin/pricing/charging_schemes.go)、pricing_admin_repo.go、pricing_scope_repo.go、scheme_target_repo.go、metering_repo.go。
+来源：[方案管理 HTTP](../backend/internal/http/admin/pricing/charging_schemes.go)、pricing_admin_repo.go、pricing_scope_repo.go、scheme_target_repo.go、metering_repo.go。
 
 目标：SchemeService.Save／ChangeStatus、QueryService.List／Effective／Capabilities、PublicationService.Publish／Assign、有效方案只读能力及所属 repo；计算继续留 domain/charging。
 
@@ -289,7 +289,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.7 card：CA-01／N-card
 
-来源：[刷卡 HTTP](../internal/http/user/card/api.go)、[主事务](../internal/card/card_repo.go)、[后台在线卡](../internal/http/admin/user/online_cards.go)、worker/charge/cards.go。
+来源：[刷卡 HTTP](../backend/internal/http/user/card/api.go)、[主事务](../backend/internal/card/card_repo.go)、[后台在线卡](../backend/internal/http/admin/user/online_cards.go)、worker/charge/cards.go。
 
 目标：SwipeService.Apply、CardStatusService.Change、CardAdminService.Bind／ChangeStatus；card_repo.go、charge_repo.go、start_result_repo.go 与窄读取能力。
 
@@ -303,7 +303,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.8 order 与 charging/query：O-01／CQ-01／N-order
 
-来源：[用户订单查询](../internal/http/user/order/query.go)、[反馈提交](../internal/http/user/order/feedback.go)、[后台 casework](../internal/http/admin/order/casework.go)、order 的 history／view／package repo，以及后台 order_live／order_process。
+来源：[用户订单查询](../backend/internal/http/user/order/query.go)、[反馈提交](../backend/internal/http/user/order/feedback.go)、[后台 casework](../backend/internal/http/admin/order/casework.go)、order 的 history／view／package repo，以及后台 order_live／order_process。
 
 目标：order.QueryService.History／Detail、FeedbackService.Submit／Reply；charging/query.Service.Ongoing／Snapshot／Curve／Process。身份、范围及窗口作为业务输入。
 
@@ -317,7 +317,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.9 marketing：M-01／N-marketing
 
-来源：HTTP admin/marketing/coupons.go、coupon_activity.go、user_coupon.go、coupon_api.go；[核销存储](../internal/marketing/coupon_redeem_repo.go)、[活动规则](../internal/marketing/coupon_activity_repo.go)。
+来源：HTTP admin/marketing/coupons.go、coupon_activity.go、user_coupon.go、coupon_api.go；[核销存储](../backend/internal/marketing/coupon_redeem_repo.go)、[活动规则](../backend/internal/marketing/coupon_activity_repo.go)。
 
 目标：CouponService.Create／Grant／Redeem、ActivityService.Create／Update／ApplyInTx，保留已有纯规则与同事务发放／核销能力。
 
@@ -330,7 +330,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.10 identity：I-01／N-identity
 
-来源：[认证适配](../internal/http/auth/auth.go)、[登录接口](../internal/http/user/identity/session.go)、phone_api.go、admin/user/charge_users.go、identity 的用户与微信能力、infrastructure/redis 的会话实现。
+来源：[认证适配](../backend/internal/http/auth/auth.go)、[登录接口](../backend/internal/http/user/identity/session.go)、phone_api.go、admin/user/charge_users.go、identity 的用户与微信能力、infrastructure/redis 的会话实现。
 
 目标：SessionService.Login／Refresh／Logout／Authenticate、PhoneService.Bind、UserQueryService；用户 repo 与 session_repo.go 的 Redis 实现。HTTP auth 子包只提取凭据、调用身份能力及写入请求上下文。
 
@@ -345,7 +345,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.11 ops：OP-01／N-ops
 
-来源：[账号管理](../internal/http/admin/account/admin_accounts.go)、[角色管理](../internal/http/admin/account/admin_roles.go)、[MFA](../internal/http/auth/admin_mfa_settings.go)、[审计辅助](../internal/http/admin/request.go)、[dashboard](../internal/ops/dashboard_repo.go)、HTTP admin/ops/operations.go。
+来源：[账号管理](../backend/internal/http/admin/account/admin_accounts.go)、[角色管理](../backend/internal/http/admin/account/admin_roles.go)、[MFA](../backend/internal/http/auth/admin_mfa_settings.go)、[审计辅助](../backend/internal/http/admin/request.go)、[dashboard](../backend/internal/ops/dashboard_repo.go)、HTTP admin/ops/operations.go。
 
 目标：AccountService、RoleService、MFAService、AnnouncementService、DashboardQueryService；account／role／audit／projection repo、session_repo.go 的后台会话实现及 mfa_repo.go。审核人实时状态能力供 settlement 使用。
 
@@ -361,7 +361,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 
 ### 5.12 export：E-01／N-export
 
-来源：[任务与清理／下载](../internal/http/admin/export/exports.go)、[CSV／XLSX 格式实现](../internal/export/format.go)、export_task_repo.go、export/cleanup.go。
+来源：[任务与清理／下载](../backend/internal/http/admin/export/exports.go)、[CSV／XLSX 格式实现](../backend/internal/export/format.go)、export_task_repo.go、export/cleanup.go。
 
 现状基线：PDF 生成、字体目录与 fpdf 依赖已移除，当前仅支持 CSV、XLSX。PDF 创建请求返回参数错误，历史 PDF 任务不再提供下载；资源清单、OpenAPI 和初始化 SQL 已同步。本任务以这一实现为准，不再安排字体迁移或恢复 PDF。现有数据库未因初始化 SQL 修改自动变更。
 

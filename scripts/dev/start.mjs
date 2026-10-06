@@ -1,11 +1,11 @@
-// 启动本地开发栈（compose.dev.yaml）。保留既有数据；结构重建见 reset-dev.mjs。
+// 启动本地开发栈（docker/compose.dev.yaml）。保留既有数据；结构重建见 reset-dev.mjs。
 // 用法：node scripts/dev/start.mjs
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]$/, '');
 
-const up = spawnSync('docker', ['compose', '-f', `${ROOT}/compose.dev.yaml`, 'up', '-d'], { stdio: 'inherit' });
+const up = spawnSync('docker', ['compose', '-f', `${ROOT}/docker/compose.dev.yaml`, 'up', '-d'], { stdio: 'inherit' });
 if (up.status !== 0) {
   console.error('Development stack did not start. Check Docker Desktop and compose logs.');
   process.exit(1);

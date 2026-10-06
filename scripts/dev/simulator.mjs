@@ -42,7 +42,8 @@ mkdirSync(join(ROOT, '.tmp'), { recursive: true });
 mkdirSync(join(ROOT, 'bin'), { recursive: true });
 const binary = join(ROOT, 'bin', `simulator-dc589-${number}${IS_WINDOWS ? '.exe' : ''}`);
 
-const build = spawnSync('go', ['build', '-o', binary, './cmd/simulator-dc589'], { cwd: ROOT, stdio: 'inherit' });
+// 编译在后端模块目录 backend/ 下执行，产物仍落仓库根 bin/。
+const build = spawnSync('go', ['build', '-o', binary, './cmd/simulator-dc589'], { cwd: join(ROOT, 'backend'), stdio: 'inherit' });
 if (build.status !== 0) {
   console.error('Simulator build failed. Go 1.27 is required.');
   process.exit(1);

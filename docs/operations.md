@@ -4,7 +4,7 @@
 
 ## 配置
 
-以 [config.go](../internal/platform/config/config.go)、Compose 和前端构建配置为准。开发 Compose 提供本地值；生产从 `.env` 和显式环境传入。密钥、私钥和真实配置不提交。
+以 [config.go](../backend/internal/platform/config/config.go)、Compose 和前端构建配置为准。开发 Compose 提供本地值；生产从 `.env` 和显式环境传入。密钥、私钥和真实配置不提交。
 
 | 变量 | 使用方及规则 |
 | --- | --- |
@@ -38,15 +38,15 @@
 
 ## 生产部署
 
-根 [docker-compose.yml](../docker-compose.yml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
+[compose.prod.yaml](../docker/compose.prod.yaml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
 
 Caddy 公网暴露 `80/443`，`/api/v1/admin/*` 代理 admin，`/api/v1/user/*` 与 `/api/v1/public/*` 代理 user；内部及其余 API 路径返回 404。`/admin/*` 提供后台静态文件，根路径转向后台。gateway 另暴露 `9100/TCP`，gateway/worker HTTP 不公开。后台静态产物必须先构建，H5 和小程序发布另行配置。
 
 ```bash
 node scripts/ops/check-deploy.mjs
-docker compose -f docker-compose.yml up -d --build
-docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.yml logs --tail=100 chargepilot-central chargepilot-gateway chargepilot-worker chargepilot-caddy
+docker compose -f docker/compose.prod.yaml up -d --build
+docker compose -f docker/compose.prod.yaml ps
+docker compose -f docker/compose.prod.yaml logs --tail=100 chargepilot-central chargepilot-gateway chargepilot-worker chargepilot-caddy
 ```
 
 部署检查核对五个应用服务的配置归属、共享业务库、内部端口隔离、Redis 策略与 Caddy 分流，再用无网络临时容器验证 Caddy 语法；不会启动生产应用。`--config-only` 仅跳过凭据值检查，Compose 的必填变量及挂载路径仍须有效。检查器回归使用 `node --test scripts/ops/check-deploy.test.mjs`。模板检查通过不代表真实凭据、支付私钥或生产连通性已经验收。
@@ -69,7 +69,7 @@ services:
       - /etc/chargepilot/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
 ```
 
-保存部署侧文件为 `compose.payment.yaml` 后，使用 `docker compose -f docker-compose.yml -f compose.payment.yaml config --quiet` 检查合并配置，启动及后续维护也使用这两个 `-f` 文件。`check-deploy.mjs` 只检查根生产 Compose。商户私钥文件权限须允许容器非 root UID 65532 读取；API v3 密钥为 32 字节。配置加载及 Compose 展开通过不证明私钥可读取、渠道可达或真实微信支付已验收。worker 通过 central 的同一支付提供方执行退款和查询。正式用户端须使用真实 AppID、已配置的 API 域名和微信发布环境。
+保存部署侧文件为 `compose.payment.yaml` 后，使用 `docker compose -f docker/compose.prod.yaml -f compose.payment.yaml config --quiet` 检查合并配置，启动及后续维护也使用这两个 `-f` 文件。`check-deploy.mjs` 只检查生产 Compose。商户私钥文件权限须允许容器非 root UID 65532 读取；API v3 密钥为 32 字节。配置加载及 Compose 展开通过不证明私钥可读取、渠道可达或真实微信支付已验收。worker 通过 central 的同一支付提供方执行退款和查询。正式用户端须使用真实 AppID、已配置的 API 域名和微信发布环境。
 
 ### 上线验收
 
@@ -81,9 +81,9 @@ REGULATORY_* 当前仅为预留变量，config 与 worker 未消费，设置 htt
 
 | Schema | 初始化定义 |
 | --- | --- |
-| `central_db` | [0001_init.sql](../migrations/central_db/0001_init.sql) |
-| `gateway_db` | [0001_init.sql](../migrations/gateway_db/0001_init.sql) |
-| `worker_db` | [0001_init.sql](../migrations/worker_db/0001_init.sql) |
+| `central_db` | [0001_init.sql](../backend/migrations/central_db/0001_init.sql) |
+| `gateway_db` | [0001_init.sql](../backend/migrations/gateway_db/0001_init.sql) |
+| `worker_db` | [0001_init.sql](../backend/migrations/worker_db/0001_init.sql) |
 
 另有各库的 Goose 版本表。表和字段 COMMENT 描述职责、单位、状态、快照及幂等用途。部分表按月分区，查询、更新及唯一性检查须使用实际联合键。表存在不表示对应功能已在主程序接线。
 
@@ -135,17 +135,11 @@ SQL 备份不包含 Redis AOF、导出文件、Caddy 状态、密钥和部署配
 RESTORE_CONFIRM="gateway_db central_db worker_db" node scripts/db/restore.mjs "$BACKUP_ARCHIVE"
 ```
 
-`BACKUP_ARCHIVE` 须设置为已核对的归档路径。恢复后核对三库、Goose 版本和关键台账；若执行 migrate，必须配置全部三库 URL。开发服务用 `docker compose -f compose.dev.yaml restart user admin central gateway worker`；生产使用实际部署的全部 Compose 文件重启对应服务。更新或恢复不得使用 `docker compose down -v`。
+`BACKUP_ARCHIVE` 须设置为已核对的归档路径。恢复后核对三库、Goose 版本和关键台账；若执行 migrate，必须配置全部三库 URL。开发服务用 `docker compose -f docker/compose.dev.yaml restart user admin central gateway worker`；生产使用实际部署的全部 Compose 文件重启对应服务。更新或恢复不得使用 `docker compose down -v`。
 
 ## 监控与故障定位
 
 五个 Go 服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。live 只说明进程存活，ready 检查服务依赖。HTTP 指标按已注册路由统计，不能作为 TCP 连接数或设备在线率。
-
-```bash
-docker compose -f compose.dev.yaml -f compose.monitoring.yaml up -d prometheus
-```
-
-当前 Prometheus 面向开发内网，端口 9090，抓取间隔 15 秒、保留 7 天。抓取失败持续 1 分钟告警；近 5 分钟至少 20 次请求且 5xx 超 5%，持续 5 分钟告警；排除 `/metrics` 后同样流量条件下 p95 超 2 秒，持续 5 分钟告警。配置和规则测试见 [monitoring](../monitoring)，当前没有 Alertmanager 通知链路。
 
 | 现象 | 核对项 |
 | --- | --- |
@@ -174,18 +168,18 @@ Invoke-RestMethod http://127.0.0.1:9190/state
 Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType application/json -Body '{"type":"power","port":1,"power_deciwatts":2500}'
 ```
 
-控制接口只允许 loopback 监听。`power_deciwatts=2500` 表示 250 W；刷卡使用 `{"type":"card","port":1,"card":100001}`，移卡使用 `{"type":"remove-card","port":1}`。完整事件字段见 [Input](../internal/gateway/simulator/dc589/behavior.go)，场景和参数见 `go run ./cmd/simulator-dc589 -h`。
+控制接口只允许 loopback 监听。`power_deciwatts=2500` 表示 250 W；刷卡使用 `{"type":"card","port":1,"card":100001}`，移卡使用 `{"type":"remove-card","port":1}`。完整事件字段见 [Input](../backend/internal/gateway/simulator/dc589/behavior.go)，场景和参数见 `go run ./cmd/simulator-dc589 -h`。
 
 充电心跳 15 秒，空闲心跳 60 秒，网关读超时为相应周期的三倍。模拟器每秒更新计量。当前使用通用五档参数，不支持特殊双口八档扩展、心跳分片合并和 OTA；完整协议规范仍保留这些内容。
 
-## 隔离栈全链路验收
+## 全链路场景验收
 
-本节是把充电、计量、计费与退款主流程做成可重复验收的操作清单。验收对象是容器内编译运行的五个服务加宿主机真实 TCP 模拟器；模拟支付与模拟器结果不构成真实微信商户、实机设备或监管投递的验收，这些仍须按 [上线验收](#上线验收) 的外部条件单独执行。
+本节是把充电、计量、计费与退款主流程做成可重复验收的操作清单。验收对象是开发栈的五个服务加宿主机真实 TCP 模拟器；模拟支付与模拟器结果不构成真实微信商户、实机设备或监管投递的验收，这些仍须按 [上线验收](#上线验收) 的外部条件单独执行。
 
 ### 环境准备
 
-1. 一键启动：`make e2e` 以 `-f compose.test.yaml -f compose.e2e.yaml` 合并编排，启动 3307 测试三库与 6381 Redis、以 docker/Dockerfile 在容器内编译并运行五个服务（不在本机编译）、执行迁移、等待就绪并自动执行 `scripts/dev/prepare.mjs`。user/admin/worker/gateway 的 HTTP 与 gateway 的 9100/TCP 映射到宿主机 loopback；central 8082 仅容器网络可达。
-2. 全链路验收使用空库（`compose.test.yaml` 无持久卷，`down` 后即重建）。若在同卷上先跑过 integration 测试且未 down，集成测试的显式高位主键会把 `central_db.charge_order` 自增抬到超出 16 位十进制 BCD 编码的范围，gateway 启动受理持续返回 409（业务码 2000）；这不是业务缺陷，`make e2e-down` 后重新 `make e2e` 即消失。
+1. 一键启动：`make dev-up` 启动开发栈（`docker/compose.dev.yaml`，五个服务以 `go run` 在容器内运行），再执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与方案。user/admin/worker/gateway 的 HTTP 与 gateway 的 9100/TCP 映射到宿主机 loopback；central 8082 仅容器网络可达。
+2. 场景断言直接落在开发库，统一取库中最新一笔订单。注意集成测试的显式高位主键会把 `central_db.charge_order` 自增抬到超出 16 位十进制 BCD 编码的范围，gateway 启动受理随之持续返回 409（业务码 2000）；这不是业务缺陷，用 `node scripts/db/reset-dev.mjs --reset-development-data` 重建开发数据即消失。
 3. 模拟器经真实 TCP 9100 接入宿主机映射端口，场景用 `-scenario` 选择（`by-energy`、`by-time`、`stop-on-command`、`reject-start`、`fault`、`silent`、`reconnect`），运行中调功率、插拔、刷卡见上一节控制接口。注意 `-power` 等功率参数单位是分瓦：`1500` 是 150 W，不是 1500 W。
 4. 部分场景需要把站点生效方案换成特定模式（如 s4 的 10 分金额套餐），`scenarios.mjs budget` 已自动化该步骤；其余模式切换经后台执行，应用走乐观锁，`expected_version` 须读站点当前生效版本。
 
@@ -226,9 +220,9 @@ SELECT event FROM central_db.charge_event_log ORDER BY id;         -- payment_co
 
 ### 脚本化执行
 
-一键入口为 Makefile 的 `e2e`（启动容器化栈并就绪）与 `e2e-down`（关闭栈）。场景驱动在 `scripts/dev/e2e/scenarios.mjs`：`scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>` 驱动单个场景并自动完成逐表断言，`budget` 子命令创建并应用 10 分金额套餐，仅 s4 前执行一次；s7 对 worker 容器执行 SIGKILL 并重新拉起，与进程级中断等价。断言统一取库中最新订单，不得并行运行多个场景；模拟器仍须按各场景以 `-scenario` 手工启动。S6（刷卡全流程）暂未脚本化，按矩阵手工执行。
+开发栈就绪后，场景驱动在 `scripts/dev/e2e/scenarios.mjs`：`scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>` 驱动单个场景并自动完成逐表断言，`budget` 子命令创建并应用 10 分金额套餐，仅 s4 前执行一次；s7 对 worker 容器执行 SIGKILL 并重新拉起，与进程级中断等价。断言统一取库中最新订单，不得并行运行多个场景；模拟器仍须按各场景以 `-scenario` 手工启动。S6（刷卡全流程）暂未脚本化，按矩阵手工执行。
 
 ### 退出
 
-停掉模拟器（前台 Ctrl+C 或退出命令），执行 `make e2e-down`，核对 3307、6381、9100、9190 及 8080/8081/8083/8085 无残留监听。保留场景日志与 SQL 导出作为验收证据；开发栈（3306/6379/6380）全程不得触碰。
+停掉模拟器（前台 Ctrl+C 或退出命令）。开发栈可保留供后续联调复用；如需回收，执行 `make dev-down`（容器与数据卷保留），核对 9100、9190 及 8080/8081/8083/8085 的监听符合预期。保留场景日志与 SQL 导出作为验收证据。
 

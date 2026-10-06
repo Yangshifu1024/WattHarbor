@@ -1,4 +1,22 @@
-docker/**/*.sh text eol=lf
-scripts/**/*.sh text eol=lf
-docker/Dockerfile text eol=lf
-docker/Caddyfile text eol=lf
+# 仓库统一以 LF 入库与检出。属性优先于各机器的 core.autocrlf 设置，
+# Windows 上不再产生 CRLF 工作区副本与「LF will be replaced by CRLF」告警；
+# Go、Node、SQL、YAML、Docker 工具链均以 LF 为准。
+* text=auto eol=lf
+
+# Windows 专属脚本按惯例保留 CRLF（当前仓库暂无，规则防新增文件遗漏）。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 常见二进制类型不做行尾转换（text=auto 已按内容识别，此处显式兜底）。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.gz binary

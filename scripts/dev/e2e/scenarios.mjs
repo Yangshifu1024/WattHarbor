@@ -1,10 +1,10 @@
 // 隔离栈端到端场景驱动：走真实用户 API、真实 worker 循环与真实 TCP 模拟器，
 // 场景结束后直接查询测试库，对持久事实逐项断言。场景矩阵与逐表断言说明见
-// docs/operations.md「隔离栈全链路验收」。
+// docs/operations.md「全链路场景验收」。
 //
-// 前置：make e2e 已启动容器化五服务（compose.test.yaml + compose.e2e.yaml 合并
-// 编排，服务在容器内编译运行）；模拟器已按场景以 -scenario <x> 接入宿主机
-// 9100 端口（控制口 9190）。场景与模拟器场景的对应关系：
+// 前置：开发栈已启动（make dev-up）且 prepare.mjs 已建立厂商、站点、设备与
+// 方案基础数据；测试直连开发环境（docker/compose.dev.yaml）。模拟器已按场景
+// 以 -scenario <x> 接入宿主机 9100 端口（控制口 9190）。场景与模拟器场景的对应关系：
 //   s3 → reject-start        s1 → by-time            s2 → stop-on-command
 //   s5 → stop-on-command     s7 → stop-on-command    s4 → stop-on-command（先执行 budget）
 //   s8 → reconnect
@@ -23,8 +23,8 @@ const ADMIN = 'http://127.0.0.1:8081/api/v1';
 const SIM = 'http://127.0.0.1:9190';
 // prepare.mjs 导入的 1 号模拟器设备的 1 号端口业务编码。
 const PORT_CODE = '5348240514082652-1';
-// 与 make e2e 相同的合并编排；s7 对 worker 容器执行 SIGKILL 并重新拉起。
-const COMPOSE = ['compose', '-f', 'compose.test.yaml', '-f', 'compose.e2e.yaml'];
+// 与开发栈同源编排；s7 对 worker 容器执行 SIGKILL 并重新拉起。
+const COMPOSE = ['compose', '-f', 'docker/compose.dev.yaml'];
 
 // 大整数身份按原 JSON 文本保留为 BigInt，再以 rawJSON 写回请求，不经 Number。
 const readJSON = text => JSON.parse(text, (_k, v, ctx) =>
@@ -50,7 +50,7 @@ const simEvent = async body => {
 };
 
 function sql(db, text) {
-  const out = execFileSync('docker', ['compose', '-f', 'compose.test.yaml', 'exec', '-T', 'mysql', 'sh', '-c',
+  const out = execFileSync('docker', ['compose', '-f', 'docker/compose.dev.yaml', 'exec', '-T', 'mysql', 'sh', '-c',
     `MYSQL_PWD="$MYSQL_PASSWORD" mysql --protocol=TCP -uchargepilot ${db} -N -B -e '${text}'`],
     { encoding: 'utf8', cwd: ROOT });
   return out.trim().split('\n').filter(l => l !== '').map(l => l.split('\t'));

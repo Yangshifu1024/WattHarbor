@@ -157,11 +157,11 @@
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
 - 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`；`make check` 顺序执行这三项。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
-- **真库集成测试单列一层**：`make test-integration TEST_MYSQL_URL=...` 带 `//go:build integration` 跑真实 MySQL。`make check` 不含它（不依赖 Docker），但 **CI 的 `integration` job 跑它**。行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 需要真实 MySQL 语义验证，详见「并发与幂等」。
-- 目录结构定稿如下。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
+- **真库集成测试单列一层**：`make test-integration TEST_MYSQL_URL=...` 带 `//go:build integration` 跑真实 MySQL。`make check` 不含它（不依赖 Docker）。2026-10-06 起 CI workflow 与独立测试实例编排（compose.test.yaml）已移除，集成测试经 `scripts/db/test-integration.mjs` 直接对开发环境执行；行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 需要真实 MySQL 语义验证，详见「并发与幂等」。
+- 目录结构定稿如下。后端 Go 模块整体位于 `backend/`（含 `cmd/`、`internal/`、`migrations/`、`go.mod` 与服务镜像 `Dockerfile`），下图为 `backend/` 内部结构；本文件后文与 `docs/` 提到的 `cmd/`、`internal/`、`migrations/` 路径均相对 `backend/`。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
 ```text
-charge-pilot/
+charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾）
 │
 ├── cmd                                                   部署单元，每个子目录一个进程
 │   ├── cmd/admin/main.go
@@ -671,11 +671,15 @@ charge-pilot/
 ├── migrations/central_db/0001_init.sql
 ├── migrations/gateway_db/0001_init.sql
 ├── migrations/worker_db/0001_init.sql
-│
-├── scripts/db/  scripts/dev/
-│
-├── AGENTS.md  README.md  docs/  Makefile  go.mod
-└── admin-web/  miniprogram/
+├── Dockerfile                                            服务镜像：上下文为 backend/，容器内编译 ./cmd/<SERVICE>
+└── go.mod  go.sum  .dockerignore
+
+仓库根（backend/ 之外，路径相对仓库根）：
+├── admin-web/  miniprogram/                              前端：运营后台与用户端 Taro（H5 与微信小程序）
+├── docker/                                               Compose 编排（compose.dev／prod.yaml）、Caddyfile 与 MySQL 初始化 SQL
+├── scripts/db/  scripts/dev/  scripts/git/  scripts/ops/ 跨平台 Node 脚本
+├── docs/  .agents/  .githooks/                           DC589 协议文档在 docs/protocols/
+└── AGENTS.md  README.md  LICENSE  Makefile  .env.example
 ```
 
 - **代码按 use case 组织**，主轴是业务用例不是技术层。每个 use case 目录自己
@@ -787,8 +791,8 @@ charge-pilot/
 
 ## 开发环境
 
-- 开发环境由 `scripts/dev/start.mjs` 启动的 `compose.dev.yaml` 容器统一提供，包含后端、后台、用户端、MySQL 和 Redis。启动、数据准备、模拟器与联调顺序见 [本地运行](README.md#本地运行) 与 [模拟器](README.md#模拟器)，本节只记录使用规则。
-- 可自主拉起、重启与停止开发容器，包括未运行时的 `start.mjs` 与 `docker compose -f compose.dev.yaml`。不为启动而启动：只做当次任务需要的动作，用完不留下多余容器，`start.mjs` 保留已有数据。**破坏性动作仍需确认**——重建数据卷、`down -v`、`reset-dev.mjs`、清空开发库前一律先问。
+- 开发环境由 `scripts/dev/start.mjs` 启动的 `docker/compose.dev.yaml` 容器统一提供，包含后端、后台、用户端、MySQL 和 Redis。启动、数据准备、模拟器与联调顺序见 [本地运行](README.md#本地运行) 与 [模拟器](README.md#模拟器)，本节只记录使用规则。
+- 可自主拉起、重启与停止开发容器，包括未运行时的 `start.mjs` 与 `docker compose -f docker/compose.dev.yaml`。不为启动而启动：只做当次任务需要的动作，用完不留下多余容器，`start.mjs` 保留已有数据。**破坏性动作仍需确认**——重建数据卷、`down -v`、`reset-dev.mjs`、清空开发库前一律先问。
 - 验证与联调优先用既有路径：`scripts/dev/start.mjs`（开发栈）、`/health/ready` 判定就绪。**不要为"多验证一点"另造旁路脚本**——自建的临时容器、临时二进制、临时灌库脚本既要自己收拾，又复现不了仓库既有的正确做法。需要新验证手段时先用仓库里已有的，或提出方案经确认后再写。
 - 不得自行在宿主机启动常驻本地服务器或 dev server，也不得为 `dist` 另建静态服务；这两类一律用容器内的地址。确需一次性临时服务时避开容器占用端口，用完立即停止并说明用途。
 - 验证前端渲染访问容器内的后台与用户端 H5 地址，并同时确认页面控制台无报错。
@@ -808,7 +812,7 @@ charge-pilot/
   不给变量时退出码 2。跳过的测试在 `go test` 输出里和通过的一模一样，
   CI 没配库就会一路绿灯——护栏最常见的失效正是靠放行通过。
 - 测试写入用事务回滚；确实需要提交的场景（如两个独立事务要看到同一行）
-  在独立测试库执行，由收尾按完整主键显式清理并核对 0 残留，不修改共享开发数据。
+  在独立测试库执行，由收尾按完整主键显式清理并核对 0 残留。2026-10-06 起独立测试实例编排移除，集成测试直连开发库；显式主键会抬高开发库自增序号，必要时以 reset-dev 重建开发数据。
 - 共享骨架（独立连接、并发闸门、按表名挂载的加锁回调）提取到各包的
   `gorm_integration_test.go`，不要每个文件复制一份。
 
@@ -854,10 +858,10 @@ charge-pilot/
 - Git 操作一律需要用户明确授权。未获授权不得执行 `commit`、`reset`、`revert`、`push`、`rebase`、`merge`、`cherry-pick`、`tag`，不得新建或切换分支，不得改写提交历史。改动只落在工作区，由用户审阅后自行提交。`git status`、`git diff`、`git log`、`git show` 等只读命令可以直接使用。
 - 交付时报告工作区的未提交改动，不代替用户提交。
 - Go 业务变更运行 `make check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `make build SERVICE=<name>` 或 `make build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
-- `make check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `make test-integration TEST_MYSQL_URL=...`，使用独立测试 MySQL；本地入口是 `node scripts/db/test-integration.mjs` 和 `compose.test.yaml`（3307）。显式测试主键即使回滚仍会抬高自增序号，不得在联调开发库运行；有构建 tag 的真库测试不能用默认测试通过替代。
-- 真实会话测试还须使用独立 Redis（6381），配置 `TEST_REDIS_URL`。确定性角色锁测试需要 `performance_schema.data_lock_waits`、`data_locks`、`threads` 的 SELECT 权限；测试入口及 CI 加载 `docker/mysql/test-lock-observer.sql`，开发／生产及共享初始化不加载这份测试授权。缺少连接或观测权限须明确失败，不跳过或改用模拟锁。
+- `make check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `make test-integration TEST_MYSQL_URL=...`；本地入口是 `node scripts/db/test-integration.mjs`，2026-10-06 起直接使用开发环境（3306/6379），不再有 compose.test.yaml 独立实例。显式测试主键即使回滚仍会抬高开发库自增序号，必要时以 reset-dev 重建；有构建 tag 的真库测试不能用默认测试通过替代。
+- 真实会话测试还须配置 `TEST_REDIS_URL`（开发 Redis 6379）。确定性角色锁测试需要 `performance_schema.data_lock_waits`、`data_locks`、`threads` 的 SELECT 权限；测试入口加载 `docker/mysql/test-lock-observer.sql` 补幂等授权，生产初始化不加载这份测试授权。缺少连接或观测权限须明确失败，不跳过或改用模拟锁。
 - 后台逻辑修改运行 `npm test` 与 `npm run build`；用户端逻辑修改运行 `npm run typecheck`、`npm test`，涉及平台适配或构建配置时构建受影响的 H5／微信目标。命令在对应前端目录执行。
 - 纯文档、注释和文案修改检查链接、引用、事实与格式；不为低影响可逆修改增加重复测试。已有验证通过后，仅在新增修改、失败或未决问题需要时扩大检查。
 - 测试覆盖实际契约和故障边界，重点验证并发重放、非法状态、授权范围、金额与计量不一致、外部未知结果和回执丢失；避免照抄实现的测试。
-- 功能、命令、目录或部署契约改变时同步维护 README、本文件及相应的业务／运行文档；设备协议完整规范维护于 `protocols/dc589.md`，精确业务字段留在源码、SQL 注释和 OpenAPI，不新增重复文档树。保留维护文档引用的 README 锚点，移动内容时更新入口及相对路径。
+- 功能、命令、目录或部署契约改变时同步维护 README、本文件及相应的业务／运行文档；设备协议完整规范维护于 `docs/protocols/dc589.md`，精确业务字段留在源码、SQL 注释和 OpenAPI，不新增重复文档树。保留维护文档引用的 README 锚点，移动内容时更新入口及相对路径。
 - 完成交付前检查差异与失效引用，报告实际修改、验证结果及仍存在的实现边界；不得把模拟器或模拟支付验证称为实机或真实资金验收。

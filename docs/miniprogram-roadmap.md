@@ -2,7 +2,7 @@
 
 状态：U1、U2、U3、U5、U9、U10、U12 已于 2026-10-06 实施并通过验证；U4、U6、U7、U8、U11 未开工。U5 实施时订正了原描述（后端无用户领取端点），详见第 2 节该行。验证方式与结果见第 5 节。
 
-依据为 2026-10-06 对 `miniprogram/` 全部源码（Taro 4.3 + React 18，23 个注册页面，73 项用户端测试全绿）与 [user.openapi.json](../internal/http/user/user.openapi.json) 端点清单的逐项盘点。
+依据为 2026-10-06 对 `miniprogram/` 全部源码（Taro 4.3 + React 18，23 个注册页面，73 项用户端测试全绿）与 [user.openapi.json](../backend/internal/http/user/user.openapi.json) 端点清单的逐项盘点。
 
 本文件负责用户端 `miniprogram/` 的后续开发任务、优先级、依赖与验收；仓库维护规则、目录结构与代码约束见 [AGENTS.md](../AGENTS.md)，本地运行与联调见 [README](../README.md#本地运行)。完成任务后原位更新状态与证据，不追加第二份"当前状态"。
 
@@ -79,7 +79,7 @@
 
 ### 5.2 开发栈活体验证
 
-在 `compose.dev.yaml` 开发栈、开发登录模式（`tester-1`）下经浏览器实际渲染核对：
+在 `docker/compose.dev.yaml` 开发栈、开发登录模式（`tester-1`）下经浏览器实际渲染核对：
 
 - 首页：无进行中订单与生效公告时横幅与公告条均正确收起，四个功能入口与附近电站区块布局完好。
 - 账单列表：登录态下正确显示空态"暂无结算账单"，页面与底部导航渲染正常。
@@ -88,6 +88,6 @@
 
 **未覆盖**：首页横幅与公告条的**有数据**形态需真实进行中订单与生效公告，本轮未构造，相关断言由 `tests/home-banners.test.cjs` 覆盖数据条件（空 `order_no` 收起、`paid` 显示"启动确认中"、公告上限 3 条）。
 
-**环境注意**：改动 `app.config.ts` 新增页面后，dev 容器的 Taro dev server 只对 `.tsx` 做 HMR，**不会重建路由表**；新页面表现为 URL 已切换但仍渲染旧页面。必须 `docker compose -f compose.dev.yaml restart user-h5` 后新路由才可用。本轮首次测试即因此判为环境未重载，重启后重测通过。
+**环境注意**：改动 `app.config.ts` 新增页面后，dev 容器的 Taro dev server 只对 `.tsx` 做 HMR，**不会重建路由表**；新页面表现为 URL 已切换但仍渲染旧页面。必须 `docker compose -f docker/compose.dev.yaml restart user-h5` 后新路由才可用。本轮首次测试即因此判为环境未重载，重启后重测通过。
 
 **工具限制**：本次浏览器运行时未提供控制台读取能力，无法收集 console 日志；改以页面可见报错形态（错误文案、白屏、布局破损）判断，各页未见异常。

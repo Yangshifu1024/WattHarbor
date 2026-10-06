@@ -16,10 +16,10 @@
 
 | 任务 | 实际行为 | 验证 |
 |---|---|---|
-| C-01／P1 | [auto_stop.go](../internal/charging/stop/auto_stop.go) 优先对已冻结且仍在充电的订单重试原 STOP。恢复不重新取证或依赖计价快照；单笔失败汇总后继续后单。首次 cutoff 的时刻、原因与费用经原子 no-op upsert 保留 | 真库故障注入覆盖普通时长／刷卡两分支：提交冻结后受理未知、下一轮恢复、删除计价快照仍恢复、后单继续、已结束不再请求；两连接并发首写保留原记录且清理为零 |
-| C-02／P1 | [charging_samples.go](../internal/gateway/control/charging_samples.go) 保留目标端口缺失事实。心跳必须严格递增，相邻间隔及末条年龄不超过 30 秒；缺失和长间隔重建窗口，以最后观测时刻而非 now 计算一分钟 | 真 gateway MySQL 事件→实际路由→具名客户端→stop 判定覆盖连续、重连、缺失、乱序及 10080 行分页边界；默认测试另覆盖未来、重复时间及静默尾段 |
-| C-03 | [deadline_repo.go](../internal/charging/stop/deadline_repo.go) 不再自己映射 card_charge 或 charge_order，使用所属模块的锁定能力。已有 cutoff 返回可恢复停机状态 | 刷卡到期恢复及回执 integration 回归保持原锁顺序和幂等事务 |
-| 生命周期订单归属 | [lifecycle_repo.go](../internal/order/lifecycle_repo.go) 提供 LifecycleView 与三个状态推进能力；[start/receipt_schema.go](../internal/charging/start/receipt_schema.go)、[finish/receipt_schema.go](../internal/charging/finish/receipt_schema.go) 接管回执与端口占用的写模型。order 删除 StartReceiptRecord／EndReceiptRecord／ActivePortChargeRecord，无别名或转发 | 启动成功与重放、最终 Outbox 写入后 storage-error 与取消的整体回滚（start／finish 各两例）、中央新 owner 条件释放、结束 owner 不匹配回滚，以及既有启动拒绝退款、结束重放与计量冲突回归在独立 3307 三库与 6381 Redis 上通过 |
+| C-01／P1 | [auto_stop.go](../backend/internal/charging/stop/auto_stop.go) 优先对已冻结且仍在充电的订单重试原 STOP。恢复不重新取证或依赖计价快照；单笔失败汇总后继续后单。首次 cutoff 的时刻、原因与费用经原子 no-op upsert 保留 | 真库故障注入覆盖普通时长／刷卡两分支：提交冻结后受理未知、下一轮恢复、删除计价快照仍恢复、后单继续、已结束不再请求；两连接并发首写保留原记录且清理为零 |
+| C-02／P1 | [charging_samples.go](../backend/internal/gateway/control/charging_samples.go) 保留目标端口缺失事实。心跳必须严格递增，相邻间隔及末条年龄不超过 30 秒；缺失和长间隔重建窗口，以最后观测时刻而非 now 计算一分钟 | 真 gateway MySQL 事件→实际路由→具名客户端→stop 判定覆盖连续、重连、缺失、乱序及 10080 行分页边界；默认测试另覆盖未来、重复时间及静默尾段 |
+| C-03 | [deadline_repo.go](../backend/internal/charging/stop/deadline_repo.go) 不再自己映射 card_charge 或 charge_order，使用所属模块的锁定能力。已有 cutoff 返回可恢复停机状态 | 刷卡到期恢复及回执 integration 回归保持原锁顺序和幂等事务 |
+| 生命周期订单归属 | [lifecycle_repo.go](../backend/internal/order/lifecycle_repo.go) 提供 LifecycleView 与三个状态推进能力；[start/receipt_schema.go](../backend/internal/charging/start/receipt_schema.go)、[finish/receipt_schema.go](../backend/internal/charging/finish/receipt_schema.go) 接管回执与端口占用的写模型。order 删除 StartReceiptRecord／EndReceiptRecord／ActivePortChargeRecord，无别名或转发 | 启动成功与重放、最终 Outbox 写入后 storage-error 与取消的整体回滚（start／finish 各两例）、中央新 owner 条件释放、结束 owner 不匹配回滚，以及既有启动拒绝退款、结束重放与计量冲突回归在独立 3307 三库与 6381 Redis 上通过 |
 
 30 秒上限基于当前充电心跳 15 秒周期，允许一个周期的抖动，定义在共享证据契约；协议周期变化须重新核对。停止受理只证明 gateway 持久命令，设备停止与订单结束由异步回执确认。
 

@@ -162,7 +162,7 @@ export function main(args = process.argv.slice(2)) {
     return 2;
   }
   try {
-    const output = docker(['compose', '-f', 'docker-compose.yml', 'config', '--format', 'json'], 'Compose validation failed. Check .env and run docker compose config --quiet.');
+    const output = docker(['compose', '-f', 'docker/compose.prod.yaml', 'config', '--format', 'json'], 'Compose validation failed. Check .env and run docker compose config --quiet.');
     let config;
     try { config = JSON.parse(output); } catch { throw new Error('Unable to read Compose configuration JSON.'); }
     const caddy = resolve(root, 'docker/Caddyfile');
