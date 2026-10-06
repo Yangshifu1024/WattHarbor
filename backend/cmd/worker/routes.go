@@ -40,7 +40,11 @@ func newRouter(cfg config.Worker, r *resources, scheduler schedule.Scheduler) *g
 		httpapi.OK(c, gin.H{"status": "outbox_ready"})
 	})
 
-	internaljob.OpsAPI{Stream: r.Stream, Streams: outbox.DefaultBusinessStreams, ServiceToken: cfg.ServiceToken}.Register(router)
+	internaljob.OpsAPI{
+		Stream:       r.Stream,
+		Streams:      outbox.DefaultBusinessStreams,
+		ServiceToken: cfg.ServiceToken,
+	}.Register(router)
 	schedule.API{Scheduler: scheduler, ServiceToken: cfg.ServiceToken}.Register(router)
 	return router
 }

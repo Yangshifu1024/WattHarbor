@@ -53,41 +53,111 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		httpapi.OK(c, gin.H{"status": "user_storage_ready"})
 	})
 
+	// 会话与档案仓储、请求鉴权器均为无状态值服务，本进程内共用同一实例；
+	// sessionAuth 仅封装 cEndAuth，语义与逐处构造一致。
+	sessionRepo := identity.SessionRepo{Redis: cache}
+	userRepo := identity.UserRepo{DB: orm}
+	cEndAuth := authhttp.NewAuthenticator(jwt, sessionRepo, userRepo)
+	sessionAuth := authhttp.SessionAuthenticator{Auth: cEndAuth}
 	discovery := device.DiscoveryService{Gateway: stopGateway, Operations: device.OperationRepo{DB: orm}}
-	cEndAuth := authhttp.NewAuthenticator(jwt, identity.SessionRepo{Redis: cache}, identity.UserRepo{DB: orm})
+	// 登录模式同时决定微信换据与手机号来源采用真实实现还是开发模拟。
 	var loginExchanger identity.CodeExchanger = wechat
 	if cfg.LoginMode == "development" {
 		loginExchanger = identity.DevelopmentExchanger{}
 	}
-	useridentity.API{Service: identity.SessionService{WeChat: loginExchanger, Users: identity.UserRepo{DB: orm}, Sessions: identity.SessionRepo{Redis: cache}, Tokens: identity.JWTAccess{JWT: jwt}}}.Register(router)
-	userpayment.ScanAPI{Discovery: discovery}.Register(router)
-	usercharging.StopAPI{JWT: jwt, Sessions: identity.SessionRepo{Redis: cache}, Users: identity.UserRepo{DB: orm}, Gateway: stopGateway}.Register(router)
-	// 支付回调由渠道服务器经对外入口打进来，属于本进程。
-	if cfg.PaymentMode == "simulation" {
-		userpayment.DevelopmentAPI{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Service: payment.SimulationService{DB: orm, Callback: payment.CallbackService{Refunds: settlement.RefundRecorder{}, DB: orm, ExpectedProvider: "simulation", ExpectedMerchantID: "local-simulation", ExpectedAppID: cfg.WeChatAppID}}}.Register(router)
-	}
-	if cfg.PaymentMode == "wechat_direct" {
-		userpayment.WechatCallbackAPI{Verifier: channel.Prepay.(userpayment.NotificationVerifier), Callbacks: payment.CallbackService{Refunds: settlement.RefundRecorder{},
-			DB: orm, ExpectedProvider: "wechat_direct", ExpectedMerchantID: cfg.WechatMchID, ExpectedAppID: cfg.WeChatAppID}}.Register(router)
-	}
-	userwallet.API{WalletQuery: wallet.QueryService{Repo: wallet.UserWalletRepo{DB: orm}}, WalletRecharge: wallet.RechargeService{DB: orm, Payments: payment.RechargePaymentRepo{DB: orm, Provider: channel.Prepay}}, WalletRefund: wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}}, Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}}.Register(router)
-	userdevice.API{Stations: device.UserStationService{DB: orm, Announcements: ops.AnnouncementQueryService{DB: orm}, Summaries: stopGateway}, Faults: device.FaultService{DB: orm}, Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}}.Register(router)
-	userops.API{Announcements: ops.AnnouncementQueryService{DB: orm}}.Register(router)
-	usermarketing.API{Query: marketing.CouponQueryService{DB: orm}, Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}}.Register(router)
-	usersettlement.InvoiceAPI{Invoices: settlement.InvoiceService{DB: orm}, Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}}.Register(router)
-	userorder.FeedbackAPI{Feedback: ordercase.FeedbackService{DB: orm}, Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}}.Register(router)
-	orderQuery := ordercase.QueryService{DB: orm, Fees: settlement.QueryFeeRepo{DB: orm}}
-	userorder.QueryAPI{Orders: orderQuery, Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Query: chargingquery.UserService{Orders: orderQuery, Fees: settlement.QueryFeeRepo{DB: orm}, State: chargingquery.UserStateRepo{DB: orm}, Gateway: stopGateway}}.Register(router)
 	var phoneSource identity.PhoneSource = identity.WeChatPhoneSource{Exchange: wechat.ExchangePhone}
 	if cfg.LoginMode == "development" {
 		phoneSource = identity.DevelopmentPhoneSource{}
 	}
-	useridentity.PhoneAPI{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Service: identity.PhoneService{Users: identity.UserRepo{DB: orm}, Source: phoneSource}}.Register(router)
-	usersettlement.BillAPI{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Bills: settlement.UserBillService{Repo: settlement.BillRepo{DB: orm}}}.Register(router)
 
-	userpayment.StartAPI{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth},
-		Checkout: payment.CheckoutService{Ports: discovery, Pricing: pricing.Repo{DB: orm}, Intents: payment.PaymentIntentRepo{DB: orm}, Provider: channel.Prepay}}.Register(router)
-	usercard.API{Auth: authhttp.SessionAuthenticator{Auth: cEndAuth}, Status: card.CardStatusService{DB: orm}}.Register(router)
+	// 会话、扫码与充电停止。
+	useridentity.API{
+		Service: identity.SessionService{
+			WeChat:   loginExchanger,
+			Users:    userRepo,
+			Sessions: sessionRepo,
+			Tokens:   identity.JWTAccess{JWT: jwt},
+		},
+	}.Register(router)
+	userpayment.ScanAPI{Discovery: discovery}.Register(router)
+	usercharging.StopAPI{JWT: jwt, Sessions: sessionRepo, Users: userRepo, Gateway: stopGateway}.Register(router)
+	// 支付回调由渠道服务器经对外入口打进来，属于本进程。
+	if cfg.PaymentMode == "simulation" {
+		userpayment.DevelopmentAPI{
+			Auth: sessionAuth,
+			Service: payment.SimulationService{
+				DB: orm,
+				Callback: payment.CallbackService{
+					Refunds:            settlement.RefundRecorder{},
+					DB:                 orm,
+					ExpectedProvider:   "simulation",
+					ExpectedMerchantID: "local-simulation",
+					ExpectedAppID:      cfg.WeChatAppID,
+				},
+			},
+		}.Register(router)
+	}
+	if cfg.PaymentMode == "wechat_direct" {
+		userpayment.WechatCallbackAPI{
+			Verifier: channel.Prepay.(userpayment.NotificationVerifier),
+			Callbacks: payment.CallbackService{
+				Refunds:            settlement.RefundRecorder{},
+				DB:                 orm,
+				ExpectedProvider:   "wechat_direct",
+				ExpectedMerchantID: cfg.WechatMchID,
+				ExpectedAppID:      cfg.WeChatAppID,
+			},
+		}.Register(router)
+	}
+
+	// 钱包、站点设备与各业务族查询。
+	userwallet.API{
+		WalletQuery:    wallet.QueryService{Repo: wallet.UserWalletRepo{DB: orm}},
+		WalletRecharge: wallet.RechargeService{DB: orm, Payments: payment.RechargePaymentRepo{DB: orm, Provider: channel.Prepay}},
+		WalletRefund:   wallet.RefundService{DB: orm, Sources: payment.RechargeSources{}, Recorder: settlement.RefundRecorder{}},
+		Auth:           sessionAuth,
+	}.Register(router)
+	userdevice.API{
+		Stations: device.UserStationService{DB: orm, Announcements: ops.AnnouncementQueryService{DB: orm}, Summaries: stopGateway},
+		Faults:   device.FaultService{DB: orm},
+		Auth:     sessionAuth,
+	}.Register(router)
+	userops.API{Announcements: ops.AnnouncementQueryService{DB: orm}}.Register(router)
+	usermarketing.API{Query: marketing.CouponQueryService{DB: orm}, Auth: sessionAuth}.Register(router)
+	usersettlement.InvoiceAPI{Invoices: settlement.InvoiceService{DB: orm}, Auth: sessionAuth}.Register(router)
+	userorder.FeedbackAPI{Feedback: ordercase.FeedbackService{DB: orm}, Auth: sessionAuth}.Register(router)
+	feeRepo := settlement.QueryFeeRepo{DB: orm}
+	orderQuery := ordercase.QueryService{DB: orm, Fees: feeRepo}
+	userorder.QueryAPI{
+		Orders: orderQuery,
+		Auth:   sessionAuth,
+		Query: chargingquery.UserService{
+			Orders:  orderQuery,
+			Fees:    feeRepo,
+			State:   chargingquery.UserStateRepo{DB: orm},
+			Gateway: stopGateway,
+		},
+	}.Register(router)
+	useridentity.PhoneAPI{
+		Auth:    sessionAuth,
+		Service: identity.PhoneService{Users: userRepo, Source: phoneSource},
+	}.Register(router)
+	usersettlement.BillAPI{
+		Auth:  sessionAuth,
+		Bills: settlement.UserBillService{Repo: settlement.BillRepo{DB: orm}},
+	}.Register(router)
+
+	// 扫码下单与在线卡。
+	userpayment.StartAPI{
+		Auth: sessionAuth,
+		Checkout: payment.CheckoutService{
+			Ports:    discovery,
+			Pricing:  pricing.Repo{DB: orm},
+			Intents:  payment.PaymentIntentRepo{DB: orm},
+			Provider: channel.Prepay,
+		},
+	}.Register(router)
+	usercard.API{Auth: sessionAuth, Status: card.CardStatusService{DB: orm}}.Register(router)
 
 	return router
 }
