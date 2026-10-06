@@ -64,8 +64,22 @@ func assemble(cfg config.Gateway, r *resources) (*application, error) {
 	zone, offset := time.Now().Zone()
 	log.Printf("gateway starting http=%s dc589=%s max_connections=%d idle_heartbeat_seconds=%d charging_heartbeat_seconds=%d debug_heartbeat=%t timezone=%s offset_seconds=%d", cfg.HTTPAddr, cfg.DC589Addr, cfg.MaxConnections, dc589.DefaultHeartbeatSeconds, dc589.ChargingHeartbeatSeconds, cfg.DebugHeartbeat, zone, offset)
 	return &application{
-		Server:  &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second},
-		Devices: gatewayruntime.Runtime{Endpoints: []protocol.Endpoint{{Address: cfg.DC589Addr, Adapter: dc589.TCPAdapter{Registry: connections, DebugHeartbeat: cfg.DebugHeartbeat}}}, Sink: sink, MaxConnections: cfg.MaxConnections, Compensation: compensation, UserStops: userStops},
+		Server: &http.Server{
+			Addr:              cfg.HTTPAddr,
+			Handler:           router,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       90 * time.Second,
+		},
+		Devices: gatewayruntime.Runtime{
+			Endpoints: []protocol.Endpoint{{
+				Address: cfg.DC589Addr,
+				Adapter: dc589.TCPAdapter{Registry: connections, DebugHeartbeat: cfg.DebugHeartbeat},
+			}},
+			Sink:           sink,
+			MaxConnections: cfg.MaxConnections,
+			Compensation:   compensation,
+			UserStops:      userStops,
+		},
 	}, nil
 }
 

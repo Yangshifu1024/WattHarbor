@@ -70,7 +70,14 @@ func assemble(ctx context.Context, cfg config.User, r *resources) (*application,
 	}
 	router := newRouter(cfg, r, jwt, identity.MiniProgram{SDK: wechat}, channel, gateway)
 	log.Printf("user: http=%s login=%s payment=%s gateway=%s", cfg.HTTPAddr, cfg.LoginMode, cfg.PaymentMode, cfg.GatewayInternalURL)
-	return &application{Server: &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}}, nil
+	return &application{
+		Server: &http.Server{
+			Addr:              cfg.HTTPAddr,
+			Handler:           router,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       90 * time.Second,
+		},
+	}, nil
 }
 
 // Run 接收进程 ctx，以十秒宽限运行 a.Server；取消或监听失败后等待受管理请求退出。

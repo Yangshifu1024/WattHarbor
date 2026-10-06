@@ -83,9 +83,23 @@ func assemble(cfg config.Worker, r *resources) (*application, error) {
 	router := newRouter(cfg, r, scheduler)
 	log.Printf("worker: http=%s gateway=%s central=%s", cfg.HTTPAddr, cfg.GatewayInternalURL, cfg.CentralInternalURL)
 	return &application{
-		Server: &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second},
-		Jobs: workerruntime.Runtime{Scheduler: scheduler, AutoStops: autoStops, Billing: billingJobs, Refunds: refunds,
-			DeviceAlerts: deviceAlerts, CardEvents: cardEvents, PaidStarts: &paidStarts, StartResults: startResults, EndResults: endResults, Publishers: publishers},
+		Server: &http.Server{
+			Addr:              cfg.HTTPAddr,
+			Handler:           router,
+			ReadHeaderTimeout: 5 * time.Second,
+		},
+		Jobs: workerruntime.Runtime{
+			Scheduler:    scheduler,
+			AutoStops:    autoStops,
+			Billing:      billingJobs,
+			Refunds:      refunds,
+			DeviceAlerts: deviceAlerts,
+			CardEvents:   cardEvents,
+			PaidStarts:   &paidStarts,
+			StartResults: startResults,
+			EndResults:   endResults,
+			Publishers:   publishers,
+		},
 	}, nil
 }
 

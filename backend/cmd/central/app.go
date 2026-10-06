@@ -57,7 +57,14 @@ func assemble(ctx context.Context, cfg config.Central, r *resources) (*applicati
 	}
 	router := newRouter(cfg, r, channel, gateway)
 	log.Printf("central: http=%s payment=%s gateway=%s", cfg.HTTPAddr, cfg.PaymentMode, cfg.GatewayInternalURL)
-	return &application{Server: &http.Server{Addr: cfg.HTTPAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}}, nil
+	return &application{
+		Server: &http.Server{
+			Addr:              cfg.HTTPAddr,
+			Handler:           router,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       90 * time.Second,
+		},
+	}, nil
 }
 
 // Run 接收进程 ctx，以十秒宽限运行 a.Server；取消或监听失败后等待受管理请求退出。
