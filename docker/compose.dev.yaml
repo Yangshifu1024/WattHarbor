@@ -13,6 +13,10 @@ x-go: &go
     - go-build:/root/.cache/go-build
   environment: &go-env
     TZ: Asia/Shanghai
+    DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
+    DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
+    DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
+    DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
     GOTOOLCHAIN: auto
     # 在中国大陆访问不到 proxy.golang.org，能用的是 goproxy.cn 这个镜像。
     # 等团队统一到可达的代理后删掉这段。

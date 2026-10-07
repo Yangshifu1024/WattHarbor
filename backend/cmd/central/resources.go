@@ -34,7 +34,9 @@ func openResources(ctx context.Context, cfg config.Central) (_ *resources, err e
 			err = errors.Join(err, r.Close())
 		}
 	}()
-	if r.DB, err = dbconn.Open(ctx, cfg.DatabaseURL); err != nil {
+	if r.DB, err = dbconn.Open(ctx, cfg.DatabaseURL, dbconn.PoolConfig{
+		MaxOpen: cfg.MaxOpen, MaxIdle: cfg.MaxIdle, Lifetime: cfg.Lifetime, IdleTime: cfg.IdleTime,
+	}); err != nil {
 		return nil, err
 	}
 	if r.ORM, err = dbconn.WrapGORM(r.DB); err != nil {

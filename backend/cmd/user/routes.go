@@ -39,7 +39,7 @@ import (
 func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.MiniProgram, channel payment.PaymentChannel, stopGateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
-	metrics := httpapi.NewMetrics("user")
+	metrics := httpapi.NewMetrics("user", httpapi.DatabasePool{Schema: "central_db", DB: r.DB})
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
 	router.GET("/health/live", func(c *gin.Context) { httpapi.OK(c, gin.H{"status": "live"}) })

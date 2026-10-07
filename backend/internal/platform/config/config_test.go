@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // clearConfigEnvironment 隔离 t 中所有服务配置变量，清理时由 t.Setenv 恢复调用前的值。
@@ -11,6 +12,7 @@ import (
 func clearConfigEnvironment(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
+		"DB_MAX_OPEN_CONNS", "DB_MAX_IDLE_CONNS", "DB_CONN_MAX_LIFETIME", "DB_CONN_MAX_IDLE_TIME",
 		"DATABASE_URL", "DATABASE_URL_CENTRAL", "DATABASE_URL_GATEWAY", "DATABASE_URL_WORKER",
 		"GATEWAY_HTTP_ADDR", "DC589_ADDR", "DEVICE_MAX_CONNECTIONS", "GATEWAY_DEBUG_HEARTBEAT",
 		"CENTRAL_HTTP_ADDR", "USER_HTTP_ADDR", "ADMIN_HTTP_ADDR", "WORKER_HTTP_ADDR",
@@ -222,5 +224,39 @@ func TestLoadUserKeepsLoginSecretRequirement(t *testing.T) {
 	t.Setenv("LOGIN_MODE", "unknown")
 	if _, err := LoadUser(); err == nil || !strings.Contains(err.Error(), "invalid LOGIN_MODE") {
 		t.Fatalf("user invalid login mode error=%v", err)
+	}
+}
+
+func TestDatabasePoolEnvironment(t *testing.T) {
+	clearConfigEnvironment(t)
+	centralEnvironment(t)
+	c, err := LoadCentral()
+	if err != nil || c.MaxOpen != 20 || c.MaxIdle != 5 || c.Lifetime != 30*time.Minute || c.IdleTime != 5*time.Minute {
+		t.Fatalf("pool defaults: %+v %v", c.DatabasePool, err)
+	}
+	t.Setenv("DB_MAX_OPEN_CONNS", "12")
+	t.Setenv("DB_MAX_IDLE_CONNS", "3")
+	t.Setenv("DB_CONN_MAX_LIFETIME", "12m")
+	t.Setenv("DB_CONN_MAX_IDLE_TIME", "2m")
+	c, err = LoadCentral()
+	if err != nil || c.MaxOpen != 12 || c.MaxIdle != 3 || c.Lifetime != 12*time.Minute || c.IdleTime != 2*time.Minute {
+		t.Fatalf("pool overrides: %+v %v", c.DatabasePool, err)
+	}
+}
+
+func TestRejectInvalidDatabasePool(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"DB_MAX_OPEN_CONNS", "-1"}, {"DB_MAX_IDLE_CONNS", "-1"},
+		{"DB_CONN_MAX_LIFETIME", "-1m"}, {"DB_CONN_MAX_IDLE_TIME", "-1m"},
+		{"DB_MAX_IDLE_CONNS", "21"}, {"DB_CONN_MAX_IDLE_TIME", "invalid"},
+	} {
+		t.Run(tc.key+tc.value, func(t *testing.T) {
+			clearConfigEnvironment(t)
+			centralEnvironment(t)
+			t.Setenv(tc.key, tc.value)
+			if _, err := LoadCentral(); err == nil {
+				t.Fatal("invalid pool accepted")
+			}
+		})
 	}
 }

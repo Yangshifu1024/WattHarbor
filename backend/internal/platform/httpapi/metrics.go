@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -19,7 +20,14 @@ type Metrics struct {
 	handler  http.Handler
 }
 
-func NewMetrics(service string) *Metrics {
+// DatabasePool 将进程持有的 SQL 池关联到固定的 schema 标签。
+// 调用方只传部署定义的 schema 名，不传请求参数或数据库 URL。
+type DatabasePool struct {
+	Schema string
+	DB     *sql.DB
+}
+
+func NewMetrics(service string, pools ...DatabasePool) *Metrics {
 	registry := prometheus.NewRegistry()
 	started := time.Now()
 	requests := prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -51,6 +59,11 @@ func NewMetrics(service string) *Metrics {
 			ConstLabels: prometheus.Labels{"service": service},
 		}, func() float64 { var mem runtime.MemStats; runtime.ReadMemStats(&mem); return float64(mem.HeapInuse) }),
 	)
+	for _, pool := range pools {
+		if pool.DB != nil {
+			registerPoolMetrics(registry, service, pool)
+		}
+	}
 	return &Metrics{requests: requests, duration: duration, handler: promhttp.HandlerFor(registry, promhttp.HandlerOpts{})}
 }
 
@@ -69,4 +82,34 @@ func (m *Metrics) Middleware() gin.HandlerFunc {
 
 func (m *Metrics) Register(router *gin.Engine) {
 	router.GET("/metrics", func(c *gin.Context) { m.handler.ServeHTTP(c.Writer, c.Request) })
+}
+
+// registerPoolMetrics 在当前服务注册表采集单池连接使用、等待和回收统计。
+func registerPoolMetrics(registry *prometheus.Registry, service string, pool DatabasePool) {
+	labels := prometheus.Labels{"service": service, "schema": pool.Schema}
+	for _, metric := range []struct {
+		name  string
+		help  string
+		value func(sql.DBStats) float64
+	}{
+		{"open_connections", "Number of open SQL connections.", func(s sql.DBStats) float64 { return float64(s.OpenConnections) }},
+		{"in_use_connections", "Number of SQL connections in use.", func(s sql.DBStats) float64 { return float64(s.InUse) }},
+		{"idle_connections", "Number of idle SQL connections.", func(s sql.DBStats) float64 { return float64(s.Idle) }},
+		{"max_open_connections", "Configured SQL connection limit; zero means unlimited.", func(s sql.DBStats) float64 { return float64(s.MaxOpenConnections) }},
+	} {
+		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "chargepilot_db_" + metric.name, Help: metric.help, ConstLabels: labels}, func() float64 { return metric.value(pool.DB.Stats()) }))
+	}
+	for _, metric := range []struct {
+		name  string
+		help  string
+		value func(sql.DBStats) float64
+	}{
+		{"wait_total", "Number of waits for a SQL connection.", func(s sql.DBStats) float64 { return float64(s.WaitCount) }},
+		{"wait_seconds_total", "Total time waiting for SQL connections.", func(s sql.DBStats) float64 { return s.WaitDuration.Seconds() }},
+		{"max_idle_closed_total", "SQL connections closed by the idle connection limit.", func(s sql.DBStats) float64 { return float64(s.MaxIdleClosed) }},
+		{"max_idle_time_closed_total", "SQL connections closed by the idle time limit.", func(s sql.DBStats) float64 { return float64(s.MaxIdleTimeClosed) }},
+		{"max_lifetime_closed_total", "SQL connections closed by the lifetime limit.", func(s sql.DBStats) float64 { return float64(s.MaxLifetimeClosed) }},
+	} {
+		registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "chargepilot_db_" + metric.name, Help: metric.help, ConstLabels: labels}, func() float64 { return metric.value(pool.DB.Stats()) }))
+	}
 }

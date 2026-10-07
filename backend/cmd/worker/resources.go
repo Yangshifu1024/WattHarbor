@@ -40,8 +40,8 @@ type resources struct {
 
 // openDatabase 接收初始化 ctx 与数据库连接 URL，打开 SQL 池并包装为同池 GORM 入口。
 // 成功返回 database 与 nil，由调用方关闭 SQL 池；打开失败返回零值与原错误，包装失败先关闭已打开池并合并关闭错误。
-func openDatabase(ctx context.Context, url string) (database, error) {
-	db, err := dbconn.Open(ctx, url)
+func openDatabase(ctx context.Context, url string, pools ...dbconn.PoolConfig) (database, error) {
+	db, err := dbconn.Open(ctx, url, pools...)
 	if err != nil {
 		return database{}, err
 	}
@@ -55,7 +55,10 @@ func openDatabase(ctx context.Context, url string) (database, error) {
 // openResources 接收初始化 ctx 与 worker 配置 cfg，以实际 openDatabase 委托三库、Redis 和 HTTP 客户端初始化。
 // 成功返回由调用方负责关闭的 resources 与 nil；失败返回 nil 与已合并清理错误，不留下此前打开的资源。
 func openResources(ctx context.Context, cfg config.Worker) (_ *resources, err error) {
-	return openResourcesWithDatabase(ctx, cfg, openDatabase)
+	pool := dbconn.PoolConfig{MaxOpen: cfg.MaxOpen, MaxIdle: cfg.MaxIdle, Lifetime: cfg.Lifetime, IdleTime: cfg.IdleTime}
+	return openResourcesWithDatabase(ctx, cfg, func(ctx context.Context, url string) (database, error) {
+		return openDatabase(ctx, url, pool)
+	})
 }
 
 // openResourcesWithDatabase 接收初始化 ctx、worker 配置 cfg 及数据库打开函数 open；open 必须在成功时转交池所有权，在自身失败时清理其未返回资源。

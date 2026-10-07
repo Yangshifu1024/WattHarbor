@@ -2,12 +2,33 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
 
+// DatabasePool 定义进程内每个 SQL 池的预算；worker 的三个池分别应用此预算。
+type DatabasePool struct {
+	MaxOpen  int           `env:"DB_MAX_OPEN_CONNS" envDefault:"20"`
+	MaxIdle  int           `env:"DB_MAX_IDLE_CONNS" envDefault:"5"`
+	Lifetime time.Duration `env:"DB_CONN_MAX_LIFETIME" envDefault:"30m"`
+	IdleTime time.Duration `env:"DB_CONN_MAX_IDLE_TIME" envDefault:"5m"`
+}
+
+// validate 校验单池预算；零值允许禁用对应期限或采用无上限且不保留空闲连接的池。
+func (c DatabasePool) validate() error {
+	if c.MaxOpen < 0 || c.MaxIdle < 0 || c.Lifetime < 0 || c.IdleTime < 0 {
+		return fmt.Errorf("database pool limits must not be negative")
+	}
+	if c.MaxIdle > c.MaxOpen {
+		return fmt.Errorf("DB_MAX_IDLE_CONNS must not exceed DB_MAX_OPEN_CONNS")
+	}
+	return nil
+}
+
 // Gateway 配置设备接入进程的监听、数据库及 central 授权客户端。
 type Gateway struct {
+	DatabasePool
 	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
 	HTTPAddr string `env:"GATEWAY_HTTP_ADDR" envDefault:":8083"`
 	// DC589Addr DC589 TCP 监听地址，默认 :9100。
@@ -29,6 +50,7 @@ type Gateway struct {
 //
 // 它仍需要微信 AppID 与商户凭据，因为退款派发由 worker 回调本进程执行。
 type Central struct {
+	DatabasePool
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
 	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
@@ -60,6 +82,7 @@ type Central struct {
 //
 // 充电中的遥测与历史曲线经 GATEWAY_INTERNAL_URL 回调 gateway，不经 central。
 type User struct {
+	DatabasePool
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
 	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
@@ -98,6 +121,7 @@ type User struct {
 // 也不替用户登录。分开定义而不是复用 Central，是为了让"这个进程需要什么
 // 凭据"在类型上就是清楚的：多给一份 WECHAT_SECRET 就等于多一处泄露面。
 type Admin struct {
+	DatabasePool
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
 	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
@@ -120,6 +144,7 @@ type Admin struct {
 
 // Worker 配置受管理的后台任务、三库连接及事件流客户端，不包含用户登录或支付凭据。
 type Worker struct {
+	DatabasePool
 	// CentralDatabaseURL worker 发布 central 业务事件所用的 central_db MySQL URL；加载时必须提供。
 	CentralDatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
 	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
@@ -144,6 +169,9 @@ func LoadGateway() (Gateway, error) {
 	if err := env.Parse(&c); err != nil {
 		return c, fmt.Errorf("gateway config: %w", err)
 	}
+	if err := c.DatabasePool.validate(); err != nil {
+		return c, fmt.Errorf("gateway config: %w", err)
+	}
 	if c.MaxConnections < 1 {
 		return c, fmt.Errorf("gateway config: DEVICE_MAX_CONNECTIONS must be positive")
 	}
@@ -154,6 +182,9 @@ func LoadGateway() (Gateway, error) {
 func LoadCentral() (Central, error) {
 	var c Central
 	if err := env.Parse(&c); err != nil {
+		return c, fmt.Errorf("central config: %w", err)
+	}
+	if err := c.DatabasePool.validate(); err != nil {
 		return c, fmt.Errorf("central config: %w", err)
 	}
 	if c.PaymentMode != "disabled" && c.PaymentMode != "simulation" && c.PaymentMode != "wechat_direct" {
@@ -171,6 +202,9 @@ func LoadWorker() (Worker, error) {
 	if err := env.Parse(&c); err != nil {
 		return c, fmt.Errorf("worker config: %w", err)
 	}
+	if err := c.DatabasePool.validate(); err != nil {
+		return c, fmt.Errorf("worker config: %w", err)
+	}
 	return c, nil
 }
 
@@ -178,6 +212,9 @@ func LoadWorker() (Worker, error) {
 func LoadAdmin() (Admin, error) {
 	var c Admin
 	if err := env.Parse(&c); err != nil {
+		return c, fmt.Errorf("admin config: %w", err)
+	}
+	if err := c.DatabasePool.validate(); err != nil {
 		return c, fmt.Errorf("admin config: %w", err)
 	}
 	if len(c.JWTSecret) < 32 {
@@ -190,6 +227,9 @@ func LoadAdmin() (Admin, error) {
 func LoadUser() (User, error) {
 	var c User
 	if err := env.Parse(&c); err != nil {
+		return c, fmt.Errorf("user config: %w", err)
+	}
+	if err := c.DatabasePool.validate(); err != nil {
 		return c, fmt.Errorf("user config: %w", err)
 	}
 	if len(c.JWTSecret) < 32 {

@@ -42,7 +42,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
 	// 指标端点无需运营会话，只暴露路由模板、状态码与耗时。
-	metrics := httpapi.NewMetrics("admin")
+	metrics := httpapi.NewMetrics("admin", httpapi.DatabasePool{Schema: "central_db", DB: r.DB})
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
 	router.GET("/health/live", func(c *gin.Context) { httpapi.OK(c, gin.H{"status": "live"}) })

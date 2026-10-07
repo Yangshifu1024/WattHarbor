@@ -24,7 +24,7 @@ func newRouter(cfg config.Gateway, r *resources, deviceConnections *session.Regi
 	// 在注册路由前安装指标中间件，覆盖全部 HTTP 请求。
 	// 指标与健康端点先于业务路由注册，与其余四个进程保持一致；
 	// 指标端点无需运营会话，仅暴露路由模板、状态码与耗时。
-	metrics := httpapi.NewMetrics("gateway")
+	metrics := httpapi.NewMetrics("gateway", httpapi.DatabasePool{Schema: "gateway_db", DB: r.DB})
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
 	router.GET("/health/live", func(c *gin.Context) { httpapi.OK(c, gin.H{"status": "live"}) })

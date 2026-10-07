@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"database/sql"
+	_ "github.com/go-sql-driver/mysql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -95,5 +97,31 @@ func TestMetricsExposeValidExposition(t *testing.T) {
 		if !strings.Contains(line, "chargepilot_") {
 			t.Fatalf("unexpected exposition line: %q", line)
 		}
+	}
+}
+
+func TestMetricsExposePoolBudgetWithoutCredentials(t *testing.T) {
+	db, err := sql.Open("mysql", "fixture:secret@tcp(localhost:3306)/central_db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(12)
+	m := NewMetrics("worker", DatabasePool{Schema: "central_db", DB: db}, DatabasePool{Schema: "gateway_db"})
+	router := NewRouter(m)
+	m.Register(router)
+	body := scrape(t, router)
+	for _, want := range []string{
+		`chargepilot_db_max_open_connections{schema="central_db",service="worker"} 12`,
+		`chargepilot_db_wait_total{schema="central_db",service="worker"} 0`,
+		`chargepilot_db_wait_seconds_total{schema="central_db",service="worker"} 0`,
+		`chargepilot_db_max_idle_time_closed_total{schema="central_db",service="worker"} 0`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, "secret") || strings.Contains(body, "localhost") || strings.Contains(body, `schema="gateway_db"`) {
+		t.Fatal("pool metrics contain credentials or unopened pool")
 	}
 }

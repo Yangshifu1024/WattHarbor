@@ -20,7 +20,7 @@ func newRouter(cfg config.Worker, r *resources, scheduler schedule.Scheduler) *g
 	gin.SetMode(gin.ReleaseMode)
 	// 在注册路由前安装指标中间件，覆盖全部 HTTP 请求。
 	// 指标端点无需运营会话，仅暴露路由模板、状态码与耗时。
-	metrics := httpapi.NewMetrics("worker")
+	metrics := httpapi.NewMetrics("worker", httpapi.DatabasePool{Schema: "gateway_db", DB: r.GatewayDB.SQL}, httpapi.DatabasePool{Schema: "central_db", DB: r.CentralDB.SQL}, httpapi.DatabasePool{Schema: "worker_db", DB: r.WorkerDB.SQL})
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
 	router.GET("/health/live", func(c *gin.Context) { httpapi.OK(c, gin.H{"status": "live"}) })
