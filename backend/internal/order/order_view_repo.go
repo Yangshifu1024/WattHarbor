@@ -5,6 +5,7 @@ import (
 	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"gorm.io/gorm"
+	"strings"
 	"time"
 )
 
@@ -83,7 +84,7 @@ func orderBaseQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 
 // ListOrders 在 ctx 下用 db 按 q 已校验条件分页读取原订单，返回原页或读取错误，无写入。
 // 先 Count 出总数再按创建时间与主键倒序取当页，
-// 最后回填站点名称。时间筛选用 COALESCE(started_at， created_at)，未开始充电的订单也能落进区间。
+// 最后回填站点名称。时间范围拆成实际启动、未启动两条索引条件，保留原 COALESCE 口径。
 func ListOrders(ctx context.Context, db *gorm.DB, q OrderQuery) (persist.Page[OrderView], error) {
 	out := persist.Page[OrderView]{Items: []OrderView{}, Page: q.Page, PageSize: q.PageSize}
 	query := orderBaseQuery(ctx, db)
@@ -108,12 +109,7 @@ func ListOrders(ctx context.Context, db *gorm.DB, q OrderQuery) (persist.Page[Or
 	if q.StationID != 0 {
 		query = query.Where("i.station_id = ?", q.StationID)
 	}
-	if q.From != nil {
-		query = query.Where("COALESCE(c.started_at,c.created_at) >= ?", q.From.UTC())
-	}
-	if q.To != nil {
-		query = query.Where("COALESCE(c.started_at,c.created_at) <= ?", q.To.UTC())
-	}
+	query = orderTimeRange(query, q.From, q.To)
 	if err := query.Session(&gorm.Session{}).Count(&out.Total).Error; err != nil {
 		return out, err
 	}
@@ -124,6 +120,32 @@ func ListOrders(ctx context.Context, db *gorm.DB, q OrderQuery) (persist.Page[Or
 		return out, err
 	}
 	return out, OrderSchemeNames(ctx, db, out.Items)
+}
+
+// orderTimeRange 按固定列构造启动优先、未启动回退创建时间的闭区间，所有时间均参数化。
+// 不对列套函数，使两条范围分支可分别使用时间索引；不改变列表排序及总数口径。
+func orderTimeRange(query *gorm.DB, from, to *time.Time) *gorm.DB {
+	if from == nil && to == nil {
+		return query
+	}
+	started := []string{"c.started_at IS NOT NULL"}
+	created := []string{"c.started_at IS NULL"}
+	args := []any{}
+	for _, column := range []string{"c.started_at", "c.created_at"} {
+		conditions := &started
+		if column == "c.created_at" {
+			conditions = &created
+		}
+		if from != nil {
+			*conditions = append(*conditions, column+" >= ?")
+			args = append(args, from.UTC())
+		}
+		if to != nil {
+			*conditions = append(*conditions, column+" <= ?")
+			args = append(args, to.UTC())
+		}
+	}
+	return query.Where("(("+strings.Join(started, " AND ")+") OR ("+strings.Join(created, " AND ")+"))", args...)
 }
 
 // FillOrderStations 在 ctx 下用 db 按 rows 当页站点身份一次读取名称并原位回填，返回读取错误。

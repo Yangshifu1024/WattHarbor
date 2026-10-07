@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,6 +36,214 @@ func identityDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	return db
+}
+
+// TestUserRepoLoginCaseSensitiveIdentity 验证大小写不同的微信身份分别开户，重放恢复各自用户。
+func TestUserRepoLoginCaseSensitiveIdentity(t *testing.T) {
+	openIDs := []string{"identity-Case-" + uuid.NewString()}
+	openIDs = append(openIDs, strings.ToLower(openIDs[0]))
+	loginDistinctIdentities(t, openIDs)
+}
+
+// TestUserRepoLoginTrailingSpaceIdentity 验证身份尾随空格仍是不同字节，不受字符排序规则的补空格比较影响。
+func TestUserRepoLoginTrailingSpaceIdentity(t *testing.T) {
+	openID := "identity-space-" + uuid.NewString()
+	loginDistinctIdentities(t, []string{openID, openID + " "})
+}
+
+// loginDistinctIdentities 验证两原始身份分别开户，并逐字节保留 OpenID 和 UnionID。
+func loginDistinctIdentities(t *testing.T, openIDs []string) {
+	t.Helper()
+	db := identityDB(t)
+	var users []uint64
+	defer cleanupLoginUsers(t, db, &users, openIDs)
+	repo := UserRepo{DB: db}
+	for _, openID := range openIDs {
+		user, err := repo.Login(t.Context(), openID, "union-"+openID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		users = append(users, user.ID)
+		if !user.IsNew || user.OpenID != openID {
+			t.Fatalf("new identity %q: %+v", openID, user)
+		}
+	}
+	if users[0] == users[1] {
+		t.Fatalf("byte-distinct identities share user %d", users[0])
+	}
+	for i, openID := range openIDs {
+		user, err := repo.Login(t.Context(), openID, "")
+		if err != nil || user.ID != users[i] || user.IsNew {
+			t.Fatalf("replay %q: user=%+v err=%v", openID, user, err)
+		}
+		var stored struct {
+			OpenID  string `gorm:"column:openid"`
+			UnionID string `gorm:"column:unionid"`
+		}
+		if err := db.Table("user").Where("id = ?", users[i]).Take(&stored).Error; err != nil || stored.OpenID != openID || stored.UnionID != "union-"+openID {
+			t.Fatalf("stored identity %q: got=%+v err=%v", openID, stored, err)
+		}
+	}
+}
+
+// TestUserRepoLoginAfterSoftDelete 验证软删释放有效身份唯一键，重新登录开户且保留历史用户。
+func TestUserRepoLoginAfterSoftDelete(t *testing.T) {
+	db := identityDB(t)
+	openID := "identity-recreate-" + uuid.NewString()
+	var users []uint64
+	defer cleanupLoginUsers(t, db, &users, []string{openID})
+	repo := UserRepo{DB: db}
+	original, err := repo.Login(t.Context(), openID, "original-union")
+	if err != nil {
+		t.Fatal(err)
+	}
+	users = append(users, original.ID)
+	if err := db.Table("user").Where("id = ?", original.ID).Update("deleted_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+	recreated, err := repo.Login(t.Context(), openID, "replacement-union")
+	if err != nil {
+		t.Fatal(err)
+	}
+	users = append(users, recreated.ID)
+	if !recreated.IsNew || recreated.ID == original.ID {
+		t.Fatalf("original=%+v recreated=%+v", original, recreated)
+	}
+	for _, userID := range users {
+		var count int64
+		if err := db.Table("wallet_account").Where("user_id = ?", userID).Count(&count).Error; err != nil || count != 1 {
+			t.Fatalf("wallet for %d: count=%d err=%v", userID, count, err)
+		}
+	}
+	var count int64
+	if err := db.Table("user").Where("id = ? AND deleted_at IS NOT NULL", original.ID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("historical user count=%d err=%v", count, err)
+	}
+	replay, err := repo.Login(t.Context(), openID, "")
+	if err != nil || replay.ID != recreated.ID || replay.IsNew {
+		t.Fatalf("recreated replay=%+v err=%v", replay, err)
+	}
+}
+
+// cleanupLoginUsers 仅按本测试创建的用户、钱包及身份完整主键删除，并核对零残留。
+func cleanupLoginUsers(t *testing.T, db *gorm.DB, users *[]uint64, openIDs []string) {
+	t.Helper()
+	if len(*users) > 0 {
+		var wallets []uint64
+		if err := db.Table("wallet_account").Where("user_id IN ?", *users).Pluck("id", &wallets).Error; err != nil {
+			t.Error(err)
+		} else if len(wallets) > 0 {
+			if err := db.Table("wallet_account").Where("id IN ?", wallets).Delete(map[string]any{}).Error; err != nil {
+				t.Error(err)
+			}
+			var count int64
+			if err := db.Table("wallet_account").Where("id IN ?", wallets).Count(&count).Error; err != nil || count != 0 {
+				t.Errorf("wallet cleanup count=%d err=%v", count, err)
+			}
+		}
+		if err := db.Table("user").Where("id IN ?", *users).Delete(map[string]any{}).Error; err != nil {
+			t.Error(err)
+		}
+		var count int64
+		if err := db.Table("user").Where("id IN ?", *users).Count(&count).Error; err != nil || count != 0 {
+			t.Errorf("user cleanup count=%d err=%v", count, err)
+		}
+	}
+	for _, openID := range openIDs {
+		if err := db.Table("user_login_identity").Where("openid = ?", []byte(openID)).Delete(map[string]any{}).Error; err != nil {
+			t.Error(err)
+		}
+		var count int64
+		if err := db.Table("user_login_identity").Where("openid = ?", []byte(openID)).Count(&count).Error; err != nil || count != 0 {
+			t.Errorf("identity cleanup %q count=%d err=%v", openID, count, err)
+		}
+	}
+}
+
+// TestUserAccountLiveOpenIDUnique 验证直接写库同样受有效身份唯一键保护；软删历史不占用该键。
+func TestUserAccountLiveOpenIDUnique(t *testing.T) {
+	tx := identityDB(t).WithContext(t.Context()).Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	id := testfixture.NewID()
+	openID := "identity-unique-" + uuid.NewString()
+	insert := func(userID uint64) error {
+		return tx.Table("user").Create(map[string]any{"id": userID, "openid": openID, "status": "active"}).Error
+	}
+	if err := insert(id); err != nil {
+		t.Fatal(err)
+	}
+	var duplicate *mysql.MySQLError
+	if err := insert(id + 1); !errors.As(err, &duplicate) || duplicate.Number != 1062 {
+		t.Fatalf("duplicate live identity err=%v", err)
+	}
+	if err := tx.Table("user").Where("id = ?", id).Update("deleted_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := insert(id + 1); err != nil {
+		t.Fatalf("replace deleted identity: %v", err)
+	}
+	var count int64
+	if err := tx.Table("user").Where("id IN ? AND deleted_at IS NULL", []uint64{id, id + 1}).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("live user count=%d err=%v", count, err)
+	}
+}
+
+// TestUserWalletAccountAmountConstraints 验证开户钱包的金额边界由数据库兜底，夹具全部回滚。
+func TestUserWalletAccountAmountConstraints(t *testing.T) {
+	db := identityDB(t)
+	for _, tc := range []struct {
+		name    string
+		balance int64
+		frozen  int64
+		valid   bool
+	}{
+		{name: "zero", valid: true},
+		{name: "fully_frozen", balance: 100, frozen: 100, valid: true},
+		{name: "partly_frozen", balance: 100, frozen: 50, valid: true},
+		{name: "negative_balance", balance: -1},
+		{name: "negative_frozen", balance: 100, frozen: -1},
+		{name: "frozen_exceeds_balance", balance: 100, frozen: 101},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tx := db.WithContext(t.Context()).Begin()
+			if tx.Error != nil {
+				t.Fatal(tx.Error)
+			}
+			defer tx.Rollback()
+			id := testfixture.NewID()
+			if err := tx.Table("wallet_account").Create(map[string]any{"id": id, "user_id": id, "balance_cents": 100, "frozen_cents": 0}).Error; err != nil {
+				t.Fatal(err)
+			}
+			err := tx.Table("wallet_account").Where("id = ?", id).Updates(map[string]any{"balance_cents": tc.balance, "frozen_cents": tc.frozen}).Error
+			if tc.valid {
+				if err != nil {
+					t.Fatalf("valid amounts rejected: %v", err)
+				}
+			} else {
+				var constraint *mysql.MySQLError
+				if !errors.As(err, &constraint) || constraint.Number != 3819 {
+					t.Fatalf("invalid amounts accepted or wrong error: %v", err)
+				}
+			}
+			var stored struct {
+				BalanceCents int64
+				FrozenCents  int64
+			}
+			if err := tx.Table("wallet_account").Where("id = ?", id).Take(&stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			wantBalance, wantFrozen := tc.balance, tc.frozen
+			if !tc.valid {
+				wantBalance, wantFrozen = 100, 0
+			}
+			if stored.BalanceCents != wantBalance || stored.FrozenCents != wantFrozen {
+				t.Fatalf("stored wallet=%+v want balance=%d frozen=%d", stored, wantBalance, wantFrozen)
+			}
+		})
+	}
 }
 
 // TestUserRepoConcurrentLoginOpensOneWallet 两独立连接在原身份锁处控制并发，验证一用户、一开户及唯一创建者。

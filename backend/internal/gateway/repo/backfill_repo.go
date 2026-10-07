@@ -8,17 +8,18 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 补采的设备与端口准入、已存读数去重、原始插入和聚合刷新由本仓储完整执行；协议解析与输入预算仍由控制层负责。
 
-// deviceStatus 接收 ctx、db 与 deviceID，读取未删除设备状态；返回原状态或缺失、SQL 错误，无写入。
+// deviceStatus 接收 ctx、所属事务与 deviceID，以当前读锁定未删除设备，串行化实时写入与补传。
 func deviceStatus(ctx context.Context, db *gorm.DB, deviceID string) (string, error) {
 	var row struct {
 		// Status 所属记录的原状态值。
 		Status string
 	}
-	err := db.WithContext(ctx).Table("device").Select("status").
+	err := db.WithContext(ctx).Table("device").Clauses(clause.Locking{Strength: "UPDATE"}).Select("status").
 		Where("device_id = ? AND deleted_at IS NULL", deviceID).Take(&row).Error
 	return row.Status, err
 }
@@ -104,13 +105,26 @@ func IsBackfillMetric(name string) bool {
 	return ok
 }
 
-// PersistBackfill 在 ctx 下用 db 执行 deviceID 与 samples 的完整补采持久操作，返回插入数、已存跳过数及原准入、SQL／取消错误。
-// 空 samples 不访问数据库；沿用输入底层数组、原可空端口及毫秒键，按五百行插入后调用原聚合刷新。
-// 不增加跨原始读数和两类聚合的总事务或重试；任一步失败仍返回零计数，不能据此推断此前步骤没有持久化。
+// PersistBackfill 在同一 READ COMMITTED 事务中执行准入、去重、原始插入和两类聚合。
+// 设备行锁使实时写入与补传串行，重放保留首次数值；失败回滚全部写入并返回零计数。
 func PersistBackfill(ctx context.Context, db *gorm.DB, deviceID string, samples []BackfillSample) (int, int, error) {
 	if len(samples) == 0 {
 		return 0, 0, nil
 	}
+	inserted, skipped := 0, 0
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		inserted, skipped, err = persistBackfill(ctx, tx, deviceID, samples)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return 0, 0, err
+	}
+	return inserted, skipped, nil
+}
+
+// persistBackfill 在调用方事务内锁定设备、批量去重并写入，禁止单独提交原始读数。
+func persistBackfill(ctx context.Context, db *gorm.DB, deviceID string, samples []BackfillSample) (int, int, error) {
 	// 仅接受已开通设备及其有效端口的补传，防止写入无法关联硬件来源的历史读数。
 	status, err := deviceStatus(ctx, db, deviceID)
 	if err != nil {
@@ -131,8 +145,10 @@ func PersistBackfill(ctx context.Context, db *gorm.DB, deviceID string, samples 
 	for _, p := range ports {
 		known[p] = struct{}{}
 	}
-	allowed := samples[:0]
+	allowed := make([]BackfillSample, 0, len(samples))
 	for _, s := range samples {
+		s.DeviceID = deviceID
+		s.TS = s.TS.UTC().Truncate(time.Millisecond)
 		if !s.PortNo.Valid {
 			allowed = append(allowed, s)
 			continue
@@ -173,6 +189,7 @@ func PersistBackfill(ctx context.Context, db *gorm.DB, deviceID string, samples 
 			skipped++
 			continue
 		}
+		present[BackfillKey(deviceID, s.PortNo, s.Metric, s.TS)] = struct{}{}
 		rows = append(rows, map[string]any{
 			"device_id": s.DeviceID, "port_no": s.PortNo, "metric": s.Metric,
 			"value_num": s.Value, "ts": s.TS,
@@ -187,7 +204,7 @@ func PersistBackfill(ctx context.Context, db *gorm.DB, deviceID string, samples 
 	if err := insertTelemetryBatch(ctx, db, rows); err != nil {
 		return 0, 0, err
 	}
-	// 原始插入成功后依次刷新聚合；原调用不提供跨步骤总事务，聚合失败不在此补偿原始插入。
+	// 原始读数与两个汇总表共同提交，聚合失败使原始插入回滚。
 	if err := RefreshAggregates(ctx, db, newSamples); err != nil {
 		return 0, 0, err
 	}

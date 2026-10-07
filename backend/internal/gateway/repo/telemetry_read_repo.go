@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+
 	"gorm.io/gorm"
 )
 
@@ -57,7 +59,8 @@ func ListBucketedReadings(
 ) ([]Reading, error) {
 	query := db.WithContext(ctx).Table(table).
 		Select("bucket_start AS ts, metric, avg_value AS value_num").
-		Where("device_id = ? AND bucket_start >= ? AND bucket_start <= ?", deviceID, from, to)
+		Where("device_id = ? AND bucket_start >= ? AND bucket_start <= ?", deviceID, from, to).
+		Where("bucket_month >= ? AND bucket_month <= ?", dbutil.MonthStartAt(from), dbutil.MonthStartAt(to))
 	if portNo > 0 {
 		query = query.Where("port_no = ? OR (port_no IS NULL AND metric IN ?)", portNo, deviceLevelMetrics)
 	}

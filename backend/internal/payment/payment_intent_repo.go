@@ -146,9 +146,6 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 			return PaymentIntent{}, err
 		}
 	}
-	if err := s.DB.WithContext(ctx).Model(&PaymentIntentRecord{}).Where("status = 'initiated' AND expires_at < NOW(3)").Update("status", "expired").Error; err != nil {
-		return PaymentIntent{}, err
-	}
 	intentID := uuid.NewString()
 	var merchantOrderNo string
 	expiresAt := time.Now().UTC().Add(5 * time.Minute).Truncate(time.Millisecond)
@@ -164,6 +161,12 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 	var openid string
 	var paymentID uint64
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 仅释放本次申请端口已过期的预占，与新意图创建同事务，不扫描其他端口。
+		if err := tx.Model(&PaymentIntentRecord{}).
+			Where("port_code = ? AND status = 'initiated' AND expires_at <= UTC_TIMESTAMP(3)", input.Port.Port.PortID).
+			Update("status", "expired").Error; err != nil {
+			return err
+		}
 		if err := CheckoutPortAvailable(tx, input.Port.Port.PortID); err != nil {
 			return err
 		}

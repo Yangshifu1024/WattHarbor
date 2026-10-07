@@ -6,13 +6,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
+	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -157,9 +162,8 @@ func TestBackfillKeepsAdmissionDecimalsNullPortsAndReplay(t *testing.T) {
 	}
 }
 
-// TestBackfillKeepsCommittedSamplesWhenAggregationIsCanceled 验证原始501样本已提交后首次聚合前取消的原503及持久事实。
-// 原重放只跳过已有原始键，不额外补聚合；不能借职责迁移增加跨两步事务而改变已有恢复语义。
-func TestBackfillKeepsCommittedSamplesWhenAggregationIsCanceled(t *testing.T) {
+// TestBackfillRollsBackSamplesWhenAggregationIsCanceled 验证聚合前取消回滚整批501样本，重试完整恢复。
+func TestBackfillRollsBackSamplesWhenAggregationIsCanceled(t *testing.T) {
 	db, board := backfillFixture(t)
 	at, port := time.Now().UTC().Add(-time.Hour).Truncate(time.Second), int16(1)
 	input := make([]backfillFrame, 501)
@@ -187,20 +191,221 @@ func TestBackfillKeepsCommittedSamplesWhenAggregationIsCanceled(t *testing.T) {
 	}
 	for _, table := range []string{"telemetry", "telemetry_aggregate_15min", "telemetry_aggregate_hourly"} {
 		want := int64(0)
-		if table == "telemetry" {
-			want = int64(len(input))
-		}
 		var n int64
 		if err := db.Table(table).Where("device_id=?", board).Count(&n).Error; err != nil || n != want {
 			t.Fatalf("%s committed=%d want=%d err=%v", table, n, want, err)
 		}
 	}
 	status, reply = callBackfill(t, db, board, input, context.Background())
-	assertBackfillCounts(t, status, reply, 0, len(input))
+	assertBackfillCounts(t, status, reply, len(input), 0)
 	for _, table := range []string{"telemetry_aggregate_15min", "telemetry_aggregate_hourly"} {
 		var n int64
-		if err := db.Table(table).Where("device_id=?", board).Count(&n).Error; err != nil || n != 0 {
-			t.Fatalf("replay unexpectedly repaired %s=%d err=%v", table, n, err)
+		if err := db.Table(table).Where("device_id=?", board).Count(&n).Error; err != nil || n != 1 {
+			t.Fatalf("replay aggregate %s=%d err=%v", table, n, err)
 		}
+	}
+}
+
+// TestBackfillConcurrentReplayKeepsFirstSamples 用独立连接和真实设备锁等待证明并发重放只累计一次。
+func TestBackfillConcurrentReplayKeepsFirstSamples(t *testing.T) {
+	first, board := backfillFixture(t)
+	second, observer := gatewayContractDB(t), gatewayContractDB(t)
+	blocker, waiter := gatewayConnectionID(t, first), gatewayConnectionID(t, second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	at := time.Now().UTC().Truncate(time.Second)
+	samples := []gatewayrepo.BackfillSample{{DeviceID: board, Metric: "voltage_v", Value: "220", TS: at}}
+	ready, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	defer once.Do(func() { close(release) })
+	hook := "test:backfill-device-lock-" + uuid.NewString()
+	if err := first.Callback().Query().After("gorm:query").Register(hook, func(q *gorm.DB) {
+		if q.Statement.Table == "device" && q.Error == nil {
+			close(ready)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer first.Callback().Query().Remove(hook)
+	doneA, doneB := make(chan error, 1), make(chan error, 1)
+	go func() {
+		n, k, err := gatewayrepo.PersistBackfill(ctx, first, board, samples)
+		if err == nil && (n != 1 || k != 0) {
+			err = fmt.Errorf("首次计数 %d/%d", n, k)
+		}
+		doneA <- err
+	}()
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	replay := []gatewayrepo.BackfillSample{{DeviceID: board, Metric: "voltage_v", Value: "999", TS: at.Add(400 * time.Microsecond)}}
+	go func() {
+		n, k, err := gatewayrepo.PersistBackfill(ctx, second, board, replay)
+		if err == nil && (n != 0 || k != 1) {
+			err = fmt.Errorf("重放计数 %d/%d", n, k)
+		}
+		doneB <- err
+	}()
+	awaitGatewayDeviceLock(t, ctx, observer, waiter, blocker, doneB)
+	once.Do(func() { close(release) })
+	for _, done := range []<-chan error{doneA, doneB} {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	for _, table := range []string{"telemetry_aggregate_15min", "telemetry_aggregate_hourly"} {
+		var row struct {
+			Count int
+			Value string
+		}
+		if err := observer.Table(table).Select("`count`,CAST(avg_value AS CHAR) value").Where("device_id=?", board).Take(&row).Error; err != nil || row.Count != 1 || row.Value != "220.000000" {
+			t.Fatalf("%s=%+v err=%v", table, row, err)
+		}
+	}
+	// 直接写入设备级重复样本必须被唯一键拒绝，不能只证明应用锁有效。
+	if err := observer.Table("telemetry").Create(map[string]any{"device_id": board, "port_no": nil, "metric": "voltage_v", "value_num": "999", "ts": at}).Error; err == nil {
+		t.Fatal("设备级重复样本绕过唯一键")
+	}
+}
+
+// TestRealtimeAndBackfillShareSampleIdentity 核对实时和补传同毫秒身份保留首次事实，重复实时不增加聚合。
+func TestRealtimeAndBackfillShareSampleIdentity(t *testing.T) {
+	db, board := backfillFixture(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	t.Cleanup(func() {
+		if err := db.Exec("DELETE FROM event_outbox WHERE event_id IN (SELECT event_key FROM device_event WHERE device_id=?)", board).Error; err != nil {
+			t.Error(err)
+		}
+		if err := db.Table("device_event").Where("device_id=?", board).Delete(map[string]any{}).Error; err != nil {
+			t.Error(err)
+		}
+		for _, table := range []string{"device_event", "event_outbox"} {
+			var count int64
+			query := db.Table(table)
+			if table == "device_event" {
+				query = query.Where("device_id=?", board)
+			} else {
+				query = query.Where("JSON_UNQUOTE(JSON_EXTRACT(envelope_json,'$.data.DeviceID'))=?", board)
+			}
+			if err := query.Count(&count).Error; err != nil || count != 0 {
+				t.Errorf("%s 残留=%d err=%v", table, count, err)
+			}
+		}
+	})
+	at := time.Now().UTC().Truncate(time.Second)
+	event := protocol.Event{Protocol: "dc589", DeviceID: board, Type: protocol.Telemetry, ReceivedAt: at.Add(400 * time.Microsecond), ChargingPorts: []protocol.PortTelemetry{{Port: 1, PowerDeciWatts: 100, ChargedMWh: 1000000}}}
+	sink := gatewayrepo.MySQLSink{DB: db}
+	if err := sink.Record(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	event.ChargingPorts[0].PowerDeciWatts = 999
+	if err := sink.Record(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	n, k, err := gatewayrepo.PersistBackfill(ctx, db, board, []gatewayrepo.BackfillSample{{DeviceID: board, PortNo: sql.NullInt16{Int16: 1, Valid: true}, Metric: "power_w", Value: "999", TS: at}})
+	if err != nil || n != 0 || k != 1 {
+		t.Fatalf("补传计数=%d/%d err=%v", n, k, err)
+	}
+	for _, table := range []string{"telemetry_aggregate_15min", "telemetry_aggregate_hourly"} {
+		var row struct {
+			Count int
+			Value string
+		}
+		if err := db.Table(table).Select("`count`,CAST(avg_value AS CHAR) value").Where("device_id=? AND metric='power_w'", board).Take(&row).Error; err != nil || row.Count != 1 || row.Value != "10.000000" {
+			t.Fatalf("%s=%+v err=%v", table, row, err)
+		}
+	}
+}
+
+// TestBackfillRollsBackFirstAggregateWhenHourlyFails 验证原始读数及已写十五分钟汇总随小时汇总失败一起回滚。
+func TestBackfillRollsBackFirstAggregateWhenHourlyFails(t *testing.T) {
+	db, board := backfillFixture(t)
+	injected := errors.New("小时聚合写入故障")
+	hook := "test:backfill-hourly-failure-" + uuid.NewString()
+	if err := db.Callback().Raw().Before("gorm:raw").Register(hook, func(q *gorm.DB) {
+		if strings.Contains(q.Statement.SQL.String(), "INSERT INTO telemetry_aggregate_hourly") {
+			q.AddError(injected)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Callback().Raw().Remove(hook)
+	samples := []gatewayrepo.BackfillSample{{DeviceID: board, Metric: "voltage_v", Value: "220", TS: time.Now().UTC().Truncate(time.Millisecond)}}
+	n, k, err := gatewayrepo.PersistBackfill(t.Context(), db, board, samples)
+	if !errors.Is(err, injected) || n != 0 || k != 0 {
+		t.Fatalf("故障返回=%d/%d err=%v", n, k, err)
+	}
+	for _, table := range []string{"telemetry", "telemetry_aggregate_15min", "telemetry_aggregate_hourly"} {
+		var count int64
+		if err := db.Table(table).Where("device_id=?", board).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("%s 未完整回滚: %d err=%v", table, count, err)
+		}
+	}
+	if err := db.Callback().Raw().Remove(hook); err != nil {
+		t.Fatal(err)
+	}
+	n, k, err = gatewayrepo.PersistBackfill(t.Context(), db, board, samples)
+	if err != nil || n != 1 || k != 0 {
+		t.Fatalf("重试返回=%d/%d err=%v", n, k, err)
+	}
+}
+
+// TestGatewayActiveIdentityConstraints 核对有效设备编号与二维码由数据库唯一约束兜底，软删后可复用业务编码。
+// 端口硬件身份 device_id/port_no 永久唯一；复用二维码使用不同端口，全部新增记录在事务中回滚。
+func TestGatewayActiveIdentityConstraints(t *testing.T) {
+	db, board := backfillFixture(t)
+	for _, table := range []string{"device", "device_port"} {
+		t.Run(table, func(t *testing.T) {
+			tx := db.Begin()
+			if tx.Error != nil {
+				t.Fatal(tx.Error)
+			}
+			defer tx.Rollback()
+			var row map[string]any
+			if table == "device" {
+				var vendor uint64
+				if err := tx.Table("device").Select("vendor_id").Where("device_id=? AND deleted_at IS NULL", board).Scan(&vendor).Error; err != nil {
+					t.Fatal(err)
+				}
+				row = map[string]any{"device_id": board, "vendor_id": vendor, "status": "enabled"}
+			} else {
+				row = map[string]any{"device_id": board, "port_no": 3, "port_code": board + "-1", "status": "idle"}
+			}
+			err := tx.Table(table).Create(row).Error
+			var duplicate *mysql.MySQLError
+			if !errors.As(err, &duplicate) || duplicate.Number != 1062 {
+				t.Fatalf("重复有效身份未被唯一键拒绝: %v", err)
+			}
+			query := tx.Table(table).Where("device_id=? AND deleted_at IS NULL", board)
+			if table == "device_port" {
+				query = query.Where("port_no=1")
+			}
+			if err := query.Update("deleted_at", time.Now().UTC()).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Table(table).Create(row).Error; err != nil {
+				t.Fatalf("软删后业务编码不可复用: %v", err)
+			}
+			var active int64
+			query = tx.Table(table).Where("device_id=? AND deleted_at IS NULL", board)
+			if table == "device_port" {
+				query = query.Where("port_code=?", board+"-1")
+			}
+			if err := query.Count(&active).Error; err != nil || active != 1 {
+				t.Fatalf("有效身份数=%d err=%v", active, err)
+			}
+		})
 	}
 }

@@ -157,3 +157,70 @@ func TestOrderQueryKeepsOwnerNullFeesBatchingAndFrozenNames(t *testing.T) {
 		t.Fatalf("cancelled resolve=%v", err)
 	}
 }
+
+// TestOrderListQueryTimeKeepsClosedBoundsAndStartedPriority 验证生成查询时间的闭区间、未启动回退、启动优先及更新即时生效。
+// 真实订单均使用私有设备身份，在外层事务回滚，不依赖开发订单内容。
+func TestOrderListQueryTimeKeepsClosedBoundsAndStartedPriority(t *testing.T) {
+	tx := queryDB(t).Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	from, to := month.Add(time.Hour), month.Add(2*time.Hour)
+	id, board := testfixture.NewID(), "QT-"+uuid.NewString()
+	seeds := []struct {
+		created  time.Time
+		started  *time.Time
+		included bool
+	}{
+		{created: from, included: true},
+		{created: to, included: true},
+		{created: from.Add(-time.Millisecond)},
+		{created: to.Add(time.Millisecond)},
+		{created: from.Add(-time.Hour), started: &to, included: true},
+		{created: from, started: timePointer(to.Add(time.Millisecond))},
+	}
+	expected := map[uint64]bool{}
+	for i, seed := range seeds {
+		oid := id + uint64(i)
+		if err := tx.Table("charge_order").Create(map[string]any{"id": oid, "order_no": fmt.Sprintf("%s-%d", board, i), "user_id": id, "device_id": board, "port_no": 1, "created_month": month, "created_at": seed.created, "started_at": seed.started}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if seed.included {
+			expected[oid] = true
+		}
+	}
+	// 不同时区的相同时间瞬间仍按UTC筛选。
+	lower, upper := from.In(time.FixedZone("fixture", 8*60*60)), to.In(time.FixedZone("fixture", 8*60*60))
+	q := order.OrderQuery{PageQuery: persist.PageQuery{Page: 1, PageSize: 20}, DeviceID: board, From: &lower, To: &upper}
+	assertIDs := func() {
+		t.Helper()
+		out, err := order.ListOrders(t.Context(), tx, q)
+		if err != nil || out.Total != int64(len(expected)) || len(out.Items) != len(expected) {
+			t.Fatalf("查询总数=%d items=%d want=%d err=%v", out.Total, len(out.Items), len(expected), err)
+		}
+		seen := map[uint64]bool{}
+		for _, row := range out.Items {
+			if !expected[row.OrderID] || seen[row.OrderID] {
+				t.Fatalf("返回意外/重复订单 %d", row.OrderID)
+			}
+			seen[row.OrderID] = true
+		}
+	}
+	assertIDs()
+	if err := tx.Table("charge_order").Where("id=? AND created_month=?", id, month).Update("started_at", to.Add(time.Millisecond)).Error; err != nil {
+		t.Fatal(err)
+	}
+	delete(expected, id)
+	assertIDs()
+	if err := tx.Table("charge_order").Where("id=? AND created_month=?", id, month).Update("started_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	expected[id] = true
+	assertIDs()
+}
+
+// timePointer 返回私有测试时间指针，用于区分未启动NULL和真实开始时刻。
+func timePointer(at time.Time) *time.Time { return &at }

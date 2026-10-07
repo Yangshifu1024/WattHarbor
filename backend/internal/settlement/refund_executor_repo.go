@@ -98,8 +98,14 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	}
 	if err != nil {
 		// 只落库脱敏后的诊断信息，绝不落 SDK 响应体或凭据。
-		_ = e.DB.WithContext(ctx).Model(&RefundRecord{}).Where("id = ? AND status='processing'", id).Update("failure_reason", "provider result unknown; query scheduled").Error
-		return fmt.Errorf("refund %s: provider result unknown", r.RefundNo)
+		diagnosticErr := e.DB.WithContext(ctx).Model(&RefundRecord{}).
+			Where("id = ? AND status='processing'", id).
+			Update("failure_reason", "provider result unknown; query scheduled").Error
+		unknown := fmt.Errorf("refund %s: provider result unknown", r.RefundNo)
+		if diagnosticErr != nil {
+			return errors.Join(unknown, fmt.Errorf("persist refund diagnostic: %w", diagnosticErr))
+		}
+		return unknown
 	}
 	return e.apply(ctx, r, request, result)
 }

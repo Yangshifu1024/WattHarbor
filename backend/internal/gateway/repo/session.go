@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 )
 
@@ -52,7 +53,7 @@ func (s MySQLSink) RecordSession(ctx context.Context, record protocol.SessionRec
 	if record.SessionID == "" || record.DeviceID == "" {
 		return errors.New("session record requires session and device identity")
 	}
-	month := time.Date(record.StartedAt.UTC().Year(), record.StartedAt.UTC().Month(), record.StartedAt.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	month := dbutil.MonthStartAt(record.StartedAt)
 	row := deviceSessionRow{
 		SessionID:    record.SessionID,
 		DeviceID:     record.DeviceID,

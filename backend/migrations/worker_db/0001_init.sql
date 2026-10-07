@@ -44,7 +44,8 @@ CREATE TABLE `task_execution_log` (
   `triggered_by` enum('cron','admin_api') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'cron' COMMENT '定时任务触发来源；取值 cron / admin_api',
   `trigger_reason` varchar(256) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '本次任务运行的触发原因',
   PRIMARY KEY (`id`,`created_month`),
-  KEY `idx_task_time` (`task_code`,`started_at`)
+  KEY `idx_task_time` (`task_code`,`started_at`),
+  CONSTRAINT `chk_task_execution_log_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='定时任务执行日志'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,

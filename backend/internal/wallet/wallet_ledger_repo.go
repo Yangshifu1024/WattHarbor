@@ -5,7 +5,9 @@ package wallet
 
 import (
 	"errors"
-	"time"
+	"math"
+
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -16,6 +18,9 @@ var ErrInactive = errors.New("wallet account is not active for debit")
 
 // ErrInsufficient 表示钱包可用余额（balance - frozen）不足。
 var ErrInsufficient = errors.New("wallet spendable balance insufficient")
+
+// ErrInvalidBalance 表示余额、冻结额或变动金额不满足账本范围，调用方必须回滚事务。
+var ErrInvalidBalance = errors.New("invalid wallet balance or movement")
 
 // Row 是 wallet_account 的行锁投影。
 type Row struct {
@@ -38,6 +43,12 @@ func Lock(tx *gorm.DB, user uint64) (Row, error) {
 // tx 须已持有 user 的 w 钱包锁，ref 为稳定流水及业务身份，note 为原业务说明。
 // 返回写入错误要求整体回滚；w 的余额投影会随操作更新，失败后不能用于再次提交。
 func Move(tx *gorm.DB, user uint64, w *Row, cents int64, ref, note string) error {
+	if w == nil || w.BalanceCents < 0 || w.FrozenCents < 0 || w.FrozenCents > w.BalanceCents || cents == math.MinInt64 {
+		return ErrInvalidBalance
+	}
+	if cents > 0 && w.BalanceCents > math.MaxInt64-cents {
+		return ErrInvalidBalance
+	}
 	if cents < 0 && w.Status != "active" {
 		return ErrInactive
 	}
@@ -56,6 +67,10 @@ func Move(tx *gorm.DB, user uint64, w *Row, cents int64, ref, note string) error
 	if err := tx.Table("wallet_account").Where("id=?", w.ID).Updates(map[string]any{"balance_cents": w.BalanceCents, "version": gorm.Expr("version+1")}).Error; err != nil {
 		return err
 	}
-	now := time.Now().UTC()
-	return tx.Table("wallet_txn").Create(map[string]any{"txn_no": ref, "user_id": user, "wallet_account_id": w.ID, "direction": direction, "amount_cents": amount, "balance_after_cents": w.BalanceCents, "biz_type": biz, "biz_ref": ref, "note": note, "created_month": time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)}).Error
+	return tx.Table("wallet_txn").Create(map[string]any{
+		"txn_no": ref, "user_id": user, "wallet_account_id": w.ID,
+		"direction": direction, "amount_cents": amount,
+		"balance_after_cents": w.BalanceCents, "biz_type": biz,
+		"biz_ref": ref, "note": note, "created_month": dbutil.MonthStart(),
+	}).Error
 }

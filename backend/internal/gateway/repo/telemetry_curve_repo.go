@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+
 	"gorm.io/gorm"
 )
 
@@ -47,6 +49,7 @@ func MetricPeaksInRange(ctx context.Context, db *gorm.DB, table, deviceID string
 			"CAST(SUM(avg_value * count) / NULLIF(SUM(count), 0) AS CHAR) AS average_value").
 		Where("device_id = ? AND port_no = ? AND bucket_start >= ? AND bucket_start <= ? AND metric IN ?",
 			deviceID, portNo, start, end, curveMetrics).
+		Where("bucket_month >= ? AND bucket_month <= ?", dbutil.MonthStartAt(start), dbutil.MonthStartAt(end)).
 		Group("metric").Find(&rows).Error
 	return rows, err
 }

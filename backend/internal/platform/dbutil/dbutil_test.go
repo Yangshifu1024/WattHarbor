@@ -35,6 +35,33 @@ func TestMonthStartIsStableWithinAMonth(t *testing.T) {
 	}
 }
 
+func TestMonthStartAtUsesUTCMonthAcrossTimeZones(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		at   string
+		want string
+	}{
+		{name: "utc_month_first", at: "2026-10-01T00:00:00Z", want: "2026-10-01T00:00:00Z"},
+		{name: "utc_month_last", at: "2026-10-31T23:59:59.999999999Z", want: "2026-10-01T00:00:00Z"},
+		{name: "east_local_next_month", at: "2026-11-01T00:01:00+08:00", want: "2026-10-01T00:00:00Z"},
+		{name: "west_local_previous_month", at: "2026-10-31T23:59:59-07:00", want: "2026-11-01T00:00:00Z"},
+		{name: "east_local_next_year", at: "2027-01-01T00:00:00+08:00", want: "2026-12-01T00:00:00Z"},
+		{name: "west_local_previous_year", at: "2026-12-31T23:59:59-05:00", want: "2027-01-01T00:00:00Z"},
+		{name: "leap_day", at: "2028-02-29T12:00:00Z", want: "2028-02-01T00:00:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at, err := time.Parse(time.RFC3339Nano, tc.at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := MonthStartAt(at)
+			if got.Format(time.RFC3339Nano) != tc.want || got.Location() != time.UTC {
+				t.Fatalf("MonthStartAt(%v)=%v want=%s UTC", at, got, tc.want)
+			}
+		})
+	}
+}
+
 // 锚点必须落在 RANGE 分区覆盖的区间内：月首 to_days() 等于该月分区的下界。
 // 2026-10-01 的 to_days 为 740255，正是 p_2026m10 的 VALUES LESS THAN 起点。
 func TestMonthStartLandsOnPartitionBoundary(t *testing.T) {

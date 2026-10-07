@@ -14,6 +14,7 @@ import (
 	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -117,5 +118,36 @@ func TestConcurrentDeviceMetadataKeepsOneVersion(t *testing.T) {
 	var audits int64
 	if err := setup.Table("audit_log").Where("request_id IN ?", requests).Count(&audits).Error; err != nil || audits != 1 {
 		t.Fatalf("audits=%d %v", audits, err)
+	}
+}
+
+// TestActiveDeviceMetadataIdentityConstraint 验证中央元数据同一有效设备编号唯一，软删除后业务编号可复用。
+// 使用私有主键及外层回滚，不改变开发设备。
+func TestActiveDeviceMetadataIdentityConstraint(t *testing.T) {
+	tx := importDB(t, "TEST_MYSQL_URL").Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	id, board := testfixture.NewID(), "META-"+uuid.NewString()
+	row := map[string]any{"id": id, "device_id": board, "status": "enabled"}
+	if err := tx.Table("device_meta").Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	second := map[string]any{"id": id + 1, "device_id": board, "status": "enabled"}
+	err := tx.Table("device_meta").Create(second).Error
+	var duplicate *mysql.MySQLError
+	if !errors.As(err, &duplicate) || duplicate.Number != 1062 {
+		t.Fatalf("重复有效元数据未被唯一键拒绝: %v", err)
+	}
+	if err := tx.Table("device_meta").Where("id=?", id).Update("deleted_at", time.Now().UTC()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Table("device_meta").Create(second).Error; err != nil {
+		t.Fatalf("软删后编号不可复用: %v", err)
+	}
+	var active int64
+	if err := tx.Table("device_meta").Where("device_id=? AND deleted_at IS NULL", board).Count(&active).Error; err != nil || active != 1 {
+		t.Fatalf("有效元数据数=%d err=%v", active, err)
 	}
 }

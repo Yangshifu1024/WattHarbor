@@ -83,7 +83,8 @@ CREATE TABLE `charge_bill` (
   PRIMARY KEY (`id`,`created_month`),
   UNIQUE KEY `uk_order` (`charge_order_id`,`created_month`),
   UNIQUE KEY `uk_bill_no` (`bill_no`,`created_month`),
-  KEY `idx_user` (`user_id`,`issued_at`)
+  KEY `idx_user` (`user_id`,`issued_at`),
+  CONSTRAINT `chk_charge_bill_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='充电账单';
 
 -- charge_bill_read：账单已读标记
@@ -93,7 +94,8 @@ CREATE TABLE `charge_bill_read` (
   `user_id` bigint unsigned NOT NULL COMMENT '充电用户 ID',
   `read_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '账单阅读时间',
   PRIMARY KEY (`bill_id`,`created_month`),
-  KEY `idx_user` (`user_id`)
+  KEY `idx_user` (`user_id`),
+  CONSTRAINT `chk_charge_bill_read_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='账单已读标记';
 
 -- charge_billing_cutoff：订单首次计费截止点
@@ -219,11 +221,15 @@ CREATE TABLE `charge_order` (
   `discount_cents` bigint NOT NULL DEFAULT '0' COMMENT '订单优惠抵扣金额，单位分',
   PRIMARY KEY (`id`,`created_month`),
   UNIQUE KEY `uk_order_no` (`order_no`,`created_month`),
+  KEY `idx_order_started` (`deleted_at`,`started_at`),
+  KEY `idx_order_created` (`deleted_at`,`created_at`),
+  KEY `idx_user_ongoing` (`user_id`,`deleted_at`,`status`,`id`),
   KEY `idx_user_created` (`user_id`,`created_at`),
   KEY `idx_status` (`status`),
   KEY `idx_business_status` (`business_status`),
   KEY `idx_payment_status` (`payment_status`),
-  KEY `idx_payment` (`payment_order_id`)
+  KEY `idx_payment` (`payment_order_id`),
+  CONSTRAINT `chk_charge_order_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='充电订单(内部生命周期及独立业务、支付状态)'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -255,7 +261,7 @@ CREATE TABLE `charge_payment_intent` (
   `merchant_order_no` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '支付渠道商户订单编号',
   `payment_order_id` bigint unsigned NOT NULL COMMENT '支付订单 ID',
   `user_id` bigint unsigned NOT NULL COMMENT '充电用户 ID',
-  `openid` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '微信用户在当前应用下的唯一标识',
+  `openid` varbinary(64) NOT NULL COMMENT '微信用户在当前应用下的唯一标识',
   `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',
   `port_no` tinyint unsigned NOT NULL COMMENT '设备充电端口号，从 1 开始',
   `port_code` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '充电端口二维码唯一编码',
@@ -286,6 +292,7 @@ CREATE TABLE `charge_payment_intent` (
   UNIQUE KEY `uk_payment_order` (`payment_order_id`),
   UNIQUE KEY `uk_active_port` (`active_port_code`),
   UNIQUE KEY `uk_charge_order` (`charge_order_id`),
+  KEY `idx_port_expiry` (`port_code`,`status`,`expires_at`),
   KEY `idx_expiry` (`status`,`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='支付前冻结方案及端口预占';
 
@@ -592,7 +599,9 @@ CREATE TABLE `payment_order` (
   UNIQUE KEY `uk_wechat_txn` (`wechat_transaction_id`,`created_month`),
   KEY `idx_biz` (`biz_type`,`biz_id`),
   KEY `idx_user_created` (`user_id`,`created_at`),
-  KEY `idx_status` (`status`)
+  KEY `idx_status` (`status`),
+  CONSTRAINT `chk_payment_amounts` CHECK (total_cents >= 0 AND paid_cents >= 0 AND refunded_cents >= 0 AND refunded_cents <= paid_cents AND paid_cents <= total_cents),
+  CONSTRAINT `chk_payment_order_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='支付订单(支持 charge / wallet_recharge)'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -636,7 +645,9 @@ CREATE TABLE `refund_record` (
   UNIQUE KEY `uk_refund_no` (`refund_no`,`created_month`),
   KEY `idx_payment` (`payment_order_id`),
   KEY `idx_status` (`status`),
-  KEY `idx_refund_dispatch` (`execution_policy`,`status`,`next_attempt_at`)
+  KEY `idx_refund_dispatch` (`execution_policy`,`status`,`next_attempt_at`),
+  CONSTRAINT `chk_refund_amount` CHECK (refund_cents > 0),
+  CONSTRAINT `chk_refund_record_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='退款记录'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -710,8 +721,8 @@ INSERT INTO `snowflake_state` (`id`,`last_millisecond`,`sequence`) VALUES (1,0,0
 -- user：终端用户
 CREATE TABLE `user` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'Snowflake 用户 ID，由业务显式分配；兼容历史自增 ID',
-  `openid` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '微信 openid',
-  `unionid` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '微信开放平台用户统一标识',
+  `openid` varbinary(64) NOT NULL COMMENT '微信 openid',
+  `unionid` varbinary(64) DEFAULT NULL COMMENT '微信开放平台用户统一标识',
   `nickname` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '用户昵称',
   `avatar_url` varchar(512) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '用户头像 URL',
   `phone` varchar(11) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '明文中国大陆手机号；未绑定为 NULL',
@@ -724,7 +735,9 @@ CREATE TABLE `user` (
   `deleted_at` datetime(3) DEFAULT NULL COMMENT '软删除时间',
   `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人 ID',
   `inviter_id` bigint unsigned DEFAULT NULL COMMENT '介绍人 user.id，绑定后不可自行更改',
+  `live_openid` varbinary(64) GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, `openid`, NULL)) STORED COMMENT '未删除记录的业务身份，用于约束有效记录唯一',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_live_openid` (`live_openid`),
   UNIQUE KEY `uk_openid` (`openid`,`deleted_at`),
   UNIQUE KEY `uk_phone` (`phone`),
   KEY `idx_status` (`status`),
@@ -756,7 +769,8 @@ CREATE TABLE `wallet_account` (
   `live_marker` tinyint unsigned GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 1, NULL)) VIRTUAL COMMENT '活钱包标记，仅用于唯一约束',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user` (`user_id`,`deleted_at`),
-  UNIQUE KEY `uk_user_live` (`user_id`,`live_marker`)
+  UNIQUE KEY `uk_user_live` (`user_id`,`live_marker`),
+  CONSTRAINT `chk_wallet_amounts` CHECK (balance_cents >= 0 AND frozen_cents >= 0 AND frozen_cents <= balance_cents)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='钱包账户(1:1 with user)';
 
 -- wallet_recharge_request：钱包充值请求幂等键
@@ -839,7 +853,9 @@ CREATE TABLE `wallet_txn` (
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
   PRIMARY KEY (`id`,`created_month`),
   UNIQUE KEY `uk_txn_no` (`txn_no`,`created_month`),
-  KEY `idx_user_time` (`user_id`,`created_at`)
+  KEY `idx_user_time` (`user_id`,`created_at`),
+  CONSTRAINT `chk_wallet_txn_amounts` CHECK (amount_cents > 0 AND balance_after_cents >= 0),
+  CONSTRAINT `chk_wallet_txn_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='钱包流水'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -926,7 +942,8 @@ CREATE TABLE `alert_event` (
   `created_month` date NOT NULL COMMENT '月分区归属日期，取对应月份第一天',
   PRIMARY KEY (`id`,`created_month`),
   KEY `idx_device_status` (`device_id`,`status`),
-  KEY `idx_event` (`event_id`,`created_month`)
+  KEY `idx_event` (`event_id`,`created_month`),
+  CONSTRAINT `chk_alert_event_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='告警事件'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -973,7 +990,8 @@ CREATE TABLE `audit_log` (
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
   PRIMARY KEY (`id`,`created_month`),
   KEY `idx_actor_time` (`actor_id`,`created_at`),
-  KEY `idx_module_action` (`module`,`action`)
+  KEY `idx_module_action` (`module`,`action`),
+  CONSTRAINT `chk_audit_log_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='审计日志'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -1027,7 +1045,9 @@ CREATE TABLE `device_meta` (
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '记录更新时间',
   `deleted_at` datetime(3) DEFAULT NULL COMMENT '软删除时间',
+  `live_device_id` varchar(64) COLLATE utf8mb4_unicode_ci GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, `device_id`, NULL)) STORED COMMENT '未删除记录的业务身份，用于约束有效记录唯一',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_live_device_id` (`live_device_id`),
   UNIQUE KEY `uk_device_id` (`device_id`,`deleted_at`),
   KEY `idx_station` (`station_id`),
   KEY `idx_status` (`status`)
@@ -1379,7 +1399,8 @@ CREATE TABLE `fee_calculation` (
   PRIMARY KEY (`id`,`created_month`),
   UNIQUE KEY `uk_no` (`calculation_no`,`created_month`),
   KEY `idx_order` (`order_no`,`created_month`),
-  KEY `idx_user` (`user_id`,`created_at`)
+  KEY `idx_user` (`user_id`,`created_at`),
+  CONSTRAINT `chk_fee_calculation_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计费明细'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,

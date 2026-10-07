@@ -252,13 +252,27 @@ func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error 
 
 // insertMeasurements 接收 ctx、所属 tx 和 event，将原协议单位转为十进制遥测并维护两种聚合；返回 SQL 错误，不自行提交事务。
 func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
+	if event.Type != protocol.Heartbeat && event.Type != protocol.ChargeEnd && len(event.ChargingPorts) == 0 {
+		return nil
+	}
+	// 与补传共用设备行锁，避免两条写入链在预查与插入之间抢占相同样本。
+	if _, err := deviceStatus(ctx, tx, event.DeviceID); err != nil {
+		return err
+	}
 	// 收集本批样本，按汇总粒度批量更新，避免逐指标执行 SQL。
 	rollup := make([]AggregateSample, 0, 8)
 	insert := func(port sql.NullInt16, metric, value string) error {
-		rollup = append(rollup, AggregateSample{DeviceID: event.DeviceID, Port: port, Metric: metric,
-			Value: value, TS: event.ReceivedAt.UTC()})
-		return tx.WithContext(ctx).Create(&telemetryRow{DeviceID: event.DeviceID, PortNo: port, Metric: metric,
-			ValueNum: value, TS: event.ReceivedAt.UTC()}).Error
+		at := event.ReceivedAt.UTC().Truncate(time.Millisecond)
+		inserted := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&telemetryRow{DeviceID: event.DeviceID, PortNo: port, Metric: metric, ValueNum: value, TS: at})
+		if inserted.Error != nil {
+			return inserted.Error
+		}
+		// 唯一键冲突保持首次读数，只有新增事实才能累加聚合。
+		if inserted.RowsAffected == 1 {
+			rollup = append(rollup, AggregateSample{DeviceID: event.DeviceID, Port: port, Metric: metric, Value: value, TS: at})
+		}
+		return nil
 	}
 	if event.Type == protocol.Heartbeat {
 		if err := insert(sql.NullInt16{}, "signal", decimal.NewFromInt(int64(event.Signal)).String()); err != nil {

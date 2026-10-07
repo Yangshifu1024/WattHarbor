@@ -143,7 +143,9 @@ CREATE TABLE `device` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '记录更新时间',
   `deleted_at` datetime(3) DEFAULT NULL COMMENT '软删除时间',
   `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人 ID',
+  `live_device_id` varchar(64) COLLATE utf8mb4_unicode_ci GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, `device_id`, NULL)) STORED COMMENT '未删除记录的业务编码，用于约束有效记录唯一',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_live_device_id` (`live_device_id`),
   UNIQUE KEY `uk_device_id` (`device_id`,`deleted_at`),
   KEY `idx_vendor` (`vendor_id`),
   KEY `idx_station` (`station_id`),
@@ -182,7 +184,9 @@ CREATE TABLE `device_port` (
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '记录更新时间',
   `deleted_at` datetime(3) DEFAULT NULL COMMENT '软删除时间',
+  `live_port_code` varchar(64) COLLATE utf8mb4_unicode_ci GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, `port_code`, NULL)) STORED COMMENT '未删除记录的业务编码，用于约束有效记录唯一',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_live_port_code` (`live_port_code`),
   UNIQUE KEY `uk_device_port` (`device_id`,`port_no`),
   UNIQUE KEY `uk_port_code` (`port_code`,`deleted_at`),
   KEY `idx_device` (`device_id`,`port_no`),
@@ -216,7 +220,8 @@ CREATE TABLE `device_session` (
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
   PRIMARY KEY (`id`,`created_month`),
   UNIQUE KEY `uk_session` (`session_id`,`created_month`),
-  KEY `idx_device` (`device_id`,`created_month`)
+  KEY `idx_device` (`device_id`,`created_month`),
+  CONSTRAINT `chk_device_session_month` CHECK (DAYOFMONTH(created_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备长连接会话'
 /*!50100 PARTITION BY RANGE (to_days(`created_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -243,19 +248,22 @@ CREATE TABLE `event_outbox` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='与业务事务一起写入的待投递事件';
 
 
--- telemetry：设备遥测原始记录(按 ts 分区,1 月保留)
+-- telemetry：设备遥测原始记录，按 ts 分区；归档与保留期由运维明确执行。
 CREATE TABLE `telemetry` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',
   `port_no` tinyint unsigned DEFAULT NULL COMMENT '遥测所属端口号，为 NULL 时表示设备级指标',
+  `port_key` tinyint unsigned GENERATED ALWAYS AS (COALESCE(`port_no`,0)) STORED COMMENT '样本唯一键端口，设备级 NULL 映射为零',
   `metric` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'voltage_v / current_a / temperature_c / battery_soc / power_w / meter_kwh',
   `value_num` decimal(18,6) DEFAULT NULL COMMENT '遥测数值，单位随指标',
   `value_json` json DEFAULT NULL COMMENT '非数值遥测内容 JSON',
   `ts` datetime(3) NOT NULL COMMENT '采集时间戳',
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
   PRIMARY KEY (`id`,`ts`),
+  UNIQUE KEY `uk_sample` (`device_id`,`port_key`,`metric`,`ts`),
+  KEY `idx_device_ts` (`device_id`,`ts`),
   KEY `idx_device_metric_ts` (`device_id`,`metric`,`ts`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备遥测原始记录(按 ts 分区,1 月保留)'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备遥测原始记录，按 ts 分区，无自动清理'
 /*!50100 PARTITION BY RANGE (to_days(`ts`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
  PARTITION p_2026m10 VALUES LESS THAN (740286) ENGINE = InnoDB,
@@ -278,7 +286,9 @@ CREATE TABLE `telemetry_aggregate_15min` (
   `count` int unsigned NOT NULL COMMENT '聚合桶内有效样本数量',
   PRIMARY KEY (`id`,`bucket_month`),
   UNIQUE KEY `uk_bucket` (`device_id`,`port_key`,`metric`,`bucket_start`,`bucket_month`),
-  KEY `idx_metric_time` (`metric`,`bucket_start`)
+  KEY `idx_metric_time` (`metric`,`bucket_start`),
+  KEY `idx_device_time` (`device_id`,`bucket_start`),
+  CONSTRAINT `chk_telemetry_aggregate_15min_month` CHECK (DAYOFMONTH(bucket_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='遥测 15 分钟聚合'
 /*!50100 PARTITION BY RANGE (to_days(`bucket_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
@@ -306,7 +316,9 @@ CREATE TABLE `telemetry_aggregate_hourly` (
   `count` int unsigned NOT NULL COMMENT '聚合桶内有效样本数量',
   PRIMARY KEY (`id`,`bucket_month`),
   UNIQUE KEY `uk_bucket` (`device_id`,`port_key`,`metric`,`bucket_start`,`bucket_month`),
-  KEY `idx_metric_time` (`metric`,`bucket_start`)
+  KEY `idx_metric_time` (`metric`,`bucket_start`),
+  KEY `idx_device_time` (`device_id`,`bucket_start`),
+  CONSTRAINT `chk_telemetry_aggregate_hourly_month` CHECK (DAYOFMONTH(bucket_month) = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='遥测小时聚合'
 /*!50100 PARTITION BY RANGE (to_days(`bucket_month`))
 (PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,

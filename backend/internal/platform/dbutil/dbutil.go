@@ -20,8 +20,14 @@ import (
 // 在不同写入路径上会落到不同分区值，唯一键将不再拦截重复，幂等失效。
 // 所有写入点必须共用本函数，不得各自推算。
 func MonthStart() time.Time {
-	now := time.Now().UTC()
-	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	return MonthStartAt(time.Now())
+}
+
+// MonthStartAt 返回 at 所属 UTC 月份首日零点；用于历史样本与闭区间查询的分区边界。
+// 不依赖宿主机时区，不执行 IO，也不改变输入时刻。
+func MonthStartAt(at time.Time) time.Time {
+	utc := at.UTC()
+	return time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
 // IsMySQLDuplicate 判定错误是否为 MySQL 唯一键冲突（1062），
