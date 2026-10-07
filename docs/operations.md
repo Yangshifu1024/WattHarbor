@@ -95,6 +95,25 @@ go run ./cmd/migrate -schema all
 
 MySQL init 脚本仅在空数据卷创建三库和授权，表由 Goose 初始化。项目尚未发布，各 schema 仅保留 `0001_init.sql`，结构调整直接修改定义，不新增发布前递增迁移，也不自动建表。已执行版本不会因文件修改重新应用；既有数据需要兼容迁移，不能只删除 Goose 版本表。MySQL DDL 无事务回滚。
 
+本次设计兼容更新使用 [upgrade-design.mjs](../scripts/db/upgrade-design.mjs)，仅连接本项目开发编排。先执行无参数预检，再停止业务写入，以 `--apply` 备份至 `.tmp/db-design-backups/` 并补字段、索引与约束。工具发现重复遥测、有效身份冲突、非法金额或月首归一后的唯一键碰撞即停止，不删除或合并数据，也不修改 Goose 版本。DDL 中断后可重复执行补齐缺项；生产数据先在恢复副本验证，再按变更窗口执行经过审核的同等 DDL。
+
+```sh
+node scripts/db/upgrade-design.mjs
+node scripts/db/upgrade-design.mjs --apply
+node scripts/db/audit-design.mjs
+```
+
+[audit-design.mjs](../scripts/db/audit-design.mjs) 在同一只读一致性快照核对钱包余额与流水、冻结额与未结分摊、支付已退与成功退款、资金来源归属及跨月业务号。零差异返回 0、存在差异返回 2、执行故障返回 1；只输出类别和数量。导入余额缺少期初流水、已归档流水、外部渠道尚未对账，都需要进一步核实，不能据此直接改余额或判定渠道账实一致。
+
+[maintain-partitions.mjs](../scripts/db/maintain-partitions.mjs) 默认预览未来 12 个月的分区补齐；`--through=YYYY-MM` 指定覆盖到该月，`--apply` 才执行。它在同一连接持有维护锁，按白名单将 `p_max` 重组为新月分区并保留 `p_max`，不删除历史分区。现有季度分区保持原状；DDL 可能搬移 `p_max` 中的数据，执行前备份并避开业务高峰。可由运维按月运行；当前 worker 未装配此任务，运行账号也无 DDL 权限。
+
+```sh
+node scripts/db/maintain-partitions.mjs
+node scripts/db/maintain-partitions.mjs --through=2027-12 --apply
+```
+
+上述对账与分区工具默认连接本项目开发 MySQL。其它环境使用宿主机 MySQL 客户端，设置 `MYSQL_HOST/MYSQL_PORT/MYSQL_USER/MYSQL_PWD`；容器客户端可设置 `MYSQL_CLIENT_CONTAINER` 并传入 `MYSQL_PWD`。对账账号需要相关表的 SELECT；分区维护需由维护账号执行，不向业务账号授予 ALTER。
+
 遥测的原有「1 月保留」表注释没有对应清理任务，已改为明确无自动清理。归档和删除期须同时核对历史曲线需求、订单计量证据、审计、未完结任务与恢复要求；付款、退款、启动、结束的回执摘要和幂等身份必须与其资金链共同保留，不能在 30 天后独立删除。当前工具不执行归档或删除。
 
 后台订单时间过滤分为实际启动时间、未启动回退创建时间两条范围分支，保留原 `COALESCE(started_at,created_at)` 口径；时间过滤索引、用户进行中查询复合索引以及聚合月份条件已补齐。列表仍保留原页码、总数及排序契约。开发库 EXPLAIN 只能核对访问计划，生产吞吐与延迟收益须以真实数据量及负载验证；连接池默认每池最多 20 个连接，worker 持有三池，配置预算须按所有进程副本汇总。
