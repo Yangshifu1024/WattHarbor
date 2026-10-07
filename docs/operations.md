@@ -38,7 +38,7 @@
 
 ## 生产部署
 
-[compose.prod.yaml](../docker/compose.prod.yaml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
+[compose.prod.yaml](../docker/compose.prod.yaml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/DB_USER_PASSWORD/DB_ADMIN_PASSWORD/DB_CENTRAL_PASSWORD/DB_GATEWAY_PASSWORD/DB_WORKER_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
 
 Caddy 公网暴露 `80/443`，`/api/v1/admin/*` 代理 admin，`/api/v1/user/*` 与 `/api/v1/public/*` 代理 user；内部及其余 API 路径返回 404。`/admin/*` 提供后台静态文件，根路径转向后台。gateway 另暴露 `9100/TCP`，gateway/worker HTTP 不公开。后台静态产物必须先构建，H5 和小程序发布另行配置。
 
@@ -98,6 +98,35 @@ MySQL init 脚本仅在空数据卷创建三库和授权，表由 Goose 初始�
 遥测的原有「1 月保留」表注释没有对应清理任务，已改为明确无自动清理。归档和删除期须同时核对历史曲线需求、订单计量证据、审计、未完结任务与恢复要求；付款、退款、启动、结束的回执摘要和幂等身份必须与其资金链共同保留，不能在 30 天后独立删除。当前工具不执行归档或删除。
 
 后台订单时间过滤分为实际启动时间、未启动回退创建时间两条范围分支，保留原 `COALESCE(started_at,created_at)` 口径；时间过滤索引、用户进行中查询复合索引以及聚合月份条件已补齐。列表仍保留原页码、总数及排序契约。开发库 EXPLAIN 只能核对访问计划，生产吞吐与延迟收益须以真实数据量及负载验证；连接池默认每池最多 20 个连接，worker 持有三池，配置预算须按所有进程副本汇总。
+
+### 迁移与运行账号
+
+`chargepilot` 保留三库 DDL 与数据权限，仅用于 migrate、测试、devseed、重置与备份恢复。五个服务使用独立账号；密码分别由 `DB_USER_PASSWORD`、`DB_ADMIN_PASSWORD`、`DB_CENTRAL_PASSWORD`、`DB_GATEWAY_PASSWORD`、`DB_WORKER_PASSWORD` 配置。运行账号没有 CREATE、ALTER、DROP、TRUNCATE、GRANT 权限。
+
+| 账号 | 数据权限 |
+| --- | --- |
+| `chargepilot_user`、`chargepilot_admin`、`chargepilot_central` | `central_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
+| `chargepilot_gateway` | `gateway_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
+| `chargepilot_worker` | `worker_db.*` 的 SELECT / INSERT / UPDATE / DELETE；`gateway_db.event_outbox`、`central_db.event_outbox`、`central_db.admin_event_outbox` 的 SELECT / UPDATE |
+
+[provision-runtime.mjs](../scripts/db/provision-runtime.mjs) 以 root 创建/更新运行账号并重置其直接权限；不改变 `chargepilot` 权限。脚本使用 Node.js 24 和 MySQL CLI，不依赖 shell、sed 或临时 SQL 文件；Compose 的专用镜像提供两项运行依赖，宿主机仅需 Docker Compose。两套 Compose 均按 MySQL 就绪 → migrate 完成 → provision-runtime 完成 → 服务启动排列依赖。root 凭据只注入 MySQL 与一次性账号配置容器，运行服务不持有它。密码通过环境传入，SQL 经标准输入交给客户端，账号配置容器不输出密码或原始客户端诊断。Compose 将运行密码原值拼入 MySQL URL，须使用 URL 安全字符，可用 Node.js 的 `crypto.randomBytes(32).toString('hex')` 分别生成。开发默认密码仅供本机使用。
+
+MySQL 与账号配置容器共享 `mysql-socket` 卷，后者只读挂载 Unix socket 并连接 `root@localhost`，且设置 `network_mode: none`；新实例显式设置 `MYSQL_ROOT_HOST=localhost`，不需要远程 root。共享 socket 仅挂载到这两个容器。
+
+已有卷不会重新执行 MySQL init 脚本。兼容升级先核对三库和 Goose 版本、确认所需表已迁移，在维护窗口重建 MySQL 容器以挂载 socket 卷，保留原 `mysql-data` 卷，再执行以下账号配置步骤。MySQL 会短暂停机；后续在计划的部署窗口重建业务容器才会采用新账号：
+
+```sh
+# 开发栈：保留数据卷，先挂载共享 socket，再配置账号。
+docker compose -f docker/compose.dev.yaml up -d --no-deps --wait mysql
+docker compose -f docker/compose.dev.yaml run --rm --no-deps provision-runtime
+# 生产栈：先填写五个运行密码；有 override 时仍使用完整 -f 列表。
+docker compose -f docker/compose.prod.yaml up -d --no-deps --wait chargepilot-mysql
+docker compose -f docker/compose.prod.yaml run --rm --no-deps chargepilot-provision-runtime
+```
+
+已有卷的账号不会因 `MYSQL_ROOT_HOST` 变化而重建。若原实例已有远程 root 账号，确认 socket 的 `root@localhost` 登录及维护工具可用后，由管理员在维护窗口撤销不再需要的远程 root 账号；配置脚本不自动删除历史管理员账号。
+
+常规新部署由 Compose 自动执行迁移与账号配置；不要跳过迁移完成条件。修改密码时同步运行密码环境与账号配置，并在计划窗口重建对应服务，避免旧连接回收后继续使用旧密码。devseed、integration 测试、reset 与备份工具仍使用其原有维护连接，不能替换成运行账号；业务服务不可使用维护账号绕过权限限制。运行授权不包含管理账号或其密码哈希；备份恢复后的目标实例仍须重新执行账号配置。
 
 充值申请的 `idx_payment_order(payment_order_id)` 是非唯一索引，供支付回调锁定所属申请，避免扫描无关申请。已执行旧版初始化的数据库须先备份该表并核对 `SHOW INDEX FROM central_db.wallet_recharge_request`；没有此索引时执行兼容增量更新，无需重建数据：
 
@@ -231,4 +260,3 @@ SELECT event FROM central_db.charge_event_log ORDER BY id;         -- payment_co
 ### 退出
 
 停掉模拟器（前台 Ctrl+C 或退出命令）。开发栈可保留供后续联调复用；如需回收，执行 `make dev-down`（容器与数据卷保留），核对 9100、9190 及 8080/8081/8083/8085 的监听符合预期。保留场景日志与 SQL 导出作为验收证据。
-

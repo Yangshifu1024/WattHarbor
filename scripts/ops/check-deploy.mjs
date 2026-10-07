@@ -49,7 +49,7 @@ function caddyBlock(text, path) {
 export function validateDeployment(config, { configOnly = false, caddyText } = {}) {
   const services = config?.services;
   requireValue(services && typeof services === 'object', 'Compose services are missing.');
-  for (const name of ['mysql', ...applicationNames, 'migrate', 'caddy', 'redis-cache', 'redis-stream']) {
+  for (const name of ['mysql', ...applicationNames, 'migrate', 'provision-runtime', 'caddy', 'redis-cache', 'redis-stream']) {
     requireValue(services[`chargepilot-${name}`], `Missing service: chargepilot-${name}.`);
   }
   for (const [name, service] of Object.entries(services)) {
@@ -66,15 +66,34 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
   const centralDB = databaseURL(central, 'DATABASE_URL_CENTRAL', 'central_db');
   for (const name of ['user', 'admin', 'worker', 'migrate']) {
     const url = databaseURL(services[`chargepilot-${name}`].environment ?? {}, 'DATABASE_URL_CENTRAL', 'central_db');
-    requireValue(url.href === centralDB.href, `${name} must use the shared central database URL.`);
+    requireValue(url.host === centralDB.host && url.pathname === centralDB.pathname, `${name} must use the shared central database URL.`);
   }
   for (const [key, schema, owner] of [['DATABASE_URL_GATEWAY', 'gateway_db', 'gateway'], ['DATABASE_URL_WORKER', 'worker_db', 'worker']]) {
     const ownerKey = owner === 'gateway' ? 'DATABASE_URL' : key;
     const ownerDB = databaseURL(services[`chargepilot-${owner}`].environment ?? {}, ownerKey, schema);
     for (const name of ['worker', 'migrate']) {
       const url = databaseURL(services[`chargepilot-${name}`].environment ?? {}, key, schema);
-      requireValue(url.href === ownerDB.href, `${name} must use the ${schema} database URL.`);
+      requireValue(url.host === ownerDB.host && url.pathname === ownerDB.pathname, `${name} must use the ${schema} database URL.`);
     }
+  }
+
+  const provision = services['chargepilot-provision-runtime'];
+  requireValue(provision.depends_on?.['chargepilot-migrate']?.condition === 'service_completed_successfully', 'Runtime accounts must be provisioned after migration.');
+  for (const name of applicationNames) {
+    const service = services[`chargepilot-${name}`];
+    requireValue(service.depends_on?.['chargepilot-provision-runtime']?.condition === 'service_completed_successfully', `${name} must wait for runtime accounts.`);
+    for (const key of name === 'worker' ? ['DATABASE_URL_CENTRAL','DATABASE_URL_GATEWAY','DATABASE_URL_WORKER'] : [name === 'gateway' ? 'DATABASE_URL' : 'DATABASE_URL_CENTRAL']) {
+      const url = new URL(service.environment[key]);
+      requireValue(url.username === `chargepilot_${name}`, `${name} must use its own runtime database account.`);
+      if (!configOnly) {
+        const password = provision.environment?.[`DB_${name.toUpperCase()}_PASSWORD`];
+        requireValue(typeof password === 'string' && password.length > 0 && !password.startsWith('change-me'), `${name} database password is missing or still uses a template value.`);
+        requireValue(decodeURIComponent(url.password) === password, `${name} database password must match account provisioning.`);
+      }
+    }
+  }
+  for (const key of ['DATABASE_URL_CENTRAL','DATABASE_URL_GATEWAY','DATABASE_URL_WORKER']) {
+    requireValue(new URL(services['chargepilot-migrate'].environment[key]).username === 'chargepilot', 'Migration must use the maintenance database account.');
   }
 
   // 只检查部署配置的实际凭据归属，不扫描源码或建立架构检查规则。

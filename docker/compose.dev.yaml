@@ -23,19 +23,21 @@ x-go: &go
     GOPROXY: https://goproxy.cn,direct
     SERVICE_TOKEN: local-dev-service-token-do-not-use-in-production
   depends_on:
-    migrate: { condition: service_completed_successfully }
+    provision-runtime: { condition: service_completed_successfully }
 
 services:
   mysql:
     image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: chargepilot_root_dev
+      MYSQL_ROOT_HOST: localhost
       MYSQL_USER: chargepilot
       MYSQL_PASSWORD: chargepilot_dev
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     ports: ["127.0.0.1:3306:3306"]
     volumes:
       - mysql-data:/var/lib/mysql
+      - mysql-socket:/var/run/mysqld
       - ./mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-chargepilot.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u chargepilot -e 'SELECT 1'"]
@@ -81,12 +83,32 @@ services:
     depends_on:
       mysql: { condition: service_healthy }
 
+  provision-runtime:
+    build:
+      context: ./mysql
+      dockerfile: runtime-accounts.Dockerfile
+    restart: "no"
+    network_mode: none
+    volumes:
+      - ../scripts/db/provision-runtime.mjs:/provision-runtime.mjs:ro
+      - mysql-socket:/var/run/mysqld:ro
+    environment:
+      MYSQL_SOCKET: /var/run/mysqld/mysqld.sock
+      MYSQL_ROOT_PASSWORD: chargepilot_root_dev
+      DB_USER_PASSWORD: ${DB_USER_PASSWORD:-chargepilot_user_dev}
+      DB_ADMIN_PASSWORD: ${DB_ADMIN_PASSWORD:-chargepilot_admin_dev}
+      DB_CENTRAL_PASSWORD: ${DB_CENTRAL_PASSWORD:-chargepilot_central_dev}
+      DB_GATEWAY_PASSWORD: ${DB_GATEWAY_PASSWORD:-chargepilot_gateway_dev}
+      DB_WORKER_PASSWORD: ${DB_WORKER_PASSWORD:-chargepilot_worker_dev}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
   gateway:
     <<: *go
     command: ["go", "run", "./cmd/gateway"]
     environment:
       <<: *go-env
-      DATABASE_URL: mysql://chargepilot:chargepilot_dev@mysql:3306/gateway_db
+      DATABASE_URL: mysql://chargepilot_gateway:${DB_GATEWAY_PASSWORD:-chargepilot_gateway_dev}@mysql:3306/gateway_db
       GATEWAY_DEBUG_HEARTBEAT: true
     ports: ["127.0.0.1:8083:8083", "127.0.0.1:9100:9100"]
 
@@ -102,9 +124,9 @@ services:
       PAYMENT_MODE: simulation
       LOGIN_MODE: development
       REDIS_CACHE_URL: redis://redis-cache:6379/0
-      DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_user:${DB_USER_PASSWORD:-chargepilot_user_dev}@mysql:3306/central_db
     depends_on:
-      migrate: { condition: service_completed_successfully }
+      provision-runtime: { condition: service_completed_successfully }
       redis-cache: { condition: service_healthy }
     ports: ["127.0.0.1:8080:8080"]
 
@@ -118,9 +140,9 @@ services:
       WECHAT_APPID: wx_local_dev
       PAYMENT_MODE: simulation
       REDIS_CACHE_URL: redis://redis-cache:6379/0
-      DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_central:${DB_CENTRAL_PASSWORD:-chargepilot_central_dev}@mysql:3306/central_db
     depends_on:
-      migrate: { condition: service_completed_successfully }
+      provision-runtime: { condition: service_completed_successfully }
       redis-cache: { condition: service_healthy }
 
   # 运营后台。只暴露 /api/v1/admin/*，与 C 端走不同的进程与端口。
@@ -136,12 +158,12 @@ services:
       <<: *go-env
       JWT_SECRET: local-dev-jwt-secret-do-not-use-in-production
       REDIS_CACHE_URL: redis://redis-cache:6379/0
-      DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_admin:${DB_ADMIN_PASSWORD:-chargepilot_admin_dev}@mysql:3306/central_db
       EXPORT_DIR: /var/lib/chargepilot/exports
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-admin}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-ChangeMe!Admin2026}
     depends_on:
-      migrate: { condition: service_completed_successfully }
+      provision-runtime: { condition: service_completed_successfully }
       redis-cache: { condition: service_healthy }
     ports: ["127.0.0.1:8081:8081"]
 
@@ -151,12 +173,12 @@ services:
     environment:
       <<: *go-env
       REDIS_STREAM_URL: redis://redis-stream:6379/0
-      DATABASE_URL_WORKER: mysql://chargepilot:chargepilot_dev@mysql:3306/worker_db
-      DATABASE_URL_GATEWAY: mysql://chargepilot:chargepilot_dev@mysql:3306/gateway_db
-      DATABASE_URL_CENTRAL: mysql://chargepilot:chargepilot_dev@mysql:3306/central_db
+      DATABASE_URL_WORKER: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:-chargepilot_worker_dev}@mysql:3306/worker_db
+      DATABASE_URL_GATEWAY: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:-chargepilot_worker_dev}@mysql:3306/gateway_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:-chargepilot_worker_dev}@mysql:3306/central_db
       REGULATORY_MODE: simulation
     depends_on:
-      migrate: { condition: service_completed_successfully }
+      provision-runtime: { condition: service_completed_successfully }
       redis-stream: { condition: service_healthy }
     ports: ["127.0.0.1:8085:8085"]
 
@@ -196,6 +218,7 @@ services:
 
 volumes:
   mysql-data:
+  mysql-socket:
   redis-stream-data:
   go-modules:
   go-build:

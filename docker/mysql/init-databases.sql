@@ -1,8 +1,8 @@
--- 建三个业务 schema 并把权限授给应用账号。建表 DDL 归 cmd/migrate 里的 Goose 管，
+-- 建三个业务 schema 并把权限授给迁移/测试账号。建表 DDL 归 cmd/migrate 里的 Goose 管，
 -- 这里只管库与权限。
 --
 -- 一份 SQL 两个调用方，别各自复制：
---   1. compose：挂进 /docker-entrypoint-initdb.d（见 docker-compose.yml）。
+--   1. compose：挂进 /docker-entrypoint-initdb.d（见 compose.dev.yaml / compose.prod.yaml）。
 --   2. CI（.github/workflows/ci.yml）：MySQL 是 service 容器，runner 上未必装了
 --      mysql 客户端，所以用 mysql 镜像自带的客户端连过去执行。
 --

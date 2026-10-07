@@ -13,7 +13,7 @@ function configuration() {
   const workerURL = 'mysql://fixture:fixture-database-password@mysql:3306/worker_db';
   const token = 'fixture-shared-service-token';
   const jwt = 'fixture-session-secret-at-least-32-characters';
-  return {
+  const value = {
     services: {
       'chargepilot-mysql': { environment: { MYSQL_ROOT_PASSWORD: 'fixture-root-password', MYSQL_PASSWORD: 'fixture-database-password' } },
       'chargepilot-user': { environment: { DATABASE_URL_CENTRAL: centralURL, REDIS_CACHE_URL: 'redis://cache:6379/0', JWT_SECRET: jwt, SERVICE_TOKEN: token, WECHAT_APPID: 'wx_fixture', WECHAT_SECRET: 'fixture-login-secret' } },
@@ -27,6 +27,24 @@ function configuration() {
       'chargepilot-redis-stream': { command: ['redis-server', '--maxmemory-policy', 'noeviction', '--appendonly', 'yes', '--requirepass', 'fixture-stream-password'] },
     },
   };
+  const provision = { environment: {}, depends_on: { 'chargepilot-migrate': { condition: 'service_completed_successfully' } } };
+  value.services['chargepilot-provision-runtime'] = provision;
+  for (const name of ['user','admin','central','gateway','worker']) {
+    const service = value.services[`chargepilot-${name}`];
+    const password = `fixture-${name}-database-password`;
+    provision.environment[`DB_${name.toUpperCase()}_PASSWORD`] = password;
+    service.depends_on = { 'chargepilot-provision-runtime': { condition: 'service_completed_successfully' } };
+    for (const key of Object.keys(service.environment).filter(key => key.startsWith('DATABASE_URL'))) {
+      const url = new URL(service.environment[key]);
+      url.username = `chargepilot_${name}`;
+      url.password = password;
+      service.environment[key] = url.href;
+    }
+  }
+  for (const key of Object.keys(value.services['chargepilot-migrate'].environment)) {
+    value.services['chargepilot-migrate'].environment[key] = value.services['chargepilot-migrate'].environment[key].replace('fixture:', 'chargepilot:');
+  }
+  return value;
 }
 
 // validate 将 value 与当前真实 Caddy 文本交给正式纯校验函数；options 只覆盖显式子测试选项，无 IO 副作用。
@@ -113,6 +131,23 @@ test('obsolete central aliases remain rejected', () => {
   const value = configuration();
   value.services['chargepilot-central'].environment.DATABASE_URL_USER = 'unused-fixture';
   assert.throws(() => validate(value), { message: 'Central must use one database URL.' });
+});
+
+test('runtime account and provisioning dependency cannot be bypassed', () => {
+  const value = configuration();
+  const service = value.services['chargepilot-worker'];
+  const original = service.environment.DATABASE_URL_CENTRAL;
+  service.environment.DATABASE_URL_CENTRAL = original.replace('chargepilot_worker:', 'chargepilot:');
+  assert.throws(() => validate(value), { message: 'worker must use its own runtime database account.' });
+  service.environment.DATABASE_URL_CENTRAL = original;
+  delete service.depends_on;
+  assert.throws(() => validate(value), { message: 'worker must wait for runtime accounts.' });
+});
+
+test('mismatched runtime password is rejected without exposing it', () => {
+  const value = configuration();
+  value.services['chargepilot-provision-runtime'].environment.DB_USER_PASSWORD = 'fixture-sensitive-wrong-password';
+  assert.throws(() => validate(value), { message: 'user database password must match account provisioning.' });
 });
 
 test('Redis policies retain cache eviction and durable stream noeviction', () => {

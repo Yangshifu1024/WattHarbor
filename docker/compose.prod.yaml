@@ -13,11 +13,13 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      MYSQL_ROOT_HOST: localhost
       MYSQL_USER: chargepilot
       MYSQL_PASSWORD: ${DB_PASSWORD:?required}
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     volumes:
       - mysql-data:/var/lib/mysql
+      - mysql-socket:/var/run/mysqld
       - ./mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-chargepilot.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u chargepilot -e 'SELECT 1'"]
@@ -60,6 +62,26 @@ services:
     depends_on:
       chargepilot-mysql: { condition: service_healthy }
 
+  chargepilot-provision-runtime:
+    build:
+      context: ./mysql
+      dockerfile: runtime-accounts.Dockerfile
+    restart: "no"
+    network_mode: none
+    volumes:
+      - ../scripts/db/provision-runtime.mjs:/provision-runtime.mjs:ro
+      - mysql-socket:/var/run/mysqld:ro
+    environment:
+      MYSQL_SOCKET: /var/run/mysqld/mysqld.sock
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      DB_USER_PASSWORD: ${DB_USER_PASSWORD:?required}
+      DB_ADMIN_PASSWORD: ${DB_ADMIN_PASSWORD:?required}
+      DB_CENTRAL_PASSWORD: ${DB_CENTRAL_PASSWORD:?required}
+      DB_GATEWAY_PASSWORD: ${DB_GATEWAY_PASSWORD:?required}
+      DB_WORKER_PASSWORD: ${DB_WORKER_PASSWORD:?required}
+    depends_on:
+      chargepilot-migrate: { condition: service_completed_successfully }
+
   chargepilot-gateway:
     build:
       <<: *go-build
@@ -70,14 +92,14 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/gateway_db
+      DATABASE_URL: mysql://chargepilot_gateway:${DB_GATEWAY_PASSWORD:?required}@chargepilot-mysql:3306/gateway_db
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       DC589_ADDR: :9100
       CENTRAL_INTERNAL_URL: http://chargepilot-central:8082
     ports: ["9100:9100"]
     expose: ["8083"]
     depends_on:
-      chargepilot-migrate: { condition: service_completed_successfully }
+      chargepilot-provision-runtime: { condition: service_completed_successfully }
 
   # C 端。对外只经 Caddy 进入。
   chargepilot-user:
@@ -90,7 +112,7 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_user:${DB_USER_PASSWORD:?required}@chargepilot-mysql:3306/central_db
       REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
       JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
@@ -105,7 +127,7 @@ services:
       GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
     expose: ["8080"]
     depends_on:
-      chargepilot-migrate: { condition: service_completed_successfully }
+      chargepilot-provision-runtime: { condition: service_completed_successfully }
       chargepilot-redis-cache: { condition: service_healthy }
 
   # 对内服务间接口。不映射端口，对外只有 Caddy 一个入口。
@@ -120,7 +142,7 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_central:${DB_CENTRAL_PASSWORD:?required}@chargepilot-mysql:3306/central_db
       REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       WECHAT_APPID: ${WECHAT_APPID:?required}
@@ -133,7 +155,7 @@ services:
       GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
     expose: ["8082"]
     depends_on:
-      chargepilot-migrate: { condition: service_completed_successfully }
+      chargepilot-provision-runtime: { condition: service_completed_successfully }
       chargepilot-redis-cache: { condition: service_healthy }
 
   # 运营后台。只暴露 8081，且不映射到宿主机——对外只有 Caddy 一个入口。
@@ -150,7 +172,7 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_admin:${DB_ADMIN_PASSWORD:?required}@chargepilot-mysql:3306/central_db
       EXPORT_DIR: /var/lib/chargepilot/exports
       REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
       JWT_SECRET: ${JWT_SECRET:?required}
@@ -160,7 +182,7 @@ services:
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
     expose: ["8081"]
     depends_on:
-      chargepilot-migrate: { condition: service_completed_successfully }
+      chargepilot-provision-runtime: { condition: service_completed_successfully }
       chargepilot-redis-cache: { condition: service_healthy }
 
   chargepilot-worker:
@@ -173,9 +195,9 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_WORKER: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/worker_db
-      DATABASE_URL_GATEWAY: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/gateway_db
-      DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
+      DATABASE_URL_WORKER: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:?required}@chargepilot-mysql:3306/worker_db
+      DATABASE_URL_GATEWAY: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:?required}@chargepilot-mysql:3306/gateway_db
+      DATABASE_URL_CENTRAL: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:?required}@chargepilot-mysql:3306/central_db
       REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD}@chargepilot-redis-stream:6379/0
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       CENTRAL_INTERNAL_URL: http://chargepilot-central:8082
@@ -185,7 +207,7 @@ services:
       REGULATORY_SIGNING_SECRET: ${REGULATORY_SIGNING_SECRET:-}
     expose: ["8085"]
     depends_on:
-      chargepilot-migrate: { condition: service_completed_successfully }
+      chargepilot-provision-runtime: { condition: service_completed_successfully }
       chargepilot-redis-stream: { condition: service_healthy }
 
   chargepilot-caddy:
@@ -204,6 +226,7 @@ services:
 
 volumes:
   mysql-data:
+  mysql-socket:
   redis-stream-data:
   caddy-data:
   caddy-config:
