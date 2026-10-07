@@ -5,7 +5,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台，支持扫�
 ## 仓库结构
 
 - `backend/`：后端 Go 模块（`cmd/`、`internal/`、`migrations/`、`go.mod`），服务镜像定义为 `backend/Dockerfile`，构建上下文即该目录。后端路径约定见 [AGENTS.md](AGENTS.md)。
-- `admin-web/`、`miniprogram/`：运营后台与用户端前端。
+- `frontend/admin-web/`、`frontend/miniprogram/`：运营后台与用户端前端。
 - `docker/`：Compose 编排（`compose.dev.yaml`、`compose.prod.yaml`）、生产 Caddyfile 与 MySQL 初始化 SQL。
 - 仓库根：`scripts/`（跨平台 Node 脚本）、`docs/` 与根 `Makefile`。
 
@@ -96,18 +96,18 @@ node scripts/db/test-integration.mjs
 
 | 目录 | 安装 / 开发 | 检查 / 构建 |
 | --- | --- | --- |
-| `admin-web` | `npm ci`、`npm run dev` | `npm test`、`npm run lint`、`npm run build` |
-| `miniprogram` | `npm ci`、`npm run dev:h5` 或 `npm run dev:weapp` | `npm run typecheck`、`npm test`、`npm run build:h5`、`npm run build:weapp` |
+| `frontend/admin-web` | `npm ci`、`npm run dev` | `npm test`、`npm run lint`、`npm run build` |
+| `frontend/miniprogram` | `npm ci`、`npm run dev:h5` 或 `npm run dev:weapp` | `npm run typecheck`、`npm test`、`npm run build:h5`、`npm run build:weapp` |
 
-产物为 `admin-web/dist`、`miniprogram/dist/h5` 和 `miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI workflow 已于 2026-10-06 移除：提交前在本地执行 `make check`（pre-commit 钩子含 vet 与默认测试）与 `node scripts/db/test-integration.mjs`，用户端检查需单独执行。用户端后续开发与交互优化计划见 [miniprogram-roadmap.md](docs/miniprogram-roadmap.md)。
+产物为 `frontend/admin-web/dist`、`frontend/miniprogram/dist/h5` 和 `frontend/miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI workflow 已于 2026-10-06 移除：提交前在本地执行 `make check`（pre-commit 钩子含 vet 与默认测试）与 `node scripts/db/test-integration.mjs`，用户端检查需单独执行。用户端后续开发与交互优化计划见 [miniprogram-roadmap.md](docs/miniprogram-roadmap.md)。
 
 ## 生产部署与维护
 
 生产入口为 [compose.prod.yaml](docker/compose.prod.yaml)。复制 [.env.example](.env.example) 为 `.env`，填写实际凭据和域名，先构建后台静态文件，再检查并启动：
 
 ```powershell
-npm --prefix admin-web ci
-npm --prefix admin-web run build
+npm --prefix frontend/admin-web ci
+npm --prefix frontend/admin-web run build
 node scripts/ops/check-deploy.mjs
 docker compose -f docker/compose.prod.yaml up -d --build
 ```

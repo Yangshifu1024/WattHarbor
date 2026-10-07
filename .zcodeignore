@@ -5,10 +5,10 @@ target/
 node_modules/
 .tmp/
 bin/
-admin-web/dist/
-miniprogram/dist/
-miniprogram/.taro/
-miniprogram/.swc/
+frontend/admin-web/dist/
+frontend/miniprogram/dist/
+frontend/miniprogram/.taro/
+frontend/miniprogram/.swc/
 
 # macOS
 .DS_Store

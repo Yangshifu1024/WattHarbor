@@ -2,9 +2,9 @@
 
 状态：U1、U2、U3、U5、U9、U10、U12 已于 2026-10-06 实施并通过验证；U4、U6、U7、U8、U11 未开工。U5 实施时订正了原描述（后端无用户领取端点），详见第 2 节该行。验证方式与结果见第 5 节。
 
-依据为 2026-10-06 对 `miniprogram/` 全部源码（Taro 4.3 + React 18，23 个注册页面，73 项用户端测试全绿）与 [user.openapi.json](../backend/internal/http/user/user.openapi.json) 端点清单的逐项盘点。
+依据为 2026-10-06 对 `frontend/miniprogram/` 全部源码（Taro 4.3 + React 18，23 个注册页面，73 项用户端测试全绿）与 [user.openapi.json](../backend/internal/http/user/user.openapi.json) 端点清单的逐项盘点。
 
-本文件负责用户端 `miniprogram/` 的后续开发任务、优先级、依赖与验收；仓库维护规则、目录结构与代码约束见 [AGENTS.md](../AGENTS.md)，本地运行与联调见 [README](../README.md#本地运行)。完成任务后原位更新状态与证据，不追加第二份"当前状态"。
+本文件负责用户端 `frontend/miniprogram/` 的后续开发任务、优先级、依赖与验收；仓库维护规则、目录结构与代码约束见 [AGENTS.md](../AGENTS.md)，本地运行与联调见 [README](../README.md#本地运行)。完成任务后原位更新状态与证据，不追加第二份"当前状态"。
 
 ## 1. 现状结论
 

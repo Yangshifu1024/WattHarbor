@@ -4,7 +4,7 @@
 
 - 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。本文件记录维护规则；[README](README.md) 提供项目概览、启动与检查入口；[业务与接口契约](docs/business-contracts.md) 记录计量、资金、权限及异步恢复规则；[运行与数据维护](docs/operations.md) 记录配置、部署、备份恢复、监控及模拟器操作。修改行为或运行方式时同步所属文档，避免在多处复制完整规则。
 - 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
-- 用户端 `miniprogram/` 的后续开发任务与交互优化计划见 [docs/miniprogram-roadmap.md](docs/miniprogram-roadmap.md)；完成任务后原位更新该文件的状态与证据。新增页面只登记 `miniprogram/src/app.config.ts` 一处，不另建页面清单副本；改动该文件后 Taro dev server 不会热重建路由表，须重启 `user-h5` 容器。
+- 用户端 `frontend/miniprogram/` 的后续开发任务与交互优化计划见 [docs/miniprogram-roadmap.md](docs/miniprogram-roadmap.md)；完成任务后原位更新该文件的状态与证据。新增页面只登记 `frontend/miniprogram/src/app.config.ts` 一处，不另建页面清单副本；改动该文件后 Taro dev server 不会热重建路由表，须重启 `user-h5` 容器。
 - `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
 - 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（持久任务扫描、结果同步与 Outbox 发布，`:8085`）。**`central` 的 8082 在两套编排里都不映射端口**，内部调用只在容器网络内可达。开发栈把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，公网 HTTP 入口为 Caddy，设备另走 `9100/TCP`。
 
@@ -675,7 +675,9 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 └── go.mod  go.sum  .dockerignore
 
 仓库根（backend/ 之外，路径相对仓库根）：
-├── admin-web/  miniprogram/                              前端：运营后台与用户端 Taro（H5 与微信小程序）
+├── frontend/                                            前端项目
+│   ├── admin-web/                                       运营后台
+│   └── miniprogram/                                     用户端 Taro（H5 与微信小程序）
 ├── docker/                                               Compose 编排（compose.dev／prod.yaml）、Caddyfile 与 MySQL 初始化 SQL
 ├── scripts/db/  scripts/dev/  scripts/git/  scripts/ops/ 跨平台 Node 脚本
 ├── docs/  .agents/  .githooks/                           DC589 协议文档在 docs/protocols/
@@ -741,7 +743,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
   - **新增协议必须新开子目录实现 `Adapter`，不得修改 `protocol` 根包。** 若做不到，说明抽象有缺陷，应改抽象而不是把新协议逻辑塞进根包。
   - 设备领域模型对所有协议保持一致；加协议不产生新的设备类型，只产生新的语义翻译。
   - `ServeConn(context.Context, net.Conn, Sink)` 假设"一条长连接 = 一个设备会话"。若将来某协议走 HTTP 轮询，要改的是 `Adapter` 接口本身，不是各协议实现——那是接口演进，不要为想象中的协议提前过度抽象。
-- 前端使用 Node.js 24、npm 和已提交的 `package-lock.json`。以 `npm ci` 安装，保留 `miniprogram/.npmrc` 的依赖配置。
+- 前端使用 Node.js 24、npm 和已提交的 `package-lock.json`。以 `npm ci` 安装，保留 `frontend/miniprogram/.npmrc` 的依赖配置。
 - 重构范围内新增、修改和迁移的代码必须补齐详细中文注释，语言严肃、简练、准确，不使用口语、比喻、主观强调或实施过程描述。规则见 [中文注释规范](docs/architecture-boundaries.md#中文注释规范)。类型及接口说明职责；每个结构体字段说明含义，适用时注明来源、单位、范围、零值／空值与快照语义；未导出字段及局部持久化投影同样适用。
 - 每个函数、方法及接口方法说明行为与前置条件，逐项解释全部入参、出参、错误、特殊返回值及副作用；涉及 context、事务或资源时说明取消影响、提交／回滚责任及生命周期。核心逻辑在对应代码段详细说明业务依据、事务边界、锁顺序、幂等、资金／状态约束、外部调用顺序、未知结果与恢复；不逐行复述语法，不把待实现目标写成现有保证。修改代码时同步修正注释，字段含义与 SQL COMMENT、DTO 和 OpenAPI 一致；保留 `go:build`、`go:embed`、`go:generate` 等指令及 `Deprecated:` 标记。
 - 不提交构建产物、依赖目录、真实配置、凭证、数据库备份或临时脚本；临时文件置于 `.tmp/`。
