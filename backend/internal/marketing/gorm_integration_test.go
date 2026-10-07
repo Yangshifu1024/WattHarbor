@@ -24,7 +24,7 @@ import (
 // 跑测试：TEST_MYSQL_URL=mysql://chargepilot:chargepilot_dev@127.0.0.1:3307/central_db \
 //         go test -tags=integration ./internal/marketing/
 //
-// build tag 同样是刻意的：`make check` 不依赖 Docker，日常单测不碰真库；
+// build tag 同样是刻意的：`node tasks.mjs check` 不依赖 Docker，日常单测不碰真库；
 // 真库测试由 CI 的 integration job 显式带 tag 执行；评审需核对 tag 与命令。
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"

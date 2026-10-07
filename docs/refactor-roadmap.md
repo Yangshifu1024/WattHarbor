@@ -1,6 +1,8 @@
 # 模块重构实施路线图
 
-状态：第 9 节 17 个任务组已全部完成并关闭。收尾第 3 步点名的支付、起充、停机、结束、计费、退款与重启恢复均已在隔离栈取得真实进程证据；计费与退款的三条分支已实测并订正先前误判，DC589 按功率分档计价且实际充过电的订单仍只能人工计费，作为已知边界记录在该步。源码及验收日期：2026-10-05。2026-10-06 起后端 Go 模块整体迁至仓库 `backend/`，下文源码链接已同步为 `../backend/…`；历史验收命令在当时均相对仓库根执行，现等价于在 `backend/` 下执行（或经仓库根 Makefile）。
+2026-10-07 起任务入口为 `node tasks.mjs <任务>`，单服务构建为 `node tasks.mjs build <服务>`。下文历史验收记录中的 Make 命令保留当时执行事实；当前检查与构建使用本入口。
+
+状态：第 9 节 17 个任务组已全部完成并关闭。收尾第 3 步点名的支付、起充、停机、结束、计费、退款与重启恢复均已在隔离栈取得真实进程证据；计费与退款的三条分支已实测并订正先前误判，DC589 按功率分档计价且实际充过电的订单仍只能人工计费，作为已知边界记录在该步。源码及验收日期：2026-10-05。2026-10-06 起后端 Go 模块整体迁至仓库 `backend/`，下文源码链接已同步为 `../backend/…`；历史验收命令在当时均相对仓库根执行，现等价于在 `backend/` 下执行（或经仓库根 tasks.mjs）。
 
 本文件负责任务、顺序和验收；[架构边界与组织约束](architecture-boundaries.md) 负责长期规则；[charging 检查结果](charging-review.md) 记录两个 P1 的修复及验证。完成任务后原位更新状态与证据，不追加多套“当前状态”或重复的历史结论。
 
@@ -460,7 +462,7 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 |---|---|
 | 纯文档 | 链接、引用、事实、目标与现状区分、任务 ID／前置关系、Markdown 格式 |
 | 注释补齐与迁移核对 | 逐字段及逐函数／方法评审；核心逻辑说明与实际分支、锁、事务和恢复一致；字段含义与 SQL／DTO／OpenAPI 一致。纯注释修改不额外重复业务测试 |
-| Go 命名／职责迁移 | make check；包路径／外部依赖变化核对 go mod tidy -diff；装配变化构建受影响 cmd |
+| Go 命名／职责迁移 | node tasks.mjs check；包路径／外部依赖变化核对 go mod tidy -diff；装配变化构建受影响 cmd |
 | 资金／状态／唯一键／锁／隔离／幂等／任务 claim | 默认测试 + 相关真库测试；批次退出最终全仓 integration 回归，不能用默认绿代替 |
 | HTTP／DTO／客户端 | 实际注册路由测试、鉴权与输入约束、JSON／错误、OpenAPI／调用方一致；fixture 只证明客户端契约 |
 | 设备与恢复 | 真实 gateway 数据／同步接口及现有模拟器流程；保留实机未验收边界 |
@@ -472,20 +474,21 @@ order 基础查询可保留明确的付款展示投影；充电实时查询由 c
 在仓库根目录执行；连接变量由已有开发环境提供，不把凭证写入任务记录。
 
 ```text
-make check
+node tasks.mjs check
 
-go mod tidy -diff
+# 在 backend/ 下执行 go mod tidy -diff
 
-make build SERVICE=user
-make build SERVICE=central
-make build SERVICE=admin
-make build SERVICE=gateway
-make build SERVICE=worker
+node tasks.mjs build user
+node tasks.mjs build central
+node tasks.mjs build admin
+node tasks.mjs build gateway
+node tasks.mjs build worker
 
-make test-integration TEST_MYSQL_URL=...
+# 预先设置 TEST_MYSQL_URL 与所需的 TEST_REDIS_URL
+node tasks.mjs test-integration
 ```
 
-构建只跑受影响服务；跨包路径迁移影响全部 cmd 时构建全部入口。Make 的前置检查使用 Node，全部入口通过 `go build -trimpath -o bin/ ./cmd/...` 构建，产物仅落 bin；本地真库入口为 `scripts/db/test-integration.mjs`，使用 `compose.test.yaml` 独立 MySQL（3307）与 Redis（6381），不得将显式测试主键插入联调开发库。构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
+构建只跑受影响服务；跨包路径迁移影响全部 cmd 时执行 `node tasks.mjs build-all`，由入口进入 `backend/` 构建，产物仅落仓库根 `bin/`。本地真库入口为 `node scripts/db/test-integration.mjs`；2026-10-06 起使用开发 MySQL（3306）与 Redis（6379），旧独立测试编排已移除，显式测试主键可能抬高开发库自增序号。构建通过不能替代真库测试。默认缓存不可读时使用已忽略的 .tmp/go-cache 与 .tmp/go-tmp，不向其它系统目录写测试产物。
 
 真库测试需要 TEST_MYSQL_URL，真实会话测试还需要 TEST_REDIS_URL；跨库／网关测试还需其实际使用的 DATABASE_URL_GATEWAY、DATABASE_URL_CENTRAL、DATABASE_URL_WORKER，参照现有 CI integration job 与测试连接辅助函数。迁移使用现有开发栈与 cmd/migrate；不得为了通过测试另建旁路容器、自动建表或无条件清库。每个 integration 文件必须保留 build tag，缺配置明确失败，不能跳过。
 

@@ -232,7 +232,7 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 
 ### 环境准备
 
-1. 一键启动：`make dev-up` 启动开发栈（`docker/compose.dev.yaml`，五个服务以 `go run` 在容器内运行），再执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与方案。user/admin/worker/gateway 的 HTTP 与 gateway 的 9100/TCP 映射到宿主机 loopback；central 8082 仅容器网络可达。
+1. 一键启动：`node tasks.mjs dev-up` 启动开发栈（`docker/compose.dev.yaml`，五个服务以 `go run` 在容器内运行），再执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与方案。user/admin/worker/gateway 的 HTTP 与 gateway 的 9100/TCP 映射到宿主机 loopback；central 8082 仅容器网络可达。
 2. 场景断言直接落在开发库，统一取库中最新一笔订单。注意集成测试的显式高位主键会把 `central_db.charge_order` 自增抬到超出 16 位十进制 BCD 编码的范围，gateway 启动受理随之持续返回 409（业务码 2000）；这不是业务缺陷，用 `node scripts/db/reset-dev.mjs --reset-development-data` 重建开发数据即消失。
 3. 模拟器经真实 TCP 9100 接入宿主机映射端口，场景用 `-scenario` 选择（`by-energy`、`by-time`、`stop-on-command`、`reject-start`、`fault`、`silent`、`reconnect`），运行中调功率、插拔、刷卡见上一节控制接口。注意 `-power` 等功率参数单位是分瓦：`1500` 是 150 W，不是 1500 W。
 4. 部分场景需要把站点生效方案换成特定模式（如 s4 的 10 分金额套餐），`scenarios.mjs budget` 已自动化该步骤；其余模式切换经后台执行，应用走乐观锁，`expected_version` 须读站点当前生效版本。
@@ -278,4 +278,4 @@ SELECT event FROM central_db.charge_event_log ORDER BY id;         -- payment_co
 
 ### 退出
 
-停掉模拟器（前台 Ctrl+C 或退出命令）。开发栈可保留供后续联调复用；如需回收，执行 `make dev-down`（容器与数据卷保留），核对 9100、9190 及 8080/8081/8083/8085 的监听符合预期。保留场景日志与 SQL 导出作为验收证据。
+停掉模拟器（前台 Ctrl+C 或退出命令）。开发栈可保留供后续联调复用；如需回收，执行 `node tasks.mjs dev-down`（容器与数据卷保留），核对 9100、9190 及 8080/8081/8083/8085 的监听符合预期。保留场景日志与 SQL 导出作为验收证据。

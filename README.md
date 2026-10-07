@@ -7,7 +7,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台，支持扫�
 - `backend/`：后端 Go 模块（`cmd/`、`internal/`、`migrations/`、`go.mod`），服务镜像定义为 `backend/Dockerfile`，构建上下文即该目录。后端路径约定见 [AGENTS.md](AGENTS.md)。
 - `frontend/admin-web/`、`frontend/miniprogram/`：运营后台与用户端前端。
 - `docker/`：Compose 编排（`compose.dev.yaml`、`compose.prod.yaml`）、生产 Caddyfile 与 MySQL 初始化 SQL。
-- 仓库根：`scripts/`（跨平台 Node 脚本）、`docs/` 与根 `Makefile`。
+- 仓库根：`scripts/`（跨平台 Node 脚本）、`docs/` 与根 `tasks.mjs`。
 
 ## 本地运行
 
@@ -78,19 +78,21 @@ central 的 `8082` 在开发和生产编排中都不映射到宿主机，只能�
 
 ## 开发与验证
 
-宿主机需要 Go 1.27、Node.js 24、npm 和 Make。开发 Compose 提供运行环境；后端检查与构建：
+宿主机需要 Go 1.27、Node.js 24 和 npm。开发 Compose 提供运行环境；后端检查与构建：
 
 ```sh
 node scripts/git/install-hooks.mjs
-make check
-make build-all
+node tasks.mjs check
+node tasks.mjs build-all
 # 直连开发环境（3306/6379），迁移三库并执行集成测试
 node scripts/db/test-integration.mjs
 ```
 
-`make check` 顺序运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`（go 命令由 Makefile 进入 `backend/` 执行）；pre-commit 直接运行 vet 和默认测试（经 scripts/git/pre-commit.mjs，不依赖 make）。缺少 Make 时在 `backend/` 下直接运行对应 Go 命令。编译产物在 `bin/`，可用 `make build SERVICE=central` 单独构建。
+`node tasks.mjs check` 顺序运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`（go 命令由 tasks.mjs 进入 `backend/` 执行）；pre-commit 直接运行 vet 和默认测试（经 scripts/git/pre-commit.mjs，不依赖 Make）。任务路径以入口文件定位，可从任意工作目录调用其绝对路径；`node tasks.mjs --help` 查看全部任务。编译产物在 `bin/`，可用 `node tasks.mjs build central` 单独构建。
 
-真库测试由 `integration` tag 隔离，不包含在 `make check` 中。按 2026-10-06 的决定，集成测试直接使用开发环境（3306/6379/6380）：`node scripts/db/test-integration.mjs` 会起依赖服务、补 [锁观测只读授权](docker/mysql/test-lock-observer.sql)、迁移三库并注入连接串。注意集成测试的显式主键会抬高开发库自增序号，必要时用 reset-dev 重建；直接执行 `make test-integration` 须自行配置 `TEST_MYSQL_URL` 和 `TEST_REDIS_URL`。
+任务入口覆盖 `fmt`、`lint`、`test`、`test-integration`、`build`、`build-all`、`check`、`clean`、`dev-up` 和 `dev-down`。`clean` 只清理 `bin/`，`dev-down` 停止开发容器并保留数据卷。任务编排与跨平台路径测试使用 `node --test scripts/tasks.test.mjs`。
+
+真库测试由 `integration` tag 隔离，不包含在 `node tasks.mjs check` 中。按 2026-10-06 的决定，集成测试直接使用开发环境（3306/6379/6380）：`node scripts/db/test-integration.mjs` 会起依赖服务、补 [锁观测只读授权](docker/mysql/test-lock-observer.sql)、迁移三库并注入连接串。注意集成测试的显式主键会抬高开发库自增序号，必要时用 reset-dev 重建；直接执行 `node tasks.mjs test-integration` 须自行配置 `TEST_MYSQL_URL` 和 `TEST_REDIS_URL`。
 
 前端命令在对应目录执行：
 
@@ -99,7 +101,7 @@ node scripts/db/test-integration.mjs
 | `frontend/admin-web` | `npm ci`、`npm run dev` | `npm test`、`npm run lint`、`npm run build` |
 | `frontend/miniprogram` | `npm ci`、`npm run dev:h5` 或 `npm run dev:weapp` | `npm run typecheck`、`npm test`、`npm run build:h5`、`npm run build:weapp` |
 
-产物为 `frontend/admin-web/dist`、`frontend/miniprogram/dist/h5` 和 `frontend/miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI workflow 已于 2026-10-06 移除：提交前在本地执行 `make check`（pre-commit 钩子含 vet 与默认测试）与 `node scripts/db/test-integration.mjs`，用户端检查需单独执行。用户端后续开发与交互优化计划见 [miniprogram-roadmap.md](docs/miniprogram-roadmap.md)。
+产物为 `frontend/admin-web/dist`、`frontend/miniprogram/dist/h5` 和 `frontend/miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI workflow 已于 2026-10-06 移除：提交前在本地执行 `node tasks.mjs check`（pre-commit 钩子含 vet 与默认测试）与 `node scripts/db/test-integration.mjs`，用户端检查需单独执行。用户端后续开发与交互优化计划见 [miniprogram-roadmap.md](docs/miniprogram-roadmap.md)。
 
 ## 生产部署与维护
 

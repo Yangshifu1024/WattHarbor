@@ -3,7 +3,7 @@
 // 测试直连开发环境；注意集成测试的显式主键会抬高开发库自增序号。
 // 无参数，Docker／迁移／测试失败即终止。子进程环境只在本次进程内注入，
 // 不影响调用方 shell。迁移与测试不在 Docker 内编译，需要 Go 1.27；
-// 测试命令优先走 make test-integration，缺少 make 时直接执行等价的 go test。
+// 测试命令统一走仓库根 tasks.mjs test-integration，不依赖 Make。
 // 用法：node scripts/db/test-integration.mjs
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -44,13 +44,6 @@ process.env.DATABASE_URL_WORKER = 'mysql://chargepilot:chargepilot_dev@127.0.0.1
 const migrated = run('go', ['run', './cmd/migrate', '--schema', 'all'], BACKEND);
 if (migrated.missing || migrated.status !== 0) fail('Development migration failed.');
 
-// make test-integration 自带「缺 TEST_MYSQL_URL 即失败」的闸门；这里已注入
-// 连接串，缺 make 的系统直接跑同一条 go test，不提供跳过路径。
-const made = run('make', ['test-integration']);
-if (made.missing) {
-  console.error('make not found; running go test directly');
-  const tested = run('go', ['test', '-tags=integration', '-count=1', './...'], BACKEND);
-  if (tested.status !== 0) fail('Integration tests failed.');
-} else if (made.status !== 0) {
-  fail('Integration tests failed.');
-}
+// tasks.mjs 保留「缺 TEST_MYSQL_URL 即失败」的闸门；连接串只在本次进程内注入。
+const tested = run(process.execPath, [join(ROOT, 'tasks.mjs'), 'test-integration']);
+if (tested.missing || tested.status !== 0) fail('Integration tests failed.');

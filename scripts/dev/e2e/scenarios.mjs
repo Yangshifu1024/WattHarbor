@@ -2,7 +2,7 @@
 // 场景结束后直接查询测试库，对持久事实逐项断言。场景矩阵与逐表断言说明见
 // docs/operations.md「全链路场景验收」。
 //
-// 前置：开发栈已启动（make dev-up）且 prepare.mjs 已建立厂商、站点、设备与
+// 前置：开发栈已启动（node tasks.mjs dev-up）且 prepare.mjs 已建立厂商、站点、设备与
 // 方案基础数据；测试直连开发环境（docker/compose.dev.yaml）。模拟器已按场景
 // 以 -scenario <x> 接入宿主机 9100 端口（控制口 9190）。场景与模拟器场景的对应关系：
 //   s3 → reject-start        s1 → by-time            s2 → stop-on-command

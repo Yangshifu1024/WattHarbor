@@ -42,13 +42,13 @@
 
 | 技能 | 主要用途 | 使用时机 | 本项目应用与边界 |
 | --- | --- | --- | --- |
-| [golang-code-style](.agents/skills/golang-code-style/SKILL.md) | 行长与换行、变量声明、控制流、函数组织、值与指针参数、注释是否有助于理解。 | 编写或评审 Go 代码；长调用、结构体字面量、嵌套分支影响阅读；讨论代码风格时。 | 多字段字面量的可读性属于此技能；格式化仍执行 `make fmt`。命名用 naming，检查器配置用 lint，文档注释用 documentation；不为排版改动业务行为。 |
+| [golang-code-style](.agents/skills/golang-code-style/SKILL.md) | 行长与换行、变量声明、控制流、函数组织、值与指针参数、注释是否有助于理解。 | 编写或评审 Go 代码；长调用、结构体字面量、嵌套分支影响阅读；讨论代码风格时。 | 多字段字面量的可读性属于此技能；格式化仍执行 `node tasks.mjs fmt`。命名用 naming，检查器配置用 lint，文档注释用 documentation；不为排版改动业务行为。 |
 | [golang-naming](.agents/skills/golang-naming/SKILL.md) | 包、类型、函数、接口、常量、错误、接收者与测试名称；缩写大小写、重复包名前缀和构造函数命名。 | 新建标识符、比较命名方案、评审名称、批量重命名或拆包时。 | 服务 DTO 严守本文件的 `Request` / `Reply` 后缀约定；批量改名配合 refactoring 与 gopls 核对引用，不能顺便改变 JSON 字段或公共契约。 |
 | [golang-error-handling](.agents/skills/golang-error-handling/SKILL.md) | 错误创建、`%w` 包装、`errors.Is/As/Join`、哨兵与自定义错误、panic/recover、错误处理和日志责任。 | 增加或修改失败路径、跨层传递错误、错误到 HTTP 响应的映射、排查重复记录或丢失原因时。 | 用例、专用客户端和 HTTP 适配层保持既有错误契约；支付未知结果不能按普通失败重提。专项结构化错误用 samber-oops，日志管道用 samber-slog。 |
 | [golang-safety](.agents/skills/golang-safety/SKILL.md) | 防止 nil 与 typed-nil、slice 底层数组别名、整数截断、除零、循环中的资源积累以及零值不安全。 | 评审防御性代码、协议数值转换、集合返回值、资源释放或类型零值设计时。 | 计量和金额转换须核对范围与单位；共享可变数据同时用 concurrency。已发生崩溃先用 troubleshooting；注入、密钥和鉴权问题用 security。 |
 | [golang-security](.agents/skills/golang-security/SKILL.md) | 注入、路径穿越、SSRF、密码学、HTTP 安全、认证、凭据与敏感日志；威胁建模和安全发现核验。 | 处理用户输入、鉴权、文件或网络 IO、签名验签、秘密信息，或进行安全审查时。 | 重点核对实时权限、资源归属、服务令牌和支付通知；报告需有可达路径与证据。依赖漏洞扫描用 dependency-management；把扫描接入 CI 用 continuous-integration。 |
 | [golang-structs-interfaces](.agents/skills/golang-structs-interfaces/SKILL.md) | 窄接口、消费方定义接口、组合与嵌入、类型断言、零值、序列化标签、值与指针接收者。 | 定义用例依赖、DTO、仓储接口、适配器，或判断接口拆分与类型组合方式时。 | 用例定义所需窄接口，`cmd` 注入实现；contracts 不依赖 gin/gorm。JSON 标签、数值类型和单位须与双方契约一致；不为每个结构体机械增加接口。 |
-| [golang-lint](.agents/skills/golang-lint/SKILL.md) | 理解 `go vet`、staticcheck 等诊断；选择检查项、配置 golangci-lint、解释或合理抑制告警。 | 处理静态检查失败，讨论检查器或 `nolint`，维护已有检查配置时。 | 本项目 `make lint` 使用 `go vet ./...`，`make check` 不增加架构脚本。通用 golangci-lint 示例不替代既有检查入口；CI job 编排用 continuous-integration。 |
+| [golang-lint](.agents/skills/golang-lint/SKILL.md) | 理解 `go vet`、staticcheck 等诊断；选择检查项、配置 golangci-lint、解释或合理抑制告警。 | 处理静态检查失败，讨论检查器或 `nolint`，维护已有检查配置时。 | 本项目 `node tasks.mjs lint` 使用 `go vet ./...`，`node tasks.mjs check` 不增加架构脚本。通用 golangci-lint 示例不替代既有检查入口；CI job 编排用 continuous-integration。 |
 | [golang-documentation](.agents/skills/golang-documentation/SKILL.md) | godoc、包与接口说明、README、变更记录、示例、配置和 API 文档；保持条件与业务含义准确。 | 编写或审查 Go 项目文档、维护本文件、解释接口约束或增加可运行示例时。 | README 保留运行入口，业务规则与运维细节分别维护于 `docs/business-contracts.md`、`docs/operations.md`，本文件管维护规则；架构记录放既有 `docs/`。API 文档核对真实接口；不因通用模板额外创建文档站、`llms.txt` 或重复文档树。 |
 
 ### 设计、并发与数据访问（8 个）
@@ -79,7 +79,7 @@
 | 技能 | 主要用途 | 使用时机 | 本项目应用与边界 |
 | --- | --- | --- | --- |
 | [golang-cli](.agents/skills/golang-cli/SKILL.md) | 命令结构、参数校验、配置、版本信息、退出码、stdin/stdout/stderr、信号、帮助与测试。 | 编写或修改迁移、种子数据、模拟器等 Go 命令行工具时。 | 保留 `cmd` 作为部署单元和生命周期入口，业务能力放所属包；遵守模拟器前台交互规则。只有使用 Cobra/Viper 时才加载其专项技能。 |
-| [golang-continuous-integration](.agents/skills/golang-continuous-integration/SKILL.md) | GitHub Actions 的测试、lint、安全扫描、覆盖率、依赖更新机器人、构建与发布 job 编排。 | 修改 `.github/workflows/`、排查 CI 配置或增加质量门禁时。 | CI 沿用 Makefile，默认检查与真实 MySQL integration job 分层；不把模拟库当真库验收。漏洞分析用 security/依赖审计技能；发布、push 或远端设置变更需已有授权。 |
+| [golang-continuous-integration](.agents/skills/golang-continuous-integration/SKILL.md) | GitHub Actions 的测试、lint、安全扫描、覆盖率、依赖更新机器人、构建与发布 job 编排。 | 修改 `.github/workflows/`、排查 CI 配置或增加质量门禁时。 | CI 沿用 tasks.mjs，默认检查与真实 MySQL integration job 分层；不把模拟库当真库验收。漏洞分析用 security/依赖审计技能；发布、push 或远端设置变更需已有授权。 |
 | [golang-dependency-management](.agents/skills/golang-dependency-management/SKILL.md) | `go.mod/go.sum`、MVS、版本升级、replace/exclude/retract、vendor、tool/go.work、依赖树与 govulncheck。 | 添加、移除或升级依赖，解决版本冲突、核验依赖漏洞或分析间接依赖成本时。 | 涉及依赖运行 `go mod tidy -diff`；先核对当前锁定版本与 replace。库选型用 popular-libraries，发布信息用 pkg-go-dev，CI 自动更新 job 用 continuous-integration。 |
 | [golang-gopls](.agents/skills/golang-gopls/SKILL.md) | 基于本地解析构建跳转定义、查引用与调用关系、读取包 API、诊断、安全重命名和代码抽取。 | 理解本地代码或当前依赖，改名/移包前确认影响，修改后核对诊断时。 | 先确认 CLI/LSP/MCP 的实际可用能力；关注锁定依赖和 replace 后源码。未安装依赖的公开 API、历史版本或许可证用 pkg-go-dev；整个重构过程用 refactoring。 |
 | [golang-pkg-go-dev](.agents/skills/golang-pkg-go-dev/SKILL.md) | 通过 godig 查询公开 Go 包的文档、签名、示例、版本、许可证、importers 和已知漏洞。 | 查询某个包或模块的公开资料，包括尚未加入项目的库与指定发布版本时。 | 核对查询版本与本项目版本；godig 可用性另查。公开版本漏洞信息不等于本地调用可达性结论；本地代码用 gopls，升级用 dependency-management，库取舍用 popular-libraries。 |
@@ -138,7 +138,7 @@
 
 | 任务 | 优先加载 | 需要核对的项目约束 |
 | --- | --- | --- |
-| 展开长调用或结构体字段，提高可读性 | code-style；涉及名称时加 naming | 保持行为与字段值，执行 `make fmt`。 |
+| 展开长调用或结构体字段，提高可读性 | code-style；涉及名称时加 naming | 保持行为与字段值，执行 `node tasks.mjs fmt`。 |
 | 调整 `cmd/*` 资源装配与停机 | dependency-injection、design-patterns、context、concurrency | 初始化失败释放资源，先等处理器和任务退出再关闭连接池。 |
 | 修改充值、退款、结算与幂等事务 | database、error-handling、testing；涉及金额转换加 safety | 资金写入归属、锁顺序、当前读、唯一键、稳定请求标识与独立真库集成测试。 |
 | 调整 worker/gateway 后台循环与重试 | concurrency、context、error-handling、testing | 明确取消和等待路径，复用已有内部接口，重试不换请求身份。 |
@@ -148,7 +148,7 @@
 | 修改服务间 HTTP 契约 | structs-interfaces、naming、context、error-handling、testing | contracts/integration 依赖方向、Request/Reply、JSON 字段与单位、处理器和客户端双向契约。 |
 | 排查慢查询或遥测热点 | troubleshooting 定位，benchmark 测量，performance 改进；SQL 加 database | 区分数据库/网络与 Go 热点，记录基线及前后结果，保持业务正确性。 |
 | 修改依赖版本或 Go 能力使用 | dependency-management 或 modernize；公开资料用 pkg-go-dev | 以本地 `go.mod/go.sum` 为准，依赖改动检查 `go mod tidy -diff`，核对构建与测试。 |
-| 修改 Go CI 或真库测试 job | continuous-integration，配合 lint、testing、dependency-management | `make check` 与 integration 分层，缺库失败，构建产物位于 `bin/`。 |
+| 修改 Go CI 或真库测试 job | continuous-integration，配合 lint、testing、dependency-management | `node tasks.mjs check` 与 integration 分层，缺库失败，构建产物位于 `bin/`。 |
 | 修改 README、AGENTS 或 API 说明 | documentation；涉及 OpenAPI 工具时加 swagger | 文档职责分工、真实路由与接口核对、链接有效；纯文档不运行无关业务测试。 |
 
 以上组合中的简称均指 `golang-` 前缀技能，例如 `database` 指 `golang-database`。技能增加、移除或更新时检查本节的条目、链接、用途与组合是否仍与本地安装一致。
@@ -156,8 +156,8 @@
 ## 工具与代码风格
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
-- 后端检查直接使用 Makefile：`make fmt` 调用 `go fmt ./...`，`make lint` 调用 `go vet ./...`，`make test` 调用 `go test ./...`；`make check` 顺序执行这三项。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
-- **真库集成测试单列一层**：`make test-integration TEST_MYSQL_URL=...` 带 `//go:build integration` 跑真实 MySQL。`make check` 不含它（不依赖 Docker）。2026-10-06 起 CI workflow 与独立测试实例编排（compose.test.yaml）已移除，集成测试经 `scripts/db/test-integration.mjs` 直接对开发环境执行；行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 需要真实 MySQL 语义验证，详见「并发与幂等」。
+- 后端检查直接使用 tasks.mjs：`node tasks.mjs fmt` 调用 `go fmt ./...`，`node tasks.mjs lint` 调用 `go vet ./...`，`node tasks.mjs test` 调用 `go test ./...`；`node tasks.mjs check` 顺序执行这三项。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
+- **真库集成测试单列一层**：`node tasks.mjs test-integration`（预先设置 `TEST_MYSQL_URL`） 带 `//go:build integration` 跑真实 MySQL。`node tasks.mjs check` 不含它（不依赖 Docker）。2026-10-06 起 CI workflow 与独立测试实例编排（compose.test.yaml）已移除，集成测试经 `scripts/db/test-integration.mjs` 直接对开发环境执行；行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 需要真实 MySQL 语义验证，详见「并发与幂等」。
 - 目录结构定稿如下。后端 Go 模块整体位于 `backend/`（含 `cmd/`、`internal/`、`migrations/`、`go.mod` 与服务镜像 `Dockerfile`），下图为 `backend/` 内部结构；本文件后文与 `docs/` 提到的 `cmd/`、`internal/`、`migrations/` 路径均相对 `backend/`。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
 ```text
@@ -681,7 +681,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 ├── docker/                                               Compose 编排（compose.dev／prod.yaml）、Caddyfile 与 MySQL 初始化 SQL
 ├── scripts/db/  scripts/dev/  scripts/git/  scripts/ops/ 跨平台 Node 脚本
 ├── docs/  .agents/  .githooks/                           DC589 协议文档在 docs/protocols/
-└── AGENTS.md  README.md  LICENSE  Makefile  .env.example
+└── AGENTS.md  README.md  LICENSE  tasks.mjs  .env.example
 ```
 
 - **代码按 use case 组织**，主轴是业务用例不是技术层。每个 use case 目录自己
@@ -810,7 +810,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 
 - 真库集成测试文件一律带 `//go:build integration`，评审核对 build tag 与 CI 执行命令。
   默认单测不访问真实数据库；集成测试必须在提供测试库后明确执行。
-- **不提供跳过路径**：`TEST_MYSQL_URL` 缺失直接 `t.Fatal`，`make test-integration`
+- **不提供跳过路径**：`TEST_MYSQL_URL` 缺失直接 `t.Fatal`，`node tasks.mjs test-integration`
   不给变量时退出码 2。跳过的测试在 `go test` 输出里和通过的一模一样，
   CI 没配库就会一路绿灯——护栏最常见的失效正是靠放行通过。
 - 测试写入用事务回滚；确实需要提交的场景（如两个独立事务要看到同一行）
@@ -859,8 +859,8 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 
 - Git 操作一律需要用户明确授权。未获授权不得执行 `commit`、`reset`、`revert`、`push`、`rebase`、`merge`、`cherry-pick`、`tag`，不得新建或切换分支，不得改写提交历史。改动只落在工作区，由用户审阅后自行提交。`git status`、`git diff`、`git log`、`git show` 等只读命令可以直接使用。
 - 交付时报告工作区的未提交改动，不代替用户提交。
-- Go 业务变更运行 `make check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `make build SERVICE=<name>` 或 `make build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
-- `make check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `make test-integration TEST_MYSQL_URL=...`；本地入口是 `node scripts/db/test-integration.mjs`，2026-10-06 起直接使用开发环境（3306/6379），不再有 compose.test.yaml 独立实例。显式测试主键即使回滚仍会抬高开发库自增序号，必要时以 reset-dev 重建；有构建 tag 的真库测试不能用默认测试通过替代。
+- Go 业务变更运行 `node tasks.mjs check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `node tasks.mjs build <name>` 或 `node tasks.mjs build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
+- `node tasks.mjs check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `node tasks.mjs test-integration`（预先设置 `TEST_MYSQL_URL`）；本地入口是 `node scripts/db/test-integration.mjs`，2026-10-06 起直接使用开发环境（3306/6379），不再有 compose.test.yaml 独立实例。显式测试主键即使回滚仍会抬高开发库自增序号，必要时以 reset-dev 重建；有构建 tag 的真库测试不能用默认测试通过替代。
 - 真实会话测试还须配置 `TEST_REDIS_URL`（开发 Redis 6379）。确定性角色锁测试需要 `performance_schema.data_lock_waits`、`data_locks`、`threads` 的 SELECT 权限；测试入口加载 `docker/mysql/test-lock-observer.sql` 补幂等授权，生产初始化不加载这份测试授权。缺少连接或观测权限须明确失败，不跳过或改用模拟锁。
 - 后台逻辑修改运行 `npm test` 与 `npm run build`；用户端逻辑修改运行 `npm run typecheck`、`npm test`，涉及平台适配或构建配置时构建受影响的 H5／微信目标。命令在对应前端目录执行。
 - 纯文档、注释和文案修改检查链接、引用、事实与格式；不为低影响可逆修改增加重复测试。已有验证通过后，仅在新增修改、失败或未决问题需要时扩大检查。
