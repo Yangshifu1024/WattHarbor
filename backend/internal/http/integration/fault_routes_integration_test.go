@@ -118,14 +118,20 @@ func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	w := call("POST", submitPath, `{"device_id":"RF`+tag+`","port_no":9,"fault_type":"other","description":null,"images":null}`, owner)
 	var submitted struct {
 		// Data 公开 HTTP 信封的业务载荷，仅用于响应形状断言。
-		Data device.FaultSubmissionResult `json:"data"`
+		Data struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"data"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &submitted); err != nil || w.Code != 200 || submitted.Data.ID == 0 || submitted.Data.Status != "open" {
+	if err := json.Unmarshal(w.Body.Bytes(), &submitted); err != nil || w.Code != 200 || submitted.Data.Status != "open" {
 		t.Fatalf("submit=%d %s %v", w.Code, w.Body, err)
 	}
-	report := submitted.Data.ID
-	userPath := "/api/v1/user/device/fault-reports/" + strconv.FormatUint(report, 10) + "/history"
-	faultPath := "/api/v1/admin/device-fault-reports/" + strconv.FormatUint(report, 10)
+	report, err := strconv.ParseUint(submitted.Data.ID, 10, 64)
+	if err != nil || report == 0 || strconv.FormatUint(report, 10) != submitted.Data.ID {
+		t.Fatalf("invalid report ID %q: %v", submitted.Data.ID, err)
+	}
+	userPath := "/api/v1/user/device/fault-reports/" + submitted.Data.ID + "/history"
+	faultPath := "/api/v1/admin/device-fault-reports/" + submitted.Data.ID
 	if w := call("GET", userPath, "", other); w.Code != 404 {
 		t.Fatalf("other=%d", w.Code)
 	}
@@ -135,7 +141,7 @@ func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	if w := call("GET", userPath, "", owner); w.Code != 200 || strings.Contains(w.Body.String(), "private fixture") {
 		t.Fatalf("private=%d %s", w.Code, w.Body)
 	}
-	if w := call("GET", "/api/v1/user/device/fault-reports", "", owner); w.Code != 200 || !strings.Contains(w.Body.String(), `"description":null`) || !strings.Contains(w.Body.String(), `"resolved_at":null`) {
+	if w := call("GET", "/api/v1/user/device/fault-reports", "", owner); w.Code != 200 || !strings.Contains(w.Body.String(), `"id":"`+submitted.Data.ID+`"`) || !strings.Contains(w.Body.String(), `"description":null`) || !strings.Contains(w.Body.String(), `"resolved_at":null`) {
 		t.Fatalf("user shape=%d %s", w.Code, w.Body)
 	}
 	dispatch := fmt.Sprintf(`{"assigned_to":%d,"note":"registered dispatch"}`, id+3)

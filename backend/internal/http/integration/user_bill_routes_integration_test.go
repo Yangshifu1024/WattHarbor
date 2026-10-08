@@ -79,14 +79,17 @@ func TestRegisteredUserBillServicePreservesOwnershipAndRead(t *testing.T) {
 	}
 	path := fmt.Sprintf("/api/v1/user/bills/%d", id)
 	detail := call("GET", path, 200).(map[string]any)
-	if detail["user_id"] != "17" || detail["total_cents"] != json.Number("7") || detail["refund_cents"] != json.Number("93") || detail["payment_order_id"] != nil || detail["charged_kwh"] != nil {
+	if detail["id"] != fmt.Sprint(id) || detail["user_id"] != "17" || detail["total_cents"] != json.Number("7") || detail["refund_cents"] != json.Number("93") || detail["payment_order_id"] != nil || detail["charged_kwh"] != nil {
 		t.Fatalf("original bill projection changed: %v", detail)
 	}
 	other := fmt.Sprintf("/api/v1/user/bills/%d", id+1)
 	call("GET", other, 404)
 	call("POST", other+"/read", 404)
 	for range 2 {
-		call("POST", path+"/read", 200)
+		read := call("POST", path+"/read", 200).(map[string]any)
+		if read["id"] != fmt.Sprint(id) {
+			t.Fatalf("read reply lost string bill ID: %v", read)
+		}
 	}
 	var count int64
 	if err := tx.Table("charge_bill_read").Where("bill_id IN ?", []uint64{id, id + 1}).Count(&count).Error; err != nil || count != 1 {
@@ -102,7 +105,7 @@ func TestRegisteredUserBillServicePreservesOwnershipAndRead(t *testing.T) {
 		if row["user_id"] != "17" {
 			t.Fatalf("other user bill leaked: %v", row)
 		}
-		if row["id"] == json.Number(fmt.Sprint(id)) {
+		if row["id"] == fmt.Sprint(id) {
 			seenRead = row["read"] == true
 		}
 	}
