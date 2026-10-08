@@ -8,7 +8,7 @@ export default defineController({
   onHide() { this._gone = true; this._generation++; },
   onUnload() { this.onHide(); },
   onPullDownRefresh() { this.load(true).finally(() => wx.stopPullDownRefresh()); },
-  onReachBottom() { if (!this.data.loading && this.data.items.length === this.data.page * this.data.pageSize) this.load(false); },
+  onReachBottom() { if (!this.data.loading && this.data.page>0 && this.data.items.length>0 && this.data.items.length === this.data.page * this.data.pageSize) this.load(false); },
   async login() { try { await invoiceApp.login(); if (!this._gone) await this.load(true); } catch (error) { if (!this._gone) this.setData({ error: error.message || '登录失败' }); } },
   async load(reset) {
     const generation = ++this._generation;

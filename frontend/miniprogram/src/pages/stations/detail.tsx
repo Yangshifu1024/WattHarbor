@@ -1,48 +1,22 @@
-import { Fragment } from "react";
-import { View, Text } from "@tarojs/components";
-import { AtIcon } from "taro-ui";
-import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
-import controller from "./detail.controller";
-import "./detail.css";
+import { Button, Text, View } from '@tarojs/components'
+import { useController } from '../../runtime'
+import { PageHeader, Notice } from '../../runtime/ui'
+import controller from './detail.controller'
 
+/** 站点详情先列设备，不在站点层混排插座与套餐。 */
 export default function PageView() {
-const { data, event } = useController(controller);
-const { station, announcements, devices, loading, error } = data;
-return (<><View className="station-detail">
-  {!!(loading) && (<View className="detail-hint">{"正在加载…"}</View>)}
-  {!!(error) && (<View className="detail-hint detail-hint-error">{error}</View>)}
-
-  {!!(station) && (<>
-    <View className="detail-head">
-      {announcements?.length > 0 && (<View className="notice-card">{announcements.slice(0,1).map((notice:any, i:number) => (<View key={String(notice?.id ?? i)}>
-        <View className="notice-title"><View className="notice-dot" />
-        <Text>{notice?.title || '站内公告'}</Text></View>
-        {!!(notice?.content) && (<Text className="notice-content">{notice.content}</Text>)}
-      </View>))}</View>)}
-      <View className="detail-name">{station?.name || '未命名电站'}</View>
-      <View className="detail-address">{station?.address || '地址未填写'}</View>
-    </View>
-
-    <View className="detail-section">
-      <View className="detail-section-title">{"站点设备"}</View>
-      {devices?.length > 0 && devices.map((device:any) => (<View
-        className={`device-card${device?.clickable ? '' : ' device-card-offline'}`}
-        data-id={device?.device_id}
-        onClick={device?.clickable ? event("openDevice", {}) : undefined}
-        key={String(device?.device_id)}>
-        <View className="device-main">
-          <Text className="device-id">{device?.device_id || '未知设备'}</Text>
-          <View className="device-status">
-            <View className={`device-dot${device?.online ? ' device-dot-online' : ''}`} />
-            <Text className="device-status-text">{device?.statusText}</Text>
-          </View>
-        </View>
-        <Text className="device-heartbeat">{device?.lastHeartbeatText}</Text>
-      </View>))}
-      {!!(!devices?.length && !loading && !error) && (<View className="detail-hint">{"该站点暂无设备记录。"}</View>)}
-    </View>
-  </>)}
-</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+  const { data, event } = useController(controller)
+  return <View className='container'>
+    <PageHeader title='电站详情' />
+    {data.loading && <Notice>正在读取电站…</Notice>}
+    {data.error && <Notice tone='error' retry={event('load')} busy={data.loading}>{data.error}</Notice>}
+    {data.station && <>
+      <View className='card'><View className='page-title'>{data.station.name || '未命名电站'}</View><Text className='text-secondary'>{data.station.address || '地址未填写'}</Text></View>
+      {(data.announcements || []).map((notice: any, i: number) => <View className='card' key={notice.id ?? i}><View className='heading'>{notice.title || '站内公告'}</View><Text className='text-secondary'>{notice.content}</Text></View>)}
+      <View className='section-heading'>设备列表</View>
+      {(data.devices || []).map((device: any) => <View className='card' key={device.device_id}><View className='row'><Text className='heading'>设备 {device.device_id}</Text><Text className={`tag ${device.online ? 'tag-green' : 'tag-grey'}`}>{device.statusText}</Text></View><View className='text-secondary'>最近上报：{device.lastHeartbeatText}</View><Button type={device.clickable ? 'primary' : 'default'} disabled={!device.clickable} onClick={event('openDevice', { id: device.device_id })}>{device.clickable ? '选择此设备' : device.statusText === '离线' ? '设备离线' : '暂不可选择'}</Button></View>)}
+      {!data.devices?.length && !data.loading && !data.error && <Notice>该站点暂无设备记录</Notice>}
+      <View className='page-footnote'>先选择设备，再选择插座与套餐</View>
+    </>}
+  </View>
 }

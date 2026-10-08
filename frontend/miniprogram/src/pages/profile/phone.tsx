@@ -1,7 +1,7 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Input, View } from "@tarojs/components";
 import { useController, developmentLogin, isH5 } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./phone.controller";
 import "./phone.css";
@@ -9,7 +9,7 @@ import "./phone.css";
 export default function PageView() {
 const { data, event } = useController(controller);
 const { loading, busy, bound, needsLogin, error, notice, phone } = data;
-return (<><View className="container">{!!(needsLogin) && (<View className="card"><View>{"登录后可管理手机号绑定"}</View>
+return (<><View className="container"><PageHeader title="手机号" />{!!(needsLogin) && (<View className="card"><View>{"登录后可管理手机号绑定"}</View>
 <Button type="primary" onClick={event("login", {})}>{"微信登录"}</Button></View>)}
 {!!(!(needsLogin) && (loading)) && (<View className="card">{"正在读取绑定状态…"}</View>)}
 {!!(!(needsLogin || loading)) && (<View className="card"><View className="heading">{"手机号绑定"}</View>
@@ -22,5 +22,5 @@ return (<><View className="container">{!!(needsLogin) && (<View className="card"
 {!!(notice) && (<View className="card success">{notice}</View>)}
 {!!(error) && (<View className="card error"><View>{error}</View>
 {!!(!needsLogin) && (<Button onClick={event("load", {})} disabled={busy}>{"刷新状态"}</Button>)}</View>)}</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+</>);
 }

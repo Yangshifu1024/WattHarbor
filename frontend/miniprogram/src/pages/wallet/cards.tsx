@@ -1,14 +1,14 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./cards.controller";
 
 export default function PageView() {
 const { data, event } = useController(controller);
 const { cards, loading, error, needsLogin, busy } = data;
-return (<><View className="container">{!!(needsLogin) && (<Button onClick={event("login", {})}>{"登录查看在线卡"}</Button>)}
+return (<><View className="container"><PageHeader title="在线卡" />{!!(needsLogin) && (<Button onClick={event("login", {})}>{"登录查看在线卡"}</Button>)}
 <View className="card">{"在线卡共用你的钱包余额。首次刷卡启动，同一卡再次刷卡追加冻结套餐的时长；扣款和退款可在资金流水查看。"}</View>
 {!!(loading) && (<View>{"读取中…"}</View>)}
 {!!(error) && (<View className="card">{error}
@@ -19,5 +19,5 @@ return (<><View className="container">{!!(needsLogin) && (<Button onClick={event
 {item?.label}</View>
 {!!(item?.status === 'active') && (<Button data-card={item?.card_no} data-status="lost" onClick={event("change", {"card":item?.card_no,"status":"lost"})} disabled={busy}>{"挂失"}</Button>)}
 <Button data-card={item?.card_no} data-status="unbound" onClick={event("change", {"card":item?.card_no,"status":"unbound"})} disabled={busy}>{"解绑"}</Button></View>))}</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+</>);
 }

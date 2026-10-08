@@ -1,51 +1,30 @@
-import { Fragment } from "react";
-import { Button, Image, Text, View } from "@tarojs/components";
-import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
-import { inlineStyle, StationMap } from "../../runtime/components";
-import controller from "./profile.controller";
-import { DevelopmentAccount } from '../../runtime/development';
-import { developmentLogin } from '../../runtime/platform';
+import { Button, Image, Text, View } from '@tarojs/components'
+import { AtIcon } from 'taro-ui'
+import { useController } from '../../runtime'
+import { TabBar } from '../../runtime/TabBar'
+import { Notice, PageHeader } from '../../runtime/ui'
+import { DevelopmentAccount } from '../../runtime/development'
+import { developmentLogin } from '../../runtime/platform'
+import controller from './profile.controller'
 
+const QUICK = [{ title: '订单', icon: 'file-generic', action: 'goOrders' }, { title: '账单', icon: 'list', action: 'goBills' }, { title: '退款', icon: 'reload', action: 'goRefunds' }, { title: '优惠券', icon: 'tags', action: 'goCoupons' }]
+const SERVICES = [{ title: '我的发票', icon: 'file-generic', action: 'goInvoices' }, { title: '在线卡', icon: 'credit-card', action: 'goCards' }, { title: '绑定手机号', icon: 'phone', action: 'goPhoneBind' }, { title: '设备报修', icon: 'settings', action: 'goFault' }, { title: '公告', icon: 'notification', action: 'goAnnouncements' }]
+/** 我的聚合账户入口；未登录不显示虚构余额，私有数据沿用控制器会话隔离。 */
 export default function PageView() {
-const { data, event } = useController(controller);
-const { profile, loading, error, needsLogin, loggingIn } = data;
-return (<><View className="container"><DevelopmentAccount />{!!(needsLogin) && (<View className="card"><View>{"登录后查看余额、优惠券和充电记录"}</View>
-<Button type="primary" onClick={event("login", {})} loading={loggingIn} disabled={loggingIn}>{developmentLogin ? '开发账号登录' : '微信登录'}</Button></View>)}
-{!!(loading) && (<View className="card">{"正在读取个人资料…"}</View>)}
-{!!(error) && (<View className="card"><Text>{error}</Text>
-{!!(!needsLogin) && (<Button onClick={event("refresh", {})}>{"重试"}</Button>)}</View>)}
-{!!(profile) && (<View className="card"><View style={inlineStyle({"display": "flex", "alignItems": "center"})}>{!!(profile?.avatar_url) && (<Image src={profile?.avatar_url} style={inlineStyle({"width": "96rpx", "height": "96rpx", "borderRadius": "50%"})}></Image>)}
-{!!(!(profile?.avatar_url)) && (<View style={inlineStyle({"fontSize": "40px"})}>{"👤"}</View>)}
-<View style={inlineStyle({"marginLeft": "24rpx"})}><View style={inlineStyle({"fontSize": "18px", "fontWeight": "500"})}>{profile?.nickname || '用户'}</View>
-<View className="text-secondary">{"可用余额 ¥"}
-{profile?.balanceText}</View></View></View>
-{!!(profile?.wallet?.status === 'frozen') && (<View>{"钱包已冻结，请联系客服"}</View>)}
-<View>{"冻结金额 ¥"}
-{profile?.frozenText}</View>
-<View>{"手机号："}
-{profile?.phone_bound ? '已绑定' : '未绑定'}</View>
-<View>{"可用优惠券："}
-{profile?.coupon_unused_count}
-{" 张"}</View>
-<View className="text-secondary">{"注册日期 "}
-{profile?.registeredText}</View></View>)}
-<View className="card"><View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goWallet", {})}><Text>{"我的余额与充值"}</Text>
-<Text className="text-secondary">{"›"}</Text></View>
-<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goOrders", {})}><Text>{"我的订单"}</Text>
-<Text className="text-secondary">{"›"}</Text></View>
-<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goBills", {})}><Text>{"我的账单"}</Text>
-<Text className="text-secondary">{"›"}</Text></View>
-<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goRefunds", {})}><Text>{"我的退款"}</Text>
-<Text className="text-secondary">{"›"}</Text></View>
-<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goCoupons", {})}><Text>{"🎫 我的优惠券"}</Text>
-<Text className="text-secondary">{"›"}</Text></View>
-<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goInvoices", {})}><Text>{"📄 我的发票"}</Text>
-<Text className="text-secondary">{"›"}</Text></View>
-<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goPhoneBind", {})}><Text>{"📱 绑定手机号"}</Text>
-<Text className="text-secondary">{"›"}</Text></View>
-<View style={inlineStyle({"display": "flex", "justifyContent": "space-between", "padding": "16rpx 0"})} onClick={event("goAnnouncements", {})}><Text>{"📢 公告"}</Text>
-<Text className="text-secondary">{"›"}</Text></View></View>
-{!!(!needsLogin) && (<View className="card" onClick={event("onLogout", {})} style={inlineStyle({"textAlign": "center", "color": "#999"})}>{"退出登录"}</View>)}</View>
-<TabBar active="profile" tabs={HOME_TABS} /></>);
+  const { data, event } = useController(controller)
+  const profile = data.profile
+  return <><View className='container'>
+    <PageHeader title='我的' root />
+    <DevelopmentAccount />
+    {data.needsLogin && <View className='card'><View className='heading'>登录后管理你的充电记录</View><View className='text-secondary'>查看余额、订单、账单与退款进度</View><Button type='primary' loading={data.loggingIn} disabled={data.loggingIn} onClick={event('login')}>{developmentLogin ? '开发账号登录' : '微信登录'}</Button></View>}
+    {data.loading && <Notice>正在读取个人资料…</Notice>}
+    {data.error && <Notice tone='error' retry={data.needsLogin ? undefined : event('refresh')} busy={data.loading}>{data.error}</Notice>}
+    {profile && <>
+      <View className='profile-head'>{profile.avatar_url ? <Image className='profile-avatar' src={profile.avatar_url} /> : <View className='profile-avatar'><AtIcon value='user' size={30} color='#718078' /></View>}<View><View className='profile-name'>{profile.nickname || '充电用户'}</View><View className='text-secondary' onClick={event('goPhoneBind')}>手机号{profile.phone_bound ? '已绑定' : '未绑定'} ›</View></View></View>
+      <View className='card' onClick={event('goWallet')}><View className='row'><Text className='text-secondary'>可用余额</Text><Text className='text-secondary'>我的钱包 ›</Text></View><View className='money-large'>¥{profile.balanceText}</View><View className='text-secondary'>冻结金额 ¥{profile.frozenText}</View>{profile.wallet?.status === 'frozen' && <View className='error'>钱包已冻结，请联系客服</View>}</View>
+      <View className='card service-grid four'>{QUICK.map(item => <Button className='service-button' key={item.title} onClick={event(item.action)}><AtIcon value={item.icon} size={24} /><Text>{item.title}</Text></Button>)}</View>
+    </>}
+    <View className='card'>{SERVICES.map(item => <View className='menu-row' key={item.title} onClick={event(item.action)}><View className='menu-label'><AtIcon value={item.icon} size={20} /><Text>{item.title}</Text></View><Text className='text-secondary'>›</Text></View>)}</View>
+    {!data.needsLogin && <Button onClick={event('onLogout')}>退出登录</Button>}
+  </View><TabBar active='profile' /></>
 }

@@ -1,14 +1,14 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Text, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import controller from "./list.controller";
 import "./list.css";
 
 export default function PageView() {
 const { data, event } = useController(controller);
 const { items, total, loading, error, needsLogin } = data;
-return (<><View className="container">
+return (<><View className="container"><PageHeader title="我的账单" />
 {!!(needsLogin) && (<View className="card"><Text>{"登录后查看结算账单"}</Text>
 <Button type="primary" onClick={event("login", {})} loading={loading}>{"微信登录"}</Button></View>)}
 {(items || []).map((item: any, index: number) => (<View className={`card bill-card${item?.unread ? ' bill-card-unread' : ''}`} data-id={item?.id} onClick={event("open", { id: item?.id })} key={String(item?.id ?? index)}>
@@ -26,5 +26,5 @@ return (<><View className="container">
 {!!(!loading && !error && !items?.length && !needsLogin) && (<View className="card">{"暂无结算账单"}</View>)}
 {!!(items?.length > 0 && items?.length < total && !loading) && (<View className="text-secondary bill-more">{"上拉加载更多"}</View>)}
 </View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+</>);
 }

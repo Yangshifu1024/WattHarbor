@@ -45,11 +45,11 @@ export default defineController({
   },
   onPullDownRefresh() { this.load().finally(()=>wx.stopPullDownRefresh()); },
 
-  // 仅在线设备可点；离线卡片不绑定该事件。
+  // 仅在线设备进入二维码解析，插座可用性仍由服务端再次核对。
   openDevice(event) {
     const id = event.currentTarget.dataset.id;
     const device = this.data.devices.find((item) => item.device_id === id);
     if (!device || !device.clickable) return;
-    wx.showToast({ title:'设备 ' + id + ' 即将支持快捷充电', icon:'none' });
+    wx.navigateTo({ url:'/pages/scan-result/scan-result?code='+encodeURIComponent(id) });
   },
 });

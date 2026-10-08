@@ -2,10 +2,10 @@
 
 .bill-card { padding: 28rpx; }
 
-.bill-card-unread { border-left: 6rpx solid #1677ff; }
+.bill-card-unread { border-left: 6rpx solid #168665; }
 
 .bill-head { display: flex; align-items: center; justify-content: space-between; }
-.bill-no { font-size: 26rpx; color: #9aa0a6; }
-.bill-unread-tag { padding: 2rpx 12rpx; border-radius: 6rpx; background: #e6f4ff; color: #1677ff; font-size: 22rpx; }
-.bill-amount { margin: 12rpx 0 8rpx; font-size: 40rpx; font-weight: 600; color: #1f2329; }
+.bill-no { font-size: 26rpx; color: #718078; }
+.bill-unread-tag { padding: 2rpx 12rpx; border-radius: 6rpx; background: #e7f5ef; color: #168665; font-size: 22rpx; }
+.bill-amount { margin: 12rpx 0 8rpx; font-size: 40rpx; font-weight: 600; color: #182823; }
 .bill-more { padding: 16rpx 0; text-align: center; }

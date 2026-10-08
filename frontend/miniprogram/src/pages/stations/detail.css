@@ -4,7 +4,7 @@
 .station-detail {
   min-height: 100vh;
   padding: 16rpx;
-  background: #f5f6f7;
+  background: #f5f7f6;
 }
 
 .detail-hint {
@@ -36,12 +36,12 @@
 .notice-dot { width: 12rpx; height: 12rpx; margin-right: 12rpx; border-radius: 50%; background: #f97316; }
 .notice-content { display: block; margin-top: 10rpx; font-size: 24rpx; color: #9a5b2c; line-height: 36rpx; }
 
-.detail-name { font-size: 36rpx; font-weight: 600; color: #1f2329; line-height: 52rpx; }
-.detail-address { margin-top: 8rpx; font-size: 26rpx; color: #9aa0a6; }
+.detail-name { font-size: 36rpx; font-weight: 600; color: #182823; line-height: 52rpx; }
+.detail-address { margin-top: 8rpx; font-size: 26rpx; color: #718078; }
 
 /* ---- 下半部分：设备列表 ---- */
 .detail-section { margin-top: 24rpx; }
-.detail-section-title { padding: 0 8rpx 16rpx; font-size: 30rpx; font-weight: 600; color: #1f2329; }
+.detail-section-title { padding: 0 8rpx 16rpx; font-size: 30rpx; font-weight: 600; color: #182823; }
 
 .device-card {
   margin-bottom: 16rpx;
@@ -53,13 +53,13 @@
 .device-card-offline { background: #fafafa; }
 
 .device-main { display: flex; align-items: center; justify-content: space-between; }
-.device-id { font-size: 30rpx; font-weight: 600; color: #1f2329; }
+.device-id { font-size: 30rpx; font-weight: 600; color: #182823; }
 
 .device-status { display: flex; align-items: center; }
 .device-dot { width: 16rpx; height: 16rpx; margin-right: 10rpx; border-radius: 50%; background: #c4c8cc; }
-.device-dot-online { background: #22c55e; }
+.device-dot-online { background: #168665; }
 
-.device-status-text { font-size: 26rpx; color: #9aa0a6; }
-.device-card:not(.device-card-offline) .device-status-text { color: #22c55e; }
+.device-status-text { font-size: 26rpx; color: #718078; }
+.device-card:not(.device-card-offline) .device-status-text { color: #168665; }
 
 .device-heartbeat { display: block; margin-top: 12rpx; font-size: 22rpx; color: #b0b4b8; }

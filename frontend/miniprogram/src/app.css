@@ -1,68 +1,100 @@
-/* ChargePilot Mini Program · 全局样式 */
-
+/* 统一视觉采用逻辑像素的两倍 rpx，匹配 750 设计宽度。 */
 page, body, .taro_page {
-  --primary: #1677ff;
-  --success: #52c41a;
-  --warning: #faad14;
-  --danger: #ff4d4f;
-  --text: #333;
-  --text-secondary: #666;
-  --bg: #f5f5f5;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 28px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --primary: #168665; --success: #168665; --warning: #b87812; --danger: #d94747;
+  --text: #182823; --text-secondary: #718078; --bg: #f5f7f6;
+  background: var(--bg); color: var(--text); font-size: 32rpx;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  line-height: 1.55;
 }
-
-.container { padding: 16rpx 24rpx; }
-
-.card {
-  background: #fff;
-  border-radius: 12rpx;
-  padding: 32rpx 24rpx;
-  margin-bottom: 16rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0,0,0,.04);
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border-radius: 8rpx;
-  padding: 20rpx 0;
-  text-align: center;
-  font-size: 32px;
-}
-
-.text-secondary { color: var(--text-secondary); font-size: 24px; }
-
-.tag {
-  display: inline-block;
-  padding: 4rpx 12rpx;
-  border-radius: 6rpx;
-  font-size: 24px;
-  margin-right: 8rpx;
-}
-.tag-blue { background: #e6f4ff; color: #1677ff; }
-.tag-green { background: #f6ffed; color: #52c41a; }
-.tag-red { background: #fff1f0; color: #ff4d4f; }
-.tag-grey { background: #f5f5f5; color: #999; }
-.tag-orange { background: #fff7e6; color: #fa8c16; }
-
-.field { padding: 18rpx 0; color: var(--text); }
-.error { color: var(--danger); margin: 12rpx 0; }
-.success { color: #389e0d; margin: 12rpx 0; }
-
-.development-panel { border: 2px solid #91caff; background: #f0f7ff; }
+.container, .home, .station-detail { padding: 24rpx 32rpx 40rpx; box-sizing: border-box; }
+.page-header { display: flex; align-items: center; gap: 16rpx; padding: 12rpx 0 32rpx; }
+.page-title { display: block; font-size: 44rpx; font-weight: 650; }
+.page-subtitle { display: block; color: var(--text-secondary); font-size: 26rpx; margin-top: 6rpx; }
+.card { background: #fff; border: 2rpx solid #eaf0ed; border-radius: 32rpx; padding: 32rpx; margin-bottom: 24rpx; overflow-wrap: anywhere; }
+.heading, .section-heading { font-size: 34rpx; font-weight: 600; margin-bottom: 20rpx; }
+.row, .money-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.money-row { padding: 14rpx 0; }
+.money-row > :first-child { color: var(--text-secondary); }
+.text-secondary, .page-footnote { color: var(--text-secondary); font-size: 26rpx; }
+.page-footnote { margin: 20rpx 0; }
+.money-large { font-size: 72rpx; font-weight: 650; line-height: 1.2; margin: 16rpx 0 24rpx; }
+.tag { display: inline-block; padding: 6rpx 16rpx; border-radius: 12rpx; font-size: 24rpx; margin-right: 12rpx; background: #eef3f0; color: #53665d; }
+.tag-blue, .tag-green { background: #e7f5ef; color: #168665; }
+.tag-orange { background: #fff5e5; color: #a3690a; }
+.tag-red { background: #fff0ef; color: #c83d3d; }
+.tag-grey { background: #f0f2f1; color: #718078; }
+.field { padding: 24rpx 0; border-bottom: 2rpx solid #edf1ee; }
+.error { color: var(--danger); } .success { color: var(--primary); }
+.notice { font-size: 28rpx; }
+button, taro-button-core { box-sizing: border-box; margin-top: 20rpx; border-radius: 24rpx; background: #fff; color: var(--text); font-size: 30rpx; min-height: 96rpx; border: 2rpx solid #dde7e1; }
+button::after { border: none; }
+button[type='primary'], taro-button-core[type='primary'], .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+button[size='mini'], taro-button-core[size='mini'] { min-height: 72rpx; font-size: 26rpx; }
+button[disabled], taro-button-core[disabled='true'] { background: #eef1ef; color: #9aa69f; border-color: #e4e9e6; }
+taro-button-core[disabled='false'] { color: var(--text) !important; }
+taro-button-core[type='primary'][disabled='false'] { color: #fff !important; background: var(--primary) !important; }
+.back-button { margin: 0; padding: 0; min-height: 88rpx; width: 72rpx; flex-shrink: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; }
+input, textarea, taro-input-core, taro-textarea-core { box-sizing: border-box; background: #f7f9f8; border: 2rpx solid #e3ebe6; border-radius: 16rpx; padding: 24rpx; margin: 20rpx 0; font-size: 30rpx; min-height: 92rpx; }
+textarea, taro-textarea-core { width: 100%; min-height: 180rpx; }
+.segments-scroll { margin-bottom: 24rpx; white-space: nowrap; }
+.segments { display: flex; gap: 12rpx; width: max-content; padding: 4rpx 0; }
+.segment { min-height: 80rpx; line-height: 80rpx; margin: 0; padding: 0 28rpx; flex-shrink: 0; font-size: 28rpx; border-color: transparent; background: #edf1ef; }
+.segment.is-selected { color: #168665; background: #e7f5ef; border-color: #a9d6c4; }
+.service-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20rpx; }
+.service-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.service-button { border: 0; margin: 0; min-width: 0; padding: 12rpx 0; line-height: 1.4; font-size: 26rpx; }
+.service-button text { display: block; margin-top: 12rpx; }
+.menu-row { padding: 28rpx 0; display: flex; align-items: center; justify-content: space-between; border-bottom: 2rpx solid #eef2ef; font-size: 30rpx; }
+.menu-row:last-child { border-bottom: 0; }
+.menu-label { display: flex; align-items: center; gap: 16rpx; }
+.fixed-checkout { position: fixed; z-index: 20; bottom: 0; left: 0; right: 0; background: #fff; border-top: 2rpx solid #e4ece7; padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom)); display: flex; gap: 20rpx; align-items: center; justify-content: space-between; }
+.fixed-checkout button { margin: 0; width: 320rpx; flex-shrink: 0; }
+.checkout-spacer { height: calc(180rpx + env(safe-area-inset-bottom)); }
+.checkout-amount { color: #168665; font-size: 40rpx; font-weight: 600; }
+.port-grid, .offer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16rpx; }
+.offer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.port-button, .offer-button { display: block; margin: 0; padding: 20rpx 8rpx; line-height: 1.4; font-size: 30rpx; background: #fff; }
+.port-button text, .offer-button text { display: block; }
+.port-button.is-selected, .offer-button.is-selected { border-color: #168665; background: #e7f5ef; color: #168665; }
+.offer-button { padding: 28rpx 20rpx; text-align: left; }
+.offer-price { display: block; font-size: 40rpx; font-weight: 600; }
+.offer-name { font-size: 28rpx; white-space: normal; overflow-wrap: anywhere; }
+.offer-rule { font-size: 26rpx; background: #eef7f2; color: #496657; border-radius: 20rpx; padding: 24rpx; margin-top: 24rpx; }
+.step-title { font-weight: 600; margin: 32rpx 0 20rpx; font-size: 34rpx; }
+.step-number { background: #168665; color: #fff; border-radius: 50%; padding: 4rpx 16rpx; margin-right: 12rpx; }
+.metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16rpx; }
+.metric-value { display: block; font-size: 36rpx; font-weight: 600; margin-top: 8rpx; overflow-wrap: anywhere; }
+.charging-hero { text-align: center; padding: 24rpx 0 36rpx; }
+.charging-ring { width: 204rpx; height: 204rpx; margin: 28rpx auto; border: 8rpx solid #d1eade; border-top-color: #168665; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #168665; }
+.danger-button { border-color: #d94747; color: #d94747; }
+.curve-row { padding: 20rpx 0; border-bottom: 2rpx solid #edf1ee; font-size: 26rpx; }
+.development-panel { border-color: #b8d8c8; background: #edf6f1; }
 .development-panel text, .map-summary text { display: block; margin-bottom: 16rpx; }
-.development-panel input { background: #fff; border: 2px solid #d9d9d9; padding: 16rpx; margin: 16rpx 0; }
-.heading { font-weight: 600; }
-.map-summary { background: #f0f7ff; padding: 24rpx; border-radius: 12rpx; }
-button { margin-top: 16rpx; }
-/* H5 custom elements render disabled="false" as an attribute; it must not
-   inherit the component's disabled appearance merely because it is present. */
-taro-button-core { margin-top: 16rpx; color: var(--text); }
-taro-button-core[type="primary"] { background: var(--primary); color: #fff; }
-taro-button-core[disabled="false"] { color: var(--text) !important; }
-taro-button-core[type="primary"][disabled="false"] { color: #fff !important; background: var(--primary) !important; }
-taro-button-core[disabled="true"] { background: #f5f5f5; color: #999; }
-input, textarea { box-sizing: border-box; padding: 16rpx; }
+.map-summary { background: #eef7f2; padding: 24rpx; border-radius: 24rpx; }
+.profile-head { display: flex; align-items: center; gap: 24rpx; margin: 12rpx 0 32rpx; }
+.profile-avatar { width: 112rpx; height: 112rpx; border-radius: 50%; background: #e5ece7; display: flex; align-items: center; justify-content: center; }
+.profile-name { font-size: 40rpx; font-weight: 600; }
+.quick-amounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16rpx; }
+.quick-amounts button { margin: 0; }
+/* H5 自定义元素的默认按钮伪边框不属于本设计，统一移除。 */
+taro-button-core::after { border: none; }
+taro-button-core[size='mini'][disabled='false'] { background: #fff; }
+taro-button-core.is-selected[disabled='false'] { background: #e7f5ef !important; color: #168665 !important; }
+taro-button-core.back-button { width: 72rpx; flex: 0 0 72rpx; }
+taro-button-core.service-button { width: 100%; }
+/* Taro H5 用空 disabled 属性表示禁用，用字符串 false 表示可用。 */
+taro-button-core::after { border: none !important; }
+taro-button-core[disabled='false'] { background: #fff; }
+taro-button-core[type='primary']:not([disabled]), taro-button-core[type='primary'][disabled='false'] { background: var(--primary) !important; color: #fff !important; }
+taro-button-core[disabled]:not([disabled='false']) { background: #eef1ef !important; color: #9aa69f !important; border-color: #e4e9e6 !important; }
+taro-button-core.port-button[disabled='false'], taro-button-core.offer-button[disabled='false'] { background: #fff; }
+taro-button-core.segment.is-selected[disabled='false'], taro-button-core.port-button.is-selected[disabled='false'], taro-button-core.offer-button.is-selected[disabled='false'] { background: #e7f5ef !important; }
+/* 页面与按钮的组件默认样式加载晚于全局样式，显式保留设计边框。 */
+.taro_page.taro_page_show { background: var(--bg) !important; }
+taro-button-core { border: 2rpx solid #dde7e1 !important; }
+taro-button-core.back-button, taro-button-core.service-button, taro-button-core.section-link, taro-button-core.scan-main, taro-button-core.scan-manual { border: 0 !important; }
+taro-button-core.is-selected { border-color: #168665 !important; }
+taro-button-core.segment { border-color: transparent !important; }
+taro-button-core.segment[disabled='false'] { background: #edf1ef; }
+taro-button-core.segment.is-selected[disabled='false'] { background: #e7f5ef !important; border-color: #a9d6c4 !important; }
+taro-button-core.danger-button { border-color: #d94747 !important; }

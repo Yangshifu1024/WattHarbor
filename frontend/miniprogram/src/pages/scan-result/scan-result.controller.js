@@ -5,7 +5,7 @@ import {normalizeCode,portView,deviceView} from '../../utils/scan';
 import {paymentParams,newRequestId} from '../../utils/payment';
 
 export default defineController({
- data:{deviceId:'',deviceStatus:'',deviceStatusLabel:'',deviceNotice:'',ports:[],selected:null,offers:[],selectedOffer:null,loading:false,error:'',paying:false,paymentNotice:'',paymentNo:'',startAttempted:false,canRetryPayment:false,feeText:'',display:{},stopWhenFull:false},
+ data:{deviceId:'',deviceStatus:'',deviceStatusLabel:'',deviceNotice:'',ports:[],selected:null,offers:[],selectedOffer:null,offerMode:'amount',loading:false,error:'',paying:false,paymentNotice:'',paymentNo:'',startAttempted:false,canRetryPayment:false,feeText:'',display:{},stopWhenFull:false},
  onLoad(query){try{this._code=decodeURIComponent(query.code || '');}catch(_){this._code='';}this._generation=0;this._gone=false;this._unloaded=false;},
  onShow(){this._gone=false;if(this._openChargingOnShow){this._openChargingOnShow=false;this.charging();return;}if(this._paying || this.data.startAttempted)return;return this.load();},
  onHide(){this._gone=true;this._generation++;},
@@ -47,12 +47,21 @@ export default defineController({
   const result=await app.request('POST','/user/scan/offers',{port_id:portID},false);
   if(this._gone || generation!==this._generation)return;
   if(!result || result.port_id!==portID || !Array.isArray(result.items))throw new Error('充电方案响应异常');
-  this.setData({offers:result.items.map(offerView),display:result.display||{},stopWhenFull:!!result.stop_when_full});
+  const offers=result.items.map(offerView);
+  const offerMode=['amount','duration','energy'].find(mode=>offers.some(offer=>offer.mode===mode)) || 'amount';
+  this.setData({offers,offerMode,selectedOffer:null,display:result.display||{},stopWhenFull:!!result.stop_when_full});
+ },
+ // 模式切换清除旧选择；已提交的支付请求不可因切换而改变身份。
+ selectMode(event){
+  const mode=event.currentTarget.dataset.mode;
+  if(this.data.loading || this._paying || this.data.startAttempted || !['amount','duration','energy'].includes(mode) || mode===this.data.offerMode)return;
+  this._requestID=null;
+  this.setData({offerMode:mode,selectedOffer:null,error:''});
  },
  selectOffer(event){
-  if(this.data.startAttempted || this._paying)return;
+  if(this.data.loading || this.data.startAttempted || this._paying)return;
   const id=Number(event.currentTarget.dataset.id);
-  const selected=this.data.offers.find(item=>item.id===id);
+  const selected=this.data.offers.find(item=>item.id===id && item.mode===this.data.offerMode);
   if(selected){this._requestID=null;this.setData({selectedOffer:selected,error:''});}
  },
  onPullDownRefresh(){return this.load().finally(()=>wx.stopPullDownRefresh());},
@@ -99,6 +108,6 @@ export default defineController({
  history(){wx.navigateTo({url:'/pages/charge/history'});},
  // 支付受理后直达充电状态页，由快照轮询消化"启动确认中"等过渡状态；
  // 返回时重新扫码会重建本页并重新解析二维码。
- charging(){const orderNo=this._checkout?.merchant_order_no;if(!orderNo)return this.history();wx.reLaunch({url:'/pages/charge/charging?order_no='+encodeURIComponent(orderNo)});},
+ charging(){const paymentNo=this._checkout?.merchant_order_no;if(!paymentNo)return this.history();wx.reLaunch({url:'/pages/charge/charging?payment_no='+encodeURIComponent(paymentNo)+'&device_id='+encodeURIComponent(this.data.deviceId)+'&port_no='+this.data.selected.port_no});},
  rescan(){wx.navigateTo({url:'/pages/scan/scan'});},
 });

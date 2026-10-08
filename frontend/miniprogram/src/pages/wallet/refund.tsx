@@ -1,14 +1,14 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Input, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./refund.controller";
 
 export default function PageView() {
 const { data, event } = useController(controller);
 const { items, total, page, amount, reason, loading, refunding, pendingRetry, error, notice, needsLogin } = data;
-return (<><View className="container">{!!(needsLogin) && (<Button onClick={event("login", {})}>{"登录查看退款"}</Button>)}
+return (<><View className="container"><PageHeader title="钱包退款" />{!!(needsLogin) && (<Button onClick={event("login", {})}>{"登录查看退款"}</Button>)}
 {!!(!needsLogin) && (<View className="card"><View>{"申请原路退款"}</View>
 <Input aria-label="退款金额" type="digit" placeholder="金额（元）" value={amount} onInput={event("inputAmount", {})} disabled={pendingRetry || refunding}></Input>
 <Input aria-label="退款原因" placeholder="退款原因（可选）" maxlength={255} value={reason} onInput={event("inputReason", {})} disabled={pendingRetry || refunding}></Input>
@@ -32,5 +32,5 @@ return (<><View className="container">{!!(needsLogin) && (<Button onClick={event
 <View className="text-secondary">{part?.refund_no}</View>
 {!!(part?.failure_reason) && (<View>{part?.failure_reason}</View>)}</View>))}</View>))}
 {!!(!loading && !items?.length && !needsLogin) && (<View>{"暂无退款申请"}</View>)}</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+</>);
 }

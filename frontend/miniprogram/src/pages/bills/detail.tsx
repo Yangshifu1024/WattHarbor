@@ -1,13 +1,13 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Text, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import controller from "./detail.controller";
 
 export default function PageView() {
 const { data, event } = useController(controller);
 const { bill, loading, error, needsLogin, readSaving, readNotice, readError } = data;
-return (<><View className="container">
+return (<><View className="container"><PageHeader title="账单详情" />
 {!!(needsLogin) && (<View className="card"><Text>{"登录后查看结算账单"}</Text>
 <Button type="primary" onClick={event("login", {})} loading={loading}>{"微信登录"}</Button></View>)}
 {!!(loading && !bill) && (<View className="card">{"正在读取账单…"}</View>)}
@@ -31,5 +31,5 @@ return (<><View className="container">
 <Button onClick={event("orderDetail", {})} disabled={!bill?.order_no}>{"查看来源订单"}</Button>
 </Fragment>)}
 </View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+</>);
 }

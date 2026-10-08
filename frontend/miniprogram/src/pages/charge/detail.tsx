@@ -1,20 +1,20 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Picker, Text, Textarea, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./detail.controller";
 
 export default function PageView() {
 const { data, event } = useController(controller);
 const { order, loading, error, needsLogin, paying, paymentNotice, curve, curveLoading, curveError, feedbackRatingIndex, feedbackCategoryIndex, feedbackRatings, feedbackCategories, feedbackCategoryValues, feedbackContent, feedbackBusy, feedbackError, feedbackNotice } = data;
-return (<><View className="container">{!!(needsLogin) && (<Button onClick={event("login", {})}>{"登录查看订单"}</Button>)}
+return (<><View className="container"><PageHeader title="订单详情" />{!!(needsLogin) && (<Button onClick={event("login", {})}>{"登录查看订单"}</Button>)}
 {!!(loading) && (<View className="card">{"正在加载…"}</View>)}
 {!!(error) && (<View className="card"><Text>{error}</Text>
 <Button onClick={event("load", {})} disabled={loading}>{"重试"}</Button></View>)}
 {!!(order) && (<Fragment>{!!(order?.status === 'pending_payment') && (<Button onClick={event("pay", {})} loading={paying} disabled={paying || loading}>{"继续付款"}</Button>)}
 {!!(paymentNotice) && (<View className="card">{paymentNotice}</View>)}
-<View className="card"><View>{order?.order_no}</View>
+<View className="card"><View className="text-secondary">{order?.order_no}</View>
 <View className="tag tag-blue">{order?.statusLabel}</View>
 <View>{order?.station_name || order?.device_id}
 {" · 端口 "}
@@ -24,20 +24,19 @@ return (<><View className="container">{!!(needsLogin) && (<Button onClick={event
 <View>{"结束："}
 {order?.endedText}</View>
 {!!(order?.display?.show_energy) && (<View>{"电量："}
-{order?.meter_kwh || '—'}
+{order?.meter_kwh ?? '暂无数据'}
 {" "}
 {order?.display?.hide_unit ? '' : 'kWh'}</View>)}</View>
 <View className="card">{!!(order?.display?.show_fee_split) && (<View>{"电费："}
 {order?.electricText}</View>)}
 {!!(order?.display?.show_fee_split) && (<View>{"服务费："}
 {order?.serviceText}</View>)}
-<View>{"总费用："}
-{order?.totalText}</View>
-<View>{"实付："}
+<View className="text-secondary">结算费用</View><View className="money-large">{order?.totalText}</View><View className="tag">{order?.billing_status === "manual_review" ? "待人工核对" : order?.billing_status === "done" ? "已结算" : "结算状态待确认"}</View>
+<View>{"预付金额："}
 {order?.paidText}</View></View>
-<View className="card"><View>{"退款状态："}
+<View className="card"><View className="heading">{"退款状态："}
 {order?.refundLabel}</View>
-<View>{"已退："}
+<View>{"已退款金额："}
 {order?.refundedText}</View>
 <View>{"支付单号："}
 {order?.payment_order_no || '—'}</View></View>
@@ -59,19 +58,19 @@ return (<><View className="container">{!!(needsLogin) && (<Button onClick={event
 {!!(curve) && (<View>{!!(!curve?.series?.length) && (<View className="text-secondary">{"没有可显示的聚合遥测。"}</View>)}
 {(curve?.series || []).map((item: any, index: number) => (<View className="curve-row" key={String(item?.bucket_start ?? index)}><View>{item?.bucketText}</View>
 <View>{!!(order?.display?.show_power) && (<Text>{"功率 "}
-{item?.power_w_avg || '—'}
+{item?.power_w_avg ?? '暂无数据'}
 {" "}
 {order?.display?.hide_unit ? '' : 'W'}
 {" ·"}</Text>)}
 {"温度 "}
-{item?.temperature_c_avg || '—'}
+{item?.temperature_c_avg ?? '暂无数据'}
 {" °C"}</View>
 <View>{"电压 "}
-{item?.voltage_v_avg || '—'}
+{item?.voltage_v_avg ?? '暂无数据'}
 {" V · 电流 "}
-{item?.current_a_avg || '—'}
+{item?.current_a_avg ?? '暂无数据'}
 {" A"}</View></View>))}
-{!!(order?.display?.show_energy && curve?.summary?.total_kwh) && (<View>{"总电量："}
+{!!(order?.display?.show_energy && curve?.summary?.total_kwh != null) && (<View>{"总电量："}
 {curve?.summary?.total_kwh}
 {" kWh"}</View>)}</View>)}</View>)}
 {!!(['completed','refunding','refunded'].includes(order?.status) && !order?.feedback_submitted) && (<View className="card"><View>{"订单评价与反馈"}</View>
@@ -87,7 +86,7 @@ return (<><View className="container">{!!(needsLogin) && (<Button onClick={event
 <Button type="primary" onClick={event("submitFeedback", {})} loading={feedbackBusy} disabled={feedbackBusy}>{"提交反馈"}</Button></View>)}
 {!!(order?.feedback_submitted) && (<View className="card success">{"已收到本订单反馈，谢谢。"}</View>)}
 {!!(order?.device_id) && (<View className="card"><Button onClick={event("reportFault", {})}>{"设备报修"}</Button>
-</View>)}{!!(['completed','refunding','refunded'].includes(order?.status)) && (<View className="card"><Button onClick={event("goBill", {})}>{"查看结算账单"}</Button>
+</View>)}{!!(['completed','refunding','refunded'].includes(order?.status)) && (<View className="card"><Button onClick={event("invoice", {})}>申请发票</Button><Button onClick={event("goBill", {})}>{"查看结算账单"}</Button>
 </View>)}</Fragment>)}</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+</>);
 }

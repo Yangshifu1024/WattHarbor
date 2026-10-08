@@ -5,6 +5,7 @@ const values = ['mechanical', 'electrical', 'communication', 'display', 'other']
 const statuses = { open: '待派单', dispatched: '处理中', fixed: '已修复', closed: '已关闭' };
 const eventLabels = { reported: '已提交报修', dispatched: '已派单', reassigned: '已重新指派', fixed: '已标记修复', closed: '已关闭' };
 export default defineController({
+  scanDevice(){wx.navigateTo({url:'/pages/scan/scan?report_fault=1'});},
   data: { deviceId: '', faultTypeIndex: 0, faultTypes: types, description: '', submitting: false, needsLogin: false, error: '', historyError: '', notice: '', reports: [], reportsPage: 1, reportsHasMore: false, loadingReports: false, expandedReport: '', reportHistory: [], reportHistoryLoading: false, reportHistoryError: '' },
   onLoad(options) { this._gone = false; this._deviceId = (options.device_id || '').trim(); this.setData({ deviceId: this._deviceId }); },
   onShow() { this._gone = false; if (faultApp.globalData.token) void this.loadReports(true); },

@@ -1,3 +1,4 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Picker, Text, Textarea, View } from "@tarojs/components";
 import { useController } from "../../runtime";
@@ -8,11 +9,11 @@ import "./fault.css";
 export default function PageView() {
 const { data, event } = useController(controller);
 const { deviceId, faultTypeIndex, faultTypes, description, submitting, needsLogin, error, historyError, notice, reports, reportsPage, reportsHasMore, loadingReports, expandedReport, reportHistory, reportHistoryLoading, reportHistoryError } = data;
-return (<><View className="container">{!!(needsLogin) && (<View className="card"><View>{"登录后提交设备报修"}</View>
+return (<><View className="container"><PageHeader title="设备报修" />{!!(needsLogin) && (<View className="card"><View>{"登录后提交设备报修"}</View>
 <Button type="primary" onClick={event("login", {})}>{"微信登录"}</Button></View>)}
 <View className="card"><View className="heading">{"设备报修"}</View>
 <View className="device">{"设备编号："}
-{deviceId || '未指定'}</View>
+{deviceId || '未指定'}</View>{!deviceId && <Button onClick={event('scanDevice')}>扫码选择报修设备</Button>}
 <Picker range={faultTypes} value={faultTypeIndex} onChange={event("onType", {})}><View className="field">{"故障类型："}
 {faultTypes?.[faultTypeIndex]}
 {" ▾"}</View></Picker>
@@ -46,5 +47,5 @@ return (<><View className="container">{!!(needsLogin) && (<View className="card"
 {!!(historyError) && (<View className="error"><View>{historyError}</View>
 <Button onClick={event("retryReports", {})} loading={loadingReports}>{"重试读取"}</Button></View>)}
 {!!(reportsHasMore) && (<Button onClick={event("loadMoreReports", {})} loading={loadingReports}>{"加载更多"}</Button>)}
-{!!(!(reportsHasMore) && (loadingReports)) && (<View className="text-secondary">{"正在读取报修进度…"}</View>)}</View></View></>);
+{!!(loadingReports) && (<View className="text-secondary">{"正在读取报修进度…"}</View>)}</View></View></>);
 }

@@ -1,17 +1,15 @@
+import { PageHeader, Segments } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Picker, Text, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./txns.controller";
 
 export default function PageView() {
 const { data, event } = useController(controller);
 const { items, total, page, loading, error, needsLogin, statusIndex, statusNames, statusValues } = data;
-return (<><View className="container">{!!(needsLogin) && (<View className="card"><Button type="primary" onClick={event("login", {})}>{"登录查看流水"}</Button></View>)}
-<Picker range={statusNames} value={statusIndex} onChange={event("onStatus", {})}><View className="card">{"类型："}
-{statusNames?.[statusIndex]}
-{" ▾"}</View></Picker>
+return (<><View className="container"><PageHeader title="余额流水" />{!!(needsLogin) && (<View className="card"><Button type="primary" onClick={event("login", {})}>{"登录查看流水"}</Button></View>)}
+<Segments labels={statusNames} selected={statusIndex} onSelect={index => event('onStatus')({ detail: { value: index } })} />
 {(items || []).map((item: any, index: number) => (<View className="card" key={String(item?.txn_no ?? index)}><View>{item?.typeText}
 {"　"}
 {item?.amountText}
@@ -26,6 +24,6 @@ return (<><View className="container">{!!(needsLogin) && (<View className="card"
 {!!(error) && (<View className="card"><Text>{error}</Text>
 <Button onClick={event("retry", {})}>{"重试"}</Button></View>)}
 {!!(!loading && !error && !needsLogin && total === 0) && (<View className="card">{"暂无资金流水"}</View>)}
-{!!(items?.length < total && !loading) && (<Button onClick={event("onReachBottom", {})}>{"加载更多"}</Button>)}</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+{!!(items?.length < total && !loading) && (<View className="text-secondary">继续上滑加载更多</View>)}</View>
+</>);
 }

@@ -1,69 +1,32 @@
-import { Fragment } from "react";
-import { Text, View } from "@tarojs/components";
-import { AtIcon } from "taro-ui";
-import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
-import controller from "./index.controller";
-import "./index.css";
+import { Button, Text, View } from '@tarojs/components'
+import { AtIcon } from 'taro-ui'
+import { useController } from '../../runtime'
+import { TabBar } from '../../runtime/TabBar'
+import { Notice } from '../../runtime/ui'
+import controller from './index.controller'
+import './index.css'
 
-// 设计稿的四个功能入口。url 为空表示该入口尚未上线，控制器会明确提示而不跳转。
-const ENTRIES = [
-  { key: "nearby", title: "附近电站", sub: "查看附近电站", icon: "map-pin", action: "goMap" },
-  { key: "frequent", title: "常用电站", sub: "最近使用的电站", icon: "lightning-bolt", action: "goFrequent" },
-  { key: "orders", title: "订单记录", sub: "查看充电订单", icon: "file-generic", action: "goOrders" },
-  { key: "deviceMap", title: "设备地图", sub: "发现附近充电设备", icon: "equalizer", action: "goDeviceMap" },
-];
-
+/** 首页只组织公开浏览与进行中订单，支付登录留在充电选择流程。 */
 export default function PageView() {
-const { data, event } = useController(controller);
-const stations = data.stations || [];
-const announcements = data.announcements || [];
-return (<><View className="home">
-  {/* 进行中订单横幅：控制器已拉取 /user/charge/ongoing，无进行中订单时该字段为 null。 */}
-  {!!(data.ongoing) && (<View className="ongoing-banner" onClick={event("goOngoing", {})}>
-    <View className="ongoing-head">
-      <Text className="ongoing-label">{data.ongoing?.statusLabel}</Text>
-      <AtIcon value="chevron-right" className="ongoing-arrow" />
-    </View>
-    <Text className="ongoing-order">{data.ongoing?.order_no}</Text>
-    <Text className="ongoing-meta">{data.ongoing?.device_id}{!!(data.ongoing?.port_no) && (" · 端口 " + data.ongoing?.port_no)}</Text>
-  </View>)}
-
-  {!!(announcements.length) && (<View className="announcement-bar" onClick={event("goAnnouncements", {})}>
-    <AtIcon value="notification" className="announcement-icon" />
-    <View className="announcement-body">
-      <Text className="announcement-title">{announcements[0]?.title}</Text>
-      {!!(announcements.length > 1) && (<Text className="announcement-more">{"等 " + announcements.length + " 条公告 ›"}</Text>)}
-    </View>
-  </View>)}
-
-  <View className="home-entries">{ENTRIES.map((entry) => (<View className="entry-card" onClick={event(entry.action, {})} key={entry.key}>
-    <View className="entry-body"><Text className="entry-title">{entry.title}</Text>
-    <Text className="entry-sub">{entry.sub}</Text></View>
-    <AtIcon value={entry.icon} className="entry-icon" /></View>))}</View>
-
-  <View className="section-head">
-    <View className="section-title"><View className="section-bar" />
-    <Text>{"附近电站"}</Text></View>
-    <View className="section-action" onClick={event("relocate", {})}><AtIcon value="reload" className="section-action-icon" />
-    <Text>{"重新定位"}</Text></View>
-  </View>
-
-  {!!(data.locating) && (<View className="station-hint">{"正在获取位置…"}</View>)}
-  {!!(data.locationNotice) && (<View className="station-hint">{data.locationNotice}
-  <Text className="station-hint-link" onClick={event("relocate", {})}>{"重新定位"}</Text></View>)}
-  {!!(data.mapError) && (<View className="station-hint station-hint-error">{data.mapError}
-  <Text className="station-hint-link" onClick={event("relocate", {})}>{"重试"}</Text></View>)}
-
-  {stations.map((station: any, index: number) => (<View className="station-card" data-id={station?.id} onClick={event("goStation", {})} key={String(station?.id ?? index)}>
-    <View className="station-head">
-      <Text className="station-name">{station?.name || '未命名电站'}</Text>
-      <Text className="station-distance">{station?.distanceText || '距离未知'}</Text>
-    </View>
-    <Text className="station-address">{station?.address || '地址未填写'}</Text>
-  </View>))}
-
-  {!!(!stations.length && !data.mapError && !data.locating) && (<View className="station-hint">{"暂无可显示的附近电站，可点击右上角重新定位。"}</View>)}
-</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+  const { data, event } = useController(controller)
+  const stations = data.stations || []
+  const announcements = data.announcements || []
+  return <>
+    <View className='home'>
+      <View className='home-brand'><AtIcon value='lightning-bolt' size={26} color='#168665' /><View><Text className='brand-name'>ChargePilot</Text><Text className='page-subtitle'>充电，从这里开始</Text></View></View>
+      <View className='scan-hero'>
+        <Button className='scan-main' onClick={event('onScanTap')}><AtIcon value='camera' size={34} /><View><Text className='scan-title'>扫码充电</Text><Text className='scan-description'>扫描设备或插座二维码</Text></View></Button>
+        <Button className='scan-manual' onClick={event('onScanTap')}>手动输入编号 ›</Button>
+      </View>
+      {data.ongoing && <View className='ongoing-banner' onClick={event('goOngoing')}><AtIcon value='lightning-bolt' size={24} /><View className='ongoing-body'><Text className='ongoing-label'>{data.ongoing.statusLabel}</Text><Text className='ongoing-meta'>设备 {data.ongoing.device_id} · 插座 {data.ongoing.port_no ?? '—'}</Text></View><Text className='ongoing-action'>查看状态 ›</Text></View>}
+      {announcements.length > 0 && <View className='announcement-bar' onClick={event('goAnnouncements')}><AtIcon value='notification' size={18} /><Text className='announcement-title'>公告 · {announcements[0].title}</Text><Text>›</Text></View>}
+      <View className='section-head'><Text className='section-heading'>附近电站</Text><Button className='section-link' onClick={event('goMap')}>查看全部 ›</Button></View>
+      {data.locating && <Notice>正在获取位置…</Notice>}
+      {data.locationNotice && <Notice retry={event('relocate')}>{data.locationNotice}</Notice>}
+      {data.mapError && <Notice tone='error' retry={event('relocate')}>{data.mapError}</Notice>}
+      {stations.map((station: any) => <View className='station-card card' key={station.id} onClick={event('goStation', { id: station.id })}><AtIcon value='map-pin' size={24} color='#168665' /><View className='station-body'><Text className='station-name'>{station.name || '未命名电站'}</Text><Text className='station-address'>{station.address || '地址未填写'}</Text></View><View className='station-distance'><Text>{station.distanceText}</Text><Text className='text-secondary'>查看设备 ›</Text></View></View>)}
+      {!stations.length && !data.mapError && !data.locating && <Notice retry={event('relocate')}>暂无可显示的电站</Notice>}
+      <View className='page-footnote'>选择站点后查看设备，再选择插座与套餐</View>
+    </View><TabBar active='home' />
+  </>
 }

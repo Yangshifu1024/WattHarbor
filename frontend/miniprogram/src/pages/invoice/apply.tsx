@@ -1,7 +1,7 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, Input, Picker, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./apply.controller";
 import "./apply.css";
@@ -9,10 +9,10 @@ import "./apply.css";
 export default function PageView() {
 const { data, event } = useController(controller);
 const { orders, orderLabels, orderIndex, selected, invoiceTypeIndex, invoiceTypes, title, taxNo, email, loading, loadingDetail, submitting, needsLogin, error, notice } = data;
-return (<><View className="container">{!!(needsLogin) && (<View className="card"><View>{"登录后申请发票"}</View>
+return (<><View className="container"><PageHeader title="申请发票" />{!!(needsLogin) && (<View className="card"><View>{"登录后申请发票"}</View>
 <Button type="primary" onClick={event("login", {})}>{"微信登录"}</Button></View>)}
 {!!(!(needsLogin)) && (<View className="card"><View className="heading">{"申请充电订单发票"}</View>
-<Picker range={orderLabels} value={orderIndex} onChange={event("onOrderSelect", {})}><View className="field">{orderIndex >= 0 ? orderLabels?.[orderIndex] : '选择已完成的充电订单'}</View></Picker>
+<View className="page-footnote">仅展示最近 100 笔订单中可申请开票的订单</View><Picker range={orderLabels} value={orderIndex} onChange={event("onOrderSelect", {})}><View className="field">{orderIndex >= 0 ? orderLabels?.[orderIndex] : '选择已完成的充电订单'}</View></Picker>
 {!!(loadingDetail) && (<View className="text-secondary">{"正在核对实付金额…"}</View>)}
 {!!(selected) && (<View className="amount">{"订单实付金额：¥"}
 {selected?.amountText}</View>)}
@@ -27,6 +27,6 @@ return (<><View className="container">{!!(needsLogin) && (<View className="card"
 {!!(error) && (<View className="card error"><View>{error}</View>
 <Button onClick={event("loadOrders", {})} disabled={loading || submitting}>{"重试"}</Button></View>)}
 {!!(notice) && (<View className="card success">{notice}</View>)}
-{!!(!loading && !needsLogin && !orders?.length) && (<View className="card">{"没有可申请开票的已完成订单"}</View>)}</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+{!!(!loading && !error && !needsLogin && !orders?.length) && (<View className="card">{"没有可申请开票的已完成订单"}</View>)}</View>
+</>);
 }

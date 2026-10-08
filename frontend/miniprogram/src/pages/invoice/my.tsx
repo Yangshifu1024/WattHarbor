@@ -1,7 +1,7 @@
+import { PageHeader } from "../../runtime/ui";
 import { Fragment } from "react";
 import { Button, View } from "@tarojs/components";
 import { useController } from "../../runtime";
-import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./my.controller";
 import "./my.css";
@@ -9,7 +9,7 @@ import "./my.css";
 export default function PageView() {
 const { data, event } = useController(controller);
 const { items, page, pageSize, loading, error, needsLogin } = data;
-return (<><View className="container">{!!(needsLogin) && (<Button type="primary" onClick={event("login", {})}>{"登录查看发票"}</Button>)}
+return (<><View className="container"><PageHeader title="我的发票" />{!!(needsLogin) && (<Button type="primary" onClick={event("login", {})}>{"登录查看发票"}</Button>)}
 {!!(!(needsLogin) && (!needsLogin)) && (<Button type="primary" onClick={event("apply", {})}>{"申请发票"}</Button>)}
 {(items || []).map((item: any, index: number) => (<View className="card" key={String(item?.invoice_no ?? index)}><View className="row"><View className="title">{item?.title}</View>
 <View className="tag">{item?.statusText}</View></View>
@@ -27,6 +27,6 @@ return (<><View className="container">{!!(needsLogin) && (<Button type="primary"
 {!!(error) && (<View className="card error"><View>{error}</View>
 <Button onClick={event("load", {})} disabled={loading}>{"重试"}</Button></View>)}
 {!!(!loading && !items?.length && !needsLogin && !error) && (<View className="card">{"暂无发票申请记录"}</View>)}
-{!!(items?.length > 0 && items?.length === page * pageSize && !loading) && (<Button onClick={event("onReachBottom", {})}>{"加载更多"}</Button>)}</View>
-<TabBar active="home" tabs={HOME_TABS} /></>);
+{!!(items?.length > 0 && items?.length === page * pageSize && !loading) && (<View className="text-secondary">继续上滑加载更多</View>)}</View>
+</>);
 }

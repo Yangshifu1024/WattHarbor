@@ -47,6 +47,8 @@ export default defineController({
   },
 
   goPhoneBind() { wx.navigateTo({ url: '/pages/profile/phone' }); },
+  goCards() { wx.navigateTo({ url: '/pages/wallet/cards' }); },
+  goFault() { wx.navigateTo({ url: '/pages/scan/scan?report_fault=1' }); },
   goWallet() { wx.navigateTo({ url: '/pages/wallet/wallet' }); },
   goBills() { wx.navigateTo({ url: '/pages/bills/list' }); },
   goRefunds() { wx.navigateTo({ url: '/pages/wallet/refund' }); },

@@ -73,6 +73,7 @@ export default defineController({
     }catch(error){if(!this._gone&&generation===detailApp._generation)this.setData({feedbackError:error.message||'反馈提交失败，请重试'});}
     finally{if(!this._gone)this.setData({feedbackBusy:false});}
   },
+  invoice(){wx.navigateTo({url:'/pages/invoice/apply'});},
   reportFault(){const order=this.data.order;if(order?.device_id)wx.navigateTo({url:'/pages/dev/fault?device_id='+encodeURIComponent(order.device_id)});},
   // 结算账单列表按时间分页，后端未提供按订单号筛选；此处只负责跳转，
   // 不在客户端猜测哪一条账单属于本订单。
