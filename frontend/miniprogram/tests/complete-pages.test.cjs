@@ -109,9 +109,9 @@ test('fault report sends the selected device and a constrained category', async 
   const calls = [];
   const app = { globalData: { token: 'token' }, _generation: 2, request: async (method, url, value) => {
     calls.push({ method, url, value });
-    if (method === 'POST') return { submitted: true, report_id: '17' };
-    if (url.endsWith('/17/history')) return { items: [{ event_type: 'fixed', from_status: 'dispatched', to_status: 'fixed', note: '更换连接器后恢复', created_at: '2026-09-27T10:00:00Z' }], total: 1 };
-    return { items: [{ report_id: '17', status: 'fixed' }], total: 1 };
+    if (method === 'POST') return { id: '8996759476100806145', status: 'open' };
+    if (url.endsWith('/8996759476100806145/history')) return { items: [{ event_type: 'fixed', from_status: 'dispatched', to_status: 'fixed', note: '更换连接器后恢复', created_at: '2026-09-27T10:00:00Z' }], total: 1 };
+    return { items: [{ id: '8996759476100806145', status: 'fixed' }], total: 1 };
   } };
   const page = loadPage('pages/dev/fault.js', app);
   page._deviceId = 'DEV_01';
@@ -120,11 +120,12 @@ test('fault report sends the selected device and a constrained category', async 
   const submit = calls.find(call => call.method === 'POST');
   assert.equal(JSON.stringify(submit.value), JSON.stringify({ device_id: 'DEV_01', fault_type: 'mechanical', description: '接口没有响应' }));
   assert.ok(calls.some(call => call.method === 'GET' && call.url === '/user/device/fault-reports'));
-  await page.toggleHistory({ currentTarget: { dataset: { reportId: '17' } } });
-  assert.ok(calls.some(call => call.method === 'GET' && call.url === '/user/device/fault-reports/17/history'));
+  await page.toggleHistory({ currentTarget: { dataset: { reportId: '8996759476100806145' } } });
+  assert.ok(calls.some(call => call.method === 'GET' && call.url === '/user/device/fault-reports/8996759476100806145/history'));
   assert.equal(page.data.reportHistory[0].eventText, '已标记修复');
   assert.equal(page.data.reportHistory[0].note, '更换连接器后恢复');
-  assert.match(page.data.notice, /已收到/);
+  assert.match(page.data.notice, /已收到（8996759476100806145）/);
+  assert.equal(page.data.reports[0].report_id, '8996759476100806145');
 });
 
 test('announcement upstream failures remain visible and never become an empty success', async () => {

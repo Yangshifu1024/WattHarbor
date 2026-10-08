@@ -81,5 +81,5 @@ func (a BillAPI) markRead(c *gin.Context) {
 		}
 		return
 	}
-	httpapi.OK(c, gin.H{"id": id, "read": true})
+	httpapi.OK(c, gin.H{"id": strconv.FormatUint(id, 10), "read": true})
 }

@@ -2,6 +2,7 @@ package device
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/ChargePilot2026/charge-pilot/internal/device"
@@ -33,7 +34,7 @@ func (a API) reportFault(c *gin.Context) {
 		}
 		return
 	}
-	httpapi.OK(c, out)
+	httpapi.OK(c, gin.H{"id": strconv.FormatUint(out.ID, 10), "status": out.Status})
 }
 
 // myFaultReports 适配 c 原用户及分页并调用所属查询，输出原页或读取错误，无存储写入。
@@ -50,6 +51,9 @@ func (a API) myFaultReports(c *gin.Context) {
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "报修记录暂时无法读取", nil)
 		return
+	}
+	for _, row := range out.Items {
+		row["id"] = fmt.Sprint(row["id"])
 	}
 	httpapi.OK(c, out)
 }

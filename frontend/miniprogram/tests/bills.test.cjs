@@ -121,3 +121,8 @@ test('bill detail surfaces the 404 contract instead of an empty bill', async () 
   assert.equal(p.data.bill, null);
   assert.equal(p.data.error, '账单不存在');
 });
+
+test('server read flag preserves a saved receipt without inventing a read timestamp', async () => {
+ const app={globalData:{token:'t'},request:async()=>({items:[{...bill('8996759476100805168',false),read:true}],total:1})};
+ const p=page('list',app);await p.load(true);assert.equal(p.data.items[0].unread,false);assert.equal(p.data.items[0].readText,'');
+});

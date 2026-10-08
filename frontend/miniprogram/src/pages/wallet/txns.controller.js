@@ -1,10 +1,9 @@
 import { defineController, getApp, wx } from "../../runtime";
 const orderApp = getApp();
-const labels={recharge:'充值',consume:'充电消费',refund:'退款',freeze:'冻结',unfreeze:'解冻',admin_adjust:'人工调整',gift:'赠送'};
-function formatOrder(item){return {...item,typeText:labels[item.txn_type] || item.txn_type,amountText:(item.amount_cents>0?'+':'')+(item.amount_cents/100).toFixed(2),balanceText:(item.balance_after_cents/100).toFixed(2),timeText:new Date(item.created_at).toLocaleString()};}
+import {formatWalletTxn} from '../../utils/wallet-txn';
 export default defineController({
   data: { items: [], total: 0, page: 0, loading: false, error: '', needsLogin: false,
-    statusIndex: 0, statusNames: ['全部','充值','充电消费','退款','冻结','解冻','人工调整','赠送'], statusValues: ['','recharge','consume','refund','freeze','unfreeze','admin_adjust','gift'] },
+    statusIndex: 0, statusNames: ['全部','收入','支出'], statusValues: ['','in','out'] },
   onShow() { this._generation = (this._generation || 0)+1; this._gone = false; this.load(true); },
   onHide() { this._gone = true; this._generation++; },
   onUnload() { this._gone = true; this._generation++; },
@@ -23,9 +22,9 @@ export default defineController({
     this.setData({ loading: true, error: '', needsLogin: false, ...(reset ? { items: [], page: 0, total: 0 } : {}) });
     try {
       const status = this.data.statusValues[this.data.statusIndex];
-      const result = await orderApp.request('GET', '/user/wallet/txns', { page, page_size: 20, ...(status ? { type:status } : {}) });
+      const result = await orderApp.request('GET', '/user/wallet/txns', { page, page_size: 20, ...(status ? { direction:status } : {}) });
       if (this._gone || generation !== this._generation) return;
-      this.setData({ items: (reset ? [] : this.data.items).concat(result.items.map(formatOrder)), total: result.total, page });
+      this.setData({ items: (reset ? [] : this.data.items).concat(result.items.map(formatWalletTxn)), total: result.total, page });
     } catch (e) { if (!this._gone && generation === this._generation) this.setData({ error: e.message || '流水加载失败', needsLogin: !orderApp.globalData.token }); }
     finally { if (!this._gone && generation === this._generation) this.setData({ loading: false }); }
   },

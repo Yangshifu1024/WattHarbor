@@ -19,7 +19,7 @@ type BillRepo struct {
 
 // Bill 是用户账单的已确认费用展示，不用当前遥测重算金额。
 type Bill struct {
-	ID             uint64     `json:"id" gorm:"column:id"`                             // 账单主键
+	ID             uint64     `json:"id,string" gorm:"column:id"`                      // 账单主键
 	BillNo         string     `json:"bill_no" gorm:"column:bill_no"`                   // 原订单派生账单号，重试沿用
 	ChargeOrderID  uint64     `json:"charge_order_id" gorm:"column:charge_order_id"`   // 所属原充电订单，一单一份账单
 	PaymentOrderID *uint64    `json:"payment_order_id" gorm:"column:payment_order_id"` // 原支付主键，无关联时为空

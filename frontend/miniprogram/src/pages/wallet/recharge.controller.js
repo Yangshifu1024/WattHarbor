@@ -21,8 +21,10 @@ export default defineController({
    this._key='cp_wallet_recharge_'+result.user_id;this._session=session;
    const saved=wx.getStorageSync(this._key);
    this._pending=saved && typeof saved.request_id==='string' && Number.isSafeInteger(saved.amount_cents)?saved:null;
+   const confirmed=result.items.find(item=>this._pending && item.request_id===this._pending.request_id && item.amount_cents===this._pending.amount_cents && ['paid','partial_refunded','partially_refunded','refunded','closed','failed'].includes(item.status));
+   if(confirmed){wx.removeStorageSync(this._key);this._pending=null;}
    const items=result.items.map(item=>({...item,amountText:(item.amount_cents/100).toFixed(2),statusText:item.status==='initiated'&&!item.can_pay?'支付窗口已结束，等待核实':labels[item.status]||'状态待核实'}));
-   this.setData({items:more?this.data.items.concat(items):items,page,hasMore:items.length===20,pending:!!this._pending,...(this._pending?{amount:(this._pending.amount_cents/100).toFixed(2)}:{})});
+   this.setData({items:more?this.data.items.concat(items):items,page,hasMore:items.length===20,pending:!!this._pending,...(this._pending?{amount:(this._pending.amount_cents/100).toFixed(2)}:confirmed?{amount:''}:{})});
   }catch(e){if(!this._gone && seq===this._seq && session===app._generation)this.setData({error:e.message||'充值记录读取失败'});}
   finally{if(!this._gone && seq===this._seq && session===app._generation)this.setData({loading:false});}
  },

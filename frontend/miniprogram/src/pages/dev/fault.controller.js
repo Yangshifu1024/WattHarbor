@@ -55,7 +55,7 @@ export default defineController({
     try {
       const result = await faultApp.request('GET', '/user/device/fault-reports', { page, page_size: 20 });
       if (this._gone || generation !== this._reportsGeneration) return;
-      const items = Array.isArray(result?.items) ? result.items.map((item) => ({ ...item, statusText: statuses[item.status] || item.status, createdText: String(item.created_at || '').replace('T', ' ').slice(0, 16) })) : [];
+      const items = Array.isArray(result?.items) ? result.items.map((item) => ({ ...item, report_id: String(item.id), statusText: statuses[item.status] || item.status, createdText: String(item.created_at || '').replace('T', ' ').slice(0, 16) })) : [];
       this.setData({ reports: reset ? items : this.data.reports.concat(items), reportsPage: page, reportsHasMore: reset ? items.length < (result?.total || 0) : (page * 20) < (result?.total || 0) });
     } catch (error) {
       if (!this._gone && generation === this._reportsGeneration) this.setData({ historyError: error.message || '报修进度读取失败' });
@@ -72,8 +72,8 @@ export default defineController({
     try {
       const result = await faultApp.request('POST', '/user/device/report-fault', { device_id: this._deviceId, fault_type: values[this.data.faultTypeIndex], description: this.data.description.trim() || null });
       if (this._gone || generation !== faultApp._generation) return;
-      if (!result || result.submitted !== true) throw new Error('报修结果未确认，请重试');
-      this.setData({ notice: `报修已收到（${result.report_id || '已提交'}），可在下方查看处理进度。`, description: '' });
+      if (!result || typeof result.id !== 'string' || !/^[1-9]\d{0,19}$/.test(result.id) || result.status !== 'open') throw new Error('报修结果未确认，请重试');
+      this.setData({ notice: `报修已收到（${result.id}），可在下方查看处理进度。`, description: '' });
       await this.loadReports(true);
     } catch (error) {
       if (!this._gone && generation === faultApp._generation) this.setData({ error: error.message || '提交失败，请重试', needsLogin: !faultApp.globalData.token });

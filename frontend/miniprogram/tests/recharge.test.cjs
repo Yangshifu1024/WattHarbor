@@ -48,3 +48,14 @@ test('recharge rejects numeric user IDs before accessing private retry storage',
  await p.onShow();assert.match(p.data.error,/充值记录响应异常/);assert.equal(p._key,null);
  p.data.amount='10';await p.submit();assert.equal(f.posts.length,0);assert.equal(f.storage.size,0);
 });
+
+ test('record confirmation releases only the matching pending recharge and leaves unknown results recoverable',async()=>{
+ const f=fixture(),p=f.create();f.storage.set('cp_wallet_recharge_7',{request_id:'original',amount_cents:1000});
+ let rows=[{request_id:'other',amount_cents:1000,status:'paid'}];
+ f.app.request=async()=>({user_id:'7',items:rows});
+ await p.onShow();assert.equal(p.data.pending,true);
+ rows=[{request_id:'original',amount_cents:999,status:'paid'}];await p.load();assert.equal(p.data.pending,true);
+ rows=[{request_id:'original',amount_cents:1000,status:'initiated'}];await p.load();assert.equal(p.data.pending,true);
+ rows=[{request_id:'original',amount_cents:1000,status:'partially_refunded'}];await p.load();
+ assert.equal(p.data.pending,false);assert.equal(p.data.amount,'');assert.equal(f.storage.size,0);
+ });

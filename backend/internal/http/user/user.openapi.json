@@ -1093,7 +1093,9 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,19}$",
+            "description": "十进制工单编号，避免 JavaScript 大整数精度丢失"
           },
           "device_id": {
             "type": "string"
@@ -1790,11 +1792,9 @@
             "format": "date-time",
             "description": "出账时间"
           },
-          "read_at": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "description": "用户已读时间；未读为 null"
+          "read": {
+            "type": "boolean",
+            "description": "当前用户是否已有已读凭据"
           }
         }
       },
@@ -1840,9 +1840,9 @@
               "id": {
                 "type": "string"
               },
-              "read_at": {
-                "type": "string",
-                "format": "date-time"
+              "read": {
+                "type": "boolean",
+                "description": "已读凭据保存成功"
               }
             }
           }

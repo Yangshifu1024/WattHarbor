@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { Button, Input, View } from "@tarojs/components";
+import { Button, Input, Text, View } from "@tarojs/components";
 import { useController } from "../../runtime";
 import { HOME_TABS, TabBar } from "../../runtime/TabBar";
 import { inlineStyle, StationMap } from "../../runtime/components";
@@ -11,7 +11,7 @@ const { amount, items, page, hasMore, loading, paying, pending, error, notice, n
 return (<><View className="container">{!!(needsLogin) && (<View className="card"><Button onClick={event("login", {})}>{"微信登录"}</Button></View>)}
 {!!(!(needsLogin)) && (<View className="card"><View>{"钱包充值（元）"}</View>
 <Input type="digit" value={amount} disabled={pending || paying} onInput={event("inputAmount", {})} placeholder="请输入充值金额"></Input>
-<Button onClick={event("submit", {})} loading={paying} disabled={paying || loading}>{pending ? '继续原充值单 / 核实结果' : '微信支付充值'}</Button>
+<Button onClick={event("submit", {})} loading={paying} disabled={paying || loading}><Text>{pending ? '继续原充值单 / 核实结果' : '微信支付充值'}</Text></Button>
 <View>{"到账以服务端支付结果为准，取消或网络中断后可继续同一笔充值。"}</View></View>)}
 {!!(error) && (<View className="card">{error}</View>)}
 {!!(notice) && (<View className="card">{notice}</View>)}

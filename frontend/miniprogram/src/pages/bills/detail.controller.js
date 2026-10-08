@@ -29,7 +29,7 @@ export default defineController({
       if (this._readBillID === bill.id && this._readConfirmed) view.unread = false;
       this.setData({ bill: view });
       // 账单已渲染后再等待已读凭据：保存失败不影响展示，读取与已读仍是两个独立事实。
-      if (!bill.read_at) await this.markRead();
+      if (!bill.read_at && bill.read !== true) await this.markRead();
     } catch (e) { if (!this._gone && generation === this._generation) this.setData({ error: e.message || '账单详情加载失败', needsLogin: !billApp.globalData.token }); }
     finally { if (!this._gone && generation === this._generation) this.setData({ loading: false }); }
   },

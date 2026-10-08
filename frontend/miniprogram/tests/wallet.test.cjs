@@ -5,7 +5,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 function page(name,app,wxOverrides={}){
   let p;vm.runInNewContext(controllerSource(controllerPath('pages/wallet/'+name+'.js')),{
-    getApp:()=>app,Page:value=>p=value,wx:{stopPullDownRefresh(){},navigateTo(){},...wxOverrides},
+    require:require('node:module').createRequire(controllerPath('pages/wallet/'+name+'.js')),getApp:()=>app,Page:value=>p=value,wx:{stopPullDownRefresh(){},navigateTo(){},...wxOverrides},
   });
   p._generation=0;p._gone=false;p.setData=value=>Object.assign(p.data,value);return p;
 }
@@ -19,7 +19,7 @@ test('wallet failures are visible rather than a zero balance',async()=>{
 test('ledger load-more retry retains successful page and sends the chosen filter',async()=>{
   let fail=false;let query;
   const p=page('txns',{globalData:{token:'access'},request:async(_,__,q)=>{query=q;if(fail)throw Error('offline');return {total:2,items:[txn(q.page,-877)]};}});
-  p.data.statusIndex=2;await p.load(true);assert.equal(query.type,'consume');assert.equal(p.data.items[0].amountText,'-8.77');
+  p.data.statusIndex=2;await p.load(true);assert.equal(query.direction,'out');assert.equal(p.data.items[0].amountText,'-8.77');
   fail=true;await p.load(false);assert.equal(p.data.page,1);assert.equal(p.data.items.length,1);
   fail=false;await p.load(false);assert.equal(p.data.page,2);assert.equal(p.data.items.length,2);
 });
@@ -93,4 +93,9 @@ test('refund rejects numeric user IDs before accessing private retry storage',as
  const f=refundFixture(),p=f.open();f.app.request=async()=>({user_id:9223372036854775807,items:[],total:0});
  await p.onShow();assert.match(p.data.error,/退款列表响应异常/);assert.equal(p._storageKey,null);
  p.data.amount='10';await p.submit();assert.equal(f.posts.length,0);assert.equal(f.storage.size,0);
+});
+
+test('unsigned outgoing refund is shown as debit and uses the server business type',async()=>{
+ const p=page('txns',{globalData:{token:'t'},request:async()=>({items:[{direction:'out',biz_type:'refund',amount_cents:100,balance_after_cents:900,note:'已原路退回'}],total:1})});
+ await p.load(true);assert.equal(p.data.items[0].amountText,'-1.00');assert.equal(p.data.items[0].typeText,'退款 · 支出');assert.equal(p.data.items[0].remark,'已原路退回');
 });
