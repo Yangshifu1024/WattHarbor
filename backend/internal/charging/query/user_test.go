@@ -90,6 +90,8 @@ func userQueryService() (*userQueryFixture, UserService, time.Time) {
 // TestUserQueryOwnershipPrecedesAllSupplementalReads 验证所有组合入口先归属、取消不启动补充IO。
 func TestUserQueryOwnershipPrecedesAllSupplementalReads(t *testing.T) {
 	f, s, _ := userQueryService()
+	live := &liveFixture{raw: durationSnapshot(t)}
+	s.Live = LiveService{Gateway: live, Orders: live, Cards: live}
 	for _, call := range []func(context.Context, uint64) error{
 		func(ctx context.Context, uid uint64) error { _, err := s.Detail(ctx, uid, "original"); return err },
 		func(ctx context.Context, uid uint64) error { _, err := s.Snapshot(ctx, uid, "original"); return err },
@@ -111,8 +113,80 @@ func TestUserQueryOwnershipPrecedesAllSupplementalReads(t *testing.T) {
 			t.Fatalf("cancel=%v", err)
 		}
 	}
-	if f.reads != 0 || f.telemetryCalls != 0 || f.historyCalls != 0 {
+	if f.reads != 0 || f.telemetryCalls != 0 || f.historyCalls != 0 || live.evidenceCalls != 0 {
 		t.Fatal("denied/cancelled request started supplemental reads")
+	}
+}
+
+// TestUserSnapshotSharesAdminEstimateWithoutConfirmingFees 验证同一观测及冻结套餐得到后台相同预估，且不产生确认费用。
+func TestUserSnapshotSharesAdminEstimateWithoutConfirmingFees(t *testing.T) {
+	f, s, now := userQueryService()
+	f.fees = map[uint64]order.FeeFacts{}
+	f.row.StartedAt.Time = now.Add(-time.Minute)
+	live := &liveFixture{raw: durationSnapshot(t)}
+	service := LiveService{Gateway: live, Orders: live, Cards: live, Now: s.Now}
+	s.Live = service
+	out, err := s.Snapshot(t.Context(), 7, "original")
+	if err != nil || out.Live == nil || out.Live.Fee == nil || out.Live.Fee.TotalCents != 10 || out.TotalCents != nil || out.ElectricCents != nil || out.ServiceCents != nil {
+		t.Fatalf("snapshot=%+v err=%v", out, err)
+	}
+	admin := []order.OrderView{{OrderID: f.row.ID, DeviceID: f.row.DeviceID, PortNo: f.row.PortNo, Status: f.row.Status, StartedAt: out.StartedAt}}
+	service.Fill(t.Context(), admin)
+	if admin[0].Live == nil || admin[0].Live.Fee == nil || *admin[0].Live.Fee != *out.Live.Fee || out.Live.Stale {
+		t.Fatal("user estimate differs from admin or incorrectly stale")
+	}
+	f.fees[f.row.ID] = order.FeeFacts{OrderID: f.row.ID}
+	out, err = s.Snapshot(t.Context(), 7, "original")
+	if err != nil || out.TotalCents == nil || *out.TotalCents != 0 || out.Live.Fee.TotalCents != 10 {
+		t.Fatal("estimate overwrote confirmed zero")
+	}
+	for _, status := range []string{"paid", "completed"} {
+		f.row.Status = status
+		before := live.evidenceCalls
+		out, err = s.Snapshot(t.Context(), 7, "original")
+		if err != nil || out.Live != nil || live.evidenceCalls != before {
+			t.Fatal("noncharging snapshot estimated fees")
+		}
+	}
+}
+
+// TestUserSnapshotEstimateFailurePreservesTelemetry 验证估价取证失败仍展示遥测、不完整证据不输出费用，陈旧量明确标记。
+func TestUserSnapshotEstimateFailurePreservesTelemetry(t *testing.T) {
+	for _, fault := range []string{"first_batch", "snapshot", "incomplete", "stale"} {
+		t.Run(fault, func(t *testing.T) {
+			f, s, now := userQueryService()
+			f.fees = map[uint64]order.FeeFacts{}
+			power := float64(6000)
+			f.telemetry.Series = []contract.CurvePoint{{TS: now.Format(time.RFC3339), PowerW: &power}}
+			live := &liveFixture{raw: durationSnapshot(t), fault: fault}
+			if fault == "incomplete" {
+				live.mutate = func(p []contract.EvidencePageReply) { p[0].Complete = false; p[0].NextAfterID = 1 }
+			}
+			s.Live = LiveService{Gateway: live, Orders: live, Cards: live, Now: s.Now}
+			out, err := s.Snapshot(t.Context(), 7, "original")
+			if err != nil || out.TotalCents != nil || out.CurrentPowerW == nil || *out.CurrentPowerW != power {
+				t.Fatalf("estimate failure hid telemetry: %+v %v", out, err)
+			}
+			if fault == "stale" {
+				if out.Live == nil || !out.Live.Stale || out.Live.Fee == nil {
+					t.Fatal("old observed estimate lost stale flag")
+				}
+			} else if out.LiveUnavailable == "" && (out.Live == nil || out.Live.Fee != nil || out.Live.FeeUnavailable == "") {
+				t.Fatal("estimate failure produced a readable fee")
+			}
+		})
+	}
+}
+
+// TestUserSnapshotEstimateCancellationStopsTelemetry 验证估价阶段请求取消不继续遥测读取。
+func TestUserSnapshotEstimateCancellationStopsTelemetry(t *testing.T) {
+	f, s, _ := userQueryService()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	live := &liveFixture{raw: durationSnapshot(t), cancel: cancel}
+	s.Live = LiveService{Gateway: live, Orders: live, Cards: live}
+	if _, err := s.Snapshot(ctx, 7, "original"); !errors.Is(err, context.Canceled) || f.telemetryCalls != 0 {
+		t.Fatalf("cancelled estimate continued reads: %v", err)
 	}
 }
 

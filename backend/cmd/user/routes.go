@@ -136,6 +136,11 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 			Fees:    feeRepo,
 			State:   chargingquery.UserStateRepo{DB: orm},
 			Gateway: stopGateway,
+			Live: chargingquery.LiveService{
+				Gateway: stopGateway,
+				Orders:  ordercase.SnapshotRepo{DB: orm},
+				Cards:   card.PurchaseQueryRepo{DB: orm},
+			},
 		},
 	}.Register(router)
 	useridentity.PhoneAPI{

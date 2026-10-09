@@ -23,8 +23,9 @@ export default function PageView() {
       <View className='card metric-grid'>
         {s.display?.show_power && <View><Text className='text-secondary'>实时功率</Text><Text className='metric-value'>{s.powerText}{s.powerText !== '暂无数据' && !s.display.hide_unit ? ' W' : ''}</Text></View>}
         {s.display?.show_energy && <View><Text className='text-secondary'>累计电量</Text><Text className='metric-value'>{s.energyText}{s.energyText !== '暂无数据' && !s.display.hide_unit ? ' kWh' : ''}</Text></View>}
-        <View><Text className='text-secondary'>当前费用</Text><Text className='metric-value'>{s.feeText}</Text></View>
+        <View><Text className='text-secondary'>{s.feeLabel}</Text><Text className='metric-value'>{s.feeText}</Text></View>
       </View>
+      {s.feeNotice && <Notice>{s.feeNotice}</Notice>}
       {s.status === 'charging' && <View className='card'>
         {!s.telemetry_available && <View className='text-secondary'>暂未收到实时遥测数据。</View>}
         <View className='money-row'><Text>电压</Text><Text>{s.voltageText}{s.voltageText !== '暂无数据' ? ' V' : ''}</Text></View>

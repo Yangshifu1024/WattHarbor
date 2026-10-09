@@ -31,12 +31,19 @@ type UserCurveReader interface {
 	HistoricalCurve(ctx context.Context, q gatewaycontract.HistoricalCurveRequest) (gatewaycontract.HistoricalCurveReply, error)
 }
 
-// UserService 拥有用户充电详情、状态补充和曲线窗口；原确认金额与遥测展示保持独立。
+// UserLiveReader 提供已授权订单的实时估算，只填充公开读模型，不写入结算费用。
+type UserLiveReader interface {
+	// Fill 在 ctx 下为 rows 中充电订单补充观测与预估费用，失败保留不可读取提示。
+	Fill(ctx context.Context, rows []order.OrderView)
+}
+
+// UserService 拥有用户充电详情、状态补充和曲线窗口；确认金额、实时估价与遥测展示保持独立。
 type UserService struct {
 	Orders         UserOrders       // 所属订单隔离读取
 	Fees           order.FeeReader  // 所属结算确认费用，不计算实时估价
 	State          UserStateReader  // 冻结方案、计费进度、截止及原资金摘要
 	Gateway        UserCurveReader  // cmd 注入的具名网关读取
+	Live           UserLiveReader   // cmd 注入与后台同口径的实时估算
 	AllowedWindows []string         // 允许的既定回看窗口；空值使用三个原默认窗口
 	Now            func() time.Time // 可选受控时钟；空值使用当前 UTC 时刻
 }
@@ -106,38 +113,40 @@ type DetailFunds struct {
 
 // UserOrderView 保留原公开字段，确认金额缺失时省略，确认零值则显式输出。
 type UserOrderView struct {
-	OrderNo                  string            `json:"order_no"`                      // 原业务单号
-	Status                   string            `json:"status"`                        // 原订单状态
-	DeviceID                 string            `json:"device_id"`                     // 原设备身份
-	PortNo                   uint8             `json:"port_no"`                       // 原物理端口
-	StartedAt                *time.Time        `json:"started_at"`                    // 原开始 UTC 时刻，可空
-	EndedAt                  *time.Time        `json:"ended_at"`                      // 原结束 UTC 时刻，可空
-	ChargedKWh               any               `json:"charged_kwh"`                   // 原确认 DECIMAL 文本或未结束时观测数值；缺失为空
-	ChargedSeconds           *int64            `json:"charged_seconds"`               // 原确认时长，秒，可空
-	DiscountCents            int64             `json:"discount_cents"`                // 原优惠，分
-	ElectricCents            *int64            `json:"electric_cents,omitempty"`      // 原确认电费，分
-	ServiceCents             *int64            `json:"service_cents,omitempty"`       // 原确认服务费，分
-	TotalCents               *int64            `json:"total_cents,omitempty"`         // 原确认总费，分
-	ShortfallCents           *int64            `json:"shortfall_cents,omitempty"`     // 原确认缺口，分
-	Display                  *charging.Display `json:"display,omitempty"`             // 原冻结展示规则
-	Offer                    any               `json:"offer,omitempty"`               // 有冻结方案时原套餐（包括显式null）；无方案省略
-	Tariff                   any               `json:"tariff,omitempty"`              // 显示资费时原分时规则（包括显式null）
-	TariffLines              *[]string         `json:"tariff_lines,omitempty"`        // 冻结口径资费文案，可为空数组
-	RuleDescription          *string           `json:"rule_description,omitempty"`    // 显示规则时原备注，允许空串
-	BillingStatus            string            `json:"billing_status"`                // 原计费任务状态
-	CardOperations           []CardOperation   `json:"card_operations"`               // 原刷卡操作数组
-	StartConfirmationPending bool              `json:"start_confirmation_pending"`    // 原paid待启动事实
-	BillingCutoff            BillingCutoff     `json:"billing_cutoff"`                // 原首次截止
-	Payment                  *PaymentBrief     `json:"payment,omitempty"`             // 详情支付事实；快照省略
-	Refunds                  *[]map[string]any `json:"refunds,omitempty"`             // 详情原退款数组；快照省略
-	PollContinue             *bool             `json:"poll_continue,omitempty"`       // 快照paid／charging继续轮询
-	NextPollAfterMS          *int              `json:"next_poll_after_ms,omitempty"`  // 原快照轮询间隔，毫秒
-	TelemetryAvailable       *bool             `json:"telemetry_available,omitempty"` // 快照是否有功率或电量观测
-	ElapsedSeconds           *int64            `json:"elapsed_seconds,omitempty"`     // 展示墙钟秒数，不进入计费
-	TelemetryAt              *time.Time        `json:"telemetry_at,omitempty"`        // 最近有效观测 UTC 时刻
-	CurrentPowerW            *float64          `json:"current_power_w,omitempty"`     // 原观测 W，可为零
-	VoltageV                 *float64          `json:"voltage_v,omitempty"`           // 原观测 V，可为零
-	TemperatureC             *float64          `json:"temperature_c,omitempty"`       // 原观测摄氏度，可为零
+	OrderNo                  string                  `json:"order_no"`                      // 原业务单号
+	Status                   string                  `json:"status"`                        // 原订单状态
+	DeviceID                 string                  `json:"device_id"`                     // 原设备身份
+	PortNo                   uint8                   `json:"port_no"`                       // 原物理端口
+	StartedAt                *time.Time              `json:"started_at"`                    // 原开始 UTC 时刻，可空
+	EndedAt                  *time.Time              `json:"ended_at"`                      // 原结束 UTC 时刻，可空
+	ChargedKWh               any                     `json:"charged_kwh"`                   // 原确认 DECIMAL 文本或未结束时观测数值；缺失为空
+	ChargedSeconds           *int64                  `json:"charged_seconds"`               // 原确认时长，秒，可空
+	DiscountCents            int64                   `json:"discount_cents"`                // 原优惠，分
+	ElectricCents            *int64                  `json:"electric_cents,omitempty"`      // 原确认电费，分
+	ServiceCents             *int64                  `json:"service_cents,omitempty"`       // 原确认服务费，分
+	TotalCents               *int64                  `json:"total_cents,omitempty"`         // 原确认总费，分
+	Live                     *charging.LiveMeterView `json:"live,omitempty"`                // 快照的观测与预估费用，不能作为结算金额
+	LiveUnavailable          string                  `json:"live_unavailable,omitempty"`    // 快照实时估算不可读取的原因，正常为空
+	ShortfallCents           *int64                  `json:"shortfall_cents,omitempty"`     // 原确认缺口，分
+	Display                  *charging.Display       `json:"display,omitempty"`             // 原冻结展示规则
+	Offer                    any                     `json:"offer,omitempty"`               // 有冻结方案时原套餐（包括显式null）；无方案省略
+	Tariff                   any                     `json:"tariff,omitempty"`              // 显示资费时原分时规则（包括显式null）
+	TariffLines              *[]string               `json:"tariff_lines,omitempty"`        // 冻结口径资费文案，可为空数组
+	RuleDescription          *string                 `json:"rule_description,omitempty"`    // 显示规则时原备注，允许空串
+	BillingStatus            string                  `json:"billing_status"`                // 原计费任务状态
+	CardOperations           []CardOperation         `json:"card_operations"`               // 原刷卡操作数组
+	StartConfirmationPending bool                    `json:"start_confirmation_pending"`    // 原paid待启动事实
+	BillingCutoff            BillingCutoff           `json:"billing_cutoff"`                // 原首次截止
+	Payment                  *PaymentBrief           `json:"payment,omitempty"`             // 详情支付事实；快照省略
+	Refunds                  *[]map[string]any       `json:"refunds,omitempty"`             // 详情原退款数组；快照省略
+	PollContinue             *bool                   `json:"poll_continue,omitempty"`       // 快照paid／charging继续轮询
+	NextPollAfterMS          *int                    `json:"next_poll_after_ms,omitempty"`  // 原快照轮询间隔，毫秒
+	TelemetryAvailable       *bool                   `json:"telemetry_available,omitempty"` // 快照是否有功率或电量观测
+	ElapsedSeconds           *int64                  `json:"elapsed_seconds,omitempty"`     // 展示墙钟秒数，不进入计费
+	TelemetryAt              *time.Time              `json:"telemetry_at,omitempty"`        // 最近有效观测 UTC 时刻
+	CurrentPowerW            *float64                `json:"current_power_w,omitempty"`     // 原观测 W，可为零
+	VoltageV                 *float64                `json:"voltage_v,omitempty"`           // 原观测 V，可为零
+	TemperatureC             *float64                `json:"temperature_c,omitempty"`       // 原观测摄氏度，可为零
 }
 
 // now 返回 s 的本次受控 UTC 时刻，无存储或网络 IO。
@@ -231,7 +240,7 @@ func (s UserService) Detail(ctx context.Context, userID uint64, raw string) (Use
 
 // Snapshot 在 ctx 下先校验 userID 对 raw 的归属，再补充最近两分钟的原端口观测。
 // 网关失败保持原快照成功且telemetry_available=false；所属存储失败不伪造空状态。
-// 墙钟秒数仅展示，观测不覆盖确认费用，已结束订单不读取遥测。
+// 墙钟秒数仅展示，live复用后台实时估价且不覆盖确认费用，已结束订单不读取遥测或估价。
 func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (UserOrderView, error) {
 	row, err := s.Orders.Resolve(ctx, userID, raw)
 	if err != nil {
@@ -249,6 +258,18 @@ func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (U
 	out.TelemetryAvailable = &available
 	if row.Status != "charging" || !row.StartedAt.Valid {
 		return out, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+	if s.Live != nil {
+		// 先完成用户归属校验，再向既有估价用例传入该单身份；确认金额字段保持原值。
+		rows := []order.OrderView{{OrderID: row.ID, DeviceID: row.DeviceID, PortNo: row.PortNo, Status: row.Status, StartedAt: out.StartedAt}}
+		s.Live.Fill(ctx, rows)
+		out.Live, out.LiveUnavailable = rows[0].Live, rows[0].LiveUnavailable
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
 	}
 	now := s.now()
 	elapsed := max(int64(0), int64(now.Sub(row.StartedAt.Time).Seconds()))

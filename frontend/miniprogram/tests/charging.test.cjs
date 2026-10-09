@@ -9,6 +9,20 @@ function setup(app){
  const p={...definition,data:structuredClone(definition.data)};p.setData=v=>Object.assign(p.data,v);p.onLoad({order_no:'ORD:1'});return {p,timers,navigations};
 }
 const snap=status=>({order_id:1,order_no:'ORD:1',status,poll_continue:['paid','charging','pending_payment'].includes(status),next_poll_after_ms:5000,current_power_w:null,current_fee_cents:null,elapsed_seconds:null});
+test('charging fees distinguish live estimates, stale readings, confirmed zero and unavailable prices',async()=>{
+ const cases=[
+  [{live:{fee:{total_cents:12},stale:false}},'≈¥0.12','预估费用','预估费用仅供参考，最终以结算账单为准。'],
+  [{live:{fee:{total_cents:0},stale:true}},'≈¥0.00（旧）','预估费用','计量数据超过 30 秒未更新，显示上次预估；最终以结算账单为准。'],
+  [{total_cents:0,live:{fee:{total_cents:12}}},'¥0.00','当前费用',''],
+  [{live:{fee_unavailable:'缺少订单计费快照'}},'待结算','当前费用','缺少订单计费快照'],
+  [{live:{fee:{total_cents:12}},live_unavailable:'设备计量暂不可读取'},'待结算','当前费用','设备计量暂不可读取'],
+  [{status:'completed',live:{fee:{total_cents:12}}},'待结算','当前费用',''],
+ ];
+ for(const [fields,text,label,notice] of cases){
+  const {p}=setup({globalData:{token:'t'},request:async()=>({...snap('charging'),...fields})});
+  await p.onShow();assert.equal(p.data.snapshot.feeText,text);assert.equal(p.data.snapshot.feeLabel,label);assert.equal(p.data.snapshot.feeNotice,notice);p.onUnload();
+ }
+});
 test('charging page displays pending startup without fabricated telemetry and stops polling at completion',async()=>{
  let state='paid';const {p,timers,navigations}=setup({globalData:{token:'t'},request:async()=>snap(state)});
  await p.onShow();assert.equal(p.data.snapshot.statusLabel,'启动确认中');assert.equal(p.data.snapshot.powerText,'暂无数据');assert.equal(timers.size,1);

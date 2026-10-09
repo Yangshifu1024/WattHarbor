@@ -1910,7 +1910,7 @@
       },
       "ChargeSnapshot": {
         "type": "object",
-        "description": "原订单快照；确认费用与补充遥测独立。网关失败时订单快照仍成功且telemetry_available=false；订单、确认费用及冻结状态存储失败返回503。墙钟elapsed_seconds只用于展示，不参加计费。",
+        "description": "原订单快照；确认费用与补充遥测独立。网关失败时订单快照仍成功且telemetry_available=false；订单、确认费用及冻结状态存储失败返回503。墙钟elapsed_seconds只用于展示，不参加计费。 充电中已授权订单复用后台估价：live.fee 为预估分值，与 total_cents 等确认金额独立；超过30秒的观测标记 stale，取证失败通过 live_unavailable 或 live.fee_unavailable 提示，不伪造零费用。",
         "properties": {
           "order_no": {
             "type": "string"
@@ -2061,6 +2061,13 @@
           "temperature_c": {
             "type": "number",
             "description": "原摄氏度，未报告时省略。"
+          },
+          "live": {
+            "$ref": "#/components/schemas/LiveChargeEstimate"
+          },
+          "live_unavailable": {
+            "type": "string",
+            "description": "实时估算暂不可读取的原因；有此提示时不展示估算金额，正常省略。"
           }
         }
       },
@@ -2109,6 +2116,62 @@
                 "description": "原开始／结束与聚合桶边界不完全对齐。"
               }
             }
+          }
+        }
+      },
+      "LiveChargeEstimate": {
+        "type": "object",
+        "description": "充电中的设备观测与冻结方案预估，不写入最终结算；仅快照返回。",
+        "required": [
+          "at",
+          "stale",
+          "kwh",
+          "seconds"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "最后有效观测时刻。"
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "观测超过30秒未更新。"
+          },
+          "kwh": {
+            "type": "number",
+            "description": "截至最后观测累计电量，单位kWh。"
+          },
+          "seconds": {
+            "type": "integer",
+            "description": "设备已观测充电时长，单位秒。"
+          },
+          "fee": {
+            "type": "object",
+            "description": "冻结方案按观测量计算的预估费用，单位分；不可估价时省略，零费用显式输出0。",
+            "required": [
+              "electric_cents",
+              "service_cents",
+              "total_cents"
+            ],
+            "properties": {
+              "electric_cents": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "service_cents": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "total_cents": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          },
+          "fee_unavailable": {
+            "type": "string",
+            "description": "计量证据或冻结方案不足等无法估价的原因，正常省略。"
           }
         }
       }

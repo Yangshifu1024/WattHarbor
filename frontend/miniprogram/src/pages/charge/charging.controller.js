@@ -3,6 +3,17 @@ const chargingApp=getApp();
 import {findPaymentOrder} from '../../utils/payment-order';
 import {formatOrder} from '../../utils/order';
 const display=value=>value==null ? '暂无数据' : String(value);
+// 确认费用优先；充电中的预估只读取服务端 live，保留零值与过期提示。
+function chargingFee(snapshot){
+ if(snapshot.total_cents!=null)return {feeText:'¥'+(snapshot.total_cents/100).toFixed(2),feeLabel:'当前费用',feeNotice:''};
+ const live=snapshot.status==='charging' ? snapshot.live : null;
+ const unavailable=snapshot.status==='charging' ? snapshot.live_unavailable || live?.fee_unavailable || '' : '';
+ if(!unavailable && Number.isFinite(live?.fee?.total_cents))return {
+  feeText:'≈¥'+(live.fee.total_cents/100).toFixed(2)+(live.stale ? '（旧）' : ''),feeLabel:'预估费用',
+  feeNotice:live.stale ? '计量数据超过 30 秒未更新，显示上次预估；最终以结算账单为准。' : '预估费用仅供参考，最终以结算账单为准。',
+ };
+ return {feeText:'待结算',feeLabel:'当前费用',feeNotice:unavailable};
+}
 export default defineController({
  data:{snapshot:null,loading:false,error:'',needsLogin:false,stopping:false,stopNotice:'',curve:null,curveLoading:false,curveError:'',waitingOrder:false},
  onLoad(query){this._orderId=query.order_id || query.order_no;this._paymentNo=query.payment_no;this._deviceId=query.device_id;this._portNo=Number(query.port_no);this._generation=0;this._viewVersion=0;this._gone=false;},
@@ -28,7 +39,7 @@ export default defineController({
    }
    const s=await chargingApp.request('GET','/user/charge/ongoing/snapshot',{order_id:this._orderId});
    if(this._gone || generation!==this._generation || session!==chargingApp._generation)return;
-   this.setData({snapshot:{...s,display:s.display||{},statusLabel:formatOrder(s).statusLabel,powerText:display(s.current_power_w ?? s.power_w),voltageText:display(s.voltage_v),temperatureText:display(s.temperature_c),energyText:display(s.charged_kwh),durationText:(s.elapsed_seconds??s.charged_seconds)==null ? '暂无数据' : Math.floor((s.elapsed_seconds??s.charged_seconds)/60)+' 分 '+(s.elapsed_seconds??s.charged_seconds)%60+' 秒',feeText:(s.current_fee_cents??s.total_cents)==null ? '待结算' : '¥'+((s.current_fee_cents??s.total_cents)/100).toFixed(2)}});
+   this.setData({snapshot:{...s,display:s.display||{},statusLabel:formatOrder(s).statusLabel,powerText:display(s.current_power_w ?? s.power_w),voltageText:display(s.voltage_v),temperatureText:display(s.temperature_c),energyText:display(s.charged_kwh),durationText:(s.elapsed_seconds??s.charged_seconds)==null ? '暂无数据' : Math.floor((s.elapsed_seconds??s.charged_seconds)/60)+' 分 '+(s.elapsed_seconds??s.charged_seconds)%60+' 秒',...chargingFee(s)}});
    if(s.status==='charging' && s.display?.show_power)await this.loadCurve();
    if(this._gone || generation!==this._generation || session!==chargingApp._generation)return;
    if(!s.poll_continue)this.setData({stopNotice:''});
