@@ -109,7 +109,9 @@ node scripts/db/audit-design.mjs
 
 仅应用 2026-10-09 审查修复结构时使用 `node scripts/db/upgrade-design.mjs --review-fixes` 预检，再执行 `node scripts/db/upgrade-design.mjs --review-fixes --apply`。该范围只补 `central_db.admin_user.mfa_secret_version/mfa_last_step`、`charge_billing_job.generation` 与 `gateway_db.sync_delivery_retry`；执行前仍备份三库，不删除数据或改变 Goose 版本。已有列默认保留原值，新消费记录为空；上线时先补结构，再部署使用新字段及退避接口的 gateway、admin／central 与 worker，避免混用接口版本。生产使用审核后的同等 DDL，而非直接调用仅面向开发编排的脚本。
 
-投递异常可按 `sync_delivery_retry.kind/delivery_key` 查询 `state/attempts/last_reason/next_attempt_at`，`review` 表示待核实，不代表独立人工审核页面已装配。分类只存固定值，核对原命令／事件、冻结请求和端口占用后再处理；禁止通过标记已上报／已处理掩盖未知结果。成功项原元数据保留作诊断，不再进入待投递查询；当前没有自动清理任务。
+投递异常可按 `sync_delivery_retry.kind/delivery_key` 查询 `state/attempts/last_reason/next_attempt_at`，`review` 表示待核实，不代表独立人工审核页面已装配。分类只存固定值，核对原命令／事件、冻结请求和端口占用后再处理；禁止通过标记已上报／已处理掩盖未知结果。成功项退避与源记录标记同事务删除；迟到失败不会重建已完成项。gateway 在启动时及每小时清理30天前已完成或缺源的历史，每轮最多500条短事务，取消后等待任务退出再关闭资源。未完成的 `review/retry` 即使超过30天也保留；持续增加表示待处理业务异常积压，不能通过TTL删除来隐藏。清理错误记录为 `sync delivery history cleanup`，下轮继续。
+
+结束候选使用 `device_event.idx_pending_type(event_type,processed_at,id)`；退避关联键显式使用 `ascii_bin`，避免连接字符集导致仅利用复合主键的kind前缀。旧开发库以全量兼容预检／`--apply` 补这两项索引（另一项为退避的 `idx_updated`）；`--review-fixes` 只补退避表索引，结束候选索引沿用全量入口。两条同步查询仍有跨表到期排序，EXPLAIN通过不构成规模吞吐验收。
 
 [audit-design.mjs](../scripts/db/audit-design.mjs) 在同一只读一致性快照核对钱包余额与流水、冻结额与未结分摊、支付已退与成功退款、资金来源归属及跨月业务号。零差异返回 0、存在差异返回 2、执行故障返回 1；只输出类别和数量。导入余额缺少期初流水、已归档流水、外部渠道尚未对账，都需要进一步核实，不能据此直接改余额或判定渠道账实一致。
 

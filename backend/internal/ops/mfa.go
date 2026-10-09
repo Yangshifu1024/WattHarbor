@@ -200,7 +200,7 @@ func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string,
 				return ErrMFAState
 			}
 			step, err := auth.VerifyTOTP(*account.MFASecret, in.Code, time.Now().UTC())
-			if err != nil || (account.MFALastStep != nil && step <= *account.MFALastStep) {
+			if err != nil {
 				return ErrMFAProof
 			}
 			if err := consumeAdminTOTPStep(tx, account, step); err != nil {

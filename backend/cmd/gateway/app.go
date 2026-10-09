@@ -39,11 +39,11 @@ func run(ctx context.Context) (err error) {
 	return app.Run(ctx)
 }
 
-// application 管理 HTTP 服务、设备接入和停止重试，资源由 run 释放。
+// application 管理HTTP、设备接入、停止重试与投递历史清理，资源由run在所有任务退出后释放。
 type application struct {
 	// Server 是随应用启动和退出的 HTTP 服务。
 	Server *http.Server
-	// Devices 管理设备监听、事件记录和停止重试。
+	// Devices 管理设备监听、事件记录、停止重试与投递历史清理。
 	Devices gatewayruntime.Runtime
 }
 
@@ -77,16 +77,18 @@ func assemble(cfg config.Gateway, r *resources) (*application, error) {
 			MaxConnections: cfg.MaxConnections,
 			Compensation:   compensation,
 			UserStops:      userStops,
+			SyncHistory:    sink,
 		},
 	}, nil
 }
 
-// Run 同时运行 HTTP、设备接入和停止重试；任一出错时取消其他任务并等待全部退出。
+// Run 同时运行HTTP、设备接入、停止重试与历史清理；任一出错时取消其他任务并等待全部退出。
 func (a *application) Run(ctx context.Context) error {
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error { return httpapi.Serve(groupCtx, a.Server, 10*time.Second) })
 	group.Go(func() error { return a.Devices.Serve(groupCtx) })
 	group.Go(func() error { return a.Devices.RetryStops(groupCtx) })
+	group.Go(func() error { return a.Devices.CleanupSyncHistory(groupCtx) })
 	if err := group.Wait(); err != nil {
 		return fmt.Errorf("gateway: %w", err)
 	}

@@ -53,14 +53,15 @@ func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	count := 0
-	var first error
+	var failures syncBatchErrors
 	processed := make([]uint64, 0, len(items))
 	fail := func(item gatewaycontract.SyncEvent, category string, cause error) {
-		first = errors.Join(first, cause, s.Gateway.DeferSyncDelivery(ctx, gatewaycontract.DeferSyncDeliveryRequest{Kind: "end", Key: strconv.FormatUint(item.ID, 10), Category: category}))
+		key := strconv.FormatUint(item.ID, 10)
+		failures.add("end", key, cause, s.Gateway.DeferSyncDelivery(ctx, gatewaycontract.DeferSyncDeliveryRequest{Kind: "end", Key: key, Category: category}))
 	}
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
-			return count, errors.Join(first, err)
+			return count, errors.Join(failures.err(), err)
 		}
 		var event protocol.Event
 		if err := json.Unmarshal([]byte(item.Payload), &event); err != nil {
@@ -110,8 +111,8 @@ func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 	}
 	if len(processed) > 0 {
 		if _, err := s.Gateway.MarkDeviceEventsProcessed(ctx, processed); err != nil {
-			return count, errors.Join(first, err)
+			return count, errors.Join(failures.err(), err)
 		}
 	}
-	return count, first
+	return count, failures.err()
 }

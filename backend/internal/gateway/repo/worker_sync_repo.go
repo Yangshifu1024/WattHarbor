@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -12,7 +13,7 @@ import (
 func ListStartResults(ctx context.Context, db *gorm.DB, commandID string) ([]SyncCommandRow, error) {
 	query := db.WithContext(ctx).Model(&SyncCommandRow{}).
 		Select("charge_command.*").
-		Joins("LEFT JOIN sync_delivery_retry x ON x.kind='start' AND x.delivery_key=charge_command.command_id").
+		Joins("LEFT JOIN sync_delivery_retry x ON x.kind='start' AND x.delivery_key=CONVERT(charge_command.command_id USING ascii) COLLATE ascii_bin").
 		Where("charge_command.status IN ('acked','rejected') AND result_reported = FALSE AND result_code IS NOT NULL AND ack_at IS NOT NULL").
 		Where("x.next_attempt_at IS NULL OR x.next_attempt_at<=UTC_TIMESTAMP(3)")
 	if commandID != "" {
@@ -24,7 +25,7 @@ func ListStartResults(ctx context.Context, db *gorm.DB, commandID string) ([]Syn
 }
 
 // MarkStartResultsReported 按输入顺序在同一事务内标记命令已上报。
-// 任一失败整批回滚；只有 err=nil 时，返回计数才代表已提交的影响行数。
+// 标记及退避删除同事务；只删除源记录已完成或缺失的退避。失败整批回滚，计数仅在err=nil时有效。
 func MarkStartResultsReported(ctx context.Context, db *gorm.DB, commandIDs []string) (int, error) {
 	marked := 0
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -36,6 +37,9 @@ func MarkStartResultsReported(ctx context.Context, db *gorm.DB, commandIDs []str
 				return res.Error
 			}
 			marked += int(res.RowsAffected)
+			if err := deleteSyncRetry(tx, "start", id); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -43,7 +47,7 @@ func MarkStartResultsReported(ctx context.Context, db *gorm.DB, commandIDs []str
 }
 
 // MarkDeviceEventsProcessed 按输入顺序在同一事务内标记事件已处理，重复请求不重复更新。
-// 任一失败整批回滚；只有 err=nil 时，返回计数才代表已提交的影响行数。
+// 标记及退避删除同事务；仍未处理的源记录保留退避。失败整批回滚，计数仅在err=nil时有效。
 func MarkDeviceEventsProcessed(ctx context.Context, db *gorm.DB, ids []uint64) (int, error) {
 	marked := 0
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -53,6 +57,9 @@ func MarkDeviceEventsProcessed(ctx context.Context, db *gorm.DB, ids []uint64) (
 				return err
 			}
 			marked += int(affected)
+			if err := deleteSyncRetry(tx, "end", strconv.FormatUint(id, 10)); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -65,7 +72,7 @@ func ListUnprocessedEndEvents(ctx context.Context, db *gorm.DB) ([]SyncEventRow,
 	var rows []SyncEventRow
 	err := db.WithContext(ctx).
 		Select("device_event.id, event_json").
-		Joins("LEFT JOIN sync_delivery_retry x ON x.kind='end' AND x.delivery_key=CAST(device_event.id AS CHAR)").
+		Joins("LEFT JOIN sync_delivery_retry x ON x.kind='end' AND x.delivery_key=CAST(device_event.id AS CHAR CHARACTER SET ascii) COLLATE ascii_bin").
 		Where("event_type = 'charge_end' AND processed_at IS NULL AND JSON_EXTRACT(event_json, '$.ConsumerType') IN (2,3)").
 		Where("x.next_attempt_at IS NULL OR x.next_attempt_at<=UTC_TIMESTAMP(3)").
 		Order("COALESCE(x.next_attempt_at,device_event.received_at),device_event.id").Limit(50).Find(&rows).Error

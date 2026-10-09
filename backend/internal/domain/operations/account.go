@@ -16,6 +16,8 @@ var (
 	ErrMFA = errors.New("此账号已启用双因素认证，当前登录入口暂不支持")
 	// ErrInvalidTOTP 表示动态验证码错误或过期。
 	ErrInvalidTOTP = errors.New("验证码无效或已过期")
+	// ErrUsedTOTP 表示验证码正确，但该步或更新的时间步已消费；拒绝重放，不计坏码次数。
+	ErrUsedTOTP = errors.New("该验证码已使用，请等待下一个验证码")
 	// ErrInvalidRefresh 表示刷新令牌无效或已过期。
 	ErrInvalidRefresh = errors.New("invalid or expired refresh token")
 	// ErrInvalidMFAChallenge 表示登录挑战不存在、已经过期，或已被一次成功的二次验证用掉。

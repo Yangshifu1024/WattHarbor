@@ -447,7 +447,7 @@ func testConcurrentMFAConsumption(t *testing.T, different bool) {
 			if err := repo.RevokeSession(context.Background(), sid); err != nil {
 				t.Fatal(err)
 			}
-		} else if !errors.Is(r.err, operations.ErrInvalidMFAChallenge) && !errors.Is(r.err, operations.ErrInvalidTOTP) {
+		} else if !errors.Is(r.err, operations.ErrInvalidMFAChallenge) && !errors.Is(r.err, operations.ErrUsedTOTP) {
 			t.Fatal(r.err)
 		}
 	}
@@ -484,7 +484,7 @@ func testConcurrentMFAConsumption(t *testing.T, different bool) {
 		}
 		consumed := 0
 		consume := func(context.Context) error { consumed++; return nil }
-		if _, err := (AccountRepo{DB: second}).CompleteMFA(ctx, current.Identity(), code, "replay", consume); !errors.Is(err, operations.ErrInvalidTOTP) || consumed != 0 {
+		if _, err := (AccountRepo{DB: second}).CompleteMFA(ctx, current.Identity(), code, "replay", consume); !errors.Is(err, operations.ErrUsedTOTP) || consumed != 0 {
 			t.Fatalf("new auth version replay=%v consumed=%d", err, consumed)
 		}
 		next, err := auth.TOTPCode(secret, time.Unix((last+1)*30, 0))

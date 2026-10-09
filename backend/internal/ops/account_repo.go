@@ -134,7 +134,7 @@ func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (
 }
 
 // CompleteMFA 锁定账号后核对版本和验证码，成功前原子删除已验证挑战。
-// 锁定、版本过期或坏码不删除挑战；坏码次数和审计同事务保存。
+// 锁定、版本过期、已消费的正确码或坏码不删除挑战；只有坏码累计失败次数并保存失败审计。
 // 删除挑战后 SQL 失败只回滚 SQL，须重新用密码登录。
 func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.AccountIdentity, code, ip string, consume func(context.Context) error) (AdminAccount, error) {
 	var account AdminAccount
@@ -157,7 +157,10 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 			return operations.ErrCredentials
 		}
 		step, verifyErr := auth.VerifyTOTP(*account.MFASecret, code, now)
-		if verifyErr != nil || (account.MFALastStep != nil && step <= *account.MFALastStep) {
+		if verifyErr == nil && account.MFALastStep != nil && step <= *account.MFALastStep {
+			return operations.ErrUsedTOTP
+		}
+		if verifyErr != nil {
 			attempts := account.FailedLoginCount + 1
 			if account.LockedUntil.Valid && !account.LockedUntil.Time.After(now) {
 				attempts = 1

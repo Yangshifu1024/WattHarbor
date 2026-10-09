@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"chargepilot/internal/domain/operations"
 	"context"
 	"encoding/json"
 	"errors"
@@ -184,8 +185,8 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 		t.Fatal("MFA challenge contract changed")
 	}
 	t.Cleanup(func() { cache.Del(ctx, "admin:mfa:"+challenge.Challenge) })
-	if w := call("POST", "/api/v1/admin/auth/mfa", map[string]any{"mfa_challenge": challenge.Challenge, "code": code}, "", ""); w.Code != 401 {
-		t.Fatalf("enrollment proof replay=%d", w.Code)
+	if w := call("POST", "/api/v1/admin/auth/mfa", map[string]any{"mfa_challenge": challenge.Challenge, "code": code}, "", ""); w.Code != 401 || !strings.Contains(w.Body.String(), operations.ErrUsedTOTP.Error()) {
+		t.Fatalf("enrollment proof replay=%d %s", w.Code, w.Body.String())
 	}
 	code, err = auth.TOTPCode(enrolled.Secret, time.Now())
 	if err != nil {

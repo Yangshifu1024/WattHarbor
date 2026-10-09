@@ -167,6 +167,7 @@ CREATE TABLE `device_event` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_event_key` (`event_key`),
   KEY `idx_unprocessed` (`processed_at`,`id`),
+  KEY `idx_pending_type` (`event_type`,`processed_at`,`id`),
   KEY `idx_device_time` (`device_id`,`received_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备事件及原始上下文';
 
@@ -362,7 +363,8 @@ CREATE TABLE `sync_delivery_retry` (
   `last_reason` enum('invalid','unknown','dependency','retry') DEFAULT NULL COMMENT '固定脱敏分类：无效记录、未知结果、缺依赖、投递重试',
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最近元数据变更时间',
   PRIMARY KEY (`kind`,`delivery_key`),
-  KEY `idx_retry_due` (`next_attempt_at`,`kind`)
+  KEY `idx_retry_due` (`next_attempt_at`,`kind`),
+  KEY `idx_updated` (`updated_at`,`kind`,`delivery_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备业务同步投递退避与核实记录，不覆盖业务状态';
 
 -- +goose Down

@@ -190,8 +190,11 @@ func UpdateAdminMFASecret(tx *gorm.DB, id uint64, secret *string, enabled bool, 
 
 // consumeAdminTOTPStep 在调用方持有账号行锁的事务内消费 account 当前密钥代际的 step。
 // step 为 VerifyTOTP 的成功结果；拒绝旧步或重复步。错误由调用方回滚安全状态及审计。
-// ctx 沿用 tx；函数不提交事务、不写日志或返回密钥，版本及步数失配返回验证码错误。
+// ctx 沿用 tx；函数不提交事务、不写日志或返回密钥；已消费步返回 ErrUsedTOTP，版本失配返回验证码错误。
 func consumeAdminTOTPStep(tx *gorm.DB, account AdminAccount, step int64) error {
+	if account.MFALastStep != nil && step <= *account.MFALastStep {
+		return operations.ErrUsedTOTP
+	}
 	res := tx.Table("admin_user").Where("id=? AND mfa_secret_version=? AND (mfa_last_step IS NULL OR mfa_last_step<?)", account.ID, account.MFASecretVersion, step).
 		Update("mfa_last_step", step)
 	if res.Error != nil {

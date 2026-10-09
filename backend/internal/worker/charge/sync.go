@@ -46,14 +46,14 @@ func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	count := 0
-	var firstError error
+	var failures syncBatchErrors
 	reported := make([]string, 0, len(rows))
 	fail := func(row gatewaycontract.SyncCommand, category string, cause error) {
-		firstError = errors.Join(firstError, cause, s.Gateway.DeferSyncDelivery(ctx, gatewaycontract.DeferSyncDeliveryRequest{Kind: "start", Key: row.CommandID, Category: category}))
+		failures.add("start", row.CommandID, cause, s.Gateway.DeferSyncDelivery(ctx, gatewaycontract.DeferSyncDeliveryRequest{Kind: "start", Key: row.CommandID, Category: category}))
 	}
 	for _, row := range rows {
 		if err := ctx.Err(); err != nil {
-			return count, errors.Join(firstError, err)
+			return count, errors.Join(failures.err(), err)
 		}
 		if row.PortID == nil || *row.PortID <= 0 || row.ResultCode == nil || row.AckAt == nil || *row.ResultCode < 0 || *row.ResultCode > 255 {
 			fail(row, "invalid", errors.New("invalid persisted start result"))
@@ -87,8 +87,8 @@ func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 	}
 	if len(reported) > 0 {
 		if _, err := s.Gateway.MarkStartResultsReported(ctx, reported); err != nil {
-			return count, errors.Join(firstError, err)
+			return count, errors.Join(failures.err(), err)
 		}
 	}
-	return count, firstError
+	return count, failures.err()
 }

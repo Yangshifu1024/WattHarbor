@@ -383,3 +383,18 @@ go test "-overlay=$probeRoot/proposed.json" ./internal/worker/charge -run '^Test
 - Caddy 语法已在无网络临时容器验证；未执行真实生产启动、网络连通、来源 IP／限流／审计日志验收，模板和内存路由测试不能替代这些结果。
 - 组件事件回归不等于浏览器／跨标签页 E2E；模拟或真库测试不等于实机、真实微信支付或第三方平台验收。
 - 未审计或修正历史错账；`Missing` 仅补账单，不纠正已存在的错误金额。
+
+## 10. 提交 6971688 的复审处理（2026-10-10）
+
+本节记录用户提出的四项后续意见及工作区修复，第9节为首次实施时点的验收记录。本轮修改尚未提交或部署。
+
+| 意见 | 核对结论与处理 | 回归证据 |
+| --- | --- | --- |
+| F05 正确旧码累计失败并锁号 | 成立。登录将正确但已消费／更早步单独返回 `ErrUsedTOTP`，文案为「该验证码已使用，请等待下一个验证码」；不累计坏码、不删除挑战、不发会话。真正坏码保留5次锁定30分钟；来源限速独立生效。 | [真实SQL／Redis回归](../backend/internal/ops/mfa_replay_integration_test.go)：已有4次坏码后重复正确旧码6次仍保持4次且无失败审计；下一步成功；更早正确步拒绝；真正坏码第5次锁定。注册HTTP回归核对启用码立即登录的提示。 |
+| F06 历史退避无清理 | 成立。成功标记与退避删除同事务；迟到失败锁读已完成源记录后不重建。gateway启动及每小时清理30天前已完成／缺源历史，最多500条短事务；先筛除待处理项再限量，删除前重查源状态及更新时间。未完成review/retry不按年龄删除，持续积压仍须业务核实。 | [真实清理回归](../backend/internal/gateway/repo/sync_retry_cleanup_integration_test.go)：清理故障回滚源标记、成功后迟到失败不重建、旧pending不占满清理窗口、过期完成／缺源清理、新记录保留、另一连接刷新后不被删除及0残留；runtime虚拟时钟核对立即执行、每小时继续、错误恢复与取消。 |
+| F06 CAST必然失去索引 | 原论断不充分，真实问题是字符集比较。原START／END的退避查找均为PRIMARY、key_len=1，只使用kind；外侧关联键显式ascii_bin后均为eq_ref、PRIMARY、key_len=67，完整主键查找。保留字符串身份，未增加数字影子列。结束事件新增 `(event_type,processed_at,id)` 候选索引，减少未处理心跳候选。 | 实际MySQL EXPLAIN：`.tmp/followup-sync-explain.log`、`.tmp/followup-sync-explain-after.log`。结束候选实际选用新索引；当前小库估算35→1，仅为计划证据。跨表COALESCE排序仍有temporary/filesort，未声称规模吞吐提升。 |
+| F06 批错误刷屏／诊断遗漏 | 两侧原实现都用errors.Join累积原因，并非只保留首项；单批展开50条确有日志放大。统一为失败数量及首项单行摘要，首项最多256字符；Unwrap保留每条完整原因，errors.Is/As不丢失。 | [摘要与真实批编排回归](../backend/internal/worker/charge/sync_errors_test.go)：50项中央失败均登记退避，继续全部项；单行长度上限；每条原始错误及超时仍可识别。 |
+
+本轮最终执行 `node tasks.mjs check`、`node scripts/db/test-integration.mjs`、`node tasks.mjs build-all` 均通过；真库全仓67个有测试的包通过，0个失败包。根脚本58／58通过、0跳过。日志分别为 `.tmp/followup-check.log`、`.tmp/followup-integration.log`、`.tmp/followup-build.log`、`.tmp/followup-scripts.log`。只读审查发现的测试故障回调退出清理问题已修正并复核闭合，真实回归已重跑。
+
+按现有兼容脚本备份三库后补 `device_event.idx_pending_type` 与 `sync_delivery_retry.idx_updated` 两项索引，备份 `.tmp/db-design-backups/chargepilot-20261009T170502Z.sql.gz` 验证为50,688字节；没有删除开发业务数据、改变Goose版本或修改分区月份。前端本轮没有改动，其测试与构建沿用第9节同一源码的已执行证据；未新增实机、真实支付、生产网络或规模压测证据。

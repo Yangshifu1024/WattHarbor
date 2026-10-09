@@ -44,6 +44,9 @@ for (const schema of ['central_db', 'gateway_db', 'worker_db']) {
       if (sql(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${schema}' AND table_name='${table}';`) === '0') {
         const end = source.indexOf(';', match.index);
         operations.push(source.slice(match.index, end + 1).replace(`CREATE TABLE \`${table}\``, `CREATE TABLE ${target}`));
+      } else if (sql(`SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='${schema}' AND table_name='${table}' AND index_name='idx_updated';`) === '0') {
+        const line = body.split('\n').map(value => value.trim().replace(/,$/, '')).find(value => value.startsWith('KEY `idx_updated`'));
+        operations.push(`ALTER TABLE ${target} ADD ${line};`);
       }
       continue;
     }
@@ -85,7 +88,7 @@ for (const schema of ['central_db', 'gateway_db', 'worker_db']) {
         if (sql(`SELECT data_type FROM information_schema.columns WHERE table_schema='${schema}' AND table_name='${table}' AND column_name='${column[1]}';`) !== 'varbinary') {
           operations.push(`ALTER TABLE ${target} MODIFY COLUMN ${line};`);
         }
-      } else if (index && ['uk_live_openid', 'uk_live_device_id', 'uk_live_port_code', 'uk_sample', 'idx_device_ts', 'idx_device_time', 'idx_port_expiry', 'idx_order_started', 'idx_order_created', 'idx_user_ongoing'].includes(index[1])) {
+      } else if (index && ['uk_live_openid', 'uk_live_device_id', 'uk_live_port_code', 'uk_sample', 'idx_device_ts', 'idx_device_time', 'idx_port_expiry', 'idx_order_started', 'idx_order_created', 'idx_user_ongoing', 'idx_pending_type'].includes(index[1])) {
         if (sql(`SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='${schema}' AND table_name='${table}' AND index_name='${index[1]}';`) === '0') {
           operations.push(`ALTER TABLE ${target} ADD ${line};`);
         }
