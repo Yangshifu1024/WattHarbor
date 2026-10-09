@@ -24,14 +24,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// alertReplyLossTransport 只在真实网关首次标记已提交后丢弃响应，后续使用原Transport，不修改数据库。
+// alertReplyLossTransport 仅丢弃网关首次确认已提交的响应，随后恢复真实传输，不改数据库。
 type alertReplyLossTransport struct {
-	inner http.RoundTripper // 受测试服务管理的实际Transport
+	inner http.RoundTripper // 受测试服务管理的实际 Transport
 	lost  bool              // 首次标记回复已丢弃
 }
 
-// TestConcurrentAlertSyncKeepsOneActiveEpisode 两条独立central连接在首次缺行当前读后同时插入，验证RR间隙锁仲裁后只一条活动告警。
-// 冲突事务保留错误交给原事件下一轮重扫，不内部重试；两真库实际提交并只清理本测试身份。
+// TestConcurrentAlertSyncKeepsOneActiveEpisode 验证两个中央真库连接首次插入同告警时，RR 间隙锁保证仅一条活动告警。
+// 冲突交给下一轮重扫，实际提交后仅清理本测试数据。
 func TestConcurrentAlertSyncKeepsOneActiveEpisode(t *testing.T) {
 	setup, first, second := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
 	gw := importDB(t, "DATABASE_URL_GATEWAY")
@@ -39,12 +39,11 @@ func TestConcurrentAlertSyncKeepsOneActiveEpisode(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	t.Cleanup(func() {
 		for _, item := range []struct {
-			// db 该清理项所属真库的 GORM 句柄；告警记录位于 central，原协议事件位于 gateway，池由测试管理。
+			// db 指定清理所属数据库：告警在 central，协议事件在 gateway。
 			db *gorm.DB
-			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
+			// table、where 配对指定清理表和本测试条件。
 			table, where string
-			// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
-			arg any
+			arg          any
 		}{{setup, "alert_event", "device_id=?", board}, {gw, "device_event", "event_key=?", key}} {
 			if err := item.db.Table(item.table).Where(item.where, item.arg).Delete(nil).Error; err != nil {
 				t.Error(err)
@@ -112,12 +111,11 @@ func TestConcurrentAlertSyncKeepsOneActiveEpisode(t *testing.T) {
 		}
 		t.Cleanup(func() { db.Callback().Query().Remove(callback); db.Callback().Query().Remove(callback + "_scope") })
 	}
-	// result 将真实告警同步用例的新增数量与错误传回测试控制方。
+	// result 汇总告警同步新增数量和错误。
 	type result struct {
-		// raised 真实告警同步调用新增的告警数量，用于核对并发重复事件不重复生成告警。
+		// raised 是本次新增告警数，用于检查重复事件不会重复建告警。
 		raised int
-		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
-		err error
+		err    error
 	}
 	call := func(db *gorm.DB) chan result {
 		ch := make(chan result, 1)
@@ -150,7 +148,7 @@ func TestConcurrentAlertSyncKeepsOneActiveEpisode(t *testing.T) {
 	}
 }
 
-// RoundTrip 执行r的实际请求后仅一次丢弃原标记响应，返回传输未知错误；不重试，不改变请求主键。
+// RoundTrip 执行真实请求，仅首次丢弃确认响应并返回结果未知错误；不重试或改事件主键。
 func (s *alertReplyLossTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	response, err := s.inner.RoundTrip(r)
 	if err == nil && !s.lost && r.URL.Path == "/api/v1/internal/device-faults/mark-processed" {
@@ -161,8 +159,8 @@ func (s *alertReplyLossTransport) RoundTrip(r *http.Request) (*http.Response, er
 	return response, err
 }
 
-// TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark 验证两真库及真实注册gateway：回复丢失重扫、持续／乱序与完整恢复。
-// 源事件为协议fixture且全部回滚，不代表实机故障；两端仍使用实际表访问及具名客户端。
+// TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark 用两套真库和已注册网关验证响应丢失重扫、故障乱序和恢复。
+// 协议事件来自测试夹具并全部回滚，不代表实机验证。
 func TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark(t *testing.T) {
 	central, gateway := importDB(t, "TEST_MYSQL_URL").Begin(), importDB(t, "DATABASE_URL_GATEWAY").Begin()
 	defer central.Rollback()
@@ -173,7 +171,7 @@ func TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark(t *testing.T) {
 	board := "AS" + uuid.NewString()
 	ctx := context.Background()
 	at := time.Now().UTC().Add(-time.Minute).Truncate(time.Millisecond)
-	// 共享测试库中的其他业务fixture不属于本轮恢复扫描，持续限定原测试设备。
+	// 恢复扫描持续限定本测试设备，排除共享库中其他测试数据。
 	key := "alert_scope_" + uuid.NewString()
 	if err := central.Callback().Query().Before("gorm:query").Register(key, func(q *gorm.DB) {
 		if q.Statement.Table == "alert_event" {
@@ -233,12 +231,12 @@ func TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark(t *testing.T) {
 	if alert.Status != "active" || alert.EventID != first {
 		t.Fatalf("initial=%+v", alert)
 	}
-	// 原标记响应虽然丢失，下一轮实际扫描为空；确认提交与unknown并存，无重复告警。
+	// 确认响应丢失但已提交，下一轮扫描为空，不能重复建告警。
 	raised, err = s.Run(ctx)
 	if err != nil || raised != 0 {
 		t.Fatalf("lost response recovery=%d %v", raised, err)
 	}
-	// 模拟原标记回复丢失后的同一原证据重扫，不产生新告警。
+	// 重扫响应丢失时的同一故障证据，不能新建告警。
 	if err := gateway.Table("device_event").Where("event_key=?", first).Update("processed_at", nil).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +315,7 @@ func TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark(t *testing.T) {
 	if err != nil || missing.Found || missing.AfterReceivedAt != nil {
 		t.Fatalf("missing=%+v %v", missing, err)
 	}
-	// 最新故障更新后，旧告警对象所附原键不得核销新状态。
+	// 最新故障改变后，旧告警的事件键不能清除新故障状态。
 	read()
 	previous := alert
 	if err := central.Table("alert_event").Where("id=? AND created_month=?", alert.ID, alert.CreatedMonth).Update("event_id", "new-watermark").Error; err != nil {

@@ -13,15 +13,14 @@ type AuditEntryInput struct {
 	Module     string // 所属业务模块
 	Action     string // 操作名称
 	TargetType string // 目标类型
-	TargetID   string // 原十进制或文本目标身份
-	BeforeJSON []byte // 变更前安全快照的JSON
-	AfterJSON  []byte // 变更后安全快照的JSON
-	ClientIP   string // 原请求客户端地址
-	RequestID  string // 原请求追踪标识
+	TargetID   string // 十进制或文本目标身份
+	BeforeJSON []byte // 变更前安全快照的 JSON
+	AfterJSON  []byte // 变更后安全快照的 JSON
+	ClientIP   string // 首次请求客户端地址
+	RequestID  string // 首次请求追踪标识
 }
 
-// InsertAudit 写一条审计记录。created_month 是分区列，必须显式给：
-// 这张表按月分区，省略它会写到错误的分区或直接报错。
+// InsertAudit 保存审计记录，必须显式填写月份分区键 created_month。
 func InsertAudit(tx *gorm.DB, in AuditEntryInput, now time.Time) error {
 	return tx.Table("audit_log").Create(map[string]any{
 		"actor_id": in.ActorID, "actor_name": in.ActorName, "module": in.Module,

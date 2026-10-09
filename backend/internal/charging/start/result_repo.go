@@ -23,26 +23,26 @@ import (
 
 var ErrStartResultConflict = errors.New("charge start result conflicts with order state")
 
-// StartResult 携带原启动命令及订单的设备回执事实，供中央用例核对成功或拒绝结果；不创建新的命令身份。
+// StartResult 携带启动命令及订单的设备回执内容，供中央用例核对成功或拒绝结果；不创建新的命令编号。
 type StartResult struct {
-	CommandID     string    `json:"command_id"`      // 原启动命令幂等身份
-	ChargeOrderID uint64    `json:"charge_order_id"` // 原已付订单主键
+	CommandID     string    `json:"command_id"`      // 启动命令幂等编号
+	ChargeOrderID uint64    `json:"charge_order_id"` // 已付订单主键
 	OrderNo       string    `json:"order_no"`        // 与主键共同核对的业务单号
-	DeviceID      string    `json:"device_id"`       // 实际响应的设备身份
+	DeviceID      string    `json:"device_id"`       // 实际响应的设备编号
 	PortNo        uint8     `json:"port_no"`         // 设备端口序号，从 1 开始
-	PortID        uint64    `json:"port_id"`         // gateway 持久端口身份，非零且不得超过 int64
+	PortID        uint64    `json:"port_id"`         // gateway 持久端口编号，非零且不得超过 int64
 	Success       bool      `json:"success"`         // 必须与 ResultCode==0 一致
-	ResultCode    uint8     `json:"result_code"`     // 原设备结果码，0 成功、1–3 拒绝
+	ResultCode    uint8     `json:"result_code"`     // 设备结果码，0 成功、1–3 拒绝
 	OccurredAt    time.Time `json:"occurred_at"`     // 回执发生时刻，入库规范为 UTC 毫秒
 }
 
-// StartResultService 在中央事务中登记启动回执并推进订单或退款状态；渠道退款登记不表示款项已经到账。
+// StartResultService 在中央事务中登记启动回执并更新订单或退款状态；渠道退款登记不表示款项已经到账。
 type StartResultService struct {
 	DB *gorm.DB /* central 回执事务连接，生命周期由进程管理 */
 }
 
 // Apply 在 ctx 管理的 READ COMMITTED 事务中应用 result 的启动回执。
-// 返回 bool 为同内容重放标志，首次成功为 false；冲突或存储错误时不应确认投递。
+// 返回 bool 为同内容重放标志，首次成功为 false；冲突时不应确认投递。
 // 余额路径先锁钱包，再锁卡会话和订单；回执、状态、退款、日志及 Outbox 原子提交。
 // 拒绝回执仅登记渠道退款或完成余额退款，不能把待渠道退款当作到账。
 func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool, error) {
@@ -55,8 +55,7 @@ func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool
 		var walletRow walletpkg.Row
 		payMethod, paymentUserID, err := pays.FindOrderPaymentForCharge(tx, result.ChargeOrderID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 订单已回滚或压根不存在。回执落不下去是冲突而不是服务故障：
-			// 报 500 会让网关无限重试一笔永远不会成立的回执。
+			// 订单不存在或已回滚时返回冲突，避免网关把无法应用的回执当作服务故障无限重试。
 			return ErrStartResultConflict
 		}
 		if err != nil {
@@ -110,9 +109,8 @@ func (s StartResultService) Apply(ctx context.Context, result StartResult) (bool
 		}
 		stream, eventName := "charge_started_stream", "start_acked"
 		if result.Success {
-			// 刷卡起充才有 card_operation 行；扫码/余额起充没有，影响 0 行是常态而非冲突。
-			// 这里只把数据库错误上抛——把 RowsAffected 当冲突判据会让所有非刷卡订单
-			// 的启动回执被拒，worker 随即下发补偿停止，把已经在充电的枪拔掉。
+			// 只有刷卡起充有 card_operation，其他入口影响 0 行属正常。
+			// 不能按 RowsAffected 报冲突，否则正常启动也会被拒绝并触发补偿停止。
 			if _, err := card.ConfirmStartOperation(tx, result.ChargeOrderID, result.OccurredAt); err != nil {
 				return err
 			}

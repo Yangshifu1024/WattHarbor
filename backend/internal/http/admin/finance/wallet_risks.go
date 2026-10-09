@@ -41,7 +41,7 @@ func (a API) walletRisks(c *gin.Context) {
 }
 
 // reviewWalletRisk 要求财务或客服角色，并验证请求恰好关联一条 wallet_refund_frequency 冻结记录。
-// 通过时按原渠道拆分充值退款并冻结等额余额；拒绝时仅保存审核结论。
+// 通过时按渠道拆分充值退款并冻结等额余额；拒绝时仅保存审核结论。
 // 相同请求、审核人、结论和留言返回首次回执；内容不一致时返回冲突。
 func (a API) reviewWalletRisk(c *gin.Context) {
 	p := c.MustGet("admin_profile").(operations.Profile)
@@ -91,7 +91,7 @@ func (a API) releaseWalletRisk(c *gin.Context) {
 	httpapi.OK(c, response)
 }
 
-// riskFailure 将钱包预占业务冲突映射到后台原冲突契约。
+// riskFailure 将钱包预占业务冲突映射到后台冲突契约。
 func riskFailure(err error) error {
 	if errors.Is(err, wallet.ErrWalletRefundConflict) {
 		return admin.ErrConflict

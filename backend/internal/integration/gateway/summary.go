@@ -11,8 +11,8 @@ import (
 	contract "chargepilot/internal/contracts/gateway"
 )
 
-// DeviceSummaries 在 ctx 下查询 ids 的原运行事实；一至一百个非空、最长 64 字节的编号。
-// 返回原 nullable 字段及端口，或输入、传输、HTTP、业务码、响应缺失错误；五秒上限，无重试或业务写入。
+// DeviceSummaries 批量查询 1 至 100 台设备，每个编号非空且最多 64 字节。
+// 保留未上报字段的空值；请求最多五秒，不自动重试。
 func (c *Client) DeviceSummaries(ctx context.Context, ids []string) ([]contract.DeviceSummary, error) {
 	if len(ids) == 0 || len(ids) > 100 {
 		return nil, errors.New("device summaries require 1–100 devices")

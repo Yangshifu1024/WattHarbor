@@ -95,18 +95,18 @@ func TestWalletRefundQueryUsesStoredApprovalAndBoundedReads(t *testing.T) {
 // recoverablePrepay 在渠道响应边界模拟未知结果；数据库申请和保存仍使用真 MySQL。
 type recoverablePrepay struct {
 	fail   bool     // 当前请求是否丢失渠道响应
-	orders []string // 每次向渠道请求的原商户单号
+	orders []string // 每次向渠道请求的固定商户单号
 }
 
-// checkoutFixture 固定测试设备及套餐；准入读取为 fixture，申请、回调与退款持久化为真库。
+// checkoutFixture 提供固定设备和套餐，报价使用夹具；申请、回调和退款使用真库。
 type checkoutFixture struct {
-	port        money.ScanResult // 原端口身份、连接事实及中央运营状态
+	port        money.ScanResult // 端口号、连接事实及中央运营状态
 	rule        charging.Rule    // 测试时冻结的完整套餐
 	unavailable bool             // 首次申请之后模拟当前方案／设备读取不可用
 	reads       int              // 发现读取次数，重放不得重新取当前事实
 }
 
-// ResolveScan 在 ctx 下返回 code 的固定事实；恢复故障用于检测不必要的新准入读取。
+// ResolveScan 返回固定扫码结果，故障用于检测恢复时是否重复查询新报价。
 func (f *checkoutFixture) ResolveScan(ctx context.Context, code string) (money.ScanResult, error) {
 	f.reads++
 	if f.unavailable {
@@ -115,7 +115,7 @@ func (f *checkoutFixture) ResolveScan(ctx context.Context, code string) (money.S
 	return f.port, ctx.Err()
 }
 
-// ActiveDeviceRule 返回测试 stationID／deviceID 的原方案，故障时拒绝新报价。
+// ActiveDeviceRule 返回测试设备方案，注入故障时拒绝新报价。
 func (f *checkoutFixture) ActiveDeviceRule(ctx context.Context, stationID uint64, deviceID string) (charging.Rule, error) {
 	if f.unavailable {
 		return charging.Rule{}, errors.New("fixture unavailable")
@@ -123,17 +123,17 @@ func (f *checkoutFixture) ActiveDeviceRule(ctx context.Context, stationID uint64
 	return f.rule, ctx.Err()
 }
 
-// CheckDeviceScheme 为测试中的已支持套餐返回 ctx 取消状态，不使用实际设备能力判断。
+// CheckDeviceScheme 返回请求取消状态，测试不检查真实设备能力。
 func (f *checkoutFixture) CheckDeviceScheme(ctx context.Context, stationID uint64, deviceID string, scheme charging.Scheme) error {
 	return ctx.Err()
 }
 
-// failingLateRecorder 在事务内能力边界注入故障，正常调用转交实际退款记录及 Outbox 实现。
+// failingLateRecorder 注入事务内保存故障，恢复后调用真实退款和 Outbox 实现。
 type failingLateRecorder struct {
 	fail bool /* 是否模拟退款存储失败 */
 }
 
-// RecordLateInTx 返回受控故障，恢复后在原 tx 内写入 in 和 eventID 的真实凭据。
+// RecordLateInTx 注入保存故障，恢复后在同一事务保存真实退款凭据。
 func (r *failingLateRecorder) RecordLateInTx(tx *gorm.DB, in money.RefundDraft, eventID string) error {
 	if r.fail {
 		return errors.New("late refund storage unavailable")
@@ -141,8 +141,8 @@ func (r *failingLateRecorder) RecordLateInTx(tx *gorm.DB, in money.RefundDraft, 
 	return (RefundRecorder{}).RecordLateInTx(tx, in, eventID)
 }
 
-// TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity 验证支付准备恢复及迟到退款的归属注入。
-// 当前方案读取为 fixture、渠道响应为 stub；金额、唯一键、事务回滚及重放均使用真库。
+// TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity 验证支付准备结果未知后恢复，以及迟到退款仍属于首次支付。
+// 方案和渠道使用测试替身，金额、唯一键、回滚和重放使用真库。
 func TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -158,7 +158,7 @@ func TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity(t *testing.T) {
 	if err := tx.Table("user").Create(map[string]any{"id": id, "openid": openid, "status": "active"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// 原repo过期扫描持续限定本测试用户；Scopes会被前次重放查询消费，不能隔离后续UPDATE。
+	// 过期扫描须始终限定本测试用户；Scopes 只作用于下一次查询，不能约束之后的 UPDATE。
 	const expiryScope = "funding_checkout_expiry_scope"
 	if err := tx.Callback().Update().Before("gorm:update").Register(expiryScope, func(q *gorm.DB) {
 		if q.Statement.Table == "charge_payment_intent" {
@@ -226,12 +226,10 @@ func TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity(t *testing.T) {
 		t.Fatalf("late refund=%+v", refund)
 	}
 	for _, q := range []struct {
-		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
+		// table、where 配对指定清理表和本测试身份条件。
 		table, where string
-		// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
-		arg any
-		// want 原支付或退款身份下预期的持久记录数量，用于核对迟到到账路径。
-		want int64
+		arg          any
+		want         int64
 	}{
 		{"refund_record", "payment_order_id=?", pay.ID, 1},
 		{"charge_order", "payment_order_id=?", pay.ID, 0},
@@ -244,7 +242,7 @@ func TestCheckoutUnknownPrepayAndLateRefundShareOriginalIdentity(t *testing.T) {
 	}
 }
 
-// Prepay 记录 ctx 下 request 的商户单号，故障时不返回参数，恢复时返回原号参数。
+// want 是测试支付或退款对应的预期记录数。
 func (p *recoverablePrepay) Prepay(ctx context.Context, request payment.PrepayRequest) (payment.PrepayParams, error) {
 	p.orders = append(p.orders, request.MerchantOrderNo)
 	if p.fail {
@@ -253,8 +251,8 @@ func (p *recoverablePrepay) Prepay(ctx context.Context, request payment.PrepayRe
 	return payment.Simulator{}.Prepay(ctx, request)
 }
 
-// TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet 贯通申请、渠道未知、原号恢复与回调到账。
-// 除渠道响应故障外使用实际 payment／wallet／settlement 能力；所有数据外层事务回滚。
+// TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet 验证充值结果未知后使用首次支付号恢复，回调可入账冻结钱包。
+// 渠道响应注入故障，其余支付、钱包和结算使用真实实现，全部数据外层回滚。
 func TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -318,10 +316,9 @@ func TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet(t *testing.T) {
 		t.Fatalf("account not credited once: %+v", account)
 	}
 	for _, q := range []struct {
-		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
+		// table、where 配对指定清理表和本测试条件。
 		table, where string
-		// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
-		arg any
+		arg          any
 	}{
 		{"wallet_recharge_request", "request_id=?", in.RequestID},
 		{"payment_order", "id=?", out.PaymentOrderID},
@@ -334,14 +331,14 @@ func TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet(t *testing.T) {
 		}
 	}
 	post, err := service.Create(context.Background(), id, in)
-	// 原钱包冻结时申请接口仍拒绝；渠道回调已经到账不自动解除冻结。
+	// 钱包冻结时仍拒绝新充值申请，已到账回调不会自动解除冻结。
 	if err == nil || !errors.Is(err, wallet.ErrFrozen) || post.CanPay {
 		t.Fatalf("frozen wallet silently reopened: %+v %v", post, err)
 	}
 }
 
-// TestRefundServiceKeepsAuditAtomicAndRechecksSigner 证明新用例保持申请、审计及实时第二签边界。
-// MySQL 与所有退款 repo 均为实际实现，身份读取用受控实时 fixture；全部数据外层回滚。
+// TestRefundServiceKeepsAuditAtomicAndRechecksSigner 验证退款申请和审计同事务，二签核对首签最新权限。
+// 退款和审计使用真库，账号查询为可控夹具，全部数据外层回滚。
 func TestRefundServiceKeepsAuditAtomicAndRechecksSigner(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()

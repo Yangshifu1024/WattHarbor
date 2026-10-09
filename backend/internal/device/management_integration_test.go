@@ -19,8 +19,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestConcurrentDeviceMetadataKeepsOneVersion 用两条独立连接和 FROM 行锁闸门核对相同旧表单只能成功一次。
-// 真库提交只清理自身设备与请求号并核对零残留；身份权限为 fixture，版本及审计使用真实 SQL。
+// TestConcurrentDeviceMetadataKeepsOneVersion 验证两个真库连接更新同一旧版本时只有一次成功。
+// 权限使用夹具，版本和审计使用真实 SQL；仅清理本测试设备及请求号。
 func TestConcurrentDeviceMetadataKeepsOneVersion(t *testing.T) {
 	setup, first, second := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
 	id, board := testfixture.NewID(), "ME"+uuid.NewString()
@@ -29,7 +29,7 @@ func TestConcurrentDeviceMetadataKeepsOneVersion(t *testing.T) {
 	defer func() {
 		for _, q := range []struct {
 			table string /* 本测试提交的表 */
-			where string /* 原身份条件 */
+			where string /* 身份条件 */
 			arg   any    /* 本测试身份 */
 		}{
 			{"audit_log", "request_id IN ?", requests}, {"device_meta", "device_id=?", board},
@@ -79,10 +79,10 @@ func TestConcurrentDeviceMetadataKeepsOneVersion(t *testing.T) {
 	defer second.Callback().Query().Remove(key)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	// answer 传递资料更新用例返回的设备行与错误，区分首次更新和旧版本冲突；最终资料及审计通过真实表确认。
+	// answer 汇总设备更新结果和错误，最终资料及审计另查真库。
 	type answer struct {
 		row device.Device /* 更新结果 */
-		err error         /* 原事务错误 */
+		err error         /* 事务错误 */
 	}
 	call := func(db *gorm.DB, request, model string) chan answer {
 		ch := make(chan answer, 1)

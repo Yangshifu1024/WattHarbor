@@ -14,24 +14,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// AlertEvidence 是告警所属用例需要的网关窄能力，不暴露数据库、URL或服务令牌。
+// AlertEvidence 只提供告警所需的网关查询和确认方法，不暴露数据库、URL 或令牌。
 type AlertEvidence interface {
-	// DeviceFaults 在ctx下读取原有界待处理故障，返回原证据或调用错误，不主动标记。
+	// DeviceFaults 读取有数量上限的待处理故障，不修改处理状态。
 	DeviceFaults(ctx context.Context) ([]contract.DeviceFaultReport, error)
-	// MarkDeviceFaults 在ctx下确认ids原事件已成功处理，返回实际首次标记数或调用错误，0允许重放。
+	// MarkDeviceFaults 确认指定事件已处理，返回首次标记数；重放可返回 0。
 	MarkDeviceFaults(ctx context.Context, ids []uint64) (int64, error)
-	// HeartbeatAfterKey 在ctx下按deviceID与key读取原水印和后续心跳；缺失不补零，返回证据或错误。
+	// HeartbeatAfterKey 读取指定故障键和后续同设备心跳，缺失时不补造数据。
 	HeartbeatAfterKey(ctx context.Context, deviceID, key string) (contract.HeartbeatAfterKeyReply, error)
 }
 
-// AlertSyncService 拥有central设备告警同步与恢复，协议翻译归dc589，跨库仅经具名能力。
+// AlertSyncService 负责中央告警同步和恢复，通过专用网关接口跨库读取，协议解释由 dc589 负责。
 type AlertSyncService struct {
-	DB      *gorm.DB      // 所属central连接，生命周期由进程管理
-	Gateway AlertEvidence // cmd装配的具名gateway证据能力
+	DB      *gorm.DB      // 所属 central 连接，生命周期由进程管理
+	Gateway AlertEvidence // cmd 装配的具名 gateway 证据能力
 }
 
-// Run 在ctx下最多25秒顺序处理原100条故障，成功提交后标记原事件，再核对恢复证据。
-// 返回已新建告警数及局部失败；单条失败不阻塞其余事件，取消不开始后续工作，无后台任务或自动重试。
+// Run 在最多 25 秒内顺序处理 100 条故障，提交成功后确认事件，再核对恢复。
+// 返回新增告警数和失败，单条失败继续其他事件，取消后停止后续处理。
 func (s AlertSyncService) Run(ctx context.Context) (int, error) {
 	if s.DB == nil || s.Gateway == nil {
 		return 0, errors.New("device alert sync is not configured")
@@ -76,8 +76,8 @@ func (s AlertSyncService) Run(ctx context.Context) (int, error) {
 	return raised, errors.Join(firstError, s.resolveRecovered(ctx))
 }
 
-// recordFault 在ctx下核对report原主键／设备／毫秒时刻与event协议事实，再锁所属维度并写入。
-// 相同原键、早于当前故障水印或不晚于已恢复时刻无新告警；未知原水印返回错误且不标记处理，不推断恢复。
+// recordFault 核对事件 ID、设备、毫秒时间和协议内容，再锁定设备对应告警并保存。
+// 同事件、早于最新故障或不晚于恢复时间时不新增；最新事件时间未知时不确认处理。
 func (s AlertSyncService) recordFault(ctx context.Context, report contract.DeviceFaultReport, event protocol.Event) (bool, error) {
 	if report.ID == 0 || report.EventKey == "" || len(report.EventKey) > 64 || report.DeviceID == "" || len(report.DeviceID) > 64 || report.DeviceID != event.DeviceID || report.ReceivedAt.IsZero() || event.ReceivedAt.IsZero() || event.ReceivedAt.Sub(report.ReceivedAt).Abs() >= time.Millisecond || event.Protocol != "dc589" || event.Type != protocol.Fault {
 		return false, errors.New("invalid device fault evidence")
@@ -97,7 +97,7 @@ func (s AlertSyncService) recordFault(ctx context.Context, report contract.Devic
 			if existing.EventID == report.EventKey || report.ReceivedAt.Before(existing.CreatedAt) || existing.ResolvedAt != nil && !report.ReceivedAt.After(*existing.ResolvedAt) {
 				return nil
 			}
-			// 原最近键的持久时刻来自gateway，不用首次created_at或中央处理墙钟代替。
+			// 最新故障时间从网关读取，不能用首次告警时间或中央处理时间代替。
 			watermark, err := s.Gateway.HeartbeatAfterKey(ctx, existing.DeviceID, existing.EventID)
 			if err != nil {
 				return err
@@ -123,8 +123,8 @@ func (s AlertSyncService) recordFault(ctx context.Context, report contract.Devic
 	return raised, err
 }
 
-// resolveRecovered 在ctx下逐条核对原最新键之后的同设备完整dc589心跳，返回首个错误并继续其它独立告警。
-// 无水印／无心跳／无端口状态不恢复；核销带原键条件，期间新增故障不会被旧证据覆盖，无人工审计或资金写入。
+// resolveRecovered 用最新故障之后的同设备完整心跳判断恢复；缺故障时间、心跳或端口状态均不恢复。
+// 更新带最新事件键，防止期间出现的新故障被覆盖；逐条继续检查并返回首个错误。
 func (s AlertSyncService) resolveRecovered(ctx context.Context) error {
 	repo := AlertRepo{DB: s.DB}
 	active, err := repo.ListRecoverableAlerts(ctx)
@@ -167,17 +167,16 @@ func (s AlertSyncService) resolveRecovered(ctx context.Context) error {
 	return firstError
 }
 
-// decodeRecoveryPayload 把payload原JSON解码为协议事件，并核对metric恢复所需字段的存在性。
-// 设备状态缺失或null不能当正常零值，端口数组中的null不能当空闲；完整nil端口仍由协议规则表达无证据。
-// 返回事件或解码／缺字段错误，无IO或状态改变。
+// decodeRecoveryPayload 解码心跳并检查恢复所需字段。
+// 设备状态缺失或 null 不能视为正常，端口数组中的 null 不能视为空闲；nil 端口仍表示没有证据。
 func decodeRecoveryPayload(payload, metric string) (protocol.Event, error) {
 	var event protocol.Event
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return event, err
 	}
 	var required struct {
-		DeviceStatus *uint8          // 原设备状态的显式存在性，0合法
-		PortStates   json.RawMessage // 原[]byte为base64字符串；兼容数值数组时逐项验证null
+		DeviceStatus *uint8          // 设备状态的显式存在性，0合法
+		PortStates   json.RawMessage // []byte 为 base64 字符串；兼容数值数组时逐项验证 null
 	}
 	if err := json.Unmarshal([]byte(payload), &required); err != nil {
 		return event, err

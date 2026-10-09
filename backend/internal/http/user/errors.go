@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// WriteResourceFailure 将 err 写入 c 的错误信封：缺失记录为 404／1004，其他错误为 503／5003；不返回错误或读取、修改业务资源。
+// WriteResourceFailure 将 err 写入 c 的错误响应：缺失记录为 404／1004，其他错误为 503／5003；不返回错误或读取、修改业务资源。
 func WriteResourceFailure(c *gin.Context, err error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		httpapi.Write(c, 404, 1004, "记录不存在", nil)

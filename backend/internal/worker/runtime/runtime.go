@@ -26,9 +26,9 @@ type StartDispatcher interface {
 	DispatchBatch(context.Context) (int, error)
 }
 
-// ResultSynchronizer 提供同步回执推进能力，持久化与幂等责任属于具体同步器。
+// ResultSynchronizer 提供同步回执更新能力，持久化与幂等责任属于具体同步器。
 type ResultSynchronizer interface {
-	// SyncBatch 按传入的任务 context 同步推进一批回执，返回完成数量与执行错误；确认、重放及持久化由实现负责。
+	// SyncBatch 按传入的任务 context 同步处理一批回执，返回完成数量与执行错误；确认、重放及持久化由实现负责。
 	SyncBatch(context.Context) (int, error)
 }
 
@@ -40,9 +40,9 @@ type Publisher interface {
 
 // Publication 组合日志来源与同一发布器实例，按切片顺序进入同步轮次。
 type Publication struct {
-	// Source 发布来源名称，仅拼接日志任务名称，不更换发布器或持久身份。
+	// Source 发布来源名称，仅拼接日志任务名称，不更换发布器或已保存的标识。
 	Source string
-	// Publisher 同一来源的同步发布器实例，具体实现负责重放与持久状态。
+	// Publisher 同一来源的同步发布器实例，具体实现负责重放与已保存状态。
 	Publisher Publisher
 }
 
@@ -75,8 +75,8 @@ type Runtime struct {
 	Publishers []Publication
 }
 
-// RunScheduler 接收生命周期 ctx，每秒同步检查调度；首次 tick 清理历史，之后从每次清理返回时重新计算一小时期限，清理失败也更新该期限。
-// 清理后仅在 ctx 未取消时执行到期任务；单次错误记日志，循环正常取消返回 nil，不打开资源，并等待当前同步任务返回。
+// RunScheduler 每秒检查到期任务；首次 tick 清理历史，之后每次清理返回后重新计时 1 小时。
+// 清理失败也更新下次时间；取消后不执行后续任务，并等待当前任务返回。
 func (r *Runtime) RunScheduler(ctx context.Context) error {
 	nextCleanup := time.Now()
 	return poll(ctx, time.Second, func(ctx context.Context) {
@@ -90,14 +90,12 @@ func (r *Runtime) RunScheduler(ctx context.Context) error {
 	})
 }
 
-// RunFinance 接收生命周期 ctx，每十秒同步执行一轮资金任务，首次执行等待首个 tick；轮次错误记录后继续后续未取消任务。
-// 取消时返回 nil，须等待在途任务返回，不替具体实现提交或回滚，也不关闭资源。
+// RunFinance 每 10 秒执行一轮资金任务，首轮等待 tick；错误只记日志，未取消时继续后续任务。
 func (r *Runtime) RunFinance(ctx context.Context) error {
 	return poll(ctx, 10*time.Second, r.financeOnce)
 }
 
-// financeOnce 接收单轮 ctx，按自动停机、计费、退款顺序同步执行；每个任务前检查取消，单次错误只记日志，未取消时继续后续任务。
-// 无返回值，批数量不参与调度；业务副作用及恢复属于各任务实现。
+// financeOnce 按自动停机、计费、退款顺序同步执行；每项前检查取消，单项失败不阻止后续任务。
 func (r *Runtime) financeOnce(ctx context.Context) {
 	runSequence(ctx, []task{
 		{"charge auto stop", counted(r.AutoStops.Run)},
@@ -106,15 +104,15 @@ func (r *Runtime) financeOnce(ctx context.Context) {
 	})
 }
 
-// RunSync 串行推进同一轮任务；PaidStarts 持有分页游标，循环间不重新装配。
+// RunSync 串行更新同一轮任务；PaidStarts 持有分页游标，循环间不重新装配。
 // ctx 为同步循环生命周期，首次执行等待一秒 tick；每轮复用 r 的任务与发布器实例。
 // 取消后等待当前同步任务返回并返回 nil，单任务错误只记录，不关闭资源或返回业务错误。
 func (r *Runtime) RunSync(ctx context.Context) error {
 	return poll(ctx, time.Second, r.syncOnce)
 }
 
-// syncOnce 接收单轮 ctx，按告警、刷卡、待启动、启动回执、结束回执、发布切片原顺序同步执行。
-// 无返回值，每个任务前检查取消；单次错误只记日志，保留已注入派发器游标与发布器身份，不复制业务逻辑或建立事务。
+// syncOnce 接收单轮 ctx，按告警、刷卡、待启动、启动回执、结束回执、发布切片顺序同步执行。
+// 每个任务前检查取消；单次错误只记日志，保留已注入派发器游标与发布器身份，不复制业务逻辑或建立事务。
 func (r *Runtime) syncOnce(ctx context.Context) {
 	tasks := []task{
 		{"device alerts", counted(r.DeviceAlerts.Run)},
@@ -137,13 +135,12 @@ type task struct {
 	run func(context.Context) error
 }
 
-// counted 接收非 nil 的计数任务 run，返回只保留错误的同步回调；回调把传入 ctx 原样交给 run，忽略其完成数量，不重试或启动 goroutine。
+// counted 将计数任务包装为只返回错误的回调；同步执行，保留 context，忽略完成数量。
 func counted(run func(context.Context) (int, error)) func(context.Context) error {
 	return func(ctx context.Context) error { _, err := run(ctx); return err }
 }
 
-// runSequence 接收单轮 ctx 与调用方持有的 tasks 切片，按顺序同步执行并记录每次错误；每次调用前取消即停止，单任务失败不阻止后续任务。
-// 无返回值，不复制切片、不等待额外后台任务；在途回调必须自行响应 ctx，返回后才继续检查取消。
+// runSequence 按顺序同步执行 tasks 并记录错误；取消后不再开始下一项，单项失败仍继续。
 func runSequence(ctx context.Context, tasks []task) {
 	for _, task := range tasks {
 		if ctx.Err() != nil {
@@ -153,16 +150,16 @@ func runSequence(ctx context.Context, tasks []task) {
 	}
 }
 
-// report 接收日志任务名 name 与执行错误 err；nil 或可由 errors.Is 匹配 context.Canceled 时静默，其余错误按名称记录。
-// 无返回值，不包装错误、不取消 context、不影响后续任务顺序。
+// report 按任务名记录错误；nil 和 context.Canceled 不记录。
+// 不包装错误、不取消 context、不影响后续任务顺序。
 func report(name string, err error) {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Printf("%s: %v", name, err)
 	}
 }
 
-// poll 接收生命周期 ctx、正数时钟间隔 interval 与非 nil 同步回调 run；首轮等待 tick，每次 tick 在未取消时直接调用 run(ctx)。
-// 取消返回 nil 并停止 ticker，已进入回调必须先返回，故回调须响应 ctx；不启动额外 goroutine、不捕获 panic，interval 非正由 time.NewTicker 触发 panic。
+// poll 每次 tick 同步执行 run(ctx)，首轮也等待 tick；interval 必须为正，run 不能为 nil。
+// 取消后停止 ticker，等待已开始的回调返回；回调必须响应 ctx。run 的 panic 直接向上传递。
 func poll(ctx context.Context, interval time.Duration, run func(context.Context)) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

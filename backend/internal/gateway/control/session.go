@@ -12,7 +12,7 @@ import (
 )
 
 // SessionAPI 提供设备会话审计及遗留会话清理接口。
-// 正常连接由所属进程关闭，进程退出后遗留的开放记录由运维清理。
+// 正常连接由进程关闭，进程退出后遗留的开放记录由运维清理。
 type SessionAPI struct {
 	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，完整读写和事务由 repo 管理。
 	DB *gorm.DB
@@ -24,13 +24,13 @@ type SessionAPI struct {
 	MaxRows int
 }
 
-// Register 接收非 nil router，注册本类型原路由与处理器，无数据库或设备 IO，不启动 HTTP 监听。
+// Register 在 router 注册路由；调用方须提供非 nil router。
 func (a SessionAPI) Register(router *gin.Engine) {
 	router.GET("/api/v1/internal/device-sessions", a.listIdle)
 	router.POST("/api/v1/internal/device-sessions/cleanup-idle", a.cleanupIdle)
 }
 
-// authorized 接收 c，精确验证服务请求头；成功返回 true，失败写原 401 并返回 false，调用方据此退出，不读取数据库。
+// authorized 精确验证服务请求头；成功返回 true，失败写 401 并返回 false，调用方据此退出。
 func (a SessionAPI) authorized(c *gin.Context) bool {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
@@ -41,21 +41,21 @@ func (a SessionAPI) authorized(c *gin.Context) bool {
 
 // IdleSession 是向运维报告的静默设备连接会话记录，不代表实际 TCP 已断开。
 type IdleSession struct {
-	// SessionID 原设备连接会话身份，不是 START 或 STOP 命令会话。
+	// SessionID 设备连接会话标识，不是 START 或 STOP 命令会话。
 	SessionID string `json:"session_id"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// Protocol 所属设备或连接的原协议名称。
+	// Protocol 设备或连接的协议名称。
 	Protocol string `json:"protocol"`
-	// RemoteAddr 原设备连接远端地址。
+	// RemoteAddr 设备连接远端地址。
 	RemoteAddr string `json:"remote_addr"`
-	// StartedAt 原设备连接开始时刻。
+	// StartedAt 设备连接开始时刻。
 	StartedAt time.Time `json:"started_at"`
-	// LastActiveAt 原设备连接最后活动时刻。
+	// LastActiveAt 设备连接最后活动时刻。
 	LastActiveAt time.Time `json:"last_active_at"`
 }
 
-// threshold 读取 IdleThreshold，正值原样返回，否则返回十五分钟；无 IO。
+// threshold 读取 IdleThreshold，正值原样返回，否则返回十五分钟。
 func (a SessionAPI) threshold() time.Duration {
 	if a.IdleThreshold > 0 {
 		return a.IdleThreshold
@@ -63,7 +63,7 @@ func (a SessionAPI) threshold() time.Duration {
 	return 15 * time.Minute
 }
 
-// limit 读取 MaxRows，正值原样返回，否则返回五百；无 IO。
+// limit 读取 MaxRows，正值原样返回，否则返回五百。
 func (a SessionAPI) limit() int {
 	if a.MaxRows > 0 {
 		return a.MaxRows
@@ -72,7 +72,7 @@ func (a SessionAPI) limit() int {
 }
 
 // listIdle 接收 c 中的服务令牌，返回阈值筛选的设备连接会话、条数和阈值秒数，空列表保持 []。
-// 鉴权失败返回 401，读取失败返回原 503；仅转换持久投影，不修改会话记录或实际 TCP 连接。
+// 鉴权失败返回 401，读取失败返回 503；仅转换数据库记录，不修改会话记录或实际 TCP 连接。
 func (a SessionAPI) listIdle(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -105,8 +105,8 @@ func (a SessionAPI) listIdle(c *gin.Context) {
 	})
 }
 
-// cleanupIdle 接收 c 中的服务令牌，捕获当前 UTC 作为关闭时刻，交由 repo 完整事务关闭静默且仍开放的连接记录。
-// 成功返回 closed 和阈值秒数；鉴权失败返回 401，事务失败返回原 503 且不输出中间计数，不关闭实际 TCP。
+// cleanupIdle 鉴权后在同一事务内关闭静默会话记录，返回关闭数和阈值秒数。
+// 事务失败不输出中间计数；此操作不关闭实际 TCP 连接。
 func (a SessionAPI) cleanupIdle(c *gin.Context) {
 	if !a.authorized(c) {
 		return

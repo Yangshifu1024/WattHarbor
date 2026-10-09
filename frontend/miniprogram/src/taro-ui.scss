@@ -1,15 +1,5 @@
-/* taro-ui 按需样式入口
- *
- * 全量样式为 taro-ui/dist/style/index.css（约 280 KB），在小程序主包 2 MB 限制下
- * 占用可观，因此这里只引入实际使用的组件。需要新组件时，在下方追加一行
- * `@import 'taro-ui/dist/style/components/<name>.scss';` 即可。
- *
- * 若改为全量引入，用下面这行替换本文件全部内容：
- *   @import 'taro-ui/dist/style/index.scss';
- *
- * 尺寸基准：taro-ui 以 750 为设计基准（dist/style/variables/default.scss 中
- * `$hd: 2`，字号写作 `14px * $hd` 即 28px），与本项目 designWidth: 750 一致，
- * 无需覆盖任何尺寸变量。
+/* 只加载实际使用的 taro-ui 组件样式，控制小程序主包大小。
+ * 新组件在下方添加 @import；设计宽度为 750，与 taro-ui 的尺寸基准一致。
  */
 
 /* 基础操作与容器 */

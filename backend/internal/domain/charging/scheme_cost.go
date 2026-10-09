@@ -151,8 +151,7 @@ func CutoffMeter(spec Spec, m ActualMeter, cutoff time.Time) (ActualMeter, error
 			if s.PowerW == nil || spec.Mode == ModeServerMaxPower && s.PeakW > *s.PowerW {
 				return ActualMeter{}, ErrMeterReview
 			}
-			// Energy is irrelevant to the power tariff but the full original
-			// segment is kept as evidence of actual charging; no inferred Wh.
+			// 功率计费不使用电量，但仍保留完整分段作为充电证据，不推算电量。
 			s.EndedAt = cutoff
 		}
 		segments = append(segments, s)

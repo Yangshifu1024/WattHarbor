@@ -4,8 +4,7 @@ import (
 	"fmt"
 )
 
-// ProtocolCapabilities defines the adapter contract. Provisioning with this
-// protocol establishes compatibility; operators cannot override its abilities.
+// ProtocolCapabilities 定义协议适配器的能力；运营配置不能覆盖协议本身的能力。
 func ProtocolCapabilities(adapter string) (Capabilities, error) {
 	switch adapter {
 	case "dc589":

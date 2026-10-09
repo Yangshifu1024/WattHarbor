@@ -41,8 +41,8 @@ func TestRoleUserCountDoesNotLockOtherRoles(t *testing.T) {
 		Username     string     // 本测试独有用户名，不依赖共享用户名。
 		PasswordHash string     // 占位存储值，不用于登录或校验口令。
 		RoleID       uint64     // 本夹具所属角色，目标与无关角色分离。
-		Status       string     // 原账号状态；停用账号仍引用角色。
-		DeletedAt    *time.Time // 原软删除事实；已删除账号不阻止角色删除。
+		Status       string     // 账号状态；停用账号仍引用角色。
+		DeletedAt    *time.Time // 软删除事实；已删除账号不阻止角色删除。
 	}
 	now := time.Now().UTC()
 	rows := []account{

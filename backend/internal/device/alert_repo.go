@@ -12,11 +12,11 @@ import (
 
 // AlertRepo 承接设备告警的同步落库与恢复判定。
 type AlertRepo struct {
-	DB *gorm.DB /* 所属central连接或调用方事务，不自行关闭 */
+	DB *gorm.DB /* 所属 central 连接或调用方事务，不自行关闭 */
 }
 
-// LockLatestDeviceAlert 在tx下按deviceID／metric当前读并锁定最新非规则告警，返回原行、存在性或读取错误。
-// 调用用例保持RR首次缺行间隙锁仲裁；冲突返回原错误，下一轮原事件重扫，不自行重试或提交。
+// LockLatestDeviceAlert 锁读设备和指标对应的最新非规则告警。
+// 首次缺行仍使用 RR 间隙锁控制并发，冲突交给下一轮事件重扫，不在此重试。
 func (s AlertRepo) LockLatestDeviceAlert(tx *gorm.DB, deviceID, metric string) (DeviceAlert, bool, error) {
 	var row DeviceAlert
 	found := tx.Table("alert_event").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -31,19 +31,19 @@ func (s AlertRepo) LockLatestDeviceAlert(tx *gorm.DB, deviceID, metric string) (
 	return row, true, nil
 }
 
-// MarkAlertOccurrence 在tx下以row原主键／月份保存eventID与faultCode，返回写入错误，不改首次时刻或提交。
-// 用例先核对最近故障的持久时刻；本方法不依据键的字符串顺序判断时序。
+// MarkAlertOccurrence 按告警主键和分区月份更新最新故障事件、故障码，保留首次时间。
+// 用例按网关事件时间判断先后，不能按事件键字符串排序。
 func (s AlertRepo) MarkAlertOccurrence(tx *gorm.DB, row DeviceAlert, eventID string, faultCode int) error {
 	return tx.Table("alert_event").Where("id = ? AND created_month = ?", row.ID, row.CreatedMonth).
 		Updates(map[string]any{"event_id": eventID, "value": faultCode}).Error
 }
 
-// InsertAlert 在tx下插入values所属告警列，返回写入错误，不自行提交；用例提供原事件时刻及分区月份。
+// InsertAlert 在调用方事务中保存告警，用例提供事件时间和分区月份。
 func (s AlertRepo) InsertAlert(tx *gorm.DB, values map[string]any) error {
 	return tx.Table("alert_event").Create(values).Error
 }
 
-// ListRecoverableAlerts 在ctx下返回active／acknowledged设备告警或读取错误，无写入，恢复证据由用例核对。
+// ListRecoverableAlerts 读取 active 或 acknowledged 告警，是否恢复由用例核对证据。
 func (s AlertRepo) ListRecoverableAlerts(ctx context.Context) ([]DeviceAlert, error) {
 	rows := []DeviceAlert{}
 	err := s.DB.WithContext(ctx).Table("alert_event").
@@ -53,8 +53,8 @@ func (s AlertRepo) ListRecoverableAlerts(ctx context.Context) ([]DeviceAlert, er
 	return rows, err
 }
 
-// AutoResolveAlert 在tx下以row原主键／月份／事件键和活动状态写入at原恢复时刻，返回写入错误，不自行提交。
-// 条件未匹配是新故障已取代水印的合法无操作，不能核销期间新增故障。
+// AutoResolveAlert 按主键、分区月份和最新事件键写恢复时间。
+// 事件键已改变时不更新，避免旧恢复证据覆盖新故障。
 func (s AlertRepo) AutoResolveAlert(tx *gorm.DB, row DeviceAlert, at time.Time) error {
 	return tx.Table("alert_event").
 		Where("id = ? AND created_month = ? AND event_id = ? AND status IN ('active','acknowledged')",
@@ -62,21 +62,20 @@ func (s AlertRepo) AutoResolveAlert(tx *gorm.DB, row DeviceAlert, at time.Time) 
 		Updates(map[string]any{"status": "auto_resolved", "resolved_at": at}).Error
 }
 
-// DeviceAlert 是设备告警的流转所需字段。
-// EventID 是最近一次故障事件的键，也是恢复判定的水印；CreatedMonth 是分区列，
-// 更新时必须带上，否则会扫全部分区。
+// DeviceAlert 保存告警状态、最新故障键和分区月份。
+// EventID 标记最新故障；更新须带 CreatedMonth，避免扫描全部分区。
 type DeviceAlert struct {
-	ID           uint64     // 原告警主键
-	DeviceID     string     // 原设备编号
-	Metric       string     // 原协议故障维度
-	EventID      string     // 最近原故障事件键
-	Status       string     // 原active／acknowledged／auto_resolved状态
+	ID           uint64     // 告警主键
+	DeviceID     string     // 设备编号
+	Metric       string     // 协议故障维度
+	EventID      string     // 最近故障事件键
+	Status       string     // active／acknowledged／auto_resolved 状态
 	CreatedAt    time.Time  // 首次故障持久时刻，不代表最近故障
-	CreatedMonth time.Time  // 原分区月份
-	ResolvedAt   *time.Time // 原恢复时刻，未恢复为nil
+	CreatedMonth time.Time  // 首次分区月份
+	ResolvedAt   *time.Time // 恢复时刻，未恢复为 nil
 }
 
-// ListAlerts 在ctx下按scope只读原告警公开列，返回原倒序数组或存储错误，不泄漏范围外告警。
+// ListAlerts 倒序读取当前范围内的告警展示字段。
 func (s AlertRepo) ListAlerts(ctx context.Context, scope operations.DataScope) ([]map[string]any, error) {
 	q := s.DB.WithContext(ctx).Table("alert_event AS a")
 	if !scope.Unrestricted {
@@ -88,14 +87,14 @@ func (s AlertRepo) ListAlerts(ctx context.Context, scope operations.DataScope) (
 	return rows, err
 }
 
-// LockAlert 在调用方tx下按id锁原告警最小流转事实，返回原行或缺失／读取错误，不提交。
+// LockAlert 在调用方事务中锁定告警并读取状态变更所需字段。
 func (s AlertRepo) LockAlert(tx *gorm.DB, id uint64) (DeviceAlert, error) {
 	var row DeviceAlert
 	err := tx.Table("alert_event").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&row).Error
 	return row, err
 }
 
-// Acknowledge 在tx下把row原主键／月份标为已认领并保存actorID及at，返回写入错误，不决定权限或提交。
+// Acknowledge 按主键和分区月份保存已认领状态、处理人和时间，权限由用例核对。
 func (s AlertRepo) Acknowledge(tx *gorm.DB, row DeviceAlert, actorID uint64, at time.Time) error {
 	return tx.Table("alert_event").Where("id=? AND created_month=?", row.ID, row.CreatedMonth).Updates(map[string]any{"status": "acknowledged", "acked_by": actorID, "acked_at": at}).Error
 }

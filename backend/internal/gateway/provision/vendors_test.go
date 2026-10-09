@@ -40,12 +40,12 @@ func callVendor(router *gin.Engine, method, path, token, body string) *httptest.
 	return rec
 }
 
-// validVendorInput 返回原合法 dc589/tcp 厂商请求，用于边界修改；不生成数据库记录。
+// validVendorInput 返回合法 dc589/tcp 厂商请求，用于边界修改；不生成数据库记录。
 func validVendorInput() contract.VendorRequest {
 	return contract.VendorRequest{VendorCode: "TEST_DC589", VendorName: "测试厂商", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
 }
 
-// TestVendorsRequireExactNonemptyServiceToken 使用 t 核对真实注册路由拒绝空配置／坏凭据及合法凭据后的缺库响应，不访问数据库。
+// TestVendorsRequireExactNonemptyServiceToken 核对真实注册路由拒绝空配置／坏凭据及合法凭据后的缺库响应，不访问数据库。
 func TestVendorsRequireExactNonemptyServiceToken(t *testing.T) {
 	for _, expected := range []string{"", vendorTestToken} {
 		router := vendorTestRouter(API{ServiceToken: expected})
@@ -74,7 +74,7 @@ func TestVendorsRequireExactNonemptyServiceToken(t *testing.T) {
 	}
 }
 
-// TestVendorInputBoundsAndSupportedTransport 使用 t 核对原字段边界、名称规范化及单一支持适配器规则，无数据库 IO。
+// TestVendorInputBoundsAndSupportedTransport 核对字段边界、名称规范化及单一支持适配器规则。
 func TestVendorInputBoundsAndSupportedTransport(t *testing.T) {
 	valid := validVendorInput()
 	valid.VendorName = "  测试厂商  "
@@ -109,7 +109,7 @@ func TestVendorInputBoundsAndSupportedTransport(t *testing.T) {
 	}
 }
 
-// TestVendorListQueryBoundsAndFailClosedScope 使用 t 核对原分页／关键词／ID范围解析、去重与拒绝边界，不声明真实数据库过滤证据。
+// TestVendorListQueryBoundsAndFailClosedScope 核对分页／关键词／ID 范围解析、去重与拒绝边界，仅测试输入解析，未测试真实数据库过滤。
 func TestVendorListQueryBoundsAndFailClosedScope(t *testing.T) {
 	parse := func(query string) (vendorListQuery, error) {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -136,7 +136,7 @@ func TestVendorListQueryBoundsAndFailClosedScope(t *testing.T) {
 	}
 }
 
-// TestVendorHandlersRejectMalformedAndUnsupportedInputsBeforeDatabase 使用 t 核对实际路由的严格 JSON、正文预算及先于数据库的拒绝顺序。
+// TestVendorHandlersRejectMalformedAndUnsupportedInputsBeforeDatabase 核对实际路由的严格 JSON、正文大小限制及先于数据库的拒绝顺序。
 func TestVendorHandlersRejectMalformedAndUnsupportedInputsBeforeDatabase(t *testing.T) {
 	router := vendorTestRouter(API{ServiceToken: vendorTestToken})
 	valid := `{"vendor_code":"V1","vendor_name":"测试厂商","adapter_class":"dc589","protocol":"tcp","status":"enabled"}`
@@ -152,12 +152,12 @@ func TestVendorHandlersRejectMalformedAndUnsupportedInputsBeforeDatabase(t *test
 	}
 }
 
-// TestVendorFailureEnvelopes 使用 t 核对原错误分类、状态及公开信封不泄露内部消息；数据库故障由窄错误值表示。
+// TestVendorFailureEnvelopes 核对错误分类、状态及公开响应不泄露内部消息；数据库故障由预设错误表示。
 func TestVendorFailureEnvelopes(t *testing.T) {
 	for _, tc := range []struct {
-		err    error // 原业务或存储故障值。
-		status int   // 原预期 HTTP 状态。
-		code   int   // 原预期公开业务码。
+		err    error // 业务或存储故障值。
+		status int   // 预期 HTTP 状态。
+		code   int   // 预期公开业务码。
 	}{
 		{gorm.ErrRecordNotFound, 404, 1004},
 		{gatewayrepo.ErrVendorCodeImmutable, 409, 2009},

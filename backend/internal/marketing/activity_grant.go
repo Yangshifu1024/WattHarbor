@@ -10,39 +10,38 @@ import (
 	"time"
 )
 
-// ErrActivityNotApplicable 表示输入或规则资格不成立；存储失败使用原错误，由调用方整体回滚。
+// ErrActivityNotApplicable 表示事件或规则不满足发券条件；数据库故障仍返回错误，调用方须整体回滚。
 var ErrActivityNotApplicable = errors.New("no activity rule applies")
 
-// ActivityEvent 描述调用方冻结的原触发事实，重放不换事件键、金额或用户。
+// ActivityEvent 保存触发类型、用户、金额和事件键，重试时保持不变。
 type ActivityEvent struct {
-	TriggerType string    // 原首充／邀请／门槛／节日触发类型
-	UserID      uint64    // 原受益用户
-	EventKey    string    // 原充值请求号或订单号生成的稳定事件键
-	AmountCents int64     // 原确认金额，分；仅门槛规则读取
-	InviterID   uint64    // 原邀请人主键，非邀请触发不读取
-	Now         time.Time // 本次受控UTC求值时刻
+	TriggerType string    // 首充／邀请／门槛／节日触发类型
+	UserID      uint64    // 受益用户
+	EventKey    string    // 充值请求号或订单号生成的稳定事件键
+	AmountCents int64     // 已确认金额，分；仅门槛规则读取
+	InviterID   uint64    // 邀请人主键，非邀请触发不读取
+	Now         time.Time // 本次受控 UTC 求值时刻
 }
 
-// ActivityResult 是原规则与模板的受理结果，重放不新增发放。
+// ActivityResult 是规则和券模板的发放结果，重放不会新增券。
 type ActivityResult struct {
-	RuleID     uint64 `json:"rule_id"`          // 原规则主键
-	CouponID   uint64 `json:"coupon_id"`        // 原奖励模板
+	RuleID     uint64 `json:"rule_id"`          // 既定规则主键
+	CouponID   uint64 `json:"coupon_id"`        // 奖励模板
 	InviterGot bool   `json:"inviter_rewarded"` // 邀请人奖励已受理或同键重放
-	Already    bool   `json:"already_granted"`  // 原受益人发放键已存在
+	Already    bool   `json:"already_granted"`  // 受益人发放键已存在
 }
 
-// activityGrant 是向持久化交付的冻结发放事实，不携带列映射。
+// activityGrant 是待保存的发放内容，不含数据库字段映射。
 type activityGrant struct {
-	CouponID  uint64    // 原奖励模板
-	UserID    uint64    // 原受益用户
-	Source    string    // 原活动或邀请来源
-	ExpiresAt time.Time // 模板与活动窗口封顶后的UTC时刻
-	EventID   string    // 原规则／用户／事件键确定的32字符凭据
+	CouponID  uint64    // 奖励模板
+	UserID    uint64    // 受益用户
+	Source    string    // 活动或邀请来源
+	ExpiresAt time.Time // 模板与活动窗口封顶后的 UTC 时刻
+	EventID   string    // 既定规则／用户／事件键确定的32字符凭据
 }
 
-// ApplyInTx 在 tx 原context下求值 event，锁定本次规则与全部模板后按原来源预算和单人份数发放。
-// 返回原结果数组或不适用／存储错误；保持调用方完整事务，失败必须回滚，不自行提交或重试。
-// 锁序为规则主键、模板主键、发放行；不在模板锁之后取得用户或钱包锁。
+// ApplyInTx 按规则主键→模板主键→发放行加锁，再检查总量和单人额度并发券。
+// 使用调用方完整事务，失败整体回滚；模板锁之后不能再锁用户或钱包。
 func (s ActivityService) ApplyInTx(tx *gorm.DB, event ActivityEvent) ([]ActivityResult, error) {
 	if event.UserID == 0 || event.EventKey == "" || event.Now.IsZero() {
 		return nil, ErrActivityNotApplicable
@@ -79,12 +78,12 @@ func (s ActivityService) ApplyInTx(tx *gorm.DB, event ActivityEvent) ([]Activity
 	return out, nil
 }
 
-// usableActivityCoupon 以 coupon 原时窗与 event.Now 判定模板当前适用，无IO；缺失零值不适用。
+// usableActivityCoupon 检查模板状态和有效时间，缺失模板视为不可用。
 func usableActivityCoupon(coupon activityCoupon, now time.Time) bool {
 	return coupon.ID != 0 && coupon.Status == "active" && (!coupon.StartAt.Valid || !now.Before(coupon.StartAt.Time)) && (!coupon.EndAt.Valid || now.Before(coupon.EndAt.Time))
 }
 
-// activityExpiry 对已锁定 rule／coupon 以 now 求值原较早截止；无额外SQL或错误回退。
+// activityExpiry 取已锁活动和券模板的最早截止时间。
 func activityExpiry(rule activityRule, coupon activityCoupon, now time.Time) time.Time {
 	var end *time.Time
 	if coupon.EndAt.Valid {
@@ -93,8 +92,8 @@ func activityExpiry(rule activityRule, coupon activityCoupon, now time.Time) tim
 	return ActivityGrantExpiry(now, coupon.ValidHours, end, rule.EndAt)
 }
 
-// grantFromRule 在 tx 已持规则与模板锁下依原 event 和 coupons 准入及发放，返回原资格／存储错误。
-// 预算耗尽沿用跳过结果；唯一键重放不再发放；邀请人无资格时跳过整条邀请规则。
+// grantFromRule 在规则和模板锁内检查资格并发放，预算耗尽时跳过，重放不重复发券。
+// 邀请人资格不符时跳过整条邀请规则。
 func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent, coupons map[uint64]activityCoupon) (ActivityResult, error) {
 	out := ActivityResult{RuleID: rule.ID, CouponID: rule.CouponID}
 	eventID := activityEventID(rule.ID, event)
@@ -171,7 +170,7 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent, coupons 
 	return out, nil
 }
 
-// grantSourceFor 保留 trigger 的既有activity／invite_reward来源，无IO。
+// grantSourceFor 将邀请奖励归为 invite_reward，其余活动归为 activity。
 func grantSourceFor(trigger string) string {
 	if trigger == TriggerInviteReward {
 		return "invite_reward"
@@ -179,7 +178,7 @@ func grantSourceFor(trigger string) string {
 	return "activity"
 }
 
-// activityEventID 按 ruleID、event 原用户和事件键及 scope 构造确定32字符号；无IO，不包含当前重试时刻。
+// activityEventID 根据规则、用户、事件键和奖励方生成稳定的 32 字符发放号，不使用重试时间。
 func activityEventID(ruleID uint64, event ActivityEvent, scope ...string) string {
 	var key strings.Builder
 	key.WriteString(fmt.Sprint(ruleID))
@@ -190,8 +189,8 @@ func activityEventID(ruleID uint64, event ActivityEvent, scope ...string) string
 	return hex.EncodeToString(sum[:16])
 }
 
-// ActivityEventKeyForRecharge 由 requestID 原充值号构造稳定事件键，无IO。
+// ActivityEventKeyForRecharge 为充值请求号生成稳定事件键。
 func ActivityEventKeyForRecharge(requestID string) string { return "recharge:" + requestID }
 
-// ActivityEventKeyForOrder 由 orderNo 原业务号构造稳定事件键，无IO。
+// ActivityEventKeyForOrder 为充电订单号生成稳定事件键。
 func ActivityEventKeyForOrder(orderNo string) string { return "order:" + orderNo }

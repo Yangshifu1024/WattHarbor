@@ -9,7 +9,7 @@ import (
 )
 
 // readCoordinates 解析 c 的可选经纬度，依次返回经度、纬度、是否提供和是否合法。
-// 两项均缺省返回 0、0、false、true；单项缺失、格式或范围错误写 400 并返回 false、false；不执行业务 IO。
+// 两项均缺省返回 0、0、false、true；单项缺失、格式或范围错误写 400 并返回 false、false。
 func readCoordinates(c *gin.Context) (float64, float64, bool, bool) {
 	rawLon, rawLat := c.Query("longitude"), c.Query("latitude")
 	if rawLon == "" && rawLat == "" {

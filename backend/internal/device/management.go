@@ -14,20 +14,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// SummaryReader 仅提供已授权设备的运行摘要，不持有中央权限或业务写入能力。
+// SummaryReader 仅查询已授权设备的运行摘要。
 type SummaryReader interface {
-	// DeviceSummaries 在 context 下批量读取原编号的摘要，返回 nullable 事实或传输／服务错误。
+	// DeviceSummaries 批量读取设备摘要，保留未上报字段的空值。
 	DeviceSummaries(context.Context, []string) ([]contract.DeviceSummary, error)
 }
 
-// ManagementService 拥有运营资料、启停及其审计；运行摘要只丰富已经通过范围过滤的设备。
+// ManagementService 负责设备运营资料、启停和审计，运行摘要只补充范围内设备。
 type ManagementService struct {
 	DB        *gorm.DB      // central 设备元数据连接，由进程管理
 	Summaries SummaryReader // 网关具名客户端，由 cmd 注入；缺失或故障不补造已知状态
 }
 
-// List 在 ctx 下按 scope、q 返回未删除设备分页及运行摘要；显式越界站点或数据库故障返回错误。
-// 摘要不可用时保留原运行未知语义；不修改设备或权限，摘要仅查询可见的当页编号。
+// List 分页读取范围内设备，仅向网关查询当页可见设备摘要。
+// 摘要失败时保留未知字段，显式越界站点或中央查询失败仍返回错误。
 func (s ManagementService) List(ctx context.Context, scope operations.DataScope, q persist.PageQuery) (persist.Page[Device], error) {
 	if q.StationID > 0 && !scope.AllowsStation(q.StationID) {
 		return persist.Page[Device]{}, operations.ErrForbidden
@@ -39,8 +39,7 @@ func (s ManagementService) List(ctx context.Context, scope operations.DataScope,
 	return out, err
 }
 
-// Get 在 ctx 下读取 scope 内 id 的资料和摘要；范围外与不存在同为缺失，存储失败原样返回。
-// 仅查询已授权身份；网关故障保留未知字段，不影响中央运营资料可读性。
+// Get 读取范围内设备和摘要；范围外与不存在均按缺失处理，网关失败时仍返回中央资料和未知运行字段。
 func (s ManagementService) Get(ctx context.Context, scope operations.DataScope, id string) (Device, error) {
 	row, err := FindDeviceByID(ctx, s.DB, scope, id)
 	if err != nil {
@@ -55,8 +54,8 @@ func (s ManagementService) Get(ctx context.Context, scope operations.DataScope, 
 	return rows[0], nil
 }
 
-// Enrich 在 ctx 下以 rows 中已授权的编号批量读取摘要，原地合并命中项并将缺失端口规范为 []。
-// 无返回值；依赖缺失或失败保留未知字段，额外设备不会扩大结果，nullable 零值原样保留。
+// Enrich 批量查询已授权设备摘要并合并，缺失端口统一为 []。
+// 摘要失败保留未知字段，额外设备不加入结果，可空零值不改写。
 func (s ManagementService) Enrich(ctx context.Context, rows []Device) {
 	for i := range rows {
 		if rows[i].Ports == nil {
@@ -93,14 +92,14 @@ func (s ManagementService) Enrich(ctx context.Context, rows []Device) {
 	}
 }
 
-// setCapabilities 从 row 的协议推导展示能力并原地写入；未知协议为零能力，无 IO。
+// setCapabilities 按设备协议填写展示能力，未知协议使用零能力。
 func setCapabilities(row *Device) {
 	cap, _ := charging.ProtocolCapabilities(row.ProtocolAdapter)
 	row.ReportsEnergy, row.ReportsSegmentedPower = cap.ReportsEnergy, cap.ReportsSegmentedPower
 }
 
-// ChangeStatus 在 ctx 下以 audit 的实时权限变更 scope 内 id 的运营 status；只接受 enabled／disabled。
-// 返回原资料、权限、缺失、状态冲突或存储错误。持行锁、更新时间与审计同事务，不关闭 TCP 或结束订单。
+// ChangeStatus 核对当前权限和范围后锁定设备，只允许 enabled／disabled。
+// 状态、更新时间和审计同事务，不关闭 TCP 或结束订单。
 func (s ManagementService) ChangeStatus(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id, status string) (Device, error) {
 	if id == "" || len(id) > 64 {
 		return Device{}, ManagementInputError{"设备编号无效"}
@@ -134,8 +133,8 @@ func (s ManagementService) ChangeStatus(ctx context.Context, audit ops.AuditCont
 	return row, err
 }
 
-// Update 在 ctx 下以 audit 的实时权限提交 scope 内 id 的完整 in，核对锁定行的原毫秒版本。
-// 返回资料及摘要，或输入、权限、缺失、旧版本、存储错误；只修改运营资料，资料与审计同事务。
+// Update 核对权限和范围后锁定设备，比较 UTC 毫秒版本，再保存完整运营资料和审计。
+// 旧版本拒绝覆盖，成功后返回资料及摘要。
 func (s ManagementService) Update(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id string, in DeviceInput) (Device, error) {
 	if id == "" || len(id) > 64 {
 		return Device{}, ManagementInputError{"设备编号无效"}

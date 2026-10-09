@@ -6,13 +6,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// CardAvailableCents 返回卡对应钱包的可用余额。
-// ctx 控制取消，db 为原连接或事务，cardNo 为原十进制身份；返回分值或缺失／存储错误。
-// 卡、用户或钱包无效均返回 gorm.ErrRecordNotFound，消费者据此返回 valid=false，不泄露绑定身份。
-// 单条只读联表投影保证同次读取的有效性和余额，负值下限零，不加锁、扣款或提交。
+// CardAvailableCents 用一次联表查询读取卡对应钱包的可用余额，单位分，下限为零。
+// 卡、用户或钱包无效时返回 gorm.ErrRecordNotFound，公开接口返回 valid=false，不泄露绑定用户。
 func CardAvailableCents(ctx context.Context, db *gorm.DB, cardNo string) (int64, error) {
 	var row struct {
-		BalanceCents int64 `gorm:"column:balance_cents"` // 原余额减冻结额的分值
+		BalanceCents int64 `gorm:"column:balance_cents"` // 余额减冻结额的金额（分）
 	}
 	err := db.WithContext(ctx).Table("online_card c").
 		Select("w.balance_cents-w.frozen_cents AS balance_cents").

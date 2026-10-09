@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// RechargePayment 是 payment 提供的支付单事实，原预支付参数以 JSON 保持渠道形状。
+// RechargePayment 返回支付编号、金额、状态与截止时间；预支付参数保留渠道 JSON 格式。
 type RechargePayment struct {
-	ID          uint64     // 原支付主键，内部契约使用整数
-	OrderNo     string     // 原商户单号，预支付重试不改变
+	ID          uint64     // 支付主键，内部契约使用整数
+	OrderNo     string     // 商户单号，预支付重试不改变
 	AmountCents int64      // 支付金额，单位分
 	Status      string     // 当前支付状态，客户端支付成功不能修改此值
 	ExpiresAt   *time.Time // UTC 支付截止，nil 表示没有有效期限
@@ -21,11 +21,11 @@ type RechargePayment struct {
 
 // RechargePayments 是钱包申请需要的支付能力；实现由 cmd 注入，钱包不引用 payment。
 type RechargePayments interface {
-	// LoadInTx 在 tx 内读取 paymentID 的原支付事实；无记录或读取失败返回错误。
+	// LoadInTx 在事务中读取 paymentID 的支付信息；无记录或读取失败返回错误。
 	LoadInTx(tx *gorm.DB, paymentID uint64) (RechargePayment, error)
-	// CreateInTx 在 tx 内为 userID 创建 amountCents（分）的充值支付；调用方负责提交。
+	// CreateInTx 在事务中为 userID 创建 amountCents（分）的充值支付；调用方负责提交。
 	CreateInTx(tx *gorm.DB, userID uint64, amountCents int64) (RechargePayment, error)
-	// Prepare 在申请已提交后为原支付单请求或复用预支付参数。
+	// Prepare 在申请已提交后为支付单请求或复用预支付参数。
 	// ctx 取消数据库和渠道调用；失败保留原单号，参数为空时必须返回错误。
 	Prepare(ctx context.Context, pay RechargePayment, openID string) (json.RawMessage, error)
 }
@@ -33,7 +33,7 @@ type RechargePayments interface {
 // RechargeService 管理充值申请事务和提交后的预支付准备。
 type RechargeService struct {
 	DB       *gorm.DB         // central 钱包请求数据，生命周期由进程管理
-	Payments RechargePayments // payment 的原单复用和渠道准备能力
+	Payments RechargePayments // payment 的支付单复用和渠道准备能力
 }
 
 // RechargeInput 保留当前充值请求的 JSON 内容用于幂等存档。
@@ -44,20 +44,18 @@ type RechargeInput struct {
 
 // RechargeResult 是可公开的申请回执，支付参数仅在原单仍可付款时出现。
 type RechargeResult struct {
-	RequestID       string          `json:"request_id"`               // 原申请身份
-	PaymentOrderID  uint64          `json:"payment_order_id"`         // 原支付身份，保持既有公开整数契约
-	MerchantOrderNo string          `json:"merchant_order_no"`        // 原商户单号
+	RequestID       string          `json:"request_id"`               // 申请身份
+	PaymentOrderID  uint64          `json:"payment_order_id"`         // 支付编号，保持既有公开整数契约
+	MerchantOrderNo string          `json:"merchant_order_no"`        // 商户单号
 	AmountCents     int64           `json:"amount_cents"`             // 申请金额，分
 	Status          string          `json:"status"`                   // 已持久支付状态
 	CanPay          bool            `json:"can_pay"`                  // 未支付且未过期才为 true
 	PaymentParams   json.RawMessage `json:"payment_params,omitempty"` // 已保存的渠道参数，不含服务密钥
 }
 
-// Create 为 userID 提交 in 的充值申请；ctx 取消事务和提交后预支付调用。
-// 成功返回原支付回执；冲突、冻结或无身份时返回相应业务错误，结果不可使用。
-// 锁序沿用 user→wallet→request，申请与支付同事务；预支付必须在提交后执行。
-// 使用 READ COMMITTED，使读取 openid 后等待用户／钱包锁的重放仍能看见前一申请的已提交凭据。
-// 渠道失败返回 ErrPrepayUnavailable，原申请仍持久存在，相同 request_id 可恢复原支付参数。
+// Create 创建用户充值申请与支付记录，锁序为用户→钱包→请求，失败全部回滚。
+// 使用 READ COMMITTED，使等锁后的重放能读取前次提交的申请；预支付只在提交后请求。
+// 渠道失败返回 ErrPrepayUnavailable，保留申请，相同 request_id 可恢复支付参数。
 func (s RechargeService) Create(ctx context.Context, userID uint64, in RechargeInput) (RechargeResult, error) {
 	if s.DB == nil || s.Payments == nil || userID == 0 || uuid.Validate(in.RequestID) != nil || in.AmountCents < 100 || in.AmountCents > 5000000 {
 		return RechargeResult{}, ErrRechargeConflict

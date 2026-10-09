@@ -18,17 +18,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrRefundConflict 表示原退款身份、金额、渠道、状态或额度与持久凭据冲突。
+// ErrRefundConflict 表示退款单号、金额、渠道、状态或可退额度与已保存记录不一致。
 var ErrRefundConflict = errors.New("refund identity or amount conflict")
 
-// ErrRefundReferenceMissing 表示退款依赖的某张表已经查不到对应行：
-// 支付单、钱包退款分摊行或钱包账户任一缺失；这些前置身份不能通过重新请求渠道创建。
-//
-// 已缺失的前置身份无法通过重新向渠道请求恢复，执行器将原退款置为失败以停止重捞。
+// ErrRefundReferenceMissing 表示支付、钱包分摊或钱包账户缺失；重新请求渠道无法补齐，退款应标为失败并停止重试。
 var ErrRefundReferenceMissing = errors.New("refund references a record that no longer exists")
 
-// walletSettlement 把退款行映射为钱包结算的最小事实集合。
-// r 为原退款记录，返回其原主键、用户、单号、类型及分值，无 IO 或错误。
+// walletSettlement 将退款单号和金额（分）转换为钱包结算输入。
 func walletSettlement(r RefundRecord) wallet.Settlement {
 	return wallet.Settlement{ID: r.ID, UserID: r.UserID, RefundNo: r.RefundNo, BizType: r.BizType, RefundCents: r.RefundCents}
 }
@@ -37,12 +33,12 @@ func walletSettlement(r RefundRecord) wallet.Settlement {
 // 结果未知的退款保持 processing 状态，每次幂等重试之前都先查询一次。
 type RefundExecutor struct {
 	DB           *gorm.DB           // central 退款连接，由进程管理
-	Provider     pay.RefundProvider // 原渠道查询及创建退款能力，未知结果先查原单
-	ProviderName string             // 当前渠道标签，必须与原预支付或交易身份一致
+	Provider     pay.RefundProvider // 渠道查询及创建退款能力，未知结果先查单
+	ProviderName string             // 当前渠道标签，必须与支付渠道记录一致
 }
 
-// Batch 在 ctx 下读取最多 20 笔已到期 automatic 退款并逐项执行，返回无错误处理笔数和首个失败。
-// 未配置 Provider 返回 0、nil；取消后停止后续处理，部分成功不回滚，原失败记录按原身份恢复。
+// Batch 每批执行最多 20 笔到期自动退款，返回成功处理数和首个错误。
+// 未配置渠道时返回 0、nil；取消后停止后续处理，已成功项不回滚。
 func (e RefundExecutor) Batch(ctx context.Context) (int, error) {
 	if e.Provider == nil {
 		return 0, nil
@@ -68,17 +64,16 @@ func (e RefundExecutor) Batch(ctx context.Context) (int, error) {
 	return count, first
 }
 
-// Execute 在 ctx 下领取 id 原退款的持久重试窗口，提交后以十秒超时查询原渠道，缺单才创建。
-// 未到期或已成功返回 nil；前置引用缺失置为失败，身份／额度冲突或渠道未知返回错误。
-// 未知结果保留 processing 与原单号，后续先查，不释放钱包 frozen；成功回执在原资金事务内应用。
+// Execute 先领取退款重试窗口并提交，再以十秒超时查询渠道，缺单才创建。
+// 结果未知时保留 processing、首次单号和钱包冻结，下次先查询；成功回执在资金事务内入账。
+// 未到期或已成功直接返回，前置记录缺失则标为失败。
 func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	if e.Provider == nil || e.ProviderName == "" {
 		return errors.New("refund provider unavailable")
 	}
 	r, request, claimed, err := e.claim(ctx, id)
 	if err != nil {
-		// claim 里的每一张引用表都先于退款单创建。查不到行就是永久性的：
-		// 落成终态让 Batch 不再选中它，而不是每 10 秒重捞一次。
+		// 依赖记录均先于退款创建；缺失时标为永久失败，避免每十秒重复扫描。
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if failErr := e.failPermanent(ctx, id, "退款依赖的支付单或钱包记录已不存在"); failErr != nil {
 				return failErr
@@ -110,18 +105,16 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	return e.apply(ctx, r, request, result)
 }
 
-// failPermanent 把不可能成功的退款落成终态。next_attempt_at 不再前推，
-// 因为没有下一次；status 离开 pending/processing 后 Batch 不会再选中它。
-// ctx 取消更新，id 为原退款主键，reason 为已脱敏原因；返回数据库错误，不请求渠道。
+// failPermanent 将退款标为终态失败，保存脱敏原因，不再安排重试。
 func (e RefundExecutor) failPermanent(ctx context.Context, id uint64, reason string) error {
 	return e.DB.WithContext(ctx).Model(&RefundRecord{}).
 		Where("id = ? AND status IN ('pending','processing')", id).
 		Updates(map[string]any{"status": "failed", "failure_reason": reason}).Error
 }
 
-// claim 在 ctx 下按 id 读取原退款，按钱包（适用时）→支付→退款锁序核对原身份及当前额度。
-// 返回原记录、渠道原请求、已领取标志及错误；false、nil 表示成功或尚未到期，不得发起新请求。
-// processing、尝试次数及有界退避窗口先提交；错误整体回滚，原单号不变，不在持锁期间请求渠道。
+// claim 按钱包（适用时）→支付→退款加锁，核对身份和当前可退额度。
+// 领取时保存 processing、尝试次数和有界退避时间，然后提交；持锁期间不请求渠道。
+// 未领取时不能发新请求，错误整体回滚，首次单号保持不变。
 func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay.RefundRequest, bool, error) {
 	var r RefundRecord
 	var request pay.RefundRequest
@@ -134,7 +127,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 		if err := wallet.LockRefundWallet(tx, walletSettlement(r)); err != nil {
 			return err
 		}
-		// payment 提供所属支付的行锁投影；settlement 单向引用 payment，后者不引用 settlement。
+		// payment 提供支付锁读方法，settlement 单向调用 payment。
 		var p pay.RefundPayment
 		var paymentErr error
 		p, paymentErr = pay.LockPaymentForRefund(tx, r.PaymentOrderID)
@@ -158,7 +151,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 		}
 		if r.BizType == "charge" {
 			var prepay struct {
-				ParamsJSON []byte // 原预支付渠道参数，核对原渠道身份
+				ParamsJSON []byte // 预支付渠道参数，核对渠道身份
 			}
 			if err := tx.Table("charge_prepay").Where("payment_order_id = ?", p.ID).Take(&prepay).Error; err != nil {
 				return err
@@ -174,8 +167,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 		}
 
 		var reserved int64
-		// 同上：payment_order 的行锁串行化不了并发新建的退款单，
-		// 这里必须用加锁读（当前读）才看得到别人已经落库的占用额。
+		// 支付锁不会刷新已有快照；在途退款须用锁读查看并发提交的最新预占。
 		if err := tx.Model(&RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("COALESCE(SUM(refund_cents),0)").
 			Where("payment_order_id = ? AND id <> ? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID, r.ID).
@@ -186,7 +178,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 			return ErrRefundConflict
 		}
 		request = pay.RefundRequest{RefundNo: r.RefundNo, MerchantOrderNo: p.OrderNo, TransactionID: p.WechatTransactionID.String, TotalCents: p.TotalCents, RefundCents: r.RefundCents}
-		// 这把持久化的租约同时提供了崩溃之后的有界指数退避重试。
+		// 持久租约保证崩溃后仍按有上限的指数退避恢复。
 		delay := time.Duration(30*(1<<min(r.RetryCount, uint32(7)))) * time.Second
 		update := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "processing", "retry_count": gorm.Expr("retry_count+1"), "next_attempt_at": time.Now().UTC().Add(delay)})
 		if update.Error != nil {
@@ -198,8 +190,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 	return r, request, claimed, err
 }
 
-// receiptMatches 核对渠道回执与原请求的交易、退款身份及金额是否严格对应。
-// request 为持久原请求，result 为渠道回执；返回严格一致标志，无 IO 或错误。
+// receiptMatches 严格比对请求与渠道回执的交易号、退款单号和金额。
 func receiptMatches(request pay.RefundRequest, result pay.RefundResult) bool {
 	return result.RefundNo == request.RefundNo &&
 		result.MerchantOrderNo == request.MerchantOrderNo &&
@@ -209,18 +200,15 @@ func receiptMatches(request pay.RefundRequest, result pay.RefundResult) bool {
 		result.RefundID != "" && len(result.RefundID) <= 64
 }
 
-// providerMatchesChannel 保证交易与结算它的渠道同属真实或模拟一侧。
-//
-// SIM 前缀交易只允许 simulation 渠道；真实交易不能通过模拟渠道生成资金确认。
-// providerName 为装配渠道，transactionID 为原支付交易号；返回同侧标志，无 IO 或错误。
+// providerMatchesChannel 检查交易来源与渠道一致：SIM 交易只允许 simulation，真实交易禁止模拟确认。
 func providerMatchesChannel(providerName, transactionID string) bool {
 	simulated := strings.HasPrefix(transactionID, "SIM")
 	return (providerName == "simulation") == simulated
 }
 
-// apply 在 ctx 下核对 r 原退款、request 原请求和 result 渠道回执后推进资金。
-// PROCESSING 保持原记录等待查询；终态失败只释放钱包预占，SUCCESS 原子写资金、回执、订单与 Outbox。
-// 适用时先锁钱包再锁支付和退款，重复同回执不重复出账；错误整体回滚，不在事务内请求渠道。
+// apply 核对退款单号、金额和渠道回执后入账，按钱包（适用时）→支付→退款加锁。
+// PROCESSING 等待查询，失败只释放钱包预占；SUCCESS 同时保存资金、回执、订单和 Outbox。
+// 重放不重复出账，错误整体回滚，事务内不请求渠道。
 func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.RefundRequest, result pay.RefundResult) error {
 	if !receiptMatches(request, result) {
 		return ErrRefundConflict
@@ -270,10 +258,10 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 			return err
 		}
 		var receipt struct {
-			RefundRecordID uint64 // 原退款主键，一笔一份成功回执
-			WechatRefundID string // 原渠道退款成功身份
+			RefundRecordID uint64 // 退款主键，一笔一份成功回执
+			WechatRefundID string // 渠道退款单号
 		}
-		// 钱包分摊的普通读取早于钱包锁；原成功回执使用当前读，不在旧快照下拒绝已成功重放。
+		// 钱包锁前的查询可能建立旧快照，成功回执用当前读以识别已入账重放。
 		err := tx.Table("refund_success_receipt").Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_record_id = ?", r.ID).Take(&receipt).Error
 		if err == nil {
 			if current.Status != "success" || receipt.WechatRefundID != result.RefundID {

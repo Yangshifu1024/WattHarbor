@@ -6,8 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ListUserCoupons 在 ctx 下按 db／userID 读取启用未删模板的原持券顺序与优惠投影，返回数组或存储错误。
-// 包含已使用和到期权益，展示状态由 CouponQueryService 仲裁，无写入。
+// ListUserCoupons 读取启用、未删模板对应的本人券，含已用和到期记录；展示状态由 CouponQueryService 计算。
 func ListUserCoupons(ctx context.Context, db *gorm.DB, userID uint64) ([]CouponGrant, error) {
 	rows := []CouponGrant{}
 	err := db.WithContext(ctx).Table("coupon_grant AS g").

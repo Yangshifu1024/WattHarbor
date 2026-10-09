@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// frames 使用 t 解析 raw 测试正文并返回原帧集合，非法 JSON 终止当前测试；不注册路由或访问数据库。
+// frames 解析 raw 测试正文并返回帧集合，非法 JSON 终止当前测试；不注册路由或访问数据库。
 func frames(t *testing.T, raw string) []backfillFrame {
 	t.Helper()
 	var in struct {
-		// Frames 原 JSON 测试帧列表，仅由解析夹具使用。
+		// Frames JSON 测试帧列表，仅由解析夹具使用。
 		Frames []backfillFrame `json:"frames"`
 	}
 	if err := json.Unmarshal([]byte(raw), &in); err != nil {
@@ -19,10 +19,10 @@ func frames(t *testing.T, raw string) []backfillFrame {
 	return in.Frames
 }
 
-// validFrame 保留原合法补采帧正文模板，不创建持久记录。
+// validFrame 保留合法补采帧正文模板，不创建持久记录。
 const validFrame = `{"device_id":"xx_001_abc","port_no":1,"msg_type":"telemetry","ts":"%s","payload":{"voltage_v":"220.5","power_w":704.0}}`
 
-// TestParseBackfillAcceptsStringAndNumberPayloads 使用 t 核对固定时钟下字符串与数字载荷的六位小数归一；只证明纯解析，不证明数据库插入。
+// TestParseBackfillAcceptsStringAndNumberPayloads 核对固定时钟下字符串与数字载荷的六位小数归一；只证明纯解析，不证明数据库插入。
 func TestParseBackfillAcceptsStringAndNumberPayloads(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	ts := now.Add(-time.Hour).Format(time.RFC3339)
@@ -46,14 +46,14 @@ func TestParseBackfillAcceptsStringAndNumberPayloads(t *testing.T) {
 	}
 }
 
-// TestParseBackfillRejectsInvalidFrames 使用 t 核对原设备、协议、指标、端口与时间拒绝边界；任一无效帧返回错误，无数据库 IO。
+// TestParseBackfillRejectsInvalidFrames 核对设备、协议、指标、端口与时间拒绝边界；任一无效帧返回错误。
 func TestParseBackfillRejectsInvalidFrames(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	valid := now.Add(-time.Hour).Format(time.RFC3339)
 	cases := []struct {
-		// name 原拒绝场景名，供 t 子测试使用。
+		// name 拒绝场景名，供 t 子测试使用。
 		name string
-		// body 该场景的原输入 JSON，不更改业务造数或断言。
+		// body 该场景的输入 JSON，不更改业务造数或断言。
 		body string
 	}{
 		{"device id mismatch", `{"frames":[{"device_id":"other_device","msg_type":"telemetry","ts":"` + valid + `","payload":{"power_w":"1"}}]}`},
@@ -75,7 +75,7 @@ func TestParseBackfillRejectsInvalidFrames(t *testing.T) {
 	}
 }
 
-// TestParseBackfillCollapsesDuplicateSamples 使用 t 核对纯解析对同毫秒设备／端口／指标键去重，并保留不同端口样本；不证明持久重放。
+// TestParseBackfillCollapsesDuplicateSamples 核对纯解析对同毫秒设备／端口／指标键去重，并保留不同端口样本；不证明持久重放。
 func TestParseBackfillCollapsesDuplicateSamples(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	ts := now.Add(-time.Hour).Format(time.RFC3339)

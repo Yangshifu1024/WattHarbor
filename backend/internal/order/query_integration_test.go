@@ -41,7 +41,7 @@ func queryDB(t *testing.T) *gorm.DB {
 }
 
 // TestOrderQueryKeepsOwnerNullFeesBatchingAndFrozenNames 使用真实订单、结算回执与站点读取验证所属只读组合。
-// 缺失／无效费用为 nil，确认零费为非空零值，批量查询固定3次；全部造数外层回滚。
+// 缺失、无效费用为 nil，确认零费为非空零值，批量查询固定3次；全部造数外层回滚。
 func TestOrderQueryKeepsOwnerNullFeesBatchingAndFrozenNames(t *testing.T) {
 	tx := queryDB(t).Begin()
 	if tx.Error != nil {
@@ -110,8 +110,8 @@ func TestOrderQueryKeepsOwnerNullFeesBatchingAndFrozenNames(t *testing.T) {
 		t.Fatalf("owned station projection=%+v err=%v", rows, err)
 	}
 	snapshot, err := json.Marshal(struct {
-		Rule  charging.Rule  `json:"rule"`  /* 原规则 */
-		Offer charging.Offer `json:"offer"` /* 原冻结套餐 */
+		Rule  charging.Rule  `json:"rule"`  /* 既有规则 */
+		Offer charging.Offer `json:"offer"` /* 冻结套餐 */
 	}{Rule: charging.Rule{Version: 1, Spec: charging.Spec{Scheme: &charging.Scheme{Name: "Original frozen scheme"}}}, Offer: charging.Offer{ID: 1, StationID: id, Name: "Original frozen package", Mode: "duration", PriceCents: 100, DurationMinutes: 30}})
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func TestOrderQueryKeepsOwnerNullFeesBatchingAndFrozenNames(t *testing.T) {
 }
 
 // TestOrderListQueryTimeKeepsClosedBoundsAndStartedPriority 验证生成查询时间的闭区间、未启动回退、启动优先及更新即时生效。
-// 真实订单均使用私有设备身份，在外层事务回滚，不依赖开发订单内容。
+// 真实订单均使用私有设备编号，在外层事务回滚，不依赖开发订单内容。
 func TestOrderListQueryTimeKeepsClosedBoundsAndStartedPriority(t *testing.T) {
 	tx := queryDB(t).Begin()
 	if tx.Error != nil {

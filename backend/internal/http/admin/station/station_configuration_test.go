@@ -8,12 +8,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestStationFilterValidation 验证站点筛选的必填性、重复参数、正整数及范围，非法输入返回400。
+// TestStationFilterValidation 验证站点筛选的必填性、重复参数、正整数及范围，非法输入返回 400。
 func TestStationFilterValidation(t *testing.T) {
 	for _, tc := range []struct {
-		// query 是站点筛选的原查询串。
+		// query 是站点筛选的查询串。
 		query string
-		// required 指定必填性，valid 是预期解析准入结果。
+		// required 表示是否必填，valid 表示预期解析是否成功。
 		required, valid bool
 		// id 是成功解析后的站点号，缺失或非法时为零。
 		id uint64

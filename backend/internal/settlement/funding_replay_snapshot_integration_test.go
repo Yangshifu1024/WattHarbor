@@ -17,8 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// oldFundingSnapshot 在 db 上开始 RR 事务并普通读取 table 的测试身份，返回仍持旧快照的事务。
-// 测试负责回滚；查询错误直接终止，不修改数据，id 仅限当前测试造数。
+// oldFundingSnapshot 开启 RR 事务并普通读取测试记录以建立旧快照，调用方负责回滚。
 func oldFundingSnapshot(t *testing.T, db *gorm.DB, table, column string, id uint64) *gorm.DB {
 	t.Helper()
 	tx := db.Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead})
@@ -33,8 +32,8 @@ func oldFundingSnapshot(t *testing.T, db *gorm.DB, table, column string, id uint
 	return tx
 }
 
-// TestManualRefundAndSecondSignatureSeeCommittedReceipts 用独立连接提交原申请及首签，再在旧快照内调用实际 repo。
-// 相同申请必须返回原号，不同审核人必须接续首签；首签实时权限为受控 fixture，造数按身份清理为零。
+// TestManualRefundAndSecondSignatureSeeCommittedReceipts 验证独立连接提交申请和首签后，旧快照内仍能重放申请并继续二签。
+// 首签权限使用可控夹具，仅清理本测试提交数据。
 func TestManualRefundAndSecondSignatureSeeCommittedReceipts(t *testing.T) {
 	writer, closeWriter := testConn(t)
 	defer closeWriter()
@@ -146,7 +145,7 @@ func TestWalletRefundReceiptAndLedgerUseCurrentFacts(t *testing.T) {
 			}()
 			for _, seed := range []struct {
 				table string         // 钱包及退款来源所属表
-				row   map[string]any // 原资金身份及必需分值
+				row   map[string]any // 资金身份及必需分值
 			}{
 				{"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 1000, "frozen_cents": 400, "version": 1}},
 				{"payment_order", map[string]any{"id": id, "order_no": "P-" + no, "user_id": id, "biz_type": "wallet_recharge", "biz_id": 0, "pay_method": "wechat", "status": "paid", "total_cents": 1000, "paid_cents": 1000, "wechat_transaction_id": "TX-" + no, "created_month": "2026-10-01"}},
@@ -206,8 +205,8 @@ func TestWalletRefundReceiptAndLedgerUseCurrentFacts(t *testing.T) {
 	}
 }
 
-// TestBillingApplyReplaysAfterOldSnapshot 验证已有资金回执不会被支付锁前的普通读快照漏掉。
-// 原证据、入账及余款退款真实提交；旧快照投递只修复任务确认，不再次创建费用、退款或事件。
+// TestBillingApplyReplaysAfterOldSnapshot 验证支付锁前建立旧快照后，仍能看到已提交的结算回执。
+// 证据、入账和余款退款使用真实提交，重放仅修复任务确认，不重复费用、退款或事件。
 func TestBillingApplyReplaysAfterOldSnapshot(t *testing.T) {
 	writer, closeWriter := testConn(t)
 	defer closeWriter()
@@ -248,8 +247,8 @@ func TestBillingApplyReplaysAfterOldSnapshot(t *testing.T) {
 		}
 	}()
 	for _, seed := range []struct {
-		table string         // 原订单及冻结证据所属表
-		row   map[string]any // 原身份、时刻及人工最终费用
+		table string         // 同一订单及冻结证据所属表
+		row   map[string]any // 身份、时刻及人工最终费用
 	}{
 		{"payment_order", map[string]any{"id": id, "order_no": "P-" + no, "user_id": id, "biz_type": "charge", "biz_id": id, "pay_method": "wechat", "status": "paid", "total_cents": 10000, "paid_cents": 10000, "created_month": "2026-10-01"}},
 		{"charge_order", map[string]any{"id": id, "order_no": no, "user_id": id, "device_id": no, "port_no": 1, "status": "completed", "payment_status": "paid", "payment_order_id": id, "started_at": at.Add(-time.Hour), "ended_at": at, "created_month": "2026-10-01"}},
@@ -284,7 +283,7 @@ func TestBillingApplyReplaysAfterOldSnapshot(t *testing.T) {
 	}
 	for _, q := range []struct {
 		table string /* 入账所属表 */
-		where string /* 原订单或支付身份 */
+		where string /* 同一订单或支付身份 */
 	}{{"charge_fee_receipt", "charge_order_id=?"}, {"refund_record", "payment_order_id=?"}, {"charge_event_log", "charge_order_id=?"}} {
 		var n int64
 		if err := writer.Table(q.table).Where(q.where, id).Count(&n).Error; err != nil || n != 1 {

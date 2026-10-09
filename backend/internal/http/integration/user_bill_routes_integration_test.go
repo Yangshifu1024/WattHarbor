@@ -22,8 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRegisteredUserBillServicePreservesOwnershipAndRead 验证所属服务后的三个真实注册路由。
-// 账单、已读与资金投影来自实际MySQL，造数外层回滚；身份为窄fixture，指定回调故障只验证原错误阶段映射。
+// TestRegisteredUserBillServicePreservesOwnershipAndRead 验证服务后的三个真实注册路由。
+// 账单、已读与资金数据来自实际 MySQL，造数外层回滚；身份为测试替身，指定回调故障只验证错误阶段映射。
 func TestRegisteredUserBillServicePreservesOwnershipAndRead(t *testing.T) {
 	db := cardRouteDB(t, "TEST_MYSQL_URL")
 	tx := db.Begin()
@@ -50,7 +50,7 @@ func TestRegisteredUserBillServicePreservesOwnershipAndRead(t *testing.T) {
 	service := settlement.UserBillService{Repo: settlement.BillRepo{DB: tx}}
 	r := httpapi.NewRouter()
 	usersettlement.BillAPI{Auth: a, Bills: service}.Register(r)
-	// call 在实际注册端点发送原身份，核对status及单信封；返回UseNumber保留精度的公开data。
+	// call 在实际注册端点发送身份，核对 status 及单个响应；返回 UseNumber 保留精度的公开 data。
 	call := func(method, path string, status int) any {
 		t.Helper()
 		req := httptest.NewRequest(method, path, nil)
@@ -112,7 +112,7 @@ func TestRegisteredUserBillServicePreservesOwnershipAndRead(t *testing.T) {
 	if !seenRead {
 		t.Fatal("original read marker not shown")
 	}
-	// 首次归属查询故障沿用404；服务须包装lookup阶段且不执行后续写入。
+	// 首次归属查询故障沿用 404；服务须包装 lookup 阶段且不执行后续写入。
 	failure := errors.New("private-bill-failure")
 	queryHook := fmt.Sprintf("bill-lookup-%d", id)
 	if err := db.Callback().Query().Before("gorm:query").Register(queryHook, func(q *gorm.DB) {
@@ -129,7 +129,7 @@ func TestRegisteredUserBillServicePreservesOwnershipAndRead(t *testing.T) {
 		t.Fatalf("lookup stage/cause lost: %v", err)
 	}
 	db.Callback().Query().Remove(queryHook)
-	// 已确认归属后已读保存故障沿用503；只影响当前fixture回调，不模拟资金失败。
+	// 已确认归属后已读保存故障沿用 503；只影响当前 fixture 回调，不模拟资金失败。
 	createHook := fmt.Sprintf("bill-read-write-%d", id)
 	if err := db.Callback().Create().Before("gorm:create").Register(createHook, func(q *gorm.DB) {
 		if q.Statement.Table == "charge_bill_read" {

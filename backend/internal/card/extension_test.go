@@ -8,11 +8,7 @@ import (
 	"chargepilot/internal/wallet"
 )
 
-// TestCanExtendRequiresEveryGuard 钉住"这张卡能不能给当前订单加时"的八项条件。
-//
-// 加时会直接扣钱包余额，所以八条必须同时成立：卡要匹配、只支持时长套餐、
-// 套餐要有价有分钟、没有进行中的刷卡、余额够、加完不超本单上限。
-// 任何一条漏掉都会导致不该发生的扣款。
+// TestCanExtendRequiresEveryGuard 验证续购的卡标识、套餐、金额、时长、待确认状态、余额及上限条件。
 func TestCanExtendRequiresEveryGuard(t *testing.T) {
 	duration := charging.Package{ID: 1, Mode: "duration", PriceCents: 500, Minutes: 30}
 	base := func() (uint64, uint64, charging.Package, uint16, uint16, int64, bool) {
@@ -47,7 +43,7 @@ func TestCanExtendRequiresEveryGuard(t *testing.T) {
 	}
 }
 
-// TestCanExtendBoundaries 确认边界：余额正好等于价格、已购时长加完正好到上限，
+// TestCanExtendBoundaries 确认边界：余额正好等于价格、已购时长加完正好到上限。
 // 都应允许；差一分都不行。
 func TestCanExtendBoundaries(t *testing.T) {
 	p := charging.Package{ID: 1, Mode: "duration", PriceCents: 500, Minutes: 30}
@@ -62,10 +58,7 @@ func TestCanExtendBoundaries(t *testing.T) {
 	}
 }
 
-// TestMapWalletMoveError 确认钱包错误被映射回刷卡自己的哨兵。
-//
-// 判据留在卡族：余额不足对应 ErrCardBalance、账户非活跃对应 ErrCardOperation，
-// 是刷卡这一层的语义。映射错会让前端把"余额不足"显示成"刷卡失败"。
+// TestMapWalletMoveError 验证余额不足与账户不可用映射为刷卡错误，其他错误保留原因。
 func TestMapWalletMoveError(t *testing.T) {
 	if got := mapWalletMoveError(wallet.ErrInsufficient); !errors.Is(got, ErrCardBalance) {
 		t.Errorf("余额不足应映射为 ErrCardBalance，实际 %v", got)

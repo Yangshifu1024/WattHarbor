@@ -10,36 +10,35 @@ import (
 
 // ManagementInputError 保存管理输入拒绝的公开文案，不包含凭据或存储细节。
 type ManagementInputError struct {
-	Message string /* 原公开输入提示 */
+	Message string /* 公开输入提示 */
 }
 
-// Error 返回e原输入提示，无IO。
+// Error 返回输入提示。
 func (e *ManagementInputError) Error() string { return e.Message }
 
 // ManagementConflict 保存当前管理状态拒绝文案，可按领域冲突统一匹配。
 type ManagementConflict struct {
-	Message string /* 当前状态拒绝原因 */
+	Message string /* 当前状态拒绝因 */
 }
 
-// Error 返回e原状态提示，无IO。
+// Error 返回状态提示。
 func (e *ManagementConflict) Error() string { return e.Message }
 
-// Unwrap 返回领域冲突以供HTTP错误匹配，无副作用。
+// Unwrap 返回领域冲突以供 HTTP 错误匹配，无副作用。
 func (e *ManagementConflict) Unwrap() error { return operations.ErrConflict }
 
 var (
-	ErrInsufficient          = errors.New("不能授予自己未拥有的权限")                   // 原角色授予越权拒绝
+	ErrInsufficient          = errors.New("不能授予自己未拥有的权限")                   // 角色授予越权拒绝
 	ErrLastAdmin             = &ManagementConflict{"必须保留至少一个有效的客户管理员账号"}    // 禁止移除最后有效客户管理员
-	ErrSelfDelete            = &ManagementConflict{"不能删除当前登录账号"}            // 原本人删除拒绝
+	ErrSelfDelete            = &ManagementConflict{"不能删除当前登录账号"}            // 本人删除拒绝
 	ErrSelfMFA               = &ManagementConflict{"请使用本人账号的安全设置修改双因素认证"}   // 本人只走个人安全设置
 	ErrBuiltinRoleDelete     = &ManagementConflict{"内置角色不可删除：它承载运营自身的访问权限"} // 内置角色不删除
-	ErrOwnRoleDelete         = &ManagementConflict{"不能删除自己正在使用的角色"}         // 原当前角色删除拒绝
+	ErrOwnRoleDelete         = &ManagementConflict{"不能删除自己正在使用的角色"}         // 当前角色删除拒绝
 	ErrRoleInUse             = &ManagementConflict{"该角色下仍有账号，请先改派后再删除"}     // 未删除账号仍引用角色
-	ErrManagementRoleMissing = errors.New("角色不存在")                          // 原角色端点特有404文案
+	ErrManagementRoleMissing = errors.New("角色不存在")                          // 角色端点特有404文案
 )
 
-// readManagementActor 在ctx下重读original原账号／版本及permission，返回当前档案或凭据／权限／存储错误。
-// 只读列表不根据传入档案的旧权限授权，不写入会话或数据范围。
+// readManagementActor 重新核对账号版本和当前权限，不使用传入资料的旧权限授权。
 func readManagementActor(ctx context.Context, db *gorm.DB, original operations.Profile, permission string) (operations.Profile, error) {
 	if db == nil {
 		return operations.Profile{}, errors.New("ops management unavailable")
@@ -57,9 +56,9 @@ func readManagementActor(ctx context.Context, db *gorm.DB, original operations.P
 	return current, nil
 }
 
-// lockedManagementActor 在tx下锁角色集合→original原账号→其当前角色及权限，返回实时档案或准入错误。
-// 所有账号分配／角色集合写入共用客户管理员角色行作为串行点；锁后当前读不信任旧RR或HTTP菜单。
-// 调用方须将实际变更及审计留在同一事务，禁止先锁目标账号再回头申请集合锁。
+// lockedManagementActor 按客户管理员角色→操作者账号→当前角色及权限加锁核对。
+// 账号分配和角色变更共用该角色锁；须先取得集合锁，再锁目标账号。
+// 权限以锁后的当前读为准，业务变更和审计留在同一事务。
 func lockedManagementActor(tx *gorm.DB, original operations.Profile, permission string) (operations.Profile, error) {
 	store := AccountRepo{DB: tx}
 	if err := store.LockCustomerAdminRole(tx); err != nil {
@@ -93,8 +92,8 @@ func lockedManagementActor(tx *gorm.DB, original operations.Profile, permission 
 	return current, nil
 }
 
-// assignManagementRole 在tx下核对roleID当前角色及全部权限不超过actor，返回空角色／越权／存储错误。
-// create决定原空角色为输入400还是状态409；角色锁与权限当前读在集合串行窗口内完成。
+// assignManagementRole 在角色锁内读取当前权限，禁止授予操作者没有的权限。
+// 角色不存在时，新建返回输入错误，更新返回状态冲突。
 func assignManagementRole(tx *gorm.DB, actor operations.Profile, roleID uint64, create bool) error {
 	role, err := (RoleRepo{DB: tx}).LockRole(tx, roleID)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {

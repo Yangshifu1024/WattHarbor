@@ -19,26 +19,26 @@ import (
 
 var ErrEndResultConflict = errors.New("charge end result conflicts with order state")
 
-// EndResult 携带原订单、启动及停止命令身份和结束计量，供中央用例核对结束回执；它本身不证明回执已落库或计费已完成。
+// EndResult 携带订单、启动及停止命令编号和结束计量，供中央用例核对结束回执；它本身不证明回执已落库或计费已完成。
 type EndResult struct {
-	OrderNo        string         `json:"order_no"`         // 原业务订单号
-	ChargeOrderID  uint64         `json:"charge_order_id"`  // 原订单主键，必须仍在充电
-	StartCommandID string         `json:"start_command_id"` // 成功启动凭据的原命令身份
-	StopCommandID  string         `json:"stop_command_id"`  // 本次结束回执原命令身份，重放不可换号
-	DeviceID       string         `json:"device_id"`        // 原设备身份
+	OrderNo        string         `json:"order_no"`         // 业务订单号
+	ChargeOrderID  uint64         `json:"charge_order_id"`  // 订单主键，必须仍在充电
+	StartCommandID string         `json:"start_command_id"` // 成功启动凭据的命令编号
+	StopCommandID  string         `json:"stop_command_id"`  // 本次结束回执命令编号，重放不可换号
+	DeviceID       string         `json:"device_id"`        // 设备编号
 	PortNo         uint8          `json:"port_no"`          // 设备端口序号，从 1 开始
-	PortID         uint64         `json:"port_id"`          // 原占用端口的 gateway 主键
+	PortID         uint64         `json:"port_id"`          // 占用端口的 gateway 主键
 	Meter          rules.EndMeter `json:"meter"`            // 结束计量证据；时长秒、电量 Wh、结束时刻 UTC
 }
 
-// EndResultService 在中央事务中登记结束凭据、推进订单并排入计费与 Outbox；网关占用释放和后续计费由各自流程完成。
+// EndResultService 在中央事务中登记结束凭据、更新订单并排入计费与 Outbox；网关占用释放和后续计费由各自流程完成。
 type EndResultService struct {
 	DB *gorm.DB /* central 结束回执事务连接，生命周期由进程管理 */
 }
 
 // Apply 在 ctx 管理的 READ COMMITTED 事务中应用 result 的结束回执。
 // 返回 bool 表示同内容重放；冲突、计量不符或数据库错误时整体回滚，不确认网关投递。
-// 按卡会话→订单加锁；释放端口必须匹配原订单，迟到回执不能释放新的占用。
+// 按卡会话→订单加锁；释放端口必须匹配订单，迟到回执不能释放新的占用。
 // 结束凭据、订单计量、占用释放、计费任务及 Outbox 同事务，计费留待后续执行。
 func (s EndResultService) Apply(ctx context.Context, result EndResult) (bool, error) {
 	if s.DB == nil || result.OrderNo == "" || result.ChargeOrderID == 0 || result.StartCommandID == "" || result.StopCommandID == "" || result.DeviceID == "" || result.PortNo == 0 || result.PortID == 0 || result.PortID > math.MaxInt64 || result.Meter.ChargedSeconds > math.MaxInt32 || result.Meter.EndedAt.IsZero() {

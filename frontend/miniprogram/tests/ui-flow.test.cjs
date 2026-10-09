@@ -51,7 +51,7 @@ test('empty mode cannot pay and mode switching cannot mutate a started operation
 test('selecting another port invalidates prior package and chooses an available mode', async () => {
  const p = await scanned(); p.selectOffer(choose(1));
  p.data.ports.push({ ...port, port_id: 'DEV001:4', port_no: 4, selectable: true });
- // Replace the bound application's request through a fresh fixture for a new port response.
+ // 新建测试实例并替换请求方法，模拟另一种端口响应。
  const app = { globalData: { token: '' }, request: async (_method, url) => url.endsWith('/port') ? { ...port, port_id: 'DEV001:4', port_no: 4 } : { port_id: 'DEV001:4', items: [offers[2]] } };
  const { p: other } = page('pages/scan-result/scan-result.js', app);
  other.onLoad({ code: 'DEV001' }); other.setData({ deviceId: 'DEV001', selected: port, selectedOffer: offers[0], ports: p.data.ports });

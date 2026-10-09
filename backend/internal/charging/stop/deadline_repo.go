@@ -10,7 +10,7 @@ import (
 )
 
 // FreezeDeadline 锁定已购时长对应的计费截止点：仍在充电且截止点已到则写入
-// charge_billing_cutoff，重复冻结沿用原记录，并返回是否应触发停机。
+// charge_billing_cutoff，重复冻结沿用记录，并返回是否应触发停机。
 // ctx 取消整个事务；db 为连接或外层事务，id 为订单主键，now 为 UTC 判定时刻。
 // 返回 false、nil 表示订单已结束或尚未到期；错误表示冻结失败，不应据此下发 STOP。
 // 加锁顺序与 Swipe 一致：先 card_charge 会话行，后 charge_order 行。

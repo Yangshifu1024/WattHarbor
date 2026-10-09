@@ -10,9 +10,8 @@ import (
 	"strings"
 )
 
-// ErrTargetBlocked 标记一个会让运维触达平台不应暴露的基础设施的订阅端点。
-// 它在创建订阅时拦一道，每次投递前再拦一道，
-// 因为一个主机名可能稍后才开始解析到内网地址。
+// ErrTargetBlocked 表示目标地址指向被禁止访问的内部设施。
+// 创建订阅和每次发送前都要检查，因为域名解析结果可能改变。
 var ErrTargetBlocked = errors.New("订阅地址指向非公网目标，已拒绝")
 
 // ValidatePublicHTTPS 校验目标使用 HTTPS 且不指向本机、内网或云元数据地址。
@@ -76,12 +75,11 @@ func isPrivateAddress(ip net.IP) bool {
 		if v4[0] == 0 {
 			return true
 		}
-		// 共享地址空间（192.0.0.0/24，RFC 6890）。
+		// 保留网段（192.0.0.0/24，RFC 6890）。
 		if v4[0] == 192 && v4[1] == 0 && v4[2] == 0 {
 			return true
 		}
-		// 基准测试网段（198.18.0.0/15，RFC 2544）。原仅为兼容开发环境 DNS 映射的放行已按 D3 决策关闭；
-		// 若开发环境仍需要该映射，应以配置项方式仅对 dev profile 放行。
+		// 拒绝基准测试网段（198.18.0.0/15，RFC 2544）。
 		if v4[0] == 198 && v4[1] >= 18 && v4[1] <= 19 {
 			return true
 		}

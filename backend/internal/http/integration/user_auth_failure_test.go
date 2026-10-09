@@ -22,14 +22,14 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// deniedUserIdentity 提供指定认证结果的窄能力fixture，不模拟业务查询或写入。
-// 真实SessionAuthenticator和identity.Authenticator仍执行凭据、会话、用户状态的原顺序。
-// 空mode提供用户17的有效身份，供其它注册接口测试核对所属业务IO。
+// deniedUserIdentity 提供指定认证结果的测试替身，不模拟业务查询或写入。
+// 真实 SessionAuthenticator 和 identity.Authenticator 仍执行凭据、会话、用户状态的顺序。
+// 空 mode 提供用户 17 的有效身份，供其它注册接口测试核对业务 IO。
 type deniedUserIdentity struct {
-	mode string // 仅控制指定的签名、会话或用户状态失败；不签发真实JWT，不连接数据库或Redis。
+	mode string // 仅控制指定的签名、会话或用户状态失败；不签发真实 JWT，不连接数据库或 Redis。
 }
 
-// Verify 只接受测试opaque令牌，返回原用户与SID，或mode指定的坏签名／零身份。
+// Verify 只接受测试 opaque 令牌，返回用户与 SID，或 mode 指定的坏签名／零身份。
 func (f deniedUserIdentity) Verify(token string) (string, string, error) {
 	if token != "opaque" || f.mode == "signature" {
 		return "", "", errors.New("private-auth-source-error")
@@ -40,7 +40,7 @@ func (f deniedUserIdentity) Verify(token string) (string, string, error) {
 	return "17", "sid", nil
 }
 
-// Exists 在ctx下检查fixture的sid，返回过期false或读取／取消错误；不修改会话。
+// Exists 检查 fixture 的 sid，返回过期 false 或读取／取消错误；不修改会话。
 func (f deniedUserIdentity) Exists(ctx context.Context, sid string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -51,7 +51,7 @@ func (f deniedUserIdentity) Exists(ctx context.Context, sid string) (bool, error
 	return f.mode != "expired", nil
 }
 
-// Active 在ctx下检查fixture原用户id，返回冻结false或读取／取消错误；不执行业务IO。
+// Active 检查 fixture 用户 id，返回冻结 false 或读取／取消错误。
 func (f deniedUserIdentity) Active(ctx context.Context, id uint64) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -62,11 +62,11 @@ func (f deniedUserIdentity) Active(ctx context.Context, id uint64) (bool, error)
 	return f.mode != "frozen", nil
 }
 
-// TestRegisteredUserAuthenticationFailureWritesOneReply 验证29个实际注册的受保护用户端点。
-// 各类认证失败只输出一个原错误信封，保留401／403／503、请求号与无敏感原因；业务依赖未装配，不能继续执行。
+// TestRegisteredUserAuthenticationFailureWritesOneReply 验证 29 个实际注册的受保护用户端点。
+// 各类认证失败只输出一个错误响应，保留 401／403／503、请求号与无敏感原因；业务依赖未装配，不能继续执行。
 func TestRegisteredUserAuthenticationFailureWritesOneReply(t *testing.T) {
 	endpoints := []struct {
-		method string // 原公开HTTP方法。
+		method string // 公开 HTTP 方法。
 		path   string // 含具体用户资源身份的公开路径；其业务依赖刻意未装配。
 	}{
 		{"GET", "/api/v1/user/wallet/balance"},
@@ -100,9 +100,9 @@ func TestRegisteredUserAuthenticationFailureWritesOneReply(t *testing.T) {
 		{"POST", "/api/v1/user/development/payments/confirm"},
 	}
 	for _, failure := range []struct {
-		mode   string // 认证失败来源；missing和malformed控制原请求头。
-		status int    // identity错误对应的原HTTP状态。
-		code   int    // 原公开业务错误码。
+		mode   string // 认证失败来源；missing 和 malformed 控制请求头。
+		status int    // identity 错误对应的 HTTP 状态。
+		code   int    // 公开业务错误码。
 	}{
 		{"missing", 401, 1001}, {"malformed", 401, 1001}, {"signature", 401, 1001},
 		{"zero-subject", 401, 1001}, {"expired", 401, 1001}, {"frozen", 403, 1003},

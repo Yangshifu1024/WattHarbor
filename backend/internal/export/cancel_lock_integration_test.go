@@ -17,8 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestExportCancellationKeepsLockUntilCallbackExit 在真实文件发布后闸住完成回调，取消后竞争申请仍须等待退出。
-// 闸门模拟不能立即退出的同步步骤；两池SQL锁和文件验证真实执行，不声明磁盘写中断测试。
+// TestExportCancellationKeepsLockUntilCallbackExit 验证文件发布后取消请求，任务锁仍保持到同步回调退出。
+// 两池 SQL 和文件验证真实执行，不测试磁盘写入中断。
 func TestExportCancellationKeepsLockUntilCallbackExit(t *testing.T) {
 	s, audit, first, second := exportFixture(t)
 	other := s
@@ -54,9 +54,9 @@ func TestExportCancellationKeepsLockUntilCallbackExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.DB.Callback().Query().Remove(key)
-	// outcome 传递取消与竞争导出 Create 的同步回执及错误；回执不单独证明文件可下载，最终任务与产物另行核对。
+	// outcome 汇总取消和竞争导出结果，最终任务状态和文件另行核对。
 	type outcome struct {
-		result CreateResult // 原同步回执
+		result CreateResult // 同步回执
 		err    error        // 取消或事务错误
 	}
 	firstResult, secondResult := make(chan outcome, 1), make(chan outcome, 1)
@@ -72,7 +72,7 @@ func TestExportCancellationKeepsLockUntilCallbackExit(t *testing.T) {
 	cancelFirst()
 	workers.Go(func() { out, err := other.Create(ctx, audit, in); secondResult <- outcome{out, err} })
 	awaitExportSignal(t, ctx, attempted)
-	// 给database/sql取消回滚有机会执行；通过第二真实请求能否完成判锁，未拿到锁时不会假定成功。
+	// 让 database/sql 有机会执行取消回滚，再用第二个真实请求是否完成判断锁是否已释放。
 	timer := time.NewTimer(100 * time.Millisecond)
 	defer timer.Stop()
 	select {

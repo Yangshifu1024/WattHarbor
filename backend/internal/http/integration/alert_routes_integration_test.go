@@ -33,8 +33,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// TestRegisteredAlertOwnershipScopeAndWorkerTrigger 验证真实两库／Redis、后台列表认领及worker→central→gateway具名链路。
-// 造数全部回滚，Redis只清理自身SID；设备事件为fixture，不代表实机告警。
+// TestRegisteredAlertOwnershipScopeAndWorkerTrigger 验证真实两库／Redis、后台列表认领及 worker→central→gateway 专用链路。
+// 造数全部回滚，Redis 只清理自身 SID；设备事件为 fixture，不代表实机告警。
 func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 	tx, gw := cardRouteDB(t, "TEST_MYSQL_URL").Begin(), cardRouteDB(t, "DATABASE_URL_GATEWAY").Begin()
 	defer tx.Rollback()
@@ -160,7 +160,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 	if w := call("POST", path); w.Code != 403 {
 		t.Fatalf("revoked=%d", w.Code)
 	}
-	// 内部服务链路采用真实注册端点；只限定本测试设备，避免共享库其他fixture进入恢复扫描。
+	// 内部服务链路采用真实注册端点；只限定本测试设备，避免共享库其他 fixture 进入恢复扫描。
 	if err := tx.Callback().Query().Before("gorm:query").Register(key, func(q *gorm.DB) {
 		if q.Statement.Table == "alert_event" {
 			q.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.Eq{Column: "device_id", Value: syncBoard}}})

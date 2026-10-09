@@ -34,12 +34,11 @@ type Tier struct {
 // Period 表示一天中的费率时段，以严格递增的结束分钟组成连续覆盖链。
 type Period struct {
 	ServiceCents int64 `json:"service_cents,omitempty"`
-	// EndMinute 是从零点起的分钟数，取值 1..1440。数值必须严格递增，且最后一个
-	// 必须正好是 1440，这样一整天才被完整覆盖，既没有空档也没有重叠。
+	// EndMinute 是从零点起的结束分钟，取值 1..1440；必须严格递增，最后一项为 1440。
 	EndMinute int `json:"end_minute"`
-	// ElectricCents 是电量计费的单一电价，单位分/kWh；该口径不使用阶梯。
+	// ElectricCents 是电量计费的单一电价，单位分/kWh；该计价方式不使用阶梯。
 	ElectricCents int64 `json:"electric_cents,omitempty"`
-	// Tiers 是该时段内适用的功率阶梯；电量口径下为空。
+	// Tiers 是该时段内适用的功率阶梯；电量计价方式下为空。
 	Tiers []Tier `json:"tiers,omitempty"`
 }
 
@@ -103,12 +102,11 @@ type Spec struct {
 	Mode   ChargeMode `json:"mode"`
 	// Electric 仅用于服务端计费；设备计费必须为零值，ValidateSpec 拒绝无效费率配置。
 	Electric *ElectricLine `json:"electric,omitempty"`
-	// Service 是独立的第二条线。两条线可以任意组合——按电量收电费配按小时收
-	// 服务费就是真实且常见的一种组合。
+	// Service 定义独立的服务费，可与电费按不同计价方式组合。
 	Service *ServiceLine `json:"service,omitempty"`
 	// Multiplier 是一张独立的费率卡，归电费所有。
 	Multiplier *ChannelMultiplier `json:"multiplier,omitempty"`
-	// TierPriceBasis 只被 BasisRealtimePower 读取。新模板固定为 TierPerKWh；
+	// TierPriceBasis 只被 BasisRealtimePower 读取。新模板固定为 TierPerKWh。
 	// 旧版值及省略值只为已发布规则和冻结的订单快照保留历史计算行为。
 	TierPriceBasis TierPriceBasis `json:"tier_price_basis,omitempty"`
 	// LossRateBP 按比例抬高计费电量以覆盖线损，10000 表示无损耗。
@@ -119,7 +117,7 @@ type Spec struct {
 	MinElectricCents int64 `json:"min_electric_cents,omitempty"`
 	// TimeCharge 只对按时长计费的充电生效。
 	TimeCharge *TimeCharge `json:"time_charge,omitempty"`
-	// SpendCapCents 是服务端计费的消费上限，单位为分；0 表示未配置。
+	// SpendCapCents 是服务端计费的费用上限，单位为分；0 表示未配置。
 	// 未配置时仍保留设备下发的时间或电量额度限制。
 	SpendCapCents int64 `json:"spend_cap_cents,omitempty"`
 	// StopGraceSeconds 是平台要求设备停止之后，等待多久才把这次充电视为失控。
@@ -139,7 +137,7 @@ type Sample struct {
 	Start      time.Time
 	End        time.Time
 	EnergyWh   uint64
-	// PowerW 是这段用电的功率。0 表示「用电量与时长反推」，
+	// PowerW 是这段用电的功率。0 表示「用电量与时长反推」。
 	// 预估只能这么做。
 	PowerW uint32
 }
@@ -166,8 +164,7 @@ func (u Usage) minutes() int64 {
 	return int64(u.End.Sub(u.Start) / time.Minute)
 }
 
-// Fee 是计价结果。Basis 原样带回，调用方据此渲染正确的单位，而不必自己
-// 再推导一遍。
+// Fee 保存计价结果，Basis 保留计价规则供展示单位。
 type Fee struct {
 	Fragments     []FeeFragment `json:"fragments,omitempty"`
 	Basis         ServerBasis   `json:"basis"`
@@ -234,7 +231,7 @@ func ValidateSpec(spec Spec) error {
 		return ErrInvalidPricing
 	}
 	if spec.Electric.Basis != spec.Mode.BasisFor() {
-		// 计费模式必须与电价口径一致。
+		// 计费模式必须与电价算法一致。
 		return ErrInvalidPricing
 	}
 	for _, period := range spec.Electric.Periods {
@@ -246,7 +243,7 @@ func ValidateSpec(spec Spec) error {
 	return err
 }
 
-// ValidateTemplateSpec 校验新写入或新发布的模板。结算仍用 ValidateSpec，
+// ValidateTemplateSpec 校验新写入或新发布的模板。结算仍用 ValidateSpec。
 // 避免把旧订单的冻结价格拒掉或按新算法重算。
 func ValidateTemplateSpec(spec Spec) error {
 	if spec.Scheme != nil {
@@ -284,9 +281,7 @@ func compilePeriods(periods []Period) ([1440]Period, error) {
 	return schedule, nil
 }
 
-// validateTiers 校验单个时段内部的阶梯链，并阻止两种形态并存。阶梯到底允不允许
-// 存在由电量口径决定：电量只有唯一电价，功率口径只有唯一阶梯，而一个同时带
-// 两者的时段就是一份运营方解释不了的电价表。
+// validateTiers 校验功率阶梯连续覆盖；电量单价与功率阶梯不能同时配置。
 func validateTiers(basis ServerBasis, period Period) error {
 	if period.ServiceCents < 0 || period.ServiceCents > maxRateCents {
 		return ErrInvalidPricing
@@ -378,8 +373,7 @@ var (
 	decimalThousand = decimal.NewFromInt(1000)
 )
 
-// parseEnergy 把用户填的充电量限制在两轮车一次充电合情合理的范围内，
-// 这样格式错误或恶意的输入就到不了计价引擎。
+// parseEnergy 限制用户输入的电量范围，拒绝格式错误或过大的数值。
 func parseEnergy(value string) (decimal.Decimal, error) {
 	kwh, err := decimal.NewFromString(value)
 	if err != nil {

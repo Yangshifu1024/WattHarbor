@@ -11,10 +11,8 @@ import (
 	"time"
 )
 
-// registerWorkerSync 把 worker 结果同步需要的 gateway_db 读写暴露为内部
-// HTTP：启动回执上报、结束事件处理、端口释放、计量证据、结束回执冻结与
-// 刷卡事件投递。语义逐项对齐原 worker 直读实现（第 5 批⑤），
-// worker 侧不再持有 gateway 库句柄。
+// registerWorkerSync 注册 worker 所需的内部同步接口，要求服务令牌。
+// 网关负责启动结果、结束事件、端口释放、计量证据和刷卡事件的读写。
 func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 	r.GET(gatewaycontract.StartResultsPath, a.startResults)
 	r.POST(gatewaycontract.MarkStartResultsPath, a.markStartResultsReported)
@@ -31,8 +29,7 @@ func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 	r.GET(gatewaycontract.CardPortPath, a.resolvePort)
 }
 
-// startResults 接收 c 中的服务令牌与可选 command_id，返回已回执未上报的启动命令，
-// 按 updated_at 升序最多五十条；鉴权失败返回 401，过长筛选值返回 400，读取失败返回 503，无写入。
+// startResults 鉴权后查询已回执但未上报的启动命令，可按 command_id 筛选；按更新时间升序最多 50 条。
 func (a TelemetryAPI) startResults(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -54,8 +51,8 @@ func (a TelemetryAPI) startResults(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.StartResultsReply{Items: items})
 }
 
-// markStartResultsReported 接收 c 中的服务令牌和命令身份集合，返回同一事务内实际推进的条数。
-// 鉴权失败返回 401，绑定失败返回 400；事务失败返回 503 且不输出中间计数，重复身份不重复推进。
+// markStartResultsReported 在同一事务内标记输入命令已上报，返回实际影响行数。
+// 重复标记不重复计数；任一写入失败整批回滚。
 func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -73,8 +70,7 @@ func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.MarkReply{Marked: marked})
 }
 
-// endEvents 接收 c 中的服务令牌，返回未处理的 ConsumerType 2/3 结束事件，按 id 升序最多五十条。
-// 鉴权失败返回 401，读取失败返回 503；响应保留原事件载荷，不标记事件或写入数据。
+// endEvents 鉴权后按 ID 升序返回最多 50 条未处理的 ConsumerType 2/3 结束事件。
 func (a TelemetryAPI) endEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -91,8 +87,7 @@ func (a TelemetryAPI) endEvents(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.EventsReply{Items: items})
 }
 
-// chargeCommandByOrder 接收 c 中的服务令牌和订单 ID，以无排序 Limit(1).Find 读取命令，
-// 不存在返回 found:false；鉴权失败返回 401，无效 ID 返回 400，读取失败返回 503，无写入。
+// chargeCommandByOrder 鉴权后查询订单命令，不指定排序；无记录返回 found:false。
 func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -115,8 +110,8 @@ func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.CommandReply{Found: true, Command: &command})
 }
 
-// markDeviceEventsProcessed 接收 c 中的服务令牌和事件身份集合，返回同一事务内实际推进的条数。
-// 鉴权失败返回 401，绑定失败返回 400；事务失败返回 503 且不输出中间计数，重复身份不重复推进。
+// markDeviceEventsProcessed 在同一事务内标记输入事件已处理，返回实际影响行数。
+// 重复标记不重复计数；任一写入失败整批回滚。
 func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -134,9 +129,8 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.MarkReply{Marked: marked})
 }
 
-// releasePort 接收 c 中的服务令牌、端口 ID 和订单号，条件更新该订单占用的 charging 端口。
-// 更新一行返回 released；未更新时读取端口，idle 且占用为 NULL 返回 already，其余状态返回 409。
-// 鉴权失败返回 401，绑定失败返回 400，更新与读取失败分别返回原 503 消息；本端点不验证结算状态。
+// releasePort 只释放该订单占用且处于 charging 的端口。
+// 更新成功返回 released；已是 idle/NULL 返回 already；其他占用状态返回 409。
 func (a TelemetryAPI) releasePort(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -172,9 +166,8 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 	httpapi.Write(c, http.StatusConflict, 2009, "端口在结算后无法释放", nil)
 }
 
-// meterSamples 接收 c 中的服务令牌、设备 ID、RFC3339Nano 起止时刻和 end_id，
-// 返回 UTC 闭区间内且 id 不超过 end_id 的心跳原始载荷，按 id 升序最多 10081 条（含哨兵预算）。
-// 鉴权失败返回 401，无效设备或窗口返回 400，读取失败返回 503，无写入。
+// meterSamples 鉴权后查询 UTC 时间闭区间内、ID 不超过 end_id 的心跳。
+// 按 ID 升序最多 10081 条，包含一条超限检查记录。
 func (a TelemetryAPI) meterSamples(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -210,9 +203,8 @@ func (a TelemetryAPI) meterSamples(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.EventsReply{Items: items})
 }
 
-// freezeEndDelivery 接收 c 中的服务令牌与冻结请求，返回首次原载荷或身份一致的存量载荷和 frozen 标志。
-// 鉴权失败返回 401，绑定失败返回 400；首次读取、冻结阶段与身份冲突分别映射原 503 消息和 409/code2009。
-// 所有 SQL 与冲突重读由 repo 执行，本层不重试未知写结果或更换身份。
+// freezeEndDelivery 保存首次结束请求；重复请求关键字段一致时返回已保存内容。
+// frozen 表示使用了旧内容；关键字段冲突返回 409，数据库错误返回 503。
 func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
 	if !a.authorized(c) {
 		return

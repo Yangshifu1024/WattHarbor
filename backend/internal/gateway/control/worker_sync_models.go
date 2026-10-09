@@ -5,7 +5,7 @@ import (
 	gatewayrepo "chargepilot/internal/gateway/repo"
 )
 
-// syncCommandDTO 接收原 row，将命令身份及可空端口、结果和 UTC 确认时刻映射为共享记录；返回记录，无 IO。
+// syncCommandDTO 将命令标识及可空端口、结果和 UTC 确认时刻映射为共享记录；返回记录。
 func syncCommandDTO(row gatewayrepo.SyncCommandRow) gatewaycontract.SyncCommand {
 	out := gatewaycontract.SyncCommand{CommandID: row.CommandID, StopCommandID: row.StopCommandID,
 		ChargeOrderID: row.ChargeOrderID, OrderNo: row.OrderNo, DeviceID: row.DeviceID,

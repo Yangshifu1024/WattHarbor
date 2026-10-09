@@ -16,25 +16,25 @@ import (
 	"chargepilot/internal/domain/operations"
 )
 
-// taskFileIdentity 限定服务生成的十六进制任务号；兼容早期较短身份，但新申请完整保留UUID。
+// taskFileIdentity 检查服务生成的十六进制任务号，兼容早期短编号，新请求保留完整 UUID。
 var taskFileIdentity = regexp.MustCompile(`^EXP[0-9A-F]{1,32}$`)
 
-// artifactProof 是服务端私有发布凭据，不写公开filter_json或新增数据库列。
-// 文件、SQL不跨存储原子；只有completed且身份、摘要、范围及脱敏证明都通过才能提供新文件。
+// artifactProof 是服务端私有文件凭据，不放入公开过滤参数。
+// 文件和 SQL 不能原子提交；只有 completed 且任务号、摘要、范围和脱敏规则均匹配时才可下载。
 type artifactProof struct {
 	Version       int                  `json:"version"`        // 私有格式版本，当前1
-	TaskNo        string               `json:"task_no"`        // 原完整任务身份
-	Resource      string               `json:"resource"`       // 原资源声明
-	Format        string               `json:"format"`         // 原扩展名
-	RequestedBy   uint64               `json:"requested_by"`   // 原申请人，不经浮点转换
+	TaskNo        string               `json:"task_no"`        // 完整任务号
+	Resource      string               `json:"resource"`       // 资源声明
+	Format        string               `json:"format"`         // 扩展名
+	RequestedBy   uint64               `json:"requested_by"`   // 申请人，不经浮点转换
 	RowCount      uint32               `json:"row_count"`      // 本次实际行数
 	Scope         operations.DataScope `json:"scope"`          // 对应资源实际执行的范围维度
 	MaskedColumns []string             `json:"masked_columns"` // 本次文件已经遮蔽的公开列
 	SHA256        string               `json:"sha256"`         // 生成字节摘要，防止文件与凭据失配
 }
 
-// effectiveScope 保留resource原读取维度：订单／站点按站点，设备为站点与厂商交集，账单仅全局。
-// 仅厂商配置不自动改变订单／站点接口语义；证明记录实际执行范围，不虚称未过滤的厂商已受限。
+// effectiveScope 记录实际查询范围：订单和站点按站点，设备按站点与厂商交集，账单仅支持全局。
+// 单独厂商限制不改变订单或站点查询，凭据不能声称使用了未执行的过滤。
 func effectiveScope(resource string, scope operations.DataScope) operations.DataScope {
 	if resource != "devices" {
 		scope.VendorIDs = nil
@@ -45,7 +45,7 @@ func effectiveScope(resource string, scope operations.DataScope) operations.Data
 	return scope
 }
 
-// containsScope 判断current实际读取范围是否覆盖saved所有维度；扩权允许，收窄不放行旧宽文件。
+// containsScope 检查当前范围是否覆盖文件保存时的全部范围；扩大权限可下载，收窄权限须拒绝旧文件。
 func containsScope(current, saved operations.DataScope) bool {
 	if current.Unrestricted {
 		return true
@@ -70,8 +70,8 @@ func containsScope(current, saved operations.DataScope) bool {
 	return covered(current.StationIDs, saved.StationIDs) && covered(current.VendorIDs, saved.VendorIDs)
 }
 
-// fileNames 按row已登记格式和服务任务身份推导相对路径，返回内容及凭据名或状态错误。
-// cleanup允许历史pdf清理，但提供下载只允许csv／xlsx；任何数据库任意路径都不成为文件操作参数。
+// fileNames 根据格式和可信任务号生成内容及凭据相对路径，忽略数据库任意路径。
+// 历史 PDF 仅允许清理，下载只支持 CSV／XLSX。
 func fileNames(row ExportTaskRow, cleanup bool) (string, string, error) {
 	format := row.FileFormat
 	if format == "" {
@@ -86,7 +86,7 @@ func fileNames(row ExportTaskRow, cleanup bool) (string, string, error) {
 	return row.TaskNo + "." + format, row.TaskNo + ".scope.json", nil
 }
 
-// openRoot 打开s可信目录，create时先创建目录；返回受限文件句柄或IO错误，调用方负责关闭。
+// openRoot 打开配置目录，需要时先创建；调用方负责关闭受限文件句柄。
 func (s ExportService) openRoot(create bool) (*os.Root, error) {
 	if create {
 		if err := os.MkdirAll(s.exportDir(), 0o700); err != nil {
@@ -96,13 +96,13 @@ func (s ExportService) openRoot(create bool) (*os.Root, error) {
 	return os.OpenRoot(s.exportDir())
 }
 
-// contextReader 在原同步读取中响应取消，不取得文件关闭权。
+// contextReader 在同步读取中响应取消，不负责关闭文件。
 type contextReader struct {
 	ctx   context.Context /* 请求取消 */
-	input io.Reader       /* 原读取句柄 */
+	input io.Reader       /* 读取句柄 */
 }
 
-// Read 从input读取p并返回字节数／错误；取消后不继续底层读取。
+// Read 响应取消后停止底层读取。
 func (r contextReader) Read(p []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
@@ -110,14 +110,14 @@ func (r contextReader) Read(p []byte) (int, error) {
 	return r.input.Read(p)
 }
 
-// publish 在ctx及root下将row记录编码为内容和私有proof，返回文件名或取消／IO错误。
-// .partial先关闭再发布，数据库状态随后由任务锁事务推进；失败清理由原任务锁内的恢复步骤执行。
+// publish 在可信目录中编码文件和私有凭据，先关闭 .partial 再发布。
+// 调用方在任务锁事务中写完成状态；失败由同任务锁内的恢复步骤清理。
 func publish(ctx context.Context, root *os.Root, row ExportTaskRow, spec ExportSpec, records []map[string]any, scope operations.DataScope, mask operations.FieldMask) (string, error) {
 	name, proofName, err := fileNames(row, false)
 	if err != nil {
 		return "", err
 	}
-	// 新内容的数据库路径带v1私有目录，凭据缺失也能与真正旧布局区分；不改公开文件名。
+	// 新文件存于 v1 私有目录，可识别凭据缺失的新文件，防止按无凭据历史文件放行。
 	if err := root.MkdirAll("v1", 0o700); err != nil {
 		return "", err
 	}
@@ -179,7 +179,7 @@ func publish(ctx context.Context, root *os.Root, row ExportTaskRow, spec ExportS
 	return name, nil
 }
 
-// stringifyCell 保留value原驱动表达：nil空串、字节为文本，其余按原数字／时间格式输出，无IO。
+// stringifyCell 将 nil 转为空文本、字节转为文本，其余保留驱动数字和时间格式。
 func stringifyCell(value any) string {
 	switch v := value.(type) {
 	case nil:
@@ -193,15 +193,15 @@ func stringifyCell(value any) string {
 	}
 }
 
-// removeArtifacts 仅在root内按row可信任务身份删除内容、凭据和两临时文件，返回IO错误。
-// 不存在视为已清理，不删除任意数据库路径或其它任务文件；调用方持任务锁。
+// removeArtifacts 在任务锁内按可信任务号删除内容、凭据和临时文件，不采用数据库任意路径。
+// 文件不存在视为已清理，不影响其他任务。
 func removeArtifacts(root *os.Root, row ExportTaskRow) error {
 	name, proof, err := fileNames(row, true)
 	if err != nil {
 		return err
 	}
 	var combined error
-	// 回滚的pending尚未写file_path，也可能已有v1发布字节；两种可信布局均属本任务号。
+	// pending 回滚后即使没有 file_path，也可能已发布 v1 文件；清理须检查该任务号的两种布局。
 	for _, path := range []string{name, proof, name + ".partial", proof + ".partial", filepath.Join("v1", name), filepath.Join("v1", proof), filepath.Join("v1", name+".partial"), filepath.Join("v1", proof+".partial")} {
 		if err := root.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			combined = errors.Join(combined, err)
@@ -210,8 +210,8 @@ func removeArtifacts(root *os.Root, row ExportTaskRow) error {
 	return combined
 }
 
-// verifyArtifact 在ctx／root下按row打开内容并复核当前scope及mask，返回已回到开头的句柄或拒绝／IO错误。
-// 新凭据失配失败关闭；历史无凭据文件只供当前实际全局且无需脱敏的权限读取，受限下载须重新生成。
+// verifyArtifact 打开文件并核对当前范围、脱敏规则和摘要，成功后将句柄移回开头。
+// 新凭据失配即拒绝；旧无凭据文件仅供当前全局且无需脱敏的账号下载，否则须重新生成。
 func verifyArtifact(ctx context.Context, root *os.Root, row ExportTaskRow, spec ExportSpec, scope operations.DataScope, mask operations.FieldMask, versioned bool) (file *os.File, err error) {
 	name, proofName, err := fileNames(row, false)
 	if err != nil {
@@ -293,7 +293,7 @@ func verifyArtifact(ctx context.Context, root *os.Root, row ExportTaskRow, spec 
 	return file, nil
 }
 
-// expectedPath 只返回s配置根目录内row可信身份的原存储表达；数据库路径仅用于一致性核对。
+// expectedPath 按配置根目录和可信任务号生成路径，数据库路径仅用于比对。
 func (s ExportService) expectedPath(row ExportTaskRow) (string, error) {
 	name, _, err := fileNames(row, false)
 	if row.FilePath != nil && *row.FilePath == filepath.Join(s.exportDir(), "v1", name) {

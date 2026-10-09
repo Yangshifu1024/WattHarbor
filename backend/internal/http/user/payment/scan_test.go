@@ -30,10 +30,10 @@ type scanUser struct{}
 // Active 忽略输入 context 和用户编号，返回 true、nil，以隔离支付报价测试用户依赖；不访问数据库。
 func (scanUser) Active(context.Context, uint64) (bool, error) { return true, nil }
 
-// scanOperation 以字符串指定设备运行状态或读取错误，用于扫码发现的准入映射；不替代网关返回的物理端口状态。
+// scanOperation 以字符串指定设备运行状态或读取错误，用于扫码时设备是否可用的判断；不替代网关返回的物理端口状态。
 type scanOperation string
 
-// DeviceStatus 忽略 context 和设备编码，返回 s 指定的运行状态或 error 对应读取错误；不访问数据库，仅验证设备发现的准入映射。
+// DeviceStatus 忽略 context 和设备编码，返回 s 指定的运行状态或 error 对应读取错误；不访问数据库，仅验证设备发现的校验结果。
 func (s scanOperation) DeviceStatus(context.Context, string) (string, error) {
 	if s == "error" {
 		return "", errors.New("storage unavailable")
@@ -41,7 +41,7 @@ func (s scanOperation) DeviceStatus(context.Context, string) (string, error) {
 	return string(s), nil
 }
 
-// TestScanIsPublicAndReturnsOnlyGatewayReadResult 用 t 验证真实注册的匿名扫码及端口路由与测试 HTTP gateway 契约；核对服务令牌及公开读模型，不访问真库或设备。
+// TestScanIsPublicAndReturnsOnlyGatewayReadResult 验证真实注册的匿名扫码及端口路由与测试 HTTP gateway 契约；核对服务令牌及公开查询结果，不访问真库或设备。
 func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/internal/scan/resolve" || r.URL.Query().Get("code") != "board:1" || r.Header.Get("X-Service-Token") != "service-token" {
@@ -88,7 +88,7 @@ func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {
 	}
 }
 
-// TestScanShowsOperationalStateAndFailsClosed 用 t 验证扫码发现对窄运行态 fixture 的状态组合及错误关闭行为；使用测试 HTTP gateway，不证明真实数据库或设备状态。
+// TestScanShowsOperationalStateAndFailsClosed 验证扫码发现对运行状态测试替身 的状态组合及错误关闭行为；使用测试 HTTP gateway，不证明真实数据库或设备状态。
 func TestScanShowsOperationalStateAndFailsClosed(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"kind":"device","device_id":"board","ports":[{"port_id":"board:1","device_id":"board","port_no":1,"port_status":"idle","online":true,"available":true},{"port_id":"board:2","device_id":"board","port_no":2,"port_status":"charging","online":true,"available":false}]}}`))
@@ -122,7 +122,7 @@ func TestScanShowsOperationalStateAndFailsClosed(t *testing.T) {
 	}
 }
 
-// TestDisabledDeviceCannotReadOffers 用 t 验证暂停设备在注册报价路由上被拒绝；运行态来自窄 fixture，不执行支付或真实设备查询。
+// TestDisabledDeviceCannotReadOffers 验证暂停设备在注册报价路由上被拒绝；运行态来自测试替身，不执行支付或真实设备查询。
 func TestDisabledDeviceCannotReadOffers(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"kind":"port","device_id":"board","port":{"port_id":"board:1","device_id":"board","port_no":1,"port_status":"idle","online":true,"available":true}}}`))
@@ -137,7 +137,7 @@ func TestDisabledDeviceCannotReadOffers(t *testing.T) {
 	}
 }
 
-// TestCanonicalScanCode 用 t 验证裸码及 HTTPS 二维码链接的纯文本解析边界；不访问网络或数据库。
+// TestCanonicalScanCode 验证裸码及 HTTPS 二维码链接的纯文本解析边界；不访问网络或数据库。
 func TestCanonicalScanCode(t *testing.T) {
 	for _, tc := range []struct {
 		// raw,code 原始二维码文本与预期解析编码。
@@ -158,7 +158,7 @@ func TestCanonicalScanCode(t *testing.T) {
 	}
 }
 
-// testScanDiscovery 用 backend 的测试 HTTP 服务、token 服务令牌及 operations 窄运行态能力装配具名客户端。
+// testScanDiscovery 用 backend 的测试 HTTP 服务、token 服务令牌及 operations 运行状态接口装配专用客户端。
 // 返回设备发现用例，t 报告装配错误；不访问真库或真实 gateway，实际 HTTP 请求在处理器执行时发生。
 func testScanDiscovery(t *testing.T, backend *httptest.Server, token string, operations device.DeviceOperationReader) device.DiscoveryService {
 	t.Helper()

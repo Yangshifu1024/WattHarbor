@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestExportSQLFailureAndHistoricalFiles 验证完成写失败的文件恢复、失败写不可用时不误报，以及真正旧文件准入。
+// TestExportSQLFailureAndHistoricalFiles 验证完成写失败后的文件恢复、失败状态写失败，以及旧文件下载条件。
 func TestExportSQLFailureAndHistoricalFiles(t *testing.T) {
 	s, audit, first, _ := exportFixture(t)
 	ctx := context.Background()
@@ -49,7 +49,7 @@ func TestExportSQLFailureAndHistoricalFiles(t *testing.T) {
 			t.Fatalf("fault artifact %s %v", suffix, err)
 		}
 	}
-	// 超限之后的失败写也故障，必须返回内部错误并保留pending，不能返回伪failed回执。
+	// 失败状态写入也失败时返回内部错误并保留 pending，不能返回 failed。
 	status = "failed"
 	s.MaxRows = 1
 	in.RequestID = uuid.NewString()
@@ -68,7 +68,7 @@ func TestExportSQLFailureAndHistoricalFiles(t *testing.T) {
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("retry persisted pending %+v %v", result, err)
 	}
-	// 历史根目录文件无sidecar，仅当前全局且无需脱敏时兼容；不把新v1文件降级为历史。
+	// 旧根目录文件无凭据，仅当前全局且无需脱敏时可下载；新 v1 文件不能按旧文件放行。
 	oldNo := "EXP" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))
 	legacy := filepath.Join(s.ExportDir, oldNo+".csv")
 	if err := os.WriteFile(legacy, []byte("历史内容\n"), 0o600); err != nil {
@@ -120,8 +120,7 @@ func TestExportSQLFailureAndHistoricalFiles(t *testing.T) {
 	}
 }
 
-// TestHistoricalPDFUnavailable 验证历史PDF仅可按可信任务身份清理，不对当前下载开放。
-// 当前测试库枚举只有CSV／XLSX，不为测试改schema或伪造数据库支持PDF的事实。
+// TestHistoricalPDFUnavailable 验证历史 PDF 仅按可信任务号清理，不提供下载；不修改测试库格式枚举。
 func TestHistoricalPDFUnavailable(t *testing.T) {
 	row := ExportTaskRow{TaskNo: "EXPABC123", FileFormat: "pdf"}
 	var state *DownloadError

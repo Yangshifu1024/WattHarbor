@@ -16,8 +16,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// TestAdminSessionConcurrentRotationHasOneWinner 两个真实Redis调用竞争同一原令牌，只一轮换且旧令牌可注销。
-// 只清理自身SID；版本不匹配及挑战均不能成为有效会话。
+// TestAdminSessionConcurrentRotationHasOneWinner 验证两个真实 Redis 调用同令牌轮换只有一次成功，旧令牌仍可注销。
+// 仅清理本测试 SID，挑战或版本失配不能作为有效会话。
 func TestAdminSessionConcurrentRotationHasOneWinner(t *testing.T) {
 	raw := os.Getenv("TEST_REDIS_URL")
 	if raw == "" {
@@ -100,8 +100,8 @@ func TestAdminSessionConcurrentRotationHasOneWinner(t *testing.T) {
 	}
 }
 
-// TestAdminSessionLegacyPrecisionSurvivesTwoRotations 验证旧数字ID／版本在真实Lua连续两轮后仍精确并维持绝对TTL。
-// 本测试只写自身随机SID并清理，不使用开发Redis；故障与并发由后续独立用例覆盖。
+// TestAdminSessionLegacyPrecisionSurvivesTwoRotations 验证旧数字 ID／版本在真实 Lua 连续两轮后仍精确并维持绝对 TTL。
+// 本测试只写自身随机 SID 并清理，不使用开发 Redis；故障与并发由后续独立用例覆盖。
 func TestAdminSessionLegacyPrecisionSurvivesTwoRotations(t *testing.T) {
 	raw := os.Getenv("TEST_REDIS_URL")
 	if raw == "" {
@@ -154,8 +154,8 @@ func TestAdminSessionLegacyPrecisionSurvivesTwoRotations(t *testing.T) {
 	}
 }
 
-// TestAdminSessionSharedRevokeAndRedisFailure 验证提取通用撤销后后台原轮换与 previous 注销契约。
-// Redis 为真实 TEST_REDIS_URL；损坏记录产生存储错误，测试只删除本次 SID，不覆盖待迁移的后台用例验收。
+// TestAdminSessionSharedRevokeAndRedisFailure 验证后台轮换和 previous 注销，以及损坏 Redis 记录报错。
+// 使用 TEST_REDIS_URL，仅清理本测试 SID。
 func TestAdminSessionSharedRevokeAndRedisFailure(t *testing.T) {
 	raw := os.Getenv("TEST_REDIS_URL")
 	if raw == "" {

@@ -14,9 +14,8 @@ import (
 	contract "chargepilot/internal/contracts/gateway"
 )
 
-// queryData 在 ctx 下为 c 读取 path 的原查询信封，返回 T 或HTTP／业务／缺字段／解码错误。
-// required 指定必须存在且非null的数据字段；next_after_id允许显式null。最多5秒且禁止重定向，不重试。
-// 复用已装配Transport，仅复制请求级Client配置；不创建后台任务或额外连接池。
+// queryData 读取查询响应并检查 required 指定的必需字段；next_after_id 可以明确为 null。
+// 请求最多五秒，共享连接池，不跟随重定向或自动重试。
 func queryData[T any](ctx context.Context, c *Client, path string, required ...string) (T, error) {
 	var empty T
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -35,10 +34,10 @@ func queryData[T any](ctx context.Context, c *Client, path string, required ...s
 	if status != http.StatusOK {
 		return empty, fmt.Errorf("%w: HTTP %d, want 200", ErrInvalidResponse, status)
 	}
-	// queryWireReply 保留原信封或数据的字段存在性，仅用于传输解码。
+	// queryWireReply 保留响应中的字段是否存在，便于校验缺失字段。
 	type queryWireReply struct {
-		Code *int            `json:"code"` // 必须存在的原业务码
-		Data json.RawMessage `json:"data"` // 原数据JSON，不先转换浮点数字
+		Code *int            `json:"code"` // 必须存在的业务码
+		Data json.RawMessage `json:"data"` // 数据 JSON，不先转换浮点数字
 	}
 	var wire queryWireReply
 	if err := json.Unmarshal(body, &wire); err != nil {
@@ -67,12 +66,12 @@ func queryData[T any](ctx context.Context, c *Client, path string, required ...s
 	return out, nil
 }
 
-// validQueryDevice 核对 device/port 原规范身份，返回准入结果，不执行网络或数据库操作。
+// validQueryDevice 检查设备编号和端口号是否有效。
 func validQueryDevice(device string, port uint8) bool {
 	return device != "" && len(device) <= 64 && strings.TrimSpace(device) == device && port != 0
 }
 
-// validSeries 核对 points 的有界长度和可解析时刻，返回契约结果；可空指标不补零，无IO。
+// validSeries 检查点数上限和时间格式，缺失的指标不补零。
 func validSeries(points []contract.CurvePoint, count int) bool {
 	if points == nil || len(points) > contract.MaxQueryPoints || count != len(points) {
 		return false
@@ -85,8 +84,8 @@ func validSeries(points []contract.CurvePoint, count int) bool {
 	return true
 }
 
-// Telemetry 在 ctx 下读取 q 原端口的有界遥测，返回实际窗口、空值与原单位或输入／传输／契约错误。
-// 参数逐段转义，核对原设备、实际窗口包含关系、点数与分辨率；不将网关故障转换为空曲线。
+// Telemetry 查询端口遥测，核对设备、实际时间范围、点数和采样粒度。
+// 保留单位和空值，网关错误不能变成空曲线。
 func (c *Client) Telemetry(ctx context.Context, q contract.TelemetryRequest) (contract.TelemetryReply, error) {
 	if !validQueryDevice(q.DeviceID, q.PortNo) || q.From.IsZero() || !q.From.Before(q.To) || q.To.Sub(q.From) > 24*time.Hour {
 		return contract.TelemetryReply{}, fmt.Errorf("invalid telemetry query")
@@ -102,8 +101,8 @@ func (c *Client) Telemetry(ctx context.Context, q contract.TelemetryRequest) (co
 	return data, nil
 }
 
-// HistoricalCurve 在 ctx 下按 q 的原订单窗口读取聚合曲线，返回原边界标志、摘要及点或输入／调用／契约错误。
-// 核对业务号、设备、端口、时刻及粒度；摘要保持原JSON精度，聚合边界允许落在原窗口相邻桶内，无写入。
+// HistoricalCurve 查询订单的聚合曲线，核对订单、设备、端口、时间和粒度。
+// 保留摘要数字精度；聚合边界可落在查询范围两侧的相邻时间桶内。
 func (c *Client) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveRequest) (contract.HistoricalCurveReply, error) {
 	if !validQueryDevice(q.DeviceID, q.PortNo) || q.OrderNo == "" || len(q.OrderNo) > 64 || strings.TrimSpace(q.OrderNo) != q.OrderNo || q.StartedAt.IsZero() || !q.StartedAt.Before(q.EndedAt) || (q.Granularity != "15min" && q.Granularity != "hourly") {
 		return contract.HistoricalCurveReply{}, fmt.Errorf("invalid historical curve query")
@@ -119,8 +118,8 @@ func (c *Client) HistoricalCurve(ctx context.Context, q contract.HistoricalCurve
 	return data, nil
 }
 
-// OrderProcess 在 ctx 下按 q 原身份与游标读取过程页，返回原序点及末页空游标或输入／调用／契约错误。
-// 行主键须严格递增且下一游标等于页尾；精确uint64与已上报零值保持原值，不自动重试或换订单。
+// OrderProcess 按订单和游标查询过程记录；ID 必须递增，下一页游标必须等于末条 ID。
+// 保留大整数和已上报的零值，不自动重试。
 func (c *Client) OrderProcess(ctx context.Context, q contract.OrderProcessRequest) (contract.OrderProcessReply, error) {
 	if !validQueryDevice(q.DeviceID, q.PortNo) || q.OrderID == 0 || q.OrderNo == "" || len(q.OrderNo) > 64 || strings.TrimSpace(q.OrderNo) != q.OrderNo || q.Limit == 0 || q.Limit > contract.MaxQueryPoints {
 		return contract.OrderProcessReply{}, fmt.Errorf("invalid order process query")

@@ -22,8 +22,7 @@ interface AuditRow {
   created_at: string;
 }
 
-// 审计日志是「谁改过钱、优惠券、设备或权限」唯一的记录。读它和动手改它是两个独立
-// 权限。
+// 审计日志记录资金、优惠券、设备和权限变更；查看日志与执行变更使用不同权限。
 export default function AuditLogsPage() {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [total, setTotal] = useState(0);

@@ -17,8 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// roleSerialLockConnection 为 t 打开原 TEST_MYSQL_URL 的真实池，不输出含凭据的 URL。
-// 返回 GORM 连接，由测试在事务及 goroutine 退出后关闭；缺配置或连接失败直接失败，不跳过。
+// roleSerialLockConnection 按 TEST_MYSQL_URL 打开真库连接，配置或连接失败即终止测试。
+// 事务和协程退出后关闭连接，不输出含密码的 URL。
 func roleSerialLockConnection(t *testing.T) *gorm.DB {
 	t.Helper()
 	raw := os.Getenv("TEST_MYSQL_URL")
@@ -43,16 +43,15 @@ func roleSerialLockConnection(t *testing.T) *gorm.DB {
 	return db
 }
 
-// roleSerialWait 是性能库记录的真实 role 锁等待，保留索引与锁模式用于复现证据。
-// 它不模拟事务、闸门或锁，等待双方通过各自固定连接 ID 识别。
+// roleSerialWait 保存真实角色锁等待的索引、模式和双方连接 ID，用于复现。
 type roleSerialWait struct {
-	IndexName string `gorm:"column:index_name"` // 原 role 索引名，旧 uk_code 或新 uk_active_code。
+	IndexName string `gorm:"column:index_name"` //  role 索引名，旧 uk_code 或新 uk_active_code。
 	LockMode  string `gorm:"column:lock_mode"`  // MySQL 实际等待锁模式，唯一命中应为记录锁。
-	LockData  string `gorm:"column:lock_data"`  // 原被锁键值，仅输出角色编码与主键，不含凭据。
+	LockData  string `gorm:"column:lock_data"`  // 被锁键值，仅输出角色编码与主键，不含凭据。
 }
 
-// awaitRoleSerialWait 在 ctx 期限内只读性能库，直到 waiter 真正等待 blocker 的原角色锁。
-// ticker 仅限查询频次，执行次序由 data_lock_waits 的真实记录决定；无权限、提前返回或期限到达都失败。
+// awaitRoleSerialWait 查询 data_lock_waits，等待竞争连接实际阻塞在角色锁上。
+// 定时器只限制查询频率；权限不足、事务提前退出或超时均失败。
 func awaitRoleSerialWait(t *testing.T, ctx context.Context, observer *gorm.DB, schema string, waiter, blocker uint64, done <-chan error) roleSerialWait {
 	t.Helper()
 	ticker := time.NewTicker(5 * time.Millisecond)
@@ -85,9 +84,8 @@ AND l.OBJECT_SCHEMA=? AND l.OBJECT_NAME='role' AND l.LOCK_TYPE='RECORD' AND l.LO
 	}
 }
 
-// TestCustomerAdminSerialLockDoesNotDeadlockWithRoleInsert 用两条真实事务连接复现等待角色锁后插入前驱编码的次序。
-// 性能库确认 B 等待 A 后，A 调用真实 InsertRole 并提交，B 必须正常取得原串行点；私有角色按完整主键清理。
-// 不改隔离级别、不重试、不伪造等待，也不修改内置角色或将全仓测试串行化。
+// TestCustomerAdminSerialLockDoesNotDeadlockWithRoleInsert 用性能库确认第二事务等待角色锁，再让第一事务插入相邻角色并提交。
+// 第二事务须成功取锁；不改隔离级别或重试，测试角色按完整主键清理。
 func TestCustomerAdminSerialLockDoesNotDeadlockWithRoleInsert(t *testing.T) {
 	for _, mode := range []string{"insert", "cancel", "deadline"} {
 		t.Run(mode, func(t *testing.T) {

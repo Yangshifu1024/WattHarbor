@@ -41,7 +41,7 @@ func TestExportDeviceScopeIntersection(t *testing.T) {
 	t.Cleanup(func() { s.DB.Callback().Query().Remove(key) })
 	for _, scenario := range []struct {
 		scope operations.DataScope // 真实管理范围维度
-		want  int                  // fixture匹配数量
+		want  int                  // 测试夹具匹配数量
 	}{
 		{operations.DataScope{VendorIDs: []uint64{first}}, 1},
 		{operations.DataScope{StationIDs: []uint64{first}}, 1},
@@ -58,7 +58,7 @@ func TestExportDeviceScopeIntersection(t *testing.T) {
 	}
 }
 
-// TestExportScopeAndMaskCurrentInOldRR 先建立旧范围／mask快照，再在另一池提交收窄，下载必须当前拒绝。
+// TestExportScopeAndMaskCurrentInOldRR 验证旧 RR 范围快照后另一连接收窄权限，下载仍读取最新规则并拒绝。
 func TestExportScopeAndMaskCurrentInOldRR(t *testing.T) {
 	s, audit, first, second := exportFixture(t)
 	ctx := context.Background()

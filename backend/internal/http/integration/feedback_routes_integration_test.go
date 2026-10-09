@@ -44,7 +44,7 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 	orderNo := "RF" + tag
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	for _, seed := range []struct {
-		table string         /* 所属事实表 */
+		table string         /* 事实表 */
 		row   map[string]any /* 本测试事实 */
 	}{
 		{"user", map[string]any{"id": id, "openid": tag, "status": "active"}},
@@ -140,9 +140,9 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 	}
 	var submitted struct {
 		Data struct {
-			ID        uint64 `json:"feedback_id"` /* 原新反馈整数身份 */
+			ID        uint64 `json:"feedback_id"` /* 新反馈整数编号 */
 			Submitted bool   `json:"submitted"`   /* 已提交标志 */
-		} `json:"data"` /* 原成功结果 */
+		} `json:"data"` /* 成功结果 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &submitted); err != nil || submitted.Data.ID == 0 || !submitted.Data.Submitted {
 		t.Fatal("feedback response changed")
@@ -189,7 +189,7 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 	if err := tx.Table("audit_log").Where("target_type='feedback' AND target_id=?", fmt.Sprint(feedbackID)).Count(&audits).Error; err != nil || audits != 2 {
 		t.Fatalf("audit count=%d err=%v", audits, err)
 	}
-	// 拆除通用表名选择后，报修原注册路径仍调用所属 FaultRepo；本段只回归迁移表访问。
+	// 拆除通用表名选择后，报修注册路径仍调用 FaultRepo；本段只回归迁移表访问。
 	if err := tx.Table("device_fault_report").Create(map[string]any{"id": id, "device_id": "RF" + tag, "user_id": id, "fault_type": "other"}).Error; err != nil {
 		t.Fatal(err)
 	}

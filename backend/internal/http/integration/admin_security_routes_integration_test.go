@@ -24,8 +24,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRegisteredAdminSecurityLifecycle 使用真实MySQL／Redis和注册认证路由验证登记、确认、挑战和关闭。
-// 账号、权限、状态与审计使用外层回滚；随机SID及本测试绑定／租锁／频次键逐项清理，不改bootstrap。
+// TestRegisteredAdminSecurityLifecycle 使用真实 MySQL／Redis 和注册认证路由验证登记、确认、挑战和关闭。
+// 账号、权限、状态与审计使用外层回滚；随机 SID 及本测试绑定／租锁／频次键逐项清理，不改 bootstrap。
 func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 	tx := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
 	if tx.Error != nil {
@@ -205,7 +205,7 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 		t.Fatalf("disable revocation=%d", w.Code)
 	}
 	final := login()
-	// 故障只注入本测试连接的审计创建，确认后的SQL启用和版本必须整体回滚；缓存消费不伪装回滚。
+	// 故障只注入本测试连接的审计创建，确认后的 SQL 启用和版本必须整体回滚；缓存消费不伪装回滚。
 	rateKey := "admin:mfa-settings:rate:" + strconv.FormatUint(id, 10)
 	if err := cache.Del(ctx, rateKey).Err(); err != nil {
 		t.Fatal(err)
@@ -239,7 +239,7 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 	if n, err := cache.Exists(ctx, pendingKey).Result(); err != nil || n != 0 {
 		t.Fatalf("consumed cache restored %d %v", n, err)
 	}
-	// 同一真实来源的坏输入也计数，第六次返回原429与Retry-After，不接触账号锁。
+	// 同一真实来源的坏输入也计数，第六次返回 429 与 Retry-After，不接触账号锁。
 	source := ip()
 	for i := range 6 {
 		w := call("POST", "/api/v1/admin/auth/login", map[string]any{}, "", source)

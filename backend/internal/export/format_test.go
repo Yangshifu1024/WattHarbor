@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestExportFormats 使用 t 分别生成内存 CSV 与 XLSX，核对公式前缀转义并读取实际 XLSX 单元格；无返回值，写入或比对失败由 t 报告，关闭工作簿，不写磁盘或访问数据库。
+// TestExportFormats 在内存生成 CSV、XLSX，并读取真实单元格核对公式转义；不写磁盘或访问数据库。
 func TestExportFormats(t *testing.T) {
 	headers := []string{"账单号", "电费(分)", "服务费(分)", "合计(分)", "退款(分)"}
 	lines := [][]string{{"BILL-001", "200", "50", "250", "0"}, {"=1+1", "300", "75", "375", "25"}}

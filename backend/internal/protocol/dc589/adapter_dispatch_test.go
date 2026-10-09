@@ -17,10 +17,10 @@ type recordingSink struct {
 	recorded chan struct{}    // 每次成功记录的确认，供发送方等待帧已处理
 }
 
-// Register 接受 context 下注册事实并返回 nil；测试只断言后续帧事件，不执行持久化。
+// Register 接受 context 下注册信息并返回 nil；测试只断言后续帧事件，不执行持久化。
 func (s *recordingSink) Register(context.Context, protocol.Registration) error { return nil }
 
-// Record 在接收者锁内保存 event 并确认已处理，返回 nil；context 不控制此内存操作，无外部 IO。
+// Record 在接收者锁内保存 event 并确认已处理，返回 nil；context 不控制此内存操作。
 func (s *recordingSink) Record(_ context.Context, event protocol.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -162,8 +162,7 @@ func TestConfigRejectionIsRecordedRatherThanCalledUnknown(t *testing.T) {
 	}
 }
 
-// 拒绝必须与「链路只是没回答」区分得开。从外面看两者都是「没有确认」，
-// 但只有其中一个意味着运维得去改一个数字。
+// 设备明确拒绝配置和未收到回复是两种情况；前者需要检查配置参数。
 func TestConfigAcceptanceAndRefusalAreDistinguishable(t *testing.T) {
 	sink := serveWithFrames(t, []Frame{{Command: ConfigAck, Data: []byte{0}}})
 	results := sink.findConfigResults()
@@ -199,8 +198,7 @@ func TestConfigReportIsNotTreatedAsUnknown(t *testing.T) {
 	}
 }
 
-// 功率控制的应答是同一类问题：一块不肯放弃分档的主板，必须以「拒绝」
-// 的形态被看见。
+// 主板拒绝功率控制时应记录明确的拒绝结果。
 func TestPowerControlRefusalIsRecorded(t *testing.T) {
 	sink := serveWithFrames(t, []Frame{{Command: cmdPowerControlReply,
 		Data: []byte{byte(PowerSet), byte(PowerOpRemove), 0xF1, 0xFF, 0, 0}}})

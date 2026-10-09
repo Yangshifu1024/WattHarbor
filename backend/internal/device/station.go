@@ -20,18 +20,17 @@ type ManagementInputError struct {
 // Error 返回字段校验提示，不执行 IO。
 func (e ManagementInputError) Error() string { return e.Message }
 
-// StationService 拥有站点资料变更与审计的完整事务；已有站点读写必须核对显式范围。
+// StationService 负责站点资料与审计事务，查询和更新均检查当前站点范围。
 type StationService struct {
 	DB *gorm.DB // central 站点连接，由进程管理资源生命周期
 }
 
-// List 在ctx下按原q及已取得scope读取站点，返回原分页或读取／取消错误，不修改站点。
-// 保留站点维度及无范围记录不受限的规则，HTTP只追加原当前权限展示。
+// List 按当前站点范围分页查询，无范围记录时不限制。
 func (s StationService) List(ctx context.Context, q persist.PageQuery, scope operations.DataScope) (persist.Page[Station], error) {
 	return ListStations(ctx, s.DB, q, scope)
 }
 
-// ValidateStationInput 检查 in 的废弃编码和必填资料；返回原公开参数错误，无 IO 或修改。
+// ValidateStationInput 检查完整资料，并拒绝已废弃的站点编码。
 func ValidateStationInput(in StationInput) error {
 	if in.Code != nil {
 		return ManagementInputError{"编码已移除：站点统一使用主键 ID，请勿提交 code 字段"}
@@ -42,7 +41,7 @@ func ValidateStationInput(in StationInput) error {
 	return nil
 }
 
-// Get 在 ctx 下读取 scope 内 id 的未删除站点；越界返回权限错误，不存在或存储失败原样返回。
+// Get 读取范围内未删除站点；越界返回权限错误。
 func (s StationService) Get(ctx context.Context, scope operations.DataScope, id uint64) (Station, error) {
 	if !scope.AllowsStation(id) {
 		return Station{}, operations.ErrForbidden
@@ -50,8 +49,8 @@ func (s StationService) Get(ctx context.Context, scope operations.DataScope, id 
 	return FindStation(ctx, s.DB, id)
 }
 
-// Save 在 ctx 下依据 audit 的实时权限保存 in，id=0 新建，否则必须属于 scope。
-// 返回原完整资料或输入、权限、缺失、存储错误；资料与审计同事务。新建尚无站点身份，沿用 station.create 权限。
+// Save 核对当前权限后保存完整站点资料与审计，ID=0 创建，否则检查站点范围。
+// 新站点按 station.create 权限授权。
 func (s StationService) Save(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id uint64, in StationInput) (Station, error) {
 	permission := "station.create"
 	if id != 0 {
@@ -87,7 +86,7 @@ func (s StationService) Save(ctx context.Context, audit ops.AuditContext, scope 
 	return row, err
 }
 
-// StationInput 是站点新建／编辑完整请求，经纬度指针区分缺失和有效零值；Code 只用于拒绝旧编码。
+// StationInput 是站点完整资料，经纬度用指针区分缺失和零值；Code 仅用于拒绝旧请求。
 type StationInput struct {
 	// 保留已废弃的 Code 请求字段用于兼容性校验，禁止写入站点记录。
 	Code         *string  `json:"code"`          // 兼容旧客户端的废弃字段；非 nil 时返回编码已移除的参数错误。
@@ -99,9 +98,8 @@ type StationInput struct {
 	ContactPhone *string  `json:"contact_phone"` // 联系电话，可空，最长 32 字符。
 }
 
-// ValidStationInput 以 input 为完整待写资料，返回其合法性，不执行 IO 或修改：名称必填且不超过 128 字符，经纬度必填、不能为 NaN 且落在
-// 合法区间内，状态必须是 active/disabled/construction 之一，
-// 地址和联系电话两个可空文本字段各有长度上限。站点全年无休，不配置营业时间。
+// ValidStationInput 检查名称必填且最多 128 字、经纬度必填且范围有效，禁止 NaN。
+// 状态仅允许 active／disabled／construction；地址和电话有长度上限，不设置营业时间。
 func ValidStationInput(input StationInput) bool {
 	if strings.TrimSpace(input.Name) == "" || utf8.RuneCountInString(input.Name) > 128 || input.Longitude == nil || input.Latitude == nil || math.IsNaN(*input.Longitude) || math.IsNaN(*input.Latitude) || math.Abs(*input.Longitude) > 180 || math.Abs(*input.Latitude) > 90 || input.Status == "" || !oneOfStatus(input.Status, "active disabled construction") {
 		return false
@@ -114,7 +112,7 @@ func ValidStationInput(input StationInput) bool {
 	return true
 }
 
-// oneOfStatus 判断 value 是否为空或属于 allowed 的空格分隔集合；无 IO 或修改。
+// oneOfStatus 检查值为空或属于空格分隔的允许状态集合。
 func oneOfStatus(value, allowed string) bool {
 	if value == "" {
 		return true

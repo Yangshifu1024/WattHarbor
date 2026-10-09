@@ -22,7 +22,7 @@ func (a API) listAuditLogs(c *gin.Context) {
 		return
 	}
 
-	// 仅解析原RFC3339输入；存储过滤和分页计数由所属审计仓储负责。
+	// 仅解析 RFC3339 输入；存储过滤和分页计数由审计仓储负责。
 	var (
 		module, action, actor, target string
 		from, to                      *time.Time
@@ -30,8 +30,8 @@ func (a API) listAuditLogs(c *gin.Context) {
 	)
 	module, action, actor, target = c.Query("module"), c.Query("action"), c.Query("actor"), c.Query("target_type")
 	for _, spec := range []struct {
-		raw  string      // 原查询参数
-		into **time.Time // 对应可空UTC时刻
+		raw  string      // 查询参数
+		into **time.Time // 对应可空 UTC 时刻
 	}{{c.Query("from"), &from}, {c.Query("to"), &to}} {
 		if spec.raw == "" {
 			continue

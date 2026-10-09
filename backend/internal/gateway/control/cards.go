@@ -20,8 +20,8 @@ type CardReplyAPI struct {
 // Register 在 r 注册共享内部回复端点；不发送设备命令或打开资源。
 func (a CardReplyAPI) Register(r *gin.Engine) { r.POST(contract.CardReplyPath, a.reply) }
 
-// reply 从 c 读取原设备、会话和冻结决定，鉴权后发送；失败返回对应 HTTP 错误。
-// accepted 只说明连接发送完成，不能据此确认设备消费或扣款结果。
+// reply 从请求读取设备、会话和已保存的决定，鉴权后发送；失败返回对应 HTTP 错误。
+// accepted 只说明连接发送完成，不能据此确认设备处理或扣款结果。
 func (a CardReplyAPI) reply(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

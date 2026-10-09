@@ -7,17 +7,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// 停机扫描的订单及截止点只读投影；card 购买记录由 card 的 repo 提供。
+// 停机扫描的订单及截止点只读查询结果；card 购买记录由 card 的 repo 提供。
 
 // AutoStopOrder 是停机扫描读到的一笔充电中订单，含下单时冻结的计价快照。
 type AutoStopOrder struct {
 	ID              uint64     `gorm:"column:id"`               // 充电订单主键，分页游标
-	OrderNo         string     `gorm:"column:order_no"`         // 网关校验停机身份的原订单号
+	OrderNo         string     `gorm:"column:order_no"`         // 网关校验停机身份的订单号
 	UserID          uint64     `gorm:"column:user_id"`          // 订单所属用户主键
 	DeviceID        string     `gorm:"column:device_id"`        // 网关设备业务标识
 	PortNo          uint8      `gorm:"column:port_no"`          // 物理端口号，从 1 开始
 	StartedAt       time.Time  `gorm:"column:started_at"`       // 实际开始充电的 UTC 时刻
-	PricingSnapshot []byte     `gorm:"column:pricing_snapshot"` // 原计价规则及套餐 JSON；已冻结恢复不依赖其存在
+	PricingSnapshot []byte     `gorm:"column:pricing_snapshot"` // 计价规则及套餐 JSON；已冻结恢复不依赖其存在
 	CutoffAt        *time.Time `gorm:"column:cutoff_at"`        // 首次冻结的 UTC 截止时刻；nil 表示尚未决定停机
 }
 

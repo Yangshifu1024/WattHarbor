@@ -20,8 +20,7 @@ function loadPage(relativePath, app, wx = {}) {
   return page;
 }
 
-// app.config.ts 是页面清单的唯一来源；defineAppConfig 为 Taro 标识函数，
-// 在此以恒等函数求值，避免再维护一份会与真实配置漂移的副本。
+// 从 app.config.ts 读取页面清单；测试将 defineAppConfig 替换为原样返回参数的函数。
 function registeredPages(root) {
   const filename = path.join(root, 'src', 'app.config.ts');
   // 该文件是纯配置字面量，去掉 ESM 导出后即可在 vm 中以 defineAppConfig 求值。

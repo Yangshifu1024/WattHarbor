@@ -18,8 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// run 在 ctx 下加载配置、打开资源并运行后台进程，返回初始化、执行及释放错误；退出前等待受管理任务。
-// ctx 为进程取消来源，无额外入参；初始化失败直接返回原错误，运行后 err 合并连接关闭错误。
+// run 加载配置并启动应用，等待请求和任务退出后释放资源；返回启动、运行和清理错误。
 func run(ctx context.Context) (err error) {
 	cfg, err := config.LoadAdmin()
 	if err != nil {
@@ -37,16 +36,14 @@ func run(ctx context.Context) (err error) {
 	return app.Run(ctx)
 }
 
-// application 管理后台 HTTP 及导出清理的共同生命周期。
+// application 管理 HTTP 服务和导出清理任务的启动与退出。
 type application struct {
 	Server  *http.Server      // 由 httpapi.Serve 处理停机及等待当前请求
-	Exports exportpkg.Cleaner // 原导出过期文件清理能力，不拥有独立未管理循环
+	Exports exportpkg.Cleaner // 导出过期文件清理，随应用启动和退出
 }
 
-// assemble 在 ctx 下按 cfg 及 r 装配鉴权、内部客户端、路由和清理，返回应用或装配错误。
-// bootstrap 沿用原账号初始化规则，客户端不启动后台任务，资源释放由 run 管理。
-// cfg 提供 JWT、后台初始化账号、网关地址及导出目录，r 提供同池 SQL／ORM、缓存与内部 HTTP 客户端。
-// 成功返回未启动的应用与 nil，JWT、账号初始化或客户端配置失败返回 nil 与原错误；初始化账号可能写入数据库。
+// assemble 创建后台鉴权、网关客户端、路由和导出清理任务；可能初始化管理员账户。
+// 这里只组装依赖，应用由 Run 启动，资源由 run 释放。
 func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application, error) {
 	jwt, err := auth.NewJWT(cfg.JWTSecret)
 	if err != nil {
@@ -82,7 +79,7 @@ func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application
 	}, nil
 }
 
-// Run 在 ctx 下管理 a 的 HTTP 与清理循环，返回首个执行错误；取消后等待两者退出才允许释放资源。
+// Run 同时运行 HTTP 服务和导出清理；取消或出错后等待两者退出。
 func (a *application) Run(ctx context.Context) error {
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error { return httpapi.Serve(groupCtx, a.Server, 10*time.Second) })

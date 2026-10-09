@@ -14,14 +14,14 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestAutoStopConsumerPreservesValidatedProgress 用 t 和真实具名客户端核对成功及未完成计数、原 wire 和一次调用。
-// 回环服务只提供回执，不执行停止命令或资金操作，合法部分计数不能被消费方吞掉。
+// TestAutoStopConsumerPreservesValidatedProgress 和真实专用客户端核对成功及未完成计数、 wire 和一次调用。
+// 回环服务只提供回执，不执行停止命令或资金操作，合法部分计数不能被调用方吞掉。
 func TestAutoStopConsumerPreservesValidatedProgress(t *testing.T) {
 	for _, tc := range []struct {
 		name   string // 成功或未完成回执场景。
-		status int    // 回环服务的原 HTTP 状态。
-		body   string // 原端点回执，包含明确处理数量。
-		count  int    // 具名客户端已验证、消费方应原样返回的数量。
+		status int    // 回环服务的 HTTP 状态。
+		body   string // 端点回执，包含明确处理数量。
+		count  int    // 专用客户端已验证、调用方应原样返回的数量。
 	}{
 		{"completed", 200, `{"code":0,"data":{"stopped":3}}`, 3},
 		{"incomplete", 503, `{"code":5003,"data":{"stopped":2}}`, 2},
@@ -58,7 +58,7 @@ func TestAutoStopConsumerPreservesValidatedProgress(t *testing.T) {
 	}
 }
 
-// autoStopFixture 仅观测停机消费方的输入并返回指定回复，不执行 HTTP、数据库或设备操作。
+// autoStopFixture 仅观测停机调用方的输入并返回指定回复，不执行 HTTP、数据库或设备操作。
 type autoStopFixture func(context.Context, centralcontract.AutoStopRequest) (centralcontract.AutoStopReply, error)
 
 // AutoStop 将 ctx 和 request 传给 fixture，原样返回其回复和错误，副作用由 fixture 定义。
@@ -66,8 +66,8 @@ func (f autoStopFixture) AutoStop(ctx context.Context, request centralcontract.A
 	return f(ctx, request)
 }
 
-// TestAutoStopConsumerKeepsContextAndDependencyErrors 用 t 核对原 context、部分计数及错误原样传播，未配置明确失败。
-// 窄 fixture 只证明消费方适配，不把取消时的 fixture 数量解释为真实设备处理结果。
+// TestAutoStopConsumerKeepsContextAndDependencyErrors 核对 context、部分计数及错误原样传播，未配置明确失败。
+// 测试替身 只证明调用方适配，不把取消时的 fixture 数量解释为真实设备处理结果。
 func TestAutoStopConsumerKeepsContextAndDependencyErrors(t *testing.T) {
 	if count, err := (AutoStopper{}).Run(context.Background()); count != 0 || err == nil || err.Error() != "auto stop is not configured" {
 		t.Fatalf("unconfigured count=%d err=%v", count, err)

@@ -218,8 +218,8 @@ func TestCutoffRequiresReliableEnergyAndClipsTime(t *testing.T) {
 // TestCutoffMeterDurationBranches 补齐时长模式截止的四个分支断言。
 // 时长套餐的截止点是已购时长的耗尽时刻，不依赖分段证据：截止点落在已充
 // 时长之内按秒裁剪；截止点超出已充秒数但早于结束时刻时（设备浮充尾段）
-// 保留实际充电秒数、结束时刻落到截止点；截止点不早于结束时刻原样返回，
-// 早于起充时刻无证据可裁须复核。与上一条测试的电量口径裁剪对照，共同
+// 保留实际充电秒数、结束时刻落到截止点；截止点不早于结束时刻原样返回。
+// 早于起充时刻无证据可裁须复核。与上一条测试的电量计价方式裁剪对照，共同
 // 锁住「功率和时长可直接裁剪、电量不得猜测」的边界。
 func TestCutoffMeterDurationBranches(t *testing.T) {
 	start := time.Date(2026, 9, 30, 9, 0, 0, 0, beijing)
@@ -250,7 +250,7 @@ func TestCutoffMeterDurationBranches(t *testing.T) {
 		}
 	})
 	t.Run("截止超出已充秒数保留实际秒数", func(t *testing.T) {
-		// 浮充尾段：设备自报已充 900 秒，证据结束时刻含 30 秒浮充尾巴，
+		// 浮充尾段：设备自报已充 900 秒，证据结束时刻含 30 秒浮充尾巴。
 		// 截止点 910 秒落在两者之间，不得把实际充电秒数裁到截止点。
 		float := ActualMeter{StartedAt: start, EndedAt: start.Add(930 * time.Second), ChargedSeconds: 900}
 		got, err := CutoffMeter(duration, float, start.Add(910*time.Second))

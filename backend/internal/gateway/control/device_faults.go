@@ -22,8 +22,7 @@ func (a TelemetryAPI) registerDeviceFaults(r *gin.Engine) {
 	r.GET("/api/v1/internal/devices/:device_id/latest-heartbeat", a.latestHeartbeat)
 }
 
-// deviceFaults 接收 c 中的服务令牌和可选 limit，按 id 升序返回原未处理故障载荷，空 reports 保持 []。
-// limit 一至一百，默认一百；鉴权失败返回 401，限额无效返回 400，读取失败返回原 503，无标记写入。
+// deviceFaults 鉴权后按 ID 升序返回未处理故障，最多 100 条；空列表返回 []。
 func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -49,8 +48,7 @@ func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// markFaultsProcessed 接收 c 中的服务令牌及一至一百个原事件主键，交由 repo 完整事务推进仍未处理记录。
-// 成功返回实际影响行数；鉴权失败返回 401，绑定或长度错误返回 400，事务失败返回原 503 且不输出中间计数。
+// markFaultsProcessed 鉴权后在同一事务内标记 1 至 100 条故障事件，返回实际影响行数。
 func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -68,9 +66,8 @@ func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 	httpapi.OK(c, contract.MarkDeviceFaultsReply{Marked: marked})
 }
 
-// latestHeartbeat 接收 c 中的服务令牌、设备 ID 和原水印参数，非空 after_key 优先且不解析 after。
-// 没有 key 时解析 RFC3339Nano 时间，交由 repo 完整读取，再返回缺水印、缺心跳或原心跳证据。
-// 鉴权失败返回 401，设备/时间无效返回 400；零水印与 SQL 错误分别映射原 503 消息，不解释协议恢复状态。
+// latestHeartbeat 查询指定起点之后的最新心跳；after_key 优先，只有它为空时才解析 after 时间。
+// 设备和时间无效返回 400，起点不可读或数据库错误返回 503。
 func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
 	if !a.authorized(c) {
 		return

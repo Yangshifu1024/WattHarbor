@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestCardDecisionInputKeepsFrozenBypass 验证实际注册输入端点的原事件身份校验、冻结回复优先及原缺失/取消消息。
+// TestCardDecisionInputKeepsFrozenBypass 验证实际注册输入端点的事件标识校验、已保存回复优先及缺失/取消消息。
 // 夹具全部位于外层回滚事务，不执行资金决策或设备回复。
 func TestCardDecisionInputKeepsFrozenBypass(t *testing.T) {
 	db := gatewayContractDB(t)
@@ -47,8 +47,8 @@ func TestCardDecisionInputKeepsFrozenBypass(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/v1/internal/card-events/decide-begin"
-	// 在实际锁读的事务连接写入私有attempts作为生命周期观测：普通成功提交，身份错误和冻结正常出口回滚。
-	// 原生产begin没有该写入，观测不作为业务投递尝试证据。
+	// 在实际锁读的事务连接写入私有 attempts 作为生命周期观测：普通成功提交，身份错误和已有回复的返回分支回滚。
+	// 原生产 begin 没有该写入，观测不作为业务投递尝试证据。
 	hook := "test:card-decision-rollback-" + uuid.NewString()
 	if err := db.Callback().Query().After("gorm:query").Register(hook, func(query *gorm.DB) {
 		if query.Statement.Table == "card_event_delivery" && query.Error == nil && query.RowsAffected == 1 && query.Statement.Clauses["FOR"].Name != "" {
@@ -60,8 +60,8 @@ func TestCardDecisionInputKeepsFrozenBypass(t *testing.T) {
 	defer db.Callback().Query().Remove(hook)
 	status, reply := callFaultEndpoint(t, tx, http.MethodPost, path, string(body), context.Background())
 	var input struct {
-		EventJSON    string `json:"event_json"`    // 原协议事件全文。
-		ResponseJSON string `json:"response_json"` // 原冻结回复，未冻结时为空。
+		EventJSON    string `json:"event_json"`    // 协议事件全文。
+		ResponseJSON string `json:"response_json"` // 已保存回复，未冻结时为空。
 	}
 	var event protocol.Event
 	if err := json.Unmarshal(reply.Data, &input); err != nil {
@@ -74,7 +74,7 @@ func TestCardDecisionInputKeepsFrozenBypass(t *testing.T) {
 	if err := tx.Table("card_event_delivery").Select("attempts").Where("event_key=?", key).Take(&attempts).Error; err != nil || attempts != 1 {
 		t.Fatalf("normal input did not commit: attempts=%d err=%v", attempts, err)
 	}
-	// 合法JSON但错事件身份必须409；已有冻结值则原样绕过该错误事件。
+	// 合法 JSON 但错事件标识必须 409；已有保存值则原样绕过该错误事件。
 	if err := tx.Table("device_event").Where("event_key=?", key).Update("event_json", `{"EventID":"wrong"}`).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestCardDecisionInputKeepsFrozenBypass(t *testing.T) {
 	}
 }
 
-// TestCardFreezeKeepsStageFailureMessages 验证取消、真实JSON列拒绝和缺投递行保持原UPDATE／后读阶段错误，失败不写冻结值。
+// TestCardFreezeKeepsStageFailureMessages 验证取消、真实 JSON 列拒绝和缺投递行保持 UPDATE／后续读取阶段错误，失败不写冻结值。
 // 只在回滚事务中造随机空冻结夹具，不触发中央或设备投递。
 func TestCardFreezeKeepsStageFailureMessages(t *testing.T) {
 	db := gatewayContractDB(t)
@@ -138,10 +138,10 @@ func TestCardFreezeKeepsStageFailureMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for _, check := range []struct {
-		ctx     context.Context // 原请求取消范围。
-		key     string          // 存在或缺失的投递身份。
-		payload string          // 原候选JSON，非法文本交真实列拒绝。
-		message string          // 原阶段消息。
+		ctx     context.Context // 请求取消范围。
+		key     string          // 存在或缺失的投递标识。
+		payload string          // 候选 JSON，非法文本交真实列拒绝。
+		message string          // 阶段消息。
 	}{
 		{ctx, key, `{}`, "刷卡回复冻结暂不可用"},
 		{context.Background(), key, `not-json`, "刷卡回复冻结暂不可用"},
@@ -168,8 +168,8 @@ func TestCardFreezeKeepsStageFailureMessages(t *testing.T) {
 	}
 }
 
-// TestConcurrentCardFreezeKeepsFirstReply 验证实际注册具名客户端在真实条件UPDATE竞争时恰一次首写，重放返回同一完整回复。
-// 仅随机卡投递夹具，请求退出后按自身主键清理零残留，不涉及钱包或TCP。
+// TestConcurrentCardFreezeKeepsFirstReply 验证实际注册专用客户端在真实条件 UPDATE 竞争时恰一次首次写入，重放返回同一完整回复。
+// 仅随机卡投递夹具，请求退出后按自身主键清理零残留，不涉及钱包或 TCP。
 func TestConcurrentCardFreezeKeepsFirstReply(t *testing.T) {
 	db := gatewayContractDB(t)
 	key := uuid.NewString()
@@ -219,8 +219,8 @@ func TestConcurrentCardFreezeKeepsFirstReply(t *testing.T) {
 	})
 	// outcome 只收已退出的客户端请求，测试断言由主测试协程执行。
 	type outcome struct {
-		reply contract.CardFreezeReply // 原首写事实及完整权威回复。
-		err   error                    // 原传输或契约错误。
+		reply contract.CardFreezeReply // 首次写入结果及完整最终回复。
+		err   error                    // 传输或契约错误。
 	}
 	results := make(chan outcome, 2)
 	for _, units := range []uint16{101, 202} {

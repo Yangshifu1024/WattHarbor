@@ -16,22 +16,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// sessionDataReply 描述原会话审计接口的数据，仅供注册端点回归断言。
+// sessionDataReply 描述会话审计接口的数据，仅供注册端点回归断言。
 type sessionDataReply struct {
-	Items            []IdleSession `json:"items"`              // 原候选连接投影。
-	Count            int           `json:"count"`              // 原列表数量。
+	Items            []IdleSession `json:"items"`              // 候选连接信息。
+	Count            int           `json:"count"`              // 列表数量。
 	Closed           int64         `json:"closed"`             // 本次实际关闭数量。
-	IdleThresholdSec int           `json:"idle_threshold_sec"` // 原静默阈值秒数。
+	IdleThresholdSec int           `json:"idle_threshold_sec"` // 静默阈值秒数。
 }
 
-// sessionEnvelopeReply 保留原错误时data:null，不能把数据库失败当作空列表成功。
+// sessionEnvelopeReply 保留错误时 data:null，不能把数据库失败当作空列表成功。
 type sessionEnvelopeReply struct {
-	Code    int               `json:"code"`    // 原公开业务码。
-	Message string            `json:"message"` // 原公开消息。
-	Data    *sessionDataReply `json:"data"`    // 成功数据，失败为nil。
+	Code    int               `json:"code"`    // 公开业务码。
+	Message string            `json:"message"` // 公开消息。
+	Data    *sessionDataReply `json:"data"`    // 成功数据，失败为 nil。
 }
 
-// callSessionEndpoint 通过实际Register发起携服务令牌的请求，返回HTTP状态及原回执；ctx控制持久操作取消。
+// callSessionEndpoint 通过实际 Register 发起携服务令牌的请求，返回 HTTP 状态及回执；ctx 控制持久操作取消。
 func callSessionEndpoint(t *testing.T, api SessionAPI, method string, ctx context.Context) (int, sessionEnvelopeReply) {
 	t.Helper()
 	router := httpapi.NewRouter()
@@ -51,7 +51,7 @@ func callSessionEndpoint(t *testing.T, api SessionAPI, method string, ctx contex
 	return out.Code, reply
 }
 
-// TestIdleSessionEndpointsKeepCompositeIdentity 验证真实候选排序、NULL远端地址及完整id/日期身份，清理不覆盖近期或正常关闭记录。
+// TestIdleSessionEndpointsKeepCompositeIdentity 验证真实候选排序、NULL 远端地址及完整 id/日期身份，清理不覆盖近期或正常关闭记录。
 // 所有夹具和嵌套清理事务位于外层回滚事务，只验证持久审计，不关闭真实连接。
 func TestIdleSessionEndpointsKeepCompositeIdentity(t *testing.T) {
 	db := gatewayContractDB(t)
@@ -73,12 +73,12 @@ func TestIdleSessionEndpointsKeepCompositeIdentity(t *testing.T) {
 	id, device := testfixture.NewID(), "SESSION-"+uuid.NewString()
 	oldSession, oldestSession := uuid.NewString(), uuid.NewString()
 	for _, seed := range []struct {
-		id      uint64    // 原审计主键，跨日期可相同。
-		month   time.Time // 原完整分区日期。
-		session string    // 原设备连接身份。
-		active  time.Time // 原最后活动时刻。
-		ended   any       // nil为开放记录。
-		reason  any       // 正常关闭原因，开放记录为nil。
+		id      uint64    // 审计主键，跨日期可相同。
+		month   time.Time // 完整分区日期。
+		session string    // 设备连接身份。
+		active  time.Time // 最后活动时刻。
+		ended   any       // nil 为开放记录。
+		reason  any       // 正常关闭原因，开放记录为 nil。
 	}{
 		{id, previous, oldSession, now.Add(-2 * time.Hour), nil, nil},
 		{id, month, uuid.NewString(), now.Add(-time.Minute), nil, nil},
@@ -106,8 +106,8 @@ func TestIdleSessionEndpointsKeepCompositeIdentity(t *testing.T) {
 		}
 	}
 	for _, check := range []struct {
-		where string // 需要保持的完整主键／关闭事实。
-		args  []any  // 原夹具身份及日期。
+		where string // 需要保持的全部主键字段／关闭事实。
+		args  []any  // 夹具身份及日期。
 		want  int64  // 预期匹配行数。
 	}{
 		{"id = ? AND created_month = ? AND ended_at IS NULL", []any{id, month}, 1},

@@ -1,36 +1,27 @@
-// Package devices 定义设备领域的只读事实类型：端口、读数、遥测。
-//
-// 这些类型与厂商协议无关。各协议适配器把自己的帧翻译成这里的读数，
-// 领域层只消费 Reading，不知道 0xB6 是什么、也不知道心跳的帧长。
+// Package devices 定义端口、读数与遥测类型，不依赖厂商协议；协议帧由适配器转换。
 package devices
 
 import "time"
 
-// Reading 是一份计量证据：某个端口在某个时刻的累计读数与瞬时功率。
-//
-// 累计量而非瞬时值是关键：设备侧只有累计电表，计费按相邻读数的差值
-// 分段计算，不从电量反推功率。PowerW 为 nil 表示该时刻没有功率读数，
-// 不得用其他区间的值顶替。
+// Reading 保存某端口的累计电量与瞬时功率，计费按相邻累计读数的差值分段。
+// 功率零值表示设备上报 0 W，不能当作缺测，也不能从电量反推功率。
 type Reading struct {
 	// Port 端口号，从 1 开始。
 	Port uint8
-	// At 该读数在设备时钟上的时刻，计费以此定位，不使用接收时间。
+	// At 保存读数时间；当前分段算法用会话起点加累计秒数定位，不依赖此字段。
 	At time.Time
-	// ChargedSeconds 设备侧累计充电秒数。分段时先归一到充电开始的时刻，
-	// 再由 delta 推出每个读数的绝对时间。
+	// ChargedSeconds 是设备累计充电秒数，加上设备会话起点得到读数时刻。
 	ChargedSeconds uint32
-	// ChargedMWh 累计电量，单位 mWh。必须能被 1000 整除才能换算成 Wh，
+	// ChargedMWh 累计电量，单位 mWh。必须能被 1000 整除才能换算成 Wh。
 	// 整除不成立说明设备上报了不可用的精度。
 	ChargedMWh uint32
-	// PowerW 瞬时功率，单位 W。设备以 0.1 W 为单位上报，此处已换算；
+	// PowerW 瞬时功率，单位 W。设备以 0.1 W 为单位上报，此处已换算。
 	// 设备上报的原始值经换算后为 0 时也记 0，不记为缺测。
 	PowerW uint32
 }
 
-// ReadingSample 是一次上报携带的一组读数，ReceivedAt 是服务端收到的时间。
-//
-// ReceivedAt 只用于剔除过期或前后矛盾的上报，绝不用于分摊电量。
-// 与之相对 Reading.At 是设备时钟上的时刻，是计量的唯一时间基准。
+// ReadingSample 保存一组设备读数及服务端接收时间。
+// ReceivedAt 用于检查上报延迟与时钟偏差，不用于分摊电量。
 type ReadingSample struct {
 	DeviceID   string
 	ReceivedAt time.Time
@@ -46,13 +37,8 @@ type SessionSpan struct {
 	// ChargedSeconds 设备侧累计秒数。与 EndedAt-StartedAt 不一致说明
 	// 证据自相矛盾，计费必须拒绝而不是取其一。
 	ChargedSeconds uint32
-	// EnergyWh 设备侧累计电量，单位 Wh。作为分段求和的校验值。
-	//
-	// 原名 EnergyMilliKWh 是历史遗留，与实际单位不符：三个构造点
-	// （measurement.SessionSpanOf、stop.measuredMeter、query.liveMeterEvidence）
-	// 传入的都是已除过 1000 的 Wh 值。计量侧一律按 Wh 读它。
-	//
-	// 注意不要与 protocol.Event.EnergyMilliKWh 混淆：后者同名字段确实装 Wh，
-	// 但它按 Go 字段名落库到 device_event.event_json，改名会读不出既有行。
+	// EnergyWh 是设备累计电量，单位 Wh，用于校验分段合计。
+	// 旧名称 EnergyMilliKWh 与实际单位不符，这里统一按 Wh 读取。
+	// protocol.Event.EnergyMilliKWh 同样保存 Wh，但字段名已写入历史 event_json，不能直接改名。
 	EnergyWh uint32
 }

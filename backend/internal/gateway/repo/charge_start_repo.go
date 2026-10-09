@@ -19,51 +19,51 @@ import (
 var ErrPortUnavailable = errors.New("device port is unavailable")
 var ErrOrderConflict = errors.New("charge command identity conflict")
 
-// PaidOrder 保存中央已支付订单授权转换得到的原启动身份与协议限制，供网关受理校验，不是额外资金记录。
+// PaidOrder 保存中央已支付订单授权转换得到的启动所需编号与协议限制，供网关受理校验，不是额外资金记录。
 type PaidOrder struct {
-	// ConsumerType 原协议消费类型，2 为扫码、3 为卡。
+	// ConsumerType 协议消费类型，2 为扫码、3 为卡。
 	ConsumerType uint8 `json:"consumer_type"`
-	// CardNumber 原协议卡号。
+	// CardNumber 协议卡号。
 	CardNumber uint32 `json:"card_number"`
-	// CardBalanceUnits 原卡余额协议值，单位 0.1 元，由金额分值除以十得到。
+	// CardBalanceUnits 卡余额协议值，单位 0.1 元，由金额分值除以十得到。
 	CardBalanceUnits uint16 `json:"card_balance_units"`
-	// ChargeOrderID 中央充电订单身份。
+	// ChargeOrderID 中央充电订单编号。
 	ChargeOrderID uint64 `json:"charge_order_id"`
-	// PaymentOrderID 中央支付订单身份。
+	// PaymentOrderID 中央支付订单编号。
 	PaymentOrderID uint64 `json:"payment_order_id"`
-	// OrderNo 原业务订单号。
+	// OrderNo 业务订单号。
 	OrderNo string `json:"order_no"`
-	// UserID 原订单用户身份。
+	// UserID 订单用户编号。
 	UserID uint64 `json:"user_id"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no"`
-	// ChargeMode 原协议充电模式。
+	// ChargeMode 协议充电模式。
 	ChargeMode uint8 `json:"charge_mode"`
-	// ChargeQuantity 原授权的协议充电量或时长单位值。
+	// ChargeQuantity 授权的协议充电量或时长单位值。
 	ChargeQuantity uint16 `json:"charge_quantity"`
 }
 
-// StartReservation 保存启动已持久受理的原命令、状态与 START/补偿 STOP 报文，报文不参与公开 JSON。
+// StartReservation 保存启动已保存的受理的命令、状态与 START/补偿 STOP 报文，报文不参与公开 JSON。
 type StartReservation struct {
-	// CommandID 原持久命令 UUID。
+	// CommandID 持久命令 UUID。
 	CommandID string `json:"command_id"`
-	// Status 所属记录的原状态值。
+	// Status 状态。
 	Status string `json:"status"`
-	// OrderNo 原业务订单号。
+	// OrderNo 业务订单号。
 	OrderNo string `json:"order_no"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no"`
-	// Wire 待下发的原协议命令，不表示设备已确认。
+	// Wire 待下发的协议命令，不表示设备已确认。
 	Wire protocol.Command `json:"-"`
-	// StopWire 启动结果不确定时使用的原补偿 STOP 命令。
+	// StopWire 启动结果不确定时使用的补偿 STOP 命令。
 	StopWire protocol.Command `json:"-"`
 }
 
-// ReserveStart 接收 ctx 与已授权 paid 订单，在 TCP 下发前持久化端口占用与稳定命令会话；重放核对身份后复用原命令，返回受理事实或校验、冲突、SQL 错误。
+// ReserveStart 在下发 START 前锁定端口并保存命令会话；重复请求核对订单后复用命令。
 func (s MySQLSink) ReserveStart(ctx context.Context, paid PaidOrder) (StartReservation, error) {
 	if s.DB == nil || paid.ChargeOrderID == 0 || paid.PaymentOrderID == 0 || paid.OrderNo == "" || paid.UserID == 0 || paid.DeviceID == "" || paid.PortNo == 0 || paid.ChargeQuantity == 0 {
 		return StartReservation{}, ErrOrderConflict
@@ -148,7 +148,7 @@ func (s MySQLSink) ReserveStart(ctx context.Context, paid PaidOrder) (StartReser
 	return reservation, err
 }
 
-// reservationFromRow 接收已存 row、paid 身份及 orderBCD、mode、quantity，核对身份和两份六字节会话后还原启动及补偿命令；失配返回 ErrOrderConflict，无 IO。
+// reservationFromRow 核对订单和两份 6 字节会话，还原启动及补偿命令；失配返回 ErrOrderConflict。
 func reservationFromRow(row chargeCommandRow, paid PaidOrder, orderBCD [8]byte, mode uint8, quantity uint16) (StartReservation, error) {
 	if row.ChargeOrderID != paid.ChargeOrderID || row.PaymentOrderID != paid.PaymentOrderID || row.UserID != paid.UserID || row.DeviceID != paid.DeviceID || row.PortNo != paid.PortNo || row.ChargeMode != mode || row.Quantity != quantity || row.ConsumerType != paid.ConsumerType || row.CardNumber != paid.CardNumber || row.CardBalanceUnits != paid.CardBalanceUnits {
 		return StartReservation{}, ErrOrderConflict
@@ -177,14 +177,14 @@ func reservationFromRow(row chargeCommandRow, paid PaidOrder, orderBCD [8]byte, 
 		StopWire: protocol.Command{Kind: protocol.CommandStop, SessionID: stopSession, Port: paid.PortNo}}, nil
 }
 
-// MarkStartSent 接收 ctx 与 commandID，仅将 pending 命令推进为 sent 并记录发送时间；返回是否影响一行及 SQL 错误，不发送设备命令。
+// MarkStartSent 仅将 pending 命令更新为 sent 并记录发送时间；返回是否影响一行及 SQL 错误，不发送设备命令。
 func (s MySQLSink) MarkStartSent(ctx context.Context, commandID string) (bool, error) {
 	result := s.DB.WithContext(ctx).Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'pending'", commandID).
 		Updates(map[string]any{"status": "sent", "sent_at": gorm.Expr("CURRENT_TIMESTAMP(3)")})
 	return result.RowsAffected == 1, result.Error
 }
 
-// StartStatus 接收 ctx 与 orderNo，读取原启动命令状态，返回状态或记录缺失、SQL 错误，无写入。
+// StartStatus 读取启动命令状态，返回状态或记录缺失、SQL 错误，不写库。
 func (s MySQLSink) StartStatus(ctx context.Context, orderNo string) (string, error) {
 	var row chargeCommandRow
 	if err := s.DB.WithContext(ctx).Select("status").Where("order_no = ?", orderNo).Take(&row).Error; err != nil {
@@ -193,7 +193,7 @@ func (s MySQLSink) StartStatus(ctx context.Context, orderNo string) (string, err
 	return row.Status, nil
 }
 
-// MarkStartStopping 接收 ctx、commandID 与 cause，仅将 sent 或 acked 推进为 stopping，持久化最多 255 字节的原错误文本；返回 SQL 错误，不释放端口或重建会话。
+// MarkStartStopping 仅将 sent 或 acked 更新为 stopping，持久化最多 255 字节的错误文本；返回 SQL 错误，不释放端口或重建会话。
 func (s MySQLSink) MarkStartStopping(ctx context.Context, commandID string, cause error) error {
 	message := "uncertain TCP write"
 	if cause != nil {
@@ -206,7 +206,7 @@ func (s MySQLSink) MarkStartStopping(ctx context.Context, commandID string, caus
 		Updates(map[string]any{"status": "stopping", "error": message}).Error
 }
 
-// numericOrderBCD 接收 orderID，左补零转换为八字节 BCD；超过十六位返回 ErrOrderConflict，无 IO。
+// numericOrderBCD 接收 orderID，左补零转换为八字节 BCD；超过十六位返回 ErrOrderConflict。
 func numericOrderBCD(orderID uint64) ([8]byte, error) {
 	var result [8]byte
 	value := strconv.FormatUint(orderID, 10)

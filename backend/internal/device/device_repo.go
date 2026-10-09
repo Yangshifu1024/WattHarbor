@@ -12,8 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Device 是充电桩（设备）的列表/详情模型，取自 central_db.device_meta 并左连站点带出
-// 站点名。站点统一用主键 ID 关联，列表不再返回站点编码，关键词搜索也不再匹配站点编码。
+// Device 是设备列表和详情资料，从 device_meta 读取并关联站点名；关联、返回和搜索都使用站点 ID。
 type Device struct {
 	ID               uint64             `json:"id"`                         // 设备在 central_db 的内部主键，仅用于列表排序。
 	DeviceID         string             `json:"device_id"`                  // 设备编号（device_id），最长 64 字符，是设备对外的业务标识，也是详情接口的寻址键。
@@ -25,7 +24,7 @@ type Device struct {
 	SignalStrength   *uint8             `json:"signal_strength" gorm:"-"`   // 最新设备信号；未上报时为空，0 仍是有效读数。
 	SignalAt         *time.Time         `json:"signal_at" gorm:"-"`         // 信号采样时刻，未知为 null
 	Ports            []DevicePortStatus `json:"ports" gorm:"-"`             // 当前端口状态；未读取到端口时返回空数组。
-	RuntimeAvailable bool               `json:"runtime_available" gorm:"-"` // 原摘要可用标记，故障不等同从未上线
+	RuntimeAvailable bool               `json:"runtime_available" gorm:"-"` // 摘要可用标记，故障不等同从未上线
 	Model            *string            `json:"model"`                      // 设备型号，可空；关键词搜索会匹配它。
 	SerialNo         *string            `json:"serial_no"`                  // 设备出厂序列号，可空。
 	Status           string             `json:"status"`                     // 设备状态：enabled 启用、disabled 停用、retired 退役、fault 故障。
@@ -40,14 +39,14 @@ type Device struct {
 	ReportsSegmentedPower bool   `json:"reports_segmented_power" gorm:"-"` // 协议是否支持分段功率上报；按功率计费要求此能力。
 }
 
-// DevicePortStatus 保留设备原始状态码和采样时刻，未上报的状态不默认为空闲。
+// DevicePortStatus 保留设备状态码和采样时间，未上报不能视为空闲。
 type DevicePortStatus struct {
 	PortNo     uint8      `json:"port_no"`     // 物理端口号
 	StatusCode *uint8     `json:"status_code"` // 原始协议状态，null 未知、零有效
-	StatusAt   *time.Time `json:"status_at"`   // 原状态上报时刻，未知为 null
+	StatusAt   *time.Time `json:"status_at"`   // 当前状态上报时刻，未知为 null
 }
 
-// DeviceQuery 在 ctx 下用 db 返回未删除设备的基础查询，左连未删除站点；不执行 SQL 或修改。
+// DeviceQuery 构造未删除设备查询，并关联未删除站点，尚不执行 SQL。
 func DeviceQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("device_meta AS d").Joins("LEFT JOIN station AS s ON s.id=d.station_id AND s.deleted_at IS NULL").Where("d.deleted_at IS NULL")
 }
@@ -55,7 +54,7 @@ func DeviceQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 // DeviceColumns 是设备列表和详情共用的查询列。
 const DeviceColumns = "d.id,d.device_id,d.station_id,d.vendor_id,d.model,d.serial_no,d.status,d.warranty_until,d.tags_json,d.updated_at,d.charge_mode,d.protocol_adapter,s.name AS station_name"
 
-// NormalizeMetadata 解析接收者的内部标签并原地规范空数组及 UTC 毫秒日期；返回 JSON 错误，无 IO。
+// NormalizeMetadata 解析设备标签，统一空数组和 UTC 毫秒时间。
 func (d *Device) NormalizeMetadata() error {
 	d.Tags = []string{}
 	if d.Ports == nil {
@@ -76,8 +75,7 @@ func (d *Device) NormalizeMetadata() error {
 	return nil
 }
 
-// ListDevices 在 ctx 下用 db 按 q 分页筛选，scopes 首项存在时限定站点及厂商。
-// 返回资料及总数或存储／标签解析错误；只读、ID 倒序、转义关键词并补充协议能力。
+// ListDevices 按站点和厂商范围分页倒序读取设备，转义搜索关键词并补充协议能力。
 func ListDevices(ctx context.Context, db *gorm.DB, q persist.PageQuery, scopes ...operations.DataScope) (persist.Page[Device], error) {
 	out := persist.Page[Device]{Items: []Device{}, Page: q.Page, PageSize: q.PageSize}
 	query := DeviceQuery(ctx, db)

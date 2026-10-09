@@ -36,8 +36,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newRouter 注册当前进程路由、指标与健康端点；cfg 提供导出目录等配置，r 提供已打开存储，authAPI 提供后台身份能力，gateway 提供网关查询与控制。
-// 返回未监听的 Gin 引擎，无错误返回；设置全局 Gin 发布模式，仅装配不执行业务请求，健康处理器用请求 context 的两秒子期限检查存储。
+// newRouter 注册本进程的业务路由、指标和健康检查，不启动监听。
+// 健康检查使用请求 context，最多等待两秒。
 func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
@@ -58,9 +58,8 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 
 	authAPI.Register(router)
 
-	// 计量复核、发票审核与人工退款签署共用同一实时权限语义：闭包在审核事务内
-	// 按账号 ID 读取当前角色并断言所需权限位，不落缓存，权限回收即时生效；
-	// 三者仅权限位与结果类型不同（ReviewerStatus／SignerStatus）。
+	// 计量复核、发票审核和人工退款签署均在事务内读取账号当前角色并检查权限。
+	// 不使用缓存，撤销权限后立即生效。
 	lookupMeterReviewer := func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
 		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err
@@ -74,8 +73,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 		return settlement.SignerStatus{Role: p.Role, Permitted: p.HasPermission("order.refund.review")}, err
 	}
 
-	// 后台业务按族注册：每个族是一个独立包，进程只挂自己提供的那些。scopes 为
-	// 无状态数据范围查询，全族共用同一实例；各字面量统一以 Auth 收尾。
+	// 按业务模块注册后台路由，共用数据范围查询服务。
 	scopes := ops.ScopeQueryService{DB: orm}
 	adminops.API{
 		Accounts:      ops.AccountService{DB: orm},
@@ -170,8 +168,8 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 	}.Register(router)
 
 	admindashboard.Dashboard{Queries: ops.DashboardQueryService{DB: orm}}.Register(router, authAPI)
-	// 账号与角色管理共用同一装配：RegisterRoles 挂角色与权限字典路由，Register
-	// 挂账号管理路由（创建路径仍由运营族注册）；Auth 取指针以满足该包的会话写入口。
+	// 账号和角色管理共用鉴权服务；分别注册角色、权限字典和账号路由。
+	// 账号创建路由仍由运营模块注册。
 	accounts := adminaccounthttp.AdminAccounts{Accounts: ops.AccountService{DB: orm}, Roles: ops.RoleService{DB: orm}, Auth: &authAPI}
 	accounts.RegisterRoles(router)
 	accounts.Register(router)

@@ -11,7 +11,7 @@ import (
 	contract "chargepilot/internal/contracts/gateway"
 )
 
-// TestAlertClientsKeepOriginalIDsWatermarkAndReplay 用loopback验证原大整数、水印和零标记重放，不代表真库证据。
+// TestAlertClientsKeepOriginalIDsWatermarkAndReplay 用本地 HTTP 服务验证大整数、用于比较的事件时间和零标记重放，不代表真库证据。
 func TestAlertClientsKeepOriginalIDsWatermarkAndReplay(t *testing.T) {
 	at := time.Date(2026, 10, 1, 0, 0, 0, 123000000, time.UTC)
 	later := at.Add(time.Second)
@@ -54,7 +54,7 @@ func TestAlertClientsKeepOriginalIDsWatermarkAndReplay(t *testing.T) {
 	}
 }
 
-// TestAlertClientsRejectMissingContradictoryEvidence 验证缺字段、倒退时刻、重定向及取消均是错误，缺失原水印可明确表达。
+// TestAlertClientsRejectMissingContradictoryEvidence 验证缺字段、倒退时刻、重定向及取消均是错误，指定事件不存在时可以明确返回空时间。
 func TestAlertClientsRejectMissingContradictoryEvidence(t *testing.T) {
 	for _, body := range []string{`{"code":0,"data":{}}`, `{"code":0,"data":{"found":true}}`, `{"code":0,"data":{"found":false,"payload":"{}"}}`, `{"code":0,"data":{"found":true,"after_received_at":"2026-10-01T00:00:01Z","received_at":"2026-10-01T00:00:00Z","payload":"{}"}}`} {
 		client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })

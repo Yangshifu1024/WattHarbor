@@ -18,21 +18,21 @@ import (
 
 var userScanCodePattern = regexp.MustCompile(`^[A-Za-z0-9_:-]{1,64}$`)
 
-// ScanAPI 提供匿名二维码和端口读模型，不创建用户会话、支付或设备命令。
+// ScanAPI 提供匿名二维码和端口查询结果，不创建用户会话、支付或设备命令。
 type ScanAPI struct {
 	Discovery device.DiscoveryService // 设备发现用例；匿名查询不创建支付或会话
 }
 
-// Register 向 router 注册两个匿名扫码查询端点，无返回值或业务 IO。
+// Register 向 router 注册两个匿名扫码查询端点，只注册路由。
 func (a ScanAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/user/scan/resolve", a.resolve)
 	router.POST("/api/v1/user/scan/port", a.port)
 }
 
-// resolve 接收 c 的扫码请求，委托 handle 解析裸码或 HTTPS 二维码链接并写设备或端口读模型；不创建会话或支付。
+// resolve 接收 c 的扫码请求，委托 handle 解析裸码或 HTTPS 二维码链接并写设备或端口查询结果；不创建会话或支付。
 func (a ScanAPI) resolve(c *gin.Context) { a.handle(c, false) }
 
-// port 接收 c 的端口编码请求，委托 handle 仅输出端口读模型；输入、缺失及读取错误保持 400／404／503。
+// port 接收 c 的端口编码请求，委托 handle 仅输出端口查询结果；输入、缺失及读取错误保持 400／404／503。
 func (a ScanAPI) port(c *gin.Context) { a.handle(c, true) }
 
 // handle 从 c 绑定扫码输入，requirePort 决定读取 port_id 或解析 code，并在请求 context 下查询设备发现用例。
@@ -86,7 +86,7 @@ func (a ScanAPI) handle(c *gin.Context, requirePort bool) {
 	httpapi.OK(c, result)
 }
 
-// canonicalScanCode 接收 raw 二维码载荷，返回裸码或 HTTPS 链接中唯一合法 code 及 true；超长、非法文本或链接返回空串及 false，无 IO。
+// canonicalScanCode 接收 raw 二维码载荷，返回裸码或 HTTPS 链接中唯一合法 code 及 true；超长、非法文本或链接返回空串及 false。
 func canonicalScanCode(raw string) (string, bool) {
 	if userScanCodePattern.MatchString(raw) {
 		return raw, true
@@ -105,7 +105,7 @@ func canonicalScanCode(raw string) (string, bool) {
 	return values[0], true
 }
 
-// Lookup 在 ctx 下用 code 调用设备发现用例，返回读模型和 HTTP 状态；缺失映射 404、其余错误映射 503，成功为 200，无业务写入。
+// Lookup 用 code 调用设备发现用例，返回查询结果和 HTTP 状态；缺失映射 404、其余错误映射 503，成功为 200。
 func (a ScanAPI) Lookup(ctx context.Context, code string) (money.ScanResult, int) {
 	out, err := a.Discovery.ResolveScan(ctx, code)
 	if errors.Is(err, gatewaycontract.ErrScanNotFound) {

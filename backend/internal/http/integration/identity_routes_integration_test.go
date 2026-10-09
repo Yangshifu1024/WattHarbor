@@ -51,7 +51,7 @@ type observedUserSessions struct {
 	sids                 []string // 本测试已创建的 SID，不含令牌明文
 }
 
-// Create 在 ctx 下为 user 调用真实实现，成功记录 SID，返回原结果或存储错误。
+// Create 为 user 调用真实实现，成功记录 SID，返回结果或存储错误。
 func (s *observedUserSessions) Create(ctx context.Context, user identity.User) (string, string, error) {
 	sid, token, err := s.SessionRepo.Create(ctx, user)
 	if err == nil {
@@ -109,8 +109,8 @@ func TestRegisteredIdentityRoutesUseRealUserWalletAndRedis(t *testing.T) {
 	decode := func(w *httptest.ResponseRecorder, target any) {
 		t.Helper()
 		var envelope struct {
-			Code int             `json:"code"` /* 原业务状态 */
-			Data json.RawMessage `json:"data"` /* 原公开结果 */
+			Code int             `json:"code"` /* 业务状态 */
+			Data json.RawMessage `json:"data"` /* 公开结果 */
 		}
 		if w.Code != 200 {
 			t.Fatalf("HTTP=%d", w.Code)

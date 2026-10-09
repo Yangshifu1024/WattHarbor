@@ -8,16 +8,8 @@ import (
 	"chargepilot/internal/domain/devices"
 )
 
-// 本文件覆盖 MeasuredSegments 的起充时刻容差。
-//
-// 背景：DC589 按功率分档计价，最终结算要求每段都带可验证功率，
-// 分段只能由网关心跳采样构造。结算侧传入的 start 是 charge_order.started_at，
-// 来自 START 命令回执的 ack_at；span.StartedAt 则是设备在结束帧里自报的会话起点。
-// 两者由不同观测者独立记录，起充后第一条心跳落在 start 之前是常态——
-// 隔离栈 2026-10-05 的用户主动停机单就是差 1 秒。该单因此拿不到分段、
-// 整单转人工计量复核，无法自动退差额。
-//
-// 这里用那笔单的原始日志数据做正向证据，再用反向用例锁住放宽的边界。
+// 覆盖中央起充时间与设备时间的偏差，复现两者相差一秒时仍可生成合法分段。
+// 回归数据来自隔离开发栈日志，只证明计量规则，不代表真实设备验收。
 
 // m2SessionStart 是隔离栈 M2 订单（设备 5348240514082652 端口 2）的设备自报会话起点。
 // 时间取自结束帧 started_at 字段 2026-10-05T22:49:54+08:00。
@@ -35,9 +27,8 @@ type m2Reading struct {
 	wh       uint32
 }
 
-// m2Heartbeats 逐条取自 .tmp/iso-logs/gateway.log 的心跳遥测帧，
-// 是实测数据而不是按理想模型编的：接收时刻与设备秒表之间恒定差 1 秒，
-// 电量单调不回退，功率全程 150 W，最后一次心跳后设备又充了 7 秒才停。
+// m2Heartbeats 取自隔离栈 gateway.log：接收时间比设备计时晚一秒。
+// 电量单调增加，功率为 150 W，最后一条心跳后七秒结束。
 func m2Heartbeats() []m2Reading {
 	return []m2Reading{
 		{time.Date(2026, 10, 5, 14, 49, 55, 0, time.UTC), 0, 0},
@@ -124,9 +115,7 @@ func TestMeasuredSegmentsAcceptsDeviceStartOneSecondBeforeRecordedStart(t *testi
 }
 
 func TestUserStoppedSessionPricesWithoutMeterReview(t *testing.T) {
-	// 这条用例锁的是业务结果：用户主动停机的单子必须能自动出账。
-	// 同样的计量在没有分段时会被 actual.go 以 ErrMeterReview 拒掉，
-	// 那正是这批订单此前只能转人工的原因。
+	// 验证合法分段可自动计价；同一记录缺少分段时仍须返回 ErrMeterReview。
 	rule := Rule{ID: 7, Version: 1, Spec: Spec{Mode: ModeServerMaxPower, Electric: &ElectricLine{
 		Basis: BasisMaxPower, Periods: []Period{{EndMinute: 1440, Tiers: []Tier{
 			{MaxWatts: 200, ElectricCents: 50, ServiceCents: 10},
@@ -145,8 +134,7 @@ func TestUserStoppedSessionPricesWithoutMeterReview(t *testing.T) {
 		t.Fatalf("已实际充过电的订单费用应为正数，得到 %d 分", fee.TotalCents)
 	}
 
-	// 对照：去掉分段就是此前的真实路径，必须仍然进复核。
-	// 这条对照证明上面的成功来自分段本身，而不是判据被整体放松。
+	// 去掉分段后仍须复核，防止放宽其他计量检查。
 	withoutSegments := withSegments
 	withoutSegments.Segments = nil
 	if _, err := PriceActual(rule, withoutSegments); !errors.Is(err, ErrMeterReview) {
@@ -154,8 +142,7 @@ func TestUserStoppedSessionPricesWithoutMeterReview(t *testing.T) {
 	}
 }
 
-// skewShape 决定心跳序列的形状，用来把「起充前窗口」和各种拒绝理由分开，
-// 避免某个用例其实被另一条判据挡下、却顶着另一个名字。
+// skewShape 控制心跳时间与电量变化，使各用例只触发目标拒绝条件。
 type skewShape int
 
 const (
@@ -168,7 +155,7 @@ const (
 	skewRewindAfterStart
 )
 
-// startSkewFixture 造一组最小证据：设备在 base 开始计量，服务器在 start 记录起充，
+// startSkewFixture 造一组最小证据：设备在 base 开始计量，服务器在 start 记录起充。
 // 心跳按每 20 秒一条上报，接收时刻比设备秒表位置晚 1 秒。
 // startOffset 是 start 相对设备自报起点的秒差，正值表示中央记录更晚。
 func startSkewFixture(startOffset int, shape skewShape) (time.Time, devices.SessionSpan, []devices.ReadingSample) {
@@ -223,7 +210,7 @@ func tailFixture(endSeconds uint32) (time.Time, devices.SessionSpan, []devices.R
 	return base, span, samples
 }
 
-// tailRule 是功率分档计价规则：600 W 落第二档。费率取整除后为整数分的值，
+// tailRule 是功率分档计价规则：600 W 落第二档。费率取整除后为整数分的值。
 // 使费用断言不含舍入因素。
 func tailRule() Rule {
 	return Rule{ID: 7, Version: 1, Spec: Spec{Mode: ModeServerMaxPower, Electric: &ElectricLine{
@@ -233,13 +220,8 @@ func tailRule() Rule {
 		}}}}}}
 }
 
-// TestTailSegmentPowerJoinsOnlyWithinWindow 锁住尾段功率的连接窗口语义。
-//
-// powerJoinWindow 规定：最后一条心跳到结束帧不超过 60 秒时，尾段沿用前次
-// 功率计价；超过 60 秒时尾段保留为证据缺失——电量归属由结束帧自报补齐，
-// 但功率不得沿用旧值，也不得从电量反推，功率分档下整单进计量复核。
-// 这是用户已接受的精度妥协（心跳间隔上限 15 秒，尾段代价封顶 60 秒），
-// 本测试防止该语义被无意改动。
+// TestTailSegmentPowerJoinsOnlyWithinWindow 验证尾段最多沿用前次功率 60 秒。
+// 间隔更长时保留功率缺测，不从电量反推；功率计费必须转计量复核。
 func TestTailSegmentPowerJoinsOnlyWithinWindow(t *testing.T) {
 	t.Run("间隔恰为六十秒时尾段沿用前次功率", func(t *testing.T) {
 		start, span, samples := tailFixture(120)

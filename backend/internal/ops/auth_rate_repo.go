@@ -13,7 +13,7 @@ type AuthRateRepo struct {
 	Redis *redis.Client /* 进程拥有的认证缓存 */
 }
 
-// CountLogin 在ctx下递增ip原登录计数并保持一分钟窗口，返回计数或Redis错误。
+// CountLogin 统计 IP 登录次数，保持首次一分钟窗口。
 func (r AuthRateRepo) CountLogin(ctx context.Context, ip string) (int, error) {
 	return authRateScript.Run(ctx, r.Redis, []string{"admin:login-rate:" + ip}).Int()
 }

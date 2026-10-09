@@ -12,15 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RefundAPI 适配worker的退款派发触发，资金及渠道执行由所属退款用例拥有。
+// RefundAPI 适配 worker 的退款派发触发，资金及渠道执行由退款用例拥有。
 type RefundAPI struct {
-	Executor     settlement.RefundExecutor // 原渠道退款批次用例，由cmd装配并管理资源。
-	ServiceToken string                    // 原内部服务令牌，仅HTTP准入使用，不进入业务用例。
+	Executor     settlement.RefundExecutor // 渠道退款批次用例，由 cmd 装配并管理资源。
+	ServiceToken string                    // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 在r挂载原退款派发POST路径，无返回值或注册期IO。
-// 处理器先校验服务令牌；未配置渠道返回enabled=false，否则以请求派生的20秒context执行批次。
-// 批次成功返回原processed／enabled，失败503保留已处理数量，不在HTTP重建资金事务或更换请求身份。
+// Register 在 r 挂载退款派发 POST 路径。
+// 处理器先校验服务令牌；未配置渠道返回 enabled=false，否则以请求派生的 20 秒 context 执行批次。
+// 批次成功返回 processed／enabled，失败 503 保留已处理数量，不在 HTTP 重建资金事务或更换请求编号。
 func (a RefundAPI) Register(r *gin.Engine) {
 	r.POST(centralcontract.RefundDispatchPath, func(c *gin.Context) {
 		if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {

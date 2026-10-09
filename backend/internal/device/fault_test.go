@@ -35,7 +35,7 @@ func TestCanTransitionFaultOnlyWalksTheLinearPath(t *testing.T) {
 }
 
 func TestCanTransitionFaultIsIdempotentForSameStatus(t *testing.T) {
-	// 重复提交同一次修复不该报错——网络重试是常态。
+	// 同状态提交允许重放。
 	for _, status := range []string{FaultOpen, FaultDispatched, FaultFixed, FaultClosed} {
 		if err := CanTransitionFault(status, status); err != nil {
 			t.Fatalf("同状态重放 %s 被拒：%v", status, err)

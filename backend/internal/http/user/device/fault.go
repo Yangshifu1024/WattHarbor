@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// reportFault 绑定 c 原用户与报修输入并调用所属完整事务，输出原自增主键／open或错误，不写表。
+// reportFault 绑定 当前用户与报修输入并调用用例事务，输出自增主键／open 或错误，不写表。
 func (a API) reportFault(c *gin.Context) {
 	id, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -37,7 +37,7 @@ func (a API) reportFault(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": strconv.FormatUint(out.ID, 10), "status": out.Status})
 }
 
-// myFaultReports 适配 c 原用户及分页并调用所属查询，输出原页或读取错误，无存储写入。
+// myFaultReports 适配 当前用户及分页并调用查询，输出页或读取错误，无存储写入。
 func (a API) myFaultReports(c *gin.Context) {
 	id, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -58,7 +58,7 @@ func (a API) myFaultReports(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// myFaultHistory 适配 c 原用户及路径后调用归属和可见性查询，不把数据库故障当作缺失报告。
+// myFaultHistory 适配 当前用户及路径后调用归属和可见性查询，不把数据库故障当作缺失报告。
 func (a API) myFaultHistory(c *gin.Context) {
 	uid, ok := a.Auth.Authenticate(c)
 	if !ok {

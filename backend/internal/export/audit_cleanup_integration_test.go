@@ -13,11 +13,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// cleanupExportAudits 先非锁读本fixture审计，再按完整主键删除，避免actor索引范围锁干扰其它测试插入。
-// 调用前须等待本fixture所有审计写入退出；保留原actor归属条件并核对清理零残留。
+// cleanupExportAudits 先定位本测试审计的完整主键，再逐行删除，避免范围锁影响其他操作者。
+// 所有写入退出后清理，保留操作者条件并检查零残留。
 func cleanupExportAudits(db *gorm.DB, actor uint64) error {
 	var rows []struct {
-		ID           uint64    // 本fixture审计主键
+		ID           uint64    // 本测试夹具审计主键
 		CreatedMonth time.Time // 分区主键月份
 	}
 	if err := db.Table("audit_log").Select("id,created_month").Where("actor_id=?", actor).
@@ -40,8 +40,7 @@ func cleanupExportAudits(db *gorm.DB, actor uint64) error {
 	return nil
 }
 
-// TestExportAuditCleanupDoesNotLockOtherActorGap 持有清理事务时，独立连接仍可在相邻actor插入自己的审计。
-// 原actor范围DELETE会阻挡该插入至deadline；完整主键删除仅持有已选行，不改生产审计或业务断言。
+// TestExportAuditCleanupDoesNotLockOtherActorGap 验证完整主键清理只锁目标行，相邻操作者仍可插入审计。
 func TestExportAuditCleanupDoesNotLockOtherActorGap(t *testing.T) {
 	s, _, actor, station := exportFixture(t)
 	other := secondExportDB(t, actor, station)

@@ -9,39 +9,39 @@ import (
 	"gorm.io/gorm"
 )
 
-// ScanPort 保存扫描端口编码、设备端口及原业务状态与在线可用读模型，不持有充电受理事实。
+// ScanPort 保存扫描端口编码、设备端口及业务状态与在线可用查询结果，不持有充电受理结果。
 type ScanPort struct {
-	// PortID 原二维码端口编码，对外字段保持 port_id 文本，不是 device_port 自增 id。
+	// PortID 二维码端口编码，对外字段保持 port_id 文本，不是 device_port 自增 id。
 	PortID string `json:"port_id"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no"`
-	// Status 所属记录的原状态值。
+	// Status 状态。
 	Status string `json:"port_status"`
-	// Online 按原可见时间窗口判断的在线状态。
+	// Online 按可见时间窗口判断的在线状态。
 	Online bool `json:"online"`
-	// Available 原空闲、无订单占用且在线的可用状态。
+	// Available 空闲、无订单占用且在线的可用状态。
 	Available bool `json:"available"`
 }
 
-// ScanResult 保存扫描到的原端口或设备及所属站点读模型，单端口与端口集合保持原空值语义。
+// ScanResult 保存扫描到的端口或设备及站点查询结果，单端口与端口集合保持空值语义。
 type ScanResult struct {
-	// Kind 原扫描对象种类，port 或 device。
+	// Kind 扫描对象种类，port 或 device。
 	Kind string `json:"kind"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// StationID 原所属站点身份，保留可空映射。
+	// StationID 站点编号，保留可空映射。
 	StationID uint64 `json:"station_id"`
-	// Port 为命中端口编码时的单端口读模型；按设备号命中时保留 nil。
+	// Port 为命中端口编码时的单端口查询结果；按设备号命中时保留 nil。
 	Port *ScanPort `json:"port,omitempty"`
-	// Ports 设备端口记录，保留原集合空值语义。
+	// Ports 设备端口记录，保留集合空值语义。
 	Ports []ScanPort `json:"ports,omitempty"`
 }
 
 var ErrScanNotFound = errors.New("scan code not found")
 
-// ResolveScan 接收 ctx 与 code，先按启用端口编码查询，再按启用设备号读取端口列表；返回扫描读模型或 ErrScanNotFound、SQL 错误，不创建命令。
+// ResolveScan 先按启用端口编码查询，再按启用设备号读取端口列表；返回扫描查询结果或 ErrScanNotFound、SQL 错误，不创建命令。
 func (s MySQLSink) ResolveScan(ctx context.Context, code string) (ScanResult, error) {
 	var port scanPortRow
 	err := s.DB.WithContext(ctx).Table("device_port AS p").
@@ -75,27 +75,27 @@ func (s MySQLSink) ResolveScan(ctx context.Context, code string) (ScanResult, er
 	return result, nil
 }
 
-// scanPortRow 投影 device_port 与 device 联表读取的原端口编码、占用、设备可见时刻和站点身份。
+// scanPortRow 保存端口与设备联表查出的端口编码、占用、最近心跳时间和站点编号。
 type scanPortRow struct {
-	// ID device_port 表的原自增主键。
+	// ID device_port 表的自增主键。
 	ID uint64 `gorm:"column:id"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `gorm:"column:device_id"`
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8 `gorm:"column:port_no"`
-	// PortCode 原端口业务编码。
+	// PortCode 端口业务编码。
 	PortCode string `gorm:"column:port_code"`
-	// Status 所属记录的原状态值。
+	// Status 状态。
 	Status string `gorm:"column:status"`
-	// CurrentOrderID 原占用端口的订单号，NULL 表示无占用。
+	// CurrentOrderID 占用端口的订单号，NULL 表示无占用。
 	CurrentOrderID sql.NullString `gorm:"column:current_order_id"`
-	// LastSeenAt 原设备最后可见时刻，可空。
+	// LastSeenAt 设备最后可见时刻，可空。
 	LastSeenAt sql.NullTime `gorm:"column:last_seen_at"`
-	// StationID 原所属站点身份，保留可空映射。
+	// StationID 站点编号，保留可空映射。
 	StationID sql.NullInt64 `gorm:"column:station_id"`
 }
 
-// scanPort 接收 code、deviceID、number、status、current 与 seen，按原两分钟过去及一分钟未来窗口判断在线并计算空闲可用性；返回读模型，无 IO。
+// scanPort 允许心跳晚于当前时间最多 1 分钟、早于当前时间最多 2 分钟，并结合端口占用判断是否可用。
 func scanPort(code, deviceID string, number uint8, status string, current sql.NullString, seen sql.NullTime) ScanPort {
 	online := seen.Valid && time.Since(seen.Time) <= 2*time.Minute && time.Since(seen.Time) >= -time.Minute
 	return ScanPort{PortID: code, DeviceID: deviceID, PortNo: number, Status: string(status), Online: online,

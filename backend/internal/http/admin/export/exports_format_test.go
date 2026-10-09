@@ -17,7 +17,7 @@ import (
 // TestExportPeriod 验证导出日期格式、起止顺序及允许的最长日期范围。
 func TestExportPeriod(t *testing.T) {
 	for _, tc := range []struct {
-		// filter 是包含原日期边界的导出筛选。
+		// filter 是包含日期边界的导出筛选。
 		filter map[string]any
 		// ok 表示日期窗口是否应被接受。
 		ok bool
@@ -53,7 +53,7 @@ func TestExportRejectsUnsupportedFormats(t *testing.T) {
 			response := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(response)
 			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/exports", bytes.NewReader(body))
-			// 实际注册路由先注入鉴权档案；非法格式服务校验仍在数据库IO前拒绝。
+			// 实际注册路由先注入鉴权档案；非法格式服务校验仍在数据库 IO 前拒绝。
 			c.Set("admin_profile", operations.Profile{})
 			ExportTask{}.createTask(c)
 			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "导出格式无效") {

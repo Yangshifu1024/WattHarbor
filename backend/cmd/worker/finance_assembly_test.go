@@ -15,8 +15,8 @@ import (
 
 // workerJobTransport 只记录实际cmd装配后的资金请求，不执行外部网络或业务写入。
 type workerJobTransport struct {
-	paths []string // 同一测试goroutine里的原请求顺序。
-	token string   // 预期由具名客户端注入的服务身份。
+	paths []string // 测试 goroutine 记录的请求顺序。
+	token string   // 客户端应携带的服务令牌。
 }
 
 // RoundTrip 核对中央地址与身份并返回端点真实成功形状，未知路径失败；不重试或创建业务任务。
@@ -53,8 +53,7 @@ func (s *workerUnexpectedTransport) RoundTrip(*http.Request) (*http.Response, er
 	return nil, errors.New("finance task used internal query transport")
 }
 
-// TestAssembledFinanceConsumersUseManagedJobTransport 核对实际assemble向三消费者注入jobHTTP连接池和中央服务身份。
-// 不启动后台循环，不调用DB/Redis；原查询连接池应没有资金请求，两个受管理Client自身配置不改变。
+// TestAssembledFinanceConsumersUseManagedJobTransport 验证三个资金任务使用 JobHTTP 和 central 服务令牌，查询连接池不会收到资金请求。
 func TestAssembledFinanceConsumersUseManagedJobTransport(t *testing.T) {
 	jobs := &workerJobTransport{token: "assembled-job-token"}
 	queries := &workerUnexpectedTransport{}

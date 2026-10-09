@@ -27,7 +27,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// cardAdminSessionHook 仅提供会话存在及原账号版本 fixture；权限、用户、卡与审计均为真实库。
+// cardAdminSessionHook 仅提供会话存在及账号版本 fixture；权限、用户、卡与审计均为真实库。
 type cardAdminSessionHook struct {
 	records map[string]string // admin:session:<sid> 对应固定用户与权限版本 JSON
 }
@@ -101,7 +101,7 @@ func cardAdminDB(t *testing.T) *gorm.DB {
 	return orm
 }
 
-// TestRegisteredCardManagementPreservesPermissionInputAndAudit 覆盖实际后台注册、实时角色权限及原卡审计事务。
+// TestRegisteredCardManagementPreservesPermissionInputAndAudit 覆盖实际后台注册、实时角色权限及卡审计事务。
 // 整个造数外层回滚；会话存在为 fixture，真实 Redis 生命周期由 OP-01 验收，不修改 bootstrap 或既有角色。
 func TestRegisteredCardManagementPreservesPermissionInputAndAudit(t *testing.T) {
 	db := cardAdminDB(t)
@@ -120,9 +120,9 @@ func TestRegisteredCardManagementPreservesPermissionInputAndAudit(t *testing.T) 
 		t.Fatalf("permission=%d %v", readPermission, err)
 	}
 	for _, seed := range []struct {
-		// table 是隔离造数的所属表。
+		// table 是隔离造数的表。
 		table string
-		// row 包含本场景的唯一身份与原权限材料，外层事务结束后回滚。
+		// row 包含本场景的唯一身份与权限材料，外层事务结束后回滚。
 		row map[string]any
 	}{{"role", map[string]any{"id": id + 2, "code": "card-read-" + sid, "name": "test card reader", "is_builtin": false}}, {"role_permission", map[string]any{"role_id": id + 2, "permission_id": readPermission}}, {"admin_user", map[string]any{"id": id + 10, "username": "card-admin-" + sid, "password_hash": "fixture", "role_id": role, "status": "active", "auth_version": 1}}, {"admin_user", map[string]any{"id": id + 11, "username": "card-reader-" + sid, "password_hash": "fixture", "role_id": id + 2, "status": "active", "auth_version": 1}}, {"user", map[string]any{"id": id, "openid": sid, "status": "active"}}, {"user", map[string]any{"id": id + 1, "openid": readerSid, "status": "active"}}} {
 		if err := tx.Table(seed.table).Create(seed.row).Error; err != nil {

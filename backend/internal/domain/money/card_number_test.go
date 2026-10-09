@@ -2,7 +2,7 @@ package money
 
 import "testing"
 
-// 真实卡号是 16–19 位。早先按 uint32 解析，任何真实卡号都会被判非法，
+// 真实卡号是 16–19 位。早先按 uint32 解析，任何真实卡号都会被判非法。
 // 这组用例把该回归钉住：12 位以上必须放行。
 func TestCanonicalCardNumberAcceptsRealPAN(t *testing.T) {
 	for _, card := range []string{

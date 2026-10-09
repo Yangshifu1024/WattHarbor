@@ -10,25 +10,25 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// fakeGateway 仅以注入回调提供证据与停止响应，供纯编排检查，不执行服务间网络调用。
+// fakeGateway 仅以注入回调提供证据与停止响应，供调用顺序检查，不执行服务间网络调用。
 type fakeGateway struct {
-	// evidence 证据分页回调，接收原查询切片并返回分页回复或错误，仅用于纯编排检查。
+	// evidence 证据分页回调，接收查询切片并返回分页回复或错误，仅用于调用顺序检查。
 	evidence func([]gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
-	// stop 停止回调，接收原请求并返回受理回复或错误，不实际发送设备指令。
+	// stop 停止回调，接收请求并返回受理回复或错误，不实际发送设备指令。
 	stop func(gatewaycontract.StopRequest) (gatewaycontract.StopReply, error)
 }
 
-// ChargingEvidence 忽略传入的 context，将查询切片 q 原样交给非 nil 的 f.evidence；返回其分页回复与错误，不发送 HTTP 或读取数据库，回调可记录查询副作用。
+// ChargingEvidence 将查询交给注入回调，不发送 HTTP 或读取数据库。
 func (f fakeGateway) ChargingEvidence(_ context.Context, q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 	return f.evidence(q)
 }
 
-// RequestStop 忽略传入的 context，将停止请求 r 原样交给非 nil 的 f.stop；返回其回复与错误，不发送设备指令，回调可记录请求副作用。
+// RequestStop 将停止请求交给注入回调，不发送设备指令。
 func (f fakeGateway) RequestStop(_ context.Context, r gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
 	return f.stop(r)
 }
 
-// TestEvidenceContinuesOnlyUnfinishedOrders 使用 t 核对仅对未完成订单继续分页并保持设备、端口、起点与游标身份；无返回值，失败由 t 报告，网关回调只构造内存页，不证明数据库证据。
+// TestEvidenceContinuesOnlyUnfinishedOrders 验证只续查未完成订单，保留设备、端口、起点与游标。
 func TestEvidenceContinuesOnlyUnfinishedOrders(t *testing.T) {
 	started := time.Now().UTC().Add(-time.Hour)
 	orders := []AutoStopOrder{{ID: 1, DeviceID: "D-1", PortNo: 1, StartedAt: started}, {ID: 2, DeviceID: "D-2", PortNo: 2, StartedAt: started}}
@@ -58,7 +58,7 @@ func TestEvidenceContinuesOnlyUnfinishedOrders(t *testing.T) {
 	}
 }
 
-// TestEvidenceBatchesAtGatewayLimit 使用 t 核对二十三个订单分为二十与三个查询的两次调用；无返回值，失败由 t 报告，夹具不发 HTTP 请求或读取数据库。
+// TestEvidenceBatchesAtGatewayLimit 验证 23 笔订单分为 20 与 3 两批；只使用内存回调。
 func TestEvidenceBatchesAtGatewayLimit(t *testing.T) {
 	orders := make([]AutoStopOrder, 23)
 	for i := range orders {
@@ -81,12 +81,11 @@ func TestEvidenceBatchesAtGatewayLimit(t *testing.T) {
 	}
 }
 
-// TestEvidenceRejectsPartialOrInvalidPages 使用 t 核对缺项、身份不符、零或停滞游标、页数上限及网关错误均拒绝证据，并比对调用次数；无返回值，仅以内存回调验证编排，不证明 HTTP 或数据库行为。
+// TestEvidenceRejectsPartialOrInvalidPages 验证缺项、身份错配、无效游标、页数超限或网关错误均拒绝取证。
+// 仅覆盖内存编排，不代表 HTTP 或数据库验证。
 func TestEvidenceRejectsPartialOrInvalidPages(t *testing.T) {
 	cases := []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
-		name string
-		// result 当前分页故障夹具；接收原查询并返回不完整、非法页或执行错误，不访问网关。
+		name   string
 		result func([]gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
 		// want 当前非法分页或网关失败预期匹配的错误，按 errors.Is 比对。
 		want error
@@ -127,7 +126,8 @@ func TestEvidenceRejectsPartialOrInvalidPages(t *testing.T) {
 	}
 }
 
-// TestRequestStopUsesOrderIdentityAndReturnsGatewayError 使用 t 核对停止请求保留订单号、超过 JavaScript 安全整数范围的用户身份与自动来源，并传回网关错误；无返回值，仅记录内存请求，不真正停机。
+// TestRequestStopUsesOrderIdentityAndReturnsGatewayError 验证停止请求保留订单号、大整数用户标识与自动来源，且返回网关错误。
+// 只记录内存请求，不实际停机。
 func TestRequestStopUsesOrderIdentityAndReturnsGatewayError(t *testing.T) {
 	want := errors.New("gateway unavailable")
 	stopper := AutoStopper{Gateway: fakeGateway{stop: func(r gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {

@@ -14,10 +14,10 @@ import (
 var (
 	ErrFrozen              = errors.New("wallet is frozen")                        // 钱包当前不可发起消费或新退款
 	ErrInsufficientBalance = errors.New("insufficient available wallet balance")   // 可用余额不足，单位分
-	ErrIdentity            = errors.New("wallet owner identity unavailable")       // 无有效渠道用户身份
+	ErrIdentity            = errors.New("wallet owner identity unavailable")       // 无有效渠道用户 ID
 	ErrRechargeConflict    = errors.New("wallet recharge request conflicts")       // 同请求号的申请人或金额不同
 	ErrPrepayNotConfigured = errors.New("wallet recharge provider not configured") // 申请已保存但未配置渠道
-	ErrPrepayUnavailable   = errors.New("wallet recharge prepay unavailable")      // 保留原支付单供相同请求重试
+	ErrPrepayUnavailable   = errors.New("wallet recharge prepay unavailable")      // 保留支付单供相同请求重试
 )
 
 // RefundInput 是用户退款申请的业务输入，不包含 HTTP 身份或数据库模型。
@@ -29,27 +29,27 @@ type RefundInput struct {
 
 // RechargeSource 是可原路退回的已支付充值事实，数据库映射留在 payment。
 type RechargeSource struct {
-	ID                   uint64 // 原支付主键
-	BizID                uint64 // 原充值业务身份
+	ID                   uint64 // 支付主键
+	BizID                uint64 // 充值业务编号
 	PaidCents            int64  // 渠道已收金额，单位分
-	TotalCents           int64  // 原申请金额，单位分
+	TotalCents           int64  // 申请金额，单位分
 	RefundedCents        int64  // 已成功退回金额，单位分
 	TransactionConfirmed bool   // 是否具有渠道交易号
 }
 
-// RechargeSourceReader 按原有钱包→支付锁顺序读取原渠道来源。
+// RechargeSourceReader 按有钱包→支付锁顺序读取渠道来源。
 type RechargeSourceReader interface {
-	// LockRechargeSources 在 tx 内锁 userID 的有效微信充值支付，按主键递增返回。
+	// LockRechargeSources 在事务中锁 userID 的有效微信充值支付，按主键递增返回。
 	// 无来源返回空集合、nil；数据库错误要求整个预占事务回滚。
 	LockRechargeSources(tx *gorm.DB, userID uint64) ([]RechargeSource, error)
 }
 
 // RefundRecorder 由 settlement 提供退款创建及在途聚合，不暴露其 ORM 模型。
 type RefundRecorder interface {
-	// ReservedInTx 当前读 paymentID 的在途退款金额（分），调用方已锁原支付。
+	// ReservedInTx 当前读 paymentID 的在途退款金额（分），调用方已锁支付。
 	// 返回 0、nil 表示无占用，错误要求回滚。
 	ReservedInTx(tx *gorm.DB, paymentID uint64) (int64, error)
-	// CreateInTx 在调用方 tx 内按 in 创建原单号退款；返回主键及错误。
+	// CreateInTx 在调用方事务中按 in 创建原单号退款；返回主键及错误。
 	// 记录、钱包冻结和来源分摊必须由调用方一并提交，不在此调用渠道。
 	CreateInTx(tx *gorm.DB, in money.RefundDraft) (uint64, error)
 }
@@ -57,14 +57,13 @@ type RefundRecorder interface {
 // RefundService 持有钱包退款申请及预占所需的窄能力，cmd 负责注入。
 type RefundService struct {
 	DB       *gorm.DB             // 所属 central 数据库；请求及预占事务由本用例管理
-	Sources  RechargeSourceReader // 原支付来源及行锁，由 payment 实现
-	Recorder RefundRecorder       // 原退款凭据及预占当前读，由 settlement 实现
+	Sources  RechargeSourceReader // 支付来源及行锁，由 payment 实现
+	Recorder RefundRecorder       // 退款凭据及预占当前读，由 settlement 实现
 }
 
-// Request 为 userID 提交 in 的余额退款；ctx 取消整个请求事务。
-// 返回首次回执或同内容重放回执；error 非 nil 时结果不可使用，业务冲突不能换号绕过。
-// 锁序为钱包→申请→原支付，在途额度用当前读；申请、频次冻结、拆单和回执同事务。
-// accepted 只表示持久预占，manual_review 表示需风控审核，均不表示渠道资金已退回。
+// Request 提交用户余额退款，重放同一请求时返回首次回执，内容不同报冲突。
+// 锁序为钱包→申请→充值支付，在途退款额须读取最新值；申请、频次冻结、拆单与回执同事务。
+// accepted 只表示已预占资金，manual_review 表示待审核，均不表示渠道已退回资金。
 func (s RefundService) Request(ctx context.Context, userID uint64, in RefundInput) (map[string]any, error) {
 	if s.DB == nil || userID == 0 || uuid.Validate(in.RequestID) != nil || in.AmountCents <= 0 || in.AmountCents > 5000000 || len([]rune(in.Reason)) > 255 {
 		return nil, ErrWalletRefundConflict

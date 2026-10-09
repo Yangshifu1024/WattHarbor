@@ -19,8 +19,7 @@ type ReviewerStatus struct {
 	Permitted bool   // 当前是否仍有发票复核权限
 }
 
-// InvoiceReviewRepo 承载人工开票的双人复核写入（invoice_request / invoice_admin_review）。
-// 方法不自行开事务：调用方须传入已挂载审计与幂等语义的 *gorm.DB 事务。
+// InvoiceReviewRepo 在调用方事务内执行发票双人复核，由用例同时保存审计。
 type InvoiceReviewRepo struct {
 	DB *gorm.DB // 结算数据库句柄；写方法使用用例显式传入的事务
 	// LookupReviewer 查询审核人的实时角色与权限；nil 时第二签一律冲突。
@@ -31,16 +30,13 @@ type InvoiceReviewRepo struct {
 type InvoiceDecision struct {
 	Approve    bool   // true 为双人通过流程，false 为单人驳回
 	InvoiceURL string // 通过时的发票文件链接，第二签必须与首签一致
-	Reason     string // 驳回原因，仅驳回分支使用
-	ActorID    uint64 // 当前审核管理员身份，由用例实时授权
+	Reason     string // 驳回因，仅驳回分支使用
+	ActorID    uint64 // 当前审核管理员 ID，由用例实时授权
 }
 
-// Review 在调用方事务内锁定申请并校验当前审核状态。
-// 审批要求两个不同且仍有权限的审核人，第二签必须提交与首签一致的发票链接；
-// 驳回由单人完成。不满足状态或审核条件时返回 ErrInvoiceConflict。
-// before 返回审核前的申请单要素快照，供调用方落审计。
-// ctx 控制读取，tx 由用例管理提交和审计，id 为申请主键，in 为已校验决定。
-// 返回审核决定状态、原申请快照和错误；缺记录及存储错误原样返回，不自行提交。
+// Review 锁定发票申请后执行审核，返回决定和审核前快照供审计使用。
+// 通过须由两个不同且仍有权限的人签名，第二签发票链接须与首签一致；驳回只需一人。
+// 状态或审核条件不符返回 ErrInvoiceConflict。
 func (s InvoiceReviewRepo) Review(ctx context.Context, tx *gorm.DB, id uint64, in InvoiceDecision) (string, map[string]any, error) {
 	status := "rejected"
 	// 申请单本体：只用到审核状态和已有的发票链接。

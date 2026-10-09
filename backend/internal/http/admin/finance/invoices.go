@@ -9,7 +9,7 @@ import (
 )
 
 // registerInvoices 挂载开票审核的三个接口。列表只读，要求 finance.read；审批和驳回
-// 共用审核处理器，由r注册的路由路径区分动作，两者都要求invoice.review。
+// 共用审核处理器，由 r 注册的路由路径区分动作，两者都要求 invoice.review。
 func (a API) registerInvoices(r *gin.Engine) {
 	r.GET("/api/v1/admin/billing/invoices", a.Auth.Require("finance.read"), a.invoices)
 	r.POST("/api/v1/admin/billing/invoices/:id/approve", a.Auth.Require("invoice.review"), a.reviewInvoice)
@@ -30,8 +30,8 @@ func (a API) invoices(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// reviewInvoice 从c适配审批和驳回的输入、权限及错误，输出原审核状态。
-// 双审、申请单状态和审计写入的完整事务由settlement服务拥有。
+// reviewInvoice 从 c 适配审批和驳回的输入、权限及错误，输出审核状态。
+// 双审、申请单状态和审计写入的完整事务由 settlement 服务拥有。
 func (a API) reviewInvoice(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {

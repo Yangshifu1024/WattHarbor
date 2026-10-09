@@ -3,67 +3,68 @@ package gateway
 import "chargepilot/internal/protocol"
 
 const (
-	CardEventsPath  = "/api/v1/internal/card-events"               // 原待投递卡事件清单
-	CardFreezePath  = "/api/v1/internal/card-events/decide-finish" // 原首写冻结决定
-	CardAdvancePath = "/api/v1/internal/card-events/advance"       // 原重排或完成投递
-	CardReplyPath   = "/api/v1/internal/cards/reply"               // 原向设备连接回复
-	CardPortPath    = "/api/v1/internal/ports/resolve"             // 原设备端口业务码读取
+	CardEventsPath  = "/api/v1/internal/card-events"               // 待处理的卡事件列表
+	CardFreezePath  = "/api/v1/internal/card-events/decide-finish" // 保存首次处理结果
+	CardAdvancePath = "/api/v1/internal/card-events/advance"       // 安排重试或标记完成
+	CardReplyPath   = "/api/v1/internal/cards/reply"               // 向设备发送回复
+	CardPortPath    = "/api/v1/internal/ports/resolve"             // 查询设备端口业务编码
 )
 
-// CardEvent 保留原事件 JSON 和已冻结回复，不能用当前钱包或新决定替换冻结值。
+// CardEvent 包含刷卡事件和首次保存的回复，重复处理不得按当前余额重算回复。
 type CardEvent struct {
-	EventKey string `json:"event_key"` // 原事件 UUID
-	Payload  string `json:"payload"`   // 原设备事件 JSON
-	Response string `json:"response"`  // 原冻结回复 JSON，未决定为空
+	EventKey string `json:"event_key"` // 事件 UUID
+	Payload  string `json:"payload"`   // 设备事件原始 JSON
+	Response string `json:"response"`  // 首次保存的回复 JSON，尚未处理时为空
 }
 
-// CardEventsReply 是原最多100条待投递清单。
+// CardEventsReply 返回最多 100 条待处理卡事件。
 type CardEventsReply struct {
-	Items []CardEvent `json:"items"` /* 原事件集合；空为 [] */
+	Items []CardEvent `json:"items"` /* 事件列表，无记录时为 [] */
 }
 
-// CardReplyRequest 保留原冻结决定；Accepted 表示已创建卡操作，无需另发拒绝／余额回复。
+// CardReplyRequest 将首次保存的结果回复给设备。
+// Accepted=true 表示 central 已接受卡操作，无需另发拒绝或余额命令。
 type CardReplyRequest struct {
-	Accepted     bool                 `json:"accepted"`      // central 原操作已受理，不表示设备回执
-	DeviceID     string               `json:"device_id"`     // 原设备身份
-	Session      string               `json:"session"`       // 原6字节会话的十六进制文本
-	Kind         protocol.CommandKind `json:"kind"`          // 原 card_denied 或 card_balance 命令
-	CardNumber   uint32               `json:"card_number"`   // 原协议卡号，非字符串资金身份
-	BalanceUnits uint16               `json:"balance_units"` // 原协议0.1元单位，转换及饱和由协议规则完成
+	Accepted     bool                 `json:"accepted"`      // central 是否已接受卡操作，不代表设备确认
+	DeviceID     string               `json:"device_id"`     // 设备编号
+	Session      string               `json:"session"`       // 六字节设备会话号，使用十六进制文本
+	Kind         protocol.CommandKind `json:"kind"`          // card_denied 或 card_balance 命令
+	CardNumber   uint32               `json:"card_number"`   // 协议中的整数卡号
+	BalanceUnits uint16               `json:"balance_units"` // 余额单位为 0.1 元，由协议规则转换并限制最大值
 	Invalid      bool                 `json:"invalid"`       // 原无效卡／拒绝标志
 }
 
-// CardFreezeRequest 请求按原事件号首写冻结完整 JSON。
+// CardFreezeRequest 请求按事件号保存首次处理结果的完整 JSON。
 type CardFreezeRequest struct {
-	EventKey     string `json:"event_key" binding:"required,max=64"`        // 原事件 UUID
-	ResponseJSON string `json:"response_json" binding:"required,max=65535"` // 原回复 JSON，不重复决策
+	EventKey     string `json:"event_key" binding:"required,max=64"`        // 事件 UUID
+	ResponseJSON string `json:"response_json" binding:"required,max=65535"` // 首次保存的回复 JSON，不重新计算
 }
 
-// CardFreezeReply 返回此次首写标志及权威原回复。
+// CardFreezeReply 返回是否首次保存及首次保存的回复。
 type CardFreezeReply struct {
-	Stored       bool   `json:"stored"`        // true 为本请求首写，false 为已有冻结值
-	ResponseJSON string `json:"response_json"` // 最终原回复，竞争失败必须使用它
+	Stored       bool   `json:"stored"`        // true 表示本次首次保存，false 表示此前已保存
+	ResponseJSON string `json:"response_json"` // 首次保存的回复；其他请求先保存时必须使用其结果
 }
 
-// CardAdvanceRequest 保留原事件身份和重排原因。
+// CardAdvanceRequest 按事件编号标记完成或安排重试，并记录重试原因。
 type CardAdvanceRequest struct {
-	EventKey string `json:"event_key" binding:"required,max=64"`         // 原事件 UUID
+	EventKey string `json:"event_key" binding:"required,max=64"`         // 事件 UUID
 	Outcome  string `json:"outcome" binding:"required,oneof=retry done"` // 原重排或完成状态
 	Error    string `json:"error" binding:"omitempty,max=255"`           // 原有界错误，非凭据
 }
 
-// CardAdvanceReply 表达原投递状态行是否推进。
+// CardAdvanceReply 返回本次是否更新了投递状态。
 type CardAdvanceReply struct {
-	Advanced bool `json:"advanced"` /* true 为实际推进一行 */
+	Advanced bool `json:"advanced"` /* true 表示更新了一行 */
 }
 
 // CardDeliveryReply 只确认本次连接发送完成，不承诺设备消费确认。
 type CardDeliveryReply struct {
-	Accepted bool `json:"accepted"` /* true 为网关已发送原回复 */
+	Accepted bool `json:"accepted"` /* true 表示网关已发送回复 */
 }
 
-// CardPortReply 返回原设备端口是否已开通及其二维码编码。
+// CardPortReply 返回设备端口是否开通及其二维码编码。
 type CardPortReply struct {
 	Found    bool   `json:"found"`               // false 表示未开通
-	PortCode string `json:"port_code,omitempty"` // 原业务码，未开通时省略
+	PortCode string `json:"port_code,omitempty"` // 业务码，未开通时省略
 }

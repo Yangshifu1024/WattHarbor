@@ -11,7 +11,7 @@ const (
 	TransportMQTT Transport = "mqtt"
 )
 
-// SessionRecord 是一条连接的终态，随时可以落库。
+// SessionRecord 保存连接结束时的审计记录。
 type SessionRecord struct {
 	SessionID   string
 	DeviceID    string

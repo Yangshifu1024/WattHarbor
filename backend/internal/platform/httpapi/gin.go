@@ -89,16 +89,13 @@ func randomID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// DefaultPageLimit 是 page 参数的默认上限。C 端列表用它，后台列表用
-// MaxAdminPageLimit——两者差一个数量级是历史遗留，保留差异而不是强行统一：
-// 后台导出与对账确实要翻到很深的页。
+// DefaultPageLimit 是 C 端页码上限；后台使用更大的 MaxAdminPageLimit，便于查询历史记录。
 const (
 	DefaultPageLimit  = 100000
 	MaxAdminPageLimit = 1000000
 )
 
-// MaxPageSize 是 page_size 的统一上限。四个接口族曾各写一份解析，
-// 边界不一致会导致同一页大小在不同接口行为不同。
+// MaxPageSize 是各接口共用的每页条数上限。
 const MaxPageSize = 100
 
 // ReadPaging 解析 page / page_size 查询参数，默认每页 fallback 条。

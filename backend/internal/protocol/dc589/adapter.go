@@ -45,8 +45,7 @@ func (a TCPAdapter) finish(ctx context.Context, sink protocol.Sink, audit *Sessi
 	_ = recorder.RecordSession(ctx, audit.Snapshot(deviceID, string(reason), clock()))
 }
 
-// TCPAdapter 是一个厂商监听器。其他 adapter 使用各自的端口并实现
-// protocol.Adapter，不必改动本包。
+// TCPAdapter 处理 DC589 设备连接，实现 protocol.Adapter。
 type TCPAdapter struct {
 	Clock          func() time.Time
 	Registry       protocol.SessionRouter
@@ -55,9 +54,9 @@ type TCPAdapter struct {
 
 func (TCPAdapter) Name() string { return "dc589" }
 
-// ServeConn 在非 nil ctx 下读取非 nil conn 的 DC589 注册与设备帧，并将事实交给非 nil sink，返回原连接、解析或持久化错误。
-// 保留原设备注册、会话审计和先持久化再确认顺序；取消观察者按原 ctx 关闭连接，所有返回路径先通知并等待观察者退出。
-// 本方法不关闭 sink 或进程连接池；正常读取错误无需等待 ctx 取消，取消时仍等待在途 conn.Close 返回。
+// ServeConn 处理设备注册和后续帧；ctx、conn 和 sink 均不能为 nil。
+// 事件保存成功后才确认帧。取消时关闭连接，所有返回路径都等待取消监听协程退出。
+// 读取出错可直接收尾，不必等待 ctx 取消；已开始的 conn.Close 必须完成后才能返回。
 func (a TCPAdapter) ServeConn(ctx context.Context, conn net.Conn, sink protocol.Sink) (serveErr error) {
 	clock := a.Clock
 	if clock == nil {
@@ -104,7 +103,7 @@ func (a TCPAdapter) ServeConn(ctx context.Context, conn net.Conn, sink protocol.
 	audit := NewSessionAudit(protocol.TransportTCP, hex.EncodeToString(serverSession[:]), remoteAddrOf(conn), clock())
 	// 新连接替换本连接时标记 replaced，区分替换与设备主动断开。
 	var replaced atomic.Bool
-	// 连接退出后记录结束原因；审计存储错误仅记录日志，不覆盖原通信错误。
+	// 连接退出后记录结束原因；审计存储错误仅记录日志，不覆盖通信错误。
 	reason := protocol.CloseDeviceClosed
 	defer func() {
 		if errors.Is(serveErr, os.ErrDeadlineExceeded) {
@@ -314,8 +313,7 @@ func (a TCPAdapter) ServeConn(ctx context.Context, conn net.Conn, sink protocol.
 					if accepted {
 						event.ResultCode = 0
 					} else {
-						// 主板保留了它原来的周期，本连接所用的读超时
-						// 从此与链路不符。
+						// 设备拒绝设置后仍使用旧周期，当前读超时可能与实际心跳周期不一致。
 						event.ResultCode = 1
 					}
 				}
@@ -384,7 +382,7 @@ func (c *connection) setHeartbeat(seconds uint32) error {
 	return c.conn.SetReadDeadline(time.Now().Add(time.Duration(seconds*MissedHeartbeatsBeforeReset) * time.Second))
 }
 
-// Never log raw payloads: card numbers, balances and configuration secrets may be present.
+// 原始载荷可能含卡号、余额或配置密钥，禁止记录到日志。
 func (c *connection) logFrame(direction string, frame Frame, err error) {
 	if (frame.Command == Heartbeat || frame.Command == HeartbeatReply) && !c.debugHeartbeat && err == nil {
 		return

@@ -6,11 +6,7 @@ import (
 	"chargepilot/internal/payment"
 )
 
-// TestReceiptMatchesRejectsAnyMismatch 逐项钉住渠道回执的核对。
-//
-// 渠道回执是外部输入，任何一项对不上都不能入账：把 A 单的回执当成 B 单的
-// 就会按 B 单的金额退钱，钱出去了账没对上。这段判断原本是 apply 里一长串
-// `||`，逐项无法单独验证；抽成纯函数后每个字段都能单独钉住。
+// TestReceiptMatchesRejectsAnyMismatch 验证渠道回执任一身份或金额字段不匹配时都不能入账。
 func TestReceiptMatchesRejectsAnyMismatch(t *testing.T) {
 	base := payment.RefundRequest{
 		RefundNo: "R-1", MerchantOrderNo: "P-1", TransactionID: "T-1",
@@ -47,21 +43,15 @@ func TestReceiptMatchesRejectsAnyMismatch(t *testing.T) {
 	}
 }
 
-// TestProviderMatchesChannel 钉住"交易与结算它的渠道必须同属真实或模拟一侧"。
-//
-// 模拟器产生的交易号（SIM 前缀）发到真实商户，真实用户的钱就真退了；
-// 真实渠道的交易让模拟器去结算，测试环境会凭空减掉用户余额。
-// 两个方向都是资金事故，所以分开钉。
+// TestProviderMatchesChannel 验证模拟交易和真实渠道的两种错配都被拒绝。
 func TestProviderMatchesChannel(t *testing.T) {
 	cases := []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
-		// provider 本轮退款渠道名，用于和交易流水号的模拟／真实来源比对。
+		// provider 是退款渠道名称。
 		provider string
-		// transaction 本轮原渠道交易号；SIM 前缀表示模拟来源，空串作为既有非模拟边界测试。
+		// transaction 是交易号；SIM 前缀表示模拟，空串用于非模拟边界。
 		transaction string
-		// want 渠道与交易来源是否应匹配的预期布尔结果。
-		want bool
+		want        bool
 	}{
 		{"模拟器结算模拟交易", "simulation", "SIM20260101", true},
 		{"真实渠道结算真实交易", "wechat", "4200001234", true},
@@ -80,7 +70,7 @@ func TestProviderMatchesChannel(t *testing.T) {
 	}
 }
 
-// longStr 接收非负字节长度 n，返回由 n 个 ASCII x 组成的字符串；零返回空串，负数由 make 触发 panic，无错误返回或外部 IO。
+// longStr 构造 n 个 ASCII x；n 为负时由 make 触发 panic。
 func longStr(n int) string {
 	b := make([]byte, n)
 	for i := range b {

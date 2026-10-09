@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestMarketingAdmissionBeforeStorage 验证权限和优惠互斥准入在任何SQL前拒绝。
+// TestMarketingAdmissionBeforeStorage 验证权限和优惠互斥检查在 SQL 执行前拒绝非法请求。
 func TestMarketingAdmissionBeforeStorage(t *testing.T) {
 	ctx := context.Background()
 	if _, err := (CouponService{}).List(ctx, operations.Profile{}); !errors.Is(err, operations.ErrForbidden) {

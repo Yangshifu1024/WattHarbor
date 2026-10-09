@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestFullSchemePreviewIsReadOnlyAndRejectsMissingInputs 验证完整方案预览无需数据库，按原规则计算退款并拒绝缺失输入。
+// TestFullSchemePreviewIsReadOnlyAndRejectsMissingInputs 验证完整方案预览无需数据库，按规则计算退款并拒绝缺失输入。
 func TestFullSchemePreviewIsReadOnlyAndRejectsMissingInputs(t *testing.T) {
 	r := gin.New()
 	r.POST("/preview", API{}.previewChargingScheme)
@@ -22,7 +22,7 @@ func TestFullSchemePreviewIsReadOnlyAndRejectsMissingInputs(t *testing.T) {
 		name string
 		// scheme 是请求提交的完整方案，不从数据库补齐。
 		scheme charging.Scheme
-		// want 是完整或缺失方案对应的HTTP状态。
+		// want 是完整或缺失方案对应的 HTTP 状态。
 		want int
 	}{
 		{"valid complete scheme with no DB", s, 200}, {"missing required input", charging.Scheme{}, 400},

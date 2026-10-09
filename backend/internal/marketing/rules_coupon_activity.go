@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// 券活动的参数校验。触发类型决定了门槛字段与邀请人券是否必填，
-// 这组约束是业务规则：写错一条，活动就会按错误的条件发券。
+// 活动触发类型决定金额门槛和邀请人券的必填要求。
 
 // ErrActivityRule 表示活动参数不合法。
 var ErrActivityRule = errors.New("invalid activity rule")
@@ -39,15 +38,9 @@ type ActivityRule struct {
 	EndAt           string  // RFC3339
 }
 
-// NormalizeActivity 校验活动参数并补上缺省值，返回 UTC 化的起止时间。
-//
-// 三条按触发类型分化的约束最容易被改错：
-//   - 满减必须有门槛（> 0）
-//   - 邀请有奖必须配置邀请人券
-//   - 其余触发类型一律不接受门槛（必须为 0）
-//   - 状态留空按 active 处理
-//
-// now 由调用方传入，使"结束时间不超过一年后"这条判断可测且不受宿主时钟影响。
+// NormalizeActivity 校验活动并将时间统一为 UTC，空状态默认 active。
+// 满减门槛须为正，其他触发门槛须为零；邀请奖励须配置邀请人券。
+// 结束时间不得超过当前时间一年后，当前时间由调用方提供。
 func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, string, error) {
 	var zero time.Time
 	if rule.Name == "" || len([]rune(rule.Name)) > MaxActivityNameLength {
@@ -99,15 +92,10 @@ func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, 
 	return start.UTC(), end.UTC(), status, nil
 }
 
-// 活动发券的资格与到期计算。发放路径（coupon_activity_repo.go）里这三项
-// 原本直接写在事务中间，夹在锁行、预算计数和插入之间，改错了不会有编译错误，
-// 也不会有测试失败——只会在活动结束后发出一张还能核销的券。
+// 活动规则统一计算发券资格、单人份数和有效期。
 
-// ActivityGrantExpiry 计算活动发券的到期时间，取三个时刻的较早者：
-// 券有效期（自发放时刻起算 validHours 小时）、券自身的结束时间、活动的结束时间。
-//
-// 活动的结束时间是硬上限：越过它发出去的券，用户在活动收尾后仍能核销，
-// 预算与核销台账会对不上。券读不到时调用方直接回落到活动结束时间。
+// ActivityGrantExpiry 取发券起算 validHours 小时、券模板结束、活动结束三者最早时间。
+// 券模板缺失时调用方使用活动结束时间。
 func ActivityGrantExpiry(now time.Time, validHours int, couponEnd *time.Time, ruleEnd time.Time) time.Time {
 	expires := now.Add(time.Duration(validHours) * time.Hour)
 	if couponEnd != nil && couponEnd.Before(expires) {
@@ -119,9 +107,7 @@ func ActivityGrantExpiry(now time.Time, validHours int, couponEnd *time.Time, ru
 	return expires
 }
 
-// PerUserAllowance 把活动规则的单人份数归一化。0 或负数按 1 份处理：
-// 留空表示"未配置"，不是"不限量"——不限量由总发放上限承担，
-// 单人额度若被当成不限量，一次活动就能把预算全发给同一个人。
+// PerUserAllowance 将零或负数单人份数按一份处理，不表示不限量；总量不限由总份数字段控制。
 func PerUserAllowance(perUserLimit int) int {
 	if perUserLimit <= 0 {
 		return 1
@@ -129,9 +115,7 @@ func PerUserAllowance(perUserLimit int) int {
 	return perUserLimit
 }
 
-// InviteEligible 判断邀请有奖是否具备发放前提。禁止自邀，邀请人也不能为空：
-// 空账号互邀不产生任何真实用户，却会成对消耗双方的活动预算。
-// 其余触发类型不受邀请关系影响。
+// InviteEligible 仅对邀请奖励检查非空邀请人和禁止自邀，其他触发不受邀请关系限制。
 func InviteEligible(triggerType string, inviterID, userID uint64) bool {
 	if triggerType != TriggerInviteReward {
 		return true

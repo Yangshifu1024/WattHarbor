@@ -10,7 +10,7 @@ import (
 	"chargepilot/internal/ops"
 )
 
-// TestFaultAdmissionBeforeStorage 用空连接验证无权限和不合规输入在任何IO之前拒绝。
+// TestFaultAdmissionBeforeStorage 验证无权限或请求不合法时，在数据库访问前拒绝。
 func TestFaultAdmissionBeforeStorage(t *testing.T) {
 	s := FaultService{}
 	ctx := context.Background()

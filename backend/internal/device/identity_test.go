@@ -3,7 +3,7 @@ package device
 import "testing"
 
 func TestValidDeviceIDAcceptsTheApplicationRange(t *testing.T) {
-	// 四条写入路径（导入、网关开通、历史回填、计费规则）共用的形状。
+	// 导入、网关开通、历史回填和计费规则共用该编号校验。
 	for _, id := range []string{
 		"DEV00001",                         // 恰好 8 位
 		"DC589-0001",                       // 含短横线

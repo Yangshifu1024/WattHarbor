@@ -29,7 +29,7 @@ import (
 )
 
 // TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures 验证真实注册用户报修和后台指派／处理／历史。
-// 用户、权限、审计及Redis为真实实现，DB造数回滚并只删除本测试会话；未知设备与范围查询都使用注册入口。
+// 用户、权限、审计及 Redis 为真实实现，DB 造数回滚并只删除本测试会话；未知设备与范围查询都使用注册入口。
 func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	tx := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
 	if tx.Error != nil {
@@ -40,7 +40,7 @@ func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	id := testfixture.NewID()
 	tag := uuid.NewString()
 	for _, seed := range []struct {
-		table string         /* 所属事实表 */
+		table string         /* 事实表 */
 		row   map[string]any /* 本测试事实 */
 	}{
 		{"user", map[string]any{"id": id, "openid": tag, "status": "active"}},
@@ -182,7 +182,7 @@ func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	if w := call("GET", userPath, "", owner); w.Code != 200 || strings.Contains(w.Body.String(), "private fixture") {
 		t.Fatalf("user history=%d %s", w.Code, w.Body)
 	}
-	// 用户归属查询失效必须是503，不得隐藏成404。
+	// 用户归属查询失效必须是 503，不得隐藏成 404。
 	if err := tx.Callback().Query().Before("gorm:query").Register(key, func(q *gorm.DB) {
 		if q.Statement.Table == "device_fault_report" {
 			q.AddError(failure)

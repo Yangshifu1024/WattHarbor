@@ -12,12 +12,12 @@ import (
 // CutoffRepo 为消费者提供停止用例所属的事务内截止事实，不持有连接或卡实现。
 type CutoffRepo struct{}
 
-// FrozenInTx 在调用方 tx 中当前读取 orderID 的截止，返回冻结标志或存储错误。
+// FrozenInTx 在调用方事务中当前读取 orderID 的截止，返回冻结标志。
 // 调用方已锁订单，SHARE 强制真实当前读，避免先前 RR 快照隐藏随后提交的冻结；无行返回 false。
 // 不写入、延长截止或提交事务，不返回截止费用以供消费者重新计价。
 func (CutoffRepo) FrozenInTx(tx *gorm.DB, orderID uint64) (bool, error) {
 	var row struct {
-		ChargeOrderID uint64 /* 截止唯一订单身份 */
+		ChargeOrderID uint64 /* 截止唯一订单编号 */
 	}
 	err := tx.Table("charge_billing_cutoff").Clauses(clause.Locking{Strength: "SHARE"}).Where("charge_order_id=?", orderID).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -43,7 +43,7 @@ type BillingCutoff struct {
 	Reason   string  `json:"reason" gorm:"column:reason"`       // 首次冻结原因，重试不覆盖
 }
 
-// FindBillingCutoff 在 ctx 下使用 db 查询 chargeOrderID 的截止记录。
+// FindBillingCutoff 使用 db 查询 chargeOrderID 的截止记录。
 // 无记录返回零值及 nil；数据库读取失败返回错误，不写入数据。
 func FindBillingCutoff(ctx context.Context, db *gorm.DB, chargeOrderID uint64) (BillingCutoff, error) {
 	var row BillingCutoff
@@ -61,7 +61,7 @@ func BillingCutoffFrozen(ctx context.Context, db *gorm.DB, orderID uint64) (int6
 	return frozen, err
 }
 
-// FreezeBillingCutoff 在 tx 内按 orderID 首写截止记录。
+// FreezeBillingCutoff 在事务中按 orderID 首写截止记录。
 // row 包含截止 UTC 时刻、原因和可选费用快照（分）；调用方须已锁订单且负责提交。
 // 并发唯一键由原子 no-op upsert 仲裁，已有时刻、原因和费用保持不变；错误表示写入失败。
 func FreezeBillingCutoff(tx *gorm.DB, orderID uint64, row map[string]any) error {

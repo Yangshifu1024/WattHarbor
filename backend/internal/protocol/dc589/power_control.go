@@ -18,9 +18,9 @@ const (
 type PowerControlKind byte
 
 const (
-	// PowerQuery 询问主板当前的设置是什么。
+	// PowerQuery 查询当前移除检测功率阈值。
 	PowerQuery PowerControlKind = 0
-	// PowerSet 修改这个设置。
+	// PowerSet 设置移除检测功率阈值。
 	PowerSet PowerControlKind = 1
 )
 
@@ -34,8 +34,7 @@ const (
 // powerControlFailure 为 0xE1 参数字段的失败标记 0xFFF1，占两个字节。
 const powerControlFailure uint16 = 0xFFF1
 
-// ErrPowerControlRejected 表示主板拒绝了功率控制，或者
-// 用失败标记作答。
+// ErrPowerControlRejected 表示主板明确拒绝功率控制，或返回失败标记。
 var ErrPowerControlRejected = errors.New("主板拒绝功率控制")
 
 // ErrPowerOperationUnknown 表示未定义的操作码，与设备明确拒绝已知操作的错误区分。
@@ -78,7 +77,7 @@ func encodePowerControl(c PowerControl) ([]byte, error) {
 	return data, nil
 }
 
-// BuildPowerControl 把一条 0xE0 编码到线上。
+// BuildPowerControl 将功率控制请求编码为 0xE0 帧。
 func BuildPowerControl(session [6]byte, c PowerControl) (Frame, error) {
 	data, err := encodePowerControl(c)
 	if err != nil {
@@ -107,7 +106,7 @@ func ParsePowerControlReply(frame Frame) (PowerControl, error) {
 }
 
 // SetNoTiering 将移除检测阈值设为零，不改变功率分档。
-// Deprecated: use BuildPowerControl with an explicit DeciWatts value.
+// Deprecated: 改用 BuildPowerControl，并明确指定 DeciWatts。
 func SetNoTiering(session [6]byte) (Frame, error) {
 	return BuildPowerControl(session, PowerControl{Control: PowerSet, Operation: PowerOpRemove})
 }

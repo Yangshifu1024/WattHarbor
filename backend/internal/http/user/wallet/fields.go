@@ -5,7 +5,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// rechargeFieldErrors 校验 requestID 的 UUID 格式与 amountCents 的 100..5000000 分范围，返回全部字段错误；空切片表示合法，无 IO。
+// rechargeFieldErrors 校验 requestID 的 UUID 格式与 amountCents 的 100..5000000 分范围，返回全部字段错误；空切片表示合法。
 func rechargeFieldErrors(requestID string, amountCents int64) []httpapi.FieldErr {
 	var errs []httpapi.FieldErr
 	if uuid.Validate(requestID) != nil {
@@ -17,7 +17,7 @@ func rechargeFieldErrors(requestID string, amountCents int64) []httpapi.FieldErr
 	return errs
 }
 
-// walletRefundFieldErrors 校验 requestID、amountCents 的 1..5000000 分范围及 reason 的 255 字符上限，返回全部字段错误；无 IO。
+// walletRefundFieldErrors 校验 requestID、amountCents 的 1..5000000 分范围及 reason 的 255 字符上限，返回全部字段错误。
 func walletRefundFieldErrors(requestID string, amountCents int64, reason string) []httpapi.FieldErr {
 	var errs []httpapi.FieldErr
 	if uuid.Validate(requestID) != nil {

@@ -11,7 +11,7 @@ import (
 	"chargepilot/internal/platform/config"
 )
 
-// TestAdminAssemblyRegistersDocumentedRoutes 使用 t 对照真实后台装配与 OpenAPI 的方法／路径，并拒绝注册其他业务族；文件读取或比对失败由 t 报告，不发业务请求。
+// TestAdminAssemblyRegistersDocumentedRoutes 对照 OpenAPI 检查后台路由，并确认未注册其他业务族的路由；不发送业务请求。
 func TestAdminAssemblyRegistersDocumentedRoutes(t *testing.T) {
 	router := newRouter(config.Admin{}, &resources{}, authhttp.AdminAuth{}, nil)
 	actual := map[string]bool{}
@@ -26,7 +26,7 @@ func TestAdminAssemblyRegistersDocumentedRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc struct {
-		// Paths OpenAPI 路径到方法声明的映射，仅用于注册清单比对，不执行接口。
+		// Paths 将 OpenAPI 路径映射到 HTTP 方法，用于比对路由。
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {

@@ -26,12 +26,11 @@ var ErrCardBalance = fmt.Errorf("%w：钱包可用余额不足", ErrCardOperatio
 
 // Repo 在调用方连接或事务中访问刷卡、钱包与订单表；刷卡写入由用例统一提交，仓储不自行确认设备执行。
 type Repo struct {
-	DB     *gorm.DB          // 原卡事务或连接，提交由用例管理
-	Cutoff SwipeCutoffReader // 所属停止用例的当前截止事实
+	DB     *gorm.DB          // 卡事务或连接，提交由用例管理
+	Cutoff SwipeCutoffReader // 停止用例提供的最新计费截止记录
 }
 
-// mapWalletMoveError 把钱包账本的错误映射回刷卡业务的哨兵错误。
-// err 为原钱包错误，返回不足余额／不可操作哨兵或其他原错误；nil 保持 nil，无 IO。
+// mapWalletMoveError 将余额不足、账户不可用映射为刷卡错误，其他错误原样返回。
 func mapWalletMoveError(err error) error {
 	if errors.Is(err, wallet.ErrInsufficient) {
 		return ErrCardBalance
@@ -42,10 +41,10 @@ func mapWalletMoveError(err error) error {
 	return err
 }
 
-// applyInTx 在调用方 tx 中按 cardNo/eventID、port 原物理身份和 rule 首次报价执行原刷卡状态机。
-// 返回原 CardOperation 或准入／资金／唯一键／存储错误；本方法不提交，所有失败必须由用例回滚。
-// 卡→钱包→会话→订单依序加锁，原操作及待确认状态当前读；截止通过所属窄能力当前读取。
-// 首购同时写支付、订单、方案、会话和扣款凭据；续购使用原套餐，并原子累计资金和时长。
+// applyInTx 在调用方事务中处理刷卡首购或续购；失败必须整体回滚。
+// 锁序为卡→钱包→会话→订单，操作记录、待确认状态及截止点都读取最新已提交值。
+// 首购同时保存支付、订单、方案、会话与扣款记录；续购沿用冻结套餐，累计金额与时长。
+// 卡锁不能刷新已有 RR 快照，重放须使用加锁查询恢复首次操作。
 func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef, rule charging.Rule) (CardOperation, error) {
 	var out CardOperation
 	if n, err := strconv.ParseUint(cardNo, 10, 32); err != nil || n == 0 || strconv.FormatUint(n, 10) != cardNo {
@@ -60,7 +59,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 			return err
 		}
 		var previous CardOperation
-		// 卡锁只串行同卡操作，不能刷新已建立的 RR 快照；原操作必须使用当前读恢复。
+		// 卡锁只串行同卡操作，不能刷新已建立的 RR 快照；首次操作必须使用当前读恢复。
 		found := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("device_id=? AND event_id=?", port.DeviceID, eventID).Find(&previous)
 		if found.Error != nil {
 			return found.Error
@@ -197,7 +196,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 			praw, _ := json.Marshal(p)
 			portCode := port.PortID
 			if err := tx.Create(&CardCharge{ChargeOrderID: order.ID, CardID: card.ID, PortCode: portCode, ActivePort: &portCode, PaidCents: p.PriceCents, PurchasedMinutes: p.Minutes, MaxMinutes: spec.Scheme.Normalized().Card.MaxMinutes, PackageJSON: praw, CardNo: card.CardNo, WalletAfterCents: w.BalanceCents - w.FrozenCents - p.PriceCents}).Error; err != nil {
-				// 并发刷卡抢同一端口时 active_port 唯一键拒绝后写事务，
+				// 并发刷卡抢同一端口时 active_port 唯一键拒绝后写事务。
 				// 按业务冲突处理，设备重试即可。
 				if dbutil.IsMySQLDuplicate(err) {
 					return ErrCardOperation
@@ -222,7 +221,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 	return out, err
 }
 
-// ActiveSessionCount 在 ctx 下统计原 portCode 的活跃卡会话；返回计数或存储错误。
+// ActiveSessionCount 统计 portCode 的活跃卡会话；返回计数。
 // 此读仅选择当前报价是否需要，事务内会重新锁会话，不作为扣款授权。
 func (s Repo) ActiveSessionCount(ctx context.Context, portCode string) (int64, error) {
 	var count int64

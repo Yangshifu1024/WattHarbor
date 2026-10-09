@@ -9,38 +9,35 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 运营后台对券模板与人工发放的读写。C 端的持券、核销在 coupon_repo.go /
-// coupon_redeem_repo.go，活动用例在 activity_grant.go；这里只管后台这一面。
+// 后台管理券模板和人工发放；用户持券与核销在 coupon_repo.go、coupon_redeem_repo.go，活动发放在 activity_grant.go。
 
-// AdminCouponRow 是券模板的完整行。优惠三选一：amount 用 DiscountValueCents、
-// percentage 用 DiscountPercent、time_free 用 FreeMinutes。
+// AdminCouponRow 是券模板记录：amount 用分值，percentage 用折扣比例，time_free 用免费分钟数，三者互斥。
 type AdminCouponRow struct {
 	ID                 uint64           `json:"id" gorm:"column:id;primaryKey"`                          // 券模板主键；创建时须为 0 由库自增
 	Name               string           `json:"name" gorm:"column:name"`                                 // 券名称，非空且不超过 128 字符
-	DiscountType       string           `json:"discount_type" gorm:"column:discount_type"`               // 原优惠类型
-	DiscountValueCents *int64           `json:"discount_value_cents" gorm:"column:discount_value_cents"` // 原减免分值，可空
-	DiscountPercent    *decimal.Decimal `json:"discount_percent" gorm:"column:discount_percent"`         // 原优惠百分比，可空
-	FreeMinutes        *uint32          `json:"free_minutes" gorm:"column:free_minutes"`                 // 原免费分钟，可空
-	MinChargeCents     int64            `json:"min_charge_cents" gorm:"column:min_charge_cents"`         // 原使用门槛，分
-	ValidHours         uint32           `json:"valid_hours" gorm:"column:valid_hours"`                   // 原领取后有效小时
-	TotalQuota         uint32           `json:"total_quota" gorm:"column:total_quota"`                   // 原总量上限，0不限
-	PerUserQuota       uint32           `json:"per_user_quota" gorm:"column:per_user_quota"`             // 原人工发放单人上限
-	Status             string           `json:"status" gorm:"column:status"`                             // 原业务状态
-	StartAt            *time.Time       `json:"start_at" gorm:"column:start_at"`                         // 原开始时刻，可空表示立即
-	EndAt              *time.Time       `json:"end_at" gorm:"column:end_at"`                             // 原截止时刻，可空表示长期
+	DiscountType       string           `json:"discount_type" gorm:"column:discount_type"`               // 优惠类型
+	DiscountValueCents *int64           `json:"discount_value_cents" gorm:"column:discount_value_cents"` // 减免分值，可空
+	DiscountPercent    *decimal.Decimal `json:"discount_percent" gorm:"column:discount_percent"`         // 优惠百分比，可空
+	FreeMinutes        *uint32          `json:"free_minutes" gorm:"column:free_minutes"`                 // 免费分钟，可空
+	MinChargeCents     int64            `json:"min_charge_cents" gorm:"column:min_charge_cents"`         // 使用门槛，分
+	ValidHours         uint32           `json:"valid_hours" gorm:"column:valid_hours"`                   // 领取后有效小时
+	TotalQuota         uint32           `json:"total_quota" gorm:"column:total_quota"`                   // 总量上限，0 表示不限量
+	PerUserQuota       uint32           `json:"per_user_quota" gorm:"column:per_user_quota"`             // 人工发放单人上限
+	Status             string           `json:"status" gorm:"column:status"`                             // 业务状态
+	StartAt            *time.Time       `json:"start_at" gorm:"column:start_at"`                         // 开始时刻，可空表示立即
+	EndAt              *time.Time       `json:"end_at" gorm:"column:end_at"`                             // 截止时刻，可空表示长期
 }
 
-// TableName 固定原模板表，不依赖类型改名推导，无IO。
+// TableName 指定优惠券模板表。
 func (AdminCouponRow) TableName() string { return "coupon" }
 
-// AdminCouponStats 是某张券的发放统计。四个状态互斥，加总等于发放总数；
-// 未使用与已过期按当前时刻动态判定，而非只看 status 列。
+// AdminCouponStats 统计互斥的四种发放状态；未用与过期由当前时间区分，各项之和等于总发放量。
 type AdminCouponStats struct {
-	TotalQuota   uint32  `json:"total_quota"`   // 原总量上限，0不限
-	GrantedCount int64   `json:"granted_count"` // 原已发份数
-	UnusedCount  int64   `json:"unused_count"`  // 原未使用未过期份数
-	UsedCount    int64   `json:"used_count"`    // 原已使用份数
-	ExpiredCount int64   `json:"expired_count"` // 原到期份数
+	TotalQuota   uint32  `json:"total_quota"`   // 总量上限，0 表示不限量
+	GrantedCount int64   `json:"granted_count"` // 已发份数
+	UnusedCount  int64   `json:"unused_count"`  // 未使用未过期份数
+	UsedCount    int64   `json:"used_count"`    // 已使用份数
+	ExpiredCount int64   `json:"expired_count"` // 到期份数
 	UsageRate    float64 `json:"usage_rate"`    // 已使用 / 已发放；未发放时为 0
 }
 
@@ -49,22 +46,19 @@ type AdminCouponRepo struct {
 	DB *gorm.DB // 所属中央连接或调用方事务，由进程管理
 }
 
-// ListCoupons 返回全部未删除的券模板，按 ID 倒序。列表不分页，模板量有限。
+// ListCoupons 倒序读取全部未删除券模板。
 func (s AdminCouponRepo) ListCoupons(ctx context.Context) ([]AdminCouponRow, error) {
 	rows := []AdminCouponRow{}
 	err := s.DB.WithContext(ctx).Table("coupon").Where("deleted_at IS NULL").Order("id DESC").Find(&rows).Error
 	return rows, err
 }
 
-// CreateCoupon 新建券模板，状态由调用方置为 active。
-// 入参是指针：主键由库自增回填，调用方要用它写审计。传值会把自增结果丢在函数里，
-// 表现为新建成功但响应与审计里的 id 都是 0。
+// CreateCoupon 创建启用模板并通过指针回填自增主键，供响应和审计使用。
 func (s AdminCouponRepo) CreateCoupon(ctx context.Context, in *AdminCouponRow) error {
 	return s.DB.WithContext(ctx).Create(in).Error
 }
 
-// UpdateCoupon 只改名称与启停状态。额度与优惠力度发出去就不能再改，
-// 否则已发出的券无法解释。改前对券行加写锁并返回旧值供审计留痕。
+// UpdateCoupon 锁定模板后只更新名称和启停状态，返回旧值供审计；额度和优惠不能修改。
 func (s AdminCouponRepo) UpdateCoupon(ctx context.Context, id uint64, name, status string) (AdminCouponRow, error) {
 	var before AdminCouponRow
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -87,12 +81,12 @@ func (s AdminCouponRepo) Stats(ctx context.Context, id uint64) (AdminCouponStats
 	}
 	out.TotalQuota = coupon.TotalQuota
 	var counts struct {
-		GrantedCount int64 `gorm:"column:granted_count"` // 原已发份数
-		UnusedCount  int64 `gorm:"column:unused_count"`  // 原未使用未过期份数
-		UsedCount    int64 `gorm:"column:used_count"`    // 原已使用份数
-		ExpiredCount int64 `gorm:"column:expired_count"` // 原到期份数
+		GrantedCount int64 `gorm:"column:granted_count"` // 已发份数
+		UnusedCount  int64 `gorm:"column:unused_count"`  // 未使用未过期份数
+		UsedCount    int64 `gorm:"column:used_count"`    // 已使用份数
+		ExpiredCount int64 `gorm:"column:expired_count"` // 到期份数
 	}
-	// status='unused' 但已过期的记为过期：判定看当前时刻，不只看待存列。
+	// unused 但已过期的记录计入过期数量。
 	err := db.Table("coupon_grant").
 		Select("COUNT(*) AS granted_count,"+
 			"COALESCE(SUM(status='unused' AND expired_at>UTC_TIMESTAMP(3)),0) AS unused_count,"+
@@ -110,13 +104,12 @@ func (s AdminCouponRepo) Stats(ctx context.Context, id uint64) (AdminCouponStats
 	return out, nil
 }
 
-// findGrantReceipt 在 tx 中按 requestID 读取原受理凭据；current 为真时取得SHARE当前读。
-// 返回原凭据或缺失／存储错误，不创建请求预占、不提交事务。
+// findGrantReceipt 按请求号读取首次发放记录；需要当前读时取得共享锁，不创建请求记录。
 func findGrantReceipt(tx *gorm.DB, requestID string, current bool) (CouponGrantReceipt, error) {
 	var row struct {
-		CouponID      uint64 `gorm:"column:coupon_id"`       // 原模板
-		UserID        uint64 `gorm:"column:user_id"`         // 原受益用户
-		CouponGrantID uint64 `gorm:"column:coupon_grant_id"` // 原发放记录
+		CouponID      uint64 `gorm:"column:coupon_id"`       // 模板
+		UserID        uint64 `gorm:"column:user_id"`         // 受益用户
+		CouponGrantID uint64 `gorm:"column:coupon_grant_id"` // 发放记录
 	}
 	q := tx.Table("coupon_grant_request").Where("request_id=?", requestID)
 	if current {
@@ -126,8 +119,7 @@ func findGrantReceipt(tx *gorm.DB, requestID string, current bool) (CouponGrantR
 	return CouponGrantReceipt{RequestID: requestID, CouponID: row.CouponID, UserID: row.UserID, CouponGrantID: row.CouponGrantID}, err
 }
 
-// manualGrantState 在 tx 已持 userID 用户锁后锁 couponID 模板并当前读取预算。
-// 返回原模板、累计份数或缺失／存储错误；不访问用户表，不反向等待用户或钱包。
+// manualGrantState 在用户锁后锁定券模板，读取当前预算；模板锁之后不能反向等待用户或钱包。
 func manualGrantState(tx *gorm.DB, couponID, userID uint64) (AdminCouponRow, CouponUsage, error) {
 	var coupon AdminCouponRow
 	usage := CouponUsage{}
@@ -141,7 +133,7 @@ func manualGrantState(tx *gorm.DB, couponID, userID uint64) (AdminCouponRow, Cou
 	return coupon, usage, err
 }
 
-// saveManualGrant 在 tx 内追加 in 原发放及请求凭据，返回原自增主键或存储错误；失败由调用方整体回滚。
+// saveManualGrant 在调用方事务内保存发放和请求凭据，失败须整体回滚。
 func saveManualGrant(tx *gorm.DB, in activityGrant) (uint64, error) {
 	if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": "manual", "status": "unused", "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error; err != nil {
 		return 0, err

@@ -5,12 +5,9 @@ import (
 	"time"
 )
 
-// 优惠券发放的判定与计算。发放资格、有效期上限、幂等重放都是业务规则：
-// 它们决定"这张券能不能发、什么时候过期、重复提交怎么办"，
-// 与存储和传输无关，因此不在处理器里各判一次。
+// 券能否发放、何时到期和如何重放由统一业务规则决定，避免各处理器重复判断。
 
-// ErrCouponGrant 表示本次发放不成立：券不可用、额度已尽、用户状态不对或重放内容不符。
-// 这类拒绝不是故障，重试没有意义。
+// ErrCouponGrant 表示券不可用、额度已尽、用户状态不符或重放内容不同；直接重试不能解决。
 var ErrCouponGrant = errors.New("优惠券不可发放")
 
 // CouponTemplate 是发放时需要用到的券模板字段。
@@ -30,9 +27,7 @@ type CouponUsage struct {
 	UserGranted  int64 // 该用户已获得的份数
 }
 
-// CheckGrantable 判断此刻能否给该用户发这张券。
-// 四个条件缺一不可：模板启用、落在生效窗口内、总量未发完、该用户未达上限。
-// now 由调用方传入，便于测试与业务日界统一。
+// CheckGrantable 检查模板启用、当前有效、总额未尽和单人未达上限，时间由调用方提供。
 func CheckGrantable(now time.Time, coupon CouponTemplate, usage CouponUsage) error {
 	if coupon.Status != "active" {
 		return ErrCouponGrant
@@ -52,9 +47,7 @@ func CheckGrantable(now time.Time, coupon CouponTemplate, usage CouponUsage) err
 	return nil
 }
 
-// GrantExpiry 计算发放后的到期时间。
-// 有效期从发放时刻起算 valid_hours；若券本身带结束时间且更早，则以结束时间封顶——
-// 券的有效期不得超出它自身的可用窗口。
+// GrantExpiry 从发券时间起计算 valid_hours 小时，若模板结束更早则以模板结束为上限。
 func GrantExpiry(now time.Time, coupon CouponTemplate) time.Time {
 	expires := now.Add(time.Duration(coupon.ValidHours) * time.Hour)
 	if coupon.EndAt != nil && coupon.EndAt.Before(expires) {
@@ -71,10 +64,7 @@ type CouponGrantReceipt struct {
 	CouponGrantID uint64 // 发放记录主键
 }
 
-// ReplayGrant 判定一次重复提交能否沿用首次发放。
-//
-// 同一请求号必须指向同一个券、同一个用户：内容一致就返回首次凭据，
-// 券或用户变了则判冲突——绝不能用同一个请求号把 A 券的凭据发给 B 用户。
+// ReplayGrant 同一请求号且券、用户一致时返回首次发放；内容不同返回冲突。
 func ReplayGrant(receipt CouponGrantReceipt, requestID string, couponID, userID uint64) (uint64, error) {
 	if receipt.RequestID != requestID {
 		return 0, ErrCouponGrant

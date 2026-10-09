@@ -132,7 +132,7 @@ func TestRegisteredDeviceAndStationManagementUsesCurrentScope(t *testing.T) {
 	}
 	for _, seed := range []struct {
 		db    *gorm.DB       // 目标真库
-		table string         // 所属表
+		table string         // 表
 		row   map[string]any // 唯一测试身份及必需列
 	}{
 		{central, "admin_user", map[string]any{"id": id, "username": "device-route-" + sid, "password_hash": "fixture", "role_id": role, "status": "active", "auth_version": 1}},
@@ -219,7 +219,7 @@ func TestRegisteredDeviceAndStationManagementUsesCurrentScope(t *testing.T) {
 	}
 	w := call("GET", base+visible, "", token)
 	var out struct {
-		Data business.Device `json:"data"` /* 原设备响应 */
+		Data business.Device `json:"data"` /* 设备响应 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
 		t.Fatalf("detail=%d %s %v", w.Code, w.Body, err)
@@ -320,7 +320,7 @@ func TestRegisteredDeviceAndStationManagementUsesCurrentScope(t *testing.T) {
 		t.Fatalf("retry revoked scope=%d %s", w.Code, w.Body)
 	}
 
-	// 厂商跨服务写入已提交后，中央审计失败沿用原尽力记录语义，不能伪报网关回滚。
+	// 厂商跨服务写入已提交后，中央审计失败沿用尽力记录语义，不能伪报网关回滚。
 	vendorInput["vendor_code"] = visible
 	vendorInput["vendor_name"] = "网关已提交审计故障"
 	vendorBody, _ = json.Marshal(vendorInput)

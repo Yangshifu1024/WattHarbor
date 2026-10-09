@@ -1,6 +1,6 @@
-# 本地 Go 开发栈。Go 模块位于 backend/，go 服务容器在 /workspace/backend 运行。
-# 本文件位于 docker/，该目录即 Compose 项目目录：文件内宿主机相对路径相对 docker/
-# 解析，`..` 指仓库根。保留现有数据；结构重建使用 scripts/db/reset-dev.mjs。
+# 本地开发栈：Go 容器在 /workspace/backend 运行。
+# 宿主机相对路径以 docker/ 为起点，.. 表示仓库根。
+# 启动保留数据；重建数据库使用 scripts/db/reset-dev.mjs。
 name: chargepilot-dev
 
 x-go: &go
@@ -18,8 +18,7 @@ x-go: &go
     DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
     DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
     GOTOOLCHAIN: auto
-    # 在中国大陆访问不到 proxy.golang.org，能用的是 goproxy.cn 这个镜像。
-    # 等团队统一到可达的代理后删掉这段。
+    # 使用 goproxy.cn 下载 Go 依赖；可按开发环境调整代理。
     GOPROXY: https://goproxy.cn,direct
     SERVICE_TOKEN: local-dev-service-token-do-not-use-in-production
   depends_on:
@@ -130,8 +129,7 @@ services:
       redis-cache: { condition: service_healthy }
     ports: ["127.0.0.1:8080:8080"]
 
-  # 对内服务间接口。不映射端口：开发栈与生产保持同一隔离策略，
-  # 内部端口只在 compose 网络内可达，从宿主机打不开。
+  # central 仅供容器网络内调用，不映射到宿主机。
   central:
     <<: *go
     command: ["go", "run", "./cmd/central"]

@@ -34,7 +34,7 @@ func (a API) devices(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// device 从 c 解析设备号及实时范围，返回范围内完整资料与摘要或原错误；业务读取由用例执行。
+// device 从请求解析设备号及实时范围，返回范围内完整资料与摘要或错误；业务读取由用例执行。
 func (a API) device(c *gin.Context) {
 	id := c.Param("id")
 	if len(id) > 64 {
@@ -53,7 +53,7 @@ func (a API) device(c *gin.Context) {
 	httpapi.OK(c, row)
 }
 
-// setDeviceStatus 从 c 严格校验编号及启停输入，读取实时范围后调用用例，返回资料或原 HTTP 错误。
+// setDeviceStatus 从 c 严格校验编号及启停输入，读取实时范围后调用用例，返回资料或 HTTP 错误。
 func (a API) setDeviceStatus(c *gin.Context) {
 	id := c.Param("id")
 	var in struct {
@@ -82,7 +82,7 @@ func (a API) setDeviceStatus(c *gin.Context) {
 	httpapi.OK(c, row)
 }
 
-// updateDevice 从 c 校验完整资料和原版本，读取实时范围后调用更新用例，返回资料、摘要或原错误。
+// updateDevice 从 c 校验完整资料和版本，读取实时范围后调用更新用例，返回资料、摘要或错误。
 func (a API) updateDevice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" || len(id) > 64 {
@@ -109,7 +109,7 @@ func (a API) updateDevice(c *gin.Context) {
 	httpapi.OK(c, row)
 }
 
-// managementFailure 将 err 的输入及权限分类写入 c，其余沿用原资源错误映射；不暴露存储细节。
+// managementFailure 将 err 的输入及权限分类写入 c，其余沿用资源错误映射；不暴露存储细节。
 func managementFailure(c *gin.Context, err error) {
 	var input device.ManagementInputError
 	switch {

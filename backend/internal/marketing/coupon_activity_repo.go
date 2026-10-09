@@ -9,32 +9,31 @@ import (
 	"time"
 )
 
-// activityRule 是锁定活动后用于本次发放的完整配置，不使用锁前快照。
+// activityRule 保存加锁后用于发券的完整配置，不使用锁前查询结果。
 type activityRule struct {
-	ID              uint64        `gorm:"column:id"`                // 原规则主键
-	TriggerType     string        `gorm:"column:trigger_type"`      // 原触发类型
-	CouponID        uint64        `gorm:"column:coupon_id"`         // 原被邀请人或普通奖励模板
-	InviterCouponID sql.NullInt64 `gorm:"column:inviter_coupon_id"` // 原邀请人奖励模板
-	ThresholdCents  int64         `gorm:"column:threshold_cents"`   // 原门槛，分
-	MaxGrants       int           `gorm:"column:max_grants"`        // 原券与来源共同预算，0不限
-	PerUserLimit    int           `gorm:"column:per_user_limit"`    // 原单人份数，0默认1
-	Status          string        `gorm:"column:status"`            // 原启停状态
-	StartAt         time.Time     `gorm:"column:start_at"`          // 原活动开始时刻
-	EndAt           time.Time     `gorm:"column:end_at"`            // 原活动截止时刻
+	ID              uint64        `gorm:"column:id"`                // 既定规则主键
+	TriggerType     string        `gorm:"column:trigger_type"`      // 触发类型
+	CouponID        uint64        `gorm:"column:coupon_id"`         // 被邀请人或普通奖励模板
+	InviterCouponID sql.NullInt64 `gorm:"column:inviter_coupon_id"` // 邀请人奖励模板
+	ThresholdCents  int64         `gorm:"column:threshold_cents"`   // 门槛，分
+	MaxGrants       int           `gorm:"column:max_grants"`        // 券与来源共同预算，0 表示不限量
+	PerUserLimit    int           `gorm:"column:per_user_limit"`    // 单人份数，0 默认 1 份
+	Status          string        `gorm:"column:status"`            // 启停状态
+	StartAt         time.Time     `gorm:"column:start_at"`          // 活动开始时刻
+	EndAt           time.Time     `gorm:"column:end_at"`            // 活动截止时刻
 }
 
-// activityCoupon 是同事务按主键顺序锁定的模板事实。
+// activityCoupon 保存按主键锁定的模板配置。
 type activityCoupon struct {
-	ID         uint64       `gorm:"column:id"`          // 原模板主键
-	Status     string       `gorm:"column:status"`      // 原启停状态
+	ID         uint64       `gorm:"column:id"`          // 模板主键
+	Status     string       `gorm:"column:status"`      // 启停状态
 	ValidHours int          `gorm:"column:valid_hours"` // 领取后的有效小时
-	StartAt    sql.NullTime `gorm:"column:start_at"`    // 原可选开始时刻
-	EndAt      sql.NullTime `gorm:"column:end_at"`      // 原可选截止时刻
+	StartAt    sql.NullTime `gorm:"column:start_at"`    // 可选开始时刻
+	EndAt      sql.NullTime `gorm:"column:end_at"`      // 可选截止时刻
 }
 
-// activeRules 在 tx 按 event 原触发和金额选出候选ID，再用PRIMARY按主键当前读、复核并锁定完整配置。
-// 候选不作为发放配置；返回锁后事实或存储错误，避免优化器用全表锁扫描无关触发。
-// 之后只按模板主键升序加锁，不反向锁用户／钱包。
+// activeRules 先筛选触发类型和金额匹配的规则主键，再按主键锁读最新配置并复查。
+// 候选查询结果不能直接用于发券；之后按模板主键升序加锁，不再锁用户或钱包。
 func activeRules(tx *gorm.DB, event ActivityEvent) ([]activityRule, error) {
 	query := tx.Table("coupon_activity_rule").
 		Where("trigger_type=? AND status='active' AND deleted_at IS NULL", event.TriggerType).
@@ -60,8 +59,8 @@ func activeRules(tx *gorm.DB, event ActivityEvent) ([]activityRule, error) {
 	return rows, err
 }
 
-// lockActivityCoupons 在 tx 持有全部规则锁后按 ids 主键升序取得模板写锁，共用模板的不同规则也串行仲裁预算。
-// 返回未删除模板事实，缺失由业务判断不适用；存储错误原样返回，不发券。
+// lockActivityCoupons 在规则锁后按模板主键升序加写锁，共用模板的规则须串行检查预算。
+// 缺失模板由发放逻辑判断为不适用。
 func lockActivityCoupons(tx *gorm.DB, ids []uint64) (map[uint64]activityCoupon, error) {
 	out := map[uint64]activityCoupon{}
 	if len(ids) == 0 {
@@ -77,28 +76,28 @@ func lockActivityCoupons(tx *gorm.DB, ids []uint64) (map[uint64]activityCoupon, 
 	return out, nil
 }
 
-// countRuleGrants 在模板锁下当前读取 rule 原券／来源已发份数，避免RR快照遗漏并发提交；无写入。
+// countRuleGrants 在模板锁内用当前读统计该券和来源的已发数量，避免旧 RR 快照遗漏并发发放。
 func countRuleGrants(tx *gorm.DB, rule activityRule) (int64, error) {
 	var n int64
 	err := tx.Table("coupon_grant").Clauses(clause.Locking{Strength: "UPDATE"}).Where("coupon_id=? AND grant_source=? AND deleted_at IS NULL", rule.CouponID, grantSourceFor(rule.TriggerType)).Count(&n).Error
 	return n, err
 }
 
-// countUserGrants 在模板锁下当前读取 userID 对 couponID 的未删除累计份数，沿用原跨来源单人额度口径。
+// countUserGrants 在模板锁内统计用户对该券的累计发放量，各来源共同计入单人额度。
 func countUserGrants(tx *gorm.DB, couponID, userID uint64) (int64, error) {
 	var n int64
 	err := tx.Table("coupon_grant").Clauses(clause.Locking{Strength: "UPDATE"}).Where("coupon_id=? AND user_id=? AND deleted_at IS NULL", couponID, userID).Count(&n).Error
 	return n, err
 }
 
-// activityGrantExists 在 tx 下当前读取 eventID／userID 原邀请奖励存在事实，返回事实或存储错误，无额外发放。
+// activityGrantExists 用当前读检查指定用户和事件的邀请奖励是否已保存。
 func activityGrantExists(tx *gorm.DB, eventID string, userID uint64) (bool, error) {
 	var n int64
 	err := tx.Table("coupon_grant").Clauses(clause.Locking{Strength: "UPDATE"}).Where("source_event_id=? AND user_id=? AND deleted_at IS NULL", eventID, userID).Count(&n).Error
 	return n > 0, err
 }
 
-// saveActivityGrant 在 tx 中写 in 原权益并按 receipt 决定是否追加请求凭据；返回重放事实或存储错误，不自行提交。
+// saveActivityGrant 在事务中保存发放，按需追加请求凭据；重放返回首次结果。
 func saveActivityGrant(tx *gorm.DB, in activityGrant, receipt bool) (bool, error) {
 	err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": in.Source, "status": "unused", "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error
 	if isDuplicateKey(err) {
@@ -118,8 +117,7 @@ func saveActivityGrant(tx *gorm.DB, in activityGrant, receipt bool) (bool, error
 	return false, err
 }
 
-// isEstablishedUser 在 tx 下只读邀请人的原已完成订单／已到账充值存在事实；不锁或写外部用例表。
-// 此资格投影不产生资金、订单编号或营销反向依赖；存储失败原样返回。
+// isEstablishedUser 检查邀请人是否有已完成充电或已到账充值；只读相关表，不加锁或写入。
 func isEstablishedUser(tx *gorm.DB, userID uint64) (bool, error) {
 	var n int64
 	if err := tx.Table("charge_order").Where("user_id=? AND status='completed' AND deleted_at IS NULL", userID).Count(&n).Error; err != nil {

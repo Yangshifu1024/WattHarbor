@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newRouter 注册当前进程路由、指标与健康端点；cfg 提供服务令牌，r 提供三库与事件流 Redis，scheduler 提供调度接口。
-// 返回未监听的 Gin 引擎，无错误返回；设置全局 Gin 发布模式，仅装配不执行业务请求，健康处理器用请求 context 的两秒子期限检查存储。
+// newRouter 注册本进程的业务路由、指标和健康检查，不启动监听。
+// 健康检查使用请求 context，最多等待两秒。
 func newRouter(cfg config.Worker, r *resources, scheduler schedule.Scheduler) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	// 在注册路由前安装指标中间件，覆盖全部 HTTP 请求。

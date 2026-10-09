@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 人工退款并发验收固定支付行锁的取得顺序，核对等待后的在途当前读不超原实付。
+// 真库测试固定支付锁顺序，验证等待后用当前读统计在途退款，累计不超过实付金额。
 
 const (
 	refundUserID   = uint64(41001)
@@ -44,8 +44,7 @@ func seedRefundableOrder(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// cleanupRefundableOrder 接收测试句柄 t 与真库句柄 db，删除固定支付身份的退款、MR-CONC 请求及充电／支付单，然后按相同条件核对零残留。
-// 无返回值，删除或核验失败由 t.Errorf 报告并继续，不创建事务或关闭池；调用方负责本测试固定身份的独占。
+// cleanupRefundableOrder 清理固定支付身份的退款、MR-CONC 请求和订单，核对零残留；调用方负责身份独占。
 func cleanupRefundableOrder(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, q := range []struct {
@@ -68,11 +67,8 @@ func cleanupRefundableOrder(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// TestConcurrentManualRefundsDoNotExceedPaidAmount 钉住并发退款申请不超额。
-//
-// 实付 10000，两笔各 6000 各自都"看起来"可退，合计却是 12000。
-// 单笔顺序提交时第二笔必然被 `pending > paid - refunded - amount` 拦下；
-// 只有并发时才会双双通过——这正是快照读造成的。
+// TestConcurrentManualRefundsDoNotExceedPaidAmount 验证实付 10000 分时，两笔各 6000 分的并发申请只能成功一笔。
+// 支付锁后的在途金额必须用当前读，避免旧快照导致超额申请。
 func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -93,11 +89,11 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 	defer gate.pass()
 
 	store := RefundReviewRepo{}
-	// outcome 将人工退款建单状态、稳定单号与事务结果传回测试控制方。
+	// outcome 汇总人工退款是否新建、退款号和错误。
 	type outcome struct {
-		created bool   // 是否实际新建原退款
-		no      string // 原稳定退款单号
-		err     error  // 原事务及建单结果
+		created bool   // 是否实际新建退款
+		no      string // 稳定退款单号
+		err     error  // 事务及建单结果
 	}
 	mk := func(p *gorm.DB, requestID string) chan outcome {
 		ch := make(chan outcome, 1)
@@ -137,7 +133,7 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 	if !errors.Is(second.err, ErrRefundConflict) || second.created {
 		t.Fatalf("second must conflict: %+v", second)
 	}
-	// 落库的才是真相：两笔都插入过就是超发。
+	// 核对实际保存的记录，两笔都创建即为超额。
 	verify, closeVerify := testConn(t)
 	defer closeVerify()
 	var rows int64

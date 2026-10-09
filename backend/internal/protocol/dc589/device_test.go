@@ -227,8 +227,7 @@ func TestBuildChargeEndRoundTrips(t *testing.T) {
 	}
 }
 
-// 订单字节对主板是不透明的：原样回显才把结束帧与启动这笔充电的订单
-// 绑回去。
+// 主板原样回显订单字节，使结束帧能关联到启动该次充电的订单。
 func TestBuildChargeEndEchoesOrderBytesVerbatim(t *testing.T) {
 	started := time.Date(2026, 9, 29, 10, 0, 0, 0, chinaLocation)
 	order := [8]byte{0x53, 0x48, 0x24, 0x05, 0x14, 0x08, 0x26, 0x52}
@@ -362,8 +361,7 @@ func TestBuildChargingBandRoundTripsThroughTheServerParser(t *testing.T) {
 	}
 }
 
-// 这里的档位是从 1 开始的，与端口状态应答里从 0 数档位正好相反。
-// 编码一个 0 或 6，就是往线上放一个主板自己的固件都读不回来的档。
+// 该命令档位从 1 开始，端口状态应答从 0 开始；0 和 6 均为无效档位。
 func TestBuildChargingBandRefusesABandOutsideOneToFive(t *testing.T) {
 	for _, band := range []byte{0, 6} {
 		if _, err := BuildChargingBand(ChargingBandReport{Port: 1, BandBefore: band, BandAfter: band}); err == nil {

@@ -17,10 +17,9 @@ const HELP = `用法：node tasks.mjs <任务>
 check 顺序执行 fmt、lint、test；构建产物位于 bin/。
 clean 仅删除 bin/；dev-down 保留容器与数据卷。`;
 
-// main 校验 argv 并顺序执行一个任务，返回退出码；不修改调用方环境。
-// options 的 env／platform 用于环境与平台选择，run／root／log／error 用于隔离验证。
-// 子命令失败立即返回其退出码；启动失败、信号终止或文件操作失败返回 1，参数错误返回 2。
-// 构建创建 root/bin，clean 仅删除该目录；开发任务会启动或停止现有 Compose 栈。
+// main 校验参数并执行任务；测试可通过 options 替换环境、平台和命令执行器。
+// 子命令失败返回其退出码；启动、信号或文件错误返回 1，参数错误返回 2。
+// 构建输出到 root/bin，clean 仅删除此目录；开发任务启动或停止 Compose 栈。
 export function main(argv, {
   env = process.env, platform = process.platform, run = spawnSync,
   root = ROOT, log = console.log, error = console.error,

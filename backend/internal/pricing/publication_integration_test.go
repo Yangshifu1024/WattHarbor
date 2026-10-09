@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// pricingConn 打开独立真实 MySQL 连接，交由 t 关闭；配置缺失或连接失败终止，不跳过验收。
+// pricingConn 打开独立 MySQL 连接，配置或连接失败即终止测试，不跳过，结束后关闭。
 func pricingConn(t *testing.T) *gorm.DB {
 	t.Helper()
 	url := os.Getenv("TEST_MYSQL_URL")
@@ -41,17 +41,17 @@ func pricingConn(t *testing.T) *gorm.DB {
 	return orm
 }
 
-// pricingScheme 返回支持 DC589 的完整时长套餐，所有金额为分、时长为分钟；无 IO。
+// pricingScheme 构造支持 DC589 的时长套餐，金额单位分，时长单位分钟。
 func pricingScheme() charging.Scheme {
 	return charging.Scheme{Name: "原价套餐", Packages: []charging.Package{{ID: 1, Name: "一小时", Mode: "duration", PriceCents: 400, Minutes: 60}}}
 }
 
-// pricingActor 返回已授权身份 fixture，真实会话与权限存储不在此 repo 验收范围。
+// pricingActor 返回授权测试账号；真实会话和权限查询不在该测试范围。
 func pricingActor(id uint64, request string) ops.AuditContext {
 	return ops.AuditContext{Actor: operations.Profile{ID: id, Username: "pricing-proof", Permissions: []string{"pricing.rule.create", "pricing.rule.update"}}, RequestID: request}
 }
 
-// seedPricingTarget 在 db 中写入 id 对应的站点及 device，返回存储错误；调用方负责回滚或按身份清理。
+// seedPricingTarget 创建本测试站点和设备，调用方负责回滚或按测试 ID 清理。
 func seedPricingTarget(db *gorm.DB, id uint64, device string) error {
 	if err := db.Table("station").Create(map[string]any{"id": id, "name": device, "longitude": 0, "latitude": 0, "status": "active"}).Error; err != nil {
 		return err
@@ -59,8 +59,8 @@ func seedPricingTarget(db *gorm.DB, id uint64, device string) error {
 	return db.Table("device_meta").Create(map[string]any{"device_id": device, "station_id": id, "vendor_id": id, "protocol_adapter": "dc589", "status": "enabled"}).Error
 }
 
-// TestSchemePublicationPreservesReplayScopeVersionsAndAudit 使用真实 repo 校验模板、范围、原载荷重放和审计原子性。
-// 身份是 fixture；整个测试外层回滚，不发送设备指令，已发布 JSON 不随模板修改变化。
+// TestSchemePublicationPreservesReplayScopeVersionsAndAudit 用真库验证模板、范围、请求重放和审计同事务。
+// 授权使用夹具，外层事务回滚，不发设备指令；已发布 JSON 不随模板变化。
 func TestSchemePublicationPreservesReplayScopeVersionsAndAudit(t *testing.T) {
 	db := pricingConn(t)
 	tx := db.Begin()
@@ -137,7 +137,7 @@ func TestSchemePublicationPreservesReplayScopeVersionsAndAudit(t *testing.T) {
 	if err := tx.Table("device_meta").Where("device_id=?", device).Update("protocol_adapter", "dc589").Error; err != nil {
 		t.Fatal(err)
 	}
-	// 故障发生在规则、原凭据都已写入后；原 active 规则必须随整个发布一起恢复。
+	// 规则和请求记录保存后注入故障，须连同被停用旧规则一起回滚。
 	key := "pricing_audit_" + rand.Text()
 	if err := db.Callback().Create().Before("gorm:create").Register(key, func(q *gorm.DB) {
 		if q.Statement.Table == "audit_log" {
@@ -168,8 +168,8 @@ func TestSchemePublicationPreservesReplayScopeVersionsAndAudit(t *testing.T) {
 	}
 }
 
-// TestConcurrentPublicationReturnsOriginalResult 固定首个站点锁和第二次锁请求，两连接真实提交同请求。
-// 两调用均返回原主键、仅一条规则／凭据／审计；只清理当前测试身份并核对零残留。
+// TestConcurrentPublicationReturnsOriginalResult 验证两个真库连接同请求发布返回相同主键，只有一条规则、请求和审计。
+// 按锁闸门固定顺序，仅清理本测试数据并检查零残留。
 func TestConcurrentPublicationReturnsOriginalResult(t *testing.T) {
 	setup := pricingConn(t)
 	first := pricingConn(t)
@@ -222,9 +222,9 @@ func TestConcurrentPublicationReturnsOriginalResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Callback().Query().Remove(key)
-	// answer 传递同一发布请求并发 Publish 的回执与错误，用于比较原规则版本和重放标志；提交行数另查规则、请求及审计表。
+	// answer 汇总发布结果与错误，规则、请求和审计数量另查真库。
 	type answer struct {
-		result PublicationResult /* 发布原结果 */
+		result PublicationResult /* 发布结果 */
 		err    error             /* 事务执行结果 */
 	}
 	scheme := pricingScheme()
@@ -258,7 +258,7 @@ func TestConcurrentPublicationReturnsOriginalResult(t *testing.T) {
 	}
 	for _, q := range []struct {
 		table string /* 本次规则及审计所属表 */
-		where string /* 原目标或请求号 */
+		where string /* 目标或请求号 */
 		arg   any    /* 查询筛选值 */
 	}{{"pricing_rule", "station_id=?", id}, {"pricing_publication", "request_id=?", request}, {"audit_log", "request_id=?", request}} {
 		var n int64

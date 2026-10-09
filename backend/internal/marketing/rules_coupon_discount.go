@@ -2,8 +2,8 @@ package marketing
 
 import "github.com/shopspring/decimal"
 
-// discountFor 以 grant 原优惠事实计算 totalCents 原价的整分优惠，返回门槛或无效券错误，无IO。
-// 十进制折扣只舍入一次，减免封顶原价；时长券沿用既有零服务费兜底。
+// discountFor 按原价计算优惠，金额单位分；减免不超过原价，十进制折扣仅舍入一次。
+// 时长券沿用每分钟服务费缺失时的默认值。
 func discountFor(grant CouponGrant, totalCents int64) (int64, error) {
 	if totalCents <= 0 || grant.MinCharge > totalCents {
 		return 0, ErrCouponThreshold
@@ -40,6 +40,5 @@ func discountFor(grant CouponGrant, totalCents int64) (int64, error) {
 	return discount, nil
 }
 
-// serviceRatePerMinute 是计价时长券时的兜底值，
-// 用于充电规则没有给出每分钟服务费的情况。
+// serviceRatePerMinute 是规则未指定每分钟服务费时，计算时长券优惠使用的默认值。
 const serviceRatePerMinute = 0

@@ -5,8 +5,8 @@
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 SET sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO,NO_ZERO_DATE,NO_ZERO_IN_DATE';
 
--- user_db 领域表
--- active_port_charge：端口当前充电占用(跨月唯一性兜底)
+-- 用户、订单与资金表
+-- active_port_charge：记录端口占用，保证跨月也只能有一笔充电
 CREATE TABLE `active_port_charge` (
   `port_id` bigint unsigned NOT NULL COMMENT '复合 ID: device_id+port_no',
   `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',
@@ -189,7 +189,7 @@ CREATE TABLE `charge_meter_review` (
   CONSTRAINT `charge_meter_review_chk_1` CHECK (((`second_reviewer_id` is null) or (`second_reviewer_id` <> `first_reviewer_id`)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='充电计量异常核对';
 
--- charge_order：充电订单(纯生命周期)
+-- charge_order：充电订单及其状态
 CREATE TABLE `charge_order` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `order_no` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'C+北京时间启动请求年月日时分秒+设备编号+两位端口号01–99',
@@ -198,8 +198,8 @@ CREATE TABLE `charge_order` (
   `port_no` tinyint unsigned NOT NULL COMMENT '设备充电端口号，从 1 开始',
   `port_code` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '充电端口二维码唯一编码',
   `payment_order_id` bigint unsigned DEFAULT NULL COMMENT '支付订单 ID',
-  `status` enum('pending_payment','paid','charging','completed','cancelled','failed','refunding','refunded') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending_payment' COMMENT '内部充电生命周期；用于启动授权、结束和退款流转，取值 pending_payment / paid / charging / completed / cancelled / failed / refunding / refunded',
-  `business_status` enum('pending_start','charging','completed') COLLATE utf8mb4_unicode_ci GENERATED ALWAYS AS (CASE WHEN `status` IN ('pending_payment','paid') THEN 'pending_start' WHEN `status` = 'charging' THEN 'charging' ELSE 'completed' END) STORED COMMENT '持久化业务状态：pending_start 待启动、charging 充电中、completed 已完成；由内部生命周期生成，不随支付退款状态变化',
+  `status` enum('pending_payment','paid','charging','completed','cancelled','failed','refunding','refunded') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending_payment' COMMENT '订单内部状态，用于启动、结束和退款处理：待支付、已支付、充电中、完成、取消、失败、退款中、已退款',
+  `business_status` enum('pending_start','charging','completed') COLLATE utf8mb4_unicode_ci GENERATED ALWAYS AS (CASE WHEN `status` IN ('pending_payment','paid') THEN 'pending_start' WHEN `status` = 'charging' THEN 'charging' ELSE 'completed' END) STORED COMMENT '展示状态，由 status 自动生成：待支付或已支付为 pending_start，充电中为 charging，其余为 completed',
   `payment_status` enum('pending','paid','refunded','partial_refunded') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT '独立支付状态：pending 待支付、paid 已支付、refunded 已退款、partial_refunded 已部分退款；仅随实际到账或退款成功同步',
   `started_at` datetime(3) DEFAULT NULL COMMENT '业务启动时间',
   `ended_at` datetime(3) DEFAULT NULL COMMENT '业务结束时间',
@@ -447,7 +447,7 @@ CREATE TABLE `device_fault_report_event` (
   KEY `idx_fault_event_actor_time` (`actor_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备报修状态与巡检处理记录';
 
--- event_outbox：事件 outbox(可靠发布)
+-- event_outbox：与业务事务一起保存的待发布事件
 CREATE TABLE `event_outbox` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `event_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '事件唯一标识，用于追踪和幂等处理',
@@ -750,7 +750,7 @@ CREATE TABLE `user_login_identity` (
   PRIMARY KEY (`openid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户登录身份关联';
 
--- wallet_account：钱包账户(1:1 with user)
+-- wallet_account：钱包账户，每位用户只能有一个未删除的钱包
 CREATE TABLE `wallet_account` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `user_id` bigint unsigned NOT NULL COMMENT '充电用户 ID',
@@ -762,10 +762,8 @@ CREATE TABLE `wallet_account` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '记录更新时间',
   `deleted_at` datetime(3) DEFAULT NULL COMMENT '软删除时间',
   `deleted_by` bigint unsigned DEFAULT NULL COMMENT '删除人 ID',
-  -- 活钱包必须一人一个。UNIQUE(user_id, deleted_at) 达不到这个效果：
-  -- 活记录的 deleted_at 是 NULL，而 MySQL 唯一索引里 NULL 不参与冲突判定，
-  -- 于是同一用户可以插入任意多条活钱包，余额与冻结额读哪条全看查询顺序。
-  -- 用生成列把"未软删"映射成常量 1，"已软删"映射成 NULL（不参与唯一性）。
+  -- MySQL 唯一索引允许多个 NULL，不能靠 deleted_at 保证每人只有一个有效钱包。
+  -- 生成列将未删除记录设为 1、已删除记录设为 NULL，唯一索引只限制未删除的钱包。
   `live_marker` tinyint unsigned GENERATED ALWAYS AS (IF(`deleted_at` IS NULL, 1, NULL)) VIRTUAL COMMENT '活钱包标记，仅用于唯一约束',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user` (`user_id`,`deleted_at`),
@@ -870,7 +868,7 @@ CREATE TABLE `wallet_txn` (
 
 -- 初始化数据：内置权限、角色及系统默认配置。业务与演示数据另行创建。
 
--- admin_db 领域表
+-- 后台账号与运营配置表
 -- admin_data_scope：后台账号数据范围
 CREATE TABLE `admin_data_scope` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
@@ -1053,7 +1051,7 @@ CREATE TABLE `device_meta` (
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备元数据(冗余自 gateway_db)';
 
--- event_outbox：事件 outbox(可靠发布)
+-- admin_event_outbox：与后台业务事务一起保存的待发布事件
 CREATE TABLE `admin_event_outbox` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `event_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '事件唯一标识，用于追踪和幂等处理',
@@ -1138,7 +1136,7 @@ CREATE TABLE `pricing_rule` (
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '记录更新时间',
   `deleted_at` datetime(3) DEFAULT NULL COMMENT '软删除时间',
-  `spec_json` json NOT NULL COMMENT '完整计费口径，对应 pricing.Spec',
+  `spec_json` json NOT NULL COMMENT '完整计费规则 JSON',
   `channel` enum('default','temp','card') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'default' COMMENT '计费通道，选择费率倍数',
   PRIMARY KEY (`id`),
   KEY `idx_station_status` (`station_id`,`status`),
@@ -1153,8 +1151,8 @@ CREATE TABLE `pricing_template` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '模板名称',
   `remark` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '模板备注',
-  `spec_json` json NOT NULL COMMENT '计费口径，对应 pricing.Spec',
-  `display_json` json NOT NULL COMMENT '用户端展示开关，对应 pricing.Display',
+  `spec_json` json NOT NULL COMMENT '计费规则 JSON',
+  `display_json` json NOT NULL COMMENT '用户端展示开关 JSON',
   `status` enum('active','disabled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active' COMMENT '当前业务状态；取值 active / disabled',
   `version` int unsigned NOT NULL DEFAULT '1' COMMENT '业务版本号',
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
@@ -1375,7 +1373,7 @@ INSERT INTO `role_permission` (`role_id`,`permission_id`) VALUES (4,62);
 INSERT INTO `role_permission` (`role_id`,`permission_id`) VALUES (4,70);
 INSERT INTO `role_permission` (`role_id`,`permission_id`) VALUES (4,77);
 
--- billing_db 领域表
+-- 计费计算与结果投递表
 -- fee_calculation：计费明细
 CREATE TABLE `fee_calculation` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
@@ -1431,7 +1429,7 @@ CREATE TABLE `fee_receipt` (
   PRIMARY KEY (`charge_order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计费事件幂等回执';
 
--- manual_fee_review：人工定价兜底单(D16)
+-- manual_fee_review：无法自动定价时的人工审核单
 CREATE TABLE `manual_fee_review` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `charge_order_id` bigint unsigned NOT NULL COMMENT '充电订单 ID',

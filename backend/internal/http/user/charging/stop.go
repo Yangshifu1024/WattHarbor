@@ -19,12 +19,12 @@ import (
 type StopAPI struct {
 	// JWT 验证用户访问令牌的签名、类型和有效期。
 	JWT *auth.JWT
-	// Sessions 读取当前会话是否存在，失败沿用原会话错误映射。
+	// Sessions 读取当前会话是否存在，失败沿用会话错误映射。
 	Sessions interface {
 		// Exists 在 context 下读取 SID 对应会话是否存在，返回布尔值或依赖错误；不修改会话。
 		Exists(context.Context, string) (bool, error)
 	}
-	// Users 读取当前用户是否启用，失败沿用原用户错误映射。
+	// Users 读取当前用户是否启用，失败沿用用户错误映射。
 	Users interface {
 		// Active 在 context 下读取用户编号对应账号是否启用，返回布尔值或依赖错误；不修改账号。
 		Active(context.Context, uint64) (bool, error)
@@ -36,10 +36,10 @@ type StopAPI struct {
 	}
 }
 
-// Register 向 router 注册用户停止端点，无返回值或业务 IO；鉴权和 gateway 调用在请求处理中执行。
+// Register 向 router 注册用户停止端点，只注册路由；鉴权和 gateway 调用在请求处理中执行。
 func (a StopAPI) Register(router *gin.Engine) { router.POST("/api/v1/user/charge/stop", a.handle) }
 
-// handle 从 c 验证用户 JWT、会话和状态，再绑定订单号并在原请求 context 下提交 gateway 停止请求。
+// handle 从 c 验证用户 JWT、会话和状态，再绑定订单号并在请求 context 下提交 gateway 停止请求。
 // 成功写受理回执；输入、身份及状态错误保持 400／401／403，订单冲突为 409、无效或拒绝回执为 502、依赖故障为 503；受理不表示设备已停电。
 func (a StopAPI) handle(c *gin.Context) {
 	parts := strings.Fields(c.GetHeader("Authorization"))

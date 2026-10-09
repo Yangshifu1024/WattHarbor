@@ -25,9 +25,7 @@ export default function AlertsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const { message } = App.useApp();
 
-  // 这个页面原来把读失败直接吞掉（catch { setData([]) }），于是一屏空白：运维
-  // 看到空表格只会得出「设备都没告警」的结论，实际上是接口挂了。这里必须把
-  // 故障摆在屏幕上。
+  // 加载失败时显示错误，避免空表格被误认为没有告警。
   const load = async () => {
     setLoading(true);
     try {

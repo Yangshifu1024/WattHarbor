@@ -16,12 +16,12 @@ import (
 	"time"
 )
 
-// marketingAudit 返回测试原操作人；不替换真实审计持久化。
+// marketingAudit 返回测试操作者，审计仍使用真实数据库保存。
 func marketingAudit() ops.AuditContext {
 	return ops.AuditContext{Actor: operations.Profile{ID: 991, Username: "marketing-proof", Permissions: []string{"coupon.create", "coupon.update", "coupon.grant", "coupon.activity.manage"}}}
 }
 
-// insertServiceCoupon 在 db 预置测试专属当前有效模板，返回原主键；调用者管理回滚或清理。
+// insertServiceCoupon 创建本测试有效券模板，调用方负责回滚或清理。
 func insertServiceCoupon(t *testing.T, db *gorm.DB, tag string, quota uint32) uint64 {
 	t.Helper()
 	amount := int64(500)
@@ -102,7 +102,7 @@ func TestMarketingAuditFailureRollsBackOwnedChanges(t *testing.T) {
 	}
 }
 
-// TestManualGrantCurrentBudgetAndReplay 建立旧RR快照再由另一连接提交发放，确认当前计数防止总量与单人超发且重放不换号。
+// TestManualGrantCurrentBudgetAndReplay 建立旧 RR 快照再由另一连接提交发放，确认当前计数防止总量与单人超发且重放不换号。
 func TestManualGrantCurrentBudgetAndReplay(t *testing.T) {
 	setup := testConn(t).orm
 	tag := "marketing-manual-" + uuid.NewString()
@@ -181,12 +181,11 @@ func TestActivitySharedTemplateSerializesDifferentRules(t *testing.T) {
 	tx1, tx2 := p1.orm.Begin(), p2.orm.Begin()
 	defer tx1.Rollback()
 	defer tx2.Rollback()
-	// outcome 将一笔发券调用的结果与错误传回并发测试控制方；外层事务提交或回滚仍由测试负责。
+	// outcome 汇总并发发券结果，事务提交和回滚由测试控制。
 	type outcome struct {
-		// rows 当前发券调用返回的发放结果，供并发控制方比对，不查询或更新记录。
+		// rows 是本次发券返回结果，供并发测试比较。
 		rows []ActivityResult
-		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
-		err error
+		err  error
 	}
 	a, b := make(chan outcome, 1), make(chan outcome, 1)
 	go func() {
@@ -217,7 +216,7 @@ func TestActivitySharedTemplateSerializesDifferentRules(t *testing.T) {
 	}
 }
 
-// TestCouponRedemptionFrozenMoneyReplayCancelAndRollback 验证真实券锁、冻结金额一致、原支付重放、跨支付拒绝、取消及失败回滚。
+// TestCouponRedemptionFrozenMoneyReplayCancelAndRollback 验证券锁、支付优惠一致、同支付重放、跨支付拒绝和取消回滚。
 func TestCouponRedemptionFrozenMoneyReplayCancelAndRollback(t *testing.T) {
 	tx := txRollback(t, testDB(t))
 	tag := uuid.NewString()
@@ -281,16 +280,16 @@ func TestCouponRedemptionFrozenMoneyReplayCancelAndRollback(t *testing.T) {
 	}
 }
 
-// TestMarketingQueriesKeepUserExpiryAndNulls 验证真实用户隔离、展示到期状态、筛选分页和原null字段，不写回过期状态。
+// TestMarketingQueriesKeepUserExpiryAndNulls 验证用户隔离、到期展示、筛选分页和 NULL 字段，不写回到期状态。
 func TestMarketingQueriesKeepUserExpiryAndNulls(t *testing.T) {
 	tx := txRollback(t, testDB(t))
 	coupon := insertServiceCoupon(t, tx, uuid.NewString(), 0)
 	uid := testfixture.NewID()
 	now := time.Now().UTC()
 	for i, row := range []struct {
-		// user 该测试发券记录的用户主键，用于核对查询不会返回另一用户的券。
+		// user 是持券用户 ID，用于验证不同用户的券隔离。
 		user uint64
-		// expires 该测试发券记录的绝对到期时刻，用于区分可用与过期状态。
+		// expires 是券到期时间，用于区分可用和过期。
 		expires time.Time
 	}{{uid, now.Add(time.Hour)}, {uid, now.Add(-time.Hour)}, {uid + 1, now.Add(time.Hour)}} {
 		if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": coupon, "user_id": row.user, "grant_source": "manual", "status": "unused", "expired_at": row.expires, "source_event_id": uuid.NewString()}).Error; err != nil {
@@ -312,7 +311,7 @@ func TestMarketingQueriesKeepUserExpiryAndNulls(t *testing.T) {
 	}
 }
 
-// TestActivityInviterKeyAndOriginalReceipt 验证两份邀请奖励键符合真实CHAR(36)约束，更新规则后重放沿用原模板而不新增权益。
+// TestActivityInviterKeyAndOriginalReceipt 验证邀请奖励号满足 CHAR(36)，规则更新后重放仍使用首次模板且不新增券。
 func TestActivityInviterKeyAndOriginalReceipt(t *testing.T) {
 	tx := txRollback(t, testDB(t))
 	seedCoupon(t, tx, 4101, 24, nil)
@@ -338,7 +337,7 @@ func TestActivityInviterKeyAndOriginalReceipt(t *testing.T) {
 	}
 }
 
-// TestActivityStorageFailureRollsBackPartialGrant 验证原请求凭据写入故障不伪装不适用，调用方事务回滚已插权益。
+// TestActivityStorageFailureRollsBackPartialGrant 验证请求凭据保存失败返回错误，调用方须回滚已插入的券。
 func TestActivityStorageFailureRollsBackPartialGrant(t *testing.T) {
 	tx := txRollback(t, testDB(t))
 	seedCoupon(t, tx, 4201, 24, nil)

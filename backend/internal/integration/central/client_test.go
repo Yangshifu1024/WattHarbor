@@ -11,7 +11,7 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// centralForServer 接收 t与 handler，创建本地 HTTP夹具和真实中央客户端并注册服务关闭；返回客户端，配置失败终止测试，不访问数据库。
+// centralForServer 为测试创建本地 HTTP 服务和 central 客户端，并注册服务清理。
 func centralForServer(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)
@@ -23,7 +23,8 @@ func centralForServer(t *testing.T, handler http.HandlerFunc) *Client {
 	return client
 }
 
-// TestPaidStartsPreservesCursorIdentityAndEmptyScan 使用 t与本地 HTTP夹具验证原服务令牌、超过2^53游标身份及非 nil空页；只验证 wire，不证明真实订单查询。
+// TestPaidStartsPreservesCursorIdentityAndEmptyScan 验证请求携带服务令牌，超过 2^53 的游标不丢精度，无订单时返回非 nil 空列表。
+// 使用本地 HTTP 服务，不验证真实订单查询。
 func TestPaidStartsPreservesCursorIdentityAndEmptyScan(t *testing.T) {
 	client := centralForServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/internal/charge-orders/paid-starts" || r.Header.Get("X-Service-Token") != "secret" {
@@ -48,14 +49,14 @@ func TestPaidStartsPreservesCursorIdentityAndEmptyScan(t *testing.T) {
 	}
 }
 
-// TestPaidStartsRejectsIncompleteAndInconsistentResponse 使用 t验证本地夹具的状态、缺字段、游标／订单失配及非法JSON均拒绝暴露部分页；不访问真实服务或数据库。
+// TestPaidStartsRejectsIncompleteAndInconsistentResponse 验证错误状态、缺字段、游标或订单不匹配、无效 JSON 均被拒绝，不返回部分页面。
 func TestPaidStartsRejectsIncompleteAndInconsistentResponse(t *testing.T) {
 	for _, tc := range []struct {
-		// name 原子测试场景名，用于定位对应输入及错误断言。
+		// name 子测试名称。
 		name string
-		// status 该场景模拟服务实际返回的 HTTP 状态，用于原成功／失败契约核对。
+		// status 测试服务返回的 HTTP 状态。
 		status int
-		// body 该场景原响应 JSON正文，不修改测试值或业务断言。
+		// body 该场景响应 JSON正文，不修改测试值或业务断言。
 		body string
 	}{
 		{"wrong HTTP status", 202, `{"code":0,"data":{"items":[]}}`},
@@ -78,7 +79,7 @@ func TestPaidStartsRejectsIncompleteAndInconsistentResponse(t *testing.T) {
 	}
 }
 
-// TestPaidStartsPreservesHTTPBusinessAndCancellationErrors 使用 t验证本地客户端保留HTTP、业务码及已取消 context错误，夹具回复不表示真实业务状态。
+// TestPaidStartsPreservesHTTPBusinessAndCancellationErrors 验证客户端保留 HTTP、业务码和 context 取消错误。
 func TestPaidStartsPreservesHTTPBusinessAndCancellationErrors(t *testing.T) {
 	client := centralForServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("after_id") == "1" {
@@ -105,10 +106,10 @@ func TestPaidStartsPreservesHTTPBusinessAndCancellationErrors(t *testing.T) {
 	}
 }
 
-// TestCentralClientRejectsInvalidConfiguration 使用 t验证原地址与令牌构造边界，失败不发网络请求，不配置进程资源。
+// TestCentralClientRejectsInvalidConfiguration 验证无效服务地址或令牌在发送请求前被拒绝。
 func TestCentralClientRejectsInvalidConfiguration(t *testing.T) {
 	for _, tc := range []struct {
-		// base,token 分别为待校验的原服务地址和服务令牌；组合用于构造拒绝边界，不向真实服务发请求。
+		// base,token 是待校验的服务地址和令牌。
 		base, token string
 	}{
 		{"", "token"}, {"ftp://central", "token"}, {"http://", "token"},

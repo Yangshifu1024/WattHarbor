@@ -100,7 +100,7 @@ func Serve(ctx context.Context, endpoints []protocol.Endpoint, sink protocol.Sin
 	return result
 }
 
-// closeAll 接收本次调用已打开的 listeners，逐一关闭以解除 Accept 阻塞；无返回值，关闭错误被忽略，不清空切片或等待连接处理器。
+// closeAll 接收本次调用已打开的 listeners，逐一关闭以解除 Accept 阻塞；关闭错误被忽略，不清空切片或等待连接处理器。
 func closeAll(listeners []net.Listener) {
 	for _, listener := range listeners {
 		_ = listener.Close()

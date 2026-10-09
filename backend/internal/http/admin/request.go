@@ -19,7 +19,7 @@ import (
 // 关键词不超过 128 字符，状态必须在该接口传入的白名单内（留空表示不按状态过滤）。
 // 任一项不合法直接写 400 并返回 false，调用方必须立即 return。
 func ReadAdminPage(c *gin.Context, statuses string) (persist.PageQuery, bool) {
-	// 保留后台分页上限1000000，与C端分页上限分别配置。
+	// 保留后台分页上限 1000000，与 C 端分页上限分别配置。
 	page, pageSize, paged := httpapi.ReadPaging(c, 20, httpapi.MaxAdminPageLimit)
 	if !paged {
 		return persist.PageQuery{}, false
@@ -32,7 +32,7 @@ func ReadAdminPage(c *gin.Context, statuses string) (persist.PageQuery, bool) {
 	return q, true
 }
 
-// AdminOneOf 返回value是否属于空格分隔的allowed白名单；空value表示不筛选并返回true。
+// AdminOneOf 返回 value 是否属于空格分隔的 allowed 白名单；空 value 表示不筛选并返回 true。
 func AdminOneOf(value, allowed string) bool {
 	if value == "" {
 		return true
@@ -46,7 +46,7 @@ func AdminOneOf(value, allowed string) bool {
 }
 
 // AdminPathID 读取路径参数 :id 并要求它是正整数，不合法直接写 400 并返回 false。
-// c的路由参数须命名为id；成功返回非零ID和true，失败返回0和false。
+// c 的路由参数须命名为 id；成功返回非零 ID 和 true，失败返回 0 和 false。
 func AdminPathID(c *gin.Context) (uint64, bool) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
@@ -76,7 +76,7 @@ func AdminResourceFailure(c *gin.Context, err error) {
 	}
 }
 
-// AdminAuditContext 从 c 提取已实时授权的操作人与请求审计事实，不开启事务。
+// AdminAuditContext 从请求提取已实时授权的操作人与请求审计信息，不开启事务。
 func AdminAuditContext(c *gin.Context) ops.AuditContext {
 	return ops.AuditContext{Actor: c.MustGet("admin_profile").(operations.Profile), ClientIP: c.ClientIP(), RequestID: httpapi.RequestID(c)}
 }

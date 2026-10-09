@@ -61,7 +61,6 @@ func TestGatewayEvidenceReachesNoPowerDecision(t *testing.T) {
 		boundarySeconds[i] = (i-len(boundarySeconds)+1)*15 - 2
 	}
 	for _, tc := range []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
 		// seconds 相对本轮检查时刻的心跳接收偏移，单位秒，负数表示过去；顺序用于验证跨页连续证据。
 		seconds []int

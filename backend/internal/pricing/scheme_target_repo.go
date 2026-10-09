@@ -8,17 +8,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// EffectiveRuleSQL 是计费规则当前生效的条件：启用、未删除，且落在生效时间窗内。
-// 方案变更时要排除设备已有的自有规则，统计与校验都必须用同一份定义。
+// EffectiveRuleSQL 限定规则启用、未删除且当前时间有效；统计和校验共用，整站变更排除有自有规则的设备。
 const EffectiveRuleSQL = "status='active' AND deleted_at IS NULL AND (effective_from IS NULL OR effective_from<=NOW(3)) AND (effective_to IS NULL OR effective_to>NOW(3))"
 
-// CheckSchemeTargets 校验一次方案变更不会让目标站点的任何设备落到协议不支持的计费方式上。
-// 设备端具体能力由 charging.Scheme.ValidateCapabilities 判定，这里只负责取数与逐台套用。
-// tx 属于发布事务，station／device 定义目标；共享锁读取目标设备，返回缺行、兼容或存储错误。
-// 整站默认排除具有当前自有规则的设备，不修改设备或独立提交。
+// CheckSchemeTargets 共享锁读目标设备，逐台检查协议是否支持方案，由 charging.Scheme.ValidateCapabilities 判定。
+// 整站变更跳过已有生效自有规则的设备，使用调用方发布事务。
 func CheckSchemeTargets(tx *gorm.DB, station uint64, device string, scheme charging.Scheme) error {
 	var rows []struct {
-		DeviceID        string // 目标设备原全局身份
+		DeviceID        string // 目标设备编号
 		ProtocolAdapter string // 创建时明确选定的适配器，领域能力的来源
 	}
 	q := tx.Table("device_meta").Where("station_id=? AND deleted_at IS NULL", station)

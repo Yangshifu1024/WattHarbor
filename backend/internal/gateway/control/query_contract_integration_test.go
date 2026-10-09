@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestQueryClientsMatchRegisteredGateway 验证实际路由及真实MySQL的原单位、端口隔离、空值、摘要与64位分页。
+// TestQueryClientsMatchRegisteredGateway 验证实际路由及真实 MySQL 的单位、端口隔离、空值、摘要与 64 位分页。
 // 原始／聚合／过程数据仅在本测试外层事务中可见并回滚；服务令牌失败不变成空数据。
 func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	tx := gatewayContractDB(t).Begin()
@@ -35,8 +35,8 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	to := time.Now().UTC().Truncate(time.Millisecond).Add(-time.Minute)
 	from := to.Add(-10 * time.Minute)
 	for _, metric := range []struct {
-		name  string // 原指标名
-		value string // 原DECIMAL文本
+		name  string // 指标名
+		value string // DECIMAL 文本
 	}{{"power_w", "0"}, {"meter_kwh", "0.0025"}, {"temperature_c", "-2"}} {
 		if err := tx.Table("telemetry").Create(map[string]any{"device_id": device, "port_no": 2, "metric": metric.name, "value_num": metric.value, "ts": from.Add(time.Minute)}).Error; err != nil {
 			t.Fatal(err)
@@ -114,7 +114,7 @@ func TestQueryClientsMatchRegisteredGateway(t *testing.T) {
 	if _, err := bad.Telemetry(context.Background(), contract.TelemetryRequest{DeviceID: device, PortNo: 2, From: from, To: to}); err == nil {
 		t.Fatal("rejected token became empty telemetry")
 	}
-	// 第二个桶的样本数不同，原摘要必须按count加权，不能用桶均值的简单平均。
+	// 第二个桶的样本数不同，摘要必须按 count 加权，不能用桶均值的简单平均。
 	previous := bucket.Add(-15 * time.Minute)
 	if err := tx.Table("telemetry_aggregate_15min").Create(map[string]any{"device_id": device, "port_no": 2, "metric": "power_w", "bucket_start": previous, "bucket_month": previous.Format("2006-01") + "-01", "avg_value": "300", "min_value": "200", "max_value": "400", "count": 1}).Error; err != nil {
 		t.Fatal(err)

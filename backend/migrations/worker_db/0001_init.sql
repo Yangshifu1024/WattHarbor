@@ -2,10 +2,10 @@
 -- +goose Up
 
 -- ChargePilot worker_db 初始化结构
--- 后台任务：事件消费、定时执行、重试与死信
+-- 后台任务：定时任务定义和执行日志
 -- 发布前基线：直接修改 CREATE TABLE，重建空库；不叠加增量 ALTER。
 -- 表间关联由所属服务维护；此文件只初始化当前库。
--- 计量、事件和审计表保留月分区及 p_max，后续月份由维护任务创建。
+-- 执行日志保留月分区和 p_max，后续月份由分区维护脚本创建。
 
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 SET sql_mode = 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,ERROR_FOR_DIVISION_BY_ZERO,NO_ZERO_DATE,NO_ZERO_IN_DATE';

@@ -12,7 +12,7 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestAlertTriggerOwnsDeadlineWithoutChangingPool 使用短caller期限证明触发只覆盖请求Client、保留Transport及取消，不需要长等待。
+// TestAlertTriggerOwnsDeadlineWithoutChangingPool 验证告警触发请求可设置独立超时，仍共享连接池并响应调用方取消。
 func TestAlertTriggerOwnsDeadlineWithoutChangingPool(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != contract.DeviceAlertSyncPath || r.Method != "POST" || r.Header.Get("X-Service-Token") != "alert-client-token" {
@@ -47,7 +47,7 @@ func TestAlertTriggerOwnsDeadlineWithoutChangingPool(t *testing.T) {
 	}
 }
 
-// TestAlertTriggerRejectsMissingProgressAndRedirect 验证原raised必需且非负，不能把缺字段或重定向当同步成功。
+// TestAlertTriggerRejectsMissingProgressAndRedirect 验证 raised 必须存在且非负，缺字段或重定向不能算同步成功。
 func TestAlertTriggerRejectsMissingProgressAndRedirect(t *testing.T) {
 	for _, body := range []string{`{"code":0,"data":{}}`, `{"code":0,"data":{"raised":-1}}`} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))

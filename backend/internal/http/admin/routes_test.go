@@ -1,7 +1,7 @@
 package admin_test
 
 // 本文件显式注册全部后台业务族，核对退休与保留端点的路由契约。
-// 保留端点应由鉴权返回401，避免漏注册被404掩盖。
+// 保留端点应由鉴权返回 401，避免漏注册被 404 掩盖。
 
 import (
 	"encoding/json"
@@ -23,7 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestRetiredAdminRoutesAreRemoved 验证各后台业务族的退休路由为404、保留路由仍鉴权，OpenAPI不再登记退休路径。
+// TestRetiredAdminRoutesAreRemoved 验证各后台业务族的已移除路由为 404、保留路由仍鉴权，OpenAPI 不再登记退休路径。
 func TestRetiredAdminRoutesAreRemoved(t *testing.T) {
 	router := gin.New()
 	ops.API{}.Register(router)
@@ -87,7 +87,7 @@ func TestRetiredAdminRoutesAreRemoved(t *testing.T) {
 		}
 	}
 	var document struct {
-		// Paths 是嵌入OpenAPI的公开路径索引。
+		// Paths 是嵌入 OpenAPI 的公开路径索引。
 		Paths map[string]any `json:"paths"`
 	}
 	if err := json.Unmarshal(authhttp.OpenAPIDocument, &document); err != nil {

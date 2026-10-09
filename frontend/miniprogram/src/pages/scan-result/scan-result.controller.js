@@ -106,8 +106,8 @@ export default defineController({
   }finally{this._paying=false;if(!this._unloaded)this.setData({paying:false});}
  },
  history(){wx.navigateTo({url:'/pages/charge/history'});},
- // 支付受理后直达充电状态页，由快照轮询消化"启动确认中"等过渡状态；
- // 返回时重新扫码会重建本页并重新解析二维码。
+ // 支付请求被接受后跳转到充电页，轮询服务端状态直到启动结果明确。
+ // 返回后重新扫码，会重新创建本页并解析二维码。
  charging(){const paymentNo=this._checkout?.merchant_order_no;if(!paymentNo)return this.history();wx.reLaunch({url:'/pages/charge/charging?payment_no='+encodeURIComponent(paymentNo)+'&device_id='+encodeURIComponent(this.data.deviceId)+'&port_no='+this.data.selected.port_no});},
  rescan(){wx.navigateTo({url:'/pages/scan/scan'});},
 });

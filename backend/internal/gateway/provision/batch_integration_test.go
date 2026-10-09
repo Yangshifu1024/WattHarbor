@@ -72,7 +72,7 @@ func provisionFixture(t *testing.T) (*gorm.DB, repo.Vendor, []contract.Provision
 	return db, vendor, devices
 }
 
-// provisionCall 经实际 Register 同步调用原开通请求，返回HTTP及原业务信封，不启动后台任务。
+// provisionCall 经实际 Register 同步调用开通请求，返回 HTTP 及业务响应，不启动后台任务。
 func provisionCall(t *testing.T, db *gorm.DB, ctx context.Context, devices []contract.ProvisionDevice) (int, httpapi.Envelope) {
 	t.Helper()
 	raw, err := json.Marshal(contract.ProvisionRequest{Devices: devices})
@@ -93,8 +93,8 @@ func provisionCall(t *testing.T, db *gorm.DB, ctx context.Context, devices []con
 	return w.Code, reply
 }
 
-// TestProvisionBatchKeepsRollbackIdentityAndReplay 在首个真实端口写入后取消，原批次不得留下设备、端口或幂等身份。
-// 恢复通过具名客户端，再核对原身份重放、NULL型号与空型号的区别，以及后项冲突时前项整体回滚。
+// TestProvisionBatchKeepsRollbackIdentityAndReplay 在首个真实端口写入后取消，批次不得留下设备、端口或去重标识。
+// 恢复通过专用客户端，再核对身份重放、NULL 型号与空型号的区别，以及后项冲突时前项整体回滚。
 func TestProvisionBatchKeepsRollbackIdentityAndReplay(t *testing.T) {
 	db, _, devices := provisionFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -141,7 +141,7 @@ func TestProvisionBatchKeepsRollbackIdentityAndReplay(t *testing.T) {
 	assertRows(ids, 2, 2, 3)
 	for _, d := range devices[:2] {
 		var frozen struct {
-			RequestJSON string `gorm:"column:request_json"` // 首次持久身份的原JSON
+			RequestJSON string `gorm:"column:request_json"` // 首次保存的标识的 JSON
 		}
 		if err := db.Table("device_provision").Where("device_id=?", d.DeviceID).Take(&frozen).Error; err != nil {
 			t.Fatal(err)

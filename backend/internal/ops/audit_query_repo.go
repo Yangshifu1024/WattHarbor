@@ -9,23 +9,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// 后台审计日志的所属只读查询，不承载其它模块的身份或定价投影。
-// 审计查询只读；写入由所属业务事务调用 ops.AppendAuditInTx。
+// 本文件只读取审计日志；业务写入通过 ops.AppendAuditInTx 保存审计。
 
 // AuditQuery 是审计列表的筛选条件，零值表示该维度不限。
 type AuditQuery struct {
-	Module     string     // 原所属模块筛选
-	Action     string     // 原动作筛选
-	Actor      string     // 登录名转义LIKE筛选
-	TargetType string     // 原目标类型筛选
+	Module     string     // 所属模块筛选
+	Action     string     // 动作筛选
+	Actor      string     // 登录名转义 LIKE 筛选
+	TargetType string     // 目标类型筛选
 	From       *time.Time // 起始时间（含），RFC 3339 解析后的 UTC
 	To         *time.Time // 截止时间（含）
 }
 
-// AuditRow 映射 audit_log；可空字段用指针保留 NULL 语义——
-// 审计里"没有目标"和"目标是空串"是两件事，不能互相顶替。
-// 快照列在库中是 JSON，查询时 CAST 为 CHAR 后扫描成文本，
-// 直接返回文本而不是让 encoding/json 把 []byte 编成 base64。
+// AuditRow 是审计列表记录，可空字段保留 NULL。
+// JSON 快照转成文本读取，避免 []byte 被响应编码为 base64。
 type AuditRow struct {
 	ID         uint64    `json:"id"`          // 审计记录主键
 	ActorID    uint64    `json:"actor_id"`    // 操作的后台账号 ID
@@ -41,18 +38,16 @@ type AuditRow struct {
 	CreatedAt  time.Time `json:"created_at"`  // 记录时间
 }
 
-// auditSelect 把两份快照 CAST 成文本，保证 int64 之类的列不会被当成
-// JSON 扫描失败。
+// auditSelect 将两份 JSON 快照转为文本，避免直接扫描 JSON 失败。
 const auditSelect = "id, actor_id, actor_name, module, action, target_type, target_id, request_id, client_ip, " +
 	"CAST(before_json AS CHAR) AS before_json, CAST(after_json AS CHAR) AS after_json, created_at"
 
-// AuditRepo 只读取所属审计表，写入由各业务完整事务调用AppendAuditInTx。
+// AuditRepo 只读取所属审计表，写入由各业务完整事务调用 AppendAuditInTx。
 type AuditRepo struct {
 	DB *gorm.DB /* 所属审计数据库 */
 }
 
-// List 在ctx下按q与page／pageSize读取原分页，返回结果或取消／存储错误，不写入。
-// 计数与列表分别构造同一过滤条件，快照保留原可空JSON文本，参数约束由AuditQueryService核对。
+// List 用相同条件分别查询总数和列表，保留可空 JSON 文本；查询参数由 AuditQueryService 校验。
 func (s AuditRepo) List(ctx context.Context, q AuditQuery, page, pageSize int) (persist.Page[AuditRow], error) {
 	out := persist.Page[AuditRow]{Items: []AuditRow{}, Page: page, PageSize: pageSize}
 	filtered := func() *gorm.DB {
@@ -64,7 +59,7 @@ func (s AuditRepo) List(ctx context.Context, q AuditQuery, page, pageSize int) (
 			query = query.Where("action = ?", q.Action)
 		}
 		if q.Actor != "" {
-			// 通用模式用!转义百分号和下划线；SQL必须显式声明，否则原账号名含_时不能匹配。
+			// 用 ! 转义关键词中的百分号和下划线，SQL 须显式声明转义字符，才能匹配含 _ 的账号名。
 			query = query.Where("actor_name LIKE ? ESCAPE '!'", dbutil.LikePattern(q.Actor))
 		}
 		if q.TargetType != "" {

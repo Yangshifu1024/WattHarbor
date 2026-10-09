@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// TestMigratedAdminOrderPackageKeepsPurchasedOfferSeparateFromSchemePackages 验证原购买内容不被冻结方案中的同号其它套餐覆盖，无 IO。
+// TestMigratedAdminOrderPackageKeepsPurchasedOfferSeparateFromSchemePackages 验证购买内容不被冻结方案中的同号其它套餐覆盖。
 func TestMigratedAdminOrderPackageKeepsPurchasedOfferSeparateFromSchemePackages(t *testing.T) {
-	// 冻结方案中的同号其它套餐不能替换原购买快照。
+	// 冻结方案中的同号其它套餐不能替换购买快照。
 	rule := Rule{Version: 3, Spec: Spec{Mode: ModeDeviceDuration,
 		Scheme: &Scheme{Name: "下单时方案", Packages: []Package{{ID: 2, Name: "其他价格", Mode: "duration", PriceCents: 900, Minutes: 120}}}}}
 	offer := Offer{ID: 102, PackageID: 2, StationID: 1, Name: "购买60分钟", Mode: "duration", PriceCents: 100, DurationMinutes: 60}
@@ -28,7 +28,7 @@ func TestMigratedAdminOrderPackageKeepsPurchasedOfferSeparateFromSchemePackages(
 	}
 }
 
-// TestMigratedAdminSelectedSchemeNameRequiresFrozenValidName 验证无冻结名称保持空且历史长名称完整，无 IO。
+// TestMigratedAdminSelectedSchemeNameRequiresFrozenValidName 验证无冻结名称保持空且历史长名称完整。
 func TestMigratedAdminSelectedSchemeNameRequiresFrozenValidName(t *testing.T) {
 	for _, selected := range []*OrderPackage{
 		nil, {Offer: Offer{Name: "价格档名"}}, {Scheme: &Scheme{Name: "  "}},
@@ -45,7 +45,7 @@ func TestMigratedAdminSelectedSchemeNameRequiresFrozenValidName(t *testing.T) {
 	}
 }
 
-// TestMigratedAdminSelectedPackageNameUsesPurchasedOfferAndTrimsBlank 验证套餐名来自原购买而非方案名，无 IO。
+// TestMigratedAdminSelectedPackageNameUsesPurchasedOfferAndTrimsBlank 验证套餐名来自购买而非方案名。
 func TestMigratedAdminSelectedPackageNameUsesPurchasedOfferAndTrimsBlank(t *testing.T) {
 	for _, selected := range []*OrderPackage{nil, {}, {Offer: Offer{Name: "  "}, Scheme: &Scheme{Name: "方案名"}}} {
 		if name := SelectedPackageName(selected); name != nil {
@@ -63,7 +63,7 @@ func TestMigratedAdminSelectedPackageNameUsesPurchasedOfferAndTrimsBlank(t *test
 	}
 }
 
-// TestMigratedAdminOrderPackageMissingOrInvalidSnapshotDoesNotInventSelection 验证损坏或无价格快照返回空，无 IO。
+// TestMigratedAdminOrderPackageMissingOrInvalidSnapshotDoesNotInventSelection 验证损坏或无价格快照返回空。
 func TestMigratedAdminOrderPackageMissingOrInvalidSnapshotDoesNotInventSelection(t *testing.T) {
 	for _, raw := range []string{"", "null", "{", `{}`, `{"rule":{"version":1}}`, `{"offer":{"name":"无效套餐","price_cents":0}}`} {
 		if got := PackageFromSnapshot([]byte(raw)); got != nil {
@@ -72,7 +72,7 @@ func TestMigratedAdminOrderPackageMissingOrInvalidSnapshotDoesNotInventSelection
 	}
 }
 
-// TestMigratedAdminOrderPackageAllModes 验证金额、时长与电量套餐原字段完整，无 IO。
+// TestMigratedAdminOrderPackageAllModes 验证金额、时长与电量套餐字段完整。
 func TestMigratedAdminOrderPackageAllModes(t *testing.T) {
 	for _, offer := range []Offer{
 		{ID: 101, StationID: 1, Name: "2元预算", Mode: "amount", PriceCents: 200, MaxMinutes: 600},

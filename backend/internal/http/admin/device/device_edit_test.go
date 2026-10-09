@@ -13,12 +13,12 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// deviceEditPayload 返回包含全部必填字段的设备编辑基准载荷；每次新建map，供非法输入测试独立修改。
+// deviceEditPayload 返回包含全部必填字段的设备编辑基准载荷；每次新建 map，供非法输入测试独立修改。
 func deviceEditPayload() map[string]any {
 	return map[string]any{"model": nil, "serial_no": nil, "warranty_until": nil, "tags": []string{}, "expected_updated_at": "2026-10-01T01:02:03.456Z"}
 }
 
-// TestDeviceEditingRejectsInvalidRequestsBeforeWriting 验证设备资料必填、类型、长度和受保护字段；无数据库依赖时非法输入仍先返回400。
+// TestDeviceEditingRejectsInvalidRequestsBeforeWriting 验证设备资料必填、类型、长度和受保护字段；无数据库依赖时非法输入仍先返回 400。
 func TestDeviceEditingRejectsInvalidRequestsBeforeWriting(t *testing.T) {
 	router := httpapi.NewRouter()
 	router.PUT("/devices/:id", (API{}).updateDevice)
@@ -82,7 +82,7 @@ func TestDeviceEditingRejectsInvalidRequestsBeforeWriting(t *testing.T) {
 	}
 }
 
-// TestDeviceEditingNormalizesMetadataAndMilliseconds 验证设备文本去空白、可空资料、空标签及UTC毫秒转换，并核对版本时刻递增。
+// TestDeviceEditingNormalizesMetadataAndMilliseconds 验证设备文本去空白、可空资料、空标签及 UTC 毫秒转换，并核对版本时刻递增。
 func TestDeviceEditingNormalizesMetadataAndMilliseconds(t *testing.T) {
 	body := deviceEditPayload()
 	body["model"], body["serial_no"] = "  ", "  "+strings.Repeat("序", 128)+"  "
@@ -120,7 +120,7 @@ func TestDeviceEditingNormalizesMetadataAndMilliseconds(t *testing.T) {
 	}
 }
 
-// stringPointer 为value生成独立字符串指针，供历史可空JSON字段测试构造输入。
+// stringPointer 为 value 生成独立字符串指针，供历史可空 JSON 字段测试构造输入。
 func stringPointer(value string) *string { return &value }
 
 // TestDeviceEditingRouteRequiresAuthentication 验证实际注册的设备资料更新路由拒绝未登录请求。

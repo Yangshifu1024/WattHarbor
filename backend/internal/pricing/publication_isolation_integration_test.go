@@ -18,12 +18,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// cleanupPricingIsolation 删除 stations、devices 和 requests 对应的本测试造数，返回存储或残留错误。
-// 审计及规则先非锁定位完整主键后逐行删除，其余表按已知主键删除；调用前须等待所有发布事务退出。
+// cleanupPricingIsolation 等所有发布事务退出后，按完整主键删除本测试规则、审计、站点、设备和请求，并检查残留。
 func cleanupPricingIsolation(db *gorm.DB, stations []uint64, devices, requests []string) error {
 	var audits []struct {
 		ID           uint64    // 本测试请求审计的记录主键。
-		CreatedMonth time.Time // 审计分区主键的原月份。
+		CreatedMonth time.Time // 审计分区主键的月份。
 	}
 	if err := db.Table("audit_log").Select("id,created_month").Where("request_id IN ?", requests).
 		Order("id,created_month").Find(&audits).Error; err != nil {
@@ -61,7 +60,7 @@ func cleanupPricingIsolation(db *gorm.DB, stations []uint64, devices, requests [
 	}
 	for _, row := range []struct {
 		table string // 已清理的测试表。
-		where string // 原测试身份条件，只用于非锁残留检查。
+		where string // 测试身份条件，只用于非锁残留检查。
 		arg   any    // 当前测试唯一身份集合。
 	}{
 		{"audit_log", "request_id IN ?", requests}, {"pricing_publication", "request_id IN ?", requests},
@@ -78,9 +77,8 @@ func cleanupPricingIsolation(db *gorm.DB, stations []uint64, devices, requests [
 	return nil
 }
 
-// TestPricingPublicationDoesNotBlockAnotherStation 用 t 管理独立 MySQL 连接，验证站点隔离及实际发布／继承事务。
-// RR 第一事务完成停用阶段后仍持锁，第二站点首次发布须先完成；空目标及已有规则均覆盖，不靠 sleep 排序。
-// 原作用域范围 UPDATE 会阻挡第二站点插入直至期限；身份为 fixture，规则、凭据、审计及锁均真实执行。
+// TestPricingPublicationDoesNotBlockAnotherStation 验证第一站点在 RR 事务中停用规则并持锁时，第二站点仍能发布。
+// 覆盖空目标和已有规则，使用真库及锁闸门；授权用夹具，不靠 sleep 排序。
 func TestPricingPublicationDoesNotBlockAnotherStation(t *testing.T) {
 	for _, tc := range []struct {
 		name     string // 发布或继承的空目标／现有规则场景。
@@ -152,7 +150,7 @@ func TestPricingPublicationDoesNotBlockAnotherStation(t *testing.T) {
 					return err
 				}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 			}()
-			// 放行及等待先于移除回调和清理造数，失败路径也不会留下持锁协程。
+			// 先放行并等事务退出，再注销回调和清理，失败时也不留持锁协程。
 			defer func() {
 				pass()
 				if err := <-result; err != nil {
@@ -179,7 +177,7 @@ func TestPricingPublicationDoesNotBlockAnotherStation(t *testing.T) {
 			var persisted struct {
 				Station uint64 `gorm:"column:station_id"` // 第二站点已提交规则的真实归属。
 				Version uint32 `gorm:"column:version"`    // 首次发布必须保持版本 1。
-				Spec    []byte `gorm:"column:spec_json"`  // 原规范化方案的持久快照。
+				Spec    []byte `gorm:"column:spec_json"`  // 规范化方案的持久快照。
 			}
 			if err := setup.Table("pricing_rule").Where("id=?", other.ID).Take(&persisted).Error; err != nil || persisted.Station != stations[1] || persisted.Version != 1 {
 				t.Fatalf("other committed rule=%+v err=%v", persisted, err)

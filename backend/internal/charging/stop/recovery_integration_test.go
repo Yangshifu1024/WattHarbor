@@ -41,7 +41,7 @@ func stopTestDB(t *testing.T) *gorm.DB {
 }
 
 // TestConcurrentCutoffKeepsFirstSnapshot 用两条独立连接验证唯一键首写及当前读。
-// 第一条事务先写入且持锁，第二条在首次提交后只能复用原时间、原因和费用。
+// 第一条事务先写入且持锁，第二条在首次提交后只能复用时间、原因和费用。
 func TestConcurrentCutoffKeepsFirstSnapshot(t *testing.T) {
 	firstDB, secondDB := stopTestDB(t), stopTestDB(t)
 	id := testfixture.NewID()
@@ -113,7 +113,7 @@ func TestConcurrentCutoffKeepsFirstSnapshot(t *testing.T) {
 	}
 }
 
-// seedStopOrder 在外层 tx 内创建隔离订单；id、no 是唯一身份，withCard 决定是否创建卡会话。
+// seedStopOrder 在外层 tx 内创建隔离订单；id、no 是唯一编号，withCard 决定是否创建卡会话。
 // t 在任一建行失败时终止；调用方回滚全部数据，不自动建表或清库。
 func seedStopOrder(t *testing.T, tx *gorm.DB, id uint64, no string, withCard bool) {
 	t.Helper()
@@ -130,10 +130,8 @@ func seedStopOrder(t *testing.T, tx *gorm.DB, id uint64, no string, withCard boo
 		t.Fatal(err)
 	}
 	for _, seed := range []struct {
-		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
 		table string
-		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
-		row map[string]any
+		row   map[string]any
 	}{
 		{"charge_order", map[string]any{"id": id, "order_no": no, "user_id": id, "device_id": no, "port_no": 1, "status": "charging", "payment_status": "paid", "started_at": started, "created_month": month}},
 		{"charge_order_pricing", map[string]any{"charge_order_id": id, "payment_intent_id": rand.Text(), "user_id": id, "port_code": no, "pricing_snapshot": string(snapshot)}},
@@ -197,7 +195,7 @@ func TestStopRecoversCommittedCutoffWithoutEvidence(t *testing.T) {
 			if err != nil || before.CutoffAt == nil {
 				t.Fatalf("cutoff=%+v err=%v", before, err)
 			}
-			// 清除快照，模拟恢复期间取证或计价依据不可用。截止记录已足以继续原决定。
+			// 清除快照，模拟恢复期间取证或计价依据不可用。截止记录已足以继续决定。
 			if err := tx.Table("charge_order_pricing").Where("charge_order_id IN ?", []uint64{id, id + 1}).Delete(nil).Error; err != nil {
 				t.Fatal(err)
 			}

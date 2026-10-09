@@ -1,6 +1,6 @@
 package central
 
-// DeviceAlertSyncPath 是worker触发central所属告警同步的原内部端点。
+// DeviceAlertSyncPath 是 worker 触发 central 告警同步的内部路径。
 const DeviceAlertSyncPath = "/api/v1/internal/device-alerts/sync"
 
 // DeviceAlertSyncReply 保留已成功新建的告警数；失败响应也可报告局部进度。

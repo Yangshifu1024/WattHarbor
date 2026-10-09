@@ -24,7 +24,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRegisteredExportRoutes 用实际注册路由及SQL／Redis验证原CSV／XLSX回执、下载、错误和实时撤权。
+// TestRegisteredExportRoutes 用实际注册路由及 SQL／Redis 验证 CSV／XLSX 回执、下载、错误和实时撤权。
 // 私有角色、账号、站点、审计及任务在外层事务回滚，文件归测试临时目录，随机会话退出注销。
 func TestRegisteredExportRoutes(t *testing.T) {
 	tx := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
@@ -115,11 +115,11 @@ func TestRegisteredExportRoutes(t *testing.T) {
 		created := call("POST", base, in, 200)
 		var envelope struct {
 			Data struct {
-				TaskNo    string  `json:"task_no"`    // 完整原任务身份
-				Status    string  `json:"status"`     // 原同步结果
-				RowCount  uint32  `json:"row_count"`  // 原实际行数
-				ExpiresAt *string `json:"expires_at"` // 原可空截止字符串
-			} `json:"data"` // 原响应包络
+				TaskNo    string  `json:"task_no"`    // 完整任务身份
+				Status    string  `json:"status"`     // 同步结果
+				RowCount  uint32  `json:"row_count"`  // 实际行数
+				ExpiresAt *string `json:"expires_at"` // 可空截止字符串
+			} `json:"data"` // 响应包络
 		}
 		if err := json.Unmarshal(created.Body.Bytes(), &envelope); err != nil || envelope.Data.Status != "completed" || envelope.Data.RowCount != 1 || envelope.Data.ExpiresAt == nil {
 			t.Fatalf("create %s %v", created.Body, err)
@@ -148,7 +148,7 @@ func TestRegisteredExportRoutes(t *testing.T) {
 	}
 	call("GET", base, nil, 200)
 	call("GET", base+"/18446744073709551615", nil, 404)
-	// 首次审计写故障整次受理回滚为503，不暴露内部存储原因。
+	// 首次审计写故障整次受理回滚为 503，不暴露内部存储原因。
 	fault := errors.New("registered export private audit failure")
 	key := "registered-export-fault-" + tag
 	if err := tx.Callback().Create().Before("gorm:create").Register(key, func(q *gorm.DB) {

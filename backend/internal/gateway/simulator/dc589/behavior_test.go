@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// Capture actual encoded wire frames, independently inspect bytes/lengths and
-// session IDs. The real TCP adapter suite remains in simulator_test.go.
+// 捕获编码后的实际帧，独立检查字节、长度和会话标识。
+// TCP 适配器联调测试位于 simulator_test.go。
 type captureConn struct{ bytes.Buffer }
 
 func (c *captureConn) Close() error                     { return nil }

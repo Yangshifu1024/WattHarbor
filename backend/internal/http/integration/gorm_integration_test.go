@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// testConn 使用 t 报告 TEST_MYSQL_URL 缺失或建连错误，返回真实 MySQL 的 GORM 句柄及关闭函数。
+// testConn 报告 TEST_MYSQL_URL 缺失或建连错误，返回真实 MySQL 的 GORM 句柄及关闭函数。
 // 建连受 10 秒超时限制，包装失败立即关闭连接；不创建 schema，调用方负责事务及数据隔离。
 func testConn(t *testing.T) (*gorm.DB, func()) {
 	t.Helper()

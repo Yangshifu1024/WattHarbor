@@ -23,33 +23,30 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// BillingOrders 持有原计费任务、证据读取及资金结算的数据库入口。
+// BillingOrders 查询计费任务和证据，并保存结算资金。
 type BillingOrders struct {
 	DB *gorm.DB // central 任务及资金连接，由进程管理
 }
 
-// Due 在 ctx 下读取最多 50 笔到期 pending 订单，按执行时间和订单 ID 稳定排序。
-// 返回订单集合或存储错误，不在读取时修改任务，真正入账由 Apply 的原回执仲裁。
+// Due 读取最多 50 笔到期 pending 任务，按执行时间、订单 ID 排序。
+// 读取不认领任务，Apply 通过结算回执保证入账幂等。
 func (s BillingOrders) Due(ctx context.Context) ([]uint64, error) {
 	ids := []uint64{}
 	err := s.DB.WithContext(ctx).Table("charge_billing_job").Where("status='pending' AND next_attempt_at<=UTC_TIMESTAMP(3)").Order("next_attempt_at,charge_order_id").Limit(50).Pluck("charge_order_id", &ids).Error
 	return ids, err
 }
 
-// Defer 在 ctx 下将未完成订单 id 任务转为 status，记录已脱敏 reason 并延后一分钟、增加尝试次数。
-// 返回更新错误，不改变 done 任务，不删除原计量或费用凭据，也不扣款。
+// Defer 更新未完成任务的状态和脱敏原因，延后一分钟并增加尝试次数；done 任务不变。
 func (s BillingOrders) Defer(ctx context.Context, id uint64, status, reason string) error {
 	return s.DB.WithContext(ctx).Table("charge_billing_job").Where("charge_order_id=? AND status<>'done'", id).Updates(map[string]any{"status": status, "last_error": reason, "attempts": gorm.Expr("attempts+1"), "next_attempt_at": time.Now().UTC().Add(time.Minute)}).Error
 }
 
-// Read 在 ctx 下读取订单 id 的原价格、结束计量、截止点及已核实证据，返回 Source 或读取／证据冲突。
-// 不用当前方案替代下单快照，不重算缺失计量，也不执行入账。
+// Read 读取下单价格、结束计量、截止点及人工核实结果；不补造缺失计量。
 func (s BillingOrders) Read(ctx context.Context, id uint64) (Source, error) {
 	return readBillingSource(s.DB.WithContext(ctx), id)
 }
 
-// readBillingSource 用 db 读取订单 id 的原证据，应用已批准且原始证据仍一致的分段核实。
-// 返回完整 Source 或读取／快照冲突；人工最终金额优先，不修改任何持久记录。
+// readBillingSource 读取计费证据，并应用已批准且首次计费证据未变的分段核实；人工最终金额优先。
 func readBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	source, err := readOriginalBillingSource(db, id)
 	if err != nil {
@@ -84,9 +81,8 @@ func readBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	return source, nil
 }
 
-// readOriginalBillingSource 用 db 读取 id 已结束订单的下单、结束、卡累计及截止凭据。
-// 返回 Source 或缺行／内容冲突；截止无法通过真实计量切片时保留 ReviewRequired，不伪造金额。
-// 卡未确认操作拒绝计算，冻结预算及人工最终金额均使用原持久身份，不改当前订单或方案。
+// readOriginalBillingSource 读取结束订单的下单、结束、卡累计和截止点证据。
+// 截止点无法用真实计量确定时保留 ReviewRequired；卡操作未确认时拒绝计算。
 func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	var order orderstore.ChargeOrderRecord
 	if err := db.Where("id=? AND ended_at IS NOT NULL AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
@@ -105,7 +101,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	}
 	var contract struct {
 		Rule  charging.Rule   `json:"rule"`  // 下单时完整规则快照
-		Offer *charging.Offer `json:"offer"` // 下单时原套餐，当前计费必须存在
+		Offer *charging.Offer `json:"offer"` // 下单时套餐，当前计费必须存在
 	}
 	var meter charging.EndMeter
 	if json.Unmarshal(snapshot.PricingSnapshot, &contract) != nil || contract.Rule.Spec.Scheme == nil || contract.Offer == nil || json.Unmarshal(end.MeterJSON, &meter) != nil || !meter.EndedAt.Equal(order.EndedAt.Time) {
@@ -135,7 +131,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	}
 	var cutoff struct {
 		CutoffAt      time.Time // 首次计费截止 UTC 时刻，零表示未冻结
-		Reason        string    // 原截止原因，预算冻结使用 budget_exhausted
+		Reason        string    // 截止因，预算冻结使用 budget_exhausted
 		ElectricCents *int64    // 已冻结预算电费，分，无预算冻结为空
 		ServiceCents  *int64    // 已冻结预算服务费，分，无预算冻结为空
 	}
@@ -165,9 +161,9 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 		source.ReviewID = "budget:" + cutoff.CutoffAt.UTC().Format(time.RFC3339Nano)
 	}
 	var manual struct {
-		RequestID     string // 原人工最终金额裁决 UUID
-		ElectricCents int64  // 原裁决电费，分
-		ServiceCents  int64  // 原裁决服务费，分
+		RequestID     string // 人工最终金额裁决 UUID
+		ElectricCents int64  // 裁决电费，分
+		ServiceCents  int64  // 裁决服务费，分
 	}
 	if err := db.Table("charge_manual_settlement").Where("charge_order_id=?", id).Find(&manual).Error; err != nil {
 		return source, err
@@ -179,9 +175,9 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	return source, nil
 }
 
-// Apply 在 ctx 下按 result 原证据幂等应用费用，并重读原身份、价格和计量核对未变化。
-// 返回证据、金额或存储错误；资金、费用回执、剩余退款、订单、任务及 Outbox 同事务提交。
-// 余额支付先锁钱包，再锁支付及订单；在途退款用当前读，重复回执不得再次退余款或发券。
+// Apply 重新核对价格、计量和身份后幂等入账。
+// 资金、费用回执、余款退款、订单、任务和 Outbox 同事务提交，错误整体回滚。
+// 余额支付按钱包→支付→订单加锁；在途退款用当前读，重放不重复退余款或发券。
 func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 	encoded, err := json.Marshal(result)
 	if err != nil {
@@ -232,9 +228,9 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 			return ErrBillingConflict
 		}
 		var existing struct {
-			ResultJSON []byte // 已入账的原完整费用回执
+			ResultJSON []byte // 已入账的完整费用回执
 		}
-		// 支付方式普通读早于资金锁；当前读原回执，确保锁等待期间完成的入账仍可幂等返回。
+		// 支付方式查询可能建立旧快照；费用回执用当前读，确保锁等待期间入账后仍可重放。
 		previous := tx.Table("charge_fee_receipt").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", order.ID).Find(&existing)
 		if previous.Error != nil {
 			return previous.Error
@@ -260,13 +256,12 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		if err := orderstore.SetSettledFeeInTx(tx, order.ID, result.ElectricCents, result.ServiceCents, result.TotalCents); err != nil {
 			return err
 		}
-		// 费用计算完成并写入回执后求值订单活动，确保金额门槛准确。
-		// 重放结算在回执检查时提前返回，不重复发券。
+		// 费用保存后再检查订单活动金额门槛；重放提前返回，不重复发券。
 		if err := applyOrderCampaigns(tx, order, result.TotalCents); err != nil {
 			return err
 		}
-		// 原支付方式的普通读取可能已在支付锁之前建立 RR 快照。
-		// 在途聚合必须使用当前读，否则会遗漏并发已提交退款，高估可退余款。
+		// 支付锁前的普通查询可能建立旧 RR 快照。
+		// 在途退款用当前读，避免漏掉并发提交的退款而高估可退金额。
 		var reserved int64
 		if err := tx.Model(&RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("COALESCE(SUM(refund_cents),0)").
@@ -314,8 +309,8 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 	})
 }
 
-// settlementNotice 以 eventID、order 原身份、display 下单展示快照、fee 最终分值及 refund 待退分值构造事件。
-// 返回符合原展示开关的 JSON 对象，无 IO 或错误；仅在资金已持久结算后由调用方追加 Outbox。
+// settlementNotice 根据订单身份、下单展示快照和结算金额构造通知，金额单位为分。
+// 遵守下单时保存的展示开关；调用方在资金结算后追加 Outbox。
 func settlementNotice(eventID string, order orderstore.ChargeOrderRecord, display charging.Display, fee charging.Fee, refund int64) map[string]any {
 	data := map[string]any{"event_id": eventID, "charge_order_id": order.ID, "order_no": order.OrderNo, "user_id": order.UserID, "status": "settled", "display": display}
 	if display.ShowFeeOnEnd {
@@ -327,9 +322,8 @@ func settlementNotice(eventID string, order orderstore.ChargeOrderRecord, displa
 	return data
 }
 
-// applyOrderCampaigns 根据已结算订单求值门槛券和节日券。
-// 规则不适用时跳过；存储错误返回调用方并整体回滚资金与权益。订单事件键保证重复求值不重复发券。
-// tx 为原资金事务，order 提供原用户及单号，totalCents 为确定结算金额（分）；返回存储错误，不自行提交。
+// applyOrderCampaigns 按已结算金额发放门槛券和节日券，金额单位为分。
+// 不适用规则跳过；存储失败须连同资金回滚，订单事件键防止重复发券。
 func applyOrderCampaigns(tx *gorm.DB, order orderstore.ChargeOrderRecord, totalCents int64) error {
 	now := time.Now().UTC()
 	for _, trigger := range []string{"threshold_redeem", "holiday"} {
@@ -346,12 +340,9 @@ func applyOrderCampaigns(tx *gorm.DB, order orderstore.ChargeOrderRecord, totalC
 	return nil
 }
 
-// EnqueueManualFeeReview 把一笔算不出费用的订单排进人工核实队列。
-//
-// 幂等键是 charge_order_id：同一笔订单重复入队只更新不新增。用 no-op upsert
-// 而不是"先查再插"，两个并发的入队请求会同时查到"没有"然后都去插，靠唯一键
-// 把其中一个挡下来。
-// tx 为调用方上下文连接或事务，in 提供原身份、原因和证据；返回插入错误，不自行提交。
+// EnqueueManualFeeReview 将无法计费的订单加入人工核实队列。
+// 按 charge_order_id 执行 no-op upsert，唯一键保证并发入队不新增重复记录。
+// 使用调用方事务，不自行提交。
 func EnqueueManualFeeReview(tx *gorm.DB, in ManualFeeReviewInput) error {
 	return tx.Table("manual_fee_review").
 		Clauses(clause.OnConflict{DoUpdates: clause.Assignments(map[string]any{"charge_order_id": gorm.Expr("charge_order_id")})}).
@@ -363,25 +354,24 @@ func EnqueueManualFeeReview(tx *gorm.DB, in ManualFeeReviewInput) error {
 
 // ManualFeeReviewInput 是一次人工核实入队的内容。
 type ManualFeeReviewInput struct {
-	ChargeOrderID uint64 // 原订单主键，入队幂等键
-	OrderNo       string // 原充电单号
-	Reason        string // 缺证据或价格无效的已脱敏原因
-	EnergyWh      uint32 // 原已确认电量，Wh
-	CreatedMonth  string // 原核实队列月份，YYYY-MM
-	SourceJSON    string // 原完整计费证据 JSON
+	ChargeOrderID uint64 // 同一订单主键，入队幂等键
+	OrderNo       string // 充电单号
+	Reason        string // 缺证据或价格无效的已脱敏因
+	EnergyWh      uint32 // 已确认电量，Wh
+	CreatedMonth  string // 核实队列月份，YYYY-MM
+	SourceJSON    string // 完整计费证据 JSON
 }
 
 // FeeDeliveryRow 是一笔待送达的计费结果。送达失败会推迟重试而不是丢弃。
 type FeeDeliveryRow struct {
-	ChargeOrderID uint64 `gorm:"column:charge_order_id"` // 原计费订单主键
+	ChargeOrderID uint64 `gorm:"column:charge_order_id"` // 计费订单主键
 	PayloadJSON   []byte `gorm:"column:payload_json"`    // 完整冻结 Result，不能按当前规则重新构造
 }
 
 // feeDeliveryBatch 一次取多少笔待送达的计费结果。
 const feeDeliveryBatch = 50
 
-// ListPendingFeeDeliveries 返回到期待送达的计费结果，按计划时间与订单排序。
-// ctx 取消 db 查询；最多 feeDeliveryBatch 笔，无待投递返回空数组，存储失败返回 error，不修改领取状态。
+// ListPendingFeeDeliveries 按计划时间、订单顺序读取到期投递，每批不超过 feeDeliveryBatch 笔。
 func ListPendingFeeDeliveries(ctx context.Context, db *gorm.DB) ([]FeeDeliveryRow, error) {
 	rows := []FeeDeliveryRow{}
 	err := db.WithContext(ctx).Table("fee_delivery").
@@ -390,28 +380,24 @@ func ListPendingFeeDeliveries(ctx context.Context, db *gorm.DB) ([]FeeDeliveryRo
 	return rows, err
 }
 
-// RescheduleFeeDelivery 用 db 将 orderID 未投递结果的下次时间设为 retryAt UTC 并增加尝试次数。
-// 返回更新错误，不删除原载荷；调用方保留原订单及结果重试，不改变已投递记录。
+// RescheduleFeeDelivery 延后未投递结果的重试时间并增加尝试次数，保留同一订单和载荷。
 func RescheduleFeeDelivery(db *gorm.DB, orderID uint64, retryAt time.Time) error {
 	return db.Table("fee_delivery").Where("charge_order_id=? AND delivered=0", orderID).
 		Updates(map[string]any{"attempts": gorm.Expr("attempts+1"), "scheduled_at": retryAt}).Error
 }
 
-// EnqueueChargeBilling 把结束计量排队。计费是异步的：结束回执只负责确认
-// 事实并排队，费用由 central 的结算用例算完再落账单。
-// tx 是原结束回执事务，chargeOrderID 为原订单；返回唯一键或插入错误，调用方整体提交／回滚。
+// EnqueueChargeBilling 在结束回执事务中登记异步计费任务；结算用例稍后计算费用并出账。
 func EnqueueChargeBilling(tx *gorm.DB, chargeOrderID uint64) error {
 	return tx.Table("charge_billing_job").Create(map[string]any{"charge_order_id": chargeOrderID}).Error
 }
 
 // BillingJobState 是计费任务的排队状态。取不到表示尚未排队。
 type BillingJobState struct {
-	ChargeOrderID uint64 `gorm:"column:charge_order_id"`      // 原排队订单主键，零表示尚未排队
+	ChargeOrderID uint64 `gorm:"column:charge_order_id"`      // 排队订单主键，零表示尚未排队
 	Status        string `json:"status" gorm:"column:status"` // pending、manual_review 或 done，未排队为空
 }
 
-// FindBillingJob 返回订单的计费排队状态。
-// ctx 取消 db 查询，chargeOrderID 为原订单；无任务返回零值、nil，存储失败返回 error，不创建任务。
+// FindBillingJob 读取订单计费任务；没有任务时返回零值和 nil。
 func FindBillingJob(ctx context.Context, db *gorm.DB, chargeOrderID uint64) (BillingJobState, error) {
 	var row BillingJobState
 	err := db.WithContext(ctx).Table("charge_billing_job").

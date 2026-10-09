@@ -110,7 +110,7 @@ func TestTierChainInvariants(t *testing.T) {
 }
 
 func TestModeAndBasisMustAgree(t *testing.T) {
-	// 最大功率模式不得使用电量电价口径。
+	// 最大功率模式不得使用电量电价算法。
 	spec := Spec{Mode: ModeServerMaxPower, Electric: &ElectricLine{Basis: BasisEnergy, Periods: []Period{{EndMinute: 1440, ElectricCents: 100}}}}
 	if err := ValidateSpec(spec); err == nil {
 		t.Fatal("a mode that disagrees with its own basis must be rejected")
@@ -206,7 +206,7 @@ func TestUnsegmentedMeterAcrossAnEnergyTariffChangeGoesToReview(t *testing.T) {
 		{EndMinute: 720, ElectricCents: 50},
 		{EndMinute: 1440, ElectricCents: 80},
 	}}}
-	start := time.Date(2026, 9, 28, 3, 30, 0, 0, time.UTC) // 11:30 in Beijing
+	start := time.Date(2026, 9, 28, 3, 30, 0, 0, time.UTC) // 北京时间 11:30
 	meter := ActualMeter{StartedAt: start, EndedAt: start.Add(time.Hour), ChargedWh: 1000, ChargedSeconds: 3600}
 	if _, err := PriceActual(Rule{ID: 1, Version: 1, Spec: spec}, meter); !errors.Is(err, ErrMeterReview) {
 		t.Fatalf("an unsegmented meter across an energy tariff change must go to review, got %v", err)
@@ -368,7 +368,7 @@ func TestFirmwareLimitsAreEnforced(t *testing.T) {
 	}
 }
 
-// 费用上限判断与最终结算必须使用相同计量和计价口径。
+// 费用上限判断与最终结算必须使用相同计量和计价规则。
 func TestStopAtMeterUsesTheSameMeterValidationAsSettlement(t *testing.T) {
 	spec := energySpec()
 	spec.SpendCapCents = 150
@@ -396,7 +396,7 @@ func TestStopAtMeterUsesTheSameMeterValidationAsSettlement(t *testing.T) {
 	}
 }
 
-// 验证消费封顶为 0 表示未配置上限；设备仍受下发时长或电量额度限制。
+// 验证费用封顶为 0 表示未配置上限；设备仍受下发时长或电量额度限制。
 func TestStopAtMeterWithoutACapNeverStops(t *testing.T) {
 	rule := Rule{ID: 7, Version: 2, Spec: energySpec()}
 	start := time.Date(2026, 1, 2, 10, 0, 0, 0, beijing)
@@ -434,7 +434,7 @@ func TestStopAtMeterLeavesDeviceBilledSessionsToTheDevice(t *testing.T) {
 	}
 }
 
-// 验证无效计量不触发消费封顶停机，交由计费核实流程处理。
+// 验证无效计量不触发费用封顶停机，交由计费核实流程处理。
 func TestStopAtMeterSendsAnUnsoundMeterToReviewRatherThanStopping(t *testing.T) {
 	spec := energySpec()
 	spec.SpendCapCents = 1

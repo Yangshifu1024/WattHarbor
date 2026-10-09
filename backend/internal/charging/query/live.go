@@ -1,4 +1,4 @@
-// Package query 拥有充电只读组合与实时估算，最终结算仍由 settlement 执行。
+// Package query 负责充电只读组合与实时估算，最终结算仍由 settlement 执行。
 package query
 
 import (
@@ -15,31 +15,31 @@ import (
 
 // EvidenceReader 是实时估算需要的有界网关取证能力，不携带 URL、令牌或通用传输。
 type EvidenceReader interface {
-	// ChargingEvidence 在 ctx 下按 queries 原设备／端口／开始时刻批量取证，返回原序页或调用错误，无业务写入。
+	// ChargingEvidence 按设备、端口与开始时间批量查询心跳，按请求顺序返回各订单的分页数据。
 	ChargingEvidence(ctx context.Context, queries []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
 }
 
-// SnapshotReader 由订单所属实现提供原冻结 JSON，缺行不能用当前价格替换。
+// SnapshotReader 由订单对应模块实现提供冻结 JSON，缺行不能用当前价格替换。
 type SnapshotReader interface {
-	// Snapshots 在 ctx 下批量读取 ids 原订单，返回身份到原 JSON 的映射或存储错误，无写入。
+	// Snapshots 按订单 ID 批量读取冻结 JSON，不用当前方案补齐缺失快照。
 	Snapshots(ctx context.Context, ids []uint64) (map[uint64][]byte, error)
 }
 
-// PurchaseReader 由卡所属实现提供累计购买事实，非卡订单不进入映射。
+// PurchaseReader 由卡对应模块实现提供累计购买记录，非卡订单不进入映射。
 type PurchaseReader interface {
-	// Purchases 在 ctx 下批量读取 ids，返回累计购买映射或存储错误，不扣款或续购。
+	// Purchases 批量读取 ids，返回累计购买映射，不扣款或续购。
 	Purchases(ctx context.Context, ids []uint64) (map[uint64]charging.OrderCardPurchase, error)
 }
 
-// LiveService 按最后观测量及订单冻结方案估算费用，只向公开读模型回填。
+// LiveService 按最后观测量及订单冻结方案估算费用，只向公开查询结果回填。
 type LiveService struct {
 	Gateway EvidenceReader   // cmd 注入的网关批量取证能力
-	Orders  SnapshotReader   // cmd 注入的原订单快照读取
+	Orders  SnapshotReader   // cmd 注入的订单快照读取
 	Cards   PurchaseReader   // cmd 注入的累计刷卡购买读取
 	Now     func() time.Time // 测试可固定观测上界；未注入时使用当前 UTC
 }
 
-// now 返回 s 的观测时刻或当前 UTC，不执行 IO。
+// now 返回 s 的观测时刻或当前 UTC，不执行 I/O。
 func (s LiveService) now() time.Time {
 	if s.Now != nil {
 		return s.Now().UTC()
@@ -47,10 +47,10 @@ func (s LiveService) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Fill 在 ctx 的取消范围及最多4秒期限内，为 rows 中 charging 且已开始的订单原位填充实时视图。
-// 每20单一次取证，全部成功取证的计价数据各一次批量读取；不逐订单外部调用或写库。
-// 独立证据批失败保留其它批结果，取消后不再发起后续调用；失败或无证据保留原公开不可读提示。
-// 缺失计价口径及不完整证据只隐藏估算费用，不将实时量写入最终结算字段；函数返回时无后台任务。
+// Fill 为充电中订单填充最新观测与估算费用，全部操作最多四秒。
+// 每 20 单批量取证，成功取证后分别批量读取价格快照与刷卡购买记录。
+// 一批失败不影响其他批，请求取消后停止后续查询；证据不全时显示不可估算。
+// 只更新展示结果，不写入最终结算，返回时没有后台任务。
 func (s LiveService) Fill(ctx context.Context, rows []order.OrderView) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
@@ -65,9 +65,9 @@ func (s LiveService) Fill(ctx context.Context, rows []order.OrderView) {
 	if len(indices) == 0 || s.Gateway == nil || s.Orders == nil || s.Cards == nil {
 		return
 	}
-	// observed 将有效心跳计量关联到输入订单行，供充电中展示回填；它是临时读模型，不写入结束计量或结算金额。
+	// observed 将有效心跳计量关联到输入订单行，供充电中展示回填；它是临时查询结果，不写入结束计量或结算金额。
 	type observed struct {
-		index int                  // 本次 rows 下标，保持原页排序
+		index int                  // 本次 rows 下标，保持分页结果排序
 		meter charging.ActualMeter // 截至最后心跳的实时估算计量，非最终结算依据
 	}
 	valid := []observed{}
@@ -143,12 +143,12 @@ func (s LiveService) Fill(ctx context.Context, rows []order.OrderView) {
 	}
 }
 
-// priceLive 按 raw 原冻结口径及 purchase 原累计购买／isCard 原卡关联为 view 回填 meter 截至观测时刻的估算费用。
-// 缺失／非法口径、购买冲突及不足计量只回填不可估算文案，不写库或读取当前模板。
+// priceLive 用冻结方案与累计购买信息计算截至最后观测时刻的费用。
+// 方案无效、购买信息冲突或计量不足时只提示不可估算，不读取当前价格或写入结算。
 func priceLive(view *charging.LiveMeterView, meter charging.ActualMeter, raw []byte, purchase charging.OrderCardPurchase, isCard bool) {
 	var frozen struct {
-		Rule  charging.Rule   `json:"rule"`  // 原完整计费规则
-		Offer *charging.Offer `json:"offer"` // 原购买套餐，缺失时不可估算
+		Rule  charging.Rule   `json:"rule"`  // 完整计费规则
+		Offer *charging.Offer `json:"offer"` // 购买套餐，缺失时不可估算
 	}
 	if json.Unmarshal(raw, &frozen) != nil || frozen.Offer == nil {
 		view.FeeUnavailable = "缺少订单计费快照"
@@ -172,8 +172,7 @@ func priceLive(view *charging.LiveMeterView, meter charging.ActualMeter, raw []b
 	view.Fee = &charging.LiveFee{ElectricCents: fee.ElectricCents, ServiceCents: fee.ServiceCents, TotalCents: fee.TotalCents}
 }
 
-// Read 在 ctx 下为 id/device/port/start 原单读取实时视图，返回观测视图或不可读错误，无写入。
-// 批量入口与单单入口共用最后观测和冻结计价规则，断线时间不会累加到计费时长。
+// Read 用订单、设备、端口与开始时间查询最新计量，断线期间不继续累计计费时长。
 func (s LiveService) Read(ctx context.Context, id uint64, device string, port uint8, start time.Time) (*charging.LiveMeterView, error) {
 	rows := []order.OrderView{{OrderID: id, DeviceID: device, PortNo: port, Status: "charging", StartedAt: &start}}
 	s.Fill(ctx, rows)

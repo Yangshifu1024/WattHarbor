@@ -9,50 +9,50 @@ import (
 	"time"
 )
 
-// CurvePoint 是本用例遥测点，保留原单位、可空读数及 UTC 时刻，不作为计费证据。
+// CurvePoint 定义曲线中的遥测点，保留单位、UTC 时刻与缺测空值；不作为计费证据。
 type CurvePoint struct {
-	TS           time.Time `json:"ts"`            // 原观测或聚合桶 UTC 时刻
-	PowerW       *float64  `json:"power_w"`       // 原功率 W，未上报为空
-	CurrentA     *float64  `json:"current_a"`     // 原电流 A，未上报为空
-	VoltageV     *float64  `json:"voltage_v"`     // 原电压 V，未上报为空
-	TemperatureC *float64  `json:"temperature_c"` // 原摄氏度，未上报为空
-	BatterySOC   *float64  `json:"battery_soc"`   // 原荷电百分比，未上报为空
-	MeterKWh     *float64  `json:"meter_kwh"`     // 原累计 kWh，未上报为空
+	TS           time.Time `json:"ts"`            // 观测或聚合桶 UTC 时刻
+	PowerW       *float64  `json:"power_w"`       // 功率 W，未上报为空
+	CurrentA     *float64  `json:"current_a"`     // 电流 A，未上报为空
+	VoltageV     *float64  `json:"voltage_v"`     // 电压 V，未上报为空
+	TemperatureC *float64  `json:"temperature_c"` // 摄氏度，未上报为空
+	BatterySOC   *float64  `json:"battery_soc"`   // 荷电百分比，未上报为空
+	MeterKWh     *float64  `json:"meter_kwh"`     // 累计 kWh，未上报为空
 }
 
-// HistoricalPoint 保持历史接口原时刻文本与可空字段，不直接公开网关契约类型。
+// HistoricalPoint 保持历史接口时刻文本与可空字段，不直接公开网关契约类型。
 type HistoricalPoint struct {
-	TS           string   `json:"ts"`            // 原桶的 RFC3339 时刻文本
-	PowerW       *float64 `json:"power_w"`       // 原功率 W
-	CurrentA     *float64 `json:"current_a"`     // 原电流 A
-	VoltageV     *float64 `json:"voltage_v"`     // 原电压 V
-	TemperatureC *float64 `json:"temperature_c"` // 原摄氏度
-	BatterySOC   *float64 `json:"battery_soc"`   // 原荷电百分比
-	MeterKWh     *float64 `json:"meter_kwh"`     // 原累计 kWh
+	TS           string   `json:"ts"`            // 桶的 RFC3339 时刻文本
+	PowerW       *float64 `json:"power_w"`       // 功率 W
+	CurrentA     *float64 `json:"current_a"`     // 电流 A
+	VoltageV     *float64 `json:"voltage_v"`     // 电压 V
+	TemperatureC *float64 `json:"temperature_c"` // 摄氏度
+	BatterySOC   *float64 `json:"battery_soc"`   // 荷电百分比
+	MeterKWh     *float64 `json:"meter_kwh"`     // 累计 kWh
 }
 
-// CurveView 是实时曲线公开读模型；窗口上界只捕获一次，系列为空时仍输出数组。
+// CurveView 是实时曲线公开查询结果；窗口上界只捕获一次，系列为空时仍输出数组。
 type CurveView struct {
-	OrderNo string       `json:"order_no"` // 已授权原业务单号
+	OrderNo string       `json:"order_no"` // 已授权业务单号
 	Window  string       `json:"window"`   // 已允许的回看枚举
 	From    time.Time    `json:"from"`     // 本次请求窗口下界 UTC
 	To      time.Time    `json:"to"`       // 本次请求窗口上界 UTC
-	Series  []CurvePoint `json:"series"`   // 原序观测，不插值或补零
-	Count   int          `json:"count"`    // 原返回点数
+	Series  []CurvePoint `json:"series"`   // 按输入顺序返回的观测，不插值或补零
+	Count   int          `json:"count"`    // 返回点数
 }
 
-// HistoricalView 保留原订单身份、聚合边界与摘要，确认电量以原 DECIMAL 文本优先。
+// HistoricalView 保留订单标识、聚合边界与摘要，确认电量以 DECIMAL 文本优先。
 type HistoricalView struct {
-	OrderID             uint64                     `json:"order_id"`             // 原中央订单主键，保持现有整数契约
-	OrderNo             string                     `json:"order_no"`             // 已授权原业务单号
-	Granularity         string                     `json:"granularity"`          // 原请求15min或hourly
-	Series              []HistoricalPoint          `json:"series"`               // 原序聚合点，不充当最终计费证据
-	Summary             map[string]json.RawMessage `json:"summary"`              // 原摘要JSON，保留数字精度及空值
-	BoundaryApproximate bool                       `json:"boundary_approximate"` // 原聚合边界不完全对齐事实
+	OrderID             uint64                     `json:"order_id"`             // 中央订单主键，保持现有整数契约
+	OrderNo             string                     `json:"order_no"`             // 已授权业务单号
+	Granularity         string                     `json:"granularity"`          // 请求15min或hourly
+	Series              []HistoricalPoint          `json:"series"`               // 按输入顺序返回的聚合点，不充当最终计费证据
+	Summary             map[string]json.RawMessage `json:"summary"`              // 摘要JSON，保留数字精度及空值
+	BoundaryApproximate bool                       `json:"boundary_approximate"` // 聚合边界不完全对齐事实
 }
 
-// windowDuration 对 raw 与 allowed 核对既定窗口，返回规范标签、时长或公开准入错误，无IO。
-// 空输入使用首个配置窗口；未知或禁用值不再静默替换，所有允许值仍最多24小时。
+// windowDuration 校验曲线窗口，返回窗口名称与时长。
+// 空输入使用首个配置窗口，未知或禁用值报错，允许的窗口最长 24 小时。
 func windowDuration(raw string, allowed []string) (string, time.Duration, error) {
 	if len(allowed) == 0 {
 		allowed = []string{"last_30min", "last_2h", "last_24h"}
@@ -73,8 +73,8 @@ func windowDuration(raw string, allowed []string) (string, time.Duration, error)
 	return "", 0, &UserInputError{Kind: "input", Message: "window 须为允许的 last_30min、last_2h 或 last_24h"}
 }
 
-// Curve 在 ctx 下先核对 userID 对 raw 的原订单归属，再按 window 允许窗口读取原端口观测。
-// 返回私有曲线或准入／缺行／依赖错误；网关失败不伪造空数组，不执行资金写入。
+// Curve 先核对 userID 对 raw 的订单归属，再按 window 允许窗口读取端口观测。
+// 返回私有曲线或校验、缺行、依赖错误；网关失败不伪造空数组，不执行资金写入。
 func (s UserService) Curve(ctx context.Context, userID uint64, raw, window string) (CurveView, error) {
 	row, err := s.Orders.Resolve(ctx, userID, raw)
 	if err != nil {
@@ -108,9 +108,9 @@ func (s UserService) Curve(ctx context.Context, userID uint64, raw, window strin
 	return out, nil
 }
 
-// HistoricalCurve 在 ctx 下先核对 userID 的 raw 原订单，再用已冻结开始／结束时刻和 granularity 读取聚合。
-// 返回本用例模型或原409／422／点数准入／依赖错误；三年与2000点上限在发起外部请求前核对。
-// 摘要确认电量来自原订单 DECIMAL，不从实时观测重算，聚合边界标志保持原值。
+// HistoricalCurve 校验订单归属，用已保存的起止时间查询历史聚合。
+// 查询前限制最长三年、最多 2000 点；未开始或时间倒置报冲突，超过保留期报错。
+// 摘要电量优先使用订单 DECIMAL 文本，不从实时观测重算。
 func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, granularity string) (HistoricalView, error) {
 	row, err := s.Orders.Resolve(ctx, userID, raw)
 	if err != nil {

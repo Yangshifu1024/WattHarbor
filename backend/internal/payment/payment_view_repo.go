@@ -10,23 +10,23 @@ import (
 	"gorm.io/gorm"
 )
 
-// 支付单的列表读模型与分页查询。支付状态与金额语义由订单/资金域定义，
-// 这里只负责取数与投影。
+// 支付单的列表查询结果与分页查询。支付状态与金额语义由订单/资金域定义。
+// 这里只负责取数与查询结果。
 
 // PaymentOrderView 包含实际支付、余额扣费与充值记录；充电生命周期由关联充电单展示。
 type PaymentOrderView struct {
-	PaymentOrderID uint64     `json:"payment_order_id"` // 原支付主键，保持既有整数契约
-	OrderNo        string     `json:"order_no"`         // 原商户支付单号
+	PaymentOrderID uint64     `json:"payment_order_id"` // 支付主键，保持既有整数契约
+	OrderNo        string     `json:"order_no"`         // 商户支付单号
 	UserID         uint64     `json:"user_id,string"`   // 付款人，公开为十进制字符串
 	BizType        string     `json:"biz_type"`         // charge 充电支付，wallet_recharge 余额充值。
 	PayMethod      string     `json:"pay_method"`       // wechat 微信支付，balance 余额支付。
 	Status         string     `json:"status"`           // 支付单内部流程状态，保留关闭和失败等原因。
 	PaymentStatus  string     `json:"payment_status"`   // 金额确认后的 pending/paid/refunded/partial_refunded。
-	TotalCents     int64      `json:"total_cents"`      // 原应付金额，分
+	TotalCents     int64      `json:"total_cents"`      // 应付金额，分
 	PaidCents      int64      `json:"paid_cents"`       // 已确认到账金额，分
 	RefundedCents  int64      `json:"refunded_cents"`   // 累计成功退款金额，单位分。
 	PaidAt         *time.Time `json:"paid_at"`          // 已确认到账时刻，未到账为空
-	CreatedAt      time.Time  `json:"created_at"`       // 原支付创建时刻
+	CreatedAt      time.Time  `json:"created_at"`       // 支付创建时刻
 	ChargeOrderID  *uint64    `json:"charge_order_id"`  // 当前有效关联充电主键，充值或无关联为空
 	ChargeOrderNo  *string    `json:"charge_order_no"`  // 当前有效关联充电单号，充值或无关联为空
 }
@@ -35,7 +35,7 @@ type PaymentOrderView struct {
 type PaymentOrderQuery struct {
 	persist.PageQuery            // 页号、页大小及通用筛选；本查询使用页号和页大小
 	UserID            uint64     // 内部用户范围；0 表示不筛选，通用支付单接口不读取此字段。
-	OrderNo           string     // 原支付单号，空值不限
+	OrderNo           string     // 支付单号，空值不限
 	BizType           string     // charge 或 wallet_recharge，空值不限
 	PayMethod         string     // wechat 或 balance，空值不限
 	PaymentStatus     string     // 独立金额确认状态，空值不限
@@ -44,7 +44,7 @@ type PaymentOrderQuery struct {
 }
 
 // PaymentOrders 直接读取支付单，充值不会被误列为充电订单。
-// ctx 取消 db 查询，q 提供分页、用户及支付筛选；返回稳定倒序原页、总数或读取错误，无资金写入。
+// ctx 取消 db 查询，q 提供分页、用户及支付筛选；返回稳定倒序分页结果、总数，无资金写入。
 func PaymentOrders(ctx context.Context, db *gorm.DB, q PaymentOrderQuery) (persist.Page[PaymentOrderView], error) {
 	out := persist.Page[PaymentOrderView]{Items: []PaymentOrderView{}, Page: q.Page, PageSize: q.PageSize}
 	query := db.WithContext(ctx).Table("payment_order AS p").Where("p.deleted_at IS NULL")
@@ -83,16 +83,15 @@ func PaymentOrders(ctx context.Context, db *gorm.DB, q PaymentOrderQuery) (persi
 
 // OrderPaymentBrief 是订单详情里的支付单摘要。
 type OrderPaymentBrief struct {
-	OrderNo       string `gorm:"column:order_no" json:"order_no"`             // 原商户支付单号
-	TotalCents    int64  `gorm:"column:total_cents" json:"total_cents"`       // 原应付金额，分
+	OrderNo       string `gorm:"column:order_no" json:"order_no"`             // 商户支付单号
+	TotalCents    int64  `gorm:"column:total_cents" json:"total_cents"`       // 应付金额，分
 	PaidCents     int64  `gorm:"column:paid_cents" json:"paid_cents"`         // 已确认到账金额，分
 	RefundedCents int64  `gorm:"column:refunded_cents" json:"refunded_cents"` // 累计成功退回，分
-	Status        string `gorm:"column:status" json:"status"`                 // 原支付生命周期状态
+	Status        string `gorm:"column:status" json:"status"`                 // 支付生命周期状态
 }
 
-// FindOrderPaymentBrief 取支付单摘要。取不到返回 gorm.ErrRecordNotFound，
-// 调用方按"没有支付单"处理而不是报错。
-// ctx 取消 db 查询，paymentOrderID 为原支付主键；只读取未删除记录，返回摘要或存储错误，不更新金额。
+// FindOrderPaymentBrief 查询未删除支付单的金额与状态，缺失时返回 gorm.ErrRecordNotFound。
+// 调用方可据此显示没有支付单，不把缺失当作数据库故障。
 func FindOrderPaymentBrief(ctx context.Context, db *gorm.DB, paymentOrderID uint64) (OrderPaymentBrief, error) {
 	var row OrderPaymentBrief
 	err := db.WithContext(ctx).Table("payment_order").

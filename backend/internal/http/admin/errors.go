@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminManagementFailure 为c映射err原输入、越权、身份和角色缺失，其余复用通用资源错误。
+// AdminManagementFailure 为 c 映射 err 输入、越权、身份和角色缺失，其余复用通用资源错误。
 func AdminManagementFailure(c *gin.Context, err error) {
 	var input *ops.ManagementInputError
 	switch {

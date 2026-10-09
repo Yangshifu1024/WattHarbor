@@ -56,10 +56,9 @@ func TestExtensionAndDeadlineSerializePurchasedDuration(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer second.Callback().Query().Remove(wait)
-			// result 传递续购或到期冻结用例返回的结果，用于核对会话锁后的两种执行次序；事务效果另查真实资金与截止记录。
 			type result struct {
 				frozen bool  /* 是否到期冻结 */
-				err    error /* 原用例结果 */
+				err    error /* 用例结果 */
 			}
 			one, two := make(chan result, 1), make(chan result, 1)
 			runExtension := func(db *gorm.DB, done chan result) {
@@ -145,8 +144,8 @@ func TestExtensionAndDeadlineSerializePurchasedDuration(t *testing.T) {
 	}
 }
 
-// TestConcurrentSameCardEventDebitsOnce 控制第二次原事件请求在卡锁上等待第一事务，核对只生成一次续购凭据。
-// 两条连接均调用真实 SwipeService；设备及价格只为 fixture，钱包、订单、支付和会话使用真实表。
+// TestConcurrentSameCardEventDebitsOnce 控制第二次事件请求在卡锁上等待第一事务，核对只生成一次续购凭据。
+// 两条连接均调用真实 SwipeService；设备及价格只为 测试替身，钱包、订单、支付和会话使用真实表。
 func TestConcurrentSameCardEventDebitsOnce(t *testing.T) {
 	first, second := cutoffCardConn(t), cutoffCardConn(t)
 	id, cardNo, port, deviceID := seedCutoffCard(t, first)
@@ -181,9 +180,8 @@ func TestConcurrentSameCardEventDebitsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Callback().Query().Remove(wait)
-	// result 传递同一刷卡事件两次 Apply 返回的操作及错误，用于比对原操作身份；单次扣款由独立表查询确认。
 	type result struct {
-		operation card.CardOperation /* 原操作 */
+		operation card.CardOperation /* 首次操作 */
 		err       error              /* 用例错误 */
 	}
 	one, two := make(chan result, 1), make(chan result, 1)
@@ -223,7 +221,7 @@ func TestConcurrentSameCardEventDebitsOnce(t *testing.T) {
 		t.Fatalf("session=%+v %v", session, err)
 	}
 	var funding struct {
-		PaidCents int64 /* 原实付分 */
+		PaidCents int64 /* 实付分 */
 	}
 	if err := first.Table("payment_order").Where("id=?", id).Take(&funding).Error; err != nil || funding.PaidCents != 200 {
 		t.Fatalf("funding=%+v %v", funding, err)
@@ -236,7 +234,7 @@ func TestConcurrentSameCardEventDebitsOnce(t *testing.T) {
 	}
 	for _, query := range []struct {
 		table, where string /* 所属凭据表及本测试身份 */
-		value        any    /* 原测试身份 */
+		value        any    /* 测试身份 */
 	}{{"card_operation", "charge_order_id=?", id}, {"wallet_txn", "user_id=?", id}} {
 		var n int64
 		if err := first.Table(query.table).Where(query.where, query.value).Count(&n).Error; err != nil || n != 1 {

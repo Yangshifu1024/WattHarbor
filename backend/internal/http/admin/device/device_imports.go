@@ -13,14 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// registerImports 将 r 绑定原导入列表、创建及重试路径，三者继续使用 device.import 权限。
+// registerImports 将 r 绑定导入列表、创建及重试路径，三者继续使用 device.import 权限。
 func (a API) registerImports(r *gin.Engine) {
 	r.GET("/api/v1/admin/device-imports", a.Auth.Require("device.import"), a.imports)
 	r.POST("/api/v1/admin/device-imports", a.Auth.Require("device.import"), a.createImport)
 	r.POST("/api/v1/admin/device-imports/:import_id/retry", a.Auth.Require("device.import"), a.retryImport)
 }
 
-// imports 在 c 下返回最近一百个原任务或读取失败，不输出存档清单，也不执行任务。
+// imports 在请求内返回最近一百个任务或读取失败，不输出存档清单，也不执行任务。
 func (a API) imports(c *gin.Context) {
 	rows, err := a.Imports.List(c.Request.Context())
 	if err != nil {
@@ -30,7 +30,7 @@ func (a API) imports(c *gin.Context) {
 	httpapi.OK(c, rows)
 }
 
-// createImport 解码原批量请求，取得当前范围并调用完整受理／同步执行用例，返回原任务或一次错误响应。
+// createImport 解码批量请求，取得当前范围并调用完整受理／同步执行用例，返回任务或一次错误响应。
 func (a API) createImport(c *gin.Context) {
 	var in device.ImportInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -52,7 +52,7 @@ func (a API) createImport(c *gin.Context) {
 	importResponse(c, out)
 }
 
-// retryImport 在 c 下校验原任务号及实时范围，以原任务清单同步恢复；不重新解析当前厂商配置。
+// retryImport 在请求内校验任务号及实时范围，以任务清单同步恢复；不重新解析当前厂商配置。
 func (a API) retryImport(c *gin.Context) {
 	id := c.Param("import_id")
 	if !admin.RequestIDPattern.MatchString(id) {
@@ -76,7 +76,7 @@ func importAudit(c *gin.Context) ops.AuditContext {
 	return ops.AuditContext{Actor: c.MustGet("admin_profile").(operations.Profile), ClientIP: c.ClientIP(), RequestID: httpapi.RequestID(c)}
 }
 
-// importResponse 将 out 原执行状态映射为公开结果；failed 是已提交可重试任务，仍返回原 503 及任务载荷。
+// importResponse 将 out 执行状态映射为公开结果；failed 是已提交可重试任务，仍返回 503 及任务载荷。
 func importResponse(c *gin.Context, out device.ImportJob) {
 	if out.Status == "failed" {
 		httpapi.Write(c, 503, 5003, *out.LastError, out)
@@ -85,7 +85,7 @@ func importResponse(c *gin.Context, out device.ImportJob) {
 	httpapi.OK(c, out)
 }
 
-// importFailure 保留输入、范围、厂商及兼容的原公开码；其他错误交给统一适配，绝不在事务里写响应。
+// importFailure 保留输入、范围、厂商及兼容的公开码；其他错误交给统一适配，绝不在事务里写响应。
 func importFailure(c *gin.Context, err error) {
 	var input device.ImportInputError
 	var vendor *contract.VendorFailure

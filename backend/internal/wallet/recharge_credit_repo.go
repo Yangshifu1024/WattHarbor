@@ -8,15 +8,15 @@ import (
 	"strings"
 )
 
-// RechargeReceipt 是支付回调所需的充值申请投影，由 wallet 持有请求表。
+// RechargeReceipt 是支付回调所需的充值申请查询结果，由 wallet 持有请求表。
 type RechargeReceipt struct {
 	RequestID   string `gorm:"column:request_id"`   // 客户端幂等请求号
-	UserID      uint64 `gorm:"column:user_id"`      // 申请人身份
+	UserID      uint64 `gorm:"column:user_id"`      // 申请人用户 ID
 	AmountCents int64  `gorm:"column:amount_cents"` // 申请金额，单位分
 	OpenID      string `gorm:"-"`                   // 所属用户的固定微信身份，用于核对渠道付款人
 }
 
-// LockRechargeForPayment 在调用方 tx 中锁定 paymentID 的充值申请。
+// LockRechargeForPayment 在调用方事务中锁定 paymentID 的充值申请。
 // 支付回调必须先锁支付行再调用；无申请返回 gorm.ErrRecordNotFound，其他错误表示读取失败。
 // 返回结果用于核对付款人和金额，不直接修改支付状态；调用方负责提交或回滚。
 func LockRechargeForPayment(tx *gorm.DB, paymentID uint64) (RechargeReceipt, error) {
@@ -25,16 +25,16 @@ func LockRechargeForPayment(tx *gorm.DB, paymentID uint64) (RechargeReceipt, err
 	if err != nil {
 		return row, err
 	}
-	// openid 是登录身份的固定标识，不由用户修改。这里只读，不反向取得用户行锁；
+	// openid 是登录身份的固定标识，不由用户修改。这里只读，不反向取得用户行锁。
 	// 充值申请的创建保持用户→钱包锁序，回调保持支付→申请→钱包锁序。
 	row.OpenID, err = (UserWalletRepo{}).FindUserOpenID(tx, row.UserID)
 	return row, err
 }
 
-// CreditRechargeInTx 将已确认的 amountCents 入账 userID 钱包并记录与 requestID 关联的流水。
-// tx 必须已锁支付和充值申请，digest 是已验签通知的摘要，至少 32 字符。
-// 返回错误要求回滚整个回调；nil 表示余额、版本及流水均已写入但尚未提交。
-// 钱包冻结只限制消费，不拒收已到账资金；重复投递由支付回调幂等摘要在调用前仲裁。
+// CreditRechargeInTx 将已确认金额（分）计入钱包，并保存申请关联流水。
+// 调用前须锁支付与充值申请，digest 是至少 32 字符的验签通知摘要。
+// 余额、版本与流水同事务，失败全部回滚；钱包冻结不拒收到账资金。
+// 重复通知由支付回调提前识别，不能再次入账。
 func CreditRechargeInTx(tx *gorm.DB, userID uint64, requestID, digest string, amountCents int64) error {
 	if amountCents <= 0 || len(digest) < 32 {
 		return errors.New("invalid recharge credit")

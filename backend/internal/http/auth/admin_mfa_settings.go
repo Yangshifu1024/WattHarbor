@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// mfaSettings 从c严格提取输入，操作人仅取已鉴权原档案与SID，返回所属安全设置回执。
+// mfaSettings 从请求严格读取输入，操作人仅取已鉴权档案与 SID，返回安全设置回执。
 func (a AdminAuth) mfaSettings(c *gin.Context) {
 	var input ops.MFASettingsInput
 	if !httpapi.DecodeResource(c, &input) {
@@ -31,7 +31,7 @@ func (a AdminAuth) mfaSettings(c *gin.Context) {
 	httpapi.OK(c, reply)
 }
 
-// mfaSettingsFailure 为c映射err原证明400、冲突409或频次429，其余复用认证错误。
+// mfaSettingsFailure 为 c 映射 err 证明 400、冲突 409 或频次 429，其余复用认证错误。
 func (a AdminAuth) mfaSettingsFailure(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ops.ErrMFAInput):

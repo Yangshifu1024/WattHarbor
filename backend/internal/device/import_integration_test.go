@@ -28,7 +28,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// importDB 打开 env 对应的独立真库连接并由 t 关闭，配置缺失或连接失败终止，不跳过。
+// importDB 打开独立真库连接，配置或连接失败即终止测试，结束后关闭。
 func importDB(t *testing.T, env string) *gorm.DB {
 	t.Helper()
 	url := os.Getenv(env)
@@ -49,9 +49,9 @@ func importDB(t *testing.T, env string) *gorm.DB {
 	return orm
 }
 
-// TestImportRecoversGatewayCommitAndCommittedFailure 贯穿实际导入用例、具名客户端及注册 gateway 路由。
-// 两库真实提交：网关成功后中央故障仍可原任务恢复；网络拒绝提交 failed 后原清单重试，完成重放不再开通。
-// 仅授权身份为 fixture；所有已提交造数按唯一身份清理并检查零残留，不使用全表清理。
+// TestImportRecoversGatewayCommitAndCommittedFailure 用真实客户端、网关路由和两套数据库验证导入恢复。
+// 网关已提交而中央失败时使用同一任务恢复；网络失败保存 failed 后仍重试首次清单，完成重放不再开通。
+// 授权使用夹具，仅清理本测试数据并检查零残留。
 func TestImportRecoversGatewayCommitAndCommittedFailure(t *testing.T) {
 	central := importDB(t, "TEST_MYSQL_URL")
 	gateway := importDB(t, "DATABASE_URL_GATEWAY")
@@ -62,7 +62,7 @@ func TestImportRecoversGatewayCommitAndCommittedFailure(t *testing.T) {
 		for _, q := range []struct {
 			db    *gorm.DB /* 本测试实际提交的目标库 */
 			table string   /* 所属持久表 */
-			where string   /* 原身份筛选 */
+			where string   /* 身份筛选 */
 			arg   any      /* 本测试身份集合 */
 		}{
 			{central, "audit_log", "request_id IN ?", []string{request, secondRequest}}, {central, "device_import", "import_id IN ?", []string{request, secondRequest}},

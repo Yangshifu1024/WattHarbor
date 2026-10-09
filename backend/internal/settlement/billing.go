@@ -12,35 +12,34 @@ import (
 
 // BillingOrderProcessor 是计费调度所需的订单结算与持久任务能力。
 type BillingOrderProcessor interface {
-	// Due 在 ctx 下返回当前可执行的订单 ID，错误表示队列读取失败；不认领资金写入。
+	// Due 返回当前待执行订单 ID。
 	Due(context.Context) ([]uint64, error)
-	// Read 在 ctx 下读取给定订单 ID 的原计量和价格快照；缺证据或存储失败返回错误。
+	// Read 读取订单下单时的价格快照和计量证据。
 	Read(context.Context, uint64) (Source, error)
-	// Apply 在 ctx 下幂等应用 Result 的原费用；资金、回执与事件同事务，错误不得标记已投递。
+	// Apply 幂等入账，资金、回执和事件同事务；失败不能标记已投递。
 	Apply(context.Context, Result) error
-	// Defer 在 ctx 下将订单 ID 任务置为给定状态及安全错误说明，返回持久化错误。
+	// Defer 更新任务状态并保存脱敏后的失败原因。
 	Defer(context.Context, uint64, string, string) error
 }
 
-// BillingService 根据原计量、快照及持久费用回执调度入账和补账单。
+// BillingService 按订单计量、下单快照和费用回执完成入账及补账单。
 type BillingService struct {
-	Calculator FeeCalculator         // 纯规则计算及原费用回执的存档能力
+	Calculator FeeCalculator         // 计费计算和费用回执保存接口
 	Orders     BillingOrderProcessor // 订单入账、任务恢复与人工核实入口
 	Bills      BillIssuer            // central 装配的账单能力；nil 仅支持不产生账单的独立调用
 }
 
 // BillIssuer 以已入账费用回执生成账单；调度不重算资金或依赖 HTTP。
 type BillIssuer interface {
-	// Issue 在 ctx 下对 chargeOrderID 幂等生成或读取账单；返回账单、可出账标志及错误。
-	// 无可开票费用时不创建，失败可通过 Missing 恢复；不重新应用扣款。
+	// Issue 根据已入账费用幂等生成账单；尚无正费用时不创建，失败由 Missing 恢复。
 	Issue(ctx context.Context, chargeOrderID uint64) (Bill, bool, error)
-	// Missing 在 ctx 下返回最多 limit 笔已入账且缺少账单的订单 ID，或读取错误。
+	// Missing 返回最多 limit 笔已入账但缺少账单的订单。
 	Missing(ctx context.Context, limit int) ([]uint64, error)
 }
 
-// Run 在 ctx 下先恢复未投递费用，再处理到期订单，最后补齐已入账的缺失账单。
-// 返回已成功投递的笔数及失败；账单失败不减去已入账计数，后续轮次只补账单。
-// 计量缺证据转人工核实，依赖失败保留原任务及回执重试；取消后停止发起后续操作。
+// Run 依次恢复待投递费用、结算到期订单、补齐缺失账单。
+// 返回成功投递笔数；补账单失败不扣减该计数，下次只补账单。
+// 计量证据不足转人工核实，依赖失败保留同一任务重试；取消后停止后续操作。
 func (s BillingService) Run(ctx context.Context) (int, error) {
 	delivered, deliveryErr := s.deliverPending(ctx)
 	ids, err := s.Orders.Due(ctx)
@@ -98,8 +97,8 @@ func (s BillingService) Run(ctx context.Context) (int, error) {
 	return count, errors.Join(first, s.recoverBills(ctx))
 }
 
-// deliverPending 在 ctx 下重放已计算但尚未确认投递的原费用回执。
-// 返回成功笔数和首个错误；失败按原订单重排队，Apply 幂等保证响应丢失不重复扣费。
+// deliverPending 重放已计算但未确认投递的费用，返回成功笔数和首个错误。
+// 失败保留同一订单重试，Apply 保证响应丢失时不会重复扣费。
 func (s BillingService) deliverPending(ctx context.Context) (int, error) {
 	rows, err := ListPendingFeeDeliveries(ctx, s.Calculator.DB)
 	if err != nil {
@@ -139,9 +138,7 @@ func (s BillingService) deliverPending(ctx context.Context) (int, error) {
 	return count, first
 }
 
-// recoverBills 补发已完成入账但尚未生成的账单。
-// ctx 取消查询与文件外的数据库操作；返回聚合错误，成功或未配置账单能力返回 nil。
-// 每轮最多 50 笔，只使用持久费用回执和原唯一键，不重新计算或应用资金。
+// recoverBills 每轮最多补发 50 笔已入账但缺失的账单；只复用费用回执，不重新扣款。
 func (s BillingService) recoverBills(ctx context.Context) error {
 	if s.Bills == nil {
 		return nil

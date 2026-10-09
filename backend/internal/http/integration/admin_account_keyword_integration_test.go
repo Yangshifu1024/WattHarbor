@@ -73,13 +73,13 @@ func TestRegisteredAdminAccountKeywordUsesLiteralCharacters(t *testing.T) {
 	if permission.Error != nil || permission.RowsAffected != 1 {
 		t.Fatalf("private read permission rows=%d err=%v", permission.RowsAffected, permission.Error)
 	}
-	// keywordAccount 只映射私有列表夹具；显示名允许符号，所有登录名保持原合法字符与长度。
+	// keywordAccount 只映射私有列表夹具；显示名允许符号，所有登录名保持合法字符与长度。
 	type keywordAccount struct {
 		offset   uint64 // 相对随机主键基址的唯一偏移。
-		username string // 本测试创建的合法登录名，最长不超过64字节。
+		username string // 本测试创建的合法登录名，最长不超过 64 字节。
 		display  string // ASCII 显示名，含目标符号或相邻干扰字符。
-		status   string // 原 active 或 disabled 状态，供真实筛选。
-		deleted  bool   // 是否种下原软删除事实，不能进入列表。
+		status   string // active 或 disabled 状态，供真实筛选。
+		deleted  bool   // 是否种下软删除事实，不能进入列表。
 	}
 	rows := []keywordAccount{
 		{10, prefix + "u_needle", "plain username target", "active", false},
@@ -142,7 +142,7 @@ func TestRegisteredAdminAccountKeywordUsesLiteralCharacters(t *testing.T) {
 		name       string   // 独立命名的输入与筛选场景。
 		keyword    string   // 经 URL 编码交给真实分页解析器的文字关键词。
 		status     string   // 原状态筛选，空值不加状态条件。
-		page, size int      // 原分页请求，不改变排序或计数口径。
+		page, size int      // 分页请求，不改变排序或计数规则。
 		total      int64    // 匹配未删除夹具的预期总数，独立于页长。
 		offsets    []uint64 // 当页按主键倒序返回的私有身份。
 	}{
@@ -164,13 +164,13 @@ func TestRegisteredAdminAccountKeywordUsesLiteralCharacters(t *testing.T) {
 			reply := httptest.NewRecorder()
 			router.ServeHTTP(reply, request)
 			var envelope struct {
-				Code int `json:"code"` // 原 HTTP 信封业务码，成功须为0。
+				Code int `json:"code"` // HTTP 信封业务码，成功须为 0。
 				Data struct {
-					Items    []ops.AdminUserRow `json:"items"`     // 实际注册路由返回的账号安全投影。
-					Total    int64              `json:"total"`     // 原筛选总数，不因分页截断。
-					Page     int                `json:"page"`      // 原响应页码。
-					PageSize int                `json:"page_size"` // 原响应页长。
-				} `json:"data"` // 原列表响应载荷，不替换公开契约。
+					Items    []ops.AdminUserRow `json:"items"`     // 实际注册路由返回的账号安全信息。
+					Total    int64              `json:"total"`     // 筛选总数，不因分页截断。
+					Page     int                `json:"page"`      // 响应页码。
+					PageSize int                `json:"page_size"` // 响应页长。
+				} `json:"data"` // 列表响应载荷，不替换公开契约。
 			}
 			if err := json.Unmarshal(reply.Body.Bytes(), &envelope); err != nil || reply.Code != http.StatusOK || envelope.Code != 0 {
 				t.Fatalf("keyword route HTTP=%d body=%s err=%v", reply.Code, reply.Body, err)

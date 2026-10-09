@@ -15,12 +15,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// 支付回调的真库测试：并发重复投递、余额只入账一次。
-//
-// 微信支付会重投回调，而钱包充值直接改余额——这是"钱"上最典型的竞态。
-// 单测能验的是 entryRejected 与 receiptMatches 这类纯判断，
-// 验不了的是「两笔并发回调会不会把余额加两次」，那只有在真库的行锁、
-// 事务与唯一约束下才存在。
+// 使用真实 MySQL 行锁、事务与唯一键验证并发回调只入账一次。
+// 渠道验签由构造的已验证通知替代，不代表真实支付验收。
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 
@@ -49,20 +45,18 @@ func testConn(t *testing.T) (*gorm.DB, func()) {
 type lockGate struct {
 	// locked 首次取得目标行锁后关闭的通知通道，由数据库回调关闭，控制方只接收。
 	locked chan struct{}
-	// release 控制方关闭后允许锁点回调继续的闸门，不提交数据库事务或自行释放行锁。
+	// release 控制方关闭后允许加锁位置回调继续的闸门，不提交数据库事务或自行释放行锁。
 	release chan struct{}
-	// once 确保首次到达锁点的通知及挂起仅发生一次，后续查询不重复进入同一闸门。
-	once sync.Once
-	// passOne 确保 release 通道最多关闭一次，显式放行与退出清理可重复调用。
+	once    sync.Once
 	passOne sync.Once
 }
 
-// newLockGate 无入参，返回尚未通知或放行的测试闸门；分配两个通道及零值同步控制器，不操作数据库或启动任务。
+// newLockGate 创建锁等待通知与放行通道，不启动任务。
 func newLockGate() *lockGate {
 	return &lockGate{locked: make(chan struct{}), release: make(chan struct{})}
 }
 
-// await 接收测试句柄 t 与诊断名称 what，最多等待十五秒观察 g.locked 关闭；无返回值，超时由 t.Fatal 终止，不放行事务或改变数据库锁。
+// await 最多等待十五秒确认事务已取得目标锁，超时终止测试。
 func (g *lockGate) await(t *testing.T, what string) {
 	t.Helper()
 	select {
@@ -72,7 +66,7 @@ func (g *lockGate) await(t *testing.T, what string) {
 	}
 }
 
-// pass 无入参或返回值，最多一次关闭 g.release，放行正在等待的测试回调；可重复调用，不提交或释放数据库行锁。
+// pass 放行测试事务；可重复调用，不提交或释放数据库锁。
 func (g *lockGate) pass() { g.passOne.Do(func() { close(g.release) }) }
 
 // armOnPaymentOrderLock 装回调：本次执行里第一次锁定 payment_order 行后挂起。
@@ -104,7 +98,7 @@ const (
 // seedWalletRecharge 造一笔待结算的充值支付单。
 func seedWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 	t.Helper()
-	// 先清干净再落数据：同一组 id 被两个测试复用，
+	// 先清干净再落数据：同一组 id 被两个测试复用。
 	// 依赖前一个测试的收尾，会让它失败时把后面一起带崩。
 	cleanupWalletRecharge(t, db, orderNo)
 	if err := db.Table("user").Create(map[string]any{
@@ -139,15 +133,13 @@ func seedWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 	}
 }
 
-// cleanupWalletRecharge 接收测试句柄 t、真库句柄 db 与支付单号 orderNo，删除该订单及固定充值用户关联的回执、流水、申请、支付、钱包和用户记录。
-// 发件箱由 DeleteOutbox 按原条件定位后删除；无返回值，逐项 SQL 错误由 t.Errorf 记录并继续，不新建事务，调用方负责固定身份的独占及池关闭。
+// cleanupWalletRecharge 清理本组固定充值身份的回执、流水、申请、支付、钱包、用户及 Outbox。
+// 逐项记录清理错误；调用方须独占这些身份，清理后才能关闭连接。
 func cleanupWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 	t.Helper()
 	for _, q := range []struct {
-		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 		table, where string
-		// args 原条件占位符对应的参数切片，展开顺序与 where 一致，不拼接参数到 SQL。
-		args []any
+		args         []any
 	}{
 		{"event_outbox", "envelope_json LIKE ?", []any{"%" + orderNo + "%"}},
 		{"wallet_txn", "biz_ref LIKE ?", []any{"RC-" + orderNo + "%"}},
@@ -169,8 +161,8 @@ func cleanupWalletRecharge(t *testing.T, db *gorm.DB, orderNo string) {
 	}
 }
 
-// verifiedRecharge 接收商户支付单号 orderNo，返回固定测试渠道、商户、应用、用户、五千分金额及 UTC 支付时刻的 VerifiedPayment。
-// 交易流水号由 orderNo 派生，无错误或 IO；这里只构造已验证事实，不执行渠道验签。
+// verifiedRecharge 构造固定测试标识、五千分金额与 UTC 支付时刻的通知。
+// 交易号由支付单号派生，只替代渠道验签，不实际验签。
 func verifiedRecharge(orderNo string) VerifiedPayment {
 	return VerifiedPayment{
 		Provider: "wechat", MerchantID: "MCH-TEST", AppID: "wxapp-test",
@@ -180,20 +172,13 @@ func verifiedRecharge(orderNo string) VerifiedPayment {
 	}
 }
 
-// TestConcurrentWalletRechargeCallbacksCreditOnce 钉住并发重复回调只入账一次。
-//
-// 微信会重投回调；两笔并发投递必须只有一笔真正加余额，
-// 另一笔识别为重放。断言三件事：余额只加一次、钱包流水只有一条、
-// 两笔调用中恰好一笔标记为重放且都不报错。
+// TestConcurrentWalletRechargeCallbacksCreditOnce 验证相同回调并发时只加一次余额、留一条流水，另一调用识别重放。
 func TestConcurrentWalletRechargeCallbacksCreditOnce(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
 	const orderNo = "P-CONC-RECHARGE-1"
-	// 清理必须先于播种注册：中途失败时种子数据可能只落了一半，
-	// 放到播种之后再注册的话，这半截就留���库里了。
-	// 两步都走 t.Cleanup：注册在前的后执行（LIFO），
-	// 于是先删数据再关连接。用 defer 关连接会抢在 t.Cleanup 之前，
-	// 清理时连接已关，只会刷出一串 "database is closed"。
+	// 造数前注册清理，确保部分写入后失败也能删除测试记录。
+	// t.Cleanup 按注册的反向顺序执行，须先删数据再关闭连接。
 	janitor, closeJanitor := testConn(t)
 	t.Cleanup(closeJanitor)
 	t.Cleanup(func() { cleanupWalletRecharge(t, janitor, orderNo) })
@@ -211,11 +196,8 @@ func TestConcurrentWalletRechargeCallbacksCreditOnce(t *testing.T) {
 	store1 := CallbackService{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 	store2 := CallbackService{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 
-	// outcome 将一笔真实支付回调的结果与错误传回测试控制方，不增加额外重试或持久化。
 	type outcome struct {
-		// res 当前支付回调返回的结果，供检查订单身份与重放，不重复执行到账。
 		res PaymentCallbackResult
-		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)
@@ -282,15 +264,8 @@ func TestConcurrentWalletRechargeCallbacksCreditOnce(t *testing.T) {
 	}
 }
 
-// TestConcurrentRechargesForSameUserDoNotLoseUpdate 钉住同一用户两笔充值并发到账。
-//
-// 上一组测试里两笔回调锁的是**同一张支付单**，最外层的行锁已经把它们完全串行化，
-// 下游的钱包行锁因此永远不会被单独触发——删掉它，那组测试照样通过。
-// 本组换场景：同一个用户的两笔**不同**充值单同时到账。外层锁的是两行不同的记录，
-// 互不阻塞，两笔都会同时走到钱包余额更新。
-//
-// 丢了 wallet_account 的行锁，第二笔会读到自己的快照旧值，两笔都按同一个基数
-// 算出余额，后写的覆盖先写的——到账 10000，余额却只增加 5000。
+// TestConcurrentRechargesForSameUserDoNotLoseUpdate 验证同用户两笔不同充值并发到账不会丢失更新。
+// 支付行互不阻塞，测试在钱包锁后挂起第一事务，确认第二事务必须等锁。
 func TestConcurrentRechargesForSameUserDoNotLoseUpdate(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -318,11 +293,8 @@ func TestConcurrentRechargesForSameUserDoNotLoseUpdate(t *testing.T) {
 	store1 := CallbackService{DB: p1, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 	store2 := CallbackService{DB: p2, ExpectedProvider: "wechat", ExpectedMerchantID: "MCH-TEST", ExpectedAppID: "wxapp-test"}
 
-	// outcome 将一笔真实支付回调的结果与错误传回测试控制方，不增加额外重试或持久化。
 	type outcome struct {
-		// res 当前支付回调返回的结果，供检查订单身份与重放，不重复执行到账。
 		res PaymentCallbackResult
-		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)

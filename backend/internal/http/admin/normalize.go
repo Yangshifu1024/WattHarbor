@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// booleanColumns 列出原后台只读投影的布尔列，驱动整数输出按零／非零转换，不新增列或读取数据库。
+// booleanColumns 列出需要将零／非零整数转为布尔值的后台响应字段。
 var booleanColumns = map[string]bool{
 	"enabled":                 true,
 	"reports_energy":          true,

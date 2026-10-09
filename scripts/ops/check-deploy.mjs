@@ -1,4 +1,4 @@
-// 检查根生产 Compose 的部署配置；不启动应用、数据库或设备服务。
+// 检查 docker/compose.prod.yaml 的部署配置，不启动服务。
 // --config-only 仅跳过凭据值检查，仍验证拓扑、挂载路径及 Caddy 配置。
 import { readFileSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -8,19 +8,19 @@ import { resolve } from 'node:path';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const applicationNames = ['user', 'admin', 'central', 'gateway', 'worker'];
 
-// requireValue 在 condition 不成立时抛出固定 message；调用方不得将解析后的秘密值拼入消息。
+// requireValue 在条件不成立时抛出错误；消息不得包含凭据。
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-// docker 在仓库根目录执行 arguments_，成功返回 stdout；失败只报告固定 message，不输出含凭据的进程输出。
+// docker 在仓库根执行命令并返回输出；失败只显示固定错误，避免泄露凭据。
 function docker(arguments_, message) {
   const result = spawnSync('docker', arguments_, { cwd: root, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, timeout: 120000 });
   requireValue(!result.error && result.status === 0, message);
   return result.stdout;
 }
 
-// databaseURL 解析 environment[key] 并要求 MySQL 的 schema；返回 URL，解析及 schema 不匹配时抛出不含连接值的错误。
+// databaseURL 解析数据库地址并核对 MySQL 库名；错误不得包含连接字符串。
 function databaseURL(environment, key, schema) {
   let url;
   try { url = new URL(environment[key]); } catch { throw new Error(`${key} is invalid.`); }
@@ -28,7 +28,7 @@ function databaseURL(environment, key, schema) {
   return url;
 }
 
-// redisArgument 从 Redis service 的原 command 参数数组取 key 的后续值；未配置返回 undefined，非数组命令报错。
+// redisArgument 读取 Redis 命令中指定参数的值；未配置返回 undefined，命令不是数组时报错。
 function redisArgument(service, key) {
   requireValue(Array.isArray(service.command), 'Redis command must be an argument list.');
   const index = service.command.indexOf(key);
@@ -44,8 +44,8 @@ function caddyBlock(text, path) {
   return match?.[1] ?? '';
 }
 
-// validateDeployment 检查已展开的 config 和 caddyText；configOnly 跳过凭据值校验，其余部署约束保持启用。
-// 返回 undefined 或抛出不含连接字符串、令牌和密码值的错误；无文件、网络、进程或数据库副作用。
+// validateDeployment 检查展开后的 Compose 和 Caddy 配置；configOnly 仅跳过凭据值检查。
+// 失败时抛出不含连接字符串、令牌和密码的错误。
 export function validateDeployment(config, { configOnly = false, caddyText } = {}) {
   const services = config?.services;
   requireValue(services && typeof services === 'object', 'Compose services are missing.');
@@ -161,7 +161,7 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
   requireValue(/^\s*respond 404\s*$/m.test(caddyBlock(caddyText, '/api/*')), 'Caddy must reject other API routes.');
 }
 
-// validatePaths 对 config 中的 bind 源及 Dockerfile 保持原存在性检查；stat 失败直接终止，不启动容器。
+// validatePaths 检查挂载源和 Dockerfile 是否存在，读取失败时终止。
 function validatePaths(config) {
   for (const [name, service] of Object.entries(config.services)) {
     for (const volume of service.volumes ?? []) {
@@ -173,8 +173,8 @@ function validatePaths(config) {
   }
 }
 
-// main 使用 args 执行 CLI；返回 0、配置失败的 1 或用法错误的 2，保留 Compose 及无网络 Caddy adapt 验证。
-// 不输出展开的 JSON；只有直接运行此文件才调用，导入纯校验函数不会执行 Docker 或读取真实配置。
+// main 检查 Compose 配置并执行 Caddy 语法验证；成功返回 0，配置错误返回 1，用法错误返回 2。
+// 不输出含凭据的展开配置；导入模块时不执行命令。
 export function main(args = process.argv.slice(2)) {
   if (args.some(arg => arg !== '--config-only')) {
     console.error('Usage: node scripts/ops/check-deploy.mjs [--config-only]');

@@ -161,7 +161,7 @@ func SettleSession(spec Spec, meter ActualMeter, paid *Offer, actual *SessionAct
 		if err != nil {
 			return Settlement{}, err
 		}
-		// 金额方案按现行费率计算，消费上限只压低账单，不增加费用。
+		// 金额方案按现行费率计算，费用上限只压低账单，不增加费用。
 		total := fee.TotalCents
 		if paid != nil {
 			if !paid.Valid() {
@@ -214,7 +214,7 @@ func splitFee(fee Fee, total int64) (int64, int64) {
 }
 
 // StopPlan 描述运行中服务端计费的停止决策。
-// 设备继续执行下发的时长或电量安全额度；消费封顶由平台执行。
+// 设备继续执行下发的时长或电量安全额度；费用封顶由平台执行。
 type StopPlan struct {
 	// ShouldStop 在每次遥测更新时求值。
 	ShouldStop bool

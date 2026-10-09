@@ -6,15 +6,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// 待起充订单由 central 的内部端点提供；worker 不持有查询这些业务表的职责。
-//
-// 三处条件缺一不可：订单已支付未启动、支付意图已付、支付单实付且金额匹配。
-// 少任何一条都可能对一笔没真正付清的单下发启动指令。
+// worker 通过中央内部端点读取待起充订单。
+// 订单未启动、支付意图已付、支付实付且金额匹配，三项必须同时满足。
 
 // PaidChargeOrder 是待下发起充指令的一笔订单。
 type PaidChargeOrder struct {
-	ID      uint64 `gorm:"column:id" json:"id"`             // 原订单主键，作为递增游标
-	OrderNo string `gorm:"column:order_no" json:"order_no"` // 原订单号，用于具名启动请求
+	ID      uint64 `gorm:"column:id" json:"id"`             // 订单主键，作为递增游标
+	OrderNo string `gorm:"column:order_no" json:"order_no"` // 订单号，用于具名启动请求
 }
 
 // paidStartBatchSize 一次扫多少笔。游标按订单主键递增，重复调用会从上次位置继续。

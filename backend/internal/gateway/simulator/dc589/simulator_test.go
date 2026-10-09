@@ -747,7 +747,7 @@ func TestSettlementEnergyAgreesWithTheReportedPower(t *testing.T) {
 
 	config := quietConfig(t, ScenarioByTime)
 	config.Gateway = gateway.address
-	config.PowerDeciWatts = 36000 // 3600.0W, so a second is exactly 1000mWh
+	config.PowerDeciWatts = 36000 // 3600 W 持续 1 秒恰好产生 1000 mWh。
 	go func() { _ = Run(ctx, config) }()
 
 	gateway.startCharge(t, 1, dc589.ByTime, 60)

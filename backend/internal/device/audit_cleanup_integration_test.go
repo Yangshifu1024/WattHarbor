@@ -18,12 +18,11 @@ import (
 // deviceAuditKey 保存审计记录的完整分区主键，仅用于本测试的精确清理和锁定位。
 type deviceAuditKey struct {
 	ID           uint64    // 自增记录 ID，与月份共同定位唯一审计行。
-	CreatedMonth time.Time // 数据库保存的分区月份，删除时使用原值。
+	CreatedMonth time.Time // 数据库保存的分区月份，删除时使用读取值。
 }
 
-// cleanupDeviceAudits 在 ctx 及最多十秒期限内清理 db 中 requestIDs 对应的测试审计。
-// 先非锁枚举完整主键，再按固定主键顺序逐行删除并保留请求归属条件；空集合不执行 SQL。
-// 返回定位或删除错误，不重试、不提交调用方事务；调用前须等待本 fixture 写入退出，调用方核对零残留。
+// cleanupDeviceAudits 在十秒内按本测试请求号定位完整主键，再逐行删除审计；空集合不执行 SQL。
+// 先等待本测试写入结束，删除保留请求号条件，调用方核对零残留。
 func cleanupDeviceAudits(ctx context.Context, db *gorm.DB, requestIDs []string) error {
 	if len(requestIDs) == 0 {
 		return nil
@@ -44,9 +43,8 @@ func cleanupDeviceAudits(ctx context.Context, db *gorm.DB, requestIDs []string) 
 	return nil
 }
 
-// TestDeviceAuditCleanupDoesNotWaitForOtherRequest 用 t 管理两条独立真库连接和唯一请求造数。
-// 明确 RR：另一事务完整主键锁住无关审计后，清理事务仍须在该锁未释放时删除自身请求并保留无关行。
-// 原无索引 request_id 范围 DELETE 会等待无关主键锁直至期限；测试不使用 sleep，不证明生产资金逻辑。
+// TestDeviceAuditCleanupDoesNotWaitForOtherRequest 验证另一事务锁住无关审计时，仍可删除本测试审计。
+// 使用两条真库连接和 RR 隔离，保留无关记录，不靠睡眠排序。
 func TestDeviceAuditCleanupDoesNotWaitForOtherRequest(t *testing.T) {
 	cleaner, locker := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
 	otherRequest, ownRequest := uuid.NewString(), uuid.NewString()

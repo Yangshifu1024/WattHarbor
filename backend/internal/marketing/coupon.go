@@ -11,65 +11,64 @@ import (
 	"time"
 )
 
-// InputError 表示营销业务输入不满足既定准入；存储故障不能包装成输入错误。
+// InputError 表示营销请求内容不合法；数据库故障不能包装成输入错误。
 type InputError struct {
-	Message string // 原公开准入文案
+	Message string // 公开校验提示
 }
 
-// Error 返回 e 的公开文案，无IO。
+// Error 返回公开输入提示。
 func (e *InputError) Error() string { return e.Message }
 
-// Coupon 是券模板业务输入与读模型，不包含ORM映射；优惠三种口径互斥。
+// Coupon 是券模板参数和查询结果，金额、折扣、免费时长三种优惠互斥。
 type Coupon struct {
-	ID                 uint64           `json:"id"`                   // 原券主键，创建时必须为0
+	ID                 uint64           `json:"id"`                   // 券主键，创建时必须为0
 	Name               string           `json:"name"`                 // 非空名称，最多128字
-	DiscountType       string           `json:"discount_type"`        // amount、percentage或time_free
-	DiscountValueCents *int64           `json:"discount_value_cents"` // 满减分值，其他口径为空
-	DiscountPercent    *decimal.Decimal `json:"discount_percent"`     // 原两位小数百分比，严格在0与100之间
-	FreeMinutes        *uint32          `json:"free_minutes"`         // 原免费分钟，1–1440，其他口径为空
-	MinChargeCents     int64            `json:"min_charge_cents"`     // 原使用门槛，非负分
-	ValidHours         uint32           `json:"valid_hours"`          // 原领取后有效小时，1–87600
-	TotalQuota         uint32           `json:"total_quota"`          // 原模板总量，0不限
-	PerUserQuota       uint32           `json:"per_user_quota"`       // 原人工发放单人上限，必须大于0
-	Status             string           `json:"status"`               // active或disabled；创建强制active
-	StartAt            *time.Time       `json:"start_at"`             // 原可选开始时刻
-	EndAt              *time.Time       `json:"end_at"`               // 原可选结束时刻，须晚于开始
+	DiscountType       string           `json:"discount_type"`        // amount、percentage 或 time_free
+	DiscountValueCents *int64           `json:"discount_value_cents"` // 满减分值，其他优惠类型为空
+	DiscountPercent    *decimal.Decimal `json:"discount_percent"`     // 两位小数百分比，严格在0与100之间
+	FreeMinutes        *uint32          `json:"free_minutes"`         // 免费分钟，1–1440，其他优惠类型为空
+	MinChargeCents     int64            `json:"min_charge_cents"`     // 使用门槛，非负分
+	ValidHours         uint32           `json:"valid_hours"`          // 领取后有效小时，1–87600
+	TotalQuota         uint32           `json:"total_quota"`          // 模板总量，0 表示不限量
+	PerUserQuota       uint32           `json:"per_user_quota"`       // 人工发放单人上限，必须大于0
+	Status             string           `json:"status"`               // active 或 disabled；创建强制 active
+	StartAt            *time.Time       `json:"start_at"`             // 可选开始时刻
+	EndAt              *time.Time       `json:"end_at"`               // 可选结束时刻，须晚于开始
 }
 
-// CouponUpdate 是模板已发放后仍允许修改的两个字段，不改变优惠口径及预算。
+// CouponUpdate 只允许修改名称和状态，不改变优惠或预算。
 type CouponUpdate struct {
-	Name   string `json:"name"`   // 原模板名称，非空最多128字
-	Status string `json:"status"` // active或disabled
+	Name   string `json:"name"`   // 模板名称，非空最多128字
+	Status string `json:"status"` // active 或 disabled
 }
 
-// GrantInput 保留人工发放的原用户及请求身份，不携带当前设备或付款状态。
+// GrantInput 保存人工发放的用户和请求号。
 type GrantInput struct {
-	RequestID string `json:"request_id"`     // 原UUID形状幂等号
-	UserID    uint64 `json:"user_id,string"` // 原目标用户主键，审计保持十进制文本
+	RequestID string `json:"request_id"`     // UUID 形状幂等号
+	UserID    uint64 `json:"user_id,string"` // 目标用户主键，审计保持十进制文本
 }
 
-// GrantResult 返回原发放主键与请求号，不替换重放身份。
+// GrantResult 返回发放主键和首次请求号，重放不生成新编号。
 type GrantResult struct {
-	CouponGrantID uint64 `json:"coupon_grant_id"` // 原发放主键
-	RequestID     string `json:"request_id"`      // 原客户端幂等号
+	CouponGrantID uint64 `json:"coupon_grant_id"` // 发放主键
+	RequestID     string `json:"request_id"`      // 客户端幂等号
 }
 
-// CouponService 拥有模板准入、人工发放及审计事务；权限沿用原全局券管理能力。
+// CouponService 负责模板校验、人工发放和同事务审计，使用全局券管理权限。
 type CouponService struct {
 	DB *gorm.DB // 所属中央连接或调用方事务，由进程管理
 }
 
-// RedeemRef 是调用方冻结支付事实；优惠原价和实付优惠不得在到账时重新解释。
+// RedeemRef 保存支付时确定的原价和优惠，到账核销时不能重新计算。
 type RedeemRef struct {
-	UserID        uint64 // 原付款用户
-	CouponGrantID uint64 // 原权益主键
-	TotalCents    int64  // 原优惠前费用，分
-	DiscountCents int64  // 原冻结优惠，分
-	PaymentOrder  uint64 // 原支付主键
+	UserID        uint64 // 付款用户
+	CouponGrantID uint64 // 权益主键
+	TotalCents    int64  // 优惠前费用，分
+	DiscountCents int64  // 冻结优惠，分
+	PaymentOrder  uint64 // 支付主键
 }
 
-// Quote 在 ctx 下只读计算 userID 的 grantID 对 totalCents 原价的优惠，返回整分或无券／过期／门槛／存储错误。
-// 不核销、不取得事务锁；当前套餐仍不接受组合券。
+// Quote 计算本人券对原价的优惠，金额单位分；只报价不核销，套餐不支持组合券。
 func (s CouponService) Quote(ctx context.Context, userID, grantID uint64, totalCents int64) (int64, error) {
 	grant, err := loadGrant(ctx, s.DB, userID, grantID, false)
 	if err != nil {
@@ -81,9 +80,8 @@ func (s CouponService) Quote(ctx context.Context, userID, grantID uint64, totalC
 	return discountFor(grant, totalCents)
 }
 
-// RedeemInTx 在 tx 原请求context下按 ref／reference 锁定并核销原权益，返回冲突／过期／门槛／存储错误。
-// 同一权益及支付凭据重放沿用首次结果；核销优惠须等于支付冻结优惠，不从实付额再算一次。
-// 核销与调用方资金事务同提交／回滚，不启动事务或后台任务，不更换原号。
+// RedeemInTx 在资金事务内锁定并核销券，同一券和支付记录重放沿用首次结果。
+// 优惠须等于支付时保存的优惠，不能按实付额再算；核销随资金一起提交或回滚。
 func (s CouponService) RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) error {
 	if tx == nil || ref.UserID == 0 || ref.CouponGrantID == 0 || ref.PaymentOrder == 0 || reference == "" || ref.DiscountCents < 0 || ref.DiscountCents > ref.TotalCents {
 		return ErrCouponGrant
@@ -118,7 +116,7 @@ func (s CouponService) RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) 
 	return saveRedemption(tx, grant, ref, reference)
 }
 
-// validDiscount 核对 in 的三选一优惠字段与原金额／分钟／小数约束，返回事实，无IO。
+// validDiscount 检查金额、折扣和免费时长三选一，且各项满足数值限制。
 func validDiscount(in Coupon) bool {
 	switch in.DiscountType {
 	case "amount":
@@ -131,7 +129,7 @@ func validDiscount(in Coupon) bool {
 	return false
 }
 
-// List 在 ctx 下核对 actor 原coupon.read权限，返回未删除模板的原倒序数组或禁止／存储错误，无写入。
+// List 核对 coupon.read 权限后倒序读取未删除模板。
 func (s CouponService) List(ctx context.Context, actor operations.Profile) ([]Coupon, error) {
 	if !actor.HasPermission("coupon.read") {
 		return nil, operations.ErrForbidden
@@ -147,8 +145,8 @@ func (s CouponService) List(ctx context.Context, actor operations.Profile) ([]Co
 	return out, nil
 }
 
-// Create 在 ctx 下以 audit 原coupon.create权限校验 in 并创建启用模板，返回原主键模型或输入／存储错误。
-// 模板与审计共用一个事务；审计失败全部回滚，不接受调用方主键或创建时停用状态。
+// Create 核对 coupon.create 权限和内容后创建启用模板，并同事务保存审计。
+// 不接受客户端主键或初始停用状态。
 func (s CouponService) Create(ctx context.Context, audit ops.AuditContext, in Coupon) (Coupon, error) {
 	if !audit.Actor.HasPermission("coupon.create") {
 		return Coupon{}, operations.ErrForbidden
@@ -170,8 +168,7 @@ func (s CouponService) Create(ctx context.Context, audit ops.AuditContext, in Co
 	return Coupon(row), err
 }
 
-// Update 在 ctx 下以 audit 原coupon.update权限将 id 模板改为 in，返回原允许字段或输入／缺失／存储错误。
-// 原行锁、修改与审计处于同一事务；额度及优惠字段不接受修改，不在失败后提交模板。
+// Update 核对 coupon.update 权限后锁定模板，只更新允许字段，并同事务保存审计。
 func (s CouponService) Update(ctx context.Context, audit ops.AuditContext, id uint64, in CouponUpdate) (CouponUpdate, error) {
 	if !audit.Actor.HasPermission("coupon.update") {
 		return in, operations.ErrForbidden
@@ -189,8 +186,7 @@ func (s CouponService) Update(ctx context.Context, audit ops.AuditContext, id ui
 	return in, err
 }
 
-// Stats 在 ctx 下以 actor 原coupon.read权限读取 id 原模板发放统计，返回原计数或禁止／缺失／存储错误。
-// 未用但已到期仍统计为expired，无资金或发放写入。
+// Stats 核对 coupon.read 权限后读取发放统计；未用但已到期计为 expired。
 func (s CouponService) Stats(ctx context.Context, actor operations.Profile, id uint64) (AdminCouponStats, error) {
 	if !actor.HasPermission("coupon.read") {
 		return AdminCouponStats{}, operations.ErrForbidden
@@ -198,8 +194,8 @@ func (s CouponService) Stats(ctx context.Context, actor operations.Profile, id u
 	return (AdminCouponRepo{DB: s.DB}).Stats(ctx, id)
 }
 
-// Grant 在 ctx 下以 audit 原coupon.grant权限给 id 模板的 in.UserID 发券，返回原凭据或输入／冲突／存储错误。
-// 模板预算、原请求内容、用户准入与发放由同事务所属能力仲裁，审计失败整体回滚，不换请求号重试。
+// Grant 核对 coupon.grant 权限后向指定用户发券。
+// 用户状态、预算和首次请求在同一事务检查，发放与审计一起提交；重试使用首次请求号。
 func (s CouponService) Grant(ctx context.Context, audit ops.AuditContext, id uint64, in GrantInput) (GrantResult, error) {
 	out := GrantResult{RequestID: in.RequestID}
 	if !audit.Actor.HasPermission("coupon.grant") {
@@ -222,9 +218,8 @@ func (s CouponService) Grant(ctx context.Context, audit ops.AuditContext, id uin
 	return out, err
 }
 
-// GrantInTx 在 tx 原context下按 couponID／userID／requestID 仲裁人工发放，返回原发放号或准入／冲突／存储错误。
-// 首次原凭据优先重放，用户→模板→发放行取得当前锁后复核请求，按原有效期及预算发券。
-// 不自行提交；发放、原请求与调用方审计共用完整事务，唯一键冲突不留下额外权益。
+// GrantInTx 先检查首次请求重放，再按用户→模板→发放行加锁，复查请求和额度后发券。
+// 发放、请求凭据和审计共用调用方事务，唯一键命中不新增券。
 func (s CouponService) GrantInTx(tx *gorm.DB, couponID, userID uint64, requestID string) (uint64, error) {
 	if tx == nil || couponID == 0 || userID == 0 || !operations.ValidRequestID(requestID) {
 		return 0, ErrCouponGrant

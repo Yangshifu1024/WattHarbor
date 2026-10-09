@@ -5,31 +5,23 @@ import (
 	"time"
 )
 
-// TestActivityGrantExpiryTakesEarliestOfThreeBounds 钉住活动发券的到期时间。
-//
-// 三个上界取最早：券有效期、券自身结束时间、活动结束时间。
-// 少算一个上界就会发出活动收尾后仍能核销的券——单测无法发现这种券，
-// 只能等核销台账和预算对不上时才暴露。
+// TestActivityGrantExpiryTakesEarliestOfThreeBounds 验证到期时间取券有效期、模板结束和活动结束中的最早值。
 func TestActivityGrantExpiryTakesEarliestOfThreeBounds(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	at := func(h int) time.Time { return now.Add(time.Duration(h) * time.Hour) }
 
-	// 三个上界分别取 24 / 48 / 10 小时，只有逐个把它们设成最短的那一项，
-	// 期望值才互不相同——若三个上界同时存在却让某一项永远赢不了，
-	// 少算一个上界的错误就测不出来。
+	// 让三个截止点分别成为最早值，确保遗漏任一上限都能使测试失败。
 	couponEnd, activityEnd := at(48), at(10)
 
 	cases := []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
-		// validHours 券从发放时刻起算的有效期，单位小时；零用来验证立即到期边界。
+		// validHours 是自发券起算的有效小时数，零用于立即到期边界。
 		validHours int
-		// couponEnd 券模板的可选绝对结束时间；nil 表示无模板结束限制。
+		// couponEnd 是模板结束时间，nil 表示不限制。
 		couponEnd *time.Time
-		// activityEn 活动的绝对结束时间，与券有效期和模板结束时间共同取最早期限。
+		// activityEn 是活动结束时间，也是发券有效期上限。
 		activityEn time.Time
-		// want 当前规则组合预期的最早发券到期时刻。
-		want time.Time
+		want       time.Time
 	}{
 		{"券有效期最短", 24, &couponEnd, at(72), at(24)},
 		{"券结束时间最短", 72, &couponEnd, at(72), at(48)},
@@ -57,13 +49,10 @@ func TestActivityGrantExpiryTakesEarliestOfThreeBounds(t *testing.T) {
 	})
 }
 
-// TestPerUserAllowanceTreatsUnsetAsOne 钉住单人份数的归一化。
-//
-// 0 与负数都必须落到 1 份，不能当成不限量。不限量的语义由总发放上限承担；
-// 若单人额度被当成不限量，一次活动就能把全部预算发给同一个人。
+// TestPerUserAllowanceTreatsUnsetAsOne 验证单人份数为零或负数时按一份处理，不表示不限量。
 func TestPerUserAllowanceTreatsUnsetAsOne(t *testing.T) {
 	cases := map[string]struct {
-		// in,want in 为配置的单人份数，want 为预期有效份数；零或负数预期使用一份，不当作不限量。
+		// in、want 分别为配置和有效份数，非正配置预期为一份。
 		in, want int
 	}{
 		"未配置（0）":   {0, 1},
@@ -82,10 +71,7 @@ func TestPerUserAllowanceTreatsUnsetAsOne(t *testing.T) {
 	}
 }
 
-// TestInviteEligibleRejectsSelfInviteAndEmptyInviter 钉住邀请有奖的发放前提。
-//
-// 自邀与空邀请人会让两个（可能是空）账号成对消耗活动预算而不产生真实用户。
-// 非邀请类触发不受邀请关系影响——把它们一并拒绝会误伤首充与节日活动。
+// TestInviteEligibleRejectsSelfInviteAndEmptyInviter 验证邀请奖励拒绝自邀和空邀请人；其他触发不检查邀请关系。
 func TestInviteEligibleRejectsSelfInviteAndEmptyInviter(t *testing.T) {
 	const self, inviter, user = uint64(7), uint64(8), uint64(9)
 
@@ -119,11 +105,7 @@ func TestInviteEligibleRejectsSelfInviteAndEmptyInviter(t *testing.T) {
 	})
 }
 
-// TestActivityEventIDIsStableAndScopeSeparated 钉住发放幂等键。
-//
-// 幂等键由规则、用户、事件键与 scope 派生：网络重试必须算出同一个键（否则
-// 重试会重复发券），而邀请人与被邀请人的奖励必须算出不同的键（否则一方拿到
-// 奖励会顶掉另一方的那张券）。
+// TestActivityEventIDIsStableAndScopeSeparated 验证重试生成相同发放号，邀请人和被邀请人的奖励号不同。
 func TestActivityEventIDIsStableAndScopeSeparated(t *testing.T) {
 	base := ActivityEvent{UserID: 42, EventKey: "order:O-1"}
 
@@ -151,10 +133,7 @@ func TestActivityEventIDIsStableAndScopeSeparated(t *testing.T) {
 	}
 }
 
-// TestGrantSourceForMapsOnlyInviteReward 钉住发放来源的映射。
-//
-// coupon_grant 的 grant_source 决定 countRuleGrants 按哪一档统计已发放量，
-// 映射错了会让满减活动的预算统计把别人的券算进来，提前耗尽。
+// TestGrantSourceForMapsOnlyInviteReward 验证邀请奖励来源映射，预算按相应发放来源统计。
 func TestGrantSourceForMapsOnlyInviteReward(t *testing.T) {
 	if got := grantSourceFor(TriggerInviteReward); got != "invite_reward" {
 		t.Errorf("邀请有奖应记为 invite_reward，实际 %q", got)
@@ -166,11 +145,7 @@ func TestGrantSourceForMapsOnlyInviteReward(t *testing.T) {
 	}
 }
 
-// TestApplyActivityRulesRejectsIncompleteEvent 钉住事件入参的前置校验。
-//
-// 这三项缺失任何一项都算不出可用的幂等键：用户为空会发到不存在的账户，
-// 事件键为空会让所有重试撞同一个键，Now 为零会让活动窗口判定恒为假。
-// 校验在触碰事务之前完成，所以这里不需要数据库。
+// TestApplyActivityRulesRejectsIncompleteEvent 验证用户、事件键或时间缺失时，在访问数据库前拒绝。
 func TestApplyActivityRulesRejectsIncompleteEvent(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	cases := map[string]ActivityEvent{
@@ -181,8 +156,7 @@ func TestApplyActivityRulesRejectsIncompleteEvent(t *testing.T) {
 	}
 	for name, event := range cases {
 		t.Run(name, func(t *testing.T) {
-			// tx 传 nil 是有意的：校验必须发生在任何数据库访问之前，
-			// 一旦这个前提被打破，这里会先 panic 而不是返回业务错误。
+			// 故意传 nil 事务，确保输入检查先于数据库访问。
 			results, err := (ActivityService{}).ApplyInTx(nil, event)
 			if err == nil {
 				t.Fatal("入参不完整却通过了校验")
@@ -194,10 +168,7 @@ func TestApplyActivityRulesRejectsIncompleteEvent(t *testing.T) {
 	}
 }
 
-// TestActivityEventKeysArePrefixedAndStable 钉住两个事件键构造器的格式。
-//
-// 前缀把不同来源的触发隔开：同一笔充值与同一笔订单若共用一个键，
-// 幂等约束会误判为同一次事件，少发一张券。
+// TestActivityEventKeysArePrefixedAndStable 验证充值和订单事件前缀不同，且重试不改键。
 func TestActivityEventKeysArePrefixedAndStable(t *testing.T) {
 	if got := ActivityEventKeyForRecharge("R-1"); got != "recharge:R-1" {
 		t.Errorf("充值事件键格式不对：%q", got)

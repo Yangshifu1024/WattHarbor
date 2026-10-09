@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// myInvoices 从 c 验证身份并解析分页，读取所属发票并写列表、总数及分页；查询失败为 503，无业务写入。
+// myInvoices 校验当前用户身份并解析分页，读取发票并写列表、总数及分页；查询失败为 503。
 func (a InvoiceAPI) myInvoices(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -30,7 +30,7 @@ func (a InvoiceAPI) myInvoices(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": out.Items, "total": out.Total, "page": page, "page_size": pageSize})
 }
 
-// applyInvoice 从 c 验证身份并绑定开票输入，校验请求号、订单号及发票字段后调用所属申请用例。
+// applyInvoice 校验当前用户身份并绑定开票输入，校验请求号、订单号及发票字段后调用申请用例。
 // 成功写申请回执，参数错误为 400、缺失订单为 404、订单未完成或未计费及重复申请为 409、读取或保存故障为 503；金额由订单确定。
 func (a InvoiceAPI) applyInvoice(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
@@ -46,7 +46,7 @@ func (a InvoiceAPI) applyInvoice(c *gin.Context) {
 		httpapi.BadRequest(c, "请提供 UUID 请求号与订单号")
 		return
 	}
-	// 发票类型沿用 normal / vat_special；空值沿用原校验助手的放行规则。
+	// 发票类型沿用 normal / vat_special；空值沿用校验助手的放行规则。
 	if !userhttp.AllowedStatus(in.InvoiceType, "normal vat_special") {
 		httpapi.BadRequest(c, "发票类型无效")
 		return

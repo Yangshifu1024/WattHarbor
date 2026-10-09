@@ -24,20 +24,20 @@ type Scheduler struct {
 	Handlers map[string]Handler // 代码中登记的处理器，配置不能新增业务实现。
 }
 
-// Task 是调度用例消费的仓储行投影，原字段映射由 worker repo 定义。
+// Task 是调度用例需要的仓储读取的记录，字段映射由 worker repo 定义。
 type Task = workerrepo.Task
 
-// CleanupHistory 在 ctx 下调用原历史清理，返回仓储错误；成功零行保留一天，其余结束记录保留30天。
+// CleanupHistory 调用历史清理，返回仓储错误；成功零行保留一天，其余结束记录保留 30 天。
 // running 记录由 execute 恢复，不在本方法删除。
 func (s Scheduler) CleanupHistory(ctx context.Context) error {
 	return workerrepo.CleanupExecutionHistory(ctx, s.DB)
 }
 
-// parser 保留原可选秒字段和描述式 UTC cron 语法，不接受每行时区覆盖。
+// parser 保留可选秒字段和描述式 UTC cron 语法，不接受每行时区覆盖。
 var parser = cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
-// RunDue 在 ctx 下读取已登记的到期任务并逐个执行，返回配置、读取或各任务执行错误的合并。
-// 任务领取及原租约在 execute 内处理，不因单任务失败跳过本轮其他已读取任务。
+// RunDue 读取已登记的到期任务并逐个执行，返回配置、读取或各任务执行错误的合并。
+// 任务领取及租约在 execute 内处理，不因单任务失败跳过本轮其他已读取任务。
 func (s Scheduler) RunDue(ctx context.Context) error {
 	if s.DB == nil {
 		return errors.New("scheduler database unavailable")
@@ -64,7 +64,7 @@ func (s Scheduler) RunDue(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-// Trigger 在 ctx 下按 code 手动执行登记任务，reason 为原触发原因，force 允许执行暂停任务。
+// Trigger 按 code 手动执行登记任务，reason 为触发原因，force 允许执行暂停任务。
 // 返回是否已领取并开始执行，以及未登记、配置、暂停或执行错误；竞争未领取返回 false/nil。
 func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool) (bool, error) {
 	if s.Handlers[code] == nil {
@@ -86,12 +86,12 @@ func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool)
 	return s.execute(ctx, task, force, "admin_api", reason)
 }
 
-// ErrPaused 表示原任务暂停且未使用强制手动触发，HTTP 适配层保留其失败语义。
+// ErrPaused 表示任务暂停且未使用强制手动触发，HTTP 适配层保留其失败语义。
 var ErrPaused = errors.New("scheduled task paused")
 
-// execute 在 ctx 下按 task 原快照领取两分钟租约，force、triggeredBy 和 reason 保留原触发规则。
-// 领取后恢复过期 running 日志，创建本次日志并以30秒 context 执行处理器，独立5秒保存终态和推进任务。
-// 返回是否领取及原处理器、日志、任务错误的合并；租约竞争未领取为 false/nil，不重试或延长租约。
+// execute 按 task 快照领取两分钟租约，force、triggeredBy 和 reason 保留触发规则。
+// 领取后恢复过期 running 日志，创建本次日志并以 30 秒 context 执行处理器，独立 5 秒保存终态和更新任务。
+// 返回是否领取及处理器、日志、任务错误的合并；租约竞争未领取为 false/nil，不重试或延长租约。
 func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggeredBy, reason string) (bool, error) {
 	handler := s.Handlers[task.Code]
 	if handler == nil {
@@ -146,10 +146,10 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	return true, errors.Join(runErr, logErr, taskErr)
 }
 
-// parseSpec 将 raw 按原 UTC cron 语法解析，返回计划或格式／panic 错误；无 IO。
-// 保留64字节上限及 TZ= 拒绝，不在解析失败时执行任务。
+// parseSpec 将 raw 按 UTC cron 语法解析，返回计划或格式／panic 错误。
+// 保留 64 字节上限及 TZ= 拒绝，不在解析失败时执行任务。
 func parseSpec(raw string) (spec cron.Schedule, err error) {
-	// 所有 worker 计划保留 UTC，拒绝逐行时区覆盖，不改变原解析时基。
+	// 所有 worker 计划保留 UTC，拒绝逐行时区覆盖，不改变解析时基。
 	if strings.Contains(raw, "TZ=") || len(raw) > 64 {
 		return nil, errors.New("timezone override or oversized cron expression")
 	}
@@ -161,7 +161,7 @@ func parseSpec(raw string) (spec cron.Schedule, err error) {
 	return parser.Parse(raw)
 }
 
-// runSafely 在 ctx 下执行 handler，返回其原行数及错误；panic 转为原调度错误并用于日志收尾。
+// runSafely 执行 handler，返回其行数及错误；panic 转为调度错误并用于日志收尾。
 // 不创建后台协程或改变处理器副作用，取消由 handler 响应。
 func runSafely(ctx context.Context, handler Handler) (rows uint64, err error) {
 	defer func() {

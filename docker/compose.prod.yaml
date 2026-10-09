@@ -130,8 +130,7 @@ services:
       chargepilot-provision-runtime: { condition: service_completed_successfully }
       chargepilot-redis-cache: { condition: service_healthy }
 
-  # 对内服务间接口。不映射端口，对外只有 Caddy 一个入口。
-  # 不取 JWT_SECRET：internal 端点一律走服务令牌，会话签发不在这一侧。
+  # central 只在容器网络内接受服务令牌调用，不映射端口，也不签发用户会话。
   chargepilot-central:
     build:
       <<: *go-build
@@ -158,8 +157,8 @@ services:
       chargepilot-provision-runtime: { condition: service_completed_successfully }
       chargepilot-redis-cache: { condition: service_healthy }
 
-  # 运营后台。只暴露 8081，且不映射到宿主机——对外只有 Caddy 一个入口。
-  # 不取微信与支付凭据：后台不替用户登录，也不发起支付。
+  # 后台由 Caddy 转发至容器内的 8081，不映射到宿主机。
+  # 后台不处理用户微信登录或发起支付，不读取相关凭据。
   chargepilot-admin:
     build:
       <<: *go-build

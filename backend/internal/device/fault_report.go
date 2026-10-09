@@ -8,36 +8,35 @@ import (
 	"gorm.io/gorm"
 )
 
-// FaultInputError 表示工单输入不满足原准入；存储错误不得转换为输入或记录缺失。
+// FaultInputError 表示工单请求不合法；存储故障不能当作输入错误或记录缺失。
 type FaultInputError struct {
-	Message string // 原公开准入文案
+	Message string // 公开校验提示
 }
 
-// Error 返回 e 原公开文案，不执行IO。
+// Error 返回公开工单输入提示。
 func (e *FaultInputError) Error() string { return e.Message }
 
-// FaultSubmission 保留用户原设备、类型、文本和图片输入；历史port_no未入库，不增加推断端口。
+// FaultSubmission 保存用户提交的设备、类型、说明和图片；port_no 未入库，不推断端口。
 type FaultSubmission struct {
-	DeviceID    string   `json:"device_id"`   // 原设备编号，非空最多64字节；兼容未知设备报告
-	PortNo      uint8    `json:"port_no"`     // 原兼容输入；既有表无端口字段，不保存或推断
-	FaultType   string   `json:"fault_type"`  // 原mechanical／electrical／communication／display／other
-	Description *string  `json:"description"` // 原可空描述，最多2000字
-	Images      []string `json:"images"`      // 原图片地址数组，最多9项，nil保留原JSON null
+	DeviceID    string   `json:"device_id"`   // 设备编号，非空最多64字节；兼容未知设备报告
+	PortNo      uint8    `json:"port_no"`     // 兼容输入；既有表无端口字段，不保存或推断
+	FaultType   string   `json:"fault_type"`  // mechanical／electrical／communication／display／other
+	Description *string  `json:"description"` // 可空描述，最多2000字
+	Images      []string `json:"images"`      // 图片地址数组，最多9项，nil 保留 JSON null
 }
 
-// FaultSubmissionResult 是首次报告的原自增主键与open状态，提交失败不保留报告或事件。
+// FaultSubmissionResult 返回首次报告主键和 open 状态，失败不留下报告或事件。
 type FaultSubmissionResult struct {
-	ID     uint64 `json:"id"`     // 原工单自增主键
-	Status string `json:"status"` // 原首次open
+	ID     uint64 `json:"id"`     // 工单自增主键
+	Status string `json:"status"` // 首次 open
 }
 
-// FaultService 拥有设备报修准入、完整流转事务和所属查询；连接由进程管理。
+// FaultService 负责报修校验、状态事务和查询，连接由进程管理。
 type FaultService struct {
-	DB *gorm.DB // central所属工单连接或调用方事务
+	DB *gorm.DB // central 所属工单连接或调用方事务
 }
 
-// Report 在 ctx 下按 userID 原用户和 in 原内容验证后原子创建报告及首条可见事件。
-// 返回原主键／open或输入／存储错误；不写设备配置，不依据未知设备号创造设备或端口事实。
+// Report 校验本人请求后，在同一事务创建 open 报告和首条可见事件；未知设备号不会补建设备或端口。
 func (s FaultService) Report(ctx context.Context, userID uint64, in FaultSubmission) (FaultSubmissionResult, error) {
 	if userID == 0 {
 		return FaultSubmissionResult{}, &FaultInputError{"报修请求无效"}
@@ -64,7 +63,7 @@ func (s FaultService) Report(ctx context.Context, userID uint64, in FaultSubmiss
 	return out, err
 }
 
-// validFaultType 核对 value 原五类故障类型，无IO。
+// validFaultType 检查五种允许的故障类型。
 func validFaultType(value string) bool {
 	switch value {
 	case "mechanical", "electrical", "communication", "display", "other":
@@ -73,12 +72,12 @@ func validFaultType(value string) bool {
 	return false
 }
 
-// validFaultPage 核对 q 原有界分页，无IO；状态由调用者的业务族另行验证。
+// validFaultPage 检查分页上下限，状态由对应接口用例校验。
 func validFaultPage(q persist.PageQuery) bool {
 	return q.Page >= 1 && q.Page <= 100000 && q.PageSize >= 1 && q.PageSize <= 100
 }
 
-// UserReports 在 ctx 下按 userID 和 q 原分页只读取自己的报告，返回原投影页或输入／存储错误，无写入。
+// UserReports 分页读取本人报告。
 func (s FaultService) UserReports(ctx context.Context, userID uint64, q persist.PageQuery) (persist.Page[map[string]any], error) {
 	if userID == 0 || !validFaultPage(q) {
 		return persist.Page[map[string]any]{}, &FaultInputError{"分页或用户编号无效"}
@@ -86,8 +85,8 @@ func (s FaultService) UserReports(ctx context.Context, userID uint64, q persist.
 	return ListUserFaultReports(ctx, s.DB, userID, q.Page, q.PageSize)
 }
 
-// UserHistory 在 ctx 下先核对 userID 对 id 原报告归属，再读取可见事件；不存在／他人同为缺失。
-// 返回原正序数组或输入／缺失／存储错误，不把数据库故障隐藏成404，不泄漏内部不可见事件。
+// UserHistory 核对本人报告后正序读取用户可见事件。
+// 他人报告和不存在都按缺失处理，存储故障不能隐藏为 404。
 func (s FaultService) UserHistory(ctx context.Context, userID, id uint64) ([]map[string]any, error) {
 	if userID == 0 || id == 0 {
 		return nil, &FaultInputError{"报修编号无效"}
@@ -102,7 +101,7 @@ func (s FaultService) UserHistory(ctx context.Context, userID, id uint64) ([]map
 	return ListUserVisibleFaultEvents(ctx, s.DB, id)
 }
 
-// requireFaultPermission 核对 actor 原工单权限，返回禁止或nil，不执行IO。
+// requireFaultPermission 检查当前工单权限。
 func requireFaultPermission(actor operations.Profile, permission string) error {
 	if !actor.HasPermission(permission) {
 		return operations.ErrForbidden

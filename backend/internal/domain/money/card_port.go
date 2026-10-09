@@ -1,11 +1,9 @@
-// 刷卡所需的端口实时状态抽象。端口发现与扫描能力归属 scan 家族
-// （charge.ScanAPI），card 包只依赖本接口，由 cmd/central 接线注入，
-// 避免 card 反向依赖 charge。
+// 端口发现由 charging 提供，card 只通过接口读取，由 cmd/central 注入。
 package money
 
 import "context"
 
-// PortRef 是刷卡事务所需的最小端口事实集合（来自 scan 家族的实时查询）。
+// PortRef 是刷卡事务所需的最小端口信息（来自 scan 模块的实时查询）。
 type PortRef struct {
 	Found        bool   // 端口是否解析成功（scan 侧返回 200 且端口存在）
 	Kind         string // 解析结果类型，刷卡要求 "port"
@@ -18,7 +16,7 @@ type PortRef struct {
 	Available    bool
 }
 
-// PortLookup 由 scan 家族实现：按端口编码查询实时端口状态，第二返回值为 HTTP 状态码语义。
+// PortLookup 由 scan 模块实现：按端口编码查询实时端口状态，第二返回值为 HTTP 状态码语义。
 type PortLookup interface {
 	LookupPort(ctx context.Context, portID string) (PortRef, int)
 }

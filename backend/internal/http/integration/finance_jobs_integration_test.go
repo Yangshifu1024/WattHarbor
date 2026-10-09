@@ -21,22 +21,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// financeDeliveryOrders 只在订单入账边界记录原身份并固定第二笔故障。
-// HTTP、BillingService、计费投递SQL均真实执行；此fixture不扣款或模拟真实资金幂等。
+// financeDeliveryOrders 只在订单入账边界记录标识并固定第二笔故障。
+// HTTP、BillingService、计费投递 SQL 均真实执行；此 fixture 不扣款或模拟真实资金幂等。
 type financeDeliveryOrders struct {
-	failing uint64         // 当前固定失败的原订单主键，零表示恢复依赖。
-	calls   map[uint64]int // 每个原身份的Apply次数，核对重放没有换主键或重投已确认笔。
+	failing uint64         // 当前固定失败的订单主键，零表示恢复依赖。
+	calls   map[uint64]int // 每个身份的 Apply 次数，核对重放没有换主键或重投已确认笔。
 }
 
-// Due 在ctx下返回无新计算任务及nil错误，只允许恢复原投递；不访问数据库。
+// Due 返回无新计算任务及 nil 错误，只允许恢复投递；不访问数据库。
 func (o *financeDeliveryOrders) Due(context.Context) ([]uint64, error) { return nil, nil }
 
-// Read 对任何ctx和id返回错误，确保恢复投递没有重新计算；不执行IO。
+// Read 对任何 ctx 和 id 返回错误，确保恢复投递没有重新计算。
 func (o *financeDeliveryOrders) Read(context.Context, uint64) (settlement.Source, error) {
 	return settlement.Source{}, errors.New("unexpected calculation")
 }
 
-// Apply 记录result原订单主键，对failing返回固定错误，其余成功；只修改fixture计数。
+// Apply 记录 result 订单主键，对 failing 返回固定错误，其余成功；只修改 fixture 计数。
 func (o *financeDeliveryOrders) Apply(_ context.Context, result settlement.Result) error {
 	id := result.Source.ChargeOrderID
 	o.calls[id]++
@@ -46,13 +46,13 @@ func (o *financeDeliveryOrders) Apply(_ context.Context, result settlement.Resul
 	return nil
 }
 
-// Defer 对任何ctx、id、状态及原因返回错误，本场景不得进入新计算任务重排；无IO。
+// Defer 对任何 ctx、id、状态及原因返回错误，本场景不得进入新计算任务重排。
 func (o *financeDeliveryOrders) Defer(context.Context, uint64, string, string) error {
 	return errors.New("unexpected new calculation defer")
 }
 
-// TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery 用t验证真实注册路由和MySQL投递恢复。
-// 固定资金边界故障只证明原回复及队列身份，不作为实际扣款验收；造数及推进均外层回滚。
+// TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery 验证真实注册路由和 MySQL 投递恢复。
+// 固定资金边界故障只证明回复及队列身份，不作为实际扣款验收；造数及更新均外层回滚。
 func TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -73,7 +73,7 @@ func TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery(t *testi
 			t.Fatal(err)
 		}
 	}
-	// 只约束本次队列扫描，避免其它并行包的临时回执被此fixture处理。
+	// 只约束本次队列扫描，避免其它并行包的临时回执被此 fixture 处理。
 	scoped := tx.Scopes(func(q *gorm.DB) *gorm.DB {
 		if q.Statement.Table == "fee_delivery" {
 			return q.Where("charge_order_id IN ?", []uint64{first, second})
@@ -102,10 +102,10 @@ func TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery(t *testi
 		t.Fatalf("partial progress=%+v err=%v calls=%v", reply, err, orders.calls)
 	}
 	var states []struct {
-		ID        uint64    `gorm:"column:charge_order_id"` // 原投递身份，不换成重试业务号。
-		Delivered bool      `gorm:"column:delivered"`       // 原完成凭据，已完成笔不重投。
-		Attempts  int       `gorm:"column:attempts"`        // 原失败尝试计数。
-		Scheduled time.Time `gorm:"column:scheduled_at"`    // 失败后的原持久重试时间。
+		ID        uint64    `gorm:"column:charge_order_id"` // 投递标识，不换成重试业务号。
+		Delivered bool      `gorm:"column:delivered"`       // 完成凭据，已完成笔不重投。
+		Attempts  int       `gorm:"column:attempts"`        // 失败尝试计数。
+		Scheduled time.Time `gorm:"column:scheduled_at"`    // 失败后的持久重试时间。
 	}
 	if err := tx.Table("fee_delivery").Where("charge_order_id IN ?", []uint64{first, second}).Order("charge_order_id").Find(&states).Error; err != nil || len(states) != 2 {
 		t.Fatalf("states=%+v err=%v", states, err)
@@ -116,7 +116,7 @@ func TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery(t *testi
 	if reply, err := client.DispatchBilling(context.Background(), contract.BillingDispatchRequest{}); err != nil || reply.Completed != 0 || orders.calls[first] != 1 || orders.calls[second] != 1 {
 		t.Fatalf("retry before due=%+v err=%v calls=%v", reply, err, orders.calls)
 	}
-	// 测试推进同一任务的到期时间，避免等待真实一分钟；不重建回执或更换订单身份。
+	// 测试更新同一任务的到期时间，避免等待真实一分钟；不重建回执或更换订单编号。
 	if err := tx.Table("fee_delivery").Where("charge_order_id=?", second).Update("scheduled_at", at).Error; err != nil {
 		t.Fatal(err)
 	}

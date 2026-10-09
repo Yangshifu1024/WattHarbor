@@ -14,96 +14,96 @@ const (
 	CompensateStartRoute  = "/api/v1/internal/charge-orders/:order_no/compensate"
 )
 
-// SyncCommand 保留 nullable 端口、结果码与回执时间，不把缺失证据解码成零值。
+// SyncCommand 保留端口、结果码和回执时间的空值，缺失记录不解码为零。
 type SyncCommand struct {
-	CommandID     string     `json:"command_id"`      // 原持久命令UUID，不生成新的回执身份
-	StopCommandID string     `json:"stop_command_id"` // 原停止命令UUID
-	ChargeOrderID uint64     `json:"charge_order_id"` // 原中央充电订单主键
-	OrderNo       string     `json:"order_no"`        // 原业务订单号
-	DeviceID      string     `json:"device_id"`       // 原设备业务身份
-	PortNo        uint8      `json:"port_no"`         // 原物理端口号，从1开始
-	PortID        *int64     `json:"port_id"`         // 原开通端口主键；可空字段表示未知
-	Status        string     `json:"status"`          // 原持久命令状态
-	ResultCode    *int16     `json:"result_code"`     // 原协议结果码；可空字段表示未收到回执
-	AckAt         *time.Time `json:"ack_at"`          // 原启动回执UTC时刻；可空表示未确认
+	CommandID     string     `json:"command_id"`      // 已保存的命令 UUID，重试沿用
+	StopCommandID string     `json:"stop_command_id"` // 停止命令 UUID
+	ChargeOrderID uint64     `json:"charge_order_id"` // 充电订单 ID
+	OrderNo       string     `json:"order_no"`        // 业务订单号
+	DeviceID      string     `json:"device_id"`       // 设备编号
+	PortNo        uint8      `json:"port_no"`         // 物理端口号，从 1 开始
+	PortID        *int64     `json:"port_id"`         // 已开通端口的 ID
+	Status        string     `json:"status"`          // 已保存的命令状态
+	ResultCode    *int16     `json:"result_code"`     // 协议结果码，未收到回执时为空
+	AckAt         *time.Time `json:"ack_at"`          // 启动确认时间，UTC；未确认时为空
 }
 
-// StartResultsReply 返回原已确认待投递启动命令，不领取或修改状态。
+// StartResultsReply 返回已确认且待上报的启动命令，不修改命令状态。
 type StartResultsReply struct {
-	Items []SyncCommand `json:"items"` // 原有序记录集合；空集合保持数组
+	Items []SyncCommand `json:"items"` // 按原顺序排列的记录；无记录时返回空数组
 }
 
-// CommandReply 表达原订单对应命令是否存在，缺失不补造成功命令。
+// CommandReply 返回订单对应的启动命令；未找到时不生成成功结果。
 type CommandReply struct {
-	Found   bool         `json:"found"`             // 是否找到原查询身份
-	Command *SyncCommand `json:"command,omitempty"` // 原持久命令；未找到时省略
+	Found   bool         `json:"found"`             // 是否找到请求的订单命令
+	Command *SyncCommand `json:"command,omitempty"` // 已保存的命令，未找到时省略
 }
 
 // SyncEvent 只提供持久化事件编号与既有 JSON 字符串，不改变协议字段或单位。
 type SyncEvent struct {
-	ID      uint64 `json:"id"`      // 原持久主键，保持uint64整数精度
-	Payload string `json:"payload"` // 原冻结事件JSON，不重写协议字段或单位
+	ID      uint64 `json:"id"`      // 已保存的 ID，保持 uint64 精度
+	Payload string `json:"payload"` // 首次保存的事件 JSON，字段和单位保持不变
 }
 
-// EventsReply 返回原待消费事件或计量事件集合，不转换其原载荷。
+// EventsReply 返回待处理设备事件或计量事件，保留原始 JSON。
 type EventsReply struct {
-	Items []SyncEvent `json:"items"` // 原有序记录集合；空集合保持数组
+	Items []SyncEvent `json:"items"` // 按原顺序排列的记录；无记录时返回空数组
 }
 
-// MarkStartResultsRequest 在中央接受启动回执后请求网关标记原命令已报告，保留原命令 UUID 批次。
+// MarkStartResultsRequest 在 central 接受启动回执后，按命令 UUID 请求 gateway 标记已上报。
 type MarkStartResultsRequest struct {
-	CommandIDs []string `json:"command_ids" binding:"required,min=1,max=50"` // 本批原启动命令UUID，最多50条
+	CommandIDs []string `json:"command_ids" binding:"required,min=1,max=50"` // 本批启动命令 UUID，最多50条
 }
 
-// MarkDeviceEventsRequest 请求网关将已处理的原设备事件批次推进为已消费，不修改事件载荷或生成新的身份。
+// MarkDeviceEventsRequest 按事件 ID 请求 gateway 标记已处理，不改变事件内容。
 type MarkDeviceEventsRequest struct {
-	IDs []uint64 `json:"ids" binding:"required,min=1,max=100"` // 本批原持久事件主键，最多100条
+	IDs []uint64 `json:"ids" binding:"required,min=1,max=100"` // 本批事件 ID，最多 100 条
 }
 
-// MarkReply.Marked 允许为 0，表示本次重放没有再次推进记录。
+// MarkReply.Marked 可以为 0，表示重复请求未再次更新记录。
 type MarkReply struct {
-	Marked int `json:"marked"` // 本次实际推进数；0为正常幂等重放
+	Marked int `json:"marked"` // 本次实际更新数；0 表示重复提交，没有更新
 }
 
-// ReleasePortRequest 以原端口主键和订单号限定网关占用释放，防止迟到结束流程释放后来订单的占用。
+// ReleasePortRequest 以端口主键和订单号限定网关占用释放，防止迟到结束流程释放后来订单的占用。
 type ReleasePortRequest struct {
-	PortID  uint64 `json:"port_id" binding:"required"`         // 原开通端口主键；可空字段表示未知
-	OrderNo string `json:"order_no" binding:"required,max=64"` // 原业务订单号
+	PortID  uint64 `json:"port_id" binding:"required"`         // 已开通端口的 ID
+	OrderNo string `json:"order_no" binding:"required,max=64"` // 业务订单号
 }
 
-// ReleasePortReply 保留实际释放与原已释放两种幂等结果，不确认资金结算。
+// ReleasePortReply 返回是否释放占用及是否此前已释放，不表示资金已结算。
 type ReleasePortReply struct {
-	Released bool `json:"released"` // 原端口是否完成释放
-	Already  bool `json:"already"`  // 原端口是否此前已释放
+	Released bool `json:"released"` // 端口是否完成释放
+	Already  bool `json:"already"`  // 端口是否此前已释放
 }
 
 // MeterSamplesRequest 以结束事件 ID 与 UTC 时间固定证据窗口。
 type MeterSamplesRequest struct {
-	DeviceID string    // 原设备业务身份
-	AckAt    time.Time // 原启动回执UTC时刻；可空表示未确认
-	EndAt    time.Time // 原结束UTC时刻，固定取证上界
-	EndID    uint64    // 原结束事件主键，固定取证游标
+	DeviceID string    // 设备编号
+	AckAt    time.Time // 启动确认时间，UTC
+	EndAt    time.Time // 结束时间，UTC，固定查询上界
+	EndID    uint64    // 结束事件 ID，固定查询游标
 }
 
-// FreezeEndDeliveryRequest 首次冻结原结束事件对应订单的投递载荷；重放必须使用既有权威载荷，不能更换事件或订单身份。
+// FreezeEndDeliveryRequest 按结束事件和订单保存首次投递数据；重复提交必须使用已保存的数据，不得更换编号。
 type FreezeEndDeliveryRequest struct {
-	DeviceEventID uint64 `json:"device_event_id" binding:"required"`   // 原设备结束事件主键
-	ChargeOrderID uint64 `json:"charge_order_id" binding:"required"`   // 原中央充电订单主键
-	Payload       string `json:"payload" binding:"required,max=65535"` // 原冻结事件JSON，不重写协议字段或单位
+	DeviceEventID uint64 `json:"device_event_id" binding:"required"`   // 设备结束事件 ID
+	ChargeOrderID uint64 `json:"charge_order_id" binding:"required"`   // 充电订单 ID
+	Payload       string `json:"payload" binding:"required,max=65535"` // 首次保存的事件 JSON，字段和单位保持不变
 }
 
 // Frozen=false 表示首次冻结成功，Frozen=true 表示返回既有冻结，两者均有效。
 type FreezeEndDeliveryReply struct {
-	Payload string `json:"payload"` // 原冻结事件JSON，不重写协议字段或单位
-	Frozen  bool   `json:"frozen"`  // false为首次冻结，true为返回既有权威载荷
+	Payload string `json:"payload"` // 首次保存的事件 JSON，字段和单位保持不变
+	Frozen  bool   `json:"frozen"`  // false 表示首次保存，true 表示返回已保存的数据
 }
 
-// CompensateStartRequest 在原订单路由中引用原 START 命令，请求持久受理补偿停止；受理不证明设备从未启动或授权退款。
+// CompensateStartRequest 指定启动命令，请求网关保存补偿停止任务；接受请求不证明设备从未启动，也不授权退款。
 type CompensateStartRequest struct {
-	CommandID string `json:"command_id" binding:"required,uuid"` // 原持久命令UUID，不生成新的回执身份
+	CommandID string `json:"command_id" binding:"required,uuid"` // 已保存的命令 UUID，重试沿用
 }
 
 // 补偿停止受理不证明设备从未启动，也不授权资金退款。
 type CompensateStartReply struct {
-	Accepted bool `json:"accepted"` // 该端点原持久受理标志，不代替物理设备确认或资金完成
+	Accepted bool `json:"accepted"` // 是否已保存请求；不代表设备操作或资金处理已完成
 }

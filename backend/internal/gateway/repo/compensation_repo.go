@@ -11,21 +11,21 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// StopJob 保存启动补偿重试需要的原命令身份、设备端口及 STOP 报文，复用原停止会话。
+// StopJob 保存启动补偿重试需要的命令标识、设备端口及 STOP 报文，复用停止会话。
 type StopJob struct {
-	// CommandID 原持久命令 UUID。
+	// CommandID 持久命令 UUID。
 	CommandID string
-	// OrderNo 原业务订单号。
+	// OrderNo 业务订单号。
 	OrderNo string
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8
-	// Wire 待下发的原协议命令，不表示设备已确认。
+	// Wire 待下发的协议命令，不表示设备已确认。
 	Wire protocol.Command
 }
 
-// CompensateStart 接收 ctx、orderNo 与 commandID，在 READ COMMITTED 事务锁定原启动身份；未发送则拒绝并释放原空闲端口，否则准备原 STOP；返回任务、需下发标志及冲突或 SQL 错误。
+// CompensateStart 在 READ COMMITTED 事务锁定启动所需编号；未发送则拒绝并释放空闲端口，否则准备 STOP；返回任务、需下发标志及冲突或 SQL 错误。
 func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID string) (StopJob, bool, error) {
 	var job StopJob
 	shouldSend := false
@@ -75,7 +75,7 @@ func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID strin
 	return job, shouldSend, nil
 }
 
-// StoppingJobs 接收 ctx，按更新时间读取最多五十个到期待补偿命令并还原原 STOP 会话；返回任务或 SQL、会话错误，无状态推进。
+// StoppingJobs 按更新时间读取最多五十个到期待补偿命令并还原 STOP 会话；返回任务或 SQL、会话错误，不更新状态。
 func (s MySQLSink) StoppingJobs(ctx context.Context) ([]StopJob, error) {
 	var rows []chargeCommandRow
 	err := s.DB.WithContext(ctx).Select("command_id, order_no, device_id, port_no, stop_session_id").
@@ -95,13 +95,13 @@ func (s MySQLSink) StoppingJobs(ctx context.Context) ([]StopJob, error) {
 	return jobs, nil
 }
 
-// MarkStopSent 接收 ctx 与 commandID，仅更新 stopping 命令的停止发送时间；返回 SQL 错误，不确认停止或释放端口。
+// MarkStopSent 仅更新 stopping 命令的停止发送时间；返回 SQL 错误，不确认停止或释放端口。
 func (s MySQLSink) MarkStopSent(ctx context.Context, commandID string) error {
 	return s.DB.WithContext(ctx).Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'stopping'", commandID).
 		Update("stop_sent_at", gorm.Expr("CURRENT_TIMESTAMP(3)")).Error
 }
 
-// stopJob 接收 commandID、orderNo、deviceID、port 与 encoded 会话，解码六字节原会话并生成 STOP 任务；无效返回 ErrOrderConflict，无 IO。
+// stopJob 解码 6 字节会话并生成 STOP 任务；会话无效返回 ErrOrderConflict。
 func stopJob(commandID, orderNo, deviceID string, port uint8, encoded sql.NullString) (StopJob, error) {
 	if !encoded.Valid {
 		return StopJob{}, ErrOrderConflict

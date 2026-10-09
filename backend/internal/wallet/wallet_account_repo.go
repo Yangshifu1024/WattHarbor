@@ -9,16 +9,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 钱包账户金额是持久事实，流水仅作为审计凭据。可用额由余额减冻结额计算，下限为零。
+// 钱包账户金额是已保存的数据，流水仅作为审计凭据。可用额由余额减冻结额计算，下限为零。
 
-// WalletBalance 是钱包余额的可读投影。
+// WalletBalance 是钱包余额的可读查询结果。
 type WalletBalance struct {
 	BalanceCents int64  `gorm:"column:balance_cents"` // 当前账面余额，分
 	FrozenCents  int64  `gorm:"column:frozen_cents"`  // 当前预占金额，分
 	Status       string `gorm:"column:status"`        // active 可用或 frozen 冻结
 }
 
-// AvailableCents 根据接收者余额与冻结额返回可用分值，下限为零；不写入数据，无错误或 IO。
+// AvailableCents 返回余额减冻结额后的可用金额，单位分，下限为零。
 func (b WalletBalance) AvailableCents() int64 {
 	if b.BalanceCents <= b.FrozenCents {
 		return 0
@@ -31,7 +31,7 @@ type UserWalletRepo struct {
 	DB *gorm.DB // central 钱包连接，由进程管理
 }
 
-// FindWalletBalance 在 ctx 下读取 userID 未删除的钱包，返回余额投影；缺账户为 gorm.ErrRecordNotFound，其他错误为存储或取消失败，不创建账户。
+// FindWalletBalance 查询未删除的钱包；未开户返回 gorm.ErrRecordNotFound，不自动创建。
 func (s UserWalletRepo) FindWalletBalance(ctx context.Context, userID uint64) (WalletBalance, error) {
 	var row WalletBalance
 	err := s.DB.WithContext(ctx).Table("wallet_account").
@@ -39,7 +39,7 @@ func (s UserWalletRepo) FindWalletBalance(ctx context.Context, userID uint64) (W
 	return row, err
 }
 
-// ListWalletTxns 在 ctx 下分页读取 userID 的流水，direction 为空不限或为 in／out，page、pageSize 已由调用方验证；返回原行、总数及读取错误，不写资金。
+// ListWalletTxns 按用户分页读取流水；direction 为空时查询所有方向，in、out 分别只查收入、支出。
 func (s UserWalletRepo) ListWalletTxns(ctx context.Context, userID uint64, direction string, page, pageSize int) (persist.Page[map[string]any], error) {
 	out := persist.Page[map[string]any]{Items: []map[string]any{}, Page: page, PageSize: pageSize}
 	query := s.DB.WithContext(ctx).Table("wallet_txn").Where("user_id = ?", userID)
@@ -54,18 +54,19 @@ func (s UserWalletRepo) ListWalletTxns(ctx context.Context, userID uint64, direc
 }
 
 // WalletRechargeRow 是充值申请的一行，联表带出支付单的状态与有效期。
-// 状态与有效期取自 payment_order：充值申请本身只记"发起过"，
+// 状态与有效期取自 payment_order：充值申请本身只记"发起过"。
 // 能不能付要看支付单有没有过期。
 type WalletRechargeRow struct {
-	RequestID   string     `json:"request_id" gorm:"column:request_id"`     // 原申请 UUID，同内容重放沿用
+	RequestID   string     `json:"request_id" gorm:"column:request_id"`     // 申请 UUID，同内容重放沿用
 	AmountCents int64      `json:"amount_cents" gorm:"column:amount_cents"` // 申请金额，分
-	Status      string     `json:"status" gorm:"column:status"`             // 原支付 initiated 待付、paid 已到账或退款状态
+	Status      string     `json:"status" gorm:"column:status"`             // 支付 initiated 待付、paid 已到账或退款状态
 	ExpiredAt   *time.Time `json:"expires_at" gorm:"column:expired_at"`     // 支付截止时间
-	CreatedAt   time.Time  `json:"created_at" gorm:"column:created_at"`     // 原申请创建 UTC 时刻
+	CreatedAt   time.Time  `json:"created_at" gorm:"column:created_at"`     // 申请创建 UTC 时刻
 	CanPay      bool       `json:"can_pay" gorm:"-"`                        // 未支付且未过期才允许继续付款
 }
 
-// ListWalletRecharges 在 ctx 下按 page、pageSize 分页读取 userID 的充值及原支付状态；返回稳定倒序页或读取错误，续付资格由 QueryService 根据原期限计算。
+// ListWalletRecharges 按用户分页读取充值申请及支付状态，按创建顺序倒序。
+// 可否继续付款由 QueryService 按支付有效期判断。
 func (s UserWalletRepo) ListWalletRecharges(ctx context.Context, userID uint64, page, pageSize int) (persist.Page[WalletRechargeRow], error) {
 	out := persist.Page[WalletRechargeRow]{Items: []WalletRechargeRow{}, Page: page, PageSize: pageSize}
 	query := s.DB.WithContext(ctx).Table("wallet_recharge_request r").
@@ -80,13 +81,13 @@ func (s UserWalletRepo) ListWalletRecharges(ctx context.Context, userID uint64, 
 
 // WalletRefundRequestRow 是用户可见的余额退款申请。
 type WalletRefundRequestRow struct {
-	RequestID   string    `gorm:"column:request_id"`   // 原申请 UUID，同内容重放沿用
+	RequestID   string    `gorm:"column:request_id"`   // 申请 UUID，同内容重放沿用
 	AmountCents int64     `gorm:"column:amount_cents"` // 申请金额，分
-	Reason      *string   `gorm:"column:reason"`       // 原申请依据，可空
-	CreatedAt   time.Time `gorm:"column:created_at"`   // 原申请创建 UTC 时刻
+	Reason      *string   `gorm:"column:reason"`       // 申请依据，可空
+	CreatedAt   time.Time `gorm:"column:created_at"`   // 申请创建 UTC 时刻
 }
 
-// LockWalletAccount 在调用方 tx 中锁 userID 未删除的钱包，返回当前行；缺账户为 gorm.ErrRecordNotFound，其他存储错误要求回滚，调用方负责提交，不自行开户。
+// LockWalletAccount 在调用方事务中锁 userID 未删除的钱包，返回当前行；缺账户为 gorm.ErrRecordNotFound，其他数据库错误要求回滚，调用方负责提交，不自行开户。
 func (s UserWalletRepo) LockWalletAccount(tx *gorm.DB, userID uint64) (WalletRow, error) {
 	var row WalletRow
 	err := tx.Table("wallet_account").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -101,24 +102,24 @@ type WalletRow struct {
 	BalanceCents int64  `gorm:"column:balance_cents"` // 当前账面余额，分
 	FrozenCents  int64  `gorm:"column:frozen_cents"`  // 当前预占金额，分
 	Status       string `gorm:"column:status"`        // active 可用或 frozen 冻结
-	Version      uint64 `gorm:"column:version"`       // 钱包乐观版本，每次资金或状态更新推进
+	Version      uint64 `gorm:"column:version"`       // 钱包版本号，每次资金或状态变化时增加
 }
 
-// OpenWalletAccount 在调用方 tx 中为 userID 开户，初始余额／冻结额为零且状态 active；返回唯一键或插入错误，不自行提交。
+// OpenWalletAccount 在调用方事务中为 userID 开户，初始余额、冻结额为零且状态 active；唯一键冲突时失败，不自行提交。
 func (s UserWalletRepo) OpenWalletAccount(tx *gorm.DB, userID uint64) error {
 	return tx.Table("wallet_account").Create(map[string]any{
 		"user_id": userID, "balance_cents": 0, "frozen_cents": 0, "status": "active",
 	}).Error
 }
 
-// FindUserOpenID 在调用方 tx 中读取 userID 未删除身份的 openid，返回原值及存储错误；缺用户或空身份返回空字符串，由退款用例拒绝，无用户写入。
+// FindUserOpenID 在调用方事务中读取 userID 未删除身份的 openid；缺用户或空身份返回空字符串，由退款用例拒绝，无用户写入。
 func (s UserWalletRepo) FindUserOpenID(tx *gorm.DB, userID uint64) (string, error) {
 	var openid string
 	err := tx.Table("user").Where("id=? AND deleted_at IS NULL", userID).Pluck("openid", &openid).Error
 	return openid, err
 }
 
-// LockUser 在调用方 tx 中锁 userID 未删除的用户，返回原行或读取错误；缺行返回 gorm.ErrRecordNotFound，不检查 active 状态，不自行提交。
+// LockUser 在调用方事务中锁 userID 未删除的用户，返回记录；缺行返回 gorm.ErrRecordNotFound，不检查 active 状态，不自行提交。
 func (s UserWalletRepo) LockUser(tx *gorm.DB, userID uint64) (map[string]any, error) {
 	var row map[string]any
 	err := tx.Table("user").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -128,21 +129,21 @@ func (s UserWalletRepo) LockUser(tx *gorm.DB, userID uint64) (map[string]any, er
 
 // WalletRechargeRequest 是充值申请存档，request_json 供幂等重放比对内容。
 type WalletRechargeRequest struct {
-	RequestID      string // 原申请 UUID，同内容重放沿用
+	RequestID      string // 申请 UUID，同内容重放沿用
 	UserID         uint64 // 账户或申请所属用户
 	AmountCents    int64  // 申请金额，分
-	PaymentOrderID uint64 // 原充值支付主键
+	PaymentOrderID uint64 // 充值支付主键
 	RequestJSON    string // 首次申请内容 JSON，参与重放核对
 }
 
-// FindRechargeRequest 在调用方 tx 中按 requestID 读取原申请，返回内容及读取错误；缺行返回 gorm.ErrRecordNotFound，归属和金额重放核对由 RechargeService 负责。
+// FindRechargeRequest 在调用方事务中按 requestID 读取申请，返回内容及读取错误；缺行返回 gorm.ErrRecordNotFound，归属和金额重放核对由 RechargeService 负责。
 func (s UserWalletRepo) FindRechargeRequest(tx *gorm.DB, requestID string) (WalletRechargeRequest, error) {
 	var row WalletRechargeRequest
 	err := tx.Table("wallet_recharge_request").Where("request_id=?", requestID).Take(&row).Error
 	return row, err
 }
 
-// InsertRechargeRequest 在调用方 tx 中保存 in 原用户、金额、支付身份和请求内容；返回唯一键或插入错误，与支付创建共同提交，失败全部回滚。
+// InsertRechargeRequest 在调用方事务中保存 in 的用户、金额、支付编号和请求内容；唯一键冲突时失败，与支付创建共同提交，失败全部回滚。
 func (s UserWalletRepo) InsertRechargeRequest(tx *gorm.DB, in WalletRechargeRequest) error {
 	return tx.Table("wallet_recharge_request").Create(map[string]any{
 		"request_id": in.RequestID, "user_id": in.UserID, "amount_cents": in.AmountCents,
@@ -150,31 +151,30 @@ func (s UserWalletRepo) InsertRechargeRequest(tx *gorm.DB, in WalletRechargeRequ
 	}).Error
 }
 
-// WalletRefundRequest 是余额退款申请的一行。幂等重放要逐字段比对，
-// 所以用具名字段而不是通用 map。
+// WalletRefundRequest 保存余额退款申请，重放须逐字段比对请求内容。
 type WalletRefundRequest struct {
-	RequestID    string  `gorm:"column:request_id"`    // 原申请 UUID，同内容重放沿用
+	RequestID    string  `gorm:"column:request_id"`    // 申请 UUID，同内容重放沿用
 	UserID       uint64  `gorm:"column:user_id"`       // 账户或申请所属用户
 	AmountCents  int64   `gorm:"column:amount_cents"`  // 申请金额，分
-	Reason       *string `gorm:"column:reason"`        // 原申请依据，可空
+	Reason       *string `gorm:"column:reason"`        // 申请依据，可空
 	ResponseJSON string  `gorm:"column:response_json"` // 首次返回体，重放时原样回给调用方
 }
 
-// FindRefundRequest 在调用方 tx 中按 requestID 读取首次退款申请及回执，返回原行或读取错误；缺行返回 gorm.ErrRecordNotFound，调用方核对归属、金额及原因。
+// FindRefundRequest 在调用方事务中按 requestID 读取首次退款申请及回执，返回记录；缺行返回 gorm.ErrRecordNotFound，调用方核对归属、金额及原因。
 func (s UserWalletRepo) FindRefundRequest(tx *gorm.DB, requestID string) (WalletRefundRequest, error) {
 	var row WalletRefundRequest
 	err := tx.Table("wallet_refund_request").Where("request_id=?", requestID).Take(&row).Error
 	return row, err
 }
 
-// InsertRefundRequest 在调用方 tx 中登记 requestID、userID、amountCents 分及可空 reason；返回唯一键或插入错误，申请、资金预占和最终回执由用例共同提交。
+// InsertRefundRequest 在调用方事务中登记 requestID、userID、amountCents 分及可空 reason；唯一键冲突时失败，申请、资金预占和最终回执由用例共同提交。
 func (s UserWalletRepo) InsertRefundRequest(tx *gorm.DB, requestID string, userID uint64, amountCents int64, reason *string) error {
 	return tx.Table("wallet_refund_request").Create(map[string]any{
 		"request_id": requestID, "user_id": userID, "amount_cents": amountCents, "reason": reason,
 	}).Error
 }
 
-// CountRecentRefundRequests 在调用方 tx 中返回 userID 自 since UTC 时刻起的申请数及读取错误；包含当前事务新申请，频次用例须在拿钱包锁后首次建立快照，不写状态。
+// CountRecentRefundRequests 在调用方事务中返回 userID 自 since UTC 时刻起的申请数及读取错误；包含当前事务新申请，频次用例须在拿钱包锁后首次建立快照，不写状态。
 func (s UserWalletRepo) CountRecentRefundRequests(tx *gorm.DB, userID uint64, since time.Time) (int64, error) {
 	var count int64
 	err := tx.Table("wallet_refund_request").
@@ -182,7 +182,7 @@ func (s UserWalletRepo) CountRecentRefundRequests(tx *gorm.DB, userID uint64, si
 	return count, err
 }
 
-// InsertRiskFreeze 在调用方 tx 中登记 userID 的 triggerRule、action 与 reason 原风险事实；返回冻结主键及插入／主键读取错误，不能提前提交冻结。
+// InsertRiskFreeze 保存用户、触发规则、处理动作与原因，返回冻结记录 ID；与申请同事务提交。
 func (s UserWalletRepo) InsertRiskFreeze(tx *gorm.DB, userID uint64, triggerRule, action, reason string) (uint64, error) {
 	if err := tx.Table("risk_freeze_log").Create(map[string]any{
 		"user_id": userID, "trigger_rule": triggerRule, "frozen_action": action, "reason": reason,
@@ -192,26 +192,26 @@ func (s UserWalletRepo) InsertRiskFreeze(tx *gorm.DB, userID uint64, triggerRule
 	return persist.LastInsertID(tx)
 }
 
-// LinkFreezeToRefund 在调用方 tx 中将 requestID 关联 freezeID；返回唯一键或插入错误，链接与申请、冻结共同提交，不修改退款执行状态。
+// LinkFreezeToRefund 在调用方事务中将 requestID 关联 freezeID；唯一键冲突时失败，链接与申请、冻结共同提交，不修改退款执行状态。
 func (s UserWalletRepo) LinkFreezeToRefund(tx *gorm.DB, requestID string, freezeID uint64) error {
 	return tx.Table("wallet_risk_freeze_link").Create(map[string]any{
 		"request_id": requestID, "freeze_id": freezeID,
 	}).Error
 }
 
-// FreezeWallet 在调用方 tx 中将 walletID 钱包置为 frozen 并推进版本；返回更新错误，不改变余额或已冻结金额，不自行提交。
+// FreezeWallet 在调用方事务中将 walletID 钱包置为 frozen 并增加版本号；返回更新错误，不改变余额或已冻结金额，不自行提交。
 func (s UserWalletRepo) FreezeWallet(tx *gorm.DB, walletID uint64) error {
 	return tx.Table("wallet_account").Where("id=?", walletID).
 		Updates(map[string]any{"status": "frozen", "version": gorm.Expr("version+1")}).Error
 }
 
-// SetRefundResponse 在调用方 tx 中为 requestID 保存 responseJSON 首次回执；返回更新错误，与申请、预占及风险共同提交，重放读取原回执。
+// SetRefundResponse 在调用方事务中为 requestID 保存 responseJSON 首次回执；返回更新错误，与申请、预占及风险共同提交，重放读取回执。
 func (s UserWalletRepo) SetRefundResponse(tx *gorm.DB, requestID, responseJSON string) error {
 	return tx.Table("wallet_refund_request").Where("request_id=?", requestID).
 		Update("response_json", responseJSON).Error
 }
 
-// ListWalletRefundRequests 在 ctx 下按 page、pageSize 分页读取 userID 原申请，以创建时间及请求号稳定倒序；返回原页及总数，存储或取消错误返回 error，不查询他人申请。
+// ListWalletRefundRequests 只读取当前用户的退款申请，按创建时间与请求号稳定倒序分页。
 func (s UserWalletRepo) ListWalletRefundRequests(ctx context.Context, userID uint64, page, pageSize int) (persist.Page[WalletRefundRequestRow], error) {
 	out := persist.Page[WalletRefundRequestRow]{Items: []WalletRefundRequestRow{}, Page: page, PageSize: pageSize}
 	query := s.DB.WithContext(ctx).Table("wallet_refund_request").Where("user_id=?", userID)
@@ -225,7 +225,7 @@ func (s UserWalletRepo) ListWalletRefundRequests(ctx context.Context, userID uin
 
 // WalletRefundPartRow 是退款申请拆出的每一笔原路退款。
 type WalletRefundPartRow struct {
-	RefundNo      string     `json:"refund_no" gorm:"column:refund_no"`           // 原分笔退款单号，重试沿用
+	RefundNo      string     `json:"refund_no" gorm:"column:refund_no"`           // 分笔退款单号，重试沿用
 	RefundCents   int64      `json:"refund_cents" gorm:"column:refund_cents"`     // 退款金额，单位分
 	Status        string     `json:"status" gorm:"column:status"`                 // active 可用或 frozen 冻结
 	FailureReason *string    `json:"failure_reason" gorm:"column:failure_reason"` // 渠道终态失败或需复核原因，可空

@@ -7,10 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 首页看板的指标汇总。业务日界按北京时间切：库里的时间统一存 UTC，
-// 自然日边界由查询服务计算，仓储只接收已换算的UTC区间。
-//
-// 全部指标通过同一个 central_db 连接池读取。
+// 看板按北京时间划分自然日，库内时间使用 UTC；服务换算时间区间，仓储读取 central_db。
 
 // DashboardTrendDay 是趋势图的一格，按东八区自然日聚合已结束的充电订单。
 type DashboardTrendDay struct {
@@ -19,8 +16,7 @@ type DashboardTrendDay struct {
 	SettledCents    int64  `json:"settled_cents"`    // 当天已结束订单的合计金额,单位分
 }
 
-// DashboardMetrics 是一次看板快照。任一查询失败都返回错误，避免展示不完整数据
-// 被误读成"业务正常"。
+// DashboardMetrics 是完整看板结果；任一查询失败均不能返回部分指标。
 type DashboardMetrics struct {
 	ChargingOrders       int64               `json:"charging_orders"`        // 当前状态为 charging(充电中)的订单数
 	TodayOrders          int64               `json:"today_orders"`           // 今日(北京时间)创建的未删除订单数，包含未启动订单
@@ -39,11 +35,10 @@ type DashboardMetrics struct {
 
 // DashboardRepo 汇总首页看板指标。
 type DashboardRepo struct {
-	DB *gorm.DB // 同一central数据库的跨模块只读投影
+	DB *gorm.DB // 中央指标查询连接
 }
 
-// Read 在ctx下读取[start,end)的当日事实与[trendStart,end)的按日趋势，返回投影或取消／存储错误。
-// 仅访问各模块原事实，不写表、不补造未计费金额；任一查询失败不能把部分指标作为完整快照。
+// Read 汇总 [start,end) 当日数据和 [trendStart,end) 每日趋势，只使用已有记录和结算金额。
 func (s DashboardRepo) Read(ctx context.Context, start, end, trendStart time.Time) (DashboardMetrics, error) {
 	m := DashboardMetrics{DailyTrend: []DashboardTrendDay{}}
 
@@ -95,11 +90,8 @@ func (s DashboardRepo) Read(ctx context.Context, start, end, trendStart time.Tim
 	return m, err
 }
 
-// applyCount 在既有查询上加一个计数条件。where 为空表示直接用基础查询计数。
-// 每个条件都开新 session，避免上一次的 Where 累积到下一次。
-//
-// args 必须与 where 里的占位符一一对应：给没有占位符的条件多传参数会让
-// gorm 报参数个数不匹配，看板整块 503。
+// applyCount 在独立查询会话中添加条件并计数，避免 Where 在多次调用间累积。
+// 条件为空时直接计数，参数须与占位符一一对应。
 func applyCount(base *gorm.DB, into *int64, where string, args ...any) error {
 	query := base.Session(&gorm.Session{})
 	if where != "" {
@@ -108,7 +100,7 @@ func applyCount(base *gorm.DB, into *int64, where string, args ...any) error {
 	return query.Count(into).Error
 }
 
-// applyDistinctCount 在基础查询的独立session中按where和args统计user_id，返回计数或存储错误。
+// applyDistinctCount 在独立查询会话中按条件去重统计 user_id。
 func applyDistinctCount(base *gorm.DB, into *int64, where string, args ...any) error {
 	return base.Session(&gorm.Session{}).Where(where, args...).Distinct("user_id").Count(into).Error
 }

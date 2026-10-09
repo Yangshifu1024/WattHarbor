@@ -229,7 +229,7 @@ func decodeBCD(data []byte) (string, error) {
 	return string(out), nil
 }
 
-// HeartbeatSetting 是平台在 0xA6 里要的东西。
+// HeartbeatSetting 表示 0xA6 请求设置的心跳周期和端口遥测开关。
 type HeartbeatSetting struct {
 	Seconds    uint16
 	PortStatus bool

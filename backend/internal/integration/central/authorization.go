@@ -13,7 +13,7 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// orderPath 接收 route 与 orderNo，拒绝空、超长及含 /?# 的订单号，返回替换首个路径占位符后的 URL 编码路径或输入错误；无网络 IO。
+// orderPath 将订单号转义后填入路径；拒绝空值、超长值及含 /?# 的订单号。
 func orderPath(route, orderNo string) (string, error) {
 	if orderNo == "" || len(orderNo) > 64 || strings.ContainsAny(orderNo, "/?#") {
 		return "", errors.New("invalid charge order number")
@@ -21,7 +21,7 @@ func orderPath(route, orderNo string) (string, error) {
 	return strings.Replace(route, ":order_no", url.PathEscape(orderNo), 1), nil
 }
 
-// authorizationError 接收 err，将真实 HTTP 404／409 与 ErrAuthorizationDenied 合并，其余错误原样返回，保留底层分类；不重发、补偿或修改业务状态。
+// authorizationError 将 HTTP 404 和 409 标记为授权拒绝，并保留底层错误。
 func authorizationError(err error) error {
 	var rejection *serviceclient.HTTPError
 	if errors.As(err, &rejection) && (rejection.StatusCode == http.StatusNotFound || rejection.StatusCode == http.StatusConflict) {
@@ -30,8 +30,8 @@ func authorizationError(err error) error {
 	return err
 }
 
-// StartAuthorization 在 ctx 下以 orderNo 查询中央启动授权，返回原 Reply 或输入、准入、身份失配、HTTP／业务／解码／取消错误。
-// 仅核对回复订单号与非零订单 ID；不发 START、不分配新命令身份、不改订单或资金。
+// StartAuthorization 查询订单是否允许启动，并核对响应中的订单号和订单 ID。
+// 只查询授权，不发送设备命令或修改订单。
 func (c *Client) StartAuthorization(ctx context.Context, orderNo string) (centralcontract.StartAuthorizationReply, error) {
 	path, err := orderPath(centralcontract.StartAuthorizationRoute, orderNo)
 	if err != nil {
@@ -47,8 +47,8 @@ func (c *Client) StartAuthorization(ctx context.Context, orderNo string) (centra
 	return data, nil
 }
 
-// StopAuthorization 在 ctx 下以 orderNo 和非零 userID 查询中央停机授权，保留用户大整数参数，返回原 Reply 或准入、身份失配及传输／响应错误。
-// 核对回复订单号、用户及非零订单 ID；不发送 STOP、不释放端口，失配不自动补偿。
+// StopAuthorization 查询用户是否允许停止订单，并核对订单号、用户和订单 ID。
+// 用户 ID 保持整数精度；central 同时保存首次计费截止点，本客户端不发送停机命令。
 func (c *Client) StopAuthorization(ctx context.Context, orderNo string, userID uint64) (centralcontract.StopAuthorizationReply, error) {
 	path, err := orderPath(centralcontract.StopAuthorizationRoute, orderNo)
 	if err != nil || userID == 0 {

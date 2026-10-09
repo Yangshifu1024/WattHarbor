@@ -13,25 +13,25 @@ import (
 	"time"
 )
 
-// RiskService 在钱包模块拥有风险审核、资金预占及解冻事务。
+// RiskService 在钱包模块负责风险审核、资金预占及解冻事务。
 type RiskService struct {
 	DB     *gorm.DB      // central 风控及账户连接，由进程管理
-	Refund RefundService // 原充值来源及退款记录创建能力，保留同一事务
+	Refund RefundService // 充值来源及退款记录创建能力，保留同一事务
 }
 
 // RiskReviewInput 是需原样存档的复核意见。
 type RiskReviewInput struct {
 	Approved *bool  `json:"approved"` // 必须显式给出，nil 表示未填
-	Comment  string `json:"comment"`  // 原审核依据，1–255 字
+	Comment  string `json:"comment"`  // 审核依据，1–255 字
 }
 
 // RiskReleaseInput 是解冻依据，参与同请求幂等比对。
 type RiskReleaseInput struct {
-	Comment string `json:"comment"` /* 原解冻依据，1–255 字 */
+	Comment string `json:"comment"` /* 解冻依据，1–255 字 */
 }
 
-// List 在 ctx 下按 status、page、size 查询风险申请，并以 actor 的实时权限计算操作资格。
-// 返回列表及总数或权限／存储错误；原审核回执保持原字段，不解冻、不发起退款。
+// List 按 status、page、size 查询风险申请，并以 actor 的实时权限计算操作资格。
+// 返回列表及总数或权限、数据库错误；审核回执保持字段，不解冻、不发起退款。
 func (s RiskService) List(ctx context.Context, actor operations.Profile, status string, page, size int) ([]map[string]any, int64, error) {
 	if !actor.HasPermission("finance.wallet_risk.review") {
 		return nil, 0, operations.ErrForbidden
@@ -54,8 +54,8 @@ func (s RiskService) List(ctx context.Context, actor operations.Profile, status 
 	return rows, total, nil
 }
 
-// riskReceipt 将驱动返回的 v 原回执解析为 JSON 值；空值保留 nil，无效 JSON 保留原值。
-// 仅处理展示类型，不修改原回执，也不把解析失败当成已批准审核。
+// riskReceipt 将驱动返回的 v 首次回执解析为 JSON 值；空值保留 nil，无效 JSON 保留原值。
+// 仅处理展示类型，不修改首次回执，也不把解析失败当成已批准审核。
 func riskReceipt(v any) any {
 	if v == nil {
 		return nil
@@ -68,7 +68,7 @@ func riskReceipt(v any) any {
 	return v
 }
 
-// riskText 将 v 的字符串或字节投影转为文本，其他类型返回空值；无 IO 或副作用。
+// riskText 将字符串或字节转换为展示文本，其他类型返回空字符串。
 func riskText(v any) string {
 	switch t := v.(type) {
 	case string:
@@ -80,10 +80,9 @@ func riskText(v any) string {
 	}
 }
 
-// Review 在 ctx 下处理 requestID 的风控动作，audit 提供实时账号与审计上下文，in 为原提交内容。
-// 返回首次存档回执；异内容或不满足冻结关联返回冲突，权限不足返回禁止，存储失败整体回滚。
-// 原请求、审核、资金预占及审计同事务；解冻不代表渠道退款完成。
-// READ COMMITTED 保证等待钱包锁后读取最新的已支付候选来源，不沿用申请锁前建立的 RR 快照。
+// Review 校验实时审核权限、冻结关联与请求内容，再保存审核回执。
+// 与首次审核不同的重放返回冲突；申请、审核、资金预占与审计同事务，失败全部回滚。
+// 使用 READ COMMITTED，确保等待钱包锁后能读取最新已支付充值来源。
 func (s RiskService) Review(ctx context.Context, audit ops.AuditContext, requestID string, in RiskReviewInput) (map[string]any, error) {
 	if (audit.Actor.Role != "customer_finance" && audit.Actor.Role != "customer_cs") || !audit.Actor.HasPermission("finance.wallet_risk.review") {
 		return nil, operations.ErrForbidden
@@ -137,10 +136,9 @@ func (s RiskService) Review(ctx context.Context, audit ops.AuditContext, request
 	return response, err
 }
 
-// Release 在 ctx 下处理 requestID 的风控动作，audit 提供实时账号与审计上下文，in 为原提交内容。
-// 返回首次存档回执；异内容或不满足冻结关联返回冲突，权限不足返回禁止，存储失败整体回滚。
-// 原请求、审核、资金预占及审计同事务；解冻不代表渠道退款完成。
-// READ COMMITTED 保证等待钱包锁后读取用户当前状态；其他冻结仍用当前读逐行核对。
+// Release 校验实时解冻权限、冻结关联与请求内容，再保存解冻回执。
+// 与首次操作不同的重放返回冲突；冻结、钱包状态、回执与审计同事务，解冻不表示退款完成。
+// 使用 READ COMMITTED 读取最新用户状态，并加锁核对是否还有其他冻结。
 func (s RiskService) Release(ctx context.Context, audit ops.AuditContext, requestID string, in RiskReleaseInput) (map[string]any, error) {
 	if audit.Actor.Role != "customer_finance" || !audit.Actor.HasPermission("finance.wallet_risk.release") {
 		return nil, operations.ErrForbidden

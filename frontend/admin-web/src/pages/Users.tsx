@@ -73,8 +73,7 @@ export default function UsersPage() {
     }
   }, [page, pageSize]);
 
-  // 角色列表读不到时不能把下拉留空：空下拉会被理解成「系统里没有角色」，
-  // 于是管理员根本建不出来，也看不出是接口问题。
+  // 角色加载失败时显示错误，避免空下拉被误认为没有角色。
   const loadRoles = useCallback(async () => {
     try {
       setRoles((await apiGet<{ items: Role[] }>('/api/v1/admin/roles')).items || []);

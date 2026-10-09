@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Scheme is the complete commercial configuration. Templates, applied copies
-// and order snapshots all use this same value; device overrides never merge it.
+// Scheme 保存完整计费方案，模板、发布副本与订单快照使用同一结构。
+// 设备覆盖必须替换整份方案，不能合并局部字段。
 type Scheme struct {
 	Name     string       `json:"name"`
 	Remark   string       `json:"remark"`
@@ -30,7 +30,7 @@ type EnergyMode struct {
 type Package struct {
 	ID         uint64 `json:"id"`
 	Name       string `json:"name"`
-	Mode       string `json:"mode"` // amount, duration, energy
+	Mode       string `json:"mode"` // 金额、时长、电量
 	PriceCents int64  `json:"price_cents"`
 	Minutes    uint16 `json:"minutes,omitempty"`
 	KWh        uint16 `json:"kwh,omitempty"`
@@ -60,7 +60,7 @@ func (s Scheme) Normalized() Scheme {
 	return s
 }
 
-// Validation returns actionable missing/conflicting inputs and never invents rates.
+// 校验只报告缺失或冲突的配置，不自动补费率。
 func (s Scheme) Validate() error {
 	s = s.Normalized()
 	if len([]rune(s.Name)) == 0 || len([]rune(s.Name)) > 64 || len([]rune(s.Remark)) > 255 {
@@ -75,8 +75,7 @@ func (s Scheme) Validate() error {
 	if s.Policy.FreeMinutes < 0 || s.Policy.FreeMinutes > int(s.Policy.MaxMinutes) || s.Policy.MinElectricCents < 0 || s.Policy.MinElectricCents > maxRateCents {
 		return fmt.Errorf("免费时长或最低电费无效")
 	}
-	// The redesign deliberately leaves these semantics unconfirmed. Fail closed
-	// instead of importing the old engine's coefficient order.
+	// 这些系数的执行顺序尚未确认，暂时拒绝配置，不能沿用旧引擎猜测。
 	if s.Policy.LossRateBP != 0 || s.Policy.ChannelBP != 10000 {
 		return fmt.Errorf("损耗与渠道系数组合规则尚未确认，当前请关闭损耗并使用1倍系数")
 	}
@@ -145,7 +144,7 @@ func (s Scheme) Package(id uint64) (Package, bool) {
 	return Package{}, false
 }
 
-// SpecFor is the execution view of a complete frozen scheme and one package.
+// SpecFor 将冻结方案与所选套餐转换为计价配置。
 func (s Scheme) SpecFor(p Package) Spec {
 	s = s.Normalized()
 	spec := Spec{Scheme: &s, Display: s.Display, TimeCharge: &s.Stop, CardMaxMinutes: s.Card.MaxMinutes}
@@ -174,7 +173,7 @@ func (s Scheme) Offers(rule Rule) []Offer {
 	return rows
 }
 
-// Preview is side-effect free and uses the exact execution/settlement functions.
+// Preview 复用实际执行与结算算法，只计算预览，不写入业务数据。
 type Preview struct {
 	CutoffAt    *time.Time `json:"cutoff_at,omitempty"`
 	WalletAfter *int64     `json:"wallet_after,omitempty"`
@@ -228,8 +227,7 @@ func (s Scheme) previewPurchases(id uint64, meter ActualMeter, count uint16) (Pr
 			meter = clipped
 		}
 	}
-	// Simulate stop decisions at the supplied actual reading boundaries. There
-	// is no interpolation of energy or prediction between two readings.
+	// 仅在提供的实测读数处判断是否停机，不插补电量或预测读数间的变化。
 	if p.Mode == "amount" && !meter.ReviewRequired && len(meter.Segments) > 0 {
 		for i, segment := range meter.Segments {
 			prefix := meter

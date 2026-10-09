@@ -8,21 +8,14 @@ import (
 	"time"
 )
 
-// 活动窗口与门槛过滤全部写死在 SQL 的 Where 里，纯函数覆盖不到：
-// 边界是开区间还是闭区间、软删除的规则会不会被选中、门槛相等算不算达标，
-// 单元测试一个都测不出来，只能对真库验证。这是 marketing 目前唯一的
-// 业务空白，补在这里。
+// 真库测试核对 SQL 活动筛选的时间边界、软删除和金额门槛；纯函数测试无法覆盖这些条件。
 
 // fixedNow 让所有窗口判断与墙上时钟无关。
 var fixedNow = time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 
 func hours(n int) time.Time { return fixedNow.Add(time.Duration(n) * time.Hour) }
 
-// TestActiveRulesWindowIsStartInclusiveEndExclusive 钉住活动窗口的两个边界。
-//
-// start_at <= now AND end_at > now：开始时刻当刻即生效，结束时刻当刻即失效。
-// 这两个比较符写反任何一个，活动都会提前或延后一整天生效，
-// 而且不会有任何单测失败。
+// TestActiveRulesWindowIsStartInclusiveEndExclusive 验证活动开始时刻生效、结束时刻失效，即 start_at <= now < end_at。
 func TestActiveRulesWindowIsStartInclusiveEndExclusive(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -42,10 +35,7 @@ func TestActiveRulesWindowIsStartInclusiveEndExclusive(t *testing.T) {
 	}
 }
 
-// TestActiveRulesSkipsInactiveAndDeleted 钉住状态与软删除过滤。
-//
-// 停用和软删除的规则都不该发券。软删除最容易漏——
-// 规则删掉了规则行还在，用户看到的活动列表也少了，但发券路径照样能选中它。
+// TestActiveRulesSkipsInactiveAndDeleted 验证停用或软删活动不发券。
 func TestActiveRulesSkipsInactiveAndDeleted(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -62,11 +52,7 @@ func TestActiveRulesSkipsInactiveAndDeleted(t *testing.T) {
 	}
 }
 
-// TestActiveRulesThresholdRedeemUsesInclusiveThreshold 钉住满减的门槛判定。
-//
-// threshold_cents > 0 AND threshold_cents <= amount：门槛相等算达标。
-// 差一分不达标会让「满 100 减 10」在正好 100 元的单上不发券；
-// 写成 < 则每次都多发一张。
+// TestActiveRulesThresholdRedeemUsesInclusiveThreshold 验证金额等于门槛时达标，低于门槛一分时不达标。
 func TestActiveRulesThresholdRedeemUsesInclusiveThreshold(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -111,10 +97,7 @@ func TestActiveRulesThresholdRedeemUsesInclusiveThreshold(t *testing.T) {
 	})
 }
 
-// TestActiveRulesThresholdNotAppliedToOtherTriggers 钉住门槛只对满减生效。
-//
-// 门槛条件挂在 trigger_type = 'threshold_redeem' 的分支里。
-// 若被误用到所有触发类型上，首充和节日活动会在金额为 0 时全不发券。
+// TestActiveRulesThresholdNotAppliedToOtherTriggers 验证金额门槛仅适用于 threshold_redeem。
 func TestActiveRulesThresholdNotAppliedToOtherTriggers(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -132,10 +115,7 @@ func TestActiveRulesThresholdNotAppliedToOtherTriggers(t *testing.T) {
 	}
 }
 
-// TestActiveRulesIsolatesTriggerTypes 钉住触发类型之间互不串场。
-//
-// 一次充值事件不应触发首充以外的规则；漏掉 trigger_type 条件，
-// 一个事件会把所有活动的券一次性发完。
+// TestActiveRulesIsolatesTriggerTypes 验证事件只匹配对应触发类型。
 func TestActiveRulesIsolatesTriggerTypes(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -158,10 +138,7 @@ func TestActiveRulesIsolatesTriggerTypes(t *testing.T) {
 	}
 }
 
-// TestActiveRulesOrdersByID 钉住发放顺序。
-//
-// 多条规则同时命中时按 id 升序发放。顺序变了会让用户看到的入账顺序
-// 与活动配置顺序对不上，客服对账时无从解释。
+// TestActiveRulesOrdersByID 验证多个命中规则按 ID 升序发券。
 func TestActiveRulesOrdersByID(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -178,11 +155,7 @@ func TestActiveRulesOrdersByID(t *testing.T) {
 	}
 }
 
-// TestActiveRulesProjectsOnlyRuleFields 钉住投影字段。
-//
-// 投影漏一列不会编译失败，只会让那段判定读到零值：
-// max_grants 读成 0 意味着"不限量"，per_user_limit 读成 0 意味着"按 1 份"，
-// 两种都会在发券时产生与预期不同的结果。
+// TestActiveRulesProjectsOnlyRuleFields 验证查询完整读取规则字段，避免漏列被误用为零值。
 func TestActiveRulesProjectsOnlyRuleFields(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -219,10 +192,7 @@ func TestActiveRulesProjectsOnlyRuleFields(t *testing.T) {
 	}
 }
 
-// TestActiveRulesReadsMaxGrantsZeroAsUnlimited 钉住"0 表示不限量"。
-//
-// 投影必须如实读出 max_grants=0，判定层才把它当不限量。
-// 若查询写成 COALESCE(max_grants, 1) 之类的兜底，预算会从"不限"变成"限 1 份"。
+// TestActiveRulesReadsMaxGrantsZeroAsUnlimited 验证 max_grants=0 保持不限量，不被查询改成一份。
 func TestActiveRulesReadsMaxGrantsZeroAsUnlimited(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)

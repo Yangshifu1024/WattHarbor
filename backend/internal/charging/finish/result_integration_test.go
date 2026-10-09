@@ -15,19 +15,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// 充电结束回执的真库并发测试。
-//
-// 这是整条跨库链路上离钱最近的一环：gateway 采集到结束帧 → worker 同步到
-// central → central 落结束回执、结束计量、释放端口占用、派发计费。
-// worker 在「central 已确认、gateway 端口释放失败」时会整条重放，
-// 所以 central 这头**必须幂等**：重复投递要么识别为重放，要么判冲突，
-// 但绝不能重复落计量、重复释放端口、重复派发计费。
-//
-// 这段的安全性依赖事务显式声明的 READ COMMITTED（result_store.go）。
-// 在 REPEATABLE READ 下，重复投递的那个事务会在 charge_end_receipt 上读到
-// 快照旧值（看不到前一事务刚落的回执），于是跳过重放分支、落到订单状态检查，
-// 判成冲突而不是重放——worker 因此永远等不到 200，端口一直占着。
-// 把那行 TxOptions 删掉，本测试立刻变红；这一点单测完全看不出来。
+// 验证并发或顺序投递结束回执不会重复保存计量、释放占用或派发计费。
+// 使用 READ COMMITTED，确保等待订单锁后能读取另一事务已提交的回执；
+// 旧 RR 快照可能漏掉回执，将重放误判为冲突。测试只覆盖中央数据库事务。
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 
@@ -74,14 +64,15 @@ func (g *lockGate) await(t *testing.T, what string) {
 
 func (g *lockGate) pass() { g.passOne.Do(func() { close(g.release) }) }
 
-// armOnOrderLock 装回调：第一次锁定 charge_order 行后挂起该事务。
+// armOnOrderLock 在首次锁定 charge_order 后挂起事务。
+// 按 FROM 表名匹配，避免把 card_charge 的 charge_order_id 条件误认为订单锁。
 func armOnOrderLock(t *testing.T, db *gorm.DB, gate *lockGate, name string) {
 	t.Helper()
 	err := db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
 		sql := tx.Statement.SQL.String()
 		// 必须按 FROM 子句匹配表名，不能只匹配 "charge_order"：
-		// card_charge 那条查询的 WHERE 列名是 charge_order_id，含这个子串，
-		// 闸门会挂在它上面——而 card_charge 没有行时 FOR UPDATE 只取间隙锁，
+		// card_charge 那条查询的 WHERE 列名是 charge_order_id，含这个子串。
+		// 闸门会挂在它上面——而 card_charge 没有行时 FOR UPDATE 只取间隙锁。
 		// 挡不住第二个事务，测试就会误判成「没有串行化」。
 		if strings.Contains(sql, "FOR UPDATE") && strings.Contains(sql, "FROM `charge_order`") {
 			gate.once.Do(func() {
@@ -159,10 +150,8 @@ func cleanupChargingOrder(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// TestConcurrentEndResultAppliesOnce 钉住并发重复投递只结算一次。
-//
-// 两笔完全相同的结束回执并发到达：一笔真正结算，另一笔必须被识别为重放。
-// 结算侧只应留下：一条结束回执、一条事件日志、一次计费派发、一条发件箱。
+// TestConcurrentEndResultAppliesOnce 验证相同回执并发投递时一笔应用、一笔重放。
+// 最终只有一条结束回执、事件日志、计费任务及 Outbox 记录。
 func TestConcurrentEndResultAppliesOnce(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -251,10 +240,7 @@ func TestConcurrentEndResultAppliesOnce(t *testing.T) {
 	}
 }
 
-// TestSequentialReplayIsIdempotent 钉住顺序重放同样幂等。
-//
-// worker 在「central 已确认、端口释放失败」时会重放整条链路，
-// 这是最常见的重放来源，必须走重放路径而不是冲突。
+// TestSequentialReplayIsIdempotent 验证端口释放失败后的顺序重放仍能识别首次回执。
 func TestSequentialReplayIsIdempotent(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -282,10 +268,7 @@ func TestSequentialReplayIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestDifferentMeterForSameOrderConflicts 钉住同单不同计量必须判冲突。
-//
-// 重复投递的判定是**逐字段比对**：电量、时长、停止原因、分段、结束时刻、
-// 停止指令号任何一项对不上，都说明来的是另一份事实，绝不能沿用首次结果。
+// TestDifferentMeterForSameOrderConflicts 验证同单回执逐字段比对，计量、时刻或停止命令不同均报冲突。
 func TestDifferentMeterForSameOrderConflicts(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()

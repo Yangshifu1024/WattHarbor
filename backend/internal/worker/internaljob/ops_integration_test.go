@@ -41,7 +41,7 @@ func opsIntegrationRedis(t *testing.T) *redis.Client {
 	return client
 }
 
-// TestOpsRegisteredRouteWithRedis 向 t 证明实际注册接口读取真实流长度、缺失流零长度以及类型错误的原 503；仅写随机私有键。
+// TestOpsRegisteredRouteWithRedis 验证实际注册接口读取真实流长度、缺失流零长度以及类型错误的 503；仅写随机私有键。
 // 拒绝令牌零 Redis 调用由默认 spy 回归证明；本测试不覆盖业务流消费、死信或共享开发数据。
 func TestOpsRegisteredRouteWithRedis(t *testing.T) {
 	client := opsIntegrationRedis(t)

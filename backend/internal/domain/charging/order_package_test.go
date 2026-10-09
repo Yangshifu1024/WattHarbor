@@ -41,9 +41,7 @@ func TestPackageFromSnapshotKeepsFrozenContract(t *testing.T) {
 
 func TestPackageFromSnapshotRefusesToSubstituteLiveTemplate(t *testing.T) {
 	rule := Rule{Version: 3, Spec: Spec{Mode: ModeServerEnergy}}
-	// 快照缺 offer、结构损坏、offer 本身不合法：都必须返回 nil。
-	// 这是本条规则的要害——宁可显式表示读不出，也不能拿当前模板补一个看起来合理的值，
-	// 否则站点方案一改，历史订单的收费依据就跟着变了。
+	// 快照缺少套餐、损坏或套餐无效时都返回 nil，不能用当前模板补齐历史价格。
 	broken := validOffer()
 	broken.PriceCents = 0 // Offer.Valid 要求价格大于 0
 	for name, raw := range map[string][]byte{

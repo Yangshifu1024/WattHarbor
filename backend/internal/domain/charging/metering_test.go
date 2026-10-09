@@ -39,7 +39,7 @@ func TestCheckModeSupportByProtocolCapabilities(t *testing.T) {
 }
 
 func TestCheckModeSupportRejectsModeWithoutRequiredCapability(t *testing.T) {
-	// 构造一个什么上报能力都没有的协议：能量与功率类必须被拒，
+	// 构造一个什么上报能力都没有的协议：能量与功率类必须被拒。
 	// 设备端时长计费仍可用（由固件倒计时停机，不要求上报）。
 	// 这里直接用 dc589 的能力集合逐项验证归属，避免依赖不存在的假协议。
 	caps, err := ProtocolCapabilities("dc589")

@@ -8,15 +8,15 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// TestWorkerSyncAPIRequiresServiceToken 接收 t，通过实际注册的十三条同步路由验证缺失服务令牌返回 401；
+// TestWorkerSyncAPIRequiresServiceToken 通过实际注册的十三条同步路由验证缺失服务令牌返回 401；
 // fixture 未注入数据库，拒绝应先于持久操作，本测试不验证合法身份的业务读写。
 func TestWorkerSyncAPIRequiresServiceToken(t *testing.T) {
 	router := httpapi.NewRouter()
 	(TelemetryAPI{ServiceToken: "service"}).Register(router)
 	cases := []struct {
-		// method 原注册路由的 HTTP 方法。
+		// method 注册路由的 HTTP 方法。
 		method string
-		// path 原同步端点及请求查询参数。
+		// path 同步端点及请求查询参数。
 		path string
 	}{
 		{"GET", "/api/v1/internal/start-results"},

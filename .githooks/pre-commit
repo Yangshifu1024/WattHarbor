@@ -1,4 +1,3 @@
 #!/bin/sh
-# Git 钩子必须以可执行脚本承载，无法直接以 .mjs 运行；真实逻辑在
-# scripts/git/pre-commit.mjs（Node），本垫片只负责转发。
+# Git 执行此脚本，再由 Node 运行 scripts/git/pre-commit.mjs。
 exec node "$(git rev-parse --show-toplevel)/scripts/git/pre-commit.mjs"

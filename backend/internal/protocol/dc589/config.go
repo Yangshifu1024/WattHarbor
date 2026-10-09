@@ -67,16 +67,14 @@ type ConfigTable struct {
 	// RunMode 取值 0 时间优先、1 时间卡优先、2 免费、3 电量优先、
 	// 4 电量卡优先。
 	RunMode byte
-	// LocalCoinTime 与 LocalCardTime 在时间模式下是分钟，在电量模式
-	// 下是每 kWh 的百分之一。
+	// LocalCoinTime 与 LocalCardTime 的单位随模式变化：时间模式为分钟，电量模式为 0.01 kWh。
 	LocalCoinTime uint16
 	LocalCardTime uint16
 	// CardAmountCents 是刷卡扣费金额，单位分，0..2500。
 	CardAmountCents uint16
 	// CardRefund 取 0 不退费、1 退费。
 	CardRefund byte
-	// TierWatts 存放最多 5 档的功率上限，单位瓦。高档不大于低档的
-	// 表会被主板拒绝。
+	// TierWatts 是最多 5 档的功率上限，单位 W；各档必须递增，否则主板拒绝配置。
 	TierWatts [5]uint16
 	// TierRatioPercent 为各档折扣百分比，范围 1–100；第一档固定为 100。
 	TierRatioPercent [5]byte
@@ -222,7 +220,7 @@ func decodeConfigTable(frame Frame) (ConfigTable, error) {
 	return table, nil
 }
 
-// ParseConfigAck 解析 C4；非零错误码表示参数被拒绝，设备保留原参数表。
+// ParseConfigAck 解析 C4；非零错误码表示参数被拒绝，设备保留参数表。
 func ParseConfigAck(frame Frame) error {
 	if frame.Command != 0xC4 || len(frame.Data) != 1 {
 		return ErrPayload
@@ -233,8 +231,7 @@ func ParseConfigAck(frame Frame) error {
 	return nil
 }
 
-// SetConfig、ReadConfig 及它们的应答就是参数表相关的命令。下行是
-// 0xC3，读取请求是 0xC5，主板用携带该表的 0xC6 回应读取。
+// SetConfig 用 0xC3 下发参数表；ReadConfig 用 0xC5 请求读取，设备用 0xC6 返回参数表。
 const (
 	SetConfig    byte = 0xC3
 	ConfigAck    byte = 0xC4
@@ -242,7 +239,7 @@ const (
 	ConfigReport byte = 0xC6
 )
 
-// BuildSetConfig 把 0xC3 下发用的字节渲染出来。
+// BuildSetConfig 将参数表编码为 0xC3 下发帧。
 func BuildSetConfig(table ConfigTable) (Frame, error) {
 	data, err := EncodeConfig(table)
 	if err != nil {
@@ -251,23 +248,22 @@ func BuildSetConfig(table ConfigTable) (Frame, error) {
 	return Frame{Command: SetConfig, Data: data}, nil
 }
 
-// DecodeConfig 按主板的读法把一张参数表从线上取下来，两个方向都接受：
-// 0xC3 下行和 0xC6 上报携带的是同一份 payload。
+// DecodeConfig 解码参数表；0xC3 下发和 0xC6 上报使用相同载荷。
 func DecodeConfig(frame Frame) (ConfigTable, error) {
 	return decodeConfigTable(frame)
 }
 
-// BuildConfigAck 编码 0xC4；非零结果表示配置被拒绝，设备保留原参数表。
+// BuildConfigAck 编码 0xC4；非零结果表示配置被拒绝，设备保留参数表。
 func BuildConfigAck(code byte) Frame {
 	return Frame{Command: ConfigAck, Data: []byte{code}}
 }
 
-// BuildReadConfigAck 渲染 0xC5 的确认。
+// BuildReadConfigAck 编码 0xC5 读取确认帧。
 func BuildReadConfigAck() Frame {
 	return Frame{Command: ReadConfig, Data: []byte{0}}
 }
 
-// BuildConfigReport 渲染携带所存参数表的 0xC6 应答。
+// BuildConfigReport 编码携带已保存参数表的 0xC6 应答。
 func BuildConfigReport(table ConfigTable) (Frame, error) {
 	data, err := EncodeConfig(table)
 	if err != nil {

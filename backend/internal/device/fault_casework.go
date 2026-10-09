@@ -11,20 +11,19 @@ import (
 	"time"
 )
 
-// FaultDispatch 是原人员和可空备注，不接受报告状态或用户身份覆盖。
+// FaultDispatch 保存指派人和可空备注，不允许覆盖报告状态或用户。
 type FaultDispatch struct {
-	AssignedTo uint64  `json:"assigned_to"` // 原处理人管理员主键，非0
-	Note       *string `json:"note"`        // 原可空备注，最多2000字
+	AssignedTo uint64  `json:"assigned_to"` // 处理人管理员主键，非0
+	Note       *string `json:"note"`        // 可空备注，最多2000字
 }
 
-// FaultResolution 是处理人申请的原状态及修复说明。
+// FaultResolution 保存处理人提交的目标状态和修复说明。
 type FaultResolution struct {
-	Status string  `json:"status"` // 原fixed或closed，不允许跳级
-	Note   *string `json:"note"`   // 原可空备注；fixed必须有非空说明，最多2000字
+	Status string  `json:"status"` // fixed 或 closed，不允许跳级
+	Note   *string `json:"note"`   // 可空备注；fixed 必须有非空说明，最多2000字
 }
 
-// List 在 ctx 下核对 actor 原fault.read权限并加载当前范围，按 q 返回原报告页或禁止／输入／存储错误。
-// 范围内列表与历史／修改一致，不访问网关或改报告。
+// List 核对 fault.read 权限和当前范围后分页读取报告。
 func (s FaultService) List(ctx context.Context, actor operations.Profile, q persist.PageQuery) (persist.Page[map[string]any], error) {
 	out := persist.Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
 	if err := requireFaultPermission(actor, "fault.read"); err != nil {
@@ -41,8 +40,8 @@ func (s FaultService) List(ctx context.Context, actor operations.Profile, q pers
 	return out, err
 }
 
-// History 在 ctx 下按 actor 原fault.read及当前范围核对 id，再按 q 返回原全可见性历史页。
-// 范围外与不存在同为缺失，SQL故障原样返回，不能查询其他工单的历史。
+// History 按 fault.read 权限和当前范围核对报告，再分页读取全部历史。
+// 范围外和不存在都按缺失处理。
 func (s FaultService) History(ctx context.Context, actor operations.Profile, id uint64, q persist.PageQuery) (persist.Page[map[string]any], error) {
 	out := persist.Page[map[string]any]{Items: []map[string]any{}, Page: q.Page, PageSize: q.PageSize}
 	if err := requireFaultPermission(actor, "fault.read"); err != nil {
@@ -67,8 +66,8 @@ func (s FaultService) History(ctx context.Context, actor operations.Profile, id 
 	return out, err
 }
 
-// checkFaultScope 在 ctx、tx 下核对 scope 对 row 原设备身份的可见性；不受限兼容无元数据报告。
-// 返回范围外／缺失或存储错误，不以缺失元数据补造设备，不取得反向设备写锁。
+// checkFaultScope 核对报告设备是否在当前范围内；不受限账号可查看没有设备资料的历史报告。
+// 不补建设备，也不反向取得设备写锁。
 func checkFaultScope(ctx context.Context, tx *gorm.DB, scope operations.DataScope, row FaultRow) error {
 	if scope.Unrestricted {
 		return nil
@@ -77,8 +76,8 @@ func checkFaultScope(ctx context.Context, tx *gorm.DB, scope operations.DataScop
 	return err
 }
 
-// Dispatch 在 ctx 下以 audit 原fault.dispatch和当前范围将 id 指派给 in 原处理人，返回原输入／冲突／存储错误。
-// READ COMMITTED事务锁工单后读取处理人的实时权限及范围；状态、用户可见事件与审计一起提交，同人重放不新增事件。
+// Dispatch 核对 fault.dispatch 权限和范围后，在 READ COMMITTED 事务中锁定工单。
+// 检查处理人的当前权限和范围，指派、用户可见事件和审计同事务；同人重放不新增事件。
 func (s FaultService) Dispatch(ctx context.Context, audit ops.AuditContext, id uint64, in FaultDispatch) error {
 	if err := requireFaultPermission(audit.Actor, "fault.dispatch"); err != nil {
 		return err
@@ -139,8 +138,8 @@ func (s FaultService) Dispatch(ctx context.Context, audit ops.AuditContext, id u
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
-// Resolve 在 ctx 下以 audit 原fault.resolve及当前范围推进 id 的 in 原状态，返回输入／冲突／缺失／存储错误。
-// 仅原处理人可操作；同状态重放不改时间或新增事件，状态、可见事件与审计同事务回滚，不回退或跳级。
+// Resolve 核对 fault.resolve 权限和范围，仅允许当前处理人顺序更新状态。
+// 状态、可见事件和审计同事务；同状态重放不改时间或新增事件。
 func (s FaultService) Resolve(ctx context.Context, audit ops.AuditContext, id uint64, in FaultResolution) error {
 	if err := requireFaultPermission(audit.Actor, "fault.resolve"); err != nil {
 		return err

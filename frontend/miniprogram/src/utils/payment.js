@@ -1,5 +1,4 @@
-// A successful WeChat payment UI only means the client submitted payment.
-// The order and device state must still be read from the server.
+// 微信支付界面成功只表示客户端已提交支付；订单和设备结果仍以服务端查询为准。
 function paymentParams(value) {
  if(value?.provider==='simulation' && typeof value.prepay_id==='string' && /^SIM(P[1-9][0-9]{4,18}|PAY[A-Za-z0-9]+)$/.test(value.prepay_id))return {provider:'simulation',merchantOrderNo:value.prepay_id.slice(3)};
  if(!value || value.signType!=='RSA' || !/^\d+$/.test(value.timeStamp || '') || typeof value.nonceStr!=='string' || !value.nonceStr || typeof value.paySign!=='string' || !value.paySign || !/^prepay_id=\S+$/.test(value.package || ''))throw new Error('支付参数异常，请在订单列表核实状态');

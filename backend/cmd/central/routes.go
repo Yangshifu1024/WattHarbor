@@ -20,8 +20,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newRouter 注册当前进程路由、指标与健康端点；cfg 提供服务令牌与支付模式，r 提供已打开存储，channel 提供退款渠道，gateway 提供设备内部调用。
-// 返回未监听的 Gin 引擎，无错误返回；设置全局 Gin 发布模式，仅装配不执行业务请求，健康处理器用请求 context 的两秒子期限检查存储。
+// newRouter 注册本进程的业务路由、指标和健康检查，不启动监听。
+// 健康检查使用请求 context，最多等待两秒。
 func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
@@ -42,7 +42,7 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 
 	// 内部端点统一使用同一服务令牌：内部调用只认 X-Service-Token，不暴露到前端。
 	token := cfg.ServiceToken
-	// 设备操作仓储为无状态值服务，卡Swipe的端口探测与设备事实共用同一实例。
+	// 设备操作仓储为无状态值服务，刷卡的端口探测与设备事实共用同一实例。
 	operationRepo := device.OperationRepo{DB: orm}
 
 	// 充电生命周期：gateway 查询授权，worker 查询待启动订单并同步回执。

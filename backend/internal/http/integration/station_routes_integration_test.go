@@ -29,8 +29,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// TestRegisteredPublicStationQueriesUseOwnedSources 验证无需登录的原公开接口、真实两库和实际摘要端点。
-// 数据在外层事务回滚，持续查询条件只隔离本测试公告／站点；不创建用户、资金或Redis会话。
+// TestRegisteredPublicStationQueriesUseOwnedSources 验证无需登录的公开接口、真实两库和实际摘要端点。
+// 数据在外层事务回滚，持续查询条件只隔离本测试公告／站点；不创建用户、资金或 Redis 会话。
 func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 	central := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
 	defer central.Rollback()
@@ -65,7 +65,7 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 		}
 		if i == 2 {
 			continue
-		} // 原中央设备尚未在网关开通，运行态未知
+		} // 中央设备尚未在网关开通，运行态未知
 		if err := gw.Table("device").Create(map[string]any{"device_id": board, "vendor_id": 1, "station_id": id, "port_count": 1, "status": "enabled", "last_heartbeat_at": heartbeat}).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -92,7 +92,7 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 		}
 		if i == 7 {
 			row["target_ids"] = `[123]`
-		} // 原规则只接受字符串目标，数字不猜测
+		} // 规则只接受字符串目标，数字不猜测
 		if err := central.Table("announcement").Create(row).Error; err != nil {
 			t.Fatal(err)
 		}

@@ -19,7 +19,7 @@ const (
 	CheckoutInvalidInput   CheckoutFailure = "input"           // 无效请求身份或端口
 	CheckoutProvider       CheckoutFailure = "provider"        // 渠道未配置
 	CheckoutNotFound       CheckoutFailure = "not_found"       // 扫描端口不存在
-	CheckoutGateway        CheckoutFailure = "gateway"         // 设备事实读取失败
+	CheckoutGateway        CheckoutFailure = "gateway"         // 设备信息读取失败
 	CheckoutPaused         CheckoutFailure = "paused"          // 设备暂停运营
 	CheckoutPort           CheckoutFailure = "port"            // 物理端口不可用
 	CheckoutPricing        CheckoutFailure = "pricing"         // 无有效计价方案
@@ -33,7 +33,7 @@ const (
 // CheckoutError 保留失败阶段和原始原因，便于适配器保持公开错误契约。
 type CheckoutError struct {
 	Kind  CheckoutFailure // 失败阶段，不携带 HTTP 状态
-	Cause error           // 原业务或存储错误，用于 errors.Is／As
+	Cause error           // 业务或存储错误，用于 errors.Is、As
 }
 
 // Error 返回原因或阶段文本，不返回渠道密钥、用户 openid 或请求凭据。
@@ -44,18 +44,18 @@ func (e *CheckoutError) Error() string {
 	return string(e.Kind)
 }
 
-// Unwrap 返回原错误供调用方匹配领域冲突，不改变失败阶段。
+// Unwrap 返回错误供调用方匹配领域冲突，不改变失败阶段。
 func (e *CheckoutError) Unwrap() error { return e.Cause }
 
 // CheckoutPorts 只提供运营状态已经合并的设备发现结果。
 type CheckoutPorts interface {
-	// ResolveScan 在 context 下读取原端口编码；错误时结果不能用于创建支付。
+	// ResolveScan 在 context 下读取端口编码；错误时结果不能用于创建支付。
 	ResolveScan(context.Context, string) (money.ScanResult, error)
 }
 
 // CheckoutPricingReader 提供当前有效规则及设备计量兼容检查，不提供管理写入。
 type CheckoutPricingReader interface {
-	// ActiveDeviceRule 读取 context 下 stationID／deviceID 的完整冻结规则，失败返回错误。
+	// ActiveDeviceRule 读取 context 下 stationID、deviceID 的完整冻结规则，失败返回错误。
 	ActiveDeviceRule(context.Context, uint64, string) (charging.Rule, error)
 	// CheckDeviceScheme 校验 context 下目标设备能实现给定方案，错误说明不兼容或读取失败。
 	CheckDeviceScheme(context.Context, uint64, string, charging.Scheme) error
@@ -63,58 +63,58 @@ type CheckoutPricingReader interface {
 
 // CheckoutIntents 提供支付请求凭据、资金预占及渠道参数的持久能力。
 type CheckoutIntents interface {
-	// Replay 按用户、请求、端口、套餐、券身份复用原请求；nil 表示尚未创建，异内容返回冲突。
+	// Replay 按用户、请求、端口、套餐、优惠券编号复用请求；nil 表示尚未创建，异内容返回冲突。
 	Replay(context.Context, uint64, string, string, uint64, uint64) (*PaymentIntent, error)
-	// Reserve 按输入在完整事务中创建原支付身份、套餐及金额快照；失败整体回滚。
+	// Reserve 按输入在完整事务中创建支付标识、套餐及金额快照；失败整体回滚。
 	Reserve(context.Context, IntentInput) (PaymentIntent, error)
 	// PrepayParams 返回 paymentID 已保存的渠道参数；无参数返回 gorm.ErrRecordNotFound。
 	PrepayParams(context.Context, uint64) (PrepayParams, error)
-	// SavePrepay 首写 paymentID 的参数；重复保存使用原唯一键，错误不得声称已准备付款。
+	// SavePrepay 首写 paymentID 的参数；重复保存使用唯一键，错误不得声称已准备付款。
 	SavePrepay(context.Context, uint64, PrepayParams) error
 }
 
-// CheckoutService 拥有报价、支付申请重放、准入与提交后预支付准备。
+// CheckoutService 负责报价、支付申请重放、校验与提交后预支付准备。
 type CheckoutService struct {
 	Ports    CheckoutPorts         // 设备发现能力，cmd 注入，不持有网络配置
-	Pricing  CheckoutPricingReader // 原有效方案与计量约束
+	Pricing  CheckoutPricingReader // 有效方案与计量约束
 	Intents  CheckoutIntents       // 支付所属请求及预支付 repo
-	Provider PrepayProvider        // 通过渠道服务器准备支付参数，不推进订单状态
+	Provider PrepayProvider        // 通过渠道服务器准备支付参数，不更新订单状态
 }
 
-// CheckoutInput 是客户端原申请身份，金额由冻结套餐确定，不能由用户提交。
+// CheckoutInput 保存客户端请求号与套餐选择，金额由冻结套餐确定，不能由用户填写。
 type CheckoutInput struct {
 	ClientRequestID string `json:"client_request_id"` // 客户端 UUID，用户范围内唯一
 	PortID          string `json:"port_id"`           // 二维码端口业务编码
-	OfferID         uint64 `json:"offer_id"`          // 后台发布套餐身份
+	OfferID         uint64 `json:"offer_id"`          // 后台发布套餐编号
 }
 
 // CheckoutOffers 保留匿名报价响应；不创建支付、订单或用户会话。
 type CheckoutOffers struct {
-	StationID    uint64           `json:"station_id"`     // 中央站点身份
-	PortID       string           `json:"port_id"`        // 原请求端口编码
-	Items        []charging.Offer `json:"items"`          // 当前套餐，金额分、时长分钟、电量按原领域单位
-	Display      charging.Display `json:"display"`        // 原方案展示配置
-	StopWhenFull bool             `json:"stop_when_full"` // 原充满停止策略
+	StationID    uint64           `json:"station_id"`     // 站点 ID
+	PortID       string           `json:"port_id"`        // 请求端口编码
+	Items        []charging.Offer `json:"items"`          // 当前套餐，金额分、时长分钟、电量按领域单位
+	Display      charging.Display `json:"display"`        // 方案展示配置
+	StopWhenFull bool             `json:"stop_when_full"` // 充满停止策略
 }
 
 // CheckoutResult 保持公开支付准备响应，不包含内部支付主键与 openid。
 type CheckoutResult struct {
-	IntentID        string       `json:"intent_id"`         // 原支付意图身份
-	MerchantOrderNo string       `json:"merchant_order_no"` // 原商户支付单号
+	IntentID        string       `json:"intent_id"`         // 支付意图身份
+	MerchantOrderNo string       `json:"merchant_order_no"` // 商户支付单号
 	PortID          string       `json:"port_id"`           // 冻结端口编码
-	DeviceID        string       `json:"device_id"`         // 冻结设备身份
+	DeviceID        string       `json:"device_id"`         // 冻结设备编号
 	StationID       uint64       `json:"station_id"`        // 冻结站点身份
 	ElectricCents   int64        `json:"electric_cents"`    // 预估电费，分
 	ServiceCents    int64        `json:"service_cents"`     // 预估服务费，分
 	TotalCents      int64        `json:"total_cents"`       // 优惠前总额，分
 	DiscountCents   int64        `json:"discount_cents"`    // 已冻结优惠额，分
 	PayableCents    int64        `json:"payable_cents"`     // 应付金额，分
-	CouponGrantID   uint64       `json:"coupon_grant_id"`   // 原券权益身份，无券为 0
-	PaymentParams   PrepayParams `json:"payment_params"`    // 渠道支付参数，重试复用原保存结果
-	ExpiresAt       time.Time    `json:"expires_at"`        // 原支付期限，UTC
+	CouponGrantID   uint64       `json:"coupon_grant_id"`   // 优惠券 ID，无券为 0
+	PaymentParams   PrepayParams `json:"payment_params"`    // 渠道支付参数，重试复用保存结果
+	ExpiresAt       time.Time    `json:"expires_at"`        // 支付期限，UTC
 }
 
-// Offers 在 ctx 下读取 portID 的匿名报价；错误带失败阶段，不创建任何资金凭据。
+// Offers 读取 portID 的匿名报价；错误带失败阶段，不创建任何资金凭据。
 func (s CheckoutService) Offers(ctx context.Context, portID string) (CheckoutOffers, error) {
 	port, err := s.port(ctx, portID)
 	if err != nil {
@@ -139,7 +139,7 @@ func (s CheckoutService) Offers(ctx context.Context, portID string) (CheckoutOff
 	return CheckoutOffers{StationID: port.StationID, PortID: portID, Items: rule.Spec.Scheme.Offers(rule), Display: rule.Spec.Scheme.Display, StopWhenFull: rule.Spec.Scheme.Stop.StopWhenFull}, nil
 }
 
-// port 在 ctx 下读取 code；网关身份不存在与读取故障独立返回，缺配置关闭准入。
+// port 按扫码编码读取端口，区分端口不存在与网关故障；未配置网关时拒绝创建支付。
 func (s CheckoutService) port(ctx context.Context, code string) (money.ScanResult, error) {
 	if s.Ports == nil {
 		return money.ScanResult{}, &CheckoutError{Kind: CheckoutGateway}
@@ -154,9 +154,8 @@ func (s CheckoutService) port(ctx context.Context, code string) (money.ScanResul
 	return out, nil
 }
 
-// Start 为 userID 的 in 准备付款；ctx 管理数据库及渠道调用，错误保留已持久申请以便原号恢复。
-// 先重放原请求再读当前设备和方案，避免当前发布变化覆盖原套餐与金额。
-// Reserve 完成后才请求渠道；预支付成功不表示到账，不创建充电中状态。
+// Start 为用户准备付款：先恢复同请求的支付，再读取当前设备与方案。
+// 支付申请提交后才请求预支付参数；失败保留申请供原单号重试，预支付成功不表示到账。
 func (s CheckoutService) Start(ctx context.Context, userID uint64, in CheckoutInput) (CheckoutResult, error) {
 	if s.Provider == nil {
 		return CheckoutResult{}, &CheckoutError{Kind: CheckoutProvider}
@@ -216,8 +215,8 @@ func (s CheckoutService) Start(ctx context.Context, userID uint64, in CheckoutIn
 	return s.prepare(ctx, intent)
 }
 
-// prepare 为 intent 复用或首写预支付参数；ctx 控制 IO，失败不撤销原已提交申请。
-// 成功保存后再次读取原参数，使并发不同渠道响应仍返回唯一键的权威记录。
+// prepare 为 intent 复用或首写预支付参数；ctx 控制 I/O，失败不撤销已提交申请。
+// 成功保存后再次读取参数，使并发不同渠道响应仍返回唯一键的首次保存的记录。
 func (s CheckoutService) prepare(ctx context.Context, intent PaymentIntent) (CheckoutResult, error) {
 	params, err := s.Intents.PrepayParams(ctx, intent.PaymentOrderID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {

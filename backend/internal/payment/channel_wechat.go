@@ -24,33 +24,33 @@ var ErrInvalidPayment = errors.New("invalid or unverified payment")
 // wechatOrderNumber 按渠道要求限制为 6–32 个允许的 ASCII 字符，商户范围内保持唯一。
 var wechatOrderNumber = regexp.MustCompile(`^[0-9A-Za-z_\-|*]{6,32}$`)
 
-// PrepayRequest 是已经持久化的原支付申请，向渠道请求参数不等于到账。
+// PrepayRequest 是已经持久化的支付申请，向渠道请求参数不等于到账。
 type PrepayRequest struct {
-	MerchantOrderNo string    // 原商户支付号，渠道重试沿用
+	MerchantOrderNo string    // 商户支付号，渠道重试沿用
 	OpenID          string    // 已核对用户的微信身份，不公开到支付回执
-	AmountCents     int64     // 原实际应付金额，分，必须为正
-	ExpiresAt       time.Time // 原支付有效期，真实预支付要求仍未过期
+	AmountCents     int64     // 实际应付金额，分，必须为正
+	ExpiresAt       time.Time // 支付有效期，真实预支付要求仍未过期
 }
 
-// PrepayParams 保持客户端调用微信支付所需的原参数形状；模拟渠道只填写原模拟字段。
+// PrepayParams 保持客户端调用微信支付所需的参数形状；模拟渠道只填写模拟字段。
 type PrepayParams struct {
 	Provider  string `json:"provider"`  // wechat_direct 或 simulation，后续确认及退款据此识别渠道
-	PrepayID  string `json:"prepay_id"` // 渠道预支付身份，同支付首次保存后复用
-	AppID     string `json:"appId"`     // 原支付应用 ID
+	PrepayID  string `json:"prepay_id"` // 渠道预支付编号，同支付首次保存后复用
+	AppID     string `json:"appId"`     // 支付应用 ID
 	TimeStamp string `json:"timeStamp"` // 渠道签名使用的秒时间戳文本
 	NonceStr  string `json:"nonceStr"`  // 渠道签名使用的随机串
-	Package   string `json:"package"`   // 原 prepay_id 参数包
+	Package   string `json:"package"`   //  prepay_id 参数包
 	SignType  string `json:"signType"`  // 客户端签名算法标签
-	PaySign   string `json:"paySign"`   // 客户端支付签名，可公开给原付款人，不是商户私钥
+	PaySign   string `json:"paySign"`   // 客户端支付签名，可公开给付款人，不是商户私钥
 }
 
-// VerifiedTransaction 只由渠道验签解密后的成功 JSAPI 通知构造，资金用例还须核对原支付关联。
+// VerifiedTransaction 只由渠道验签解密后的成功 JSAPI 通知构造，资金用例还须核对支付关联。
 type VerifiedTransaction struct {
 	Provider        string    // 已验签渠道标签
 	MerchantID      string    // 已验签收款商户
 	AppID           string    // 已验签支付应用
-	MerchantOrderNo string    // 原商户支付号
-	TransactionID   string    // 渠道交易唯一身份
+	MerchantOrderNo string    // 商户支付号
+	TransactionID   string    // 渠道交易唯一编号
 	OpenID          string    // 已验签付款人身份
 	PaidCents       int64     // 渠道成功支付额，CNY 分
 	PaidAt          time.Time // 渠道成功时刻，规范化为 UTC
@@ -74,7 +74,7 @@ type WechatDirect struct {
 	notify  *notify.Handler                  // 通知签名验证及 APIv3 解密处理器
 }
 
-// NewWechatDirect 在 ctx 下按 config 校验凭据、读取私钥并构造官方 SDK 及证书访问器。
+// NewWechatDirect 按 config 校验凭据、读取私钥并构造官方 SDK 及证书访问器。
 // 返回可复用渠道；配置不完整为 ErrInvalidPayment，密钥文件和 SDK 初始化错误原样返回，不写业务状态。
 func NewWechatDirect(ctx context.Context, config Config) (*WechatDirect, error) {
 	if config.AppID == "" || config.MerchantID == "" || config.CertificateSerial == "" || len(config.APIv3Key) != 32 ||
@@ -94,8 +94,8 @@ func NewWechatDirect(ctx context.Context, config Config) (*WechatDirect, error) 
 		notify: notify.NewNotifyHandler(config.APIv3Key, verifiers.NewSHA256WithRSAVerifier(visitor))}, nil
 }
 
-// Prepay 在 ctx 下为 request 原单向渠道准备支付参数，返回完整参数或输入／SDK／缺字段错误。
-// 错误可能发生在渠道受理之后，调用方须保留原单号恢复，不根据本次响应推进到账。
+// Prepay 为 request 原单向渠道准备支付参数，返回完整参数或输入、SDK、缺字段错误。
+// 错误可能发生在渠道受理之后，调用方须保留原单号恢复，不根据本次响应更新到账。
 func (w *WechatDirect) Prepay(ctx context.Context, request PrepayRequest) (PrepayParams, error) {
 	if w == nil || !wechatOrderNumber.MatchString(request.MerchantOrderNo) || request.OpenID == "" || request.AmountCents <= 0 || !request.ExpiresAt.After(time.Now()) {
 		return PrepayParams{}, ErrInvalidPayment
@@ -118,8 +118,8 @@ func (w *WechatDirect) Prepay(ctx context.Context, request PrepayRequest) (Prepa
 		SignType: *resp.SignType, PaySign: *resp.PaySign}, nil
 }
 
-// VerifyNotification 在 ctx 下用官方 SDK 验证 request 签名并解密，仅读取成功 CNY／JSAPI 通知。
-// 返回已验签交易；签名、解密、状态、字段、商户／应用或时间不符返回错误，无资金或数据库写入。
+// VerifyNotification 用官方 SDK 验证 request 签名并解密，仅读取成功 CNY、JSAPI 通知。
+// 返回已验签交易；签名、解密、状态、字段、商户、应用或时间不符返回错误，无资金或数据库写入。
 func (w *WechatDirect) VerifyNotification(ctx context.Context, request *http.Request) (VerifiedTransaction, error) {
 	if w == nil || request == nil {
 		return VerifiedTransaction{}, ErrInvalidPayment

@@ -7,7 +7,8 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// TestNoPowerRequiresContinuousMinuteAndFreshHeartbeat 使用 t 核对零功率至少持续一分钟且心跳新鲜，正功率重置计时，缺少目标端口不能当作零功率；无返回值，失败由 t 报告，仅调用纯证据判断。
+// TestNoPowerRequiresContinuousMinuteAndFreshHeartbeat 验证零功率须连续一分钟且末条心跳有效。
+// 正功率重置计时，缺少目标端口不能算作零功率。
 func TestNoPowerRequiresContinuousMinuteAndFreshHeartbeat(t *testing.T) {
 	now := time.Now().UTC()
 	at := func(before time.Duration, power uint32) protocol.Event {
@@ -39,9 +40,8 @@ func TestNoPowerRejectsInterruptedEvidence(t *testing.T) {
 	}
 	z := protocol.PortTelemetry{Port: 1}
 	for _, tc := range []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
-		// events 按给定顺序构造的原心跳事实，用于检查静默、缺端口或时间中断不能满足连续零功率。
+		// events 按给定顺序构造的心跳事实，用于检查静默、缺端口或时间中断不能满足连续零功率。
 		events []protocol.Event
 	}{
 		{"reconnect", []protocol.Event{at(-70, z), at(-2, z)}},

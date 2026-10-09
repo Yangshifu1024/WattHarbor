@@ -15,14 +15,12 @@ import (
 	"time"
 )
 
-// TOTP 在 RFC 4226 的 HOTP 之上实现 RFC 6238 的基于时间的一次性密码。
-// 放在本地实现，后台登录链路就不必多一个网络依赖，
-// 而且验证的时间窗口是显式的、可测的。
+// 按 RFC 6238 在本地生成和验证动态口令，无需外部服务。
 
 const (
 	totpPeriod    = 30 * time.Second // 动态口令的时间步长，标准取 30 秒。
 	totpDigits    = 6                // 口令位数，与主流验证器 App 的默认一致。
-	totpSkew      = 1                // 容许的时间步偏移数：接受前一步和后一步，吸收服务器与手机之间的时钟漂移。
+	totpSkew      = 1                // 允许前后各一个时间步，容忍服务器和手机的时钟偏差。
 	totpSecretLen = 20               // 共享密钥字节数，取 RFC 4226 建议的 160 位。
 )
 
@@ -33,9 +31,7 @@ var (
 	base32Encoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 )
 
-// NewTOTPSecret 生成一个适合验证器 App 使用的 base32 密钥。
-
-// NewTOTPSecret 生成 20 字节随机密钥并做 base32 编码，返回值直接落库即可与验证端共用。
+// NewTOTPSecret 生成 20 字节随机密钥，编码为验证器使用的 base32。
 func NewTOTPSecret() (string, error) {
 	raw := make([]byte, totpSecretLen)
 	if _, err := rand.Read(raw); err != nil {
@@ -44,10 +40,8 @@ func NewTOTPSecret() (string, error) {
 	return base32Encoding.EncodeToString(raw), nil
 }
 
-// TOTPURI 拼出 otpauth：// 绑定链接，运营扫一次就行。
-
-// TOTPURI 拼出 otpauth：// 绑定链接，管理员扫码一次即可把密钥录入验证器 App。算法固定
-// SHA1，位数和周期取自本文件的常量；issuer、account、secret 任一为空都算参数错误。
+// TOTPURI 生成验证器绑定链接；issuer、account 和 secret 不能为空。
+// 使用 SHA1、六位口令和三十秒周期。
 func TOTPURI(issuer, account, secret string) (string, error) {
 	if issuer == "" || account == "" || secret == "" {
 		return "", errors.New("issuer, account and secret are required")
@@ -66,10 +60,8 @@ func TOTPURI(issuer, account, secret string) (string, error) {
 	}).String(), nil
 }
 
-// VerifyTOTP 使用常数时间比较并检查全部允许的时间步，减少验证码和时钟偏移的时序泄露。
-
-// VerifyTOTP 用共享密钥校验动态口令，容差为当前时间步的前后各一步。口令先做长度和
-// 全数字校验，再对每个可接受的时间步用常数时间比较，任一时间步命中即通过。
+// VerifyTOTP 校验六位动态口令，允许当前时间步前后各一步。
+// 检查所有允许时间步，并用固定时间比较减少时序信息泄露。
 func VerifyTOTP(secret, code string, now time.Time) error {
 	secret = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(secret), " ", ""))
 	code = strings.TrimSpace(code)
@@ -102,10 +94,7 @@ func VerifyTOTP(secret, code string, now time.Time) error {
 	return nil
 }
 
-// hotp 按 RFC 4226 推导基于计数器的一次性密码。
-
-// hotp 按 RFC 4226 从计数器推导一次性密码：HMAC-SHA1 之后取末字节低 4 位做动态截断，
-// 再取模补零到 6 位。
+// hotp 按 RFC 4226 用 HMAC-SHA1 和动态截断生成六位口令。
 func hotp(key []byte, counter uint64) (string, error) {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], counter)
@@ -131,9 +120,7 @@ func TOTPCode(secret string, now time.Time) (string, error) {
 	return hotp(key, uint64(now.Unix()/int64(totpPeriod/time.Second)))
 }
 
-// RandomSecret 生成 n 字节密码学随机数并编成不带填充的 base64url 串。
-// 会话 id、刷新令牌密钥、MFA 挑战码等需要不可预测字符串的地方共用它，
-// 保证各处的随机源与编码一致。
+// RandomSecret 生成 n 字节随机数并编码为无填充 base64url，用于会话、刷新令牌和 MFA 挑战。
 func RandomSecret(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

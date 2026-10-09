@@ -6,28 +6,21 @@ import (
 	"time"
 )
 
-// 本文件逐条枚举 usageFromMeter（actual.go）的全部计量复核触发条件。
-//
-// 该函数是消费封顶（StopAtMeter）与最终结算（PriceActual）共用的计量校验入口，
-// 任一分支放松都会让缺乏证据的电量按估算计价，任一分支收紧都会把真实订单
-// 推进人工复核。因此这里不满足于「部分用例间接覆盖」，而是把每个 ErrMeterReview
-// 返回点各对应一行用例，正向对照单独成表，锁住两条边界。
-//
-// 全部用例通过公开入口 PriceActual 断言，不直接调用未导出的 usageFromMeter。
+// 通过 PriceActual 覆盖计量复核条件及合法边界；同一校验也用于费用封顶。
 
-// actualStart 是共享的起充时刻，取北京时间上午整点，避开日界与时段边界，
+// actualStart 是共享的起充时刻，取北京时间上午整点，避开日界与时段边界。
 // 使单时段费率用例不受跨档干扰。
 var actualStart = time.Date(2026, 10, 5, 9, 0, 0, 0, beijing)
 
-// energyRule 构造按电量计价的合法规则。电量口径每个时段只有单一电价，
+// energyRule 构造按电量计价的合法规则。电量计价方式每个时段只有单一电价。
 // 不允许携带功率阶梯；periods 决定费率在一天内是否变化。
 func energyRule(periods ...Period) Rule {
 	return Rule{ID: 7, Version: 1, Spec: Spec{Mode: ModeServerEnergy,
 		Electric: &ElectricLine{Basis: BasisEnergy, Periods: periods}}}
 }
 
-// tierRule 构造带功率阶梯的服务端规则，mode 只接受两种功率口径，
-// 电价口径由模式推导，保证 ValidateSpec 通过。
+// tierRule 构造带功率阶梯的服务端规则，mode 只接受两种功率计价方式。
+// 电价算法由模式推导，保证 ValidateSpec 通过。
 func tierRule(mode ChargeMode, tiers []Tier) Rule {
 	return Rule{ID: 7, Version: 1, Spec: Spec{Mode: mode,
 		Electric: &ElectricLine{Basis: mode.BasisFor(), Periods: []Period{{EndMinute: 1440, Tiers: tiers}}}}}
@@ -42,8 +35,8 @@ func actualTiers() []Tier {
 	}
 }
 
-// energyMeter 构造两段首尾相接的合法计量：30 分钟 1 Wh 加 30 分钟 2 Wh，
-// 电量口径分段不要求功率，供边界矛盾类用例在其上做单点变异。
+// energyMeter 构造两段首尾相接的合法计量：30 分钟 1 Wh 加 30 分钟 2 Wh。
+// 电量计价方式分段不要求功率，供边界矛盾类用例在其上做单点变异。
 func energyMeter() ActualMeter {
 	power := uint32(0)
 	return ActualMeter{
@@ -56,7 +49,7 @@ func energyMeter() ActualMeter {
 	}
 }
 
-// secondSegments 构造 n 个一秒一段、零电量的分段链，恰好收口到 n 秒处，
+// secondSegments 构造 n 个一秒一段、零电量的分段链，恰好收口到 n 秒处。
 // 用于分段数上限的边界对照：链本身完全合法，只有条数超限才被拒绝。
 func secondSegments(start time.Time, n int) []MeterSegment {
 	segments := make([]MeterSegment, n)
@@ -69,11 +62,8 @@ func secondSegments(start time.Time, n int) []MeterSegment {
 	return segments
 }
 
-// TestUsageFromMeterReviewTriggers 把 usageFromMeter 的每个 ErrMeterReview
-// 返回点各对应一行：预设复核标记、时段四项（零时刻、倒置、跨七天、
-// 累计秒数超墙钟加五分钟）、分段数上限、无分段跨费率、分段边界五类矛盾
-// （首段错位、段间缺口、时刻倒置、越界、零时长带电量）、两种功率口径的
-// 功率缺失，以及收口与合计两项终检。
+// TestUsageFromMeterReviewTriggers 覆盖复核标记、时间矛盾、分段上限、跨费率缺测、
+// 分段边界错误、缺少功率，以及结束时刻与电量合计不符。
 func TestUsageFromMeterReviewTriggers(t *testing.T) {
 	uniform := []Period{{EndMinute: 1440, ElectricCents: 100}}
 	// 跨档电量费率：前 10 分钟 100 分/度、之后 200 分/度，用于无分段跨费率用例。
@@ -182,10 +172,8 @@ func TestUsageFromMeterReviewTriggers(t *testing.T) {
 	}
 }
 
-// TestPriceActualPositiveControls 与复核触发表逐点对照，锁住不应被收紧的
-// 合法路径：整段总量配均匀费率、累计秒数的五分钟容差、峰值功率独立定价、
-// 分段数恰好在上限，以及带实测功率的分档计价。费率与时长全部取整除组合，
-// 断言精确到分。
+// TestPriceActualPositiveControls 验证固定费率、五分钟时长容差、可验证峰值、
+// 分段数上限和实测功率计价均能通过；费用精确到分。
 func TestPriceActualPositiveControls(t *testing.T) {
 	t.Run("整段总量配全天单一电价", func(t *testing.T) {
 		fee, err := PriceActual(energyRule(Period{EndMinute: 1440, ElectricCents: 100}),
@@ -208,8 +196,8 @@ func TestPriceActualPositiveControls(t *testing.T) {
 		}
 	})
 	t.Run("峰值功率可独立定价", func(t *testing.T) {
-		// 功率分档口径下，峰值可验证的段即使缺实测功率也能按峰值定价；
-		// 这与触发表中「零功率且无实测」一行构成同口径的正反两面。
+		// 功率分档计价下，峰值可验证的段即使缺实测功率也能按峰值定价。
+		// 这与触发表中「零功率且无实测」一行构成同一种计价方式的正反两面。
 		peak := uint32(600)
 		fee, err := PriceActual(tierRule(ModeServerMaxPower, actualTiers()),
 			ActualMeter{StartedAt: actualStart, EndedAt: actualStart.Add(time.Hour), ChargedWh: 1, ChargedSeconds: 3600,

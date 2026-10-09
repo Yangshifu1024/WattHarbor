@@ -5,7 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// announcements 从c解析原分页并调用ops公开公告能力，返回原筛选窗口或存储错误。
+// announcements 从请求解析分页并调用 ops 公开公告能力，返回筛选窗口或存储错误。
 func (a API) announcements(c *gin.Context) {
 	page, size, ok := httpapi.ReadPaging(c, 20, httpapi.DefaultPageLimit)
 	if !ok {

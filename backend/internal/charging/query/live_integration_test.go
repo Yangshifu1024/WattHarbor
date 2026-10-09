@@ -45,7 +45,7 @@ func liveDB(t *testing.T, name string) *gorm.DB {
 	return db
 }
 
-// TestLiveUsesRegisteredGatewayAndTwoOwnedQueries 通过实际网关路由与两库验证批量取证、原冻结价格和刷卡累计购买。
+// TestLiveUsesRegisteredGatewayAndTwoOwnedQueries 通过实际网关路由与两库验证批量取证、冻结价格和刷卡累计购买。
 // 21单只发两次 HTTP，中央计价读取仅两次 SQL；其它端口与断线不增加计量，全部造数外层回滚。
 func TestLiveUsesRegisteredGatewayAndTwoOwnedQueries(t *testing.T) {
 	central := liveDB(t, "TEST_MYSQL_URL").Begin()

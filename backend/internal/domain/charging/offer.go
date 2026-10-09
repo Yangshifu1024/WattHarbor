@@ -4,8 +4,7 @@ import (
 	"errors"
 )
 
-// Offer is derived from exactly one applied scheme. Prices and billing rules
-// cannot be independently published.
+// Offer 来自一份完整方案，套餐价格与计费规则必须一起发布。
 type Offer struct {
 	ServerDuration  bool   `json:"server_duration,omitempty"`
 	PackageID       uint64 `json:"package_id,omitempty"`

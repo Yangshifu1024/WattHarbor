@@ -12,8 +12,8 @@ import (
 	"chargepilot/internal/testfixture"
 )
 
-// TestImportCompatibilityCachesAbsentRuleAndChecksWholeScheme 使用真实规则表及外层回滚。
-// 同站多设备在没有规则时均准入；存在规则时完整检查后续套餐，不能只检查首个模式。
+// TestImportCompatibilityCachesAbsentRuleAndChecksWholeScheme 验证无站点规则时可导入，有规则时检查全部套餐和算法。
+// 使用真实规则表，外层事务回滚。
 func TestImportCompatibilityCachesAbsentRuleAndChecksWholeScheme(t *testing.T) {
 	db := pricingConn(t)
 	tx := db.Begin()

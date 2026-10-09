@@ -44,32 +44,32 @@ func cutoffCardConn(t *testing.T) *gorm.DB {
 
 // cutoffCardFacts 仅模拟已在线端口及 DC589 能力；订单、截止和资金均为真实库。
 type cutoffCardFacts struct {
-	port money.ScanResult /* 原端口事实 */
+	port money.ScanResult /* 端口信息 */
 }
 
-// ResolveScan 返回 ctx/code 对应端口 fixture，无网络或数据库写入。
+// ResolveScan 返回 ctx/code 对应端口 测试替身，无网络或数据库写入。
 func (f cutoffCardFacts) ResolveScan(ctx context.Context, code string) (money.ScanResult, error) {
 	return f.port, nil
 }
 
-// Capabilities 返回 ctx/station/device 的 DC589 能力 fixture，无 IO。
+// Capabilities 返回 ctx/station/device 的 DC589 能力 测试替身。
 func (f cutoffCardFacts) Capabilities(ctx context.Context, station uint64, device string) (string, charging.Capabilities, error) {
 	cap, err := charging.ProtocolCapabilities("dc589")
 	return "dc589", cap, err
 }
 
-// ActiveDeviceRule 拒绝续购读取新报价；入参 ctx/station/device 仅标识原目标，无 IO。
+// ActiveDeviceRule 拒绝续购读取新报价；入参 ctx/station/device 仅标识目标。
 func (f cutoffCardFacts) ActiveDeviceRule(ctx context.Context, station uint64, device string) (charging.Rule, error) {
 	return charging.Rule{}, errors.New("extension must not read current pricing")
 }
 
-// CheckDeviceScheme 拒绝续购校验新方案；ctx/station/device/scheme 无 IO。
+// CheckDeviceScheme 拒绝续购校验新方案；ctx/station/device/scheme 无 I/O。
 func (f cutoffCardFacts) CheckDeviceScheme(ctx context.Context, station uint64, device string, scheme charging.Scheme) error {
 	return errors.New("extension must not check current pricing")
 }
 
 // TestSwipeReadsCutoffCommittedAfterRRSnapshot 用两条真实连接固定旧快照→截止提交→续购的顺序。
-// 不依赖概率竞态，截止写入复用 stop 所属能力；拒绝后钱包、时长、支付金额及操作凭据均不变。
+// 不依赖概率竞态，截止写入复用 stop 对应模块的接口；拒绝后钱包、时长、支付金额及操作凭据均不变。
 func TestSwipeReadsCutoffCommittedAfterRRSnapshot(t *testing.T) {
 	db := cutoffCardConn(t)
 	other := cutoffCardConn(t)
@@ -88,7 +88,7 @@ func TestSwipeReadsCutoffCommittedAfterRRSnapshot(t *testing.T) {
 	if err := stop.RecordBillingCutoff(ctx, other, id, "card_deadline", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	// 原操作随后提交，同一 RR 快照也不能隐藏这一凭据；重放优先于当前截止检查。
+	// 首次操作随后提交，同一 RR 快照也不能隐藏这一凭据；重放优先于当前截止检查。
 	originalEvent, originalOperation := uuid.NewString(), uuid.NewString()
 	if err := other.Table("card_operation").Create(map[string]any{"operation_id": originalOperation, "event_id": originalEvent, "device_id": no, "charge_order_id": id, "card_id": id, "kind": "extend", "price_cents": 100, "minutes": 30, "status": "confirmed"}).Error; err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestSwipeReadsCutoffCommittedAfterRRSnapshot(t *testing.T) {
 		t.Fatalf("unexpected wallet debit=%+v %v", balance, err)
 	}
 	var count int64
-	// 普通读仍是旧快照，应保持零；单独当前读核对只能有原操作，不能产生新的扣款凭据。
+	// 普通读仍是旧快照，应保持零；单独当前读核对只能有首次操作，不能产生新的扣款凭据。
 	if err := tx.Table("card_operation").Where("charge_order_id=?", id).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("unexpected operation=%d %v", count, err)
 	}
@@ -123,7 +123,7 @@ func TestSwipeReadsCutoffCommittedAfterRRSnapshot(t *testing.T) {
 	}
 }
 
-// seedCutoffCard 为 t 在 db 提交独立身份的真实续购数据并注册逐表清理；返回订单、卡号、端口和设备身份。
+// seedCutoffCard 为 t 在 db 提交独立身份的真实续购数据并注册逐表清理；返回订单、卡号、端口和设备编号。
 func seedCutoffCard(t *testing.T, db *gorm.DB) (uint64, string, string, string) {
 	t.Helper()
 	id := testfixture.NewID()
@@ -132,10 +132,8 @@ func seedCutoffCard(t *testing.T, db *gorm.DB) (uint64, string, string, string) 
 	port := "CUT" + no
 	t.Cleanup(func() {
 		for _, query := range []struct {
-			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 			table, where string
-			// args 原条件占位符对应的参数切片，展开顺序与 where 一致，不拼接参数到 SQL。
-			args []any
+			args         []any
 		}{{"card_operation", "charge_order_id=?", []any{id}}, {"wallet_txn", "user_id=?", []any{id}}, {"card_charge", "charge_order_id=?", []any{id}}, {"charge_billing_cutoff", "charge_order_id=?", []any{id}}, {"charge_event_log", "charge_order_id=?", []any{id}}, {"charge_order", "id=?", []any{id}}, {"payment_order", "id=?", []any{id}}, {"online_card", "id=?", []any{id}}, {"wallet_account", "user_id=?", []any{id}}, {"user", "id=?", []any{id}}} {
 			if err := db.Table(query.table).Where(query.where, query.args...).Delete(map[string]any{}).Error; err != nil {
 				t.Error(err)
@@ -150,10 +148,8 @@ func seedCutoffCard(t *testing.T, db *gorm.DB) (uint64, string, string, string) 
 	raw, _ := json.Marshal(pkg)
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, entry := range []struct {
-			// table 本次刷卡截止夹具的种子目标表，与 row 原列映射配对。
 			table string
-			// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
-			row map[string]any
+			row   map[string]any
 		}{{"user", map[string]any{"id": id, "openid": no, "status": "active"}}, {"wallet_account", map[string]any{"user_id": id, "balance_cents": 1000, "status": "active"}}, {"online_card", map[string]any{"id": id, "user_id": id, "card_no": cardNo, "status": "active"}}, {"payment_order", map[string]any{"id": id, "order_no": "P" + no, "biz_type": "charge", "biz_id": id, "user_id": id, "pay_method": "balance", "total_cents": 100, "paid_cents": 100, "status": "paid", "created_month": time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC)}}, {"charge_order", map[string]any{"id": id, "order_no": "C" + no, "user_id": id, "device_id": no, "port_no": 1, "port_code": port, "payment_order_id": id, "status": "charging", "started_at": time.Now(), "created_month": time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC)}}, {"card_charge", map[string]any{"charge_order_id": id, "card_id": id, "card_no": cardNo, "port_code": port, "active_port": port, "paid_cents": 100, "purchased_minutes": 30, "max_minutes": 180, "package_json": string(raw), "wallet_after_cents": 1000}}} {
 			if err := tx.Table(entry.table).Create(entry.row).Error; err != nil {
 				return err

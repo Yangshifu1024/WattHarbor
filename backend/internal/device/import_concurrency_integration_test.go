@@ -23,14 +23,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// concurrentImportGateway 只确认固定厂商及开通次数；并发测试证明中央锁和持久凭据，不代表设备开通。
+// concurrentImportGateway 只确认测试厂商并统计调用次数，不执行实际设备开通。
 type concurrentImportGateway struct {
-	vendor uint64       // 测试唯一厂商身份
+	vendor uint64       // 测试唯一厂商 ID
 	calls  atomic.Int32 // 实际执行开通的调用数量
 }
 
-// TestOverlappingImportListsUseOneLockOrder 以反向的两份原清单并发恢复相同已登记设备，核对中央元数据行锁顺序。
-// 真库持有第一台行锁后才放行另一事务；网关为 fixture，原请求数组不改写，已提交造数仅按本测试身份清理。
+// TestOverlappingImportListsUseOneLockOrder 验证反向清单并发导入时中央资料按同一设备顺序加锁。
+// 行锁和提交使用真库，网关为夹具，不修改首次请求清单，仅清理本测试数据。
 func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 	setup, first, second := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
 	id := testfixture.NewID()
@@ -38,7 +38,7 @@ func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 	requests := []string{uuid.NewString(), uuid.NewString()}
 	defer func() {
 		for _, q := range []struct {
-			table string /* 原提交所属表 */
+			table string /* 提交所属表 */
 			where string /* 本测试筛选条件 */
 			arg   any    /* 唯一测试身份 */
 		}{
@@ -110,7 +110,7 @@ func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Callback().Query().Remove(key)
-	// 若回退为请求数组顺序，第二事务先拿到后一台锁才通知，保证变异能复现真正的反向等待。
+	// 按请求清单锁设备的对照版本会反向等待，闸门确保该错误可复现。
 	if err := second.Callback().Query().After("gorm:query").Register(key+"_reverse", func(q *gorm.DB) {
 		if lockBoard(q) == boards[1] {
 			attempt.Do(func() { close(trying) })
@@ -123,9 +123,9 @@ func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 	defer cancel()
 	gateway := &concurrentImportGateway{vendor: id}
 	scope := operations.DataScope{Unrestricted: true}
-	// answer 传递不同请求按相反设备顺序执行导入后的任务与错误，用于核对统一锁序；提交后的资料与冻结输入另查真实表。
+	// answer 汇总两个导入任务结果，设备资料和保存清单另查真库。
 	type answer struct {
-		out device.ImportJob /* 原任务状态 */
+		out device.ImportJob /* 同一任务状态 */
 		err error            /* 执行错误 */
 	}
 	call := func(db *gorm.DB, request string, ordered []string) chan answer {
@@ -173,7 +173,7 @@ func TestOverlappingImportListsUseOneLockOrder(t *testing.T) {
 	}
 }
 
-// Vendor 在 ctx 下返回 id 的固定公开厂商，requestID 仅为追踪；取消或身份不符返回错误，无写入。
+// Vendor 返回固定测试厂商，取消或厂商不符时报错。
 func (g *concurrentImportGateway) Vendor(ctx context.Context, id uint64, requestID string) (contract.VendorReply, error) {
 	if err := ctx.Err(); err != nil {
 		return contract.VendorReply{}, err
@@ -184,7 +184,7 @@ func (g *concurrentImportGateway) Vendor(ctx context.Context, id uint64, request
 	return contract.VendorReply{ID: id, Status: "enabled", Protocol: "tcp", AdapterClass: "dc589"}, nil
 }
 
-// Provision 在 ctx 下确认原 devices，并增加次数；取消返回原错误，不访问网关数据库。
+// Provision 记录测试清单和调用次数，不访问网关数据库。
 func (g *concurrentImportGateway) Provision(ctx context.Context, devices []contract.ProvisionDevice) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -193,14 +193,14 @@ func (g *concurrentImportGateway) Provision(ctx context.Context, devices []contr
 	return nil
 }
 
-// TestConcurrentFirstImportClaimsOriginalIdentity 用两条独立连接同时进入首次登记 SQL，核对唯一键等待及原请求重放。
-// 首次插入持锁时第二连接已尝试原 SQL；不使用延时。中央真实提交，网关为明确 fixture，造数清理为零。
+// TestConcurrentFirstImportClaimsOriginalIdentity 验证两条真库连接竞争首次任务号，等待唯一键后重放同一任务。
+// 网关为测试夹具，中央实际提交后清理本测试数据。
 func TestConcurrentFirstImportClaimsOriginalIdentity(t *testing.T) {
 	setup, first, second := importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL"), importDB(t, "TEST_MYSQL_URL")
 	id, board, request := testfixture.NewID(), "IC"+strings.ReplaceAll(uuid.NewString(), "-", "")[:26], uuid.NewString()
 	defer func() {
 		for _, q := range []struct {
-			table string /* 原提交所属表 */
+			table string /* 提交所属表 */
 			where string /* 本测试身份筛选 */
 			arg   any    /* 本测试唯一身份 */
 		}{
@@ -268,10 +268,10 @@ func TestConcurrentFirstImportClaimsOriginalIdentity(t *testing.T) {
 	scope := operations.DataScope{Unrestricted: true}
 	originalModel := "原型号"
 	in := device.ImportInput{ImportID: request, Devices: []device.ImportDevice{{DeviceID: board, VendorID: id, StationID: id, PortCount: 2, Model: &originalModel}}}
-	// answer 传递同一导入请求并发 Create 的任务与错误，用于核对原任务重放；唯一导入记录和网关调用次数分别验证。
+	// answer 汇总同请求并发导入结果，另行核对任务数量和开通次数。
 	type answer struct {
-		out device.ImportJob /* 原任务状态 */
-		err error            /* 原申请结果 */
+		out device.ImportJob /* 同一任务状态 */
+		err error            /* 申请结果 */
 	}
 	call := func(db *gorm.DB) chan answer {
 		ch := make(chan answer, 1)
@@ -306,7 +306,7 @@ func TestConcurrentFirstImportClaimsOriginalIdentity(t *testing.T) {
 		t.Fatalf("first=%+v second=%+v calls=%d", one, two, gateway.calls.Load())
 	}
 	for _, q := range []struct {
-		table string /* 原持久表 */
+		table string /* 持久表 */
 		where string /* 身份筛选 */
 		arg   any    /* 唯一测试身份 */
 		want  int64  /* 应提交行数 */

@@ -14,13 +14,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// UserRepo 持有进程管理的 central 连接；用户与开户事务由所属用例拥有。
+// UserRepo 持有进程管理的 central 连接；用户与开户事务由对应用例负责。
 type UserRepo struct {
 	DB *gorm.DB /* 进程管理的用户连接或调用方事务 */
 }
 
-// Login 在 ctx 下按 openID/unionID 恢复或创建用户，返回身份或输入、冻结、存储错误。
-// 死锁／锁等待仅按原有界五次策略重试；已有用户只更新登录时间，新用户与所属钱包开户同事务。
+// Login 按 openID 恢复或创建用户。
+// MySQL 死锁或锁等待最多重试五次；已有用户更新登录时间，新用户与零余额钱包同事务创建。
 func (s UserRepo) Login(ctx context.Context, openID, unionID string) (User, error) {
 	if openID == "" || len(openID) > 64 || len(unionID) > 64 {
 		return User{}, errors.New("invalid WeChat identity")
@@ -39,18 +39,15 @@ func (s UserRepo) Login(ctx context.Context, openID, unionID string) (User, erro
 	return User{}, errors.New("concurrent login retries exhausted")
 }
 
-// retryableMySQL 核对 err 是否为1213死锁或1205锁等待，返回可重试事实，无 IO。
+// retryableMySQL 只允许重试 MySQL 1213 死锁与 1205 锁等待错误。
 func retryableMySQL(err error) bool {
 	var mysqlErr *mysql.MySQLError
 	return errors.As(err, &mysqlErr) && (mysqlErr.Number == 1213 || mysqlErr.Number == 1205)
 }
 
-// loginOnce 在 ctx 下以 openID 唯一身份串行准入，并记录 unionID 首次事实。
-// 返回恢复／新建身份或错误；身份行先自动提交，用户和零余额开户在后续同事务中提交。
+// loginOnce 先以自动提交创建 openID 唯一编号，再在事务中恢复用户或创建用户及钱包。
 func (s UserRepo) loginOnce(ctx context.Context, openID, unionID string) (User, error) {
-	// 以自动提交模式创建 identity 行。
-	// 事务里并发的 INSERT IGNORE
-	// 可能在 FOR UPDATE 之前就因缺失键间隙而死锁。
+	// 身份行先自动提交，避免事务中 INSERT IGNORE 在取得行锁前因缺失键间隙锁发生死锁。
 	if err := s.DB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&LoginIdentity{OpenID: []byte(openID)}).Error; err != nil {
 		return User{}, err
 	}
@@ -97,7 +94,7 @@ func (s UserRepo) loginOnce(ctx context.Context, openID, unionID string) (User, 
 	return user, err
 }
 
-// Active 在 ctx 下读取 id 未删除用户是否 active，返回事实或读取错误；无用户为 false，不修改状态。
+// Active 读取 id 未删除用户是否 active，返回检查结果；无用户为 false，不修改状态。
 func (s UserRepo) Active(ctx context.Context, id uint64) (bool, error) {
 	var user UserAccount
 	err := s.DB.WithContext(ctx).Select("status").Where("id = ? AND deleted_at IS NULL", id).Take(&user).Error
@@ -110,18 +107,17 @@ func (s UserRepo) Active(ctx context.Context, id uint64) (bool, error) {
 	return user.Status == "active", nil
 }
 
-// LockStatusInTx 在 tx 原context下以 id 取得未删除用户写锁并返回原status或缺失／存储错误。
-// 供同事务业务准入使用；调用方必须在模板或钱包锁前取得用户锁，不自行提交或修改身份。
+// LockStatusInTx 锁定未删除用户并读取当前状态，供同事务操作检查。
+// 调用方须先锁用户，再锁模板或钱包。
 func LockStatusInTx(tx *gorm.DB, id uint64) (string, error) {
 	var user struct {
-		Status string `gorm:"column:status"` /* 原账户状态 */
+		Status string `gorm:"column:status"` /* 账户状态 */
 	}
 	err := tx.Table("user").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&user).Error
 	return user.Status, err
 }
 
-// Profile 在 ctx 下读取 id 活跃用户的单次联表档案，返回身份、钱包和权益投影或缺失／存储错误。
-// 金额沿用原公开语义，不扣款；跨领域只读投影不创建资金或优惠券。
+// Profile 联表读取启用用户的档案、钱包与权益，只读，不创建余额或优惠券。
 func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {
 	var row profileRow
 	result := s.DB.WithContext(ctx).Raw(`SELECT u.id, u.nickname, u.avatar_url, u.phone, u.first_seen_at,
@@ -141,15 +137,11 @@ func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {
 	return profile, nil
 }
 
-// ErrPhoneTaken 表示手机号已被其他账号占用。号码归属由唯一索引最终兜底，
-// 本哨兵用于把并发冲突映射成明确的业务错误而非通用 500。
+// ErrPhoneTaken 表示手机号已被其他账号占用，用于将唯一键冲突转换为明确业务错误。
 var ErrPhoneTaken = errors.New("手机号已被占用")
 
-// BindPhone 写入或清除 user 表的手机号。号码归属检查与写入在同一事务内完成：
-// 先查占用以给出明确提示，唯一索引负责并发兜底。
-// phone 传 nil 表示解绑。解绑必须显式传 nil 而不是空字符串——GORM 的 Updates
-// 会忽略字符串零值，用 nil 判断并直接写 SQL NULL 才是解绑的正确语义。
-// ctx 控制 userID 号码事务，value 非空表示原规范号码；返回归属或数据库错误，调用方校验来源。
+// BindPhone 在同一事务内检查并写入手机号，唯一索引防止并发绑定同号。
+// value 为 nil 时写入 SQL NULL 以解绑，不能用空字符串替代。
 func (s UserRepo) BindPhone(ctx context.Context, userID uint64, value *string) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var holder int64

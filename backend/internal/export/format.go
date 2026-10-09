@@ -9,11 +9,10 @@ import (
 	"io"
 )
 
-// FormatWriter 提供CSV标准转义和XLSX流式编码，不持有任务或文件路径。
+// FormatWriter 编码 CSV 和流式 XLSX，不管理任务或路径。
 type FormatWriter struct{}
 
-// Write 在ctx下将headers及lines写入w，返回取消、格式或编码IO错误；不关闭调用方输出。
-// 表格公式继续转义为文本，缺失字段由调用方映射为空串，格式化不会确认任务完成。
+// Write 编码表头和行，公式转义为文本，缺字段由调用方填空串；不关闭输出，也不确认任务完成。
 func (FormatWriter) Write(ctx context.Context, w io.Writer, format string, headers []string, lines [][]string) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -71,13 +70,13 @@ func (FormatWriter) Write(ctx context.Context, w io.Writer, format string, heade
 	}
 }
 
-// contextWriter 在每次输出前响应ctx取消，不取得输出的关闭权。
+// contextWriter 在每次写入前检查取消，不负责关闭输出。
 type contextWriter struct {
 	ctx    context.Context /* 本次同步编码请求 */
 	output io.Writer       /* 调用方输出 */
 }
 
-// Write 将p写入原output，返回写入字节数或取消／IO错误，不再发起取消后的后续写入。
+// Write 将字节写入输出，取消后不再写入。
 func (w contextWriter) Write(p []byte) (int, error) {
 	if err := w.ctx.Err(); err != nil {
 		return 0, err

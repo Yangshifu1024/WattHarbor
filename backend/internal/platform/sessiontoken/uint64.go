@@ -7,16 +7,15 @@ import (
 )
 
 // JSONUint64 在JSON中用十进制字符串保存无符号整数，兼容旧整数字面量，不经浮点转换。
-// 是否允许零由调用方业务决定；该原语不定义用户、权限版本或会话规则。
+// 是否允许零由调用方业务决定；此类型不检查用户、权限或会话规则。
 type JSONUint64 uint64
 
-// MarshalJSON 返回value的带引号十进制JSON，无IO或错误，避免Lua cjson数字精度损失。
+// MarshalJSON 将整数编码为十进制字符串，避免 Lua cjson 丢失精度。
 func (value JSONUint64) MarshalJSON() ([]byte, error) {
 	return json.Marshal(strconv.FormatUint(uint64(value), 10))
 }
 
-// UnmarshalJSON 将raw的十进制字符串或原数字文本赋给value，返回格式／范围错误。
-// null、负数、小数、指数和超uint64范围拒绝，不转换float64、不修改存储。
+// UnmarshalJSON 接受十进制字符串或整数字面量；拒绝 null、负数、小数、指数和超出 uint64 范围的值。
 func (value *JSONUint64) UnmarshalJSON(raw []byte) error {
 	text := string(raw)
 	if len(raw) > 0 && raw[0] == '"' {

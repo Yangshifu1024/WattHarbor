@@ -16,8 +16,7 @@ type Display struct {
 	HideUnit   bool `json:"hide_unit"`
 }
 
-// DefaultDisplay 展示运行中的各项数值与费用拆分，这是运营方在不至于隐瞒
-// 实际收费的前提下最少能发布的东西。
+// DefaultDisplay 默认展示运行数据与费用拆分。
 func DefaultDisplay() Display {
 	return Display{ShowEnergy: true, ShowPower: true, ShowFeeSplit: true, FeeSplitInline: true, ShowFeeOnEnd: true, ShowMethod: true}
 }

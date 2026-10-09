@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestBalanceQueryAndInvalidPortProduceNativeReplies 使用 t、本地 HTTP 余额回复和真实具名中央客户端，核对原卡号查询及 worker 协议回复：889 分按 0.1 元单位截断为 88、零会话编码保留，255 端口刷卡及零卡号余额查询返回无效回复。失败由 t 报告，关闭本地服务；不访问真实数据库、设备或资金，也不执行冻结、投递和推进流程。
+// TestBalanceQueryAndInvalidPortProduceNativeReplies 用本地 HTTP 服务核对卡号查询、协议单位换算和无效端口回复。
 func TestBalanceQueryAndInvalidPortProduceNativeReplies(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("card_no") != "17564161" {

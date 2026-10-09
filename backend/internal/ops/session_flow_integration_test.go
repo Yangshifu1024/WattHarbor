@@ -21,8 +21,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// securityFixture 为t打开独立真实连接池和Redis，提交自己的自定义角色／账号；不影响bootstrap管理员。
-// 返回两独立连接、会话repo、账号、口令及JWT；提交造数清理自身行和认证缓存并核对零残留。
+// securityFixture 用真库和 Redis 创建本测试的角色、账号和会话；不修改初始管理员。
+// 结束后只清理自己的记录及认证缓存，并检查零残留。
 func securityFixture(t *testing.T) (*gorm.DB, *gorm.DB, SessionRepo, AdminAccount, string, *auth.JWT) {
 	t.Helper()
 	ctx := context.Background()
@@ -108,8 +108,8 @@ func securityFixture(t *testing.T) (*gorm.DB, *gorm.DB, SessionRepo, AdminAccoun
 	return first, second, SessionRepo{Redis: cache}, account, password, jwt
 }
 
-// TestSecuritySessionLiveVersionAndMFAAdmission 使用真实SQL与Redis验证即时撤权、改密、挑战版本和锁定准入。
-// 不消费坏码／锁定／旧版本挑战；成功消费后重放拒绝，所有会话按本测试SID清理。
+// TestSecuritySessionLiveVersionAndMFAAdmission 用真实 SQL 和 Redis 验证撤权、改密、挑战版本和锁定检查。
+// 坏码、锁定或旧版本不删除挑战；成功删除后重放拒绝，仅清理本测试 SID。
 func TestSecuritySessionLiveVersionAndMFAAdmission(t *testing.T) {
 	db, _, repo, account, password, jwt := securityFixture(t)
 	ctx := context.Background()
@@ -241,8 +241,7 @@ func TestSecuritySessionLiveVersionAndMFAAdmission(t *testing.T) {
 	}
 }
 
-// TestSecurityMFAChallengeVersionUsesLockedCurrentRead 固定旧RR快照早于另一连接提交版本提升，锁后必须拒绝旧挑战。
-// 版本变更真实提交，测试会话／挑战和SQL造数均只清理自身身份，不把普通快照读当实时准入。
+// TestSecurityMFAChallengeVersionUsesLockedCurrentRead 验证另一连接提升版本后，旧 RR 快照下锁读仍拒绝旧挑战；只清理本测试数据。
 func TestSecurityMFAChallengeVersionUsesLockedCurrentRead(t *testing.T) {
 	first, second, repo, account, _, jwt := securityFixture(t)
 	ctx := context.Background()
@@ -290,27 +289,27 @@ func TestSecurityMFAChallengeVersionUsesLockedCurrentRead(t *testing.T) {
 	}
 }
 
-// trackedSecuritySessions 保留真实存储并记录本次新SID，供签发失败清理核对。
+// trackedSecuritySessions 使用真实存储并记录新 SID，供签发失败清理检查。
 type trackedSecuritySessions struct {
-	SessionRepo        // 原创建／轮换／撤销行为
-	createdSID  string // 原创建返回的唯一SID
+	SessionRepo        // 创建／轮换／撤销行为
+	createdSID  string // 创建返回的唯一 SID
 }
 
-// Create 在ctx下为account真实创建并记住SID，返回原结果或存储错误，不替换撤销语义。
+// Create 创建真实会话并记住 SID。
 func (s *trackedSecuritySessions) Create(ctx context.Context, account operations.AccountIdentity) (string, string, error) {
 	sid, refresh, err := s.SessionRepo.Create(ctx, account)
 	s.createdSID = sid
 	return sid, refresh, err
 }
 
-// failedSecuritySigner 只注入签发阶段失败；会话、SQL与校验均为真实实现。
+// failedSecuritySigner 仅在签发时失败，账号、会话和权限校验仍使用真实实现。
 type failedSecuritySigner struct {
-	JWTAccess                    // 原校验适配
+	JWTAccess                    // 校验适配
 	failure   error              // 指定签发错误
-	cancel    context.CancelFunc // 可选原请求取消，用于核对失败清理的实际边界
+	cancel    context.CancelFunc // 可选首次请求取消，用于核对失败清理的实际边界
 }
 
-// Sign 忽略profile／sid／now的签发并按fixture取消原请求，返回failure，不生成伪令牌。
+// Sign 按夹具配置取消请求并返回签发故障，不生成令牌。
 func (s failedSecuritySigner) Sign(profile operations.Profile, sid string, now time.Time) (string, error) {
 	if s.cancel != nil {
 		s.cancel()
@@ -318,8 +317,8 @@ func (s failedSecuritySigner) Sign(profile operations.Profile, sid string, now t
 	return "", s.failure
 }
 
-// TestSecuritySigningFailureCleanupBoundaries 验证签发失败真实撤销，以及取消原context后清理失败的实际TTL边界。
-// 取消分支不宣称已注销，由本测试显式清理随机SID；签发器为fixture，SQL／Redis为真实实现。
+// TestSecuritySigningFailureCleanupBoundaries 验证签发失败可撤销真实会话，已取消请求下清理失败则仍受 TTL 限制。
+// 取消分支不声称已注销，测试显式清理 SID；SQL 和 Redis 使用真实实现。
 func TestSecuritySigningFailureCleanupBoundaries(t *testing.T) {
 	for _, canceled := range []bool{false, true} {
 		t.Run(fmt.Sprint("canceled=", canceled), func(t *testing.T) {
@@ -350,14 +349,14 @@ func TestSecuritySigningFailureCleanupBoundaries(t *testing.T) {
 	}
 }
 
-// gatedChallenges 在真实Redis原读取后闸住两调用，保证双方持有同一原挑战再竞争两个SQL连接。
+// gatedChallenges 暂停两个调用，确保都从真实 Redis 读到同一挑战，再竞争两条 SQL 连接。
 type gatedChallenges struct {
-	SessionRepo                 // 实际会话与消费，不以fixture替换原子性
-	read        chan struct{}   // 每次原读取完成通知
-	release     <-chan struct{} // 两原读取后才放行
+	SessionRepo                 // 真实会话和挑战删除，不用测试替身
+	read        chan struct{}   // 每次读取完成通知
+	release     <-chan struct{} // 两次读取后才放行
 }
 
-// ResolveMFA 在ctx下真实读取token后通知read并等待release，返回原凭据或取消错误，不伪造身份。
+// ResolveMFA 读取真实挑战后发通知并等待放行，取消时返回错误。
 func (r gatedChallenges) ResolveMFA(ctx context.Context, token string) (MFAChallenge, error) {
 	value, err := r.SessionRepo.ResolveMFA(ctx, token)
 	if err != nil {
@@ -372,8 +371,7 @@ func (r gatedChallenges) ResolveMFA(ctx context.Context, token string) (MFAChall
 	}
 }
 
-// TestSecurityConcurrentMFAChallengeOneSession 固定两真实Redis原读取及两SQL连接，只有一个消费／成功审计／会话。
-// 锁后旧凭据不得重放，不要求先启动的请求获胜；提交造数按自身身份清理。
+// TestSecurityConcurrentMFAChallengeOneSession 验证同一挑战并发验证只有一次删除、登录审计和会话创建；不保证先启动者获胜。
 func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 	first, second, repo, account, _, jwt := securityFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -396,10 +394,10 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 	}
 	read, release := make(chan struct{}, 2), make(chan struct{})
 	gated := gatedChallenges{SessionRepo: repo, read: read, release: release}
-	// result 传递并发 MFA 验证的访问回执与错误，用于判定挑战消费获胜者；Redis 消费、SQL 审计和会话分别核对。
+	// result 汇总并发 MFA 返回值；挑战删除、SQL 审计和会话另行核对。
 	type result struct {
-		reply AccessReply // 本次挑战消费的认证回执
-		err   error       // 并发消费的原错误
+		reply AccessReply // 本次挑战验证结果
+		err   error       // 并发挑战验证错误
 	}
 	results := make(chan result, 2)
 	for _, db := range []*gorm.DB{first, second} {
@@ -443,8 +441,8 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 	}
 }
 
-// TestSecurityMFASQLFailureAfterConsumeClosesLogin 真实消费后注入审计故障，SQL状态回滚且不签发会话。
-// 原挑战保持已消费，重试须重新密码登录；fixture故障不等于实际数据库提交未知证据。
+// TestSecurityMFASQLFailureAfterConsumeClosesLogin 验证挑战已删除后审计失败，SQL 回滚且不签发会话。
+// Redis 挑战无法恢复，重试须重新密码登录；注入故障不代表真实提交结果未知。
 func TestSecurityMFASQLFailureAfterConsumeClosesLogin(t *testing.T) {
 	db, _, repo, account, _, jwt := securityFixture(t)
 	ctx := context.Background()

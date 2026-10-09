@@ -13,7 +13,7 @@ func PriceOfferActual(rule Rule, offer *Offer, meter ActualMeter) (ActualFee, er
 	}, nil
 }
 
-// ActualFromMeter retains the actual duration and energy reported by the device.
+// ActualFromMeter 保留设备上报的实际时长与电量。
 func ActualFromMeter(meter ActualMeter) *SessionActual {
 	actual := &SessionActual{
 		UsedSeconds: meter.ChargedSeconds,

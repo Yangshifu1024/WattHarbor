@@ -27,7 +27,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds 使用真实MySQL／Redis与原路由验证营销接口，造数回滚且只删除自身SID。
+// TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds 使用真实 MySQL／Redis 与路由验证营销接口，造数回滚且只删除自身 SID。
 func TestRegisteredMarketingKeepsIdentityAuditAndFailureKinds(t *testing.T) {
 	tx := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
 	defer tx.Rollback()

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort 使用 t 核对在线计量单位、离线时保留最后证据，以及不同端口和订单起点的隔离；无返回值，失败由 t 报告，仅构造内存协议事件。
+// TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort 验证计量单位、离线保留最后读数及端口和订单隔离。
 func TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort(t *testing.T) {
 	start := time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 	samples := []protocol.Event{}
@@ -35,7 +35,7 @@ func TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort(t *testing.T) {
 	}
 }
 
-// TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement 使用 t 核对实时估算可以连接短采样间隔，而最终结算证据仍把该间隔标记缺失；无返回值，失败由 t 报告，不访问存储或替代真实计量。
+// TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement 验证实时估算可连接短缺口，最终结算仍保留缺测。
 func TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement(t *testing.T) {
 	start := time.Date(2026, 10, 1, 3, 0, 0, 0, time.UTC)
 	samples := []protocol.Event{}
@@ -46,7 +46,7 @@ func TestLiveEstimateHandlesShortSamplingGapWithoutWeakeningSettlement(t *testin
 	if !ok || len(meter.Segments) != 4 || meter.Segments[2].PowerW == nil {
 		t.Fatal("short gap did not produce a current estimate", meter)
 	}
-	// The shared final-settlement evidence builder must still leave that gap missing.
+	// 最终结算使用的分段构造仍须保留这段缺测。
 	span := devices.SessionSpan{DeviceID: "device", Port: 1, StartedAt: start, EndedAt: start.Add(110 * time.Second), ChargedSeconds: 110, EnergyWh: 4}
 	strict := charging.MeasuredSegments(start, span, measurement.ReadingSamplesOf(samples))
 	if len(strict) != 4 || strict[2].PowerW != nil {

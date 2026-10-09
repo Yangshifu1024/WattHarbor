@@ -62,7 +62,7 @@ func seedFeedbackOrder(t *testing.T, db *gorm.DB) (uint64, uint64) {
 }
 
 // TestFeedbackCurrentReadRejectsDuplicateAfterOldRRSnapshot 固定旧 RR 快照早于另一连接的反馈提交，验证等锁后的当前读。
-// 第二连接真实提交；第一事务回滚，最终清理原订单与反馈，不依赖概率性并发。
+// 第二连接真实提交；第一事务回滚，最终清理订单与反馈，不依赖概率性并发。
 func TestFeedbackCurrentReadRejectsDuplicateAfterOldRRSnapshot(t *testing.T) {
 	a, b := feedbackDB(t), feedbackDB(t)
 	orderID, userID := seedFeedbackOrder(t, a)
@@ -89,7 +89,7 @@ func TestFeedbackCurrentReadRejectsDuplicateAfterOldRRSnapshot(t *testing.T) {
 	}
 }
 
-// TestFeedbackConcurrentSubmitSerializesOriginalOrder 以两连接与订单锁闸门固定提交顺序，核对一反馈和原重复冲突。
+// TestFeedbackConcurrentSubmitSerializesOriginalOrder 以两连接与订单锁闸门固定提交顺序，核对一反馈和重复冲突。
 // 同一完成订单先锁后查，提交造数只按自身身份清理；此测试不代表后台回复或设备报修验收。
 func TestFeedbackConcurrentSubmitSerializesOriginalOrder(t *testing.T) {
 	a, b := feedbackDB(t), feedbackDB(t)
@@ -120,7 +120,6 @@ func TestFeedbackConcurrentSubmitSerializesOriginalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Callback().Query().Remove(gate)
-	// result 传递同一订单并发提交反馈返回的主键与错误，用于区分首次提交和重复拒绝；不持有事务或充电状态锁。
 	type result struct {
 		id  uint64 /* 实际反馈主键 */
 		err error  /* 提交结果 */
@@ -159,7 +158,7 @@ func TestFeedbackConcurrentSubmitSerializesOriginalOrder(t *testing.T) {
 }
 
 // TestFeedbackReplyAuditRollbackAndOriginalTransitions 验证真库回复、关闭、已关闭重放与审计故障整体回滚。
-// 原归属和状态检查拒绝他人／未完成订单；外层事务回滚所有造数和审计。
+// 归属和状态检查拒绝他人、未完成订单；外层事务回滚所有造数和审计。
 func TestFeedbackReplyAuditRollbackAndOriginalTransitions(t *testing.T) {
 	db := feedbackDB(t)
 	orderID, userID := seedFeedbackOrder(t, db)

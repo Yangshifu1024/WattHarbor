@@ -4,7 +4,7 @@ import (
 	"slices"
 )
 
-// AllowedStatus 判断 value 是否为空或属于 allowed 中仅以 ASCII 空格分隔的词，返回准入布尔值；不规范化文本，无 IO。
+// AllowedStatus 判断 value 是否为空，或是否出现在以 ASCII 空格分隔的 allowed 列表中；不修改输入。
 func AllowedStatus(value, allowed string) bool {
 	if value == "" {
 		return true
@@ -12,7 +12,7 @@ func AllowedStatus(value, allowed string) bool {
 	return slices.Contains(splitFields(allowed), value)
 }
 
-// splitFields 仅按 ASCII 空格切分 value，忽略空段并保留其他空白字符，返回非 nil 词集合；无 IO。
+// splitFields 仅按 ASCII 空格切分 value，忽略空段并保留其他空白字符，返回非 nil 词集合。
 func splitFields(value string) []string {
 	out := []string{}
 	current := ""

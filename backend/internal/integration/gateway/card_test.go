@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-// TestCardClientsRequireDecisionFields 核对冻结／开通缺字段不成为正常 false，原幂等 false 仍可恢复。
+// TestCardClientsRequireDecisionFields 核对冻结／开通缺字段不成为正常 false，重复调用返回的 false 仍可恢复。
 func TestCardClientsRequireDecisionFields(t *testing.T) {
 	for _, tc := range []struct {
 		name   string // 用例身份
-		body   string // 原 HTTP 响应
+		body   string // HTTP 响应
 		freeze bool   // 是否请求冻结端点
 		valid  bool   // 是否符合原契约
 	}{

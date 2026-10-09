@@ -8,32 +8,32 @@ import (
 	"time"
 )
 
-// AnnouncementRow 是原管理公告清单；JSON目标保留null／空数组及字符串原值，不转数值身份。
+// AnnouncementRow 是后台公告记录，JSON 目标保留 null、空数组和字符串值。
 type AnnouncementRow struct {
-	ID        uint64          `json:"id"`                                  // 原公告主键
-	Title     string          `json:"title"`                               // 原标题
-	Content   string          `json:"content"`                             // 原正文
-	Scope     string          `json:"scope"`                               // 原发布范围
-	TargetIDs json.RawMessage `json:"target_ids" gorm:"column:target_ids"` // 原JSON目标，可为null
-	Status    string          `json:"status"`                              // 原发布状态
+	ID        uint64          `json:"id"`                                  // 公告主键
+	Title     string          `json:"title"`                               // 标题
+	Content   string          `json:"content"`                             // 正文
+	Scope     string          `json:"scope"`                               // 发布范围
+	TargetIDs json.RawMessage `json:"target_ids" gorm:"column:target_ids"` // JSON 目标，可为 null
+	Status    string          `json:"status"`                              // 发布状态
 	StartAt   time.Time       `json:"start_at"`                            // 生效时刻
 	EndAt     *time.Time      `json:"end_at"`                              // 可空失效时刻
 }
 
-// AnnouncementRepo 只读写所属公告表，不接收HTTP表名或动态列。
+// AnnouncementRepo 只读写所属公告表，不接收 HTTP 表名或动态列。
 type AnnouncementRepo struct {
-	DB *gorm.DB /* 公告连接，由cmd管理 */
+	DB *gorm.DB /* 公告连接，由 cmd 管理 */
 }
 
-// List 在ctx下按原ID倒序读取未删除公告，返回非nil清单或取消／存储错误，不限制原有效期。
+// List 倒序读取未删除公告，包含有效期外记录，返回非 nil 数组。
 func (s AnnouncementRepo) List(ctx context.Context) ([]AnnouncementRow, error) {
 	rows := []AnnouncementRow{}
 	err := s.DB.WithContext(ctx).Table("announcement").Select("id,title,content,scope,target_ids,status,start_at,end_at").Where("deleted_at IS NULL").Order("id DESC").Find(&rows).Error
 	return rows, err
 }
 
-// Insert 在tx下按in及actorID插入已发布公告，返回原自增ID或序列化／存储错误，不自行提交。
-// 调用方先核对输入和当前操作者，公告与审计同事务；nil目标编码为JSON null，沿用原存储语义。
+// Insert 在调用方事务中保存 published 公告、目标和创建人；nil 目标编码为 JSON null。
+// 调用方完成权限和内容校验，并同时保存审计。
 func (s AnnouncementRepo) Insert(tx *gorm.DB, in AnnouncementInput, actorID uint64) (uint64, error) {
 	targets, err := json.Marshal(in.TargetIDs)
 	if err != nil {

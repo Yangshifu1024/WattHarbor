@@ -12,7 +12,8 @@ import (
 	gatewaycontract "chargepilot/internal/contracts/gateway"
 )
 
-// TestSyncReadOperationsPreserveNullsAndEvidenceWindow 使用 t核对真实客户端到本地HTTP夹具的命令筛选URL编码、可空证据、大整数与UTC计量窗口；只验证wire，不证明真库查询。
+// TestSyncReadOperationsPreserveNullsAndEvidenceWindow 验证命令筛选参数的 URL 编码、空值、大整数和 UTC 计量时间范围。
+// 使用本地 HTTP 服务，不验证实际数据库查询。
 func TestSyncReadOperationsPreserveNullsAndEvidenceWindow(t *testing.T) {
 	stamp := time.Date(2026, 10, 5, 12, 0, 0, 123000000, time.FixedZone("CST", 8*3600))
 	client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +63,8 @@ func TestSyncReadOperationsPreserveNullsAndEvidenceWindow(t *testing.T) {
 	}
 }
 
-// TestSyncMutationsRequirePositiveAcceptanceAndAllowReplay 使用 t核对原标记／释放／冻结／补偿请求身份及合法零计数和already／frozen重放，夹具不执行真实事务或设备下发。
+// TestSyncMutationsRequirePositiveAcceptanceAndAllowReplay 验证标记、释放、冻结和补偿请求的编号，以及零更新数和 already、frozen 重复调用结果。
+// 本地响应不执行实际事务或设备命令。
 func TestSyncMutationsRequirePositiveAcceptanceAndAllowReplay(t *testing.T) {
 	client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.Header.Get("X-Service-Token") != "test-service-token" {
@@ -119,12 +121,12 @@ func TestSyncMutationsRequirePositiveAcceptanceAndAllowReplay(t *testing.T) {
 	}
 }
 
-// TestSyncClientRejectsMissingAcknowledgements 使用 t验证原客户端拒绝缺确认、失配及非法进度；本地夹具不修改持久状态，原所有断言保留。
+// TestSyncClientRejectsMissingAcknowledgements 验证客户端拒绝缺确认、编号不匹配和非法进度。
 func TestSyncClientRejectsMissingAcknowledgements(t *testing.T) {
 	for _, tc := range []struct {
-		// name,body 原子场景名及原服务响应JSON正文，供每个客户端失败边界定位。
+		// name,body 是子测试名称和服务响应 JSON。
 		name, body string
-		// call 该场景实际调用的客户端函数，返回其原错误，不自行模拟持久结果。
+		// call 是待验证的客户端调用。
 		call func(*Client) error
 	}{
 		{"missing list", `{"code":0,"data":{}}`, func(c *Client) error { _, err := c.EndEvents(context.Background()); return err }},

@@ -35,7 +35,7 @@ func walletDB(t *testing.T) *gorm.DB {
 func walletTransaction(t *testing.T, db *gorm.DB) *gorm.DB {
 	t.Helper()
 	// testing 在 Cleanup 前取消 t.Context，database/sql 会抢先回滚该 context
-	// 的事务。夹具自己拥有有界 context，并按回滚→取消顺序释放，避免两条回滚路径竞态。
+	// 的事务。夹具自己负责有界 context，并按回滚→取消顺序释放，避免两条回滚路径竞态。
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	tx := db.WithContext(ctx).Begin()
 	if tx.Error != nil {

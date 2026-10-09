@@ -24,36 +24,32 @@ type SignerStatus struct {
 	Permitted bool   // 当前是否仍有退款复核权限
 }
 
-// RefundReviewRepo 承载人工退款的工作流写入：建单（幂等重放）、双人复核、执行重投。
-// refund_review / refund_rejection / manual_refund_request / refund_record 的写入归属本包，
-// RefundAdminService 负责授权与事务内审计，HTTP 仅适配请求和响应。
-// 方法不自行开事务：调用方须传入已挂载审计与幂等语义的 *gorm.DB 事务。
+// RefundReviewRepo 在调用方事务内处理人工退款建单、双审和重投。
+// RefundAdminService 负责实时权限与同事务审计，HTTP 只转换请求和响应。
 type RefundReviewRepo struct {
 	DB *gorm.DB // 结算数据库句柄；写方法使用显式传入的事务
 	// LookupSigner 查询审核人的实时角色与权限；nil 时第二签一律冲突。
 	LookupSigner func(ctx context.Context, signerID uint64) (SignerStatus, error)
 }
 
-// ManualRefundInput 是人工建单的最小事实集合；ActorID 用于幂等请求体快照。
+// ManualRefundInput 保存退款业务内容，ActorID 参与请求快照比对。
 type ManualRefundInput struct {
-	ActorID     uint64 // 发起人工退款的管理员身份，参与重放内容核对
+	ActorID     uint64 // 发起人工退款的管理员 ID，参与重放内容核对
 	OrderID     uint64 // 已终止的充电订单主键
 	RequestID   string // 人工申请幂等号，同号必须提交相同内容
 	AmountCents int64  // 本次申请退款额，分；由用例校验为正数
-	Reason      string // 退款业务原因，参与重放内容核对
+	Reason      string // 退款业务因，参与重放内容核对
 }
 
-// manualRefundNo 根据 requestID 生成稳定退款单号；无 IO 或错误返回。
+// manualRefundNo 根据请求 ID 生成稳定退款号。
 func manualRefundNo(requestID string) string {
 	sum := sha256.Sum256([]byte(requestID))
 	return "MR" + hex.EncodeToString(sum[:16])
 }
 
-// ManualCreate 在调用方事务中锁定支付单，校验订单可退及累计退款不超额，
-// 再创建待双人复核的退款记录。同一 request_id、相同内容返回原退款单（created=false）；
-// ctx 控制数据库请求，tx 须由用例管理提交与审计，in 已完成身份与输入校验。
-// 新建返回 created、退款号及记录 ID；重放返回原号且 ID 为零。
-// 同号不同内容或状态校验失败返回 ErrRefundConflict，查询与写入错误原样返回。
+// ManualCreate 在支付锁内核对订单和累计可退金额，再登记待双审退款。
+// 同一 request_id 且内容一致时返回首次退款号、created=false 和 ID=0；首次返回新主键。
+// 同号异内容或状态不符返回 ErrRefundConflict；用例负责同事务审计和提交。
 func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in ManualRefundInput) (created bool, refundNo string, recordID uint64, err error) {
 	refundNo = manualRefundNo(in.RequestID)
 	payload, _ := json.Marshal(map[string]any{"actor_id": in.ActorID, "order_id": in.OrderID, "amount_cents": in.AmountCents, "reason": in.Reason})
@@ -127,11 +123,11 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 type ReviewDecision struct {
 	Approve        bool   // true 为双人通过流程，false 为单人驳回
 	ApproveComment string // 通过意见，分别保存为首签或第二签意见
-	Reason         string // 驳回原因，仅驳回分支使用
-	ActorID        uint64 // 当前审核管理员身份，须由用例实时授权
+	Reason         string // 驳回因，仅驳回分支使用
+	ActorID        uint64 // 当前审核管理员 ID，须由用例实时授权
 }
 
-// reviewRow 是 refund_review 的读取投影，每笔退款至多一条。
+// reviewRow 是退款复核记录，每笔退款至多一条。
 type reviewRow struct {
 	RefundRecordID uint64  // 关联的退款记录主键 refund_record.id，一对一
 	SnapshotJSON   string  // 第一签时冻结的退款要素 JSON，第二签据此比对，内容不一致即冲突
@@ -141,19 +137,16 @@ type reviewRow struct {
 	SecondComment  *string // 第二审核人的审核意见，nil 表示第二签还没做
 }
 
-// refundSnapshot 将退款的业务要素编码为规范 JSON，作为双人复核快照。
-// r 提供支付、用户、业务身份及金额；返回规范 JSON，无 IO 或错误返回。
-// 状态、重试次数和时间戳在审核期间可能变化，不参与一致性比较。
+// refundSnapshot 将退款支付、用户、业务 ID 和金额编码为双审快照。
+// 审核期间可变化的状态、次数和时间不参与一致性比较。
 func refundSnapshot(r RefundRecord) string {
 	b, _ := json.Marshal(map[string]any{"refund_no": r.RefundNo, "payment_order_id": r.PaymentOrderID, "user_id": r.UserID, "biz_type": r.BizType, "biz_id": r.BizID, "refund_cents": r.RefundCents})
 	return string(b)
 }
 
-// Review 按决定执行通过或驳回，仅接受 pending、manual_review 退款，须在调用方事务内执行。
-// 首签进入 awaiting_second；不同审核人第二签（实时身份经 LookupSigner 核对）后返回 approved，
-// 退款改为 automatic 并立即安排执行。驳回写入 refund_rejection 并将退款置为 rejected，无需第二签。
-// ctx 控制读取，tx 管理支付→退款锁及写入，refundNo 标识退款，in 提供已授权决定。
-// 返回决定状态和退款记录 ID；状态、快照或首签身份不符返回 ErrRefundConflict，数据库错误原样返回。
+// Review 在调用方事务中按支付→退款加锁，仅审核 pending/manual_review 退款。
+// 首签进入 awaiting_second；不同且仍有权限的人二签后改为 automatic 并安排执行。
+// 驳回只需一人，写入拒绝记录；状态、快照或首签身份不符返回 ErrRefundConflict。
 func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo string, in ReviewDecision) (string, uint64, error) {
 	status := "rejected"
 	recordID := uint64(0)
@@ -215,9 +208,8 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 	return status, recordID, tx.Table("refund_record").Where("id=?", r.ID).Updates(map[string]any{"execution_policy": "automatic", "next_attempt_at": time.Now().UTC()}).Error
 }
 
-// Retry 将 automatic、pending/processing 退款的 next_attempt_at 设为当前时间，
-// ctx 控制数据库请求，tx 由用例管理，refundNo 标识退款；返回记录 ID 供审计使用。
-// 不修改金额或状态；人工复核或终态返回 ErrRefundConflict，缺记录和存储错误原样返回。
+// Retry 将 automatic 且 pending/processing 的退款立即排队，返回记录 ID 供审计。
+// 金额和状态不变；人工待审或终态返回 ErrRefundConflict。
 func (s RefundReviewRepo) Retry(ctx context.Context, tx *gorm.DB, refundNo string) (uint64, error) {
 	var r RefundRecord
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_no=? AND deleted_at IS NULL", refundNo).Take(&r).Error; err != nil {
@@ -229,7 +221,7 @@ func (s RefundReviewRepo) Retry(ctx context.Context, tx *gorm.DB, refundNo strin
 	return r.ID, tx.Table("refund_record").Where("id=?", r.ID).Update("next_attempt_at", time.Now().UTC()).Error
 }
 
-// oneOf 判断 value 是否匹配 options 中任一空白分隔值；返回匹配结果，无 IO 或错误。
+// oneOf 检查值是否属于空白分隔的允许集合。
 func oneOf(value string, options string) bool {
 	for _, option := range strings.Fields(options) {
 		if value == option {

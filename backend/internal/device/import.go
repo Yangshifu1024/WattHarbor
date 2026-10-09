@@ -17,52 +17,51 @@ import (
 	"gorm.io/gorm"
 )
 
-// ImportGateway 只提供导入所需的厂商公开事实及原身份同步开通，不暴露 URL、令牌或通用 HTTP。
+// ImportGateway 提供公开厂商资料和同步开通方法，不暴露 URL、令牌或通用 HTTP 客户端。
 type ImportGateway interface {
-	// Vendor 返回 id 的公开协议事实或原服务错误，requestID 仅用于服务追踪。
+	// Vendor 读取公开厂商协议资料，请求号只用于追踪。
 	Vendor(context.Context, uint64, string) (contract.VendorReply, error)
-	// Provision 同步确认原设备清单已持久开通，失败不得改用新的设备身份。
+	// Provision 确认设备清单已保存并开通；失败后必须使用同一设备编号重试。
 	Provision(context.Context, []contract.ProvisionDevice) error
 }
 
-// ImportCompatibility 由 pricing 提供所属站点的计费兼容判断，保持 device 不反向引用 pricing。
+// ImportCompatibility 检查目标站点计费规则是否支持待导入设备协议，由 pricing 注入实现。
 type ImportCompatibility interface {
-	// CheckImportAgainstStation 在原 tx 中批量核对首次 devices，返回兼容或存储错误，不建设备。
+	// CheckImportAgainstStation 在事务中检查新设备与站点计费规则是否兼容。
 	CheckImportAgainstStation(*gorm.DB, []ImportDevice) error
 }
 
-// ImportService 拥有受理及同步执行两段事务，未知结果从原任务与原设备身份恢复。
+// ImportService 分两段事务受理和同步执行导入，结果未知时用已有任务和设备编号恢复。
 type ImportService struct {
 	DB            *gorm.DB                                                                // central 导入任务与运营元数据连接，由进程管理
 	Gateway       ImportGateway                                                           // 厂商读取及同步开通客户端，由 cmd 注入
 	Compatibility ImportCompatibility                                                     // 所属站点规则兼容能力，由 cmd 注入 pricing repo
-	LoadScope     func(context.Context, operations.Profile) (operations.DataScope, error) // 执行前重读当前范围，保留受理与执行之间的原二次核对
+	LoadScope     func(context.Context, operations.Profile) (operations.DataScope, error) // 执行前重读当前范围，保留受理与执行之间的二次核对
 }
 
-// List 在ctx下返回最近100个原导入任务或读取／取消错误，保持原全局device.import查询。
-// 不暴露持久清单、不重试或执行任务，不把受理／执行时的数据范围条件扩为新的列表过滤。
+// List 按全局 device.import 权限返回最近 100 个任务；不返回清单，不执行导入，不追加受理时的范围过滤。
 func (s ImportService) List(ctx context.Context) ([]ImportJob, error) {
 	return (ImportRepo{DB: s.DB}).ListImportJobs(ctx, 100)
 }
 
-// ImportInput 是原公开批量请求；协议及能力由厂商字典覆盖，不信任客户端声明。
+// ImportInput 是批量导入请求，协议和能力以服务端厂商字典为准。
 type ImportInput struct {
-	ImportID string         `json:"import_id"` // 请求 UUID，原任务及重试身份
-	Devices  []ImportDevice `json:"devices"`   // 一至一百台原设备身份，批内大小写不敏感判重
+	ImportID string         `json:"import_id"` // 请求 UUID，同一任务及重试身份
+	Devices  []ImportDevice `json:"devices"`   // 一至一百台设备编号，批内大小写不敏感判重
 }
 
-// ImportInputError 是导入格式或准入失败的原提示，可由 HTTP 映射为 400。
+// ImportInputError 表示导入格式或校验失败，HTTP 映射为 400。
 type ImportInputError struct {
-	Message string /* 原公开输入错误 */
+	Message string /* 公开输入错误 */
 }
 
-// Error 返回原输入提示，不执行 IO。
+// Error 返回导入输入提示。
 func (e ImportInputError) Error() string { return e.Message }
 
-// ImportScopeError 标识原设备清单超出当前范围；适配器映射 403，不写入失败任务。
+// ImportScopeError 表示设备清单超出当前范围，HTTP 映射为 403，不创建失败任务。
 type ImportScopeError struct{}
 
-// Error 返回原范围拒绝提示，不执行 IO。
+// Error 返回范围拒绝提示。
 func (ImportScopeError) Error() string {
 	return "导入设备的站点或厂商不在您的数据范围内"
 }
@@ -70,7 +69,7 @@ func (ImportScopeError) Error() string {
 // Unwrap 返回共享权限哨兵，供错误分类，不执行 IO。
 func (ImportScopeError) Unwrap() error { return operations.ErrForbidden }
 
-// checkImportScope 依据显式 scope 核对 devices 的原站点及厂商，返回范围错误；无 IO 或修改。
+// checkImportScope 检查待导入设备的站点和厂商均在当前范围内。
 func checkImportScope(scope operations.DataScope, devices []ImportDevice) error {
 	for _, d := range devices {
 		if !scope.AllowsStation(d.StationID) || !scope.AllowsVendor(d.VendorID) {
@@ -80,8 +79,8 @@ func checkImportScope(scope operations.DataScope, devices []ImportDevice) error 
 	return nil
 }
 
-// ValidateImportInput 校验 in 的请求号、批量边界、设备身份和声明模式，返回原输入提示。
-// 无 IO，不信任声明的协议或计量能力；厂商事实、范围与目标兼容在 Create 内继续校验。
+// ValidateImportInput 检查请求号、批量大小、设备编号和声明模式。
+// 服务端厂商协议、权限范围和计费兼容由 Create 继续校验。
 func ValidateImportInput(in ImportInput) error {
 	if uuid.Validate(in.ImportID) != nil || len(in.Devices) == 0 || len(in.Devices) > 100 {
 		return ImportInputError{"导入编号无效或设备数不在 1–100 范围"}
@@ -100,9 +99,8 @@ func ValidateImportInput(in ImportInput) error {
 	return nil
 }
 
-// Create 在 ctx 下按 audit 实时身份与 scope 接受 in，冻结厂商协议、身份及原任务，再同步执行。
-// 返回原任务或输入／范围／兼容／依赖／存储错误；受理与审计同事务，执行使用原清单和原导入号。
-// gateway 失败允许提交 failed 并返回该任务；中央执行写入失败整体回滚，保留先前 pending 供原号重试。
+// Create 核对权限和范围，保存厂商协议、设备资料、任务和受理审计，再同步执行清单。
+// 网关失败可保存 failed 任务；中央写入失败整体回滚，保留 pending 供同号重试。
 func (s ImportService) Create(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, in ImportInput) (ImportJob, error) {
 	if !audit.Actor.HasPermission("device.import") {
 		return ImportJob{}, operations.ErrForbidden
@@ -113,7 +111,7 @@ func (s ImportService) Create(ctx context.Context, audit ops.AuditContext, scope
 	if err := checkImportScope(scope, in.Devices); err != nil {
 		return ImportJob{}, err
 	}
-	// 原请求切片属于调用方；冻结服务事实只改本用例副本，避免重试持有的输入被隐式修改。
+	// 复制请求清单后再补充服务端协议，避免修改调用方用于重试的输入。
 	in.Devices = append([]ImportDevice(nil), in.Devices...)
 	adapters := map[uint64]string{}
 	for i := range in.Devices {
@@ -140,8 +138,7 @@ func (s ImportService) Create(ctx context.Context, audit ops.AuditContext, scope
 	body, _ := json.Marshal(in.Devices)
 	repo := ImportRepo{DB: s.DB}
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 先竞争任务唯一键；默认 RR 下对缺失任务 FOR UPDATE 会取得间隙锁，
-		// 两个首次申请再插入会互相等待。登记和后续身份核对仍在一个事务中。
+		// 先登记唯一任务号，再锁读核对；RR 下先锁缺失任务会持间隙锁，并发首次插入可能互相等待。
 		created, err := repo.ClaimImportJob(tx, in.ImportID, audit.Actor.ID, string(body))
 		if err != nil {
 			return err
@@ -192,9 +189,8 @@ func (s ImportService) Create(ctx context.Context, audit ops.AuditContext, scope
 	return s.Retry(ctx, audit, current, in.ImportID)
 }
 
-// Retry 在 ctx 下用 audit 当前权限及 scope 执行 id 原任务，返回原状态或范围／存储错误。
-// 在十秒有界开通期间保持任务行锁，中央元数据和完成审计同事务；不覆盖已有设备配置。
-// 失败开通提交 failed、递增尝试次数，可按原身份恢复；completed 重放不重复网络调用或审计。
+// Retry 核对当前权限和范围，在十秒开通过程中持有任务锁，不覆盖已有配置。
+// 设备资料和完成审计同事务；开通失败保存 failed 和尝试次数，completed 重放不重复开通或审计。
 func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id string) (ImportJob, error) {
 	if !audit.Actor.HasPermission("device.import") {
 		return ImportJob{}, operations.ErrForbidden
@@ -259,8 +255,8 @@ func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope 
 	return result, err
 }
 
-// importLockOrder 复制 devices 并按大小写不敏感设备号排序，返回持锁及下发顺序，不修改冻结清单或执行 IO。
-// 不同任务的重叠设备以相同顺序取得身份、网关开通和中央元数据锁，避免反向清单互相等待。
+// importLockOrder 复制并按忽略大小写的设备号排序，确定锁定和下发顺序。
+// 重叠任务使用相同锁序，避免反向清单死锁；保存的首次清单不变。
 func importLockOrder(devices []ImportDevice) []ImportDevice {
 	ordered := append([]ImportDevice(nil), devices...)
 	sort.Slice(ordered, func(i, j int) bool {

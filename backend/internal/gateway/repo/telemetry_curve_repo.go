@@ -9,17 +9,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// 历史曲线按原接口粒度选择聚合表，表名与桶宽在本包对应。
+// 历史曲线按接口粒度选择聚合表，表名与桶宽在本包对应。
 
 // CurveGranularity 是一条时间窗对应的聚合粒度。
 type CurveGranularity struct {
-	// Bucket 原聚合桶宽。
+	// Bucket 聚合桶宽。
 	Bucket time.Duration
-	// Table 原所属聚合表名。
+	// Table 聚合表名。
 	Table string
 }
 
-// CurveGranularityFor 接收 granularity，仅为 15min 或 hourly 返回原桶宽、表名和 true；其它返回零值与 false，无 IO。
+// CurveGranularityFor 仅支持 15min 和 hourly，返回对应桶宽和表名；其他值返回 false。
 func CurveGranularityFor(granularity string) (CurveGranularity, bool) {
 	switch granularity {
 	case "15min":
@@ -30,18 +30,18 @@ func CurveGranularityFor(granularity string) (CurveGranularity, bool) {
 	return CurveGranularity{}, false
 }
 
-// MetricPeak 是窗口原指标摘要；DECIMAL以文本读取，避免浮点转换改变公开精度。
+// MetricPeak 是窗口指标摘要；DECIMAL 以文本读取，避免浮点转换改变公开精度。
 type MetricPeak struct {
-	Metric string `gorm:"column:metric" json:"metric"`               // 原power_w或temperature_c指标
-	Peak   string `gorm:"column:peak" json:"peak"`                   // 窗口原峰值DECIMAL文本
-	Avg    string `gorm:"column:average_value" json:"average_value"` // 按原样本count加权的均值文本，不按结构体名称推导列
+	Metric string `gorm:"column:metric" json:"metric"`               // power_w 或 temperature_c 指标
+	Peak   string `gorm:"column:peak" json:"peak"`                   // 窗口峰值 DECIMAL 文本
+	Avg    string `gorm:"column:average_value" json:"average_value"` // 按原样本 count 加权的均值文本，不按结构体名称推导列
 }
 
 // curveMetrics 是曲线摘要关心的指标。功率与温度是两条主曲线，其余指标
 // 在摘要里没有展示价值。
 var curveMetrics = []string{"power_w", "temperature_c"}
 
-// MetricPeaksInRange 接收 ctx、db、所属 table、deviceID、portNo 与 start/end，读取闭区间 power_w、temperature_c 的峰值和按 count 加权均值文本；返回摘要及 SQL 错误，无写入。
+// MetricPeaksInRange 查询时间闭区间内的功率、温度峰值和按样本数加权的均值，结果保留十进制文本。
 func MetricPeaksInRange(ctx context.Context, db *gorm.DB, table, deviceID string, portNo uint16, start, end time.Time) ([]MetricPeak, error) {
 	rows := []MetricPeak{}
 	err := db.WithContext(ctx).Table(table).
@@ -56,13 +56,13 @@ func MetricPeaksInRange(ctx context.Context, db *gorm.DB, table, deviceID string
 
 // HeartbeatSample 是一条心跳事件的原始载荷。
 type HeartbeatSample struct {
-	// ID device_event 表的原自增主键，用作心跳取证游标。
+	// ID device_event 表的自增主键，用作心跳取证游标。
 	ID uint64 `gorm:"column:id"`
-	// EventJSON 原持久协议事件 JSON 字节。
+	// EventJSON 持久协议事件 JSON 字节。
 	EventJSON []byte `gorm:"column:event_json"`
 }
 
-// ListHeartbeatsInWindow 接收 ctx、db、device、from/to、afterID 与 limit，读取闭区间心跳证据，按 id 升序且多取一条；返回原载荷或 SQL 错误，无写入。
+// ListHeartbeatsInWindow 按 ID 升序查询时间闭区间内的心跳，并多取一条判断是否还有下一页。
 func ListHeartbeatsInWindow(ctx context.Context, db *gorm.DB, device string, from, to time.Time, afterID uint64, limit int) ([]HeartbeatSample, error) {
 	query := db.WithContext(ctx).Table("device_event").Select("id, event_json").
 		Where("device_id=? AND event_type='heartbeat' AND received_at>=? AND received_at<=?", device, from.UTC(), to.UTC())

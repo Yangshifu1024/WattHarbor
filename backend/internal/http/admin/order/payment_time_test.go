@@ -8,9 +8,9 @@ import (
 func TestPaymentTimeRangeAcceptsEmptyOpenAndEqualBounds(t *testing.T) {
 	start := "2026-10-01T08:00:00+08:00"
 	for _, tc := range []struct {
-		// from、to 是原查询起止文本，空文本表示无此侧边界。
+		// from、to 是查询起止文本，空文本表示无此侧边界。
 		from, to string
-		// hasFrom、hasTo 是解析后两侧是否应返回非nil时刻。
+		// hasFrom、hasTo 是解析后两侧是否应返回非 nil 时刻。
 		hasFrom, hasTo bool
 	}{
 		{"", "", false, false}, {start, "", true, false}, {"", start, false, true}, {start, start, true, true},

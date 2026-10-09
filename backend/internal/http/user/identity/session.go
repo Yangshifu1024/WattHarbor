@@ -15,7 +15,7 @@ type API struct {
 	Service identity.SessionService /* cmd 注入的完整用户会话用例 */
 }
 
-// Register 在 router 注册原公开身份端点，不启动后台任务或打开资源。
+// Register 在 router 注册公开身份端点，不启动后台任务或打开资源。
 func (a API) Register(router *gin.Engine) {
 	router.POST("/api/v1/user/auth/login", a.login)
 	router.POST("/api/v1/user/auth/refresh", a.refresh)
@@ -23,10 +23,10 @@ func (a API) Register(router *gin.Engine) {
 	router.GET("/api/v1/user/profile", a.profile)
 }
 
-// login 从 c 绑定 code 并调用完整身份用例，返回原字段或原阶段 HTTP 错误。
+// login 从 c 绑定 code 并调用完整身份用例，返回字段或阶段 HTTP 错误。
 func (a API) login(c *gin.Context) {
 	var request struct {
-		Code string `json:"code" binding:"required,min=1,max=128"` /* 原交换凭据 */
+		Code string `json:"code" binding:"required,min=1,max=128"` /* 交换凭据 */
 	}
 	if c.ShouldBindJSON(&request) != nil {
 		httpapi.BadRequest(c, "invalid login code")
@@ -52,7 +52,7 @@ func (a API) login(c *gin.Context) {
 	}
 }
 
-// refresh 从 c 提取原刷新凭据，返回轮换后的访问回执或原错误，流程不在 HTTP 拼接。
+// refresh 从请求提取刷新凭据，返回轮换后的访问回执或错误，流程不在 HTTP 拼接。
 func (a API) refresh(c *gin.Context) {
 	out, err := a.Service.Refresh(c.Request.Context(), bearer(c))
 	if err == nil {
@@ -74,7 +74,7 @@ func (a API) refresh(c *gin.Context) {
 	}
 }
 
-// logout 从 c 提取刷新凭据并撤销原会话，返回原注销标志或格式／存储错误。
+// logout 从请求提取刷新凭据并撤销会话，返回注销标志或格式／存储错误。
 func (a API) logout(c *gin.Context) {
 	err := a.Service.Logout(c.Request.Context(), bearer(c))
 	if errors.Is(err, identity.ErrInvalidRefresh) {
@@ -88,7 +88,7 @@ func (a API) logout(c *gin.Context) {
 	httpapi.OK(c, gin.H{"logged_out": true})
 }
 
-// profile 在 c 的取消范围读取认证用户档案，保持原访问／会话／状态错误文案。
+// profile 在 c 的取消范围读取认证用户档案，保持访问／会话／状态错误文案。
 func (a API) profile(c *gin.Context) {
 	out, err := a.Service.Profile(c.Request.Context(), bearer(c))
 	if err == nil {
@@ -112,7 +112,7 @@ func (a API) profile(c *gin.Context) {
 	}
 }
 
-// bearer 从 c 原头提取单个 Bearer 凭据，格式错误返回空串；不验证或记录明文。
+// bearer 从 c 头提取单个 Bearer 凭据，格式错误返回空串；不验证或记录明文。
 func bearer(c *gin.Context) string {
 	parts := strings.Fields(c.GetHeader("Authorization"))
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {

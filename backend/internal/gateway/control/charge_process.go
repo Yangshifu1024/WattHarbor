@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// chargeProcess 接收 c 中的原订单及可选身份、游标和 limit，先鉴权校验，再读取过程点并用多取一条生成下一游标；写 200、400、401 或 503，无业务状态写入。
+// chargeProcess 鉴权并校验订单和游标，分页返回充电采样点及下一页游标。
 func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -40,7 +40,7 @@ func (a TelemetryAPI) chargeProcess(c *gin.Context) {
 			return
 		}
 	}
-	// 在读取数据库前校验全部原身份筛选。
+	// 在读取数据库前校验全部编号筛选。
 	var chargeOrderID uint64
 	if values.Has("charge_order_id") {
 		var err error

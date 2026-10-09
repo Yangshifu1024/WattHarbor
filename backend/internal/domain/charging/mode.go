@@ -43,7 +43,7 @@ func (m ChargeMode) Executor() ChargeExecutor {
 	}
 }
 
-// ServerBilled 判断该模式是否由 Cost 计算权威费用。
+// ServerBilled 判断该模式是否由 Cost 计算最终费用。
 func (m ChargeMode) ServerBilled() bool { return m.Executor() == ExecutorServer }
 
 // IsDevice 判断该模式是否由设备控制充电结束。
@@ -52,7 +52,7 @@ func (e ChargeExecutor) IsDevice() bool { return e == ExecutorDevice }
 // Valid 判断当前版本是否支持该计费模式。
 func (m ChargeMode) Valid() bool { return m.Executor() != "" }
 
-// ServerBasis 是电费按什么口径收取，它只对服务端计费模式有意义。
+// ServerBasis 是电费按什么方式计价，它只对服务端计费模式有意义。
 type ServerBasis string
 
 const (
@@ -64,8 +64,7 @@ const (
 	BasisEnergy ServerBasis = "energy"
 )
 
-// BasisFor 返回一个服务端模式必须配置成的电量口径，使模式与电价表不会
-// 各自漂移到描述两份不同的电价表。
+// BasisFor 返回服务端模式对应的电价算法，避免模式与费率配置不一致。
 func (m ChargeMode) BasisFor() ServerBasis {
 	switch m {
 	case ModeServerRealtimePower:
@@ -79,8 +78,7 @@ func (m ChargeMode) BasisFor() ServerBasis {
 	}
 }
 
-// ServiceBasis 是服务费按什么口径收取。它是独立的第二条线：有自己的开关、
-// 自己的口径，并且可以与电费正在做的一切自由组合。
+// ServiceBasis 定义服务费计价规则，可与电费计价方式独立组合。
 type ServiceBasis string
 
 const (
@@ -96,7 +94,7 @@ const (
 	ServiceSession ServiceBasis = "session"
 )
 
-// Valid 判断计价引擎是否支持该服务费口径。
+// Valid 判断计价引擎是否支持该服务费计价方式。
 func (b ServiceBasis) Valid() bool {
 	switch b {
 	case ServiceNone, ServiceEnergy, ServiceMinutePower, ServiceMinute, ServiceSession:

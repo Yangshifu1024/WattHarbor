@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Exact unrounded cent contributions explain the same sum used by Cost.
+// 保留未取整的费用明细，解释 Cost 的合计结果。
 type FeeFragment struct {
 	StartedAt     time.Time `json:"started_at"`
 	EndedAt       time.Time `json:"ended_at"`

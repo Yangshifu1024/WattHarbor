@@ -15,7 +15,7 @@ import (
 )
 
 // TestOutboxCleanupDoesNotLockOtherFixtures 在真实两连接中持有清理事务，另一连接仍能锁住无关夹具。
-// 两条私有已发布记录按完整主键清理，不进入领取队列或改变任何资金状态。
+// 两条私有已发布记录按全部主键字段清理，不进入领取队列或改变任何资金状态。
 func TestOutboxCleanupDoesNotLockOtherFixtures(t *testing.T) {
 	open := func() *gorm.DB {
 		t.Helper()
@@ -36,12 +36,12 @@ func TestOutboxCleanupDoesNotLockOtherFixtures(t *testing.T) {
 	}
 	first, second := open(), open()
 	target := uuid.NewString()
-	// row 是清理锁测试写入 event_outbox 的私有已发布夹具，回填真实主键并携清理载荷；不进入领取队列或执行投递。
+	// row 是清理锁测试写入 event_outbox 的本测试已发布记录，回填真实主键并携清理载荷；不进入领取队列或执行投递。
 	type row struct {
 		ID           uint64 `gorm:"primaryKey"` // 实际插入回填的队列主键
-		EventID      string // 本夹具独有事件身份
+		EventID      string // 本夹具独有事件标识
 		Stream       string // 私有测试流，不执行投递
-		EnvelopeJSON string // 清理所属载荷
+		EnvelopeJSON string // 清理载荷
 		Status       string // 已发布状态，不进入后台领取
 	}
 	rows := []row{

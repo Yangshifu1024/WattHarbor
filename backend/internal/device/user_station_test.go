@@ -11,15 +11,15 @@ import (
 	contract "chargepilot/internal/contracts/gateway"
 )
 
-// stationSummaryFunc 只在给定ctx和ids下提供摘要fixture，不模拟数据库。
+// stationSummaryFunc 提供摘要查询测试替身，不模拟数据库。
 type stationSummaryFunc func(context.Context, []string) ([]contract.DeviceSummary, error)
 
-// DeviceSummaries 把ctx、ids交给f，返回其原数组／错误，不开后台任务。
+// DeviceSummaries 调用测试函数获取摘要，不启动后台任务。
 func (f stationSummaryFunc) DeviceSummaries(ctx context.Context, ids []string) ([]contract.DeviceSummary, error) {
 	return f(ctx, ids)
 }
 
-// TestStationRuntimeBatchesAndPreservesUnknown 验证201台设备三批、失败批隔离及心跳null／零差异。
+// TestStationRuntimeBatchesAndPreservesUnknown 验证201台设备三批、失败批隔离及心跳 null／零差异。
 func TestStationRuntimeBatchesAndPreservesUnknown(t *testing.T) {
 	rows := make([]stationDeviceRow, 201)
 	for i := range rows {
@@ -63,7 +63,7 @@ func TestStationRuntimeBatchesAndPreservesUnknown(t *testing.T) {
 	}
 }
 
-// TestStationRuntimeRejectsWrongIdentityAndStopsOnCancel 验证重复／额外身份不伪造已知、取消不继续取证。
+// TestStationRuntimeRejectsWrongIdentityAndStopsOnCancel 验证重复或额外设备不被合并，取消后不继续查询。
 func TestStationRuntimeRejectsWrongIdentityAndStopsOnCancel(t *testing.T) {
 	for _, extras := range [][]contract.DeviceSummary{{{DeviceID: "outside"}}, {{DeviceID: "one"}, {DeviceID: "one"}}} {
 		s := UserStationService{Summaries: stationSummaryFunc(func(context.Context, []string) ([]contract.DeviceSummary, error) { return extras, nil })}
@@ -86,7 +86,7 @@ func TestStationRuntimeRejectsWrongIdentityAndStopsOnCancel(t *testing.T) {
 	}
 }
 
-// TestStationAdmissionBeforeStorage 验证坏输入在nil数据库之前被拒绝，不产生SQL。
+// TestStationAdmissionBeforeStorage 验证非法输入在数据库访问前被拒绝。
 func TestStationAdmissionBeforeStorage(t *testing.T) {
 	for _, q := range []StationQuery{{Page: 0, PageSize: 20, RadiusKM: 50}, {Page: 1, PageSize: 101, RadiusKM: 50}, {Page: 1, PageSize: 20, RadiusKM: math.NaN()}, {Page: 1, PageSize: 20, RadiusKM: 51}, {Page: 1, PageSize: 20, RadiusKM: 50, Located: true, Latitude: 91}} {
 		if _, err := (UserStationService{}).Nearby(context.Background(), q); err == nil {

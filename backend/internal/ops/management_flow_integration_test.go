@@ -20,8 +20,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// managementFixture 为t授予自身自定义角色的九项实际权限，返回两真实连接、原服务身份及审计事实。
-// 复用securityFixture自身账号／角色清理，不修改内置角色权限或bootstrap管理员。
+// managementFixture 为自身自定义角色授予九项权限，并创建两条真库连接及审计参数；不修改内置角色或初始管理员。
 func managementFixture(t *testing.T) (*gorm.DB, *gorm.DB, SessionRepo, AuditContext, *auth.JWT) {
 	t.Helper()
 	first, second, repo, account, _, jwt := securityFixture(t)
@@ -41,7 +40,7 @@ func managementFixture(t *testing.T) (*gorm.DB, *gorm.DB, SessionRepo, AuditCont
 	return first, second, repo, AuditContext{Actor: profile, ClientIP: "management-fixture", RequestID: uuid.NewString()}, jwt
 }
 
-// cleanupManagementRole 按t中的id清理原角色及权限，核对零残留，不触及其它身份。
+// cleanupManagementRole 仅清理本测试角色和权限，并检查零残留。
 func cleanupManagementRole(t *testing.T, db *gorm.DB, id uint64) {
 	t.Helper()
 	if id == 0 {
@@ -61,7 +60,7 @@ func cleanupManagementRole(t *testing.T, db *gorm.DB, id uint64) {
 	})
 }
 
-// cleanupManagementUser 按t中的id清理自身管理账号并核对零残留，关联审计由操作者fixture清理。
+// cleanupManagementUser 仅清理本测试账号并检查零残留，审计由操作者夹具清理。
 func cleanupManagementUser(t *testing.T, db *gorm.DB, id uint64) {
 	t.Helper()
 	if id == 0 {
@@ -78,8 +77,8 @@ func cleanupManagementUser(t *testing.T, db *gorm.DB, id uint64) {
 	})
 }
 
-// TestManagementAccountRoleTransactionsAndSafeAudit 使用真实SQL／Redis验证管理全流程、实时权限与安全审计。
-// 同角色回传不撤销，停用再启用不得恢复旧签名，重置解除临时锁定；MFA确认必须使用原登记材料。
+// TestManagementAccountRoleTransactionsAndSafeAudit 使用真实 SQL／Redis 验证管理全流程、实时权限与安全审计。
+// 同角色回传不撤销，停用再启用不得恢复旧签名，重置解除临时锁定；MFA 确认必须使用服务端登记材料。
 func TestManagementAccountRoleTransactionsAndSafeAudit(t *testing.T) {
 	db, _, repo, audit, jwt := managementFixture(t)
 	ctx := context.Background()
@@ -213,8 +212,7 @@ func TestManagementAccountRoleTransactionsAndSafeAudit(t *testing.T) {
 	}
 }
 
-// TestManagementAuditFailureRollsBackRoleAndAccount 用真实事务注入审计失败，创建及权限关联全部回滚。
-// ID分配可前进但没有已提交对象；失败fixture和清理只作用于本操作者，不宣称真实提交未知。
+// TestManagementAuditFailureRollsBackRoleAndAccount 验证审计失败时账号、角色关联一起回滚；清理只涉及本测试操作者。
 func TestManagementAuditFailureRollsBackRoleAndAccount(t *testing.T) {
 	db, _, _, audit, _ := managementFixture(t)
 	ctx := context.Background()
@@ -269,8 +267,8 @@ func TestManagementAuditFailureRollsBackRoleAndAccount(t *testing.T) {
 	}
 }
 
-// TestManagementGrantReadsCurrentPermissions 固定旧RR快照早于另一真实角色更新，当前权限读取不能再次授予撤销项。
-// 撤销由真实RoleService提交，旧请求仍持原Profile；不以HTTP旧菜单或角色快照替代锁后授权。
+// TestManagementGrantReadsCurrentPermissions 固定旧 RR 快照早于另一真实角色更新，当前权限读取不能再次授予撤销项。
+// 撤销由真实 RoleService 提交，旧请求仍持先前的 Profile；不以 HTTP 旧菜单或角色快照替代锁后授权。
 func TestManagementGrantReadsCurrentPermissions(t *testing.T) {
 	first, second, _, audit, _ := managementFixture(t)
 	ctx := context.Background()
@@ -304,7 +302,7 @@ func TestManagementGrantReadsCurrentPermissions(t *testing.T) {
 	}
 }
 
-// TestManagementRoleDeletionUsesCurrentReferences 固定旧RR角色引用计数早于真实账号分配，删除须看到新引用而拒绝。
+// TestManagementRoleDeletionUsesCurrentReferences 固定旧 RR 角色引用计数早于真实账号分配，删除须看到新引用而拒绝。
 // 创建和角色集合使用实际服务，外层回滚不清空共享角色／权限或开发数据。
 func TestManagementRoleDeletionUsesCurrentReferences(t *testing.T) {
 	first, second, _, audit, _ := managementFixture(t)
@@ -333,8 +331,8 @@ func TestManagementRoleDeletionUsesCurrentReferences(t *testing.T) {
 	}
 }
 
-// isolateManagementAdmins 持续限定db的客户管理员计数为ids原fixture，仅匹配FROM别名u并显式增加WHERE。
-// 真实共享客户管理员角色锁不替换，保留bootstrap及其它测试账号，不将子集计数称为全库清空证明。
+// isolateManagementAdmins 仅限制管理员计数为本测试账号，仍使用真实共享角色锁。
+// 保留初始管理员和其他账号，不把测试子集当作全库统计。
 func isolateManagementAdmins(t *testing.T, db *gorm.DB, ids []uint64) {
 	t.Helper()
 	name := fmt.Sprint("management-own-count-", ids[0])
@@ -349,7 +347,7 @@ func isolateManagementAdmins(t *testing.T, db *gorm.DB, ids []uint64) {
 }
 
 // TestManagementLastCustomerAdminAllRemovalPaths 验证停用、改派和软删都保留最后客户管理员，解除临时锁不复活旧凭据。
-// fixture只计自身两名客户管理员，使用真实共享角色行和两连接；bootstrap保持原样。
+// 测试夹具只计自身两名客户管理员，使用真实共享角色行和两连接；bootstrap 保持原样。
 func TestManagementLastCustomerAdminAllRemovalPaths(t *testing.T) {
 	first, second, _, audit, _ := managementFixture(t)
 	ctx := context.Background()
@@ -391,7 +389,7 @@ func TestManagementLastCustomerAdminAllRemovalPaths(t *testing.T) {
 	if err := accounts.Unlock(ctx, audit, ids[1]); err != nil {
 		t.Fatal(err)
 	}
-	// 创建旧RR快照后另一连接提交第二名停用，当前计数不得漏掉真实状态变化。
+	// 创建旧 RR 快照后另一连接提交第二名停用，当前计数不得漏掉真实状态变化。
 	tx := first.Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if tx.Error != nil {
 		t.Fatal(tx.Error)
@@ -411,7 +409,7 @@ func TestManagementLastCustomerAdminAllRemovalPaths(t *testing.T) {
 	if err := tx.Where("id=?", ids[0]).Clauses(clause.Locking{Strength: "SHARE"}).Take(&row).Error; err != nil || row.Status != "active" {
 		t.Fatalf("remaining active %s %v", row.Status, err)
 	}
-	// 只核对安全快照字段，原认证材料不能因锁行成为管理审计数据。
+	// 锁读出的密码或 MFA 材料仍不能写入管理审计。
 	safe, err := (AccountRepo{DB: tx}).LockAdminUser(tx, ids[0])
 	if err != nil {
 		t.Fatal(err)
@@ -479,10 +477,10 @@ func TestManagementConcurrentRevocationBeforeAssignment(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("first root lock not reached")
 	}
-	// result 传递并发账号创建用例返回的主键与权限错误，用于核对角色撤权后的拒绝；账号是否落库另查真实表。
+	// result 汇总账号创建主键和错误，另查数据库确认未授权创建未保存。
 	type result struct {
 		id  uint64 // 并发创建返回的真实账号主键
-		err error  // 创建或当前权限准入错误
+		err error  // 创建或当前权限校验错误
 	}
 	assigned := make(chan result, 1)
 	username := "race-" + uuid.NewString()

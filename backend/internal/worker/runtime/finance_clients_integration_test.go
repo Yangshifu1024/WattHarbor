@@ -30,22 +30,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// financeOrderBoundary 仅固定原订单入账边界及故障；真实HTTP、资金循环和fee_delivery SQL执行，不扣真实资金。
+// financeOrderBoundary 仅固定订单入账边界及故障；真实 HTTP、资金循环和 fee_delivery SQL 执行，不扣真实资金。
 type financeOrderBoundary struct {
-	id      uint64       // 本fixture原订单身份，不建立新订单或更换重试号。
-	failing atomic.Bool  // 固定失败开关，恢复后仍使用原回执。
-	calls   atomic.Int64 // 原订单Apply次数，验证到期前重扫和完成重放。
+	id      uint64       // 本 fixture 订单编号，不建立新订单或更换重试号。
+	failing atomic.Bool  // 固定失败开关，恢复后仍使用回执。
+	calls   atomic.Int64 // 订单 Apply 次数，验证到期前重扫和完成重放。
 }
 
-// Due 返回没有新增计算任务，保留本次原投递恢复场景；无IO。
+// Due 返回没有新增计算任务，保留本次投递恢复场景。
 func (*financeOrderBoundary) Due(context.Context) ([]uint64, error) { return nil, nil }
 
-// Read 拒绝新计算，防止恢复流程绕过原持久费用载荷；无IO。
+// Read 拒绝新计算，防止恢复流程绕过持久费用载荷。
 func (*financeOrderBoundary) Read(context.Context, uint64) (settlement.Source, error) {
 	return settlement.Source{}, errors.New("unexpected new calculation")
 }
 
-// Apply 校验原订单身份，记录调用并按开关返回固定依赖错误；不执行资金写入。
+// Apply 校验订单编号，记录调用并按开关返回固定依赖错误；不执行资金写入。
 func (o *financeOrderBoundary) Apply(_ context.Context, result settlement.Result) error {
 	if result.Source.ChargeOrderID != o.id {
 		return errors.New("delivery changed original order identity")
@@ -57,17 +57,17 @@ func (o *financeOrderBoundary) Apply(_ context.Context, result settlement.Result
 	return nil
 }
 
-// Defer 拒绝新计算任务重排，本fixture只能恢复原fee_delivery；无IO。
+// Defer 拒绝新计算任务重排，本 fixture 只能恢复 fee_delivery。
 func (*financeOrderBoundary) Defer(context.Context, uint64, string, string) error {
 	return errors.New("unexpected new calculation defer")
 }
 
-// financeStopBoundary 提供原停机进度与固定失败；可取消本轮受管理context，不代表真实设备停机。
+// financeStopBoundary 提供停机进度与固定失败；可取消本轮受管理 context，不代表真实设备停机。
 type financeStopBoundary struct {
-	cancel context.CancelFunc // 仅取消测试持有的worker轮次；nil保留普通部分失败。
+	cancel context.CancelFunc // 仅取消测试持有的 worker 轮次；nil 保留普通部分失败。
 }
 
-// Run 返回2笔已处理和固定错误；设置cancel时先取消轮次，不创建goroutine或接触设备。
+// Run 返回 2 笔已处理和固定错误；设置 cancel 时先取消轮次，不创建 goroutine 或接触设备。
 func (s financeStopBoundary) Run(context.Context) (int, error) {
 	if s.cancel != nil {
 		s.cancel()
@@ -75,48 +75,48 @@ func (s financeStopBoundary) Run(context.Context) (int, error) {
 	return 2, errors.New("stop scan incomplete")
 }
 
-// financeBatchProbe 在原runtime接口外记录具名消费者实际返回值，方法仍在原调用goroutine执行。
+// financeBatchProbe 在 runtime 接口外记录专用调用方实际返回值，方法仍在调用 goroutine 执行。
 type financeBatchProbe struct {
-	next    BatchRunner // 实际worker自动停止消费者。
-	count   int         // 本轮原合法进度。
-	failure error       // 原消费者错误，不重建或吞掉分类。
+	next    BatchRunner // 实际 worker 自动停止调用方。
+	count   int         // 本轮合法进度。
+	failure error       // 调用方错误，不重建或吞掉分类。
 }
 
-// Run 原样调用next并记录其进度和错误，不添加重试或后台任务。
+// Run 原样调用 next 并记录其进度和错误，不添加重试或后台任务。
 func (p *financeBatchProbe) Run(ctx context.Context) (int, error) {
 	p.count, p.failure = p.next.Run(ctx)
 	return p.count, p.failure
 }
 
-// financeDispatchProbe 记录runtime是否进入原派发消费者，取消后不能以HTTP未发出替代入口未调用的证明。
+// financeDispatchProbe 记录 runtime 是否进入派发调用方，取消后不能以 HTTP 未发出替代入口未调用的证明。
 type financeDispatchProbe struct {
-	next    Dispatcher // 实际worker计费或退款消费者。
-	calls   int        // runtime实际调用次数。
-	failure error      // 原调用结果。
+	next    Dispatcher // 实际 worker 计费或退款调用方。
+	calls   int        // runtime 实际调用次数。
+	failure error      // 调用结果。
 }
 
-// Run 记录入口再原样执行next；不修改context、调用顺序或失败语义。
+// Run 记录入口再原样执行 next；不修改 context、调用顺序或失败语义。
 func (p *financeDispatchProbe) Run(ctx context.Context) error {
 	p.calls++
 	p.failure = p.next.Run(ctx)
 	return p.failure
 }
 
-// financeRequestLog 持有服务器实际收到的路径，以互斥保护HTTP线程和测试读取。
+// financeRequestLog 持有服务器实际收到的路径，以互斥保护 HTTP 线程和测试读取。
 type financeRequestLog struct {
-	mu    sync.Mutex // 保护paths。
-	paths []string   // 按到达顺序记录实际POST路径。
+	mu    sync.Mutex // 保护 paths。
+	paths []string   // 按到达顺序记录实际 POST 路径。
 }
 
-// snapshot 返回独立路径副本，不暴露服务器可变slice；无外部IO。
+// snapshot 返回独立路径副本，不暴露服务器可变 slice。
 func (l *financeRequestLog) snapshot() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return append([]string(nil), l.paths...)
 }
 
-// registeredFinanceServer 挂载central真实三个任务API，使用原BillingService和限定自身的MySQL投递队列。
-// 返回真实具名客户端、服务器及路径记录；调用方必须先关闭服务器再回滚事务及关闭数据库。
+// registeredFinanceServer 挂载 central 真实三个任务 API，使用 BillingService 和限定自身的 MySQL 投递队列。
+// 返回真实专用客户端、服务器及路径记录；调用方必须先关闭服务器再回滚事务及关闭数据库。
 func registeredFinanceServer(t *testing.T, db *gorm.DB, orders *financeOrderBoundary, stopper financeStopBoundary) (*centralclient.Client, *httptest.Server, *financeRequestLog) {
 	t.Helper()
 	router := httpapi.NewRouter()
@@ -139,9 +139,9 @@ func registeredFinanceServer(t *testing.T, db *gorm.DB, orders *financeOrderBoun
 	return client, server, requests
 }
 
-// TestFinanceConsumersUseRegisteredJobsAndOriginalRecovery 验证真实注册API、具名消费者与原financeOnce顺序。
-// 停机及计费失败仍进入退款；原到期前不重投、推进同一身份后恢复、完成重放不重入账。
-// 资金Apply与停机为窄边界fixture，退款实际走禁用渠道；只证明编排和投递SQL，不替代资金或实机验收。
+// TestFinanceConsumersUseRegisteredJobsAndOriginalRecovery 验证真实注册 API、专用调用方与 financeOnce 顺序。
+// 停机及计费失败仍进入退款；到期前不重投、更新同一身份后恢复、完成重放不重入账。
+// 资金 Apply 与停机为测试替身，退款实际走禁用渠道；只证明编排和投递 SQL，不替代资金或实机验收。
 func TestFinanceConsumersUseRegisteredJobsAndOriginalRecovery(t *testing.T) {
 	url := os.Getenv("TEST_MYSQL_URL")
 	if url == "" {
@@ -192,9 +192,9 @@ func TestFinanceConsumersUseRegisteredJobsAndOriginalRecovery(t *testing.T) {
 		t.Fatalf("original sequence=%v stopped=%d/%v billing=%v refund=%d/%v apply=%d", requests.snapshot(), stops.count, stops.failure, bills.failure, refunds.calls, refunds.failure, orders.calls.Load())
 	}
 	var state struct {
-		Delivered bool      // 原投递确认凭据。
-		Attempts  int       // 原失败尝试计数。
-		Scheduled time.Time `gorm:"column:scheduled_at"` // 原恢复时间。
+		Delivered bool      // 投递确认凭据。
+		Attempts  int       // 失败尝试计数。
+		Scheduled time.Time `gorm:"column:scheduled_at"` // 恢复时间。
 	}
 	if err := tx.Table("fee_delivery").Where("charge_order_id=?", id).Take(&state).Error; err != nil || state.Delivered || state.Attempts != 1 || !state.Scheduled.After(time.Now().UTC()) {
 		t.Fatalf("original pending state=%+v err=%v", state, err)

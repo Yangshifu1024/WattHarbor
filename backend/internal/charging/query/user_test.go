@@ -13,17 +13,17 @@ import (
 
 // userQueryFixture 提供归属与取消闸门，不冒充真实网关或存储验收。
 type userQueryFixture struct {
-	row            order.ChargeOrderRecord         // 本用户原事实
+	row            order.ChargeOrderRecord         // 本用户信息
 	ownerError     error                           // 所属读取故障
-	frozen         FrozenState                     // 冻结读模型
-	fees           map[uint64]order.FeeFacts       // 原确认费用
-	funds          DetailFunds                     // 原资金读模型
+	frozen         FrozenState                     // 冻结查询结果
+	fees           map[uint64]order.FeeFacts       // 确认费用
+	funds          DetailFunds                     // 资金查询结果
 	stateError     error                           // 冻结故障
 	feeError       error                           // 回执故障
-	fundsError     error                           // 支付／退款故障
+	fundsError     error                           // 支付、退款故障
 	gatewayError   error                           // 网络故障
-	telemetry      contract.TelemetryReply         // 原观测
-	history        contract.HistoricalCurveReply   // 原聚合
+	telemetry      contract.TelemetryReply         // 观测
+	history        contract.HistoricalCurveReply   // 聚合
 	reads          int                             // 授权后组合调用计数
 	telemetryCalls int                             // 遥测调用计数
 	historyCalls   int                             // 历史调用计数
@@ -31,7 +31,7 @@ type userQueryFixture struct {
 	lastHistory    contract.HistoricalCurveRequest // 实际规范历史窗口
 }
 
-// Resolve 在 ctx 下检查 uid/no 与 f 原用户及单号，返回原事实或取消／fixture准入错误，无写入。
+// Resolve 检查 uid/no 与 f 用户及单号，返回信息或取消、测试替身校验错误。
 func (f *userQueryFixture) Resolve(ctx context.Context, uid uint64, no string) (order.ChargeOrderRecord, error) {
 	if err := ctx.Err(); err != nil {
 		return f.row, err
@@ -42,25 +42,25 @@ func (f *userQueryFixture) Resolve(ctx context.Context, uid uint64, no string) (
 	return f.row, f.ownerError
 }
 
-// Frozen 在 ctx 下记录一次已授权 row 的读取，返回 f 冻结模型或注入错误，无写入。
+// Frozen 记录一次已授权 row 的读取，返回 f 冻结模型或注入错误。
 func (f *userQueryFixture) Frozen(ctx context.Context, row order.ChargeOrderRecord) (FrozenState, error) {
 	f.reads++
 	return f.frozen, f.stateError
 }
 
-// Funds 在 ctx 下记录一次已授权 row 的读取，返回 f 资金模型或注入错误，无写入。
+// Funds 记录一次已授权 row 的读取，返回 f 资金模型或注入错误。
 func (f *userQueryFixture) Funds(ctx context.Context, row order.ChargeOrderRecord) (DetailFunds, error) {
 	f.reads++
 	return f.funds, f.fundsError
 }
 
-// Fees 在 ctx 下记录 ids 原回执的读取，返回 f 确认值或注入错误，无写入。
+// Fees 记录 ids 首次回执的读取，返回 f 确认值或注入错误。
 func (f *userQueryFixture) Fees(ctx context.Context, ids []uint64) (map[uint64]order.FeeFacts, error) {
 	f.reads++
 	return f.fees, f.feeError
 }
 
-// Telemetry 在 ctx 下记录 q 原窗口，返回 f 原观测或取消／注入错误，不启动后台任务。
+// Telemetry 记录 q 窗口，返回 f 观测或取消、注入错误，不启动后台任务。
 func (f *userQueryFixture) Telemetry(ctx context.Context, q contract.TelemetryRequest) (contract.TelemetryReply, error) {
 	f.telemetryCalls++
 	f.lastTelemetry = q
@@ -70,7 +70,7 @@ func (f *userQueryFixture) Telemetry(ctx context.Context, q contract.TelemetryRe
 	return f.telemetry, f.gatewayError
 }
 
-// HistoricalCurve 在 ctx 下记录 q 原窗口，返回 f 原聚合或取消／注入错误，不启动后台任务。
+// HistoricalCurve 记录 q 窗口，返回 f 聚合或取消、注入错误，不启动后台任务。
 func (f *userQueryFixture) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveRequest) (contract.HistoricalCurveReply, error) {
 	f.historyCalls++
 	f.lastHistory = q
@@ -80,14 +80,14 @@ func (f *userQueryFixture) HistoricalCurve(ctx context.Context, q contract.Histo
 	return f.history, f.gatewayError
 }
 
-// userQueryService 创建固定时刻与原身份 fixture，返回可注入故障源和业务服务，无外部IO。
+// userQueryService 创建固定时刻与标识 测试替身，返回可注入故障源和业务服务，不执行外部 I/O。
 func userQueryService() (*userQueryFixture, UserService, time.Time) {
 	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 	f := &userQueryFixture{row: order.ChargeOrderRecord{ID: 19, UserID: 7, OrderNo: "original", DeviceID: "board", PortNo: 2, Status: "charging", StartedAt: sql.NullTime{Time: now.Add(-time.Hour), Valid: true}}, fees: map[uint64]order.FeeFacts{19: {OrderID: 19}}, telemetry: contract.TelemetryReply{Series: []contract.CurvePoint{}}, history: contract.HistoricalCurveReply{Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{}}}
 	return f, UserService{Orders: f, Fees: f, State: f, Gateway: f, Now: func() time.Time { return now }}, now
 }
 
-// TestUserQueryOwnershipPrecedesAllSupplementalReads 验证所有组合入口先归属、取消不启动补充IO。
+// TestUserQueryOwnershipPrecedesAllSupplementalReads 验证所有组合入口先归属、取消不启动补充 I/O。
 func TestUserQueryOwnershipPrecedesAllSupplementalReads(t *testing.T) {
 	f, s, _ := userQueryService()
 	live := &liveFixture{raw: durationSnapshot(t)}
@@ -190,7 +190,7 @@ func TestUserSnapshotEstimateCancellationStopsTelemetry(t *testing.T) {
 	}
 }
 
-// TestUserSnapshotKeepsConfirmedZeroAndOptionalObservations 验证原确认零、未上报空值、有限窗口与网关降级。
+// TestUserSnapshotKeepsConfirmedZeroAndOptionalObservations 验证确认零、未上报空值、有限窗口与网关降级。
 func TestUserSnapshotKeepsConfirmedZeroAndOptionalObservations(t *testing.T) {
 	f, s, now := userQueryService()
 	zero := float64(0)
@@ -220,7 +220,7 @@ func TestUserSnapshotKeepsConfirmedZeroAndOptionalObservations(t *testing.T) {
 	}
 }
 
-// TestUserDetailNullShapeAndStorageFailures 验证原省略／null／空数组的区别，存储失败不伪装为缺失。
+// TestUserDetailNullShapeAndStorageFailures 验证省略、null、空数组的区别，存储失败不伪装为缺失。
 func TestUserDetailNullShapeAndStorageFailures(t *testing.T) {
 	f, s, _ := userQueryService()
 	f.fees = map[uint64]order.FeeFacts{}
@@ -267,7 +267,7 @@ func TestUserDetailNullShapeAndStorageFailures(t *testing.T) {
 	}
 }
 
-// TestUserCurvesBoundWindowsAndKeepOriginalSummary 验证配置允许值、三年／2000桶边界及原确认DECIMAL优先。
+// TestUserCurvesBoundWindowsAndKeepOriginalSummary 验证配置允许值、三年、2000桶边界及确认DECIMAL优先。
 func TestUserCurvesBoundWindowsAndKeepOriginalSummary(t *testing.T) {
 	f, s, now := userQueryService()
 	s.AllowedWindows = []string{"last_2h"}

@@ -15,24 +15,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// StartAuthorization 适配网关按原订单号读取起充授权，支付／在线卡资格由所属用例核对。
-// 只返回原执行身份、模式及数量，不发起起充命令或更新支付状态。
+// StartAuthorization 适配网关按订单号读取起充授权，支付／在线卡资格由用例核对。
+// 只返回执行所需编号、模式及数量，不发起起充命令或更新支付状态。
 type StartAuthorization struct {
-	// Service 是cmd注入的起充授权窄能力，不暴露数据库或通用HTTP。
+	// Service 是 cmd 注入的起充授权接口，不暴露数据库或通用 HTTP。
 	Service interface {
-		// Start 以请求context及原订单号读取授权，返回执行事实或资格／快照／存储错误，不下发命令。
+		// Start 以请求 context 及订单号读取授权，返回执行事实或资格／快照／存储错误，不下发命令。
 		Start(context.Context, string) (chargestart.StartAuthorization, error)
 	}
-	ServiceToken string // 原内部服务令牌，仅HTTP准入使用，不进入业务用例。
+	ServiceToken string // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 将原起充授权GET路径挂到router，无返回值或业务IO。
+// Register 将起充授权 GET 路径挂到 router，只注册路由。
 func (a StartAuthorization) Register(router *gin.Engine) {
 	router.GET(centralcontract.StartAuthorizationRoute, a.handle)
 }
 
-// handle 从c校验服务令牌及原订单号，调用所属授权读取，输出原整数身份和DC589卡余额单位。
-// 坏输入400、订单状态409、存储或卡快照503；写一次响应后返回，不持有业务事务。
+// handle 从 c 校验服务令牌及订单号，调用授权读取，输出整数编号和 DC589 卡余额单位。
+// 坏输入 400、订单状态 409、存储或卡快照 503；写一次响应后返回，不持有业务事务。
 func (a StartAuthorization) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

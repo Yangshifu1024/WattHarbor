@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-// liveMeterEvidence 从 samples 原序心跳为 device/port 提取 start 至 now 最后观测量。
-// 返回实时投影、估算计量及是否有目标端口证据；未来／旧单／其它端口被排除，无 IO。
-// 只为实时估算补最初30秒及中间180秒以内的短缺口，不修改最终结算证据构造。
+// liveMeterEvidence 提取目标设备与端口从起充到当前时刻的最新心跳量，排除未来或其他订单的数据。
+// 实时估算可补齐起初 30 秒与中间 180 秒内的短缺口，不改变最终结算的严格证据要求。
 func liveMeterEvidence(device string, port uint8, start time.Time, samples []protocol.Event, now time.Time) (*charging.LiveMeterView, charging.ActualMeter, bool) {
 	for i, e := range slices.Backward(samples) {
 

@@ -26,9 +26,8 @@ type AuditChange struct {
 	RequestID string // 优先于请求 context 的业务请求号
 }
 
-// AppendAuditInTx 在调用方 tx 中为 context 的操作人写入 change 快照。
-// 序列化或存储失败返回错误，调用方必须回滚业务变更；不自行提交或开新事务。
-// 请求号仍最多 64 字节，快照 nil 保持原 JSON null 语义。
+// AppendAuditInTx 在业务事务内保存操作者和变更快照；失败须回滚业务变更。
+// 请求号最多 64 字节，nil 快照保存为 JSON null。
 func AppendAuditInTx(tx *gorm.DB, context AuditContext, change AuditChange) error {
 	before, err := json.Marshal(change.Before)
 	if err != nil {

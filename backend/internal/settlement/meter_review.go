@@ -16,29 +16,28 @@ import (
 // ErrMeterSignerUnavailable 表示首次核实人的当前财务身份或权限已失效。
 var ErrMeterSignerUnavailable = errors.New("meter first signer unavailable")
 
-// MeterReviewService 拥有计量核实和最终金额裁决的准入、审计及事务。
+// MeterReviewService 负责计量核实和人工金额的权限校验、审计和事务。
 type MeterReviewService struct {
-	Orders         BillingOrders                                         // 原计费任务、计量快照及决策的事务能力
+	Orders         BillingOrders                                         // 计费任务、计量快照及决策的事务能力
 	LookupReviewer func(context.Context, uint64) (ReviewerStatus, error) // cmd 注入的实时首签人身份查询
 }
 
-// MeterProposalInput 保留原计量提案内容及请求身份。
+// MeterProposalInput 保存计量修正提案和请求号。
 type MeterProposalInput struct {
-	RequestID string                  `json:"request_id"` // 客户端 UUID，同内容复用原核实记录
+	RequestID string                  `json:"request_id"` // 客户端 UUID，同内容复用核实记录
 	Reason    string                  `json:"reason"`     // 人工依据，规范化后 1–500 字
-	Segments  []charging.MeterSegment `json:"segments"`   // 原有单位及分段约束，不补造计量
+	Segments  []charging.MeterSegment `json:"segments"`   // 有单位及分段约束，不补造计量
 }
 
 // MeterDecisionInput 指定本订单核实记录和通过／驳回意见。
 type MeterDecisionInput struct {
-	ReviewID uint64 `json:"review_id"` // 必须属于当前订单的原记录主键
+	ReviewID uint64 `json:"review_id"` // 必须属于当前订单的已保存记录主键
 	Approve  *bool  `json:"approve"`   // 必须显式提交，nil 表示缺失
 	Reason   string `json:"reason"`    // 驳回依据，规范化后 1–500 字
 }
 
-// List 在 ctx 下按 q 状态、关键词及分页读取核实队列，以 actor 核对财务读取权限。
-// 返回原费用证据和当前页各订单的全部核实记录；最多三次查询，不做计费或状态写入。
-// 存储失败返回错误，原持久数值 ID 保留供内部解码，公开 ID 格式由接口适配。
+// List 核对财务读取权限后分页读取核实队列和每单全部核实记录，最多三次查询。
+// 公开 ID 格式由 HTTP 层转换。
 func (s MeterReviewService) List(ctx context.Context, actor operations.Profile, q persist.PageQuery) (persist.Page[ManualFeeReviewListRow], error) {
 	if !actor.HasPermission("finance.read") {
 		return persist.Page[ManualFeeReviewListRow]{}, operations.ErrForbidden
@@ -69,8 +68,7 @@ func (s MeterReviewService) permitted(audit ops.AuditContext) bool {
 	return audit.Actor.Role == "customer_finance" && audit.Actor.HasPermission("billing.meter.review")
 }
 
-// Propose 在 ctx 下对 id 提交 in，audit 提供操作人与审计事实。
-// 持有原计费任务锁后核对重放，计量快照、提案与首次审计同事务；失败回滚，不直接入账。
+// Propose 锁定计费任务后提交计量提案，核对重放；计量快照、提案和首次审计同事务。
 func (s MeterReviewService) Propose(ctx context.Context, audit ops.AuditContext, id uint64, in MeterProposalInput) (MeterReview, error) {
 	if !s.permitted(audit) {
 		return MeterReview{}, operations.ErrForbidden
@@ -100,8 +98,8 @@ func (s MeterReviewService) Propose(ctx context.Context, audit ops.AuditContext,
 	return out, err
 }
 
-// Decide 在 ctx 下对 id 的 in.ReviewID 裁决；通过时在原任务锁内复查首签人的当前权限。
-// audit 与审核状态同事务，错误不推进任务；拒绝不要求原首签人仍有效，以便重新提交。
+// Decide 锁定任务后执行二签，批准时复查首签人的当前权限，审核和审计同事务。
+// 驳回不要求首签仍有效，允许重新提交。
 func (s MeterReviewService) Decide(ctx context.Context, audit ops.AuditContext, id uint64, in MeterDecisionInput) error {
 	if !s.permitted(audit) {
 		return operations.ErrForbidden
@@ -137,8 +135,7 @@ func (s MeterReviewService) Decide(ctx context.Context, audit ops.AuditContext, 
 	})
 }
 
-// ResolveAmount 为 id 登记原最终金额提案 in，audit 的操作人覆盖请求中的 actor_id。
-// 先锁原任务并判断重复，金额快照、任务重新排队及首次审计同事务；不等同费用已入账。
+// ResolveAmount 登记人工金额提案，操作人取当前授权身份；金额、重新排队和首次审计同事务。
 func (s MeterReviewService) ResolveAmount(ctx context.Context, audit ops.AuditContext, id uint64, in ManualSettlement) error {
 	if !s.permitted(audit) {
 		return operations.ErrForbidden

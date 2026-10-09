@@ -35,8 +35,8 @@ func identityRedis(t *testing.T) *redis.Client {
 	return client
 }
 
-// TestSessionRepoAtomicRotationAndPreviousRevocation 使用真实 Redis 同时刷新原令牌，验证仅一次获胜与 KEEPTTL。
-// 旧摘要可注销原会话；测试仅清理自己随机 SID，不清空其他会话。
+// TestSessionRepoAtomicRotationAndPreviousRevocation 使用真实 Redis 同时刷新令牌，验证仅一次获胜与 KEEPTTL。
+// 旧摘要可注销会话；测试仅清理自己随机 SID，不清空其他会话。
 func TestSessionRepoAtomicRotationAndPreviousRevocation(t *testing.T) {
 	client := identityRedis(t)
 	repo := SessionRepo{Redis: client}
@@ -57,10 +57,9 @@ func TestSessionRepoAtomicRotationAndPreviousRevocation(t *testing.T) {
 	if err != nil || before <= 0 {
 		t.Fatalf("initial TTL=%v %v", before, err)
 	}
-	// result 传递真实 Redis 原子轮换返回的用户、SID、新令牌与错误，用于判定唯一获胜者；它不代表 SQL 事务结果。
 	type result struct {
-		user       User   /* 原用户身份 */
-		sid, token string /* 原SID及新令牌 */
+		user       User   /* 用户 ID */
+		sid, token string /* SID及新令牌 */
 		err        error  /* 轮换结果 */
 	}
 	start := make(chan struct{})
@@ -113,7 +112,7 @@ func TestSessionRepoAtomicRotationAndPreviousRevocation(t *testing.T) {
 	}
 }
 
-// TestSessionRepoLegacyNumericIdentitySurvivesLuaRotation 验证 Lua 使用原 JSON 数字文本恢复精确旧用户身份。
+// TestSessionRepoLegacyNumericIdentitySurvivesLuaRotation 验证 Lua 使用 JSON 数字文本恢复精确旧用户 ID。
 // 外来同SID密钥不得撤销记录；取消不得产生新会话，测试仅删除自己键。
 func TestSessionRepoLegacyNumericIdentitySurvivesLuaRotation(t *testing.T) {
 	client := identityRedis(t)
@@ -160,8 +159,8 @@ func TestSessionRepoLegacyNumericIdentitySurvivesLuaRotation(t *testing.T) {
 	}
 }
 
-// TestSessionRepoKeepsRedisFailureDistinctFromInvalidRefresh 用真实 Lua 对损坏记录返回存储错误，不能伪装为凭据失效。
-// 当前键必须仍存在以供排查，测试只清理自己随机 SID。
+// TestSessionRepoKeepsRedisFailureDistinctFromInvalidRefresh 验证损坏记录返回 Redis 错误，不能伪装为令牌失效。
+// 键保留供排查，测试只清理自己的随机 SID。
 func TestSessionRepoKeepsRedisFailureDistinctFromInvalidRefresh(t *testing.T) {
 	client := identityRedis(t)
 	repo := SessionRepo{Redis: client}

@@ -15,14 +15,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// QueryAPI 仅适配用户充电查询的凭据、输入与结果，业务隔离及组合读取由所属用例执行。
+// QueryAPI 仅适配用户充电查询的凭据、输入与结果，业务隔离及组合读取由用例执行。
 type QueryAPI struct {
-	Orders orderstore.QueryService       // 所属正在充电及批量历史查询
+	Orders orderstore.QueryService       // 正在充电及批量历史查询
 	Query  chargingquery.UserService     // 用户详情、状态及有界曲线用例
-	Auth   authhttp.SessionAuthenticator // 当前用户会话准入
+	Auth   authhttp.SessionAuthenticator // 当前用户会话验证
 }
 
-// Register 将 a 的六个原用户查询路径注册到 r，无存储或网络读取。
+// Register 将 a 的六个用户查询路径注册到 r，无存储或网络读取。
 func (a QueryAPI) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/charge/ongoing", a.ongoing)
 	r.GET("/api/v1/user/charge/ongoing/snapshot", a.snapshot)
@@ -32,7 +32,7 @@ func (a QueryAPI) Register(r *gin.Engine) {
 	r.GET("/api/v1/user/charge/:order_no", a.detail)
 }
 
-// queryFailure 将 err 所属业务准入及阶段错误映射到 c 原公开响应，不读取或更改业务数据。
+// queryFailure 将 err 业务条件校验及阶段错误映射到 c 公开响应，不读取或更改业务数据。
 func queryFailure(c *gin.Context, err error) {
 	var input *orderstore.QueryInputError
 	if errors.As(err, &input) {
@@ -76,7 +76,7 @@ func queryFailure(c *gin.Context, err error) {
 	httpapi.Write(c, 503, 5003, message, nil)
 }
 
-// queryOrderNo 从 c 原兼容参数读取业务号，优先order_id；仅适配文本，不校验归属。
+// queryOrderNo 从 c 兼容参数读取业务号，优先 order_id；仅适配文本，不校验归属。
 func queryOrderNo(c *gin.Context) string {
 	no := strings.TrimSpace(c.Query("order_id"))
 	if no == "" {
@@ -85,7 +85,7 @@ func queryOrderNo(c *gin.Context) string {
 	return no
 }
 
-// snapshot 将 c 原用户与单号传给快照用例，输出原读模型或映射错误，无业务写入。
+// snapshot 将 当前用户与单号传给快照用例，输出查询结果或映射错误。
 func (a QueryAPI) snapshot(c *gin.Context) {
 	id, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -99,7 +99,7 @@ func (a QueryAPI) snapshot(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// detail 将 c 原用户与路径单号传给详情用例，输出原读模型或映射错误，无业务写入。
+// detail 将 当前用户与路径单号传给详情用例，输出查询结果或映射错误。
 func (a QueryAPI) detail(c *gin.Context) {
 	id, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -113,7 +113,7 @@ func (a QueryAPI) detail(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// curve 将 c 原用户、单号与回看窗口传给曲线用例，输出原读模型或映射错误，无业务写入。
+// curve 将 当前用户、单号与回看窗口传给曲线用例，输出查询结果或映射错误。
 func (a QueryAPI) curve(c *gin.Context) {
 	id, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -127,7 +127,7 @@ func (a QueryAPI) curve(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// historyCurve 将 c 原用户、路径单号与粒度传给历史曲线用例，输出原读模型或映射错误，无业务写入。
+// historyCurve 将 当前用户、路径单号与粒度传给历史曲线用例，输出查询结果或映射错误。
 func (a QueryAPI) historyCurve(c *gin.Context) {
 	id, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -141,7 +141,7 @@ func (a QueryAPI) historyCurve(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// nullTime 将 v 原可空时刻转换为公开 UTC 或null，无IO。
+// nullTime 将 v 可空时刻转换为公开 UTC 或 null。
 func nullTime(v sql.NullTime) any {
 	if !v.Valid {
 		return nil
@@ -149,7 +149,7 @@ func nullTime(v sql.NullTime) any {
 	return v.Time.UTC()
 }
 
-// ongoing 适配原用户最新正在充电查询；无记录仍返回空状态，读取失败返回503。
+// ongoing 适配用户最新正在充电查询；无记录仍返回空状态，读取失败返回 503。
 func (a QueryAPI) ongoing(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -170,7 +170,7 @@ func (a QueryAPI) ongoing(c *gin.Context) {
 	})
 }
 
-// history 从 c 验证身份并解析分页和状态，按最新优先返回所属订单页。
+// history 校验当前用户身份并解析分页和状态，按最新优先返回订单页。
 // 输入错误为 400，订单或费用读取失败为 503；不修改订单及资金。
 func (a QueryAPI) history(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)

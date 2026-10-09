@@ -257,7 +257,7 @@ func seedOrder(ctx context.Context, userDB *sql.DB, userID int64, u demoUser, o 
 	}
 	var electric, service any
 	if o.cents > 0 {
-		// Historical demo orders use fixed duration packages: the package fee is service.
+		// 历史示例订单使用固定时长套餐，套餐价全部计入服务费。
 		electric = 0
 		service = o.cents
 	}

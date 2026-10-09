@@ -11,10 +11,8 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// measuredMeter 用最新读数和遥测能佐证的各段数据，
-// 为运行中的会话拼出计量记录，
-// order 提供原开始时刻与端口，latest 提供最新计量，samples 为完整事件序列。
-// 返回实际计量及可验证分段，不执行 IO；消费上限判定与结算使用同一份证据。
+// measuredMeter 用订单开始时刻、最新读数与完整心跳生成运行中计量。
+// 费用封顶与结算共用这些证据，不补造测量。
 func measuredMeter(order AutoStopOrder, latest meterReading, samples []protocol.Event) rules.ActualMeter {
 	ended := latest.at
 	meter := rules.ActualMeter{
@@ -43,7 +41,7 @@ type meterReading struct {
 
 // latestMeter 从按入库顺序排列的 samples 中取目标 port 的最新可用计量。
 // now 为 UTC 判定时刻；拒绝未来、陈旧及不能整除为 Wh 的读数，第二返回值表示是否找到。
-// 不执行 IO，不以零值代替缺失证据。
+// 不执行 I/O，不以零值代替缺失证据。
 func latestMeter(samples []protocol.Event, port uint8, now time.Time) (meterReading, bool) {
 	for _, e := range slices.Backward(samples) {
 		if e.ReceivedAt.After(now) || now.Sub(e.ReceivedAt) > gatewaycontract.MaxChargingEvidenceGap {

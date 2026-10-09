@@ -41,8 +41,8 @@ func seedStationScheme(ctx context.Context, db *sql.DB, station int64) (int64, e
 	return rule.LastInsertId()
 }
 
-// These are historical synthetic receipts, never requests sent to a real device.
-// They use a complete frozen duration scheme with actual payment relationships.
+// 这些是历史示例回执，不发送到真实设备。
+// 使用已保存的完整时长方案，并关联对应的示例支付记录。
 func seedOrderContract(ctx context.Context, db *sql.DB, id, user int64, u demoUser, o demoOrder, created time.Time, device string, station, ruleID int64, orderNo string) error {
 	price, minutes := o.cents, uint16(60)
 	if price <= 0 {

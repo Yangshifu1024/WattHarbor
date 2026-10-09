@@ -10,8 +10,8 @@ type MeterSegment struct {
 	EnergyWh  uint32    `json:"energy_wh"`
 	// PeakW 是该段内可验证的峰值；缺失时不以电量反推功率。
 	PeakW uint32 `json:"peak_w,omitempty"`
-	// PowerW is a verified constant-power fragment; peak alone cannot price
-	// realtime power. Missing fragments are sent to review, never inferred from Wh.
+	// PowerW 是已验证的恒定功率片段。只有峰值不能计算实时功率费用；
+	// 缺少实测片段时须复核，不能从电量反推功率。
 	PowerW *uint32 `json:"power_w,omitempty"`
 }
 
@@ -37,7 +37,7 @@ func PriceActual(rule Rule, meter ActualMeter) (Fee, error) {
 }
 
 // usageFromMeter 校验计量记录并转换为 Cost 所需的 Usage。
-// 消费封顶与最终结算共用此校验，保持计量有效性及计费结果一致。
+// 费用封顶与最终结算共用此校验，保持计量有效性及计费结果一致。
 func usageFromMeter(rule Rule, meter ActualMeter) (Usage, error) {
 	if meter.ReviewRequired {
 		return Usage{}, ErrMeterReview
@@ -56,8 +56,7 @@ func usageFromMeter(rule Rule, meter ActualMeter) (Usage, error) {
 		return Usage{}, ErrMeterReview
 	}
 	usage := Usage{Start: meter.StartedAt, End: meter.EndedAt, EnergyWh: uint64(meter.ChargedWh), Channel: rule.Channel}
-	// A total energy reading can price a uniform tariff exactly. Changing rates
-	// require measured boundary readings; never distribute energy by time.
+	// 费率不变时可直接按总电量计价；费率变化时须有边界读数，不能按时长分摊电量。
 	if len(meter.Segments) == 0 && !specIsUniformOver(rule.Spec, meter.StartedAt, meter.EndedAt) {
 		return Usage{}, ErrMeterReview
 	}
@@ -88,7 +87,7 @@ func usageFromMeter(rule Rule, meter ActualMeter) (Usage, error) {
 	return usage, nil
 }
 
-// StopAtMeter 使用结算相同的计量校验判断服务端计费是否达到消费上限。
+// StopAtMeter 使用结算相同的计量校验判断服务端计费是否达到费用上限。
 // 计量或规则无效、模式不适用时返回说明原因的计划，不依据无效数据停机。
 func StopAtMeter(rule Rule, meter ActualMeter) (StopPlan, error) {
 	usage, err := usageFromMeter(rule, meter)

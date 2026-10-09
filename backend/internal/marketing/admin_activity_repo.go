@@ -9,40 +9,39 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 运营后台对券活动规则的读写。活动触发发券在 activity_grant.go，
-// 这里只管规则本身的增删改查与统计。
+// 后台负责活动规则读写和统计，触发发券由 activity_grant.go 执行。
 
 // AdminActivityRuleRow 是活动规则列表的一行，联表带出活动券名称。
 type AdminActivityRuleRow struct {
-	ID              uint64     `json:"id" gorm:"column:id"`                               // 原记录主键
-	Name            string     `json:"name" gorm:"column:name"`                           // 原业务名称
-	TriggerType     string     `json:"trigger_type" gorm:"column:trigger_type"`           // 原触发类型
-	CouponID        uint64     `json:"coupon_id" gorm:"column:coupon_id"`                 // 原模板主键
-	CouponName      string     `json:"coupon_name" gorm:"column:coupon_name"`             // 原模板名称
-	InviterCouponID *uint64    `json:"inviter_coupon_id" gorm:"column:inviter_coupon_id"` // 原可选邀请人模板
-	ThresholdCents  int64      `json:"threshold_cents" gorm:"column:threshold_cents"`     // 原触发门槛，分
-	MaxGrants       int        `json:"max_grants" gorm:"column:max_grants"`               // 原券与来源共享上限，0不限
-	PerUserLimit    int        `json:"per_user_limit" gorm:"column:per_user_limit"`       // 原单人份数，0默认1
-	Status          string     `json:"status" gorm:"column:status"`                       // 原业务状态
-	StartAt         time.Time  `json:"start_at" gorm:"column:start_at"`                   // 原开始时刻，可空表示立即
-	EndAt           *time.Time `json:"end_at" gorm:"column:end_at"`                       // 原截止时刻，可空表示长期
-	CreatedAt       time.Time  `json:"created_at" gorm:"column:created_at"`               // 原创建UTC时刻
+	ID              uint64     `json:"id" gorm:"column:id"`                               // 已保存记录主键
+	Name            string     `json:"name" gorm:"column:name"`                           // 业务名称
+	TriggerType     string     `json:"trigger_type" gorm:"column:trigger_type"`           // 触发类型
+	CouponID        uint64     `json:"coupon_id" gorm:"column:coupon_id"`                 // 模板主键
+	CouponName      string     `json:"coupon_name" gorm:"column:coupon_name"`             // 模板名称
+	InviterCouponID *uint64    `json:"inviter_coupon_id" gorm:"column:inviter_coupon_id"` // 可选邀请人模板
+	ThresholdCents  int64      `json:"threshold_cents" gorm:"column:threshold_cents"`     // 触发门槛，分
+	MaxGrants       int        `json:"max_grants" gorm:"column:max_grants"`               // 券与来源共享上限，0 表示不限量
+	PerUserLimit    int        `json:"per_user_limit" gorm:"column:per_user_limit"`       // 单人份数，0 默认 1 份
+	Status          string     `json:"status" gorm:"column:status"`                       // 业务状态
+	StartAt         time.Time  `json:"start_at" gorm:"column:start_at"`                   // 开始时刻，可空表示立即
+	EndAt           *time.Time `json:"end_at" gorm:"column:end_at"`                       // 截止时刻，可空表示长期
+	CreatedAt       time.Time  `json:"created_at" gorm:"column:created_at"`               // 创建 UTC 时刻
 	// GrantedCount 是活动券的累计发放份数，由 ListActivityRules 单独聚合回填。
-	GrantedCount int64 `json:"granted_count" gorm:"-"` // 原已发份数
+	GrantedCount int64 `json:"granted_count" gorm:"-"` // 已发份数
 }
 
 // AdminActivityRuleInput 是活动规则的写入参数。时间由调用方解析成 UTC 后传入。
 type AdminActivityRuleInput struct {
-	Name            string    // 原业务名称
-	TriggerType     string    // 原触发类型
-	CouponID        uint64    // 原模板主键
-	InviterCouponID *uint64   // 原可选邀请人模板
-	ThresholdCents  int64     // 原触发门槛，分
-	MaxGrants       int       // 原券与来源共享上限，0不限
-	PerUserLimit    int       // 原单人份数，0默认1
-	Status          string    // 原业务状态
-	StartAt         time.Time // 原开始时刻，可空表示立即
-	EndAt           time.Time // 原截止时刻，可空表示长期
+	Name            string    // 业务名称
+	TriggerType     string    // 触发类型
+	CouponID        uint64    // 模板主键
+	InviterCouponID *uint64   // 可选邀请人模板
+	ThresholdCents  int64     // 触发门槛，分
+	MaxGrants       int       // 券与来源共享上限，0 表示不限量
+	PerUserLimit    int       // 单人份数，0 默认 1 份
+	Status          string    // 业务状态
+	StartAt         time.Time // 开始时刻，可空表示立即
+	EndAt           time.Time // 截止时刻，可空表示长期
 }
 
 // AdminActivityRepo 是后台活动规则的读写入口。
@@ -54,8 +53,7 @@ const activityRuleColumns = "r.id, r.name, r.trigger_type, r.coupon_id, c.name A
 	"r.inviter_coupon_id, r.threshold_cents, r.max_grants, r.per_user_limit, r.status, " +
 	"r.start_at, r.end_at, r.created_at"
 
-// ListActivityRules 分页返回活动规则，支持按状态与名称关键词过滤，
-// 并把每条活动券的实际发放份数补进 GrantedCount。
+// ListActivityRules 按状态和名称分页查询规则，补充各券模板实际发放量。
 func (s AdminActivityRepo) ListActivityRules(ctx context.Context, status, keyword string, page, pageSize int) ([]AdminActivityRuleRow, int64, error) {
 	query := s.DB.WithContext(ctx).Table("coupon_activity_rule AS r").
 		Joins("LEFT JOIN coupon AS c ON c.id = r.coupon_id").
@@ -85,7 +83,7 @@ func (s AdminActivityRepo) ListActivityRules(ctx context.Context, status, keywor
 	return rows, total, nil
 }
 
-// couponIDs 从 rows 提取原模板主键，供批量聚合，不执行IO。
+// couponIDs 提取列表中的券模板主键，用于批量统计。
 func couponIDs(rows []AdminActivityRuleRow) []uint64 {
 	ids := make([]uint64, 0, len(rows))
 	for _, r := range rows {
@@ -101,10 +99,10 @@ func activityGrantedCounts(db *gorm.DB, couponIDs []uint64) (map[uint64]int64, e
 	if len(couponIDs) == 0 {
 		return counts, nil
 	}
-	// row 是按优惠券模板聚合的活动及邀请奖励发放份数，只回填后台规则统计；多条规则共享同一模板计数。
+	// row 按券模板统计活动及邀请奖励发放量；引用同一模板的规则共享计数。
 	type row struct {
-		CouponID uint64 `gorm:"column:coupon_id"` // 原模板主键
-		Total    int64  `gorm:"column:total"`     // 原聚合份数
+		CouponID uint64 `gorm:"column:coupon_id"` // 模板主键
+		Total    int64  `gorm:"column:total"`     // 聚合份数
 	}
 	var rows []row
 	err := db.Table("coupon_grant").Select("coupon_id, COUNT(*) AS total").
@@ -140,23 +138,22 @@ func (s AdminActivityRepo) CreateActivityRule(ctx context.Context, in AdminActiv
 	return id, err
 }
 
-// UpdateActivityRule 更新活动配置但保持 trigger_type 不变——改了触发语义，
-// 历史发放就解释不清了。返回更新前的一行供审计留痕；规则不存在时返回 ErrRecordNotFound。
+// UpdateActivityRule 更新配置并返回旧记录供审计，trigger_type 不变；缺失返回 ErrRecordNotFound。
 func (s AdminActivityRepo) UpdateActivityRule(ctx context.Context, id uint64, in AdminActivityRuleInput) (AdminActivityRuleRow, error) {
 	var before AdminActivityRuleRow
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row struct {
-			ID              uint64     `gorm:"column:id"`                // 原记录主键
-			Name            string     `gorm:"column:name"`              // 原业务名称
-			TriggerType     string     `gorm:"column:trigger_type"`      // 原触发类型
-			CouponID        uint64     `gorm:"column:coupon_id"`         // 原模板主键
-			InviterCouponID *uint64    `gorm:"column:inviter_coupon_id"` // 原可选邀请人模板
-			ThresholdCents  int64      `gorm:"column:threshold_cents"`   // 原触发门槛，分
-			MaxGrants       int        `gorm:"column:max_grants"`        // 原券与来源共享上限，0不限
-			PerUserLimit    int        `gorm:"column:per_user_limit"`    // 原单人份数，0默认1
-			Status          string     `gorm:"column:status"`            // 原业务状态
-			StartAt         time.Time  `gorm:"column:start_at"`          // 原开始时刻，可空表示立即
-			EndAt           *time.Time `gorm:"column:end_at"`            // 原截止时刻，可空表示长期
+			ID              uint64     `gorm:"column:id"`                // 已保存记录主键
+			Name            string     `gorm:"column:name"`              // 业务名称
+			TriggerType     string     `gorm:"column:trigger_type"`      // 触发类型
+			CouponID        uint64     `gorm:"column:coupon_id"`         // 模板主键
+			InviterCouponID *uint64    `gorm:"column:inviter_coupon_id"` // 可选邀请人模板
+			ThresholdCents  int64      `gorm:"column:threshold_cents"`   // 触发门槛，分
+			MaxGrants       int        `gorm:"column:max_grants"`        // 券与来源共享上限，0 表示不限量
+			PerUserLimit    int        `gorm:"column:per_user_limit"`    // 单人份数，0 默认 1 份
+			Status          string     `gorm:"column:status"`            // 业务状态
+			StartAt         time.Time  `gorm:"column:start_at"`          // 开始时刻，可空表示立即
+			EndAt           *time.Time `gorm:"column:end_at"`            // 截止时刻，可空表示长期
 		}
 		// 取具体类型而非接口：GORM 反射 nil 接口会 panic。
 		if err := tx.Table("coupon_activity_rule").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -192,16 +189,16 @@ func (s AdminActivityRepo) UpdateActivityRule(ctx context.Context, id uint64, in
 	return before, err
 }
 
-// requireActivityCoupons 在调用方tx内按in原奖励身份当前读取并锁定模板，返回准入／存储错误。
-// 更新调用者须先锁规则；模板按主键升序取得SHARE锁，校验与规则写入共用事务，不修改券。
+// requireActivityCoupons 在调用方事务内按模板主键升序取得共享锁，并校验奖励券。
+// 更新须先锁活动规则，校验和规则写入同事务。
 func requireActivityCoupons(tx *gorm.DB, in AdminActivityRuleInput) error {
 	ids := []uint64{in.CouponID}
 	if in.InviterCouponID != nil && *in.InviterCouponID != 0 && *in.InviterCouponID != in.CouponID {
 		ids = append(ids, *in.InviterCouponID)
 	}
 	var rows []struct {
-		ID     uint64 `gorm:"column:id"`     // 原模板主键
-		Status string `gorm:"column:status"` // 原启停状态
+		ID     uint64 `gorm:"column:id"`     // 模板主键
+		Status string `gorm:"column:status"` // 启停状态
 	}
 	if err := tx.Table("coupon").Select("id,status").Clauses(clause.Locking{Strength: "SHARE"}).Where("id IN ? AND deleted_at IS NULL", ids).Order("id").Find(&rows).Error; err != nil {
 		return err

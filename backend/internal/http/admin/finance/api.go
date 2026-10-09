@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// API 注入本业务族所需的所属服务、窄查询能力和实时鉴权，不持有数据库连接。
+// API 注入本业务族所需的服务、窄查询能力和实时鉴权，不持有数据库连接。
 type API struct {
 	Risks    wallet.RiskService              // 钱包审核与解冻用例，由 cmd 注入
 	Refunds  settlement.RefundAdminService   // 人工退款事务，由 cmd 装配

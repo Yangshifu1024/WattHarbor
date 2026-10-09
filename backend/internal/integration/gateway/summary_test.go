@@ -12,12 +12,12 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestSummaryClientRequiresSuccessfulEnvelope 核对 loopback 传输的身份、成功状态和完整 envelope；不代表真实网关数据。
+// TestSummaryClientRequiresSuccessfulEnvelope 验证摘要响应的设备编号、成功状态和必需字段；不连接实际网关。
 func TestSummaryClientRequiresSuccessfulEnvelope(t *testing.T) {
 	for _, fixture := range []struct {
 		name   string /* 错误场景 */
-		status int    /* 原 HTTP 状态 */
-		body   string /* 原响应 JSON */
+		status int    /* HTTP 状态 */
+		body   string /* 响应 JSON */
 	}{
 		{"wrong-success-status", 201, `{"code":0,"data":{"items":[]}}`},
 		{"missing-code", 200, `{"data":{"items":[]}}`},
@@ -47,7 +47,7 @@ func TestSummaryClientRequiresSuccessfulEnvelope(t *testing.T) {
 	}
 }
 
-// TestSummaryClientCancelsInFlightRead 验证真实 loopback 请求已进入处理器后取消父 ctx 能结束调用，不使用固定延时。
+// TestSummaryClientCancelsInFlightRead 验证处理器已收到请求后，取消调用方 context 能结束读取。
 func TestSummaryClientCancelsInFlightRead(t *testing.T) {
 	entered := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done() }))

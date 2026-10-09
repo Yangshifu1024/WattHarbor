@@ -1,5 +1,5 @@
-// Local development fixtures use the admin process (127.0.0.1:8081) and preserve existing edits.
-// Run from the repository root after node tasks.mjs dev-up (scripts/dev/start.mjs), with Node.js 24 or later.
+// 通过本地后台服务（127.0.0.1:8081）准备开发数据，保留已有修改。
+// 先执行 node tasks.mjs dev-up，再在仓库根用 Node.js 24 或更高版本运行本脚本。
 const base='http://127.0.0.1:8081/api/v1';let token;
 // 数据库 ID 可超过 Number 的精确整数范围；保留响应原始整数，并按原数值写回请求。
 // BigInt 可直接用于 URL 插值，JSON.rawJSON 保持现有 uint64 请求契约。

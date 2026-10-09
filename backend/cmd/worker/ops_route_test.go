@@ -43,8 +43,7 @@ func (h *deniedOpsRedisHook) ProcessPipelineHook(redis.ProcessPipelineHook) redi
 	}
 }
 
-// TestRegisteredWorkerOpsRejectsBeforeRedis 核对实际 cmd 注册含非空业务流的运维端点。
-// 未配置、缺失和错误身份只写一个401信封且无 Redis 命令，不以 nil 依赖未崩溃冒充准入证据。
+// TestRegisteredWorkerOpsRejectsBeforeRedis 验证实际注册的运维路由在令牌未配置、缺失或错误时只返回一次 401，且不执行 Redis 命令。
 func TestRegisteredWorkerOpsRejectsBeforeRedis(t *testing.T) {
 	for _, tc := range []struct {
 		name     string // 当前拒绝场景。

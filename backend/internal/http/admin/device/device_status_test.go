@@ -14,7 +14,7 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestDeviceStatusRejectsInvalidRequestsBeforeWriting 验证设备运营状态端点先拒绝缺值、非法状态、额外字段和多个JSON值。
+// TestDeviceStatusRejectsInvalidRequestsBeforeWriting 验证设备运营状态端点先拒绝缺值、非法状态、额外字段和多个 JSON 值。
 func TestDeviceStatusRejectsInvalidRequestsBeforeWriting(t *testing.T) {
 	for _, body := range []string{`{}`, `{"status":"fault"}`, `{"status":"enabled","station_id":9}`, `{"status":"disabled"} {}`} {
 		r := httpapi.NewRouter()
@@ -27,7 +27,7 @@ func TestDeviceStatusRejectsInvalidRequestsBeforeWriting(t *testing.T) {
 	}
 }
 
-// TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown 通过具名loopback客户端验证只查询可见设备，保留真实零值、未知值及网关故障状态。
+// TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown 通过专用 loopback 客户端验证只查询可见设备，保留真实零值、未知值及网关故障状态。
 func TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown(t *testing.T) {
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ids := r.URL.Query()["device_id"]
@@ -54,7 +54,7 @@ func TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown(t *testing.T)
 	}
 }
 
-// TestDeviceEnrichmentNormalizesMissingPortArrays 验证缺失、null及未配置网关的端口均输出空数组，不补造设备运行事实。
+// TestDeviceEnrichmentNormalizesMissingPortArrays 验证缺失、null 及未配置网关的端口均输出空数组，不补造设备运行状态。
 func TestDeviceEnrichmentNormalizesMissingPortArrays(t *testing.T) {
 	for _, body := range []string{`{"code":0,"data":{"items":[{"device_id":"board","ports":null}]}}`, `{"code":0,"data":{"items":[{"device_id":"board"}]}}`} {
 		gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
@@ -72,7 +72,7 @@ func TestDeviceEnrichmentNormalizesMissingPortArrays(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out struct {
-		// Ports 是公开端口数组；未知状态也必须保持非nil空数组。
+		// Ports 是公开端口数组；未知状态也必须保持非 nil 空数组。
 		Ports []device.DevicePortStatus `json:"ports"`
 	}
 	if err := json.Unmarshal(encoded, &out); err != nil || out.Ports == nil || rows[0].RuntimeAvailable {
@@ -80,7 +80,7 @@ func TestDeviceEnrichmentNormalizesMissingPortArrays(t *testing.T) {
 	}
 }
 
-// summaryAPI 为 t 在 url 的 loopback 服务注入真实具名客户端；配置错误终止，无数据库写入。
+// summaryAPI 为 t 在 url 的 loopback 服务注入真实专用客户端；配置错误终止，无数据库写入。
 func summaryAPI(t *testing.T, url string) API {
 	t.Helper()
 	client, err := gatewayclient.NewClient(serviceclient.Client{}, url, "service")

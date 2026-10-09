@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// registerChargingSchemes 在 r 上绑定原方案路由及逐动作权限，只负责 HTTP 装配。
+// registerChargingSchemes 在 r 上绑定方案路由及逐动作权限，只负责 HTTP 装配。
 func (a API) registerChargingSchemes(r *gin.Engine) {
 	p := "/api/v1/admin/settings/charging-schemes"
 	r.GET(p, a.Auth.Require("pricing.read"), a.chargingSchemes)
@@ -29,7 +29,7 @@ func (a API) registerChargingSchemes(r *gin.Engine) {
 	r.GET("/api/v1/admin/settings/device-capabilities", a.Auth.Require("pricing.read"), a.executionCapabilities)
 }
 
-// asPricingConflict 将err中的方案版本冲突转为后台409哨兵，其余错误原样返回。
+// asPricingConflict 将 err 中的方案版本冲突转为后台 409 对应的错误类型，其余错误原样返回。
 func asPricingConflict(err error) error {
 	if errors.Is(err, pricing.ErrPricingVersionConflict) {
 		return admin.ErrConflict
@@ -37,7 +37,7 @@ func asPricingConflict(err error) error {
 	return err
 }
 
-// chargingSchemes 在请求 context 下读取模板并输出原列表及实时权限；非法历史 JSON 沿用原行为跳过。
+// chargingSchemes 在请求 context 下读取模板并输出列表及实时权限；非法历史 JSON 沿用行为跳过。
 // 存储错误写统一失败响应，不执行业务写入。
 func (a API) chargingSchemes(c *gin.Context) {
 	items, err := a.Queries.List(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile))
@@ -48,7 +48,7 @@ func (a API) chargingSchemes(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": items, "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 
-// saveChargingScheme 解码公开输入及路径，将保存交给注入用例，返回原主键和版本。
+// saveChargingScheme 解码公开输入及路径，将保存交给注入用例，返回主键和版本。
 func (a API) saveChargingScheme(c *gin.Context) {
 	var in pricing.SchemeInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -76,7 +76,7 @@ func (a API) chargingSchemeStatus(c *gin.Context) { a.changeChargingScheme(c, fa
 // deleteChargingScheme 将 c 中软删除请求交给统一变更适配器，不删除历史规则。
 func (a API) deleteChargingScheme(c *gin.Context) { a.changeChargingScheme(c, true) }
 
-// changeChargingScheme 解码原启停／删除输入；remove 指定软删除，事务与审计由用例管理。
+// changeChargingScheme 解码启停／删除输入；remove 指定软删除，事务与审计由用例管理。
 func (a API) changeChargingScheme(c *gin.Context, remove bool) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -93,13 +93,13 @@ func (a API) changeChargingScheme(c *gin.Context, remove bool) {
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// applyChargingScheme 解码原发布请求和实时范围，调用唯一发布入口并返回原结果。
+// applyChargingScheme 解码发布请求和实时范围，调用唯一发布入口并返回结果。
 func (a API) applyChargingScheme(c *gin.Context) {
 	var in pricing.PublishInput
 	if !httpapi.DecodeResource(c, &in) {
 		return
 	}
-	// 先校验格式，维持非法输入不会查询数据库范围的原顺序。
+	// 先校验格式，维持非法输入不会查询数据库范围的顺序。
 	if uuid.Validate(in.RequestID) != nil || in.StationID == 0 || in.DeviceID != "" && !devstore.ValidDeviceID(in.DeviceID) || (in.TemplateID == 0) == (in.Scheme == nil) {
 		httpapi.BadRequest(c, "请选择模板或完整方案，并提供请求编号与站点")
 		return
@@ -116,8 +116,8 @@ func (a API) applyChargingScheme(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// effectiveChargingScheme 在 c 下解析目标及实时范围，读取原当前规则和设备覆盖版本。
-// 无规则返回空方案；缺归属或存储错误写原错误响应，不以历史冻结规则替代当前方案。
+// effectiveChargingScheme 在请求内解析目标及实时范围，读取当前规则和设备覆盖版本。
+// 无规则返回空方案；缺归属或存储错误写错误响应，不以历史冻结规则替代当前方案。
 func (a API) effectiveChargingScheme(c *gin.Context) {
 	station, ok := admin.AdminPathID(c)
 	if !ok {
@@ -135,7 +135,7 @@ func (a API) effectiveChargingScheme(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// inheritChargingScheme 解码设备继承输入及实时范围，返回原继承标志或统一错误。
+// inheritChargingScheme 解码设备继承输入及实时范围，返回继承标志或统一错误。
 func (a API) inheritChargingScheme(c *gin.Context) {
 	station, ok := admin.AdminPathID(c)
 	if !ok {
@@ -180,7 +180,7 @@ func (a API) previewChargingScheme(c *gin.Context) {
 	httpapi.OK(c, result)
 }
 
-// executionCapabilities 在 c 下校验查询目标与实时范围，输出所选适配器的领域能力或原失败响应。
+// executionCapabilities 在请求内校验查询目标与实时范围，输出所选适配器的领域能力或失败响应。
 // 不按设备型号推测协议，不读取或修改资金。
 func (a API) executionCapabilities(c *gin.Context) {
 	station, ok := admin.QueryStationID(c, true)
@@ -209,7 +209,7 @@ func pricingAudit(c *gin.Context) ops.AuditContext {
 	return ops.AuditContext{Actor: c.MustGet("admin_profile").(operations.Profile), ClientIP: c.ClientIP(), RequestID: httpapi.RequestID(c)}
 }
 
-// pricingFailure 将输入、权限、版本及存储错误映射为原接口错误；不暴露底层存储信息。
+// pricingFailure 将输入、权限、版本及存储错误映射为接口错误；不暴露底层存储信息。
 func pricingFailure(c *gin.Context, err error) {
 	var input pricing.InputError
 	switch {

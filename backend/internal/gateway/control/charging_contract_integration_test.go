@@ -19,8 +19,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// gatewayContractDB 接收测试句柄 t，优先使用 DATABASE_URL_GATEWAY；缺失时读取 TEST_MYSQL_URL 并仅将库路径改为 gateway_db。
-// 以十秒初始化 context 打开真库并返回同池 GORM 入口；缺配置、URL、连接或包装失败由 t.Fatal 终止，成功打开的 SQL 池登记到 t.Cleanup。
+// gatewayContractDB 优先使用 DATABASE_URL_GATEWAY；否则将 TEST_MYSQL_URL 的库名改为 gateway_db。
+// 连接超时为 10 秒；连接失败终止测试，已打开的连接池由 t.Cleanup 关闭。
 func gatewayContractDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	raw := os.Getenv("DATABASE_URL_GATEWAY")

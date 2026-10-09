@@ -9,8 +9,7 @@ const (
 	AutoStopPath = "/api/v1/internal/charge-orders/auto-stop"
 )
 
-// BillingDispatchRequest 表达无业务参数的计费批次触发，不携带订单、金额或请求身份。
-// 原 HTTP 请求没有正文和 Content-Type；客户端不将空结构序列化为 JSON。
+// BillingDispatchRequest 触发计费批次，不指定订单或金额；HTTP 请求没有正文和 Content-Type。
 type BillingDispatchRequest struct{}
 
 // BillingDispatchReply 是计费批次回执；失败也可携带已完成进度，不代表整轮成功。
@@ -18,18 +17,17 @@ type BillingDispatchReply struct {
 	Completed int `json:"completed"` // 已完成计费数量，回执必须明确提供非负整数。
 }
 
-// RefundDispatchRequest 表达无业务参数的退款批次触发，不携带金额、渠道身份或重试标识。
-// 原 HTTP 请求没有正文和 Content-Type；退款身份由已持久化记录决定。
+// RefundDispatchRequest 触发退款批次，不指定金额或退款编号；HTTP 请求没有正文和 Content-Type。
+// 退款编号来自已保存的退款记录。
 type RefundDispatchRequest struct{}
 
 // RefundDispatchReply 是退款批次回执；失败保留进度且可不声明渠道是否启用。
 type RefundDispatchReply struct {
-	Enabled   *bool `json:"enabled,omitempty"` // 成功时必须明确提供；未启用只能有零进度，失败原回执可缺失。
+	Enabled   *bool `json:"enabled,omitempty"` // 成功响应必须提供，禁用时进度只能为零；失败响应可缺失。
 	Processed int   `json:"processed"`         // 已处理数量，回执必须明确提供非负整数。
 }
 
-// AutoStopRequest 表达无业务参数的停机扫描触发，不携带订单、截止点或设备命令身份。
-// 原 HTTP 请求正文为 JSON null 并携带 application/json，由客户端保持该形状。
+// AutoStopRequest 触发停机扫描，不指定订单或命令编号；请求正文为 JSON null，Content-Type 为 application/json。
 type AutoStopRequest struct{}
 
 // AutoStopReply 是停机扫描回执；已处理数量不表示所有设备已经停电。

@@ -1,5 +1,4 @@
-// Package operations 承载运营后台的业务概念：后台账号、角色权限、数据范围与审计。
-// 这些类型不依赖 gorm、gin 或 Redis，可独立测试；表名与查询实现位于 infrastructure/database。
+// Package operations 定义后台账号、权限、数据范围与审计；不依赖数据库或 HTTP 框架。
 package operations
 
 import (
@@ -7,7 +6,7 @@ import (
 	"strings"
 )
 
-// 后台登录失败的三类原因。对外只区分"凭据错误"和"被锁定"，
+// 后台登录失败的三类原因。对外只区分"凭据错误"和"被锁定"。
 // 避免通过报错文案区分"用户不存在"与"密码错误"，给暴力破解留线索。
 var (
 	ErrCredentials    = errors.New("用户名或密码错误")
@@ -19,7 +18,7 @@ var (
 	ErrInvalidMFAChallenge = errors.New("invalid or expired mfa challenge")
 )
 
-// Profile 保存鉴权后的管理员身份、权限及审计信息，不包含口令散列。
+// Profile 保存鉴权后的管理员标识、权限及审计信息，不包含口令散列。
 // 它是会话与审计的共同身份来源：Redis 会话记录 AccountIdentity，审计记录取这里的 ID 与登录名。
 type Profile struct {
 	AuthVersion uint64   `json:"-"`             // 凭证版本号，与账号一致，用于校验令牌是否已失效
@@ -66,7 +65,7 @@ func WithoutRetiredPermissions(codes []string) []string {
 	return result
 }
 
-// RetiredPermission 列出已下线功能的权限码。这些功能已从路由中移除，
+// RetiredPermission 列出已下线功能的权限码。这些功能已从路由中移除。
 // 库里的历史权限行在开发库重建前仍会存在，必须从授权结果中剔除。
 func RetiredPermission(code string) bool {
 	return strings.HasPrefix(code, "customer_service.") || strings.HasPrefix(code, "ota.") ||

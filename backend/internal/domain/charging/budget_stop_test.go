@@ -67,8 +67,7 @@ func TestBudgetLowerBoundHandlesNonMonotonicPeakPrices(t *testing.T) {
 			meter.Segments[i].PowerW, meter.Segments[i].PeakW = &power, power
 		}
 	}
-	// A missed higher peak could select this cheaper tier. Do not stop based
-	// on the more expensive observed lower tier while such a gap remains.
+	// 缺测区间可能出现更高、但单价更低的功率档，不能仅按已观测的高价档停机。
 	rule.Spec.Electric.Periods[0].Tiers[2].ElectricCents = 10
 	rule.Spec.Electric.Periods[0].Tiers[2].ServiceCents = 0
 	plan, fee, err := BudgetStopAtMeter(rule, offer, meter)
@@ -101,7 +100,7 @@ func TestBudgetBoundsNeverAcceptConflictingMeters(t *testing.T) {
 }
 
 func TestBudgetEnergyBoundsDoNotDistributeMissingBoundaryEnergy(t *testing.T) {
-	start := time.Date(2026, 10, 1, 3, 55, 0, 0, time.UTC) // 11:55 Beijing
+	start := time.Date(2026, 10, 1, 3, 55, 0, 0, time.UTC) // 北京时间 11:55
 	rule := Rule{ID: 1, Version: 1, Spec: Spec{Mode: ModeServerEnergy, Electric: &ElectricLine{Basis: BasisEnergy, Periods: []Period{
 		{EndMinute: 720, ElectricCents: 100, ServiceCents: 10},
 		{EndMinute: 1440, ElectricCents: 200, ServiceCents: 30},

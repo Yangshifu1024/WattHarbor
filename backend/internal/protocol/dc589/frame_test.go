@@ -71,11 +71,8 @@ func TestStartCommandUsesDocumentedPayload(t *testing.T) {
 	}
 }
 
-// FuzzDecode 用随机字节流验证 Decode 的接受侧不变量与往返性质：
-// 任何被接受的输入都必须满足起始符、长度域与 XOR 校验和约束，会话六字节
-// 与负载逐字节取自原文，且重新编码必须还原出完全相同的字节序列。
-// 拒绝侧的错误分类已由 TestFrameRejectsCorruptionAndBadLength 锁定，
-// 模糊输入只需不 panic 且不产生畸形 Frame 即可。
+// FuzzDecode 用随机字节验证帧解码：通过时起始符、长度和校验和必须正确，重新编码应得到相同字节。
+// 拒绝输入的错误分类由 TestFrameRejectsCorruptionAndBadLength 覆盖；随机输入不得引发 panic 或畸形 Frame。
 func FuzzDecode(f *testing.F) {
 	valid, err := hex.DecodeString("EE09B900000000000005B5")
 	if err != nil {

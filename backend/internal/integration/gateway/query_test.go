@@ -13,7 +13,7 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision 用loopback信封验证原身份、单位、空值和64位游标精度，不代表真实网关取数。
+// TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision 验证本地 HTTP 响应保留编号、计量单位、空值和 64 位游标精度。
 func TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision(t *testing.T) {
 	from := time.Date(2026, 10, 1, 0, 0, 0, 123000000, time.UTC)
 	to := from.Add(time.Hour)
@@ -66,7 +66,7 @@ func TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision(t *testing.T) {
 func TestQueryClientsRejectMalformedDataAndRespectCancellation(t *testing.T) {
 	for _, tc := range []struct {
 		name  string // 故障身份
-		body  string // 指定原响应正文
+		body  string // 指定响应正文
 		valid bool   // 是否为合法空页
 	}{
 		{"empty", `{"code":0,"data":{"items":[],"next_after_id":null}}`, true},

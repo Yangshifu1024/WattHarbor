@@ -14,7 +14,7 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestBillingDispatchCallsProtectedRoute 用 t 和具名客户端核对原计费 POST、路径和令牌，回环服务不执行资金。
+// TestBillingDispatchCallsProtectedRoute 使用专用客户端核对计费 POST、路径和令牌，回环服务不执行资金。
 func TestBillingDispatchCallsProtectedRoute(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -33,7 +33,7 @@ func TestBillingDispatchCallsProtectedRoute(t *testing.T) {
 	}
 }
 
-// TestBillingDispatchPreservesIncompleteError 用 t 核对合法部分计费回执仍作为失败传播且只请求一次；不执行真实计费。
+// TestBillingDispatchPreservesIncompleteError 核对合法部分计费回执仍作为失败传播且只请求一次；不执行真实计费。
 func TestBillingDispatchPreservesIncompleteError(t *testing.T) {
 	var calls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +54,7 @@ func TestBillingDispatchPreservesIncompleteError(t *testing.T) {
 	}
 }
 
-// billingDispatchFixture 仅观测消费方传入的 context 和请求并返回指定回执，不访问网络或资金库。
+// billingDispatchFixture 仅观测调用方传入的 context 和请求并返回指定回执，不访问网络或资金库。
 type billingDispatchFixture func(context.Context, centralcontract.BillingDispatchRequest) (centralcontract.BillingDispatchReply, error)
 
 // DispatchBilling 将 ctx 和 request 交给 fixture 函数，原样返回回复和错误，副作用由该函数定义。
@@ -62,7 +62,7 @@ func (f billingDispatchFixture) DispatchBilling(ctx context.Context, request cen
 	return f(ctx, request)
 }
 
-// TestBillingDispatchKeepsContextAndDependencyErrors 用 t 核对取消链、原错误及未配置失败；窄 fixture 不代表客户端或资金执行。
+// TestBillingDispatchKeepsContextAndDependencyErrors 核对取消链、错误及未配置失败；测试替身 不代表客户端或资金执行。
 func TestBillingDispatchKeepsContextAndDependencyErrors(t *testing.T) {
 	if err := (Dispatcher{}).Run(context.Background()); err == nil || err.Error() != "billing dispatcher is not configured" {
 		t.Fatalf("unconfigured dispatcher=%v", err)

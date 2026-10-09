@@ -14,19 +14,19 @@ import (
 
 // recoveryCards 仅模拟持久投递接口，不宣称证明真实库的冻结或设备消费。
 type recoveryCards struct {
-	event          gateway.CardEvent            // 原事件及模拟持久冻结值
-	replies        []gateway.CardReplyRequest   // 发送的原回复
-	advances       []gateway.CardAdvanceRequest // 原事件状态推进
+	event          gateway.CardEvent            // 事件及模拟持久冻结值
+	replies        []gateway.CardReplyRequest   // 发送的回复
+	advances       []gateway.CardAdvanceRequest // 事件状态更新
 	freezeCalls    int                          // 冻结请求次数
 	loseFirstReply bool                         // 模拟首个回复发送后响应丢失
 }
 
-// CardEvents 返回 ctx 下同一个待投递原事件 fixture，无 IO。
+// CardEvents 返回 ctx 下同一个待投递事件 fixture。
 func (f *recoveryCards) CardEvents(ctx context.Context) ([]gateway.CardEvent, error) {
 	return []gateway.CardEvent{f.event}, nil
 }
 
-// FreezeCardResponse 在 ctx 下按 in 原号模拟首写，返回权威原 JSON 或身份错误，无真实库 IO。
+// FreezeCardResponse 按 in 号模拟首次写入，返回已保存的 JSON 或身份错误。
 func (f *recoveryCards) FreezeCardResponse(ctx context.Context, in gateway.CardFreezeRequest) (gateway.CardFreezeReply, error) {
 	f.freezeCalls++
 	if in.EventKey != f.event.EventKey {
@@ -39,13 +39,13 @@ func (f *recoveryCards) FreezeCardResponse(ctx context.Context, in gateway.CardF
 	return gateway.CardFreezeReply{Stored: stored, ResponseJSON: f.event.Response}, nil
 }
 
-// AdvanceCardEvent 记录 ctx 下 in 的原推进；不清除冻结回复，无 IO。
+// AdvanceCardEvent 记录 ctx 下 in 的更新；不清除已保存回复。
 func (f *recoveryCards) AdvanceCardEvent(ctx context.Context, in gateway.CardAdvanceRequest) error {
 	f.advances = append(f.advances, in)
 	return nil
 }
 
-// ReplyCard 记录 ctx 下 in，模拟第一次发送后的未知结果，不改变原回复，无真实设备 IO。
+// ReplyCard 记录 ctx 下 in，模拟第一次发送后的未知结果，不改变回复，无真实设备 IO。
 func (f *recoveryCards) ReplyCard(ctx context.Context, in gateway.CardReplyRequest) error {
 	f.replies = append(f.replies, in)
 	if f.loseFirstReply && len(f.replies) == 1 {
@@ -54,30 +54,30 @@ func (f *recoveryCards) ReplyCard(ctx context.Context, in gateway.CardReplyReque
 	return nil
 }
 
-// ResolveCardPort 返回 ctx/device/port 的原端口 fixture，无 IO。
+// ResolveCardPort 返回 ctx/device/port 的端口 fixture。
 func (f *recoveryCards) ResolveCardPort(ctx context.Context, device string, port uint8) (gateway.CardPortReply, error) {
 	return gateway.CardPortReply{Found: true, PortCode: "original-port"}, nil
 }
 
 // recoveryCentral 记录资金查询次数，模拟明确余额不足和之后改变的余额；无真实资金副作用。
 type recoveryCentral struct {
-	swipes, balances int   /* 原操作调用计数 */
+	swipes, balances int   /* 操作调用计数 */
 	cents            int64 /* 当前可花费分值 */
 }
 
-// SwipeCard 记录 ctx/in 原事件并返回明确不足余额；无真实扣款。
+// SwipeCard 记录 ctx/in 事件并返回明确不足余额；无真实扣款。
 func (f *recoveryCentral) SwipeCard(ctx context.Context, in central.CardSwipeRequest) (central.CardOperationReply, error) {
 	f.swipes++
 	return central.CardOperationReply{}, &central.CardDeclineReply{InsufficientBalance: true}
 }
 
-// CardBalance 返回 ctx/card 原卡当前余额 fixture，记录次数，无 IO。
+// CardBalance 返回 ctx/card 卡当前余额 fixture，记录次数。
 func (f *recoveryCentral) CardBalance(ctx context.Context, card string) (central.CardBalanceReply, error) {
 	f.balances++
 	return central.CardBalanceReply{Valid: true, BalanceCents: f.cents}, nil
 }
 
-// TestFrozenCardReplyIsUsedWithoutNewDecision 钉住已经冻结的原设备、会话及余额回复，禁止再次决策。
+// TestFrozenCardReplyIsUsedWithoutNewDecision 核对已经冻结的设备、会话及余额回复，禁止再次决策。
 func TestFrozenCardReplyIsUsedWithoutNewDecision(t *testing.T) {
 	key := uuid.NewString()
 	original := gateway.CardReplyRequest{DeviceID: "original-device", Session: "010203040506", Kind: protocol.CommandCardBalance, CardNumber: 17, BalanceUnits: 88}
@@ -93,7 +93,7 @@ func TestFrozenCardReplyIsUsedWithoutNewDecision(t *testing.T) {
 	}
 }
 
-// TestLostCardReplyReusesFrozenOriginalBalance 模拟发送后响应丢失及原事件重排，余额变化不得改写回复。
+// TestLostCardReplyReusesFrozenOriginalBalance 模拟发送后响应丢失及事件重排，余额变化不得改写回复。
 func TestLostCardReplyReusesFrozenOriginalBalance(t *testing.T) {
 	key := uuid.NewString()
 	event := protocol.Event{EventID: key, Type: protocol.CardSwipe, DeviceID: "device", CardNumber: 17, Port: 1}

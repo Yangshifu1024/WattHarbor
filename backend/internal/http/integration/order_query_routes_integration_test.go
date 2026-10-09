@@ -50,8 +50,8 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	no := "OR" + tag
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	for _, seed := range []struct {
-		table string         /* 所属事实表 */
-		row   map[string]any /* 自身原事实 */
+		table string         /* 事实表 */
+		row   map[string]any /* 自身事实 */
 	}{
 		{"user", map[string]any{"id": id, "openid": tag, "status": "active"}},
 		{"user", map[string]any{"id": id + 1, "openid": tag + "-other", "status": "active"}},
@@ -75,8 +75,8 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot, err := json.Marshal(struct {
-		Rule  charging.Rule  `json:"rule"`  /* 原规则 */
-		Offer charging.Offer `json:"offer"` /* 原套餐 */
+		Rule  charging.Rule  `json:"rule"`  /* 规则 */
+		Offer charging.Offer `json:"offer"` /* 套餐 */
 	}{Rule: charging.Rule{Version: 1, Spec: charging.Spec{Mode: charging.ModeDeviceDuration, Scheme: &charging.Scheme{Name: "Registered frozen scheme", Packages: []charging.Package{{ID: 1, Name: "Registered frozen package", Mode: "duration", PriceCents: 100, Minutes: 30}}}}}, Offer: charging.Offer{ID: 1, PackageID: 1, StationID: id, Name: "Registered frozen package", Mode: "duration", PriceCents: 100, DurationMinutes: 30}})
 	if err != nil {
 		t.Fatal(err)
@@ -167,9 +167,9 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	var page struct {
 		Data struct {
-			Items []order.UserOrderHistoryRow `json:"items"` /* 原订单行 */
-			Total int64                       `json:"total"` /* 原总数 */
-		} `json:"data"` /* 原页结果 */
+			Items []order.UserOrderHistoryRow `json:"items"` /* 订单行 */
+			Total int64                       `json:"total"` /* 总数 */
+		} `json:"data"` /* 页结果 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || page.Data.Total != 2 || len(page.Data.Items) != 2 || page.Data.Items[0].OrderNo != no+"P" || page.Data.Items[0].TotalCents != nil || page.Data.Items[1].TotalCents == nil || *page.Data.Items[1].TotalCents != 0 {
 		t.Fatal("original history owner, ordering or nullable fees changed")
@@ -204,7 +204,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 		t.Fatalf("missing timeline=%d", w.Code)
 	}
 
-	// 实际已注册后台详情必须输出补充后的实时行；原确认费用回执不能被实时估算覆盖。
+	// 实际已注册后台详情必须输出补充后的实时行；确认费用回执不能被实时估算覆盖。
 	liveStart := time.Now().UTC().Truncate(time.Second).Add(-2 * time.Minute)
 	if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"status": "charging", "started_at": liveStart}).Error; err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	w = call(adminPath, adminToken)
 	var liveReply struct {
-		Data order.OrderView `json:"data"` /* 原后台档案与实时估算 */
+		Data order.OrderView `json:"data"` /* 后台档案与实时估算 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &liveReply); err != nil || w.Code != 200 || liveReply.Data.Live == nil || liveReply.Data.Live.Seconds != 60 || liveReply.Data.Live.Fee == nil || liveReply.Data.Live.Fee.TotalCents != 3 || liveReply.Data.LiveUnavailable != "" {
 		t.Fatalf("registered live detail=%d %s", w.Code, w.Body)
@@ -240,7 +240,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 		t.Fatal("live estimate changed confirmed receipt")
 	}
 
-	// 过程只使用已授权订单身份；额外公开设备参数不能覆盖原设备与端口。
+	// 过程只使用已授权订单编号；额外公开设备参数不能覆盖设备与端口。
 	for n := range 2 {
 		if err := gatewayTx.Table("charge_process").Create(map[string]any{"id": id + 50 + uint64(n), "event_key": tag + "process" + strconv.Itoa(n), "charge_order_id": id, "order_no": no, "device_id": "OR" + tag, "port_no": 1, "ts": liveStart.Add(time.Duration(n) * time.Second), "power_deciwatts": 1485, "charged_seconds": 30 + n, "remaining_seconds": 120 - n, "charged_mwh": 2500, "remaining_mwh": 1250000, "signal_strength": 0, "port_status": 0, "temperature_c": -2}).Error; err != nil {
 			t.Fatal(err)
@@ -249,7 +249,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	processPath := adminPath + "/process?limit=1&device_id=other&order_no=other"
 	w = call(processPath, adminToken)
 	var processReply struct {
-		Data chargingquery.ProcessPage `json:"data"` /* 原过程页 */
+		Data chargingquery.ProcessPage `json:"data"` /* 过程页 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &processReply); err != nil || w.Code != 200 || len(processReply.Data.Items) != 1 || processReply.Data.Items[0].ID != id+50 || processReply.Data.NextAfterID == nil || *processReply.Data.NextAfterID != id+50 || processReply.Data.Items[0].ChargedKWh != 0.0025 || processReply.Data.Items[0].PortStatus == nil || *processReply.Data.Items[0].PortStatus != 0 {
 		t.Fatalf("registered canonical process=%d %s", w.Code, w.Body)
@@ -262,10 +262,10 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 		t.Fatalf("missing process order=%d", w.Code)
 	}
 
-	// C端组合读取使用真实两库和实际网关注册，原确认零与补充观测保持独立。
+	// C 端组合读取使用真实两库和实际网关注册，确认零与补充观测保持独立。
 	for _, seed := range []struct {
-		table string         /* 所属表 */
-		row   map[string]any /* 原自身事实 */
+		table string         /* 表 */
+		row   map[string]any /* 自身事实 */
 	}{
 		{"payment_order", map[string]any{"id": id, "order_no": "PAY" + tag, "biz_type": "charge", "biz_id": id, "user_id": id, "pay_method": "balance", "total_cents": 100, "paid_cents": 100, "refunded_cents": 99, "status": "partial_refunded", "created_month": month}},
 		{"refund_record", map[string]any{"id": id, "refund_no": "RF" + tag, "payment_order_id": id, "user_id": id, "biz_type": "charge", "biz_id": id, "refund_cents": 99, "status": "success", "reason": "original query refund", "created_month": month}},
@@ -282,9 +282,9 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	observation := time.Now().UTC().Truncate(time.Second).Add(-10 * time.Second)
 	for _, metric := range []struct {
-		port  uint8  /* 原端口 */
-		name  string /* 原指标 */
-		value string /* 原DECIMAL */
+		port  uint8  /* 端口 */
+		name  string /* 指标 */
+		value string /* DECIMAL */
 	}{{1, "power_w", "0"}, {1, "meter_kwh", "0.0025"}, {2, "power_w", "9999"}} {
 		if err := gatewayTx.Table("telemetry").Create(map[string]any{"device_id": "OR" + tag, "port_no": metric.port, "metric": metric.name, "value_num": metric.value, "ts": observation}).Error; err != nil {
 			t.Fatal(err)
@@ -317,7 +317,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	w = call(curvePath, owner)
 	var curveReply struct {
-		Data chargingquery.CurveView `json:"data"` /* 原遥测模型 */
+		Data chargingquery.CurveView `json:"data"` /* 遥测模型 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &curveReply); err != nil || w.Code != 200 || curveReply.Data.Count != 1 || curveReply.Data.Series[0].PowerW == nil || *curveReply.Data.Series[0].PowerW != 0 || curveReply.Data.Series[0].VoltageV != nil {
 		t.Fatalf("registered curve=%d %s", w.Code, w.Body)
@@ -339,7 +339,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	w = call(userDetail+"/curve", owner)
 	var historyReply struct {
-		Data chargingquery.HistoricalView `json:"data"` /* 原历史模型 */
+		Data chargingquery.HistoricalView `json:"data"` /* 历史模型 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &historyReply); err != nil || w.Code != 200 || historyReply.Data.OrderID != id || historyReply.Data.OrderNo != no || len(historyReply.Data.Series) != 1 || string(historyReply.Data.Summary["total_kwh"]) != `"0.2500"` || !historyReply.Data.BoundaryApproximate {
 		t.Fatalf("registered original history=%d %s", w.Code, w.Body)
@@ -354,8 +354,8 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	if w := call(userDetail+"/curve?granularity=minute", owner); w.Code != 400 {
 		t.Fatal("legacy wrong documentation granularity accepted")
 	}
-	// 已结束订单以原结束时刻计算包含首尾的桶数；不可用当前墙钟推断历史尾桶。
-	// 使用完整过去桶，所有测试phase的结束都早于当前时刻，不触发网关未来窗口拒绝。
+	// 已结束订单以结束时刻计算包含首尾的桶数；不可用当前墙钟推断历史尾桶。
+	// 使用完整过去桶，所有测试 phase 的结束都早于当前时刻，不触发网关未来窗口拒绝。
 	historyEndBucket := liveStart.Add(time.Minute).Truncate(15 * time.Minute).Add(-15 * time.Minute)
 	for _, phase := range []time.Duration{0, 8 * time.Minute, 14*time.Minute + 59*time.Second} {
 		if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"ended_at": historyEndBucket.Add(phase), "started_at": historyEndBucket.Add(-1999 * 15 * time.Minute)}).Error; err != nil {
@@ -374,10 +374,10 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"status": "charging", "started_at": liveStart, "ended_at": nil, "charged_kwh": nil, "charged_seconds": nil}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// 真实所属查询故障须逐阶段返回503；不隐藏费用或支付错误为未确认／无记录。
+	// 真实查询故障须逐阶段返回 503；不隐藏费用或支付错误为未确认／无记录。
 	for _, failure := range []struct {
-		table   string /* 失败所属表 */
-		message string /* 原公开文案 */
+		table   string /* 失败表 */
+		message string /* 公开文案 */
 	}{{"charge_fee_receipt", "费用暂时无法读取"}, {"charge_order_pricing", "订单方案及确认状态暂不可读取"}, {"payment_order", "支付记录暂时无法读取"}, {"refund_record", "退款记录暂时无法读取"}} {
 		name := "registered_user_query_fault_" + failure.table
 		if err := tx.Callback().Query().Before("gorm:query").Register(name, func(q *gorm.DB) {

@@ -26,9 +26,7 @@ type SimulationSender struct{}
 func (SimulationSender) Mode() string                      { return "simulation" }
 func (SimulationSender) Send(context.Context, Event) error { return nil }
 
-// HTTPSender 是可替换的基线适配器。
-// 真实监管方的字段映射、签名方案和国密算法
-// 必须依据其对接规范另行提供。
+// HTTPSender 提供通用 HTTP 发送能力；实际监管接口所需的字段、签名和国密算法须按其规范另行实现。
 type HTTPSender struct {
 	Endpoint string
 	Secret   string

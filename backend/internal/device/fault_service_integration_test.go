@@ -19,17 +19,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// faultFixture 提供所属账号、角色和范围；提交造数只按本测试身份清理，资金表不参与。
+// faultFixture 创建测试账号、角色和范围，仅清理本测试记录，不使用资金表。
 func faultFixture(t *testing.T, db *gorm.DB) (uint64, string, operations.Profile) {
 	t.Helper()
 	id, tag := testfixture.NewID(), uuid.NewString()
 	board := "FT" + tag
 	t.Cleanup(func() {
 		for _, item := range []struct {
-			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
+			// table、where 配对指定清理表和本测试条件。
 			table, where string
-			// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
-			arg any
+			arg          any
 		}{
 			{"audit_log", "actor_id=?", id}, {"device_fault_report_event", "report_id IN (SELECT id FROM device_fault_report WHERE device_id=?)", board},
 			{"device_fault_report", "device_id=?", board}, {"device_meta", "device_id=?", board}, {"admin_data_scope", "admin_user_id=?", id},
@@ -45,9 +44,9 @@ func faultFixture(t *testing.T, db *gorm.DB) (uint64, string, operations.Profile
 		}
 	})
 	for _, seed := range []struct {
-		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
+		// table 指定测试种子表，与 row 的列和值配对。
 		table string
-		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
+		// row 指定种子记录字段和值。
 		row map[string]any
 	}{
 		{"role", map[string]any{"id": id, "code": tag, "name": "fault proof", "is_builtin": false}},
@@ -111,13 +110,13 @@ func TestFaultTransitionsKeepAtomicAuditAndCurrentScope(t *testing.T) {
 		t.Fatalf("outside assignee=%v", err)
 	}
 	var row struct {
-		// Status 故障工单当前持久处理状态，用于核对未指派、处理与恢复分支。
+		// Status 保存工单当前处理状态。
 		Status string
-		// AssignedTo 故障工单当前指派账号主键；nil 表示未指派，不与零主键混用。
+		// AssignedTo 保存当前处理人 ID，nil 表示未指派，不能用零主键代替。
 		AssignedTo *uint64
-		// 故障工单保存的图片 JSON 文本；本场景比对 null 与后续提供的原图片内容。
+		// 图片 JSON 用于核对 null 和提交的图片内容。
 		ImagesJSON string
-		// ResolvedAt 故障工单解决时刻；nil 表示尚未解决，恢复重放不应改写已冻结时刻。
+		// ResolvedAt 是修复时间，nil 表示尚未修复，重放不能改变已保存时间。
 		ResolvedAt *time.Time
 	}
 	read := func() {
@@ -309,7 +308,7 @@ func TestConcurrentFaultDispatchKeepsOneEventAndSeesRevocation(t *testing.T) {
 	}
 	first.Callback().Query().Remove(key)
 	second.Callback().Query().Remove(key)
-	// 先建立RC事务的范围读取，再停用处理人；锁后Profile不得使用旧RR快照。
+	// 先在 READ COMMITTED 事务读取范围，再停用处理人；锁后 Profile 必须读取最新账号。
 	pre, proceed := make(chan struct{}), make(chan struct{})
 	var gate sync.Once
 	if err := second.Callback().Query().Before("gorm:query").Register(key, func(q *gorm.DB) {

@@ -34,8 +34,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newRouter 注册当前进程路由、指标与健康端点；cfg 提供登录与支付模式，r 提供已打开存储，jwt 提供会话签名，wechat 提供微信能力，channel 提供支付渠道，stopGateway 提供设备内部调用。
-// 返回未监听的 Gin 引擎，无错误返回；设置全局 Gin 发布模式，仅装配不执行业务请求，健康处理器用请求 context 的两秒子期限检查存储。
+// newRouter 注册本进程的业务路由、指标和健康检查，不启动监听。
+// 健康检查使用请求 context，最多等待两秒。
 func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.MiniProgram, channel payment.PaymentChannel, stopGateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
@@ -53,14 +53,13 @@ func newRouter(cfg config.User, r *resources, jwt *auth.JWT, wechat identity.Min
 		httpapi.OK(c, gin.H{"status": "user_storage_ready"})
 	})
 
-	// 会话与档案仓储、请求鉴权器均为无状态值服务，本进程内共用同一实例；
-	// sessionAuth 仅封装 cEndAuth，语义与逐处构造一致。
+	// 会话、档案和请求鉴权共用同一组服务实例。
 	sessionRepo := identity.SessionRepo{Redis: cache}
 	userRepo := identity.UserRepo{DB: orm}
 	cEndAuth := authhttp.NewAuthenticator(jwt, sessionRepo, userRepo)
 	sessionAuth := authhttp.SessionAuthenticator{Auth: cEndAuth}
 	discovery := device.DiscoveryService{Gateway: stopGateway, Operations: device.OperationRepo{DB: orm}}
-	// 登录模式同时决定微信换据与手机号来源采用真实实现还是开发模拟。
+	// 登录模式决定微信登录和手机号授权使用真实接口还是开发模拟。
 	var loginExchanger identity.CodeExchanger = wechat
 	if cfg.LoginMode == "development" {
 		loginExchanger = identity.DevelopmentExchanger{}

@@ -3,8 +3,7 @@ import Taro from '@tarojs/taro'
 export const developmentLogin = process.env.TARO_APP_LOGIN_MODE === 'development'
 export const isH5 = process.env.TARO_ENV === 'h5'
 
-// Explicit Taro references let its compiler include the H5 platform APIs.
-// Resolve them at call time rather than copying the pre-initialization object.
+// 显式引用 Taro API，让编译器加入 H5 实现；调用时读取 API，避免使用初始化前的对象。
 export const wx: any = new Proxy({
   request: (options: any) => Taro.request(options),
   getStorageSync: (key: string) => Taro.getStorageSync(key),
@@ -37,8 +36,7 @@ export const wx: any = new Proxy({
     try {
       const accepted = await Taro.showModal({ title: '开发模拟支付', content: '确认后由服务端处理真实业务回调，不会扣取真实资金。' })
       if (!accepted.confirm) throw { errMsg: 'requestPayment:fail cancel' }
-      // Token comes from the user's session. No internal service token is
-      // exposed to browser code or frontend environment variables.
+      // 这里只使用用户会话令牌，服务间令牌不得进入前端代码或环境变量。
       const result = await Taro.request({ url: (process.env.TARO_APP_API_BASE || '/api/v1') + '/user/development/payments/confirm', method: 'POST',
         data: { merchant_order_no: options.merchantOrderNo }, header: { Authorization: 'Bearer ' + Taro.getStorageSync('cp_token') } })
       if (result.statusCode !== 200 || result.data?.code !== 0) throw new Error(result.data?.message || '模拟支付未确认')

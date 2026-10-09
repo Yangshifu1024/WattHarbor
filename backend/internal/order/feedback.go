@@ -15,39 +15,39 @@ import (
 )
 
 var (
-	ErrFeedbackExists        = errors.New("order already has feedback")                  // 原订单已评价，重复提交仍为冲突
-	ErrFeedbackOrderNotReady = errors.New("order is not a completed order of this user") // 未完成、未拥有或缺失统一不可评价
+	ErrFeedbackExists        = errors.New("order already has feedback")                  // 订单已评价，重复提交仍为冲突
+	ErrFeedbackOrderNotReady = errors.New("order is not a completed order of this user") // 未完成、未负责或缺失统一不可评价
 )
 
-// FeedbackInputError 保留业务准入的原公开文案，不包含用户或订单存在性。
+// FeedbackInputError 保留业务校验的公开文案，不包含用户或订单存在性。
 type FeedbackInputError struct {
-	Message string /* 原评分、类型、内容或附件错误 */
+	Message string /* 评分、类型、内容或附件错误 */
 }
 
-// Error 返回 e 的原公开准入文案，无 IO。
+// Error 返回 e 的公开校验错误文案。
 func (e *FeedbackInputError) Error() string { return e.Message }
 
-// FeedbackInput 是用户原反馈字段，归属由事务中的订单提供。
+// FeedbackInput 是用户反馈字段，归属由事务中的订单提供。
 type FeedbackInput struct {
-	Rating   int8     `json:"rating"`   // 1–5 原评分
+	Rating   int8     `json:"rating"`   // 1–5 评分
 	Category string   `json:"category"` // rating/complaint/suggestion
 	Content  *string  `json:"content"`  // 可空，最多2000个字符
 	Images   []string `json:"images"`   // 最多5个HTTPS附件，nil 原样保存 JSON null
 }
 
-// FeedbackReplyInput 是原后台动作；close 忽略回复正文，reply 必须提供原有效文本。
+// FeedbackReplyInput 是后台动作；close 忽略回复正文，reply 必须提供有效文本。
 type FeedbackReplyInput struct {
 	Action       string `json:"action"`        // reply 回复或 close 关闭
 	ReplyContent string `json:"reply_content"` // reply 时1–2000字符
 }
 
-// FeedbackService 拥有订单评价准入、回复状态与审计的完整事务；不依赖 HTTP 或设备领域实现。
+// FeedbackService 负责订单评价校验、回复状态与审计的完整事务；不依赖 HTTP 或设备领域实现。
 type FeedbackService struct {
 	DB *gorm.DB /* 所属订单与反馈连接，由进程管理 */
 }
 
-// ResolveReference 在 ctx 下按 userID 解析 raw 原主键或业务单号，返回身份或输入／缺失／读取错误。
-// 数字主键沿用原无预查语义；业务单号先核对原用户，真正提交仍在锁内再次核对。
+// ResolveReference 将订单主键或业务单号转换为订单 ID。
+// 业务单号先核对用户；数字主键留待提交事务加锁后核对，两种输入都不能绕过归属校验。
 func (s FeedbackService) ResolveReference(ctx context.Context, userID uint64, raw string) (uint64, error) {
 	if id, err := strconv.ParseUint(raw, 10, 64); err == nil && id > 0 {
 		return id, nil
@@ -59,7 +59,7 @@ func (s FeedbackService) ResolveReference(ctx context.Context, userID uint64, ra
 	return (FeedbackRepo{DB: s.DB}).ResolveOwnedReference(ctx, userID, orderNo)
 }
 
-// ValidateFeedback 核对 in 原评分、类别、内容长度及附件，返回原准入文案或 nil，无 IO。
+// ValidateFeedback 校验评分、类别、内容长度与附件，失败返回明确文案，成功返回 nil。
 func ValidateFeedback(in FeedbackInput) error {
 	if in.Rating < 1 || in.Rating > 5 || (in.Category != "rating" && in.Category != "complaint" && in.Category != "suggestion") {
 		return &FeedbackInputError{"评分或反馈类型无效"}
@@ -78,7 +78,7 @@ func ValidateFeedback(in FeedbackInput) error {
 	return nil
 }
 
-// ValidFeedbackImage 核对 raw 是无首尾空白、认证信息的 HTTPS 域名链接，最多512字节，返回事实，无 IO。
+// ValidFeedbackImage 核对 raw 是无首尾空白、认证信息的 HTTPS 域名链接，最多512字节，返回检查结果。
 func ValidFeedbackImage(raw string) bool {
 	if len(raw) == 0 || len(raw) > 512 || strings.TrimSpace(raw) != raw {
 		return false
@@ -87,8 +87,8 @@ func ValidFeedbackImage(raw string) bool {
 	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil
 }
 
-// Submit 在 ctx 下为 userID 的 orderID 提交已绑定 in，返回原新反馈主键或准入／不可评价／重复／存储错误。
-// 先锁订单、核对完成与归属，再当前读已有反馈并插入，整个事务失败回滚，不把重复提交视为成功。
+// Submit 为已完成且属于当前用户的订单保存反馈。
+// 先锁订单再核对已有反馈，避免旧快照漏掉并发提交；重复反馈报错，失败全部回滚。
 func (s FeedbackService) Submit(ctx context.Context, userID, orderID uint64, in FeedbackInput) (uint64, error) {
 	if err := ValidateFeedback(in); err != nil {
 		return 0, err
@@ -123,8 +123,7 @@ func (s FeedbackService) Submit(ctx context.Context, userID, orderID uint64, in 
 	return id, err
 }
 
-// List 在 ctx 下按 actor 原 feedback.read 权限读取 q 反馈页，返回原页或禁止／读取错误，不修改工单。
-// 反馈无站点范围列，沿用原全局权限，不按报修或订单页面位置引入额外过滤。
+// List 按实时 feedback.read 权限读取反馈页；反馈属于全局管理功能，不按站点过滤。
 func (s FeedbackService) List(ctx context.Context, actor operations.Profile, q persist.PageQuery) (persist.Page[map[string]any], error) {
 	if !actor.HasPermission("feedback.read") {
 		return persist.Page[map[string]any]{}, operations.ErrForbidden
@@ -133,8 +132,8 @@ func (s FeedbackService) List(ctx context.Context, actor operations.Profile, q p
 	return persist.Page[map[string]any]{Items: rows, Total: total, Page: q.Page, PageSize: q.PageSize}, err
 }
 
-// Reply 在 ctx 下按 audit 原 feedback.reply 权限处理 id 的 in 动作，返回禁止／输入／缺失／状态冲突／存储错误。
-// reply 仅允许 pending→processed；close 可从未关闭状态关闭，已关闭重放无重复审计；状态与审计同事务。
+// Reply 按实时 feedback.reply 权限回复或关闭反馈，状态与审计同事务。
+// 回复仅允许 pending→processed；关闭允许任意未关闭状态，重复关闭不重复审计。
 func (s FeedbackService) Reply(ctx context.Context, audit ops.AuditContext, id uint64, in FeedbackReplyInput) error {
 	if !audit.Actor.HasPermission("feedback.reply") {
 		return operations.ErrForbidden

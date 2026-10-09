@@ -50,7 +50,7 @@ type opsEnvelopeReply struct {
 	Code int `json:"code"`
 	// Message 为既有公开消息。
 	Message string `json:"message"`
-	// Data 保留原 JSON 数据，失败时应为 null。
+	// Data 保留 JSON 数据，失败时应为 null。
 	Data json.RawMessage `json:"data"`
 }
 
@@ -62,7 +62,7 @@ type opsStreamsReply struct {
 	CheckedAt time.Time `json:"checked_at"`
 }
 
-// callOpsRoute 为 t 实际注册 api 并以 ctx 和 token 请求原路径，返回记录器，无外部 IO。
+// callOpsRoute 为 t 实际注册 api 并以 ctx 和 token 请求路径，返回记录器。
 func callOpsRoute(t *testing.T, api OpsAPI, token string, ctx context.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	router := httpapi.NewRouter()
@@ -76,7 +76,7 @@ func callOpsRoute(t *testing.T, api OpsAPI, token string, ctx context.Context) *
 	return reply
 }
 
-// decodeOpsReply 为 t 解码记录器的唯一信封；额外 JSON 或解码失败终止，防止重复写响应漏检。
+// decodeOpsReply 为 t 解码记录器的唯一响应；额外 JSON 或解码失败终止，防止重复写响应漏检。
 func decodeOpsReply(t *testing.T, response *httptest.ResponseRecorder) opsEnvelopeReply {
 	t.Helper()
 	decoder := json.NewDecoder(response.Body)
@@ -91,7 +91,7 @@ func decodeOpsReply(t *testing.T, response *httptest.ResponseRecorder) opsEnvelo
 	return reply
 }
 
-// TestOpsRouteRejectsBeforeRedis 以真实 Register 向 t 证明拒绝身份仅返回一次 401 且不进入 Redis。
+// TestOpsRouteRejectsBeforeRedis 以真实 Register 验证拒绝身份仅返回一次 401 且不进入 Redis。
 func TestOpsRouteRejectsBeforeRedis(t *testing.T) {
 	cases := []struct {
 		// name 标识不同拒绝边界。
@@ -122,7 +122,7 @@ func TestOpsRouteRejectsBeforeRedis(t *testing.T) {
 	}
 }
 
-// TestOpsRouteReportsStreamLengths 核对 t 的真实成功响应、原令牌精确比较、redis.Nil 跳过和原 context 传递；不宣称真实 Redis 语义。
+// TestOpsRouteReportsStreamLengths 核对真实成功响应、令牌精确比较、redis.Nil 跳过和 context 传递；不宣称真实 Redis 语义。
 func TestOpsRouteReportsStreamLengths(t *testing.T) {
 	spy := &opsRedisSpy{lengths: map[string]int64{"one": 2, "two": 7}, failures: map[string]error{"nil": redis.Nil}}
 	ctx := t.Context()
@@ -150,7 +150,7 @@ func TestOpsRouteReportsStreamLengths(t *testing.T) {
 	}
 }
 
-// TestOpsRouteRedisFailureAndCancellation 核对 t 的原 503 映射、隐藏内部错误、失败后停止读取以及取消 context 传播，无真实 Redis IO。
+// TestOpsRouteRedisFailureAndCancellation 核对 503 映射、隐藏内部错误、失败后停止读取以及取消 context 传播，无真实 Redis IO。
 func TestOpsRouteRedisFailureAndCancellation(t *testing.T) {
 	for _, canceled := range []bool{false, true} {
 		name := "redis_failure"

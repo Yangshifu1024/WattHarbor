@@ -12,34 +12,34 @@ import (
 	"gorm.io/gorm"
 )
 
-// VendorGateway 提供网关所属字典的四个具名操作，不暴露传输配置或数据库。
+// VendorGateway 提供厂商列表、详情、创建和更新方法，不暴露传输配置或数据库。
 type VendorGateway interface {
-	// Vendors 在 context 下按查询及追踪号返回公开分页或原服务错误，无自动重试。
+	// Vendors 查询公开厂商列表，不自动重试。
 	Vendors(context.Context, contract.VendorListRequest, string) (contract.VendorListReply, error)
-	// Vendor 在 context 下按厂商 ID 及追踪号返回原公开字典或错误。
+	// Vendor 按厂商 ID 查询公开资料。
 	Vendor(context.Context, uint64, string) (contract.VendorReply, error)
-	// CreateVendor 在 context 下提交完整输入及追踪号，返回网关确认的字典或错误。
+	// CreateVendor 提交完整厂商资料，返回网关确认结果。
 	CreateVendor(context.Context, contract.VendorRequest, string) (contract.VendorReply, error)
-	// UpdateVendor 在 context 下按原 ID 提交完整输入及追踪号，返回字典或错误。
+	// UpdateVendor 按指定厂商 ID 提交完整资料。
 	UpdateVendor(context.Context, uint64, contract.VendorRequest, string) (contract.VendorReply, error)
 }
 
-// VendorService 拥有中央账号对厂商的范围编排；厂商写入事务由网关提供。
+// VendorService 核对中央账号厂商范围，厂商写入事务由网关管理。
 type VendorService struct {
 	DB      *gorm.DB      // central 审计及站点存在性连接，不访问 gateway 表
 	Gateway VendorGateway // 具名厂商客户端，由 cmd 注入
 }
 
-// VendorNotVisible 表示原详情或编辑目标超出厂商范围；HTTP 沿用 404，避免扩大可见性。
+// VendorNotVisible 表示目标厂商超出范围，HTTP 返回 404。
 type VendorNotVisible struct{}
 
-// Error 返回原范围缺失提示，无 IO。
+// Error 返回厂商不可见提示。
 func (VendorNotVisible) Error() string { return "厂商不存在或不在数据范围内" }
 
-// ErrScopeConflict 是数据范围类型、ID 或存在性失败的原公开错误。
+// ErrScopeConflict 表示范围类型、ID 或资源存在性校验失败。
 var ErrScopeConflict = errors.New("数据范围与现有记录冲突")
 
-// VendorQuery 以 page 及当前 scope 生成具名查询；范围不受限时不转发 ID，不修改输入或执行 IO。
+// VendorQuery 将分页和账号厂商范围转为网关查询；不受限时不传范围 ID。
 func VendorQuery(page persist.PageQuery, scope operations.DataScope) contract.VendorListRequest {
 	q := contract.VendorListRequest{Page: page.Page, PageSize: page.PageSize, Keyword: page.Keyword, Status: page.Status}
 	if !scope.Unrestricted && len(scope.VendorIDs) > 0 {
@@ -48,8 +48,8 @@ func VendorQuery(page persist.PageQuery, scope operations.DataScope) contract.Ve
 	return q
 }
 
-// List 在 ctx 下以 audit 实时权限及 scope 查询 page，options 只返回启用的导入选项。
-// 返回分页及本地权限或权限／服务错误；上游越界或非启用选项按依赖故障处理，不能授予中央权限。
+// List 核对当前权限后查询范围内厂商；导入选项只返回启用项。
+// 上游返回越界或非启用选项时按依赖故障处理，中央操作权限仍由本地核对。
 func (s VendorService) List(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, page persist.PageQuery, options bool) (persist.Page[contract.VendorReply], error) {
 	permission := "vendor.read"
 	if options {
@@ -81,7 +81,7 @@ func (s VendorService) List(ctx context.Context, audit ops.AuditContext, scope o
 	return out, nil
 }
 
-// Get 在 ctx 下以 audit 的实时读取权限查询 scope 内 id；返回公开字典、权限、范围缺失或服务错误，只读。
+// Get 核对当前读取权限后查询范围内厂商。
 func (s VendorService) Get(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id uint64) (contract.VendorReply, error) {
 	if !audit.Actor.HasPermission("vendor.read") {
 		return contract.VendorReply{}, operations.ErrForbidden
@@ -92,9 +92,8 @@ func (s VendorService) Get(ctx context.Context, audit ops.AuditContext, scope op
 	return s.Gateway.Vendor(ctx, id, audit.RequestID)
 }
 
-// Save 在 ctx 下以 audit 实时权限及 scope 提交完整 in；id=0 新建，否则读取原字典后按原 ID 更新。
-// 返回网关确认的公开字典或权限、范围缺失、原服务错误；中央审计沿用提交后尽力记录，不能回滚网关写入。
-// 不添加重试或新业务 ID；网络结果未知时由调用方核对原厂商编码及资料。
+// Save 核对权限和范围后提交完整厂商资料，ID=0 创建，否则读取后按同一 ID 更新。
+// 网关确认后尝试记录中央审计，审计失败不能回滚网关；网络结果未知时须核对厂商编码和资料。
 func (s VendorService) Save(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id uint64, in contract.VendorRequest) (contract.VendorReply, error) {
 	permission := "vendor.create"
 	if id != 0 {
@@ -132,8 +131,8 @@ func (s VendorService) Save(ctx context.Context, audit ops.AuditContext, scope o
 	return out, nil
 }
 
-// ValidateScope 在 ctx 下核对 scopeType 及一至五百个 ids；返回格式、存在性或存储／服务错误，只读。
-// 厂商只经具名网关查询核对总数，站点由所属 repo 统计；沿用原输入数量与总数比对，不自行去重。
+// ValidateScope 检查范围类型及 1–500 个 ID 是否存在。
+// 厂商由网关核对总数，站点由中央仓储统计；按输入数量比对，不自动去重。
 func (s VendorService) ValidateScope(ctx context.Context, scopeType string, ids []uint64) error {
 	if !operations.ValidScopeType(scopeType) || !operations.ValidScopeIDs(ids) {
 		return ErrScopeConflict

@@ -19,13 +19,13 @@ import (
 //
 // worker 有三个 publisher（gateway / user / admin），生产上多副本同时扫同一张表。
 // `ListPublishableOutbox` 用 `FOR UPDATE SKIP LOCKED`：各副本在本次并发领取中各取未锁行。
-// Redis已收到而MySQL回滚仍可导致后续重复发布，本测试不替代消费者幂等验收。
+// Redis 已收到而 MySQL 回滚仍可导致后续重复发布，本测试不替代调用方幂等验收。
 //
-// 本项目以真实MySQL的行锁验证该性质，单测和内存替身不作为锁证据。
+// 本项目以真实 MySQL 的行锁验证该性质，单测和内存替身不作为锁证据。
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 
-// testConn 为 t 打开独立真库连接并返回关闭函数；缺配置或失败终止，原OB前缀Scope隔离造数。
+// testConn 为 t 打开独立真库连接并返回关闭函数；缺配置或失败终止，OB 前缀 Scope 隔离造数。
 func testConn(t *testing.T) (*gorm.DB, func()) {
 	t.Helper()
 	raw := os.Getenv(testMySQLURLEnv)
@@ -66,7 +66,7 @@ func newLockGate() *lockGate {
 	return &lockGate{locked: make(chan struct{}), release: make(chan struct{})}
 }
 
-// await 等待 g 的实际行锁信号，超过15秒由 t 报告 what 对应的失败，不以 sleep 判定并发次序。
+// await 等待 g 的实际行锁信号，超过 15 秒由 t 报告 what 对应的失败，不以 sleep 判定并发次序。
 func (g *lockGate) await(t *testing.T, what string) {
 	t.Helper()
 	select {
@@ -98,10 +98,10 @@ func armOnOutboxLock(t *testing.T, db *gorm.DB, gate *lockGate, name string) {
 
 const outboxStream = "charge_ended_stream"
 
-// seedOutbox 用 t 在 db 写入 prefix 对应的 n 条原到期事件并返回事件号，写入失败终止；调用方清理。
+// seedOutbox 在 db 写入 prefix 对应的 n 条到期事件并返回事件号，写入失败终止；调用方清理。
 //
 // 断言必须针对这 n 条本身而不是「表里一共 n 条」：
-// ListPublishableOutbox 领取的是传入连接Scope内所有到期行，
+// ListPublishableOutbox 领取的是传入连接 Scope 内所有到期行，
 // 而 `go test ./...` 会并发跑别的包，那些包的集成测试也会往同一张
 // event_outbox 写（钱包到账、退款成功都发事件）。计数写死必然被邻居干扰。
 func seedOutbox(t *testing.T, db *gorm.DB, prefix string, n int) []string {
@@ -129,7 +129,7 @@ func cleanupOutbox(t *testing.T, db *gorm.DB, prefix string) {
 	}
 }
 
-// outboxIDs 把 rows 的原事件号复制为列表，返回独立slice，无 IO 或状态修改。
+// outboxIDs 把 rows 的事件号复制为列表，返回独立 slice，无 IO 或状态修改。
 func outboxIDs(rows []ops.EventOutboxRecord) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -138,10 +138,10 @@ func outboxIDs(rows []ops.EventOutboxRecord) []string {
 	return out
 }
 
-// TestConcurrentOutboxClaimReturnsDisjointRows 用 t 和真实双连接行锁验证多副本本次领取互不重叠。
+// TestConcurrentOutboxClaimReturnsDisjointRows 用两个真实连接验证行锁多副本本次领取互不重叠。
 //
 // 事务一领取后仍持锁未提交，事务二必须拿到**另一批**事件而不是同一批。
-// 拿到同一批就意味着同一条事件被投递两次——消费端虽有 event_id 去重，
+// 拿到同一批就意味着同一条事件被投递两次——消息处理方虽有 event_id 去重，
 // 但那是在故障兜底路径上，不该成为常态。
 //
 // 若把 SKIP LOCKED 去掉，事务二会阻塞在等锁上，"不阻塞"这条断言立刻失败。
@@ -171,10 +171,10 @@ func TestConcurrentOutboxClaimReturnsDisjointRows(t *testing.T) {
 	}
 	defer tx1.Rollback()
 
-	// claim 传递仍在调用方事务中的 Outbox 锁读身份与错误，用于比对 SKIP LOCKED 结果；返回身份不表示事务提交或事件已发布。
+	// claim 传递仍在调用方事务中的 Outbox 锁读身份与错误，用于比对 SKIP LOCKED 结果；返回编号不表示事务提交或事件已发布。
 	type claim struct {
-		ids []string // 本事务实际领取的原事件身份。
-		err error    // 原仓储查询或锁错误。
+		ids []string // 本事务实际领取的事件标识。
+		err error    // 仓储查询或锁错误。
 	}
 	done1 := make(chan claim, 1)
 	go func() {
@@ -242,8 +242,8 @@ func TestConcurrentOutboxClaimReturnsDisjointRows(t *testing.T) {
 	}
 }
 
-// TestMarkOutboxPublishedRemovesFromNextClaim 用 t 及真实MySQL验证已标记 published 的事件不再领取。
-// 只验证队列SQL，不连接Redis或证明事件消费完成；原测试前缀造数由调用方清理。
+// TestMarkOutboxPublishedRemovesFromNextClaim 用真实 MySQL 验证已标记 published 的事件不再领取。
+// 只验证队列 SQL，不连接 Redis 或证明事件消费完成；测试前缀造数由调用方清理。
 func TestMarkOutboxPublishedRemovesFromNextClaim(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -276,7 +276,7 @@ func TestMarkOutboxPublishedRemovesFromNextClaim(t *testing.T) {
 	}
 }
 
-// TestMarkOutboxFailedAppliesBackoff 用 t 及真实MySQL验证失败计数、原错误及30秒延后不立即重领。
+// TestMarkOutboxFailedAppliesBackoff 用真实 MySQL 验证失败计数、错误及 30 秒延后不立即重领。
 //
 // 退避写成 `DATE_ADD(NOW(3), INTERVAL ? SECOND)`，若间隔算错（比如退避秒数
 // 传成 0），坏事件会被立刻重领，10 秒一轮的发布器变成对下游的死循环轰炸。

@@ -12,29 +12,28 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// WalletRefundReservation 在调用方事务内指定原申请及原路退款金额，冻结钱包并按原充值拆单。
+// WalletRefundReservation 在调用方事务内指定申请及原路退款金额，冻结钱包并按充值拆单。
 type WalletRefundReservation struct {
-	RequestID   string // 原申请 UUID，派生稳定分笔退款号
-	UserID      uint64 // 钱包及原充值所属用户
+	RequestID   string // 申请 UUID，派生稳定分笔退款号
+	UserID      uint64 // 钱包及充值所属用户
 	AmountCents int64  // 本次需预占金额，分，必须大于 0
-	Reason      string // 原退款或风险批准依据
+	Reason      string // 退款或风险批准依据
 }
 
 // refundWalletReservation 是预占时持有行锁的钱包事实。
 type refundWalletReservation struct {
 	ID           uint64 // 所属钱包主键
 	UserID       uint64 // 账户所属用户
-	Version      uint64 // 当前版本，资金更新推进版本
+	Version      uint64 // 当前版本，资金更新增加版本号
 	BalanceCents int64  // 账面余额，分
 	FrozenCents  int64  // 已预占金额，分
 	Status       string // active 或 frozen；已批准风险可在冻结账户继续预占
 }
 
-// ReserveInTx 按 req 的原充值来源拆单，并在 tx 内冻结钱包可用余额。
-// tx 由调用方提交，锁序为钱包→支付→在途退款；金额单位分，同请求不能二次预占。
-// 来源候选查询使用调用方快照：事务须为 READ COMMITTED，或在取得钱包锁后才首次建立 RR 快照。
-// nil 表示冻结、原退款及来源分摊均已写入同一事务；错误要求全部回滚。
-// 渠道未知结果保留原退款身份与 frozen，不能在本方法中宣称已到账。
+// ReserveInTx 按充值来源拆分退款，在调用方事务中冻结可用余额。
+// 锁序为钱包→支付→在途退款，金额单位分，同请求不能重复预占。
+// 使用 READ COMMITTED，或在钱包锁后首次建立 RR 快照，避免漏掉新到账来源。
+// 冻结、退款与来源分摊一并提交；渠道结果未知时保留编号及冻结额，不算作已退款。
 func (s RefundService) ReserveInTx(tx *gorm.DB, req WalletRefundReservation) error {
 	if s.Sources == nil || s.Recorder == nil {
 		return errors.New("wallet refund dependencies not configured")

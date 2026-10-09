@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// recordHeartbeatState 接收 ctx、所属 tx 和心跳 event，仅更新更晚的信号与已提供的端口上报状态；返回 SQL 错误，缺扩展块不清除已知状态，不更改业务端口占用。
+// recordHeartbeatState 只更新较新心跳中已提供的信号和端口状态，不清除缺失信息或改变端口占用。
 func recordHeartbeatState(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	at := event.ReceivedAt.UTC().Truncate(time.Millisecond)
 	if err := tx.WithContext(ctx).Model(&deviceRow{}).
@@ -37,48 +37,48 @@ func recordHeartbeatState(ctx context.Context, tx *gorm.DB, event protocol.Event
 		Updates(map[string]any{"reported_status": gorm.Expr(state.String(), args...), "reported_status_at": at}).Error
 }
 
-// chargeProcessRow 映射 charge_process 的原持久充电采样，保留订单关联、整数单位及可空协议扩展证据。
+// chargeProcessRow 映射 charge_process 的持久充电采样，保留订单关联、整数单位及可空协议扩展证据。
 type chargeProcessRow struct {
-	// ID charge_process 表的原自增主键。
+	// ID charge_process 表的自增主键。
 	ID uint64 `gorm:"primaryKey"`
-	// EventKey 原持久事件幂等键。
+	// EventKey 持久事件幂等键。
 	EventKey string
-	// ChargeOrderID 中央充电订单身份。
+	// ChargeOrderID 中央充电订单编号。
 	ChargeOrderID uint64
-	// OrderNo 原业务订单号。
+	// OrderNo 业务订单号。
 	OrderNo string
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8
-	// TS 原采样时刻，保留所属结构的时间表示。
+	// TS 采样时刻，使用该结构的时间格式。
 	TS time.Time
-	// PowerDeciwatts 原功率整数，单位十分之一瓦。
+	// PowerDeciwatts 功率整数，单位十分之一瓦。
 	PowerDeciwatts uint32
-	// ChargedSeconds 原已充时长秒数。
+	// ChargedSeconds 已充时长秒数。
 	ChargedSeconds uint32
-	// RemainingSeconds 原剩余时长秒数。
+	// RemainingSeconds 剩余时长秒数。
 	RemainingSeconds uint32
-	// ChargedMWh 原已充电量整数，单位毫瓦时。
+	// ChargedMWh 已充电量整数，单位毫瓦时。
 	ChargedMWh uint32 `gorm:"column:charged_mwh"`
-	// RemainingMWh 原剩余电量整数，单位毫瓦时。
+	// RemainingMWh 剩余电量整数，单位毫瓦时。
 	RemainingMWh uint32 `gorm:"column:remaining_mwh"`
-	// SignalStrength 原设备信号强度，保留未知可空映射。
+	// SignalStrength 设备信号强度，保留未知可空映射。
 	SignalStrength uint8
-	// PortStatus 原端口协议状态，nil 表示未提供该证据。
+	// PortStatus 端口协议状态，nil 表示未提供该证据。
 	PortStatus *uint8
-	// VoltageV 原设备电压值，保留可空扩展块。
+	// VoltageV 设备电压值，保留可空扩展块。
 	VoltageV *uint16
-	// TemperatureC 原设备温度值，保留可空扩展块。
+	// TemperatureC 设备温度值，保留可空扩展块。
 	TemperatureC *int16
-	// DeviceStatus 原设备协议状态，保留可空扩展块。
+	// DeviceStatus 设备协议状态，保留可空扩展块。
 	DeviceStatus *uint8
 }
 
-// TableName 返回原固定表名 charge_process，供 GORM 定位模型；无数据库 IO。
+// TableName 返回固定表名 charge_process，供 GORM 定位模型。
 func (chargeProcessRow) TableName() string { return "charge_process" }
 
-// insertChargeProcess 接收 ctx、所属 tx、事件 key 和 event，锁定端口后关联已确认且确认时间不晚于上报的原订单，幂等插入过程点；不匹配返回 nil，SQL 失败返回错误，不提交事务。
+// insertChargeProcess 在事务内锁定端口，将心跳关联到此前已确认启动的订单，并去重插入采样点。
 func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event protocol.Event) error {
 	if event.Protocol != "dc589" || len(event.ChargingPorts) == 0 {
 		return nil
@@ -97,11 +97,11 @@ func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event pro
 		return err
 	}
 	var sessions []struct {
-		// ChargeOrderID 中央充电订单身份。
+		// ChargeOrderID 中央充电订单编号。
 		ChargeOrderID uint64
-		// OrderNo 原业务订单号。
+		// OrderNo 业务订单号。
 		OrderNo string
-		// PortNo 原协议端口序号。
+		// PortNo 协议端口序号。
 		PortNo uint8
 	}
 	if err := tx.WithContext(ctx).Table("device_port AS p").

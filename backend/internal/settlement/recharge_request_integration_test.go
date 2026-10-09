@@ -17,8 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestConcurrentRechargeRequestsReplayAfterIdentityRead 验证读取身份后等待用户锁的同请求重放。
-// 两条独立连接、指定 user 锁闸门和真实支付唯一键；模拟渠道仅准备参数，真实提交后清理并核对零残留。
+// TestConcurrentRechargeRequestsReplayAfterIdentityRead 验证查询账号后等待用户锁的同请求充值，仍重放首次支付。
+// 使用两条真库连接和支付唯一键，模拟渠道仅准备参数，不代表实际到账。
 func TestConcurrentRechargeRequestsReplayAfterIdentityRead(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -47,7 +47,7 @@ func TestConcurrentRechargeRequestsReplayAfterIdentityRead(t *testing.T) {
 		}
 		for _, q := range []struct {
 			table string // 本测试需要提交的表
-			where string // 唯一用户或请求身份，不删除环境原数据
+			where string // 唯一用户或请求身份，不删除环境数据
 			arg   any    // 对应筛选身份
 		}{{"wallet_recharge_request", "request_id=?", request}, {"payment_order", "user_id=?", id}, {"wallet_account", "user_id=?", id}, {"user", "id=?", id}} {
 			if err := setup.Table(q.table).Where(q.where, q.arg).Delete(nil).Error; err != nil {
@@ -78,10 +78,10 @@ func TestConcurrentRechargeRequestsReplayAfterIdentityRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.Callback().Query().Remove(key)
-	// outcome 传递同一充值申请并发 Create 的支付身份、参数与错误，用于核对原支付重放；生成模拟参数不表示支付到账。
+	// outcome 汇总并发充值申请的支付身份、参数和错误；模拟参数不表示实际到账。
 	type outcome struct {
-		result wallet.RechargeResult // 首次或同内容重放的原充值身份
-		err    error                 // 原事务及渠道准备错误
+		result wallet.RechargeResult // 新建或重放的充值单号
+		err    error                 // 事务及渠道准备错误
 	}
 	start := func(db *gorm.DB) <-chan outcome {
 		ch := make(chan outcome, 1)

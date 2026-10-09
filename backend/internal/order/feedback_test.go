@@ -2,7 +2,7 @@ package order
 
 import "testing"
 
-// TestHTTPSImageRejectsNonTLS 验证反馈附件的原HTTPS、长度与认证信息约束。
+// TestHTTPSImageRejectsNonTLS 验证反馈附件的HTTPS、长度与认证信息约束。
 func TestHTTPSImageRejectsNonTLS(t *testing.T) {
 	// 验证反馈附件拒绝非 HTTPS 及脚本链接，避免在客服页面回显不安全 URL。
 	accepted := []string{

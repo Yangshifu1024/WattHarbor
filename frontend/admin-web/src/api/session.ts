@@ -27,8 +27,7 @@ function tokenExpiresAt(token:string):number|null {
  } catch { return null; }
 }
 
-// 刷新、登录、登出共用同一把锁。一个迟到的响应绝不能覆盖掉属于更晚一次登录的凭据，
-// 无论是本标签页还是别的标签页。
+// 刷新、登录和登出共用会话锁；本页或其他标签页的旧响应不得覆盖新登录的凭据。
 export function createSessionManager(storage:StoragePort, lock:LockPort, changed:()=>void, newEpoch:()=>string) {
  const epoch=()=>storage.getItem('cp_session_epoch');
  const accountId=()=>{

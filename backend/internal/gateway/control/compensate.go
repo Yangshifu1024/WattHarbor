@@ -13,15 +13,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Compensation 编排原启动补偿的持久状态与设备 STOP 下发，复用原命令及会话，不重新生成 START。
+// Compensation 编排启动补偿的已保存状态与设备 STOP 下发，复用命令及会话，不重新生成 START。
 type Compensation struct {
-	// Repo 原 MySQLSink 持久能力，保留命令身份与事务规则。
+	// Repo MySQLSink 持久能力，保留命令标识与事务规则。
 	Repo repo.MySQLSink
-	// Devices 原设备连接注册表，查询在线状态并发送原补偿 STOP。
+	// Devices 设备连接注册表，查询在线状态并发送补偿 STOP。
 	Devices *session.Registry
 }
 
-// Request 接收 ctx、orderNo 与 commandID，先持久化原启动补偿事实，连接在线时标记发送并下发原 STOP；返回持久化或下发错误，不创建第二条 START。
+// Request 先保存启动补偿状态，连接在线时标记发送并下发 STOP；返回持久化或下发错误，不创建第二条 START。
 func (c Compensation) Request(ctx context.Context, orderNo, commandID string) error {
 	job, needsStop, err := c.Repo.CompensateStart(ctx, orderNo, commandID)
 	if err != nil || !needsStop {
@@ -36,7 +36,7 @@ func (c Compensation) Request(ctx context.Context, orderNo, commandID string) er
 	return c.Devices.Send(ctx, job.DeviceID, job.Wire)
 }
 
-// RetryStopping 接收 ctx，读取原到期补偿任务，为在线设备依次标记发送并下发同一 STOP。
+// RetryStopping 读取到期补偿任务，为在线设备依次标记发送并下发同一 STOP。
 // 返回首次持久化或发送错误，继续其它任务，不创建第二条 START 或新会话。
 func (c Compensation) RetryStopping(ctx context.Context) error {
 	jobs, err := c.Repo.StoppingJobs(ctx)
@@ -63,21 +63,21 @@ func (c Compensation) RetryStopping(ctx context.Context) error {
 
 // CompensationAPI 适配内部启动补偿请求，负责服务鉴权、输入和错误映射，业务操作交由 Request 能力执行。
 type CompensationAPI struct {
-	// Service 所属命令用例能力，保留原返回事实及错误。
+	// Service 处理命令，返回处理结果或错误。
 	Service interface {
-		// Request 接收 ctx、orderNo 与 commandID，先持久化原启动补偿事实，连接在线时标记发送并下发原 STOP；返回持久化或下发错误，不创建第二条 START。
+		// Request 先保存启动补偿状态，连接在线时标记发送并下发 STOP；返回持久化或下发错误，不创建第二条 START。
 		Request(context.Context, string, string) error
 	}
 	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
 }
 
-// Register 接收非 nil router，注册本类型原路由与处理器，无数据库或设备 IO，不启动 HTTP 监听。
+// Register 在 router 注册路由；调用方须提供非 nil router。
 func (a CompensationAPI) Register(router *gin.Engine) {
 	router.POST(gatewaycontract.CompensateStartRoute, a.handle)
 }
 
-// handle 接收 c，鉴权并校验原补偿请求后调用 Service；成功返回 accepted，失配写 409，输入、鉴权或执行失败写原 400、401、503。
+// handle 鉴权并校验补偿请求后调用 Service；成功返回 accepted，失配写 409，输入、鉴权或执行失败写 400、401、503。
 func (a CompensationAPI) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

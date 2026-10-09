@@ -13,41 +13,41 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ActiveOrder 保存中央停机授权转换得到的原充电订单、用户和已确认启动及端口身份。
+// ActiveOrder 保存中央停机授权转换得到的充电订单、用户和已确认启动及端口编号。
 type ActiveOrder struct {
-	// ChargeOrderID 中央充电订单身份。
+	// ChargeOrderID 中央充电订单编号。
 	ChargeOrderID uint64 `json:"charge_order_id"`
-	// OrderNo 原业务订单号。
+	// OrderNo 业务订单号。
 	OrderNo string `json:"order_no"`
-	// UserID 原订单用户身份。
+	// UserID 订单用户编号。
 	UserID uint64 `json:"user_id"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no"`
-	// PortID 原已授权占用端口的 device_port 自增主键。
+	// PortID 已授权占用端口的 device_port 自增主键。
 	PortID uint64 `json:"port_id"`
-	// StartCommandID 停机对应的原 START 命令 UUID。
+	// StartCommandID 停机对应的 START 命令 UUID。
 	StartCommandID string `json:"start_command_id"`
 }
 
-// StopReservation 保存用户 STOP 已持久受理的原身份、状态及协议报文，不表示设备已经断电。
+// StopReservation 保存已受理停机的命令编号、状态和协议报文；不表示设备已经断电。
 type StopReservation struct {
-	// CommandID 原持久命令 UUID。
+	// CommandID 持久命令 UUID。
 	CommandID string `json:"command_id"`
-	// OrderNo 原业务订单号。
+	// OrderNo 业务订单号。
 	OrderNo string `json:"order_no"`
-	// DeviceID 原设备业务编号。
+	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// PortNo 原协议端口序号。
+	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no"`
-	// Status 所属记录的原状态值。
+	// Status 状态。
 	Status string `json:"status"`
-	// Wire 待下发的原协议命令，不表示设备已确认。
+	// Wire 待下发的协议命令，不表示设备已确认。
 	Wire protocol.Command `json:"-"`
 }
 
-// ExistingUserStop 接收 ctx、orderNo 与 userID，读取原用户停机命令并核对所有者；返回受理事实或缺失、冲突、SQL 错误，无写入。
+// ExistingUserStop 读取用户停机命令并核对所有者；返回受理结果或缺失、冲突、SQL 错误，不写库。
 func (s MySQLSink) ExistingUserStop(ctx context.Context, orderNo string, userID uint64) (StopReservation, error) {
 	var row chargeStopCommandRow
 	if err := s.DB.WithContext(ctx).Where("order_no = ?", orderNo).Take(&row).Error; err != nil {
@@ -59,7 +59,7 @@ func (s MySQLSink) ExistingUserStop(ctx context.Context, orderNo string, userID 
 	return stopReservationFromRow(row)
 }
 
-// ReserveUserStop 接收 ctx 与 active 授权事实，在 READ COMMITTED 事务按启动命令再端口的顺序锁定归属并创建稳定 STOP；存在时复用，返回受理事实或校验、锁定、SQL 错误。
+// ReserveUserStop 在 READ COMMITTED 事务内先锁启动命令、再锁端口，创建稳定 STOP 命令；重复请求复用已保存的命令。
 func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (StopReservation, error) {
 	if active.ChargeOrderID == 0 || active.OrderNo == "" || active.UserID == 0 || active.DeviceID == "" || active.PortNo == 0 || active.PortID == 0 || active.StartCommandID == "" {
 		return StopReservation{}, ErrOrderConflict
@@ -109,13 +109,13 @@ func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (Sto
 	return reservation, nil
 }
 
-// MarkUserStopSent 接收 ctx 与 commandID，将 pending 或 sent 用户停机命令标记 sent 并更新原发送时间；返回 SQL 错误，不确认设备断电。
+// MarkUserStopSent 将 pending 或 sent 用户停机命令标记 sent 并更新发送时间；返回 SQL 错误，不确认设备断电。
 func (s MySQLSink) MarkUserStopSent(ctx context.Context, commandID string) error {
 	return s.DB.WithContext(ctx).Model(&chargeStopCommandRow{}).Where("command_id = ? AND status IN ('pending','sent')", commandID).
 		Updates(map[string]any{"status": "sent", "sent_at": gorm.Expr("CURRENT_TIMESTAMP(3)")}).Error
 }
 
-// PendingUserStops 接收 ctx，按创建时间读取最多五十个 pending 或发送超过十秒的 sent 命令，复用原 STOP 会话；返回待发送事实或 SQL、会话错误，无写入。
+// PendingUserStops 按创建时间读取最多 50 条待发或已发送超过 10 秒的停机命令，复用 STOP 会话。
 func (s MySQLSink) PendingUserStops(ctx context.Context) ([]StopReservation, error) {
 	var rows []chargeStopCommandRow
 	err := s.DB.WithContext(ctx).Where("status = 'pending' OR (status = 'sent' AND sent_at < DATE_SUB(NOW(3), INTERVAL 10 SECOND))").
@@ -134,7 +134,7 @@ func (s MySQLSink) PendingUserStops(ctx context.Context) ([]StopReservation, err
 	return result, nil
 }
 
-// stopReservationFromRow 接收原停机 row，解码并还原 STOP 与原持久状态；返回受理事实或会话错误，无 IO。
+// stopReservationFromRow 接收停机 row，解码并还原 STOP 与已保存状态；返回受理结果或会话错误。
 func stopReservationFromRow(row chargeStopCommandRow) (StopReservation, error) {
 	job, err := stopJob(row.CommandID, row.OrderNo, row.DeviceID, row.PortNo, row.SessionID)
 	if err != nil {

@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// AdminAccount 是一个后台账号在 admin_user 表上的行，同时承载登录判定所需的全部字段。
-// 敏感字段一律 json："-"，不会随任何接口返回。
+// AdminAccount 是登录校验所需的后台账号记录，密码和 MFA 等敏感字段不参与 JSON 输出。
 type AdminAccount struct {
 	AuthVersion      uint64         `json:"-"`             // 凭证版本号：改密或强制下线时自增，用于让已签发的令牌立即失效
 	ID               uint64         `json:"admin_user_id"` // 账号主键
@@ -29,7 +28,7 @@ type AdminAccount struct {
 	LockedUntil      sql.NullTime   `json:"-"`             // 锁定到期时间；可空，未锁定为 null
 }
 
-// TableName 指明 AdminAccount 映射到 admin_user（表名与模型名不一致，必须显式指定）。
+// TableName 将 AdminAccount 映射到 admin_user。
 func (AdminAccount) TableName() string { return "admin_user" }
 
 // AccountRepo 访问后台认证与账号自有表，凭据材料只用于认证判定。
@@ -37,9 +36,8 @@ type AccountRepo struct {
 	DB *gorm.DB /* 所属账号与审计数据库 */
 }
 
-// Bootstrap 在全新安装时创建第一个后台账号。
-// 用户名与密码都为空表示不初始化；用户名与密码只给一半、或密码不在 12–72 字节之间，一律报错。
-// 只在库里还没有任何账号时才创建，绝不覆盖已有账号的口令。
+// Bootstrap 仅在没有账号的新安装中创建首个管理员，不覆盖现有密码。
+// 用户名和密码都为空时跳过；只填一项或密码不在 12–72 字节时拒绝。
 func (s AccountRepo) Bootstrap(ctx context.Context, username, password string) error {
 	if username == "" && password == "" {
 		return nil
@@ -53,7 +51,7 @@ func (s AccountRepo) Bootstrap(ctx context.Context, username, password string) e
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var role struct {
-			ID uint64 /* 初始化角色的原主键 */
+			ID uint64 /* 初始化角色的主键 */
 		}
 		if err := tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).Where("active_code = ?", "customer_admin").Take(&role).Error; err != nil {
 			return err
@@ -74,10 +72,9 @@ func (s AccountRepo) Bootstrap(ctx context.Context, username, password string) e
 	})
 }
 
-// Login 校验用户名与口令，成功时返回账号并写登录时间与审计。
-// 连续 5 次失败即锁定 30 分钟，锁定到期后失败计数自动清零。
-// 账号启用双因素认证时，口令正确也只返回账号、不写成功状态，由调用方接着走 MFA 流程。
-// 用户名不存在与口令错误返回同一个错误，不给暴力破解区分线索。
+// Login 校验密码；连续失败 5 次锁定 30 分钟，锁定到期清零失败次数。
+// 启用 MFA 时只返回账号，完成二次验证后才记录登录成功；普通登录同时保存时间和审计。
+// 用户不存在和密码错误返回同一错误。
 func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (AdminAccount, error) {
 	var account AdminAccount
 	var denied error
@@ -134,9 +131,9 @@ func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (
 	return account, nil
 }
 
-// CompleteMFA 在ctx下锁identity原账号，核对原版本及code；ip用于审计，consume原子消费已验证挑战。
-// 锁定／版本失效不消费；坏码计数与审计同事务提交，好码先消费后记录成功。
-// 消费后SQL失败会回滚SQL但不恢复Redis挑战，失败关闭且须重新密码登录。
+// CompleteMFA 锁定账号后核对版本和验证码，成功前原子删除已验证挑战。
+// 锁定、版本过期或坏码不删除挑战；坏码次数和审计同事务保存。
+// 删除挑战后 SQL 失败只回滚 SQL，须重新用密码登录。
 func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.AccountIdentity, code, ip string, consume func(context.Context) error) (AdminAccount, error) {
 	var account AdminAccount
 	var denied error
@@ -195,11 +192,10 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 	return account, nil
 }
 
-// Profile 读取一个账号的登录身份与权限清单：先联表取角色编码，再按角色展开权限码。
-// 只接受 active 且未删除的账号；查不到与被停用都返回凭据错误，避免泄漏账号是否存在。
+// Profile 读取有效账号、当前角色和权限；不存在或停用统一返回凭据错误。
 func (s AccountRepo) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
 	var row struct {
-		// AdminAccount 从当前有效 admin_user 行扫描的账号列，包含主键、角色归属与鉴权版本；与同次联表查询的角色信息组合，不另查缓存。
+		// AdminAccount 保存本次有效账号查询的主键、角色和认证版本，不另查缓存。
 		AdminAccount
 		Role     string // 当前有效角色编码
 		RoleName string // 当前角色展示名称
@@ -217,16 +213,15 @@ func (s AccountRepo) Profile(ctx context.Context, id uint64) (operations.Profile
 	return p, err
 }
 
-// WriteAuthAudit 在tx下按a最小身份写action及ip，返回存储错误，不记录口令、密钥或挑战。
-// 固定记在 auth 模块和 admin_user 对象上。created_month 是该表按月分区的键，必须一并写入。
+// WriteAuthAudit 在账号事务中保存操作和 IP，排除密码、密钥和挑战。
+// 审计归属 auth 模块、admin_user 对象，并填写月份分区键 created_month。
 func WriteAuthAudit(tx *gorm.DB, a AdminAccount, action, ip string) error {
 	now := time.Now().UTC()
 	return tx.Table("audit_log").Create(map[string]any{"actor_id": a.ID, "actor_name": a.Username, "module": "auth", "action": action, "target_type": "admin_user", "target_id": fmt.Sprint(a.ID), "client_ip": ip, "created_month": time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}).Error
 }
 
-// ChangePassword 校验旧口令后改新口令，并把 auth_version 自增一，
-// 使该账号已签发的令牌立即失效。旧口令错误返回凭据错误；
-// 新口令必须与旧口令不同且在 12–72 字节之间（bcrypt 的上限）。
+// ChangePassword 验证旧密码后更新新密码并提升 auth_version，使已有令牌失效。
+// 新密码须不同于旧密码，长度为 12–72 字节。
 func (s AccountRepo) ChangePassword(ctx context.Context, id uint64, oldPassword, newPassword, ip string) error {
 	if len(newPassword) < 12 || len(newPassword) > 72 || newPassword == oldPassword {
 		return errors.New("new password must differ and contain 12–72 bytes")
@@ -250,8 +245,7 @@ func (s AccountRepo) ChangePassword(ctx context.Context, id uint64, oldPassword,
 	})
 }
 
-// Identity 把账号收敛为会话需要的最小身份：ID、登录名与凭证版本。
-// 口令散列、MFA 密钥等登录判定字段不进入 Redis 会话。
+// Identity 提取会话所需账号 ID、登录名和认证版本；密码散列和 MFA 密钥不进入 Redis 会话。
 func (a AdminAccount) Identity() operations.AccountIdentity {
 	return operations.AccountIdentity{ID: a.ID, AuthVersion: a.AuthVersion, Username: a.Username}
 }

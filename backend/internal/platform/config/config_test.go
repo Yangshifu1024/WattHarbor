@@ -37,7 +37,7 @@ func centralEnvironment(t *testing.T) {
 	t.Setenv("WECHAT_APPID", "wx_fixture")
 }
 
-// wechatPaymentEnvironment 为 t 提供通过原直连配置校验的商户参数，不读取私钥或初始化渠道。
+// wechatPaymentEnvironment 为 t 提供通过直连配置校验的商户参数，不读取私钥或初始化渠道。
 func wechatPaymentEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("PAYMENT_MODE", "wechat_direct")
@@ -48,7 +48,7 @@ func wechatPaymentEnvironment(t *testing.T) {
 	t.Setenv("WECHAT_NOTIFY_URL", "https://fixture.example/api/v1/public/payments/wechat/callback")
 }
 
-// TestLoadGatewayNeedsNoLoginOrRedis 验证设备网关加载只需自己的数据库与服务令牌，并保持原监听默认值。
+// TestLoadGatewayNeedsNoLoginOrRedis 验证设备网关加载只需自己的数据库与服务令牌，并保持默认监听地址。
 func TestLoadGatewayNeedsNoLoginOrRedis(t *testing.T) {
 	clearConfigEnvironment(t)
 	t.Setenv("DATABASE_URL", "mysql://fixture:fixture@localhost/gateway_db")
@@ -109,15 +109,15 @@ func TestLoadCentralKeepsRequiredInputs(t *testing.T) {
 	}
 }
 
-// TestLoadCentralKeepsPaymentValidation 验证 central 保持原支付模式、五项商户参数和 APIv3 密钥长度校验。
+// TestLoadCentralKeepsPaymentValidation 验证 central 保持支付模式、五项商户参数和 APIv3 密钥长度校验。
 // 测试仅执行配置加载，直连成功用例不代表私钥文件可读或微信渠道已验收。
 func TestLoadCentralKeepsPaymentValidation(t *testing.T) {
 	tests := []struct {
 		name      string // 子测试名称，标识所验证的配置边界。
 		mode      string // 设置的支付模式；空值表示未配置，沿用默认 disabled。
-		wechat    bool   // 是否先提供全部通过原校验的直连参数。
+		wechat    bool   // 是否先提供全部通过校验的直连参数。
 		missing   string // 待移除的商户参数名称；空值表示不移除。
-		shortKey  bool   // 是否将 APIv3 密钥改为 31 字节，验证原长度约束。
+		shortKey  bool   // 是否将 APIv3 密钥改为 31 字节，验证长度约束。
 		wantError string // 预期错误文本片段；空值表示应成功加载。
 	}{
 		{name: "disabled_default"},
@@ -206,7 +206,7 @@ func TestLoadAdminNeedsNoPaymentOrStream(t *testing.T) {
 }
 
 // TestLoadUserKeepsLoginSecretRequirement 验证 user 仍要求微信登录密钥，即使选择开发登录与模拟支付也不能缺失该配置。
-// 提供密钥后能加载；非法登录模式仍被原校验拒绝。
+// 提供密钥后能加载；非法登录模式仍被校验拒绝。
 func TestLoadUserKeepsLoginSecretRequirement(t *testing.T) {
 	clearConfigEnvironment(t)
 	centralEnvironment(t)

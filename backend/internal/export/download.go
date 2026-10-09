@@ -12,16 +12,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// Download 是准入通过后打开的原文件；HTTP只消费句柄，结束时负责关闭，不再读取数据库路径。
+// Download 保存已通过校验的打开文件，HTTP 读取后负责关闭，不再使用数据库路径。
 type Download struct {
 	File       *os.File  // 任务锁内已打开、校验、回到开头的内容句柄
 	Name       string    // 可信任务号与扩展名推导的下载名称
-	MIME       string    // 原CSV或XLSX内容类型
-	ModifiedAt time.Time // 原文件修改时刻，供HTTP条件／范围请求
+	MIME       string    // CSV 或 XLSX 内容类型
+	ModifiedAt time.Time // 文件修改时间，供 HTTP 条件和范围请求
 }
 
-// GetDownload 在ctx下核对original当前权限、id归属／范围／脱敏及锁后到期，返回句柄或公开准入／状态／IO错误。
-// 下载与清理共用任务锁，锁内打开句柄；退出事务后HTTP消费，不在传输期间占用数据库锁。
+// GetDownload 核对当前权限、申请人、范围、脱敏规则和锁后的有效期，再打开文件。
+// 下载和清理共用任务锁；打开后释放数据库锁，再由 HTTP 传输。
 func (s ExportService) GetDownload(ctx context.Context, original operations.Profile, id uint64) (out Download, err error) {
 	if s.DB == nil {
 		return out, errors.New("export unavailable")
@@ -100,7 +100,7 @@ func (s ExportService) GetDownload(ctx context.Context, original operations.Prof
 		if err != nil {
 			return errors.Join(err, file.Close())
 		}
-		// 摘要校验也可能跨过截止；关闭句柄后在同任务锁内清理，避免Windows占用文件。
+		// 摘要校验也可能跨过截止时间，须先关闭句柄再在任务锁内清理，兼容 Windows 文件占用。
 		if expiry != nil && !s.now().Before(*expiry) {
 			if err := file.Close(); err != nil {
 				return err
@@ -135,8 +135,8 @@ func (s ExportService) GetDownload(ctx context.Context, original operations.Prof
 	return out, nil
 }
 
-// expireInTx 在ctx及tx已持row任务锁下，仅从可信根推导并清理旧文件，再标记expired，返回IO／存储错误。
-// 不使用数据库FilePath删除；异常任务身份拒绝删除，不存在的文件视为已清理。
+// expireInTx 在任务锁内按可信目录和任务号清理文件，再标为 expired。
+// 异常任务号拒绝删除，文件不存在视为已清理，不使用数据库 FilePath 删除。
 func (s ExportService) expireInTx(ctx context.Context, tx *gorm.DB, row ExportTaskRow) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -154,8 +154,8 @@ func (s ExportService) expireInTx(ctx context.Context, tx *gorm.DB, row ExportTa
 	return s.repo().ExpireExportTask(tx, row.TaskNo)
 }
 
-// CleanupExpired 在ctx下取至多1000原completed／failed候选并逐条当前锁读，返回推进数或取消／IO／存储错误。
-// 每条重新核对时刻和状态，重复清理不重复计数；不接管生成任务，不启动新goroutine。
+// CleanupExpired 每批最多取 1000 个 completed／failed 候选，逐条锁读并重新核对时间和状态。
+// 清理后标为 expired，重复执行不重复计数，不接管生成中的任务。
 func (s ExportService) CleanupExpired(ctx context.Context) (int, error) {
 	if s.DB == nil {
 		return 0, errors.New("export unavailable")

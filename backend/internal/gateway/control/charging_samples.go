@@ -46,7 +46,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 		if e.DeviceID != device || e.Type != protocol.Heartbeat {
 			continue
 		}
-		// 即使本次心跳缺失目标端口也保留事件，使消费者能中断连续证据。
+		// 即使本次心跳缺失目标端口也保留事件，使调用方能中断连续证据。
 		// 只输出目标端口，不泄露其他端口遥测、卡号或原始载荷。
 		sample := gatewaycontract.EvidenceSample{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: e.ReceivedAt, ChargingPorts: []protocol.PortTelemetry{}}
 		for _, p := range e.ChargingPorts {
@@ -64,7 +64,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 	return samples, nextAfterID, complete, nil
 }
 
-// Return bounded, port-specific evidence without raw payloads or card data.
+// chargingSamples 返回指定端口的有限条心跳，不含原始载荷和卡号。
 // after_id 为游标：传入上一段返回的 next_after_id 可续取更早的证据。
 func (a TelemetryAPI) chargingSamples(c *gin.Context) {
 	if !a.authorized(c) {

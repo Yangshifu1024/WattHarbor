@@ -15,7 +15,7 @@ import (
 	wire "chargepilot/internal/protocol/dc589"
 )
 
-// Input changes physical conditions or presents a card; no gateway/DB shortcut.
+// Input 模拟设备物理状态变化或刷卡，不直接调用网关或写数据库。
 type Input struct {
 	Config      *wire.ConfigTable `json:"config,omitempty"`
 	Type        string            `json:"type"`
@@ -78,8 +78,8 @@ type ChargeState struct {
 	NotBeforeEnd   time.Time
 }
 
-// ControlHandler is intended for a loopback listener. All inputs are serialized
-// with wire commands and metering in the board loop; tests use the same path.
+// ControlHandler 用于本机监听；控制输入、协议命令和计量在设备循环中顺序处理。
+// 测试使用相同的处理路径。
 func ControlHandler(ctx context.Context, inputs chan<- Input) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -160,7 +160,7 @@ func (b *board) sendAllPorts(short bool, command byte) error {
 			ports = append(ports, b.telemetry(c))
 		}
 	}
-	// The real 20-port board emits at most ten charging blocks per frame.
+	// 20 端口主板每帧最多上报 10 个充电端口。
 	count := len(ports)
 	if short {
 		count = 0
@@ -585,7 +585,7 @@ func (b *board) remote(f wire.Frame) error {
 	if len(f.Data) != 10 || f.Data[0] != 1 || f.Data[1] != 0 {
 		return nil
 	}
-	// Successful reset does not emit A3; reconnect with the existing identity.
+	// 重启成功后不发 A3，继续使用相同设备编号重新连接。
 	for port, c := range b.charging {
 		delete(b.charging, port)
 		if err := b.reportEnd(c, 3); err != nil {
@@ -599,7 +599,7 @@ func (b *board) remote(f wire.Frame) error {
 }
 
 func (b *board) updateBand(c *charge) error {
-	// Platform billing and long charging bypass discounts and full/remove checks.
+	// 平台计费和长时充电模式跳过折扣、充满及移除检测。
 	if c.mode == wire.PlatformBilling || c.mode == wire.LongPlatformBilling || c.mode == wire.LongTime || c.mode == wire.LongEnergy {
 		return nil
 	}

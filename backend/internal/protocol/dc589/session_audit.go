@@ -34,8 +34,7 @@ type SessionAudit struct {
 	unknown   [256]bool
 }
 
-// NewSessionAudit 开始跟踪一条连接。remoteAddr 在这里就记下来，
-// 因为等到写这一行的时候连接早就没了。
+// NewSessionAudit 开始记录连接；立即保存对端地址，供连接关闭后的审计写入使用。
 func NewSessionAudit(transport Transport, sessionID, remoteAddr string, startedAt time.Time) *SessionAudit {
 	audit := &SessionAudit{
 		transport:  transport,

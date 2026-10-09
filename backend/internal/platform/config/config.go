@@ -45,10 +45,8 @@ type Gateway struct {
 	DebugHeartbeat bool `env:"GATEWAY_DEBUG_HEARTBEAT" envDefault:"false"`
 }
 
-// Central 是对内进程的配置。它不签发也不校验用户会话——internal 端点一律走
-// 服务令牌，因此不取 JWT_SECRET：密钥只留在真正需要它的 user 与 admin 两个对外进程。
-//
-// 它仍需要微信 AppID 与商户凭据，因为退款派发由 worker 回调本进程执行。
+// Central 配置内部业务进程；接口使用服务令牌，不需要 JWT 密钥。
+// 退款由本进程执行，因此需要微信 AppID 和商户凭据。
 type Central struct {
 	DatabasePool
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
@@ -77,10 +75,8 @@ type Central struct {
 	WechatNotifyURL string `env:"WECHAT_NOTIFY_URL"`
 }
 
-// User 是 C 端进程的配置。它取微信与支付凭据（登录、手机号授权、支付回调都在
-// 这一侧），但不取 Redis 流——事件流由 worker 消费，不经过对外进程。
-//
-// 充电中的遥测与历史曲线经 GATEWAY_INTERNAL_URL 回调 gateway，不经 central。
+// User 配置 C 端登录、手机号授权和支付，不连接事件流 Redis。
+// 充电遥测和历史曲线通过 GATEWAY_INTERNAL_URL 查询 gateway。
 type User struct {
 	DatabasePool
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
@@ -115,11 +111,8 @@ type User struct {
 	WechatNotifyURL string `env:"WECHAT_NOTIFY_URL"`
 }
 
-// Admin 是运营后台进程的配置。
-//
-// 与 Central 共用同一个 central_db，但不碰微信与支付配置——后台不发起支付，
-// 也不替用户登录。分开定义而不是复用 Central，是为了让"这个进程需要什么
-// 凭据"在类型上就是清楚的：多给一份 WECHAT_SECRET 就等于多一处泄露面。
+// Admin 配置运营后台，与 central 共用 central_db。
+// 后台不替用户登录或发起支付，因此不读取微信和支付凭据。
 type Admin struct {
 	DatabasePool
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
@@ -163,7 +156,7 @@ type Worker struct {
 	GatewayInternalURL string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
 }
 
-// LoadGateway 加载环境变量并校验设备连接上限，返回已解析配置或解析／校验错误；不打开连接或启动监听。
+// LoadGateway 读取设备网关配置并检查连接上限。
 func LoadGateway() (Gateway, error) {
 	var c Gateway
 	if err := env.Parse(&c); err != nil {
@@ -178,7 +171,7 @@ func LoadGateway() (Gateway, error) {
 	return c, nil
 }
 
-// LoadCentral 加载 central 所需环境变量并校验支付模式与直连凭据，返回配置或解析／校验错误；不读取用户登录模式、微信登录密钥或事件流配置，不打开资源。
+// LoadCentral 读取内部业务配置，检查支付模式和直连商户凭据。
 func LoadCentral() (Central, error) {
 	var c Central
 	if err := env.Parse(&c); err != nil {
@@ -196,7 +189,7 @@ func LoadCentral() (Central, error) {
 	return c, nil
 }
 
-// LoadWorker 加载 worker 所需环境变量，返回配置或解析错误；不打开数据库、Redis 或启动后台任务。
+// LoadWorker 读取后台任务配置，不打开数据库或启动任务。
 func LoadWorker() (Worker, error) {
 	var c Worker
 	if err := env.Parse(&c); err != nil {
@@ -208,7 +201,7 @@ func LoadWorker() (Worker, error) {
 	return c, nil
 }
 
-// LoadAdmin 加载后台环境变量并校验 JWT 密钥长度，返回配置或解析／校验错误；不初始化后台账户或打开资源。
+// LoadAdmin 读取后台配置并检查 JWT 密钥长度。
 func LoadAdmin() (Admin, error) {
 	var c Admin
 	if err := env.Parse(&c); err != nil {
@@ -223,7 +216,7 @@ func LoadAdmin() (Admin, error) {
 	return c, nil
 }
 
-// LoadUser 加载用户端环境变量并校验 JWT、登录模式及支付配置，返回配置或解析／校验错误；不登录用户、构造支付渠道或打开资源。
+// LoadUser 读取用户端配置，检查 JWT 密钥、登录模式和支付凭据。
 func LoadUser() (User, error) {
 	var c User
 	if err := env.Parse(&c); err != nil {

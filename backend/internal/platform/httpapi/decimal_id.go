@@ -42,10 +42,8 @@ func (id *DecimalID) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// DecimalizeIDField 把一段已序列化的 JSON 对象里指定字段的整数 ID 改写为十进制字符串。
-// 用于 DecimalID 覆盖不到的场合：原始 JSON 文本、审计快照、第三方报文被原样存回库后
-// 再原样返回。大 ID 以字符串传输，避免 JavaScript number 在发出请求前就丢掉精度。
-// 字段缺失或值不是整数时保持原样，不猜测、不改写。
+// DecimalizeIDField 将 JSON 对象中指定的整数 ID 转为十进制字符串，避免前端丢失精度。
+// 用于原始 JSON 和审计快照；字段缺失或不是整数时保持原样。
 func DecimalizeIDField(raw []byte, field string) ([]byte, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return raw, nil
@@ -66,11 +64,8 @@ func DecimalizeIDField(raw []byte, field string) ([]byte, error) {
 	return json.Marshal(object)
 }
 
-// DecimalizeRowIDs 把一行 map 中指定列的 ID 转为十进制字符串。
-//
-// 用于以 map[string]any 组装的响应（工单列表、审计行等）：这些行没有结构体字段，
-// 无法靠 DecimalID 的 MarshalJSON 生效。NULL 保持 null，不变成字符串 "0"——
-// 两者含义不同，前端据此判断"未指派"。调用方只应把确实是 ID 的列传进来。
+// DecimalizeRowIDs 将 map 中指定的 ID 列转为十进制字符串，NULL 保持 null。
+// 只传入确实表示 ID 的列，避免转换金额等其他整数。
 func DecimalizeRowIDs(row map[string]any, keys ...string) {
 	for _, key := range keys {
 		if value, ok := row[key]; ok && value != nil {

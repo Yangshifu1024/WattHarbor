@@ -15,8 +15,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// Generate 在ctx下为taskNo原申请人original同步生成，返回取消、准入、查询、IO或状态错误。
-// 集合／账号→任务锁持续到文件及范围凭据发布、完成状态提交；不启动后台任务，不宣称SQL／文件原子。
+// Generate 同步为申请人生成文件；按角色集合→账号→任务加锁，保持到文件、凭据发布和 completed 提交。
+// 不启动后台任务，文件与 SQL 不保证原子提交。
 func (s ExportService) Generate(ctx context.Context, taskNo string, original operations.Profile) error {
 	if s.DB == nil {
 		return errors.New("export unavailable")
@@ -90,7 +90,7 @@ func (s ExportService) Generate(ctx context.Context, taskNo string, original ope
 		if err != nil {
 			return err
 		}
-		// 取数及编码可能跨过下载截止；发布字节不代表允许把过期产物标成completed。
+		// 取数和编码后须重新检查有效期，已发布字节不能作为过期任务完成的依据。
 		now := s.now()
 		if expiry != nil && !now.Before(*expiry) {
 			return &DownloadError{Message: "导出文件已过期，请重新导出", Expired: true}
@@ -100,8 +100,8 @@ func (s ExportService) Generate(ctx context.Context, taskNo string, original ope
 	if err == nil || !owned {
 		return err
 	}
-	// 只在受管理调用内同步收尾，最多5秒；不继续取数／编码。原取消ctx不能落失败状态。
-	// 先当前重读，提交回执未知或另一请求已完成时保留已完成文件，不盲删竞争者成果。
+	// 取消后仅同步收尾，最多五秒，不继续取数或编码。
+	// 先锁读当前状态；提交结果未知或另一请求已完成时保留文件，避免误删成功结果。
 	recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	failed, settleErr := s.settleFailure(recovery, taskNo, original.ID, err, mayHaveFiles)
@@ -114,8 +114,8 @@ func (s ExportService) Generate(ctx context.Context, taskNo string, original ope
 	return &generationFailure{cause: err}
 }
 
-// settleFailure 在ctx下当前锁读taskNo并核对actorID，仅为自己未完成任务清理和记录cause。
-// 返回是否持久failed及恢复错误；SQL不可用时不宣称已失败，原pending可由同申请重新生成。
+// settleFailure 锁读任务并核对申请人，只清理自己的未完成任务。
+// 失败状态须确实保存才返回已失败；数据库不可用时保留 pending 供同申请恢复。
 func (s ExportService) settleFailure(ctx context.Context, taskNo string, actorID uint64, cause error, mayHaveFiles bool) (bool, error) {
 	failed := false
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -148,7 +148,7 @@ func (s ExportService) settleFailure(ctx context.Context, taskNo string, actorID
 	return failed && err == nil, err
 }
 
-// truncateReason 按原字节上限max保留value且不切断UTF-8，返回可落库错误文本，无IO。
+// truncateReason 按字节上限截断错误文本，不截断 UTF-8 字符。
 func truncateReason(value string, max int) string {
 	if len(value) <= max {
 		return value

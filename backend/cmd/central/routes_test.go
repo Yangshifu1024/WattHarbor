@@ -14,13 +14,12 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// TestCentralAssemblyRejectsInvalidServiceIdentityBeforeBusinessIO 核对t中的真实cmd装配：
-// 原内部方法／路径与模拟模式开关不变，空配置或错误令牌先返回唯一401信封。
-// 所有业务、SQL、Redis及网关依赖为空；误入业务会失败，不以该测试证明存储或资金语义。
+// TestCentralAssemblyRejectsInvalidServiceIdentityBeforeBusinessIO 验证内部路由和模拟开关保持一致，空配置或错误令牌返回一次 401。
+// 所有业务依赖均为空，确保鉴权失败时不会进入业务处理。
 func TestCentralAssemblyRejectsInvalidServiceIdentityBeforeBusinessIO(t *testing.T) {
 	routes := []struct {
-		method string // 原注册的HTTP方法。
-		path   string // 原路由模板，订单号在请求中替换为固定测试身份。
+		method string // 已注册的 HTTP 方法。
+		path   string // 路由模板，测试使用固定订单号。
 	}{
 		{http.MethodGet, "/api/v1/internal/charge-orders/paid-starts"},
 		{http.MethodGet, "/api/v1/internal/charge-orders/:order_no/start-authorization"},

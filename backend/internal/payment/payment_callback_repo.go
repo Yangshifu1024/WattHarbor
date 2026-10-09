@@ -24,7 +24,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrPaymentCallbackConflict 表示通知身份、金额或原支付关联不一致，不能推进任何到账状态。
+// ErrPaymentCallbackConflict 表示通知标识、金额或支付关联不一致，不能更新任何到账状态。
 var ErrPaymentCallbackConflict = errors.New("verified payment does not match intent")
 
 // VerifiedPayment 只能在配置好的支付 SDK 已经验签/解密成功通知、
@@ -32,10 +32,10 @@ var ErrPaymentCallbackConflict = errors.New("verified payment does not match int
 type VerifiedPayment struct {
 	Provider        string    // 已验签渠道，与装配渠道一致
 	MerchantID      string    // 已验签收款商户，与本进程商户一致
-	AppID           string    // 已验签应用，与原支付应用一致
-	MerchantOrderNo string    // 原商户支付单号，最长 64 字节
-	TransactionID   string    // 渠道交易唯一身份，最长 64 字节
-	OpenID          string    // 已验签付款人，必须匹配原申请
+	AppID           string    // 已验签应用，与支付应用一致
+	MerchantOrderNo string    // 商户支付单号，最长 64 字节
+	TransactionID   string    // 渠道交易唯一编号，最长 64 字节
+	OpenID          string    // 已验签付款人，必须匹配申请
 	PaidCents       int64     // 渠道实际支付金额，分，严格匹配原单
 	PaidAt          time.Time // 渠道确认时刻，规范化到 UTC 毫秒
 }
@@ -48,17 +48,16 @@ type PaymentCallbackResult struct {
 	Replayed       bool   `json:"replayed"`                  // 已存在相同身份及金额的到账凭据
 }
 
-// CallbackService 是已验签通知到账的唯一入口，拥有支付及摘要事务。
+// CallbackService 是已验签通知到账的唯一入口，负责支付及摘要事务。
 type CallbackService struct {
 	DB                 *gorm.DB           // central 支付连接，由进程管理
-	ExpectedProvider   string             // 该部署接受的渠道
-	ExpectedMerchantID string             // 该部署收款商户
-	ExpectedAppID      string             // 该部署支付应用
+	ExpectedProvider   string             // 本进程接受的渠道
+	ExpectedMerchantID string             // 本进程收款商户
+	ExpectedAppID      string             // 本进程支付应用
 	Refunds            LateRefundRecorder // 同事务迟到退款及 Outbox 能力，cmd 注入 settlement 实现
 }
 
-// entryRejected 用 payment 已验签身份、paidAt 规范时刻和 now 当前时刻校验通知准入。
-// 返回 true 表示配置、身份、分值或时间无效，须在开事务前拒绝；无 IO 或状态写入。
+// entryRejected 在事务前校验已验证通知的配置、标识、金额与时间；不合格返回 true。
 func (s CallbackService) entryRejected(payment VerifiedPayment, paidAt, now time.Time) bool {
 	return s.DB == nil || s.ExpectedProvider == "" || s.ExpectedMerchantID == "" || s.ExpectedAppID == "" ||
 		payment.Provider != s.ExpectedProvider || payment.MerchantID != s.ExpectedMerchantID || payment.AppID != s.ExpectedAppID ||
@@ -67,10 +66,10 @@ func (s CallbackService) entryRejected(payment VerifiedPayment, paidAt, now time
 		payment.PaidCents <= 0 || paidAt.IsZero() || paidAt.After(now.Add(5*time.Minute))
 }
 
-// Apply 在 ctx 下按 payment 原商户单号锁定支付，核对身份、金额、关联及交易摘要。
+// Apply 按 payment 商户单号锁定支付，核对标识、金额、关联及交易摘要。
 // 返回首次或重放回执；任一存储、权益、退款或建单错误回滚整个到账事务。
-// READ COMMITTED 下正常充电的意图、价格快照、订单、优惠核销及 Outbox 同时提交；
-// 充值同事务调用钱包到账，迟到支付仅登记原退款，不创建可启动的充电订单。
+// READ COMMITTED 下正常充电的意图、价格快照、订单、优惠核销及 Outbox 同时提交。
+// 充值同事务调用钱包到账，迟到支付仅登记退款，不创建可启动的充电订单。
 func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (PaymentCallbackResult, error) {
 	paidAt := payment.PaidAt.UTC().Truncate(time.Millisecond)
 	if s.entryRejected(payment, paidAt, time.Now()) {
@@ -103,7 +102,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 		if err != nil {
 			return err
 		}
-		// 意图必须属于这同一笔支付订单，
+		// 意图必须属于这同一笔支付订单。
 		// 否则一个验签通过的回调可能结算到别的客户的订单上。
 		if intent.PaymentOrderID != order.ID {
 			return ErrPaymentCallbackConflict
@@ -232,9 +231,8 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 	return callbackResult, err
 }
 
-// queueLatePaymentRefund 在已锁支付的 tx 中将 intent 标为需退款，order 提供原支付身份。
-// payment 提供已核实金额，digest 派生稳定退款及事件号，paidAt 为 UTC 到账时刻。
-// 返回状态、注入能力或写入错误；退款和 Outbox 失败须回滚支付及摘要，不在此调用渠道。
+// queueLatePaymentRefund 在到账事务中登记迟到支付的自动退款与 Outbox。
+// 退款编号由通知摘要稳定派生，失败回滚支付及摘要；只登记退款，不调用渠道。
 func (s CallbackService) queueLatePaymentRefund(tx *gorm.DB, intent PaymentIntentRecord, order PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time) error {
 	changed := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status IN ('initiated','expired')", intent.IntentID).
 		Updates(map[string]any{"status": "refund_required", "paid_at": paidAt})
@@ -250,8 +248,8 @@ func (s CallbackService) queueLatePaymentRefund(tx *gorm.DB, intent PaymentInten
 	return s.Refunds.RecordLateInTx(tx, money.RefundDraft{RefundNo: "REF" + digest[:32], PaymentOrderID: order.ID, UserID: intent.UserID, BizType: "charge", AmountCents: payment.PaidCents, Reason: "payment arrived after intent expired", CreatedMonth: dbutil.MonthStart()}, "R"+digest[:32])
 }
 
-// callbackDigest 对 payment 的渠道、商户、应用、付款人、原单、交易号及分值生成 SHA256 十六进制摘要。
-// 不含到账时刻，容许同一交易重新查询时刻不同；金额或身份变化不能重放，无 IO 或错误。
+// callbackDigest 对 payment 的渠道、商户、应用、付款人、原单、交易号及金额（分）生成 SHA256 十六进制摘要。
+// 不含到账时刻，容许同一交易重新查询时刻不同；金额或身份变化不能重放。
 func callbackDigest(payment VerifiedPayment) string {
 	value := payment.Provider + "\x00" + payment.MerchantID + "\x00" + payment.AppID + "\x00" + payment.OpenID + "\x00" + payment.MerchantOrderNo + "\x00" + payment.TransactionID + "\x00" +
 		decimalAmount(payment.PaidCents)
@@ -259,13 +257,13 @@ func callbackDigest(payment VerifiedPayment) string {
 	return hex.EncodeToString(digest[:])
 }
 
-// decimalAmount 将 amount 分值格式化为十进制整数，作为摘要的稳定金额编码，无 IO 或错误。
+// decimalAmount 将金额（分）转为稳定的十进制文本，供通知摘要使用。
 func decimalAmount(amount int64) string { return strconv.FormatInt(amount, 10) }
 
 // settleWalletRecharge 对验签通过且金额匹配的渠道充值入账。
 // 钱包冻结或其他不可用状态不阻止资金记账；可用性限制仅影响后续消费。
-// tx 已锁 order 原支付，payment 为验签事实，digest 为稳定摘要，paidAt 为 UTC 到账时刻。
-// 成功回填 result；身份、金额、摘要、权益或写入错误回滚支付、钱包、奖励及 Outbox，不自行提交。
+// tx 已锁 order 支付，payment 为验签事实，digest 为稳定摘要，paidAt 为 UTC 到账时刻。
+// 成功回填 result；标识、金额、摘要、权益或写入错误回滚支付、钱包、奖励及 Outbox，不自行提交。
 func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time, result *PaymentCallbackResult) error {
 	request, err := wallet.LockRechargeForPayment(tx, order.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -274,7 +272,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	if err != nil {
 		return err
 	}
-	// 请求必须属于付款人且金额一致，
+	// 请求必须属于付款人且金额一致。
 	// 这样一个验签通过的回调不会入账与申请金额不同的数目。
 	if request.UserID != order.UserID || request.OpenID == "" || request.OpenID != payment.OpenID || request.AmountCents != payment.PaidCents || order.TotalCents != payment.PaidCents {
 		return ErrPaymentCallbackConflict
@@ -347,7 +345,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 }
 
 // pendingChargeNoFor 在充电行还不存在时推导出核销单号。
-// paymentOrderID 为原支付主键，返回稳定 PENDING- 编号，无 IO 或错误。
+// paymentOrderID 为支付主键，返回稳定 PENDING- 编号。
 func pendingChargeNoFor(paymentOrderID uint64) string {
 	return fmt.Sprintf("PENDING-%d", paymentOrderID)
 }

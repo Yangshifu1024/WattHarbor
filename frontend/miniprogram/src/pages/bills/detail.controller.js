@@ -23,8 +23,7 @@ export default defineController({
       const bill = await billApp.request('GET', '/user/bills/' + encodeURIComponent(this._id));
       if (this._gone || generation !== this._generation) return;
       if (!bill || !bill.id) throw new Error('账单详情响应异常');
-      // 本次已写回并确认的已读凭据是既成事实；后续加载若读到仍为空的
-      // read_at（响应早于回执落库），不得把未读标记退回去。
+      // 已确认的已读状态不被旧响应覆盖，即使旧响应的 read_at 仍为空。
       const view = formatBill(bill);
       if (this._readBillID === bill.id && this._readConfirmed) view.unread = false;
       this.setData({ bill: view });
@@ -33,9 +32,8 @@ export default defineController({
     } catch (e) { if (!this._gone && generation === this._generation) this.setData({ error: e.message || '账单详情加载失败', needsLogin: !billApp.globalData.token }); }
     finally { if (!this._gone && generation === this._generation) this.setData({ loading: false }); }
   },
-  // 已读凭据按账单号单飞：重复打开同一张账单不重复提交。
-  // 已读是这张账单的事实而非本次视图的状态，因此回执成功即落显示，
-  // 不随页面加载的 generation 丢弃；保存失败则释放单飞并允许下次加载重试。
+  // 同一账单只允许一个已读请求在途，成功后立即显示已读，不受页面加载版本影响。
+  // 失败时清除在途标记，下次加载可重试。
   markRead() {
     if (this._readBillID === this._id && (this._readPending || this._readConfirmed)) return this._readPending;
     this._readBillID = this._id;

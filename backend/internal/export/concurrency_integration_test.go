@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// secondExportDB 为t创建独立连接池，源读取仍仅覆盖fixture两个站点，退出关闭池及回调。
+// secondExportDB 创建独立连接池，源查询只覆盖本测试两个站点，结束后关闭池和回调。
 func secondExportDB(t *testing.T, first, second uint64) *gorm.DB {
 	t.Helper()
 	pool, err := dbconn.Open(t.Context(), os.Getenv("TEST_MYSQL_URL"))
@@ -45,7 +45,7 @@ func secondExportDB(t *testing.T, first, second uint64) *gorm.DB {
 	return db
 }
 
-// awaitExportSignal 等待真实数据库步骤entered；ctx超时使t失败，不用睡眠假定锁已取得。
+// awaitExportSignal 等待真实数据库步骤通知，超时终止测试，不用睡眠假定已取锁。
 func awaitExportSignal(t *testing.T, ctx context.Context, entered <-chan struct{}) {
 	t.Helper()
 	select {
@@ -55,7 +55,7 @@ func awaitExportSignal(t *testing.T, ctx context.Context, entered <-chan struct{
 	}
 }
 
-// TestExportConcurrentClaimAndOldSnapshot 用两个物理池验证同UUID重放及旧RR快照的当前任务读取。
+// TestExportConcurrentClaimAndOldSnapshot 验证同 UUID 并发重放，以及旧 RR 快照下锁读最新任务。
 func TestExportConcurrentClaimAndOldSnapshot(t *testing.T) {
 	s, audit, first, second := exportFixture(t)
 	other := s
@@ -88,10 +88,10 @@ func TestExportConcurrentClaimAndOldSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.DB.Callback().Query().Remove(key)
-	// outcome 传递同一导出申请两次 Create 的同步回执及错误，用于比较重放结果；任务提交与审计数量另查真实表。
+	// outcome 汇总同一申请的两次创建结果，任务和审计数量另查真库。
 	type outcome struct {
-		result CreateResult // 原同步回执
-		err    error        // 事务或准入错误
+		result CreateResult // 同步回执
+		err    error        // 事务或校验错误
 	}
 	results := make(chan outcome, 2)
 	var workers sync.WaitGroup
@@ -127,7 +127,7 @@ func TestExportConcurrentClaimAndOldSnapshot(t *testing.T) {
 	if err := s.DB.Table("audit_log").Where("actor_id=? AND target_type='export_task'", audit.Actor.ID).Count(&audits).Error; err != nil || audits != 1 {
 		t.Fatalf("audits %d %v", audits, err)
 	}
-	// 普通读建立旧RR视图，另一连接提交后仍读不到；服务锁读必须能重放原completed。
+	// 普通查询保留旧 RR 快照，锁读必须看到另一连接已提交的 completed 任务并重放。
 	old := other.DB.WithContext(ctx).Begin()
 	if old.Error != nil {
 		t.Fatal(old.Error)
@@ -165,7 +165,7 @@ func TestExportConcurrentClaimAndOldSnapshot(t *testing.T) {
 	}
 }
 
-// TestExportClockAfterLockAndPublication 验证等待锁与取数跨过有效期时不下载或推进completed。
+// TestExportClockAfterLockAndPublication 验证取锁或取数后已过期时，不能下载或标为 completed。
 func TestExportClockAfterLockAndPublication(t *testing.T) {
 	s, audit, first, second := exportFixture(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)

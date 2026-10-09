@@ -1,5 +1,4 @@
-// 把 ChargePilot 的三个库备份进同一个压缩包，并验证它能被完整读回来。
-// 没人恢复过的备份不算备份，所以归档读不出来时直接报错退出，而不是报告成功。
+// 将三个数据库备份到同一个压缩包；完整解压检查失败时退出报错。
 // gzip 由 node:zlib 提供，不依赖外部 gzip 命令；MySQL 客户端可用宿主机
 // mysql/mysqldump，或经 MYSQL_CLIENT_CONTAINER 在数据库容器内执行。
 //
@@ -30,8 +29,7 @@ function fail(message) {
   process.exit(1);
 }
 
-// 文档约定原生客户端凭 MYSQL_PWD；调用方只给了 MYSQL_PASSWORD 时代为映射，
-// 与容器回退路径的传参方式保持一致。
+// 原生客户端使用 MYSQL_PWD；仅提供 MYSQL_PASSWORD 时将其映射过去。
 const nativeEnv = { ...process.env };
 if (!nativeEnv.MYSQL_PWD && password) nativeEnv.MYSQL_PWD = password;
 
@@ -51,13 +49,12 @@ function runCli(tool, args) {
   return spawnSync(cmd, [...prefix, ...args], { cwd: ROOT, encoding: 'utf8' });
 }
 
-// 输出目录必须已存在：备份位置由操作者显式决定，不替他挑。
+// 输出目录必须已存在，由操作者指定备份位置。
 if (!existsSync(outDir) || !statSync(outDir).isDirectory()) {
   fail(`create output directory first: ${outDir}`);
 }
 
-// mysqldump 遇到缺表就会拒绝继续，所以还没建出来的库不能被悄悄跳过：
-// 任一 schema 不存在即整包拒绝，绝不产出部分备份。
+// 任一数据库不存在时停止备份，避免生成缺库的归档。
 for (const schema of SCHEMAS) {
   const probe = runCli('mysql', ['-N', '-e', `SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${schema}'`]);
   if (probe.status !== 0 || probe.stdout.trim() === '') {
@@ -66,13 +63,11 @@ for (const schema of SCHEMAS) {
 }
 
 const archive = join(outDir, `chargepilot-${stamp}.sql.gz`);
-// set-gtid-purged/column-statistics/no-tablespaces 与容器内外客户端版本差异相关，
-// 与原 bash 版保持同一组参数，保证归档可在两个环境间互换。
+// 禁用 GTID、列统计和表空间输出，兼容容器内外的 MySQL 客户端。
 const dumpArgs = ['--single-transaction', '--routines', '--triggers', '--events', '--set-gtid-purged=OFF', '--column-statistics=0', '--no-tablespaces'];
 
-// gzip 变换流接到文件流上；注意 pipe() 返回终点流，必须保留 gzip 引用本身，
-// 否则后续写入会绕过压缩（这正是归档头检查失败的原因）。
-// 同一 gzip 流会被五段来源顺序写入，管道层会临时挂多个监听器，放宽告警阈值。
+// 保留 gzip 流用于后续写入，pipe() 返回的是目标文件流。
+// 多段数据共用压缩流，临时监听器较多，适当提高告警阈值。
 const gzip = createGzip({ level: 9 }).setMaxListeners(25);
 const sink = createWriteStream(archive);
 gzip.pipe(sink);
@@ -80,10 +75,7 @@ gzip.pipe(sink);
 await pipeline(Readable.from(`-- ChargePilot backup ${stamp}\n-- schemas: ${SCHEMAS.join(' ')}\n`), gzip, { end: false });
 
 for (const schema of SCHEMAS) {
-  // USE 语句必须与该库的 dump 交错出现：全部前置会让所有 CREATE TABLE
-  // 落进最后一个 USE 的库上下文（原 bash 版正是逐段交错，这里保持一致）。
-  // 告诉 mysqldump 不要写 USE 时它就不写，所以这里显式声明目标库；
-  // 靠猜的恢复会写进错误的库。
+  // 每份数据库 dump 前写入对应的 USE 语句，避免恢复到错误的库。
   await pipeline(Readable.from(`-- ---- ${schema} ----\nUSE \`${schema}\`;\n`), gzip, { end: false });
   const { cmd, prefix } = resolveCli('mysqldump');
   const child = spawn(cmd, [...prefix, ...dumpArgs, schema], { cwd: ROOT, env: nativeEnv, stdio: ['ignore', 'pipe', 'inherit'] });
@@ -98,7 +90,7 @@ for (const schema of SCHEMAS) {
 await pipeline(Readable.from('-- end of backup\n'), gzip);
 await finished(sink);
 
-// 靠完整解压来验证；被截断的 dump 不应该算通过。
+// 完整解压归档，检查是否截断或损坏。
 let bytes = 0;
 for await (const chunk of createReadStream(archive).pipe(createGunzip())) bytes += chunk.length;
 const size = statSync(archive).size;

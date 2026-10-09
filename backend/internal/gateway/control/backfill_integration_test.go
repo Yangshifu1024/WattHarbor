@@ -22,8 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// backfillFixture 为 t 在真实网关库创建私有停用设备、一个有效及一个已删除端口，返回连接与设备身份。
-// 各表仅按本次设备身份或厂商主键清理并核对零残留，不触发开发设备、命令或中央资金。
+// backfillFixture 为 t 在真实网关库创建私有停用设备、一个有效及一个已删除端口，返回连接与设备编号。
+// 各表仅按本次设备编号或厂商主键清理并核对零残留，不触发开发设备、命令或中央资金。
 func backfillFixture(t *testing.T) (*gorm.DB, string) {
 	t.Helper()
 	db := gatewayContractDB(t)
@@ -65,7 +65,7 @@ func backfillFixture(t *testing.T) (*gorm.DB, string) {
 	return db, board
 }
 
-// callBackfill 用 ctx 经实际 Register 同步提交 input，返回 HTTP 状态与原信封；不创建脱离请求的任务。
+// callBackfill 用 ctx 经实际 Register 同步提交 input，返回 HTTP 状态与响应；不创建脱离请求的任务。
 func callBackfill(t *testing.T, db *gorm.DB, board string, input []backfillFrame, ctx context.Context) (int, faultEnvelopeReply) {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{"frames": input})
@@ -75,20 +75,20 @@ func callBackfill(t *testing.T, db *gorm.DB, board string, input []backfillFrame
 	return callFaultEndpoint(t, db, http.MethodPost, "/api/v1/internal/devices/"+board+"/backfill", string(body), ctx)
 }
 
-// assertBackfillCounts 核对 status/reply 原成功计数是否与 inserted/skipped 一致，不读取或写入数据库。
+// assertBackfillCounts 核对 status/reply 成功计数是否与 inserted/skipped 一致，不读取或写入数据库。
 func assertBackfillCounts(t *testing.T, status int, reply faultEnvelopeReply, inserted, skipped int) {
 	t.Helper()
 	var data struct {
 		Inserted int `json:"inserted"` // 本次实际提交的原始读数条数。
-		Skipped  int `json:"skipped"`  // 原已存身份跳过条数，纯解析同批去重不计入。
+		Skipped  int `json:"skipped"`  // 已存身份跳过条数，纯解析同批去重不计入。
 	}
 	if err := json.Unmarshal(reply.Data, &data); err != nil || status != 200 || reply.Code != 0 || data.Inserted != inserted || data.Skipped != skipped {
 		t.Fatalf("backfill status=%d reply=%+v count=%+v err=%v", status, reply, data, err)
 	}
 }
 
-// TestBackfillKeepsAdmissionDecimalsNullPortsAndReplay 核对停用设备补传、设备级 NULL、精确小数、毫秒去重及原重放。
-// 未知／已删除端口拒绝整批，退役／已删除／缺失设备保持原404，不以空读数或聚合替代最终结算。
+// TestBackfillKeepsAdmissionDecimalsNullPortsAndReplay 核对停用设备补传、设备级 NULL、精确小数、毫秒去重及重放。
+// 未知／已删除端口拒绝整批，退役／已删除／缺失设备保持 404，不以空读数或聚合替代最终结算。
 func TestBackfillKeepsAdmissionDecimalsNullPortsAndReplay(t *testing.T) {
 	db, board := backfillFixture(t)
 	ctx := context.Background()
@@ -105,9 +105,9 @@ func TestBackfillKeepsAdmissionDecimalsNullPortsAndReplay(t *testing.T) {
 	assertBackfillCounts(t, status, reply, 0, 2)
 	var raw []struct {
 		PortNo sql.NullInt16 // 原始设备级读数为空、端口级保持实际端口。
-		Metric string        // 原指标名称，不替换单位或构造汇总指标。
-		Value  string        // MySQL精确十进制文本，不经过float64。
-		TS     time.Time     // 原UTC毫秒采样时刻。
+		Metric string        // 指标名称，不替换单位或构造汇总指标。
+		Value  string        // MySQL 精确十进制文本，不经过 float64。
+		TS     time.Time     // UTC 毫秒采样时刻。
 	}
 	if err := db.Table("telemetry").Select("port_no,metric,CAST(value_num AS CHAR) AS value,ts").Where("device_id=?", board).Order("metric").Find(&raw).Error; err != nil || len(raw) != 2 {
 		t.Fatalf("raw=%+v err=%v", raw, err)
@@ -117,10 +117,10 @@ func TestBackfillKeepsAdmissionDecimalsNullPortsAndReplay(t *testing.T) {
 	}
 	for _, table := range []string{"telemetry_aggregate_15min", "telemetry_aggregate_hourly"} {
 		var aggregates []struct {
-			PortNo sql.NullInt16 // NULL端口原样存储，唯一键使用库中生成列。
-			Metric string        // 原指标名，设备／端口样本分别聚合。
+			PortNo sql.NullInt16 // NULL 端口原样存储，唯一键使用库中生成列。
+			Metric string        // 指标名，设备／端口样本分别聚合。
 			Value  string        // 当前单样本平均值，不重复累加重放。
-			Count  int           // 当前原聚合样本数。
+			Count  int           // 当前聚合样本数。
 		}
 		if err := db.Table(table).Select("port_no,metric,CAST(avg_value AS CHAR) AS value,`count`").Where("device_id=?", board).Order("metric").Find(&aggregates).Error; err != nil || len(aggregates) != 2 || aggregates[0].Count != 1 || aggregates[1].Count != 1 || aggregates[0].Value != "10.000000" || aggregates[1].Value != "220.123457" || !aggregates[0].PortNo.Valid || aggregates[1].PortNo.Valid {
 			t.Fatalf("%s aggregate=%+v err=%v", table, aggregates, err)
@@ -162,7 +162,7 @@ func TestBackfillKeepsAdmissionDecimalsNullPortsAndReplay(t *testing.T) {
 	}
 }
 
-// TestBackfillRollsBackSamplesWhenAggregationIsCanceled 验证聚合前取消回滚整批501样本，重试完整恢复。
+// TestBackfillRollsBackSamplesWhenAggregationIsCanceled 验证聚合前取消回滚整批 501 样本，重试完整恢复。
 func TestBackfillRollsBackSamplesWhenAggregationIsCanceled(t *testing.T) {
 	db, board := backfillFixture(t)
 	at, port := time.Now().UTC().Add(-time.Hour).Truncate(time.Second), int16(1)
@@ -279,7 +279,7 @@ func TestBackfillConcurrentReplayKeepsFirstSamples(t *testing.T) {
 	}
 }
 
-// TestRealtimeAndBackfillShareSampleIdentity 核对实时和补传同毫秒身份保留首次事实，重复实时不增加聚合。
+// TestRealtimeAndBackfillShareSampleIdentity 核对实时和补传同毫秒身份保留首次结果，重复实时不增加聚合。
 func TestRealtimeAndBackfillShareSampleIdentity(t *testing.T) {
 	db, board := backfillFixture(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)

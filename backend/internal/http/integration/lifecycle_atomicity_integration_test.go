@@ -25,24 +25,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// lifecycleAtomicFixture 持有已提交的私有中央订单与独立观察池，仅证明原生命周期事务，不执行渠道或计费入账。
+// lifecycleAtomicFixture 持有已提交的私有中央订单与独立观察池，仅证明生命周期事务，不执行渠道或计费入账。
 type lifecycleAtomicFixture struct {
 	Writer       *gorm.DB  // 真正 Apply 使用的中央池，事务由生产用例开启并提交。
 	Observer     *gorm.DB  // 不共享 Writer 的物理连接，观察已提交或回滚的持久事实。
 	ID           uint64    // 私有大订单及支付身份，所有偏移均在 NewID 预留范围内。
 	PortID       uint64    // 私有中央端口主键，成功启动写入及结束释放必须匹配它。
-	OtherOwner   uint64    // 同私有端口上的另一订单身份，用于证明旧结束不能释放新占用。
+	OtherOwner   uint64    // 同私有端口上的另一订单编号，用于证明旧结束不能释放新占用。
 	DeviceID     string    // 私有设备编号，避免唯一设备端口与其他测试相撞。
-	OrderNo      string    // 原业务订单号，重复调用不改变。
-	StartCommand string    // 原启动 UUID，也是启动事件及 Outbox 身份。
-	StopCommand  string    // 原结束 UUID，也是结束事件及 Outbox 身份。
-	StartedAt    time.Time // 原 UTC 毫秒启动事实。
-	EndedAt      time.Time // 原 UTC 毫秒结束事实，晚于启动一小时。
-	Month        string    // 订单及支付复合主键的原 UTC 月首，清理不得省略。
+	OrderNo      string    // 业务订单号，重复调用不改变。
+	StartCommand string    // 启动 UUID，也是启动事件及 Outbox 身份。
+	StopCommand  string    // 结束 UUID，也是结束事件及 Outbox 身份。
+	StartedAt    time.Time // UTC 毫秒启动事实。
+	EndedAt      time.Time // UTC 毫秒结束事实，晚于启动一小时。
+	Month        string    // 订单及支付复合主键的 UTC 月首，清理不得省略。
 }
 
-// newLifecycleAtomicFixture 接收 t 与 charging，提交私有 paid 或 charging 订单及必要原凭据，返回两个独立中央连接的夹具。
-// 复用必需真库配置，不建表；支付仅为成功启动的原参考事实，不调用支付、退款或资金算法，清理在关池之前执行。
+// newLifecycleAtomicFixture 创建 paid 或 charging 私有订单及凭据，提供两个独立中央数据库连接。
+// 复用必需真库配置，不建表；支付仅为成功启动的参考事实，不调用支付、退款或资金算法，清理在关池之前执行。
 func newLifecycleAtomicFixture(t *testing.T, charging bool) *lifecycleAtomicFixture {
 	t.Helper()
 	id := testfixture.NewID()
@@ -89,18 +89,18 @@ func newLifecycleAtomicFixture(t *testing.T, charging bool) *lifecycleAtomicFixt
 	return f
 }
 
-// startRequest 返回 f 的原成功启动请求，无 IO，不产生新命令身份或时间。
+// startRequest 返回 f 的成功启动请求，无 IO，不产生新命令标识或时间。
 func (f *lifecycleAtomicFixture) startRequest() centralcontract.StartResultRequest {
 	return centralcontract.StartResultRequest{CommandID: f.StartCommand, ChargeOrderID: f.ID, OrderNo: f.OrderNo, DeviceID: f.DeviceID, PortNo: 1, PortID: f.PortID, Success: true, ResultCode: 0, OccurredAt: f.StartedAt}
 }
 
-// endResult 返回 f 的原结束业务值，计量为1200Wh／3600秒，无 IO或计费计算。
+// endResult 返回 f 的结束业务值，计量为 1200Wh／3600 秒，无 IO 或计费计算。
 func (f *lifecycleAtomicFixture) endResult() finish.EndResult {
 	return finish.EndResult{OrderNo: f.OrderNo, ChargeOrderID: f.ID, StartCommandID: f.StartCommand, StopCommandID: f.StopCommand, DeviceID: f.DeviceID, PortNo: 1, PortID: f.PortID,
 		Meter: rules.EndMeter{ChargedWh: 1200, ChargedSeconds: 3600, EndedAt: f.EndedAt, StopReason: 7}}
 }
 
-// assertCount 接收 t、table、where、args 与 want，通过独立 Observer 核对私有匹配记录数；读错或数量不符终止测试。
+// assertCount 通过独立 Observer 核对私有匹配记录数；读错或数量不符终止测试。
 func (f *lifecycleAtomicFixture) assertCount(t *testing.T, table, where string, want int64, args ...any) {
 	t.Helper()
 	var count int64
@@ -109,16 +109,16 @@ func (f *lifecycleAtomicFixture) assertCount(t *testing.T, table, where string, 
 	}
 }
 
-// assertState 接收 t、charging 与 applied，核对原阶段全部可见记录及状态；只有实际完成的 Apply 才能留下对应事件、Outbox或结束任务。
-// Observer 不复用用例事务，启动时核对真实回执的可空字段、占用与事件载荷，结束时核对计量及原启动凭据不变。
+// assertState 核对阶段全部可见记录及状态；只有实际完成的 Apply 才能留下对应事件、Outbox 或结束任务。
+// Observer 不复用用例事务，启动时核对真实回执的可空字段、占用与事件载荷，结束时核对计量及启动凭据不变。
 func (f *lifecycleAtomicFixture) assertState(t *testing.T, charging, applied bool) {
 	t.Helper()
 	var row struct {
 		Status         string         `gorm:"column:status"`          // 持久生命周期状态，必须与本次提交阶段一致。
-		StartedAt      sql.NullTime   `gorm:"column:started_at"`      // 可空启动时刻，启动 rollback 时必须仍NULL。
-		EndedAt        sql.NullTime   `gorm:"column:ended_at"`        // 可空结束时刻，结束 rollback 时必须仍NULL。
-		ChargedKWh     sql.NullString `gorm:"column:charged_kwh"`     // 原DECIMAL电量文本，显式映射kwh缩写，不通过浮点比较丢失精度。
-		ChargedSeconds sql.NullInt64  `gorm:"column:charged_seconds"` // 原结束秒数，未结束时必须NULL。
+		StartedAt      sql.NullTime   `gorm:"column:started_at"`      // 可空启动时刻，启动 rollback 时必须仍 NULL。
+		EndedAt        sql.NullTime   `gorm:"column:ended_at"`        // 可空结束时刻，结束 rollback 时必须仍 NULL。
+		ChargedKWh     sql.NullString `gorm:"column:charged_kwh"`     // DECIMAL 电量文本，显式映射 kwh 缩写，不通过浮点比较丢失精度。
+		ChargedSeconds sql.NullInt64  `gorm:"column:charged_seconds"` // 结束秒数，未结束时必须 NULL。
 	}
 	if err := f.Observer.Table("charge_order").Where("id=? AND created_month=?", f.ID, f.Month).Take(&row).Error; err != nil {
 		t.Fatal(err)
@@ -169,8 +169,8 @@ func (f *lifecycleAtomicFixture) assertState(t *testing.T, charging, applied boo
 	}
 	f.assertCount(t, "charge_event_log", "charge_order_id=? AND event_id=? AND event=? AND actor='gateway'", 1, f.ID, command, event)
 	var outbox struct {
-		Stream       string `gorm:"column:stream"`        // 原目标流标签，不随repo抽取改变。
-		EnvelopeJSON string `gorm:"column:envelope_json"` // 原最终回执JSON，具名请求与业务值形状保持。
+		Stream       string `gorm:"column:stream"`        // 目标流标签，不随 repo 抽取改变。
+		EnvelopeJSON string `gorm:"column:envelope_json"` // 最终回执 JSON，专用请求与业务值形状保持。
 	}
 	if err := f.Observer.Table("event_outbox").Where("event_id=?", command).Take(&outbox).Error; err != nil || outbox.Stream != stream {
 		t.Fatalf("original outbox=%+v: %v", outbox, err)
@@ -191,8 +191,8 @@ func (f *lifecycleAtomicFixture) assertState(t *testing.T, charging, applied boo
 	}
 }
 
-// cleanup 接收 t，按私有主键清理提交夹具并逐表验证零残留；自增事件先普通枚举主键，Outbox复用隔离清理能力。
-// 清理不使用被取消的业务context，不借外层rollback掩盖生产提交，也不删除其他订单的记录。
+// cleanup 按私有主键清理提交夹具并逐表验证零残留；自增事件先普通枚举主键，Outbox 复用隔离清理能力。
+// 清理不使用被取消的业务 context，不借外层 rollback 掩盖生产提交，也不删除其他订单的记录。
 func (f *lifecycleAtomicFixture) cleanup(t *testing.T) {
 	t.Helper()
 	var ids []uint64
@@ -209,8 +209,8 @@ func (f *lifecycleAtomicFixture) cleanup(t *testing.T) {
 	}
 	for _, item := range []struct {
 		table string // 仅本夹具创建或用例产生的目标表。
-		where string // 完整主键及必要归属条件，保持参数化。
-		args  []any  // 原私有身份／分区日期，不推导其他测试的身份。
+		where string // 全部主键字段及必要归属条件，保持参数化。
+		args  []any  // 私有身份／分区日期，不推导其他测试的身份。
 	}{
 		{"charge_billing_job", "charge_order_id=?", []any{f.ID}},
 		{"charge_end_receipt", "charge_order_id=?", []any{f.ID}},
@@ -240,8 +240,8 @@ func (f *lifecycleAtomicFixture) cleanup(t *testing.T) {
 	}
 }
 
-// TestRegisteredStartResultPersistsAndReplaysAllLifecycleFacts 使用真实注册端点、具名客户端及独立观察池验证成功起充完整提交与同号重放。
-// 仅提交原生命周期和通知事实，不执行实际微信、TCP或计费算法；缺卡操作的0行不能错误拒绝成功扫码启动。
+// TestRegisteredStartResultPersistsAndReplaysAllLifecycleFacts 使用真实注册端点、专用客户端及独立观察池验证成功起充完整提交与同号重放。
+// 仅提交生命周期和通知记录，不执行实际微信、TCP 或计费算法；缺卡操作的 0 行不能错误拒绝成功扫码启动。
 func TestRegisteredStartResultPersistsAndReplaysAllLifecycleFacts(t *testing.T) {
 	f := newLifecycleAtomicFixture(t, false)
 	router := httpapi.NewRouter()
@@ -261,12 +261,12 @@ func TestRegisteredStartResultPersistsAndReplaysAllLifecycleFacts(t *testing.T) 
 	}
 }
 
-// TestLifecycleLastOutboxFailureRollsBackPriorWrites 接收 t，分别在实际启动／结束最终Outbox INSERT成功后注入错误或取消context。
-// 外层事务必须回滚所有先写事实；移除事务应留下真实持久化而失败，恢复同请求只提交一次，不用stub业务结果。
+// TestLifecycleLastOutboxFailureRollsBackPriorWrites 分别在实际启动／结束最终 Outbox INSERT 成功后注入错误或取消 context。
+// 外层事务必须回滚所有先前写入；移除事务应留下真实持久化而失败，恢复同请求只提交一次，不用 stub 业务结果。
 func TestLifecycleLastOutboxFailureRollsBackPriorWrites(t *testing.T) {
 	for _, phase := range []struct {
 		name     string // 用例阶段名称，仅用于独立子测试定位。
-		charging bool   // false为成功启动，true为结束已有充电订单。
+		charging bool   // false 为成功启动，true 为结束已有充电订单。
 	}{{"start", false}, {"finish", true}} {
 		for _, mode := range []string{"storage-error", "cancel"} {
 			t.Run(phase.name+"/"+mode, func(t *testing.T) {
@@ -338,8 +338,8 @@ func TestLifecycleLastOutboxFailureRollsBackPriorWrites(t *testing.T) {
 	}
 }
 
-// TestCentralEndOwnerMismatchRollsBackReceiptAndCompletion 接收 t，提交另一订单占用同端口，旧结束必须DELETE0后冲突且回滚先写结束凭据／订单。
-// 直接调用真实EndResultService验证中央四条件释放，不以gateway迟到回执回归代替；私有新owner和其订单持久状态不改变。
+// TestCentralEndOwnerMismatchRollsBackReceiptAndCompletion 提交另一订单占用同端口，旧结束必须 DELETE0 后冲突且回滚先写结束凭据／订单。
+// 直接调用真实 EndResultService 验证中央四条件释放，不以 gateway 迟到回执回归代替；私有新 owner 和其订单已保存状态不改变。
 func TestCentralEndOwnerMismatchRollsBackReceiptAndCompletion(t *testing.T) {
 	f := newLifecycleAtomicFixture(t, true)
 	if err := f.Writer.Transaction(func(tx *gorm.DB) error {

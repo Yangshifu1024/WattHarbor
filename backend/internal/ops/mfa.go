@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-// mfaEnrollmentTTL 保留五分钟待绑定窗口，确认还须核对绝对到期时刻。
+// mfaEnrollmentTTL 限制待绑定窗口为五分钟，确认时仍核对截止时间。
 const mfaEnrollmentTTL = 5 * time.Minute
 
 var (
-	ErrMFAProof        = errors.New("密码或验证码校验失败")            // 当前密码或TOTP证明失败
-	ErrMFAPending      = errors.New("绑定已过期或已被替换，请重新开始")      // 原绑定凭据已失效
-	ErrMFAState        = errors.New("双因素认证状态已改变，请刷新后重试")     // 当前状态不支持原动作
+	ErrMFAProof        = errors.New("密码或验证码校验失败")            // 当前密码或 TOTP 证明失败
+	ErrMFAPending      = errors.New("绑定已过期或已被替换，请重新开始")      // 绑定凭据已失效
+	ErrMFAState        = errors.New("双因素认证状态已改变，请刷新后重试")     // 当前状态不支持动作
 	ErrMFABusy         = errors.New("账号安全设置正在处理中，请稍后重试")     // 同账号设置租锁已占用
 	ErrMFAInput        = errors.New("请按操作提供当前密码、绑定标识和六位验证码") // 输入证明组合不合要求
 	ErrMFASettingsRate = errors.New("安全验证过于频繁，请稍后重试")        // 一分钟安全设置超过五次
@@ -26,23 +26,23 @@ var (
 
 // MFASettingsInput 仅接收动作与当前证明，不允许客户端指定目标账号或密钥。
 type MFASettingsInput struct {
-	Action       string `json:"action"`        // enrol／confirm／disable原动作
+	Action       string `json:"action"`        // enrol／confirm／disable 动作
 	Password     string `json:"password"`      // 登记或关闭时的当前口令
-	Code         string `json:"code"`          // 确认或关闭时的六位TOTP
-	EnrollmentID string `json:"enrollment_id"` // 确认时的原随机绑定标识
+	Code         string `json:"code"`          // 确认或关闭时的六位 TOTP
+	EnrollmentID string `json:"enrollment_id"` // 确认时的随机绑定标识
 }
 
-// MFASettingsReply 保留原登记材料及状态字段，密钥仅在口令通过的新登记响应返回。
+// MFASettingsReply 返回登记材料和状态，密钥只在密码验证通过的新登记响应出现。
 type MFASettingsReply struct {
-	EnrollmentID    string `json:"enrollment_id,omitempty"` // 原确认标识
+	EnrollmentID    string `json:"enrollment_id,omitempty"` // 确认标识
 	Secret          string `json:"secret,omitempty"`        // 服务端新密钥，不写入审计
-	OTPAuthURI      string `json:"otpauth_uri,omitempty"`   // 当前账号的验证器绑定URI
+	OTPAuthURI      string `json:"otpauth_uri,omitempty"`   // 当前账号的验证器绑定 URI
 	ExpiresIn       int    `json:"expires_in,omitempty"`    // 绑定寿命，秒
 	MFAEnabled      bool   `json:"mfa_enabled"`             // 当前操作后的启用事实
 	SessionsRevoked bool   `json:"sessions_revoked"`        // 是否已提升认证版本使旧会话失效
 }
 
-// Valid 核对输入动作和各证明字段的组合，返回准入事实，无IO；六位码仅允许数字。
+// Valid 检查 MFA 动作与证明字段的组合；六位验证码只能包含数字。
 func (in MFASettingsInput) Valid() bool {
 	password := in.Password != "" && len(in.Password) <= 72
 	code := len(in.Code) == 6
@@ -63,15 +63,14 @@ func (in MFASettingsInput) Valid() bool {
 	}
 }
 
-// MFAService 拥有当前账号安全设置规则、租锁和SQL状态／审计事务。
+// MFAService 负责当前账号 MFA 设置、租锁和 SQL 状态及审计事务。
 type MFAService struct {
 	DB   *gorm.DB // 所属账号数据库
-	Repo MFARepo  // 所属缓存IO
+	Repo MFARepo  // 所属缓存 IO
 }
 
-// Apply 在ctx下为profile原会话sid执行input并用ip审计，返回原设置回执或输入／证明／冲突／存储错误。
-// 同账号设置串行，十秒操作期限短于三十秒租期；同步延迟清理仅释放自己的租锁。
-// Redis原凭据消费先于SQL提交，后续SQL失败不恢复凭据，必须重新登记；不宣称跨存储原子提交。
+// Apply 串行处理同一账号 MFA 设置，操作限十秒，短于三十秒锁租期，只释放自己的锁。
+// Redis 挑战在 SQL 提交前删除，之后 SQL 失败不能恢复挑战，须重新登记。
 func (s MFAService) Apply(ctx context.Context, profile operations.Profile, sid string, input MFASettingsInput, ip string) (MFASettingsReply, error) {
 	input.Code = strings.TrimSpace(input.Code)
 	if !input.Valid() {
@@ -111,8 +110,8 @@ func (s MFAService) Apply(ctx context.Context, profile operations.Profile, sid s
 	return s.apply(ctx, profile, sid, input, ip)
 }
 
-// apply 在ctx下锁p原账号并核对sid绑定凭据及in证明，ip用于审计；返回回执或回滚错误。
-// 密码／坏码不改变安全状态；登记仅写短期缓存，确认／关闭提升认证版本并同事务审计。
+// apply 锁定账号，核对会话绑定的挑战和证明后执行设置，IP 用于审计。
+// 坏密码或坏码不改安全状态；登记只写短期缓存，确认和关闭提升版本并保存审计。
 func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string, in MFASettingsInput, ip string) (MFASettingsReply, error) {
 	var result MFASettingsReply
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -167,7 +166,7 @@ func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string,
 			if err := auth.VerifyTOTP(pending.Secret, in.Code, time.Now().UTC()); err != nil {
 				return ErrMFAProof
 			}
-			// 在更新前原子消费相同缓存。坏码不消费，过期或并发替换不启用。
+			// 更新前比较并原子删除读取过的挑战；坏码、过期或已替换挑战不能启用 MFA。
 			consumed, err := s.Repo.ConsumePending(ctx, account.ID, raw)
 			if err != nil {
 				return err

@@ -246,16 +246,16 @@ func TestUserWalletAccountAmountConstraints(t *testing.T) {
 	}
 }
 
-// TestUserRepoConcurrentLoginOpensOneWallet 两独立连接在原身份锁处控制并发，验证一用户、一开户及唯一创建者。
-// 普通路径与一次重试错误fixture分别验证；SQL／事务仍用真库，原unionID归实际创建者而非请求启动顺序。
+// TestUserRepoConcurrentLoginOpensOneWallet 两独立连接在标识锁处控制并发，验证一用户、一开户及唯一创建者。
+// 普通路径与一次重试错误测试替身分别验证；SQL、事务仍用真库，unionID归实际创建者而非请求启动顺序。
 func TestUserRepoConcurrentLoginOpensOneWallet(t *testing.T) {
 	for _, forceRetry := range []bool{false, true} {
 		t.Run(fmt.Sprintf("retry_%t", forceRetry), func(t *testing.T) { concurrentLoginWallet(t, forceRetry) })
 	}
 }
 
-// concurrentLoginWallet 在t管理的两连接中以forceRetry选择首次锁后1213故障fixture。
-// 无返回值；核对完整重试结果、唯一创建者及首次unionID，清理自身提交记录并核对零残留。
+// concurrentLoginWallet 用两条真实连接控制并发开户，可在首次锁后注入 1213 错误。
+// 核对重试后只有一用户、一钱包与一位创建者，并按自身记录清理。
 func concurrentLoginWallet(t *testing.T, forceRetry bool) {
 	a, b := identityDB(t), identityDB(t)
 	openid := "identity-concurrent-" + uuid.NewString()
@@ -302,7 +302,7 @@ func concurrentLoginWallet(t *testing.T, forceRetry bool) {
 				db.AddError(ctx.Err())
 			}
 			if forceRetry {
-				// 仅首次锁后注入可重试错误，真实事务必须回滚；后续仍由原Login有界重试。
+				// 仅首次锁后注入可重试错误，真实事务必须回滚；后续仍由Login有界重试。
 				db.AddError(&mysql.MySQLError{Number: 1213, Message: "login retry fixture"})
 			}
 		}
@@ -327,7 +327,6 @@ func concurrentLoginWallet(t *testing.T, forceRetry bool) {
 		t.Fatal(err)
 	}
 	defer b.Callback().Create().Remove(callback)
-	// result 传递同一 openid 并发 Login 返回的身份、首次标志与错误；用户及钱包是否只创建一次另查真实表。
 	type result struct {
 		user User  /* 实际身份及首次标志 */
 		err  error /* 登录结果 */
@@ -410,7 +409,7 @@ func concurrentLoginWallet(t *testing.T, forceRetry bool) {
 }
 
 // TestPhoneServiceConcurrentUniqueOwnership 用两独立连接闸门固定两个预查均未占用，再由真实唯一键仲裁号码。
-// 一次绑定成功、一次返回归属冲突；原用户解绑使用 SQL NULL，提交造数按自身 ID 清理。
+// 一次绑定成功、一次返回归属冲突；用户解绑使用 SQL NULL，提交造数按自身 ID 清理。
 func TestPhoneServiceConcurrentUniqueOwnership(t *testing.T) {
 	a, b := identityDB(t), identityDB(t)
 	id := testfixture.NewID()
@@ -451,9 +450,8 @@ func TestPhoneServiceConcurrentUniqueOwnership(t *testing.T) {
 		defer db.Callback().Query().Remove(callback)
 	}
 	number := fmt.Sprintf("188%08d", id%100000000)
-	// result 关联手机号绑定申请的原用户与 Bind 错误，用于识别唯一归属获胜者；不携带提交事务或渠道确认对象。
 	type result struct {
-		uid uint64 /* 请求原用户 */
+		uid uint64 /* 请求用户 */
 		err error  /* 唯一归属结果 */
 	}
 	done := make(chan result, 2)

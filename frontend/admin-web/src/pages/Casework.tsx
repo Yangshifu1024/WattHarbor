@@ -138,8 +138,7 @@ export default function CaseworkPage() {
     },
   });
 
-  // 指派下拉的候选来自管理员列表，和报修数据不是一个接口，所以单独一个错误态：
-  // 读不到人时如果只把下拉留空，客服会以为「没有可指派的人」而直接放弃派单。
+  // 管理员候选单独加载并显示错误，避免将加载失败误认为无人可指派。
   const loadAdmins = async () => {
     try {
       const result = await apiGet<{ items: AdminUser[] }>('/api/v1/admin/admin-users?page_size=100');

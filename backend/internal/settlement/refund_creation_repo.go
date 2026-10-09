@@ -9,12 +9,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// RefundRecorder 写入 settlement 所属退款记录；不持有连接，使用调用方原事务。
+// RefundRecorder 在调用方事务中保存结算退款记录。
 type RefundRecorder struct{}
 
-// RecordLateInTx 在 tx 中创建 in 的迟到支付自动退款和 eventID 对应的 Outbox。
-// tx 已持有支付及意图锁，调用方提交或回滚；输入金额为分、月份为 UTC 月首。
-// 返回创建或序列化错误，nil 表示待执行凭据已落入同一事务，尚未渠道退款。
+// RecordLateInTx 在已锁支付和意图的事务中登记迟到支付退款及 Outbox。
+// 金额单位为分，月份为 UTC 月首；成功只表示待执行记录已保存。
 func (RefundRecorder) RecordLateInTx(tx *gorm.DB, in money.RefundDraft, eventID string) error {
 	if _, err := (RefundRecorder{}).CreateInTx(tx, in); err != nil {
 		return err
@@ -26,9 +25,8 @@ func (RefundRecorder) RecordLateInTx(tx *gorm.DB, in money.RefundDraft, eventID 
 	return ops.AppendEventInTx(tx, ops.OutboxEvent{EventID: eventID, Stream: "refund_required_stream", EnvelopeJSON: payload})
 }
 
-// CreateInTx 创建 in 对应的 automatic/pending 退款，返回持久主键及错误。
-// tx 须已锁钱包（适用时）及原支付，调用方负责额度核对和提交；不能自动重试或换单号。
-// 错误要求回滚；成功仅表示退款被登记，钱包预占由 wallet 在相同事务中完成。
+// CreateInTx 登记 automatic/pending 退款并返回主键。
+// 调用方先锁钱包（适用时）和支付，核对额度；钱包预占在同一事务完成，错误整体回滚。
 func (RefundRecorder) CreateInTx(tx *gorm.DB, in money.RefundDraft) (uint64, error) {
 	r := RefundRecord{RefundNo: in.RefundNo, PaymentOrderID: in.PaymentOrderID, UserID: in.UserID, BizType: in.BizType, BizID: in.BizID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: "pending", ExecutionPolicy: "automatic", CreatedMonth: in.CreatedMonth, NextAttemptAt: in.NextAttemptAt}
 	if err := tx.Create(&r).Error; err != nil {
@@ -37,9 +35,8 @@ func (RefundRecorder) CreateInTx(tx *gorm.DB, in money.RefundDraft) (uint64, err
 	return r.ID, nil
 }
 
-// ReservedInTx 当前读 paymentID 的在途退款聚合（分），不依赖 RR 的旧快照。
-// tx 必须先锁原支付行；返回 0、nil 表示没有预占，错误表示读取失败。
-// 调用方持有支付锁期间不得出现绕过该锁的退款创建路径。
+// ReservedInTx 在支付锁内用当前读合计在途退款，金额单位为分。
+// 所有退款创建路径都须遵守该支付锁，避免旧 RR 快照遗漏预占。
 func (RefundRecorder) ReservedInTx(tx *gorm.DB, paymentID uint64) (int64, error) {
 	var rows []struct {
 		RefundCents int64 `gorm:"column:refund_cents"` // 当前在途退款分值，在已锁支付下求和

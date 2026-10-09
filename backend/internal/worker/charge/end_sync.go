@@ -12,36 +12,36 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// EndGateway 是消费方结束同步窄接口，提供取证、首写冻结、原占用释放及处理标记；执行顺序由 EndSynchronizer拥有。
+// EndGateway 提供结束事件、计量证据、首次结束请求保存、端口释放和事件标记接口。
 type EndGateway interface {
-	// EndEvents 接收 ctx，返回原未处理结束事件页或读取错误；不修改事件。
+	// EndEvents 返回未处理结束事件页或读取错误；不修改事件。
 	EndEvents(context.Context) ([]gatewaycontract.SyncEvent, error)
-	// ChargeCommand 接收 ctx 与原订单 ID，返回关联 START命令、nil缺失或错误；不补造启动凭据。
+	// ChargeCommand 查询订单对应的 START 命令；不存在时返回 nil。
 	ChargeCommand(context.Context, uint64) (*gatewaycontract.SyncCommand, error)
-	// MeterSamples 接收 ctx 与固定原设备／UTC窗口／事件ID上界请求，返回原心跳载荷或取证错误；无写入。
+	// MeterSamples 查询指定设备、UTC 时间窗口和事件 ID 上限内的心跳。
 	MeterSamples(context.Context, gatewaycontract.MeterSamplesRequest) ([]gatewaycontract.SyncEvent, error)
-	// FreezeEndDelivery 接收 ctx 与原事件／订单／候选载荷，返回首写或既有冻结 Reply及错误；冻结与身份比较由网关执行。
+	// FreezeEndDelivery 保存首次结束请求；重复调用读取旧内容，关键字段不一致则拒绝。
 	FreezeEndDelivery(context.Context, gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryReply, error)
-	// ReleasePort 接收 ctx 与原端口／订单释放请求，返回释放或已释放 Reply及错误；占用条件保护由网关执行。
+	// ReleasePort 仅释放该订单仍占用的端口；已释放也返回成功。
 	ReleasePort(context.Context, gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortReply, error)
-	// MarkDeviceEventsProcessed 接收 ctx 与原事件 ID集合，返回实际处理标记数或错误；持久标记由网关事务拥有。
+	// MarkDeviceEventsProcessed 在网关事务内标记事件已处理，返回实际影响行数。
 	MarkDeviceEventsProcessed(context.Context, []uint64) (int, error)
 }
 
-// EndSynchronizer 编排原设备结束证据向中央确认并推进网关投递状态；依赖由 cmd注入，不持数据库、服务URL或进程资源。
+// EndSynchronizer 编排设备结束证据向中央确认并更新网关投递状态；依赖由 cmd 注入，不持数据库、服务 URL 或进程资源。
 type EndSynchronizer struct {
-	// Gateway 原结束同步所需网关窄能力，执行者由 cmd注入；不在 worker持网关数据库或 URL。
+	// Gateway 结束同步所需网关接口，执行者由 cmd 注入；不在 worker 持网关数据库或 URL。
 	Gateway EndGateway
-	// Central 原中央结束回执确认能力，事务及结束计量／计费排队由中央用例拥有。
+	// Central 中央结束回执确认能力，事务及结束计量／计费排队由中央用例拥有。
 	Central interface {
-		// SubmitEndResult 接收 ctx 与原冻结结束请求，返回接受／重放 Reply或错误；不代表计费、扣款或退款已完成。
+		// SubmitEndResult 由中央确认结束请求；确认不代表计费、扣款或退款已完成。
 		SubmitEndResult(context.Context, centralcontract.EndResultRequest) (centralcontract.ResultReply, error)
 	}
 }
 
-// SyncBatch 接收 ctx，逐个核对结束事件与已 acked START身份，先获取并冻结原计量请求，再提交中央，确认后释放原端口，最后批量标记事件。
-// 返回已获释放或已释放确认的条数与原错误；解析、取证、冻结及中央失败继续其它事件，释放失败立即返回并不提交已收集标记。
-// 标记失败仍返回已有计数，计数不表示事件标记已提交；所有调用复用 ctx、原事件和命令身份，不直接计费或自动创建恢复身份。
+// SyncBatch 核对结束事件对应已确认的 START，再依次保存结束请求、提交中央、释放端口、批量标记事件。
+// 取证、保存或中央提交失败时继续下一事件；释放失败立即返回，不提交此前收集的标记。
+// 返回数只表示端口已释放或已是释放状态；标记失败时仍保留计数，不表示标记已提交。
 func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 	if s.Gateway == nil || s.Central == nil {
 		return 0, errors.New("charge end synchronizer is not configured")

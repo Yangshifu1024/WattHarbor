@@ -11,15 +11,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// 计费的真库并发与幂等测试。
-//
-// Calculate 的结构是「按 charge_order_id upsert 回执 → 锁回执行 → 看
-// calculation_id 是否已填」。填了就走重放路径返回首次结果，没填就新建计价。
-// 这套判重的正确性只在真库的 upsert、行锁与唯一键下才存在，
-// 单测（只覆盖 PriceSource）验不到。
+// 计费真库测试验证 upsert、行锁和唯一键：先登记回执，再锁行，已有 calculation_id 就返回首次结果。
 
-// feeSource 造一份可计价来源。走 FinalFee 那条路而非实际计量：
-// 后者需要一份完整的 charging.Spec.Scheme，凭空构造的 Spec 会被正确地拒绝。
+// feeSource 构造人工核定金额的计费来源；实际计量计价需要完整有效的方案。
 func feeSource(chargeOrderID uint64, orderNo string) Source {
 	fee := charging.Fee{ElectricCents: 300, ServiceCents: 100, TotalCents: 400}
 	return Source{
@@ -34,15 +28,13 @@ func feeSource(chargeOrderID uint64, orderNo string) Source {
 	}
 }
 
-// cleanupFee 接收测试句柄 t、真库句柄 db、充电主键 chargeOrderID 与订单号 orderNo，按两种身份删除计价投递、回执及计算记录。
-// 无返回值，逐项 SQL 失败由 t.Errorf 记录并继续；不打开事务或关闭池，调用方负责本测试身份与清理时机。
+// cleanupFee 按本测试订单 ID 和订单号清理投递、回执及计价记录；逐项报告失败。
 func cleanupFee(t *testing.T, db *gorm.DB, chargeOrderID uint64, orderNo string) {
 	t.Helper()
 	for _, q := range []struct {
-		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
+		// table、where 指定清理表和本测试身份条件，保持配对。
 		table, where string
-		// args 原条件占位符对应的参数切片，展开顺序与 where 一致，不拼接参数到 SQL。
-		args []any
+		args         []any
 	}{
 		{"fee_delivery", "charge_order_id = ?", []any{chargeOrderID}},
 		{"fee_receipt", "charge_order_id = ?", []any{chargeOrderID}},
@@ -54,11 +46,7 @@ func cleanupFee(t *testing.T, db *gorm.DB, chargeOrderID uint64, orderNo string)
 	}
 }
 
-// TestConcurrentCalculateProducesSingleResult 钉住并发计费只出一份结果。
-//
-// 同一笔充电订单被两个计费任务同时处理（worker 重跑、补跑、并发分片），
-// 只能落一份计价、只投递一次。断言：计价表一行、投递表一行、
-// 两笔调用拿到同一个计算单号且都不报错。
+// TestConcurrentCalculateProducesSingleResult 验证同一订单并发计费只有一份计价和投递，两个调用返回相同计算号。
 func TestConcurrentCalculateProducesSingleResult(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -80,11 +68,10 @@ func TestConcurrentCalculateProducesSingleResult(t *testing.T) {
 	defer gate.pass()
 
 	src := feeSource(chargeOrderID, orderNo)
-	// outcome 将真实计价结果与错误传回并发测试控制方，不替计算器创建事务。
+	// outcome 汇总两个并发计价调用的结果。
 	type outcome struct {
-		// res 当前真实计价返回的结果，包含计算单号与分为单位的金额，供并发唯一结果核对。
+		// res 保存计算单号和费用，金额单位为分。
 		res Result
-		// err 当前调用返回的执行错误；nil 表示该调用成功，不替代持久状态核验。
 		err error
 	}
 	done1 := make(chan outcome, 1)
@@ -138,10 +125,7 @@ func TestConcurrentCalculateProducesSingleResult(t *testing.T) {
 	}
 }
 
-// TestCalculateRejectsDifferentSourceForSameOrder 钉住同单不同来源被判冲突。
-//
-// 同一笔充电订单若换了一份来源（改了单号或金额），绝不能沿用首次结果，
-// 也不能再出一条计价——必须判冲突，让调用方去查为什么。
+// TestCalculateRejectsDifferentSourceForSameOrder 验证同一订单更改单号或金额时必须报冲突，不复用或新增计价。
 func TestCalculateRejectsDifferentSourceForSameOrder(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()

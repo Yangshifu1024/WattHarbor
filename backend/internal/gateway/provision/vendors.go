@@ -22,7 +22,7 @@ import (
 
 var vendorCodePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// registerVendors 接收非 nil r，注册原厂商列表、读取、创建与更新路由，无数据库 IO。
+// registerVendors 注册厂商查询、创建和更新路由；r 不能为 nil。
 func (a API) registerVendors(r *gin.Engine) {
 	r.GET(contract.VendorPath, a.listVendors)
 	r.GET(contract.VendorPath+"/:id", a.getVendor)
@@ -30,7 +30,7 @@ func (a API) registerVendors(r *gin.Engine) {
 	r.PUT(contract.VendorPath+"/:id", a.updateVendor)
 }
 
-// vendorAuthorized 接收 c，校验原服务令牌；成功返回 true，失败写 401 并返回 false，无数据库 IO。
+// vendorAuthorized 校验服务令牌；成功返回 true，失败写 401 并返回 false。
 func (a API) vendorAuthorized(c *gin.Context) bool {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
@@ -39,7 +39,7 @@ func (a API) vendorAuthorized(c *gin.Context) bool {
 	return true
 }
 
-// vendorDBAvailable 接收 c，数据库已配置返回 true，否则写原 503 并返回 false，不执行 SQL。
+// vendorDBAvailable 数据库已配置返回 true，否则写 503 并返回 false。
 func (a API) vendorDBAvailable(c *gin.Context) bool {
 	if a.DB == nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "厂商管理暂时不可用", nil)
@@ -48,7 +48,7 @@ func (a API) vendorDBAvailable(c *gin.Context) bool {
 	return true
 }
 
-// validateVendorInput 接收非 nil in，校验原编码、名称、适配器、协议和状态并原地去除名称两侧空白；返回公开校验错误或 nil，无 IO。
+// validateVendorInput 校验厂商字段并去除名称两侧空白；in 不能为 nil。
 func validateVendorInput(in *contract.VendorRequest) error {
 	if !vendorCodePattern.MatchString(in.VendorCode) {
 		return errors.New("厂商编码须为 1–64 个字母、数字、下划线或连字符")
@@ -74,7 +74,7 @@ func validateVendorInput(in *contract.VendorRequest) error {
 	return nil
 }
 
-// bindVendorInput 接收 c，在原正文上限内严格读取唯一 JSON 并校验、规范名称；返回 in 与成功标志，失败写原 400，不读取数据库。
+// bindVendorInput 限制正文大小，只接受一个合法 JSON 对象，并校验厂商字段。
 func bindVendorInput(c *gin.Context) (contract.VendorRequest, bool) {
 	var in contract.VendorRequest
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
@@ -95,7 +95,7 @@ func bindVendorInput(c *gin.Context) (contract.VendorRequest, bool) {
 	return in, true
 }
 
-// vendorID 接收 raw，解析原正整数厂商 ID，返回身份或公开校验错误，无 IO。
+// vendorID 解析正整数厂商 ID，返回编号或校验错误。
 func vendorID(raw string) (uint64, error) {
 	if raw == "" {
 		return 0, errors.New("厂商 ID 须为正整数")
@@ -112,17 +112,17 @@ func vendorID(raw string) (uint64, error) {
 	return id, nil
 }
 
-// vendorListQuery 保存原厂商分页、关键字、状态及指定身份筛选，由 HTTP 解析后交仓储读取。
+// vendorListQuery 保存厂商分页、关键字、状态及指定编号筛选，由 HTTP 解析后交仓储读取。
 type vendorListQuery struct {
-	// Page、PageSize 原从一开始的页码。 原每页记录上限。
+	// Page、PageSize 分别是页码（从 1 开始）与每页条数。
 	Page, PageSize int
-	// Keyword、Status 原厂商编码或名称筛选关键字。 所属记录的原状态值。
+	// Keyword、Status 分别筛选厂商编码或名称，以及厂商状态。
 	Keyword, Status string
-	// IDs 原指定记录身份筛选集合。
+	// IDs 指定记录 ID 的筛选集合。
 	IDs []uint64
 }
 
-// parseVendorList 接收 c，解析原分页、关键字、状态及有界去重 ID 集合；返回筛选值或错误，不写响应或执行 SQL。
+// parseVendorList 解析分页、关键字、状态及有界去重 ID 集合；返回筛选值或错误。
 func parseVendorList(c *gin.Context) (vendorListQuery, error) {
 	// 分页边界与 httpapi.ReadPaging 共用常量；本接口返回 error 而非写响应，
 	// 故不直接调 ReadPaging，只取同样的上下限。
@@ -164,8 +164,8 @@ func parseVendorList(c *gin.Context) (vendorListQuery, error) {
 	return q, nil
 }
 
-// listVendors 接收 c，鉴权校验后将普通关键词与原筛选交仓储，转换公开九字段并写原列表、总数和分页值。
-// 空列表保持 []；失败写原校验或仓储错误响应，无业务写入。
+// listVendors 鉴权校验后将普通关键词与筛选交仓储，转换公开九字段并写列表、总数和分页值。
+// 空列表保持 []；失败写校验或仓储错误响应。
 func (a API) listVendors(c *gin.Context) {
 	if !a.vendorAuthorized(c) {
 		return
@@ -192,7 +192,7 @@ func (a API) listVendors(c *gin.Context) {
 	httpapi.OK(c, reply)
 }
 
-// getVendor 接收 c，鉴权并解析原厂商 id 后读取未删除厂商，写记录或原 400、401、404、503。
+// getVendor 鉴权并解析厂商 id 后读取未删除厂商，写记录或 400、401、404、503。
 func (a API) getVendor(c *gin.Context) {
 	if !a.vendorAuthorized(c) {
 		return
@@ -213,7 +213,7 @@ func (a API) getVendor(c *gin.Context) {
 	httpapi.OK(c, vendorReply(row))
 }
 
-// createVendor 接收 c，鉴权校验原支持适配器后创建厂商及启用时间；写记录或原校验、唯一键冲突、存储错误响应。
+// createVendor 鉴权校验支持适配器后创建厂商及启用时间；写记录或校验、唯一键冲突、存储错误响应。
 func (a API) createVendor(c *gin.Context) {
 	if !a.vendorAuthorized(c) {
 		return
@@ -237,7 +237,7 @@ func (a API) createVendor(c *gin.Context) {
 	httpapi.OK(c, vendorReply(row))
 }
 
-// updateVendor 接收 c，鉴权校验后将 id 与五字段交仓储执行原厂商更新事务，转换九字段记录或写原冲突、校验、存储错误响应。
+// updateVendor 鉴权校验后将 id 与五字段交仓储执行厂商更新事务，转换九字段记录或写冲突、校验、存储错误响应。
 func (a API) updateVendor(c *gin.Context) {
 	if !a.vendorAuthorized(c) {
 		return
@@ -259,7 +259,7 @@ func (a API) updateVendor(c *gin.Context) {
 	httpapi.OK(c, vendorReply(row))
 }
 
-// vendorFailure 接收 c 与 err，按原缺失、不可改、适配器不支持、1062 或其它错误写 404、409、400 或 503；不输出内部 SQL 错误或执行额外 SQL。
+// vendorFailure 按厂商错误返回 400、404、409 或 503，不暴露内部 SQL 错误。
 func vendorFailure(c *gin.Context, err error) {
 	var mysqlErr *mysql.MySQLError
 	switch {
@@ -276,12 +276,12 @@ func vendorFailure(c *gin.Context, err error) {
 	}
 }
 
-// vendorRepoInput 将 in 已校验的五字段逐项转换为仓储写入参数，返回独立值，不校验、写响应或执行 IO。
+// vendorRepoInput 将已校验的厂商字段转为仓储写入参数。
 func vendorRepoInput(in contract.VendorRequest) gatewayrepo.VendorInput {
 	return gatewayrepo.VendorInput{VendorCode: in.VendorCode, VendorName: in.VendorName, AdapterClass: in.AdapterClass, Protocol: in.Protocol, Status: in.Status}
 }
 
-// vendorReply 将 row 原公开九字段逐项转换为共享响应，保留启用时间 NULL 与原时间值，不查询或写入。
+// vendorReply 将 row 公开九字段转换为共享响应，保留启用时间 NULL 与时间值。
 func vendorReply(row gatewayrepo.Vendor) contract.VendorReply {
 	return contract.VendorReply{ID: row.ID, VendorCode: row.VendorCode, VendorName: row.VendorName, AdapterClass: row.AdapterClass, Protocol: row.Protocol, Status: row.Status, EnabledAt: row.EnabledAt, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}
 }

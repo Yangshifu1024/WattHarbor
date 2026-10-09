@@ -15,18 +15,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 真库集成测试的公共骨架：连接、并发闸门、加锁回调。
-//
-// 同一包内的多个集成测试共用这一份。并发验证必须用**两条独立连接**：
-// 同一个 *sql.DB 池里的两个连接才是两个事务，复用同一条会让
-// 「并发」退化成串行，测出来的是假象。
+// 真库测试共用连接、并发闸门和锁回调；两个并发事务必须使用独立连接。
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 
-// testConn 开一条独立的数据库连接。
-//
-// 环境变量缺失、连不上或 ping 失败一律 t.Fatal——不给「这次没测成」留出口。
-// 跳过的测试在 go test 输出里和通过的一模一样，CI 没配库就会一路绿灯。
+// testConn 打开独立数据库连接；配置缺失或连接失败立即终止测试，不跳过验收。
 func testConn(t *testing.T) (*gorm.DB, func()) {
 	t.Helper()
 	raw := os.Getenv(testMySQLURLEnv)
@@ -46,9 +39,7 @@ func testConn(t *testing.T) (*gorm.DB, func()) {
 	return orm, func() { _ = sqlDB.Close() }
 }
 
-// lockGate 把一个事务卡在某条带 FOR UPDATE 的语句返回之后，
-// 由主控用 channel 决定何时放行。每一步的先后都是确定的，
-// 不靠起 N 个 goroutine 碰运气——那样的测试要么抓不到竞态，要么换台机器就偶发。
+// lockGate 在 FOR UPDATE 返回后暂停事务，由 channel 控制放行，确保并发顺序可重复。
 type lockGate struct {
 	locked  chan struct{} // 指定行锁查询已返回，关闭后主控可启动竞争事务
 	release chan struct{} // 主控释放持锁事务的通知，关闭前回调保持阻塞
@@ -56,12 +47,12 @@ type lockGate struct {
 	passOne sync.Once     // 确保释放通道可被显式和 defer 重复关闭
 }
 
-// newLockGate 返回未触发、未放行的锁闸门；无 IO 或错误，由测试通过 await／pass 控制顺序。
+// newLockGate 创建等待和放行均未触发的锁闸门。
 func newLockGate() *lockGate {
 	return &lockGate{locked: make(chan struct{}), release: make(chan struct{})}
 }
 
-// await 最多等待十五秒确认 what 对应锁已取得，超时终止测试；不放行持锁事务。
+// await 最多等待十五秒确认指定锁已取得；超时终止测试。
 func (g *lockGate) await(t *testing.T, what string) {
 	t.Helper()
 	select {
@@ -71,8 +62,8 @@ func (g *lockGate) await(t *testing.T, what string) {
 	}
 }
 
-// armOnLockAttempt 注册指定表的 FOR UPDATE 请求通知，返回只读通道；不等待查询返回或阻塞回调。
-// t 负责注销，db 必须是竞争连接，name 需唯一；用于确认旧快照普通读已完成并开始等待目标锁。
+// armOnLockAttempt 在竞争连接请求指定表的 FOR UPDATE 时发出通知，测试结束后注销。
+// 通知表示已开始请求锁，不表示已取得锁。
 func armOnLockAttempt(t *testing.T, db *gorm.DB, name, table string) <-chan struct{} {
 	t.Helper()
 	trying := make(chan struct{})
@@ -90,7 +81,7 @@ func armOnLockAttempt(t *testing.T, db *gorm.DB, name, table string) <-chan stru
 	return trying
 }
 
-// awaitLockAttempt 等待 trying 通知，what 用于诊断；超时终止测试，不通过睡眠猜测竞争事务已开始。
+// awaitLockAttempt 等待竞争事务开始请求锁；超时终止测试。
 func awaitLockAttempt(t *testing.T, trying <-chan struct{}, what string) {
 	t.Helper()
 	select {
@@ -103,8 +94,7 @@ func awaitLockAttempt(t *testing.T, trying <-chan struct{}, what string) {
 // pass 放行该事务。可重复调用，测试里既有显式放行也有 defer 兜底。
 func (g *lockGate) pass() { g.passOne.Do(func() { close(g.release) }) }
 
-// armOnLock 装回调：本次执行里第一次出现「带 FOR UPDATE 且命中 wantTable」的
-// 查询时，在它返回之后把事务挂起，等主控放行。
+// armOnLock 在首次匹配目标表的 FOR UPDATE 返回后暂停事务，等待主控放行。
 func armOnLock(t *testing.T, db *gorm.DB, gate *lockGate, name, wantTable string) {
 	t.Helper()
 	err := db.Callback().Query().After("gorm:query").Register(name, func(tx *gorm.DB) {
@@ -183,7 +173,7 @@ func TestSnapshotReadMissesCommitThatHappenedDuringLockWait(t *testing.T) {
 
 	// 事务一现在才去拿行锁——它已经晚于事务二的提交。
 	var locked struct {
-		// ID 当前锁定支付行的主键扫描投影，仅确认加锁查询命中原支付身份。
+		// ID 仅用于确认支付锁查询命中目标行。
 		ID uint64
 	}
 	if err := tx1.Clauses(clause.Locking{Strength: "UPDATE"}).Table("payment_order").

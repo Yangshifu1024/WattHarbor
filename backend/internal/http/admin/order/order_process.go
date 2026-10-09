@@ -13,11 +13,11 @@ import (
 
 // orderProcessQuery 保存后台订单过程接口已校验的事件游标与页长，只控制只读分页，不参与计量或资金写入。
 type orderProcessQuery struct {
-	AfterID uint64 // 原过程行游标，首读为0
+	AfterID uint64 // 过程行游标，首读为 0
 	Limit   uint16 // 单页条数，1–2000
 }
 
-// parseOrderProcessQuery 从 c 读取原游标与页长，返回已校验参数及成功标志；无效时直接输出原400，不执行业务IO。
+// parseOrderProcessQuery 从请求读取游标与页长，返回已校验参数及成功标志；无效时直接输出 400。
 func parseOrderProcessQuery(c *gin.Context) (orderProcessQuery, bool) {
 	q := orderProcessQuery{Limit: 1000}
 	values := c.Request.URL.Query()
@@ -42,7 +42,7 @@ func parseOrderProcessQuery(c *gin.Context) (orderProcessQuery, bool) {
 	return q, true
 }
 
-// orderProcess 从 c 解析原订单ID、分页及后台身份，调用完整所属查询并映射原页或公开错误，无业务写入。
+// orderProcess 从请求解析订单 ID、分页及后台身份，调用完整查询并映射页或公开错误。
 func (a API) orderProcess(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

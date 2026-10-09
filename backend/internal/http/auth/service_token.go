@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RequireServiceToken 返回按token校验X-Service-Token的内部路由中间件。
-// 空配置或不匹配写401并Abort，成功才执行后续处理器；不执行业务IO。
+// RequireServiceToken 返回按 token 校验 X-Service-Token 的内部路由中间件。
+// 空配置或不匹配写 401 并 Abort，成功才执行后续处理器。
 func RequireServiceToken(token string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !serviceclient.VerifyServiceToken(token, c.GetHeader("X-Service-Token")) {

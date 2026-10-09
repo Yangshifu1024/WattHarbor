@@ -7,12 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// RechargeHistoryRepo 实现钱包所需的原充值页读取，不持有身份或 HTTP 实现。
+// RechargeHistoryRepo 实现钱包所需的充值页读取，不持有身份或 HTTP 实现。
 type RechargeHistoryRepo struct {
-	DB *gorm.DB /* 进程拥有的支付连接 */
+	DB *gorm.DB /* 进程负责的支付连接 */
 }
 
-// WalletRecharges 在 ctx 下仅查询 userID 的 page 充值支付，返回公开投影或读取错误；无资金写入。
+// WalletRecharges 仅查询 userID 的 page 充值支付，返回公开查询结果；无资金写入。
 func (s RechargeHistoryRepo) WalletRecharges(ctx context.Context, userID uint64, page persist.PageQuery) (persist.Page[wallet.AdminRechargeRow], error) {
 	original, err := PaymentOrders(ctx, s.DB, PaymentOrderQuery{PageQuery: page, UserID: userID, BizType: "wallet_recharge"})
 	out := persist.Page[wallet.AdminRechargeRow]{Items: []wallet.AdminRechargeRow{}, Total: original.Total, Page: original.Page, PageSize: original.PageSize}

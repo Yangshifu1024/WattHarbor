@@ -6,15 +6,8 @@ import (
 	"chargepilot/internal/domain/charging"
 )
 
-// TestPriceSourceRejectsUnauditedFinalFee 钉住人工核定金额的准入条件。
-//
-// 计量复核（跨费率边界没有可用读数）会走 FinalFee 这条路：不再按实际计量算钱，
-// 改用复核单上核定的金额。这条路一旦放开就是"人为指定收多少钱"，因此必须同时
-// 满足：已持久化且有复核单号、档位存在、两项非负、合计等于两项之和、合计不超过
-// 档位标价。缺任何一条都必须拒绝。
-//
-// 这段判断原先是六项一串 `||`，无法单独验证；PriceSource 是纯函数，抽出后
-// 每一条都能钉住。它决定最终向用户收多少钱，错了就是资损。
+// TestPriceSourceRejectsUnauditedFinalFee 验证人工核定金额必须有已保存的复核单和有效档位。
+// 电费、服务费须非负，合计须等于两项之和且不得超过档位标价。
 func TestPriceSourceRejectsUnauditedFinalFee(t *testing.T) {
 	offer := &charging.Offer{ID: 1, PriceCents: 1000}
 	fee := charging.Fee{ElectricCents: 300, ServiceCents: 100, TotalCents: 400}
@@ -27,9 +20,8 @@ func TestPriceSourceRejectsUnauditedFinalFee(t *testing.T) {
 	}
 
 	cases := []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
-		// mutate 覆写当前测试输入的回调，用于构造金额或已验证支付事实的非法边界；nil 时保留基准输入。
+		// mutate 修改基准输入，构造非法费用边界。
 		mutate func(*Source)
 	}{
 		{"无复核单号", func(s *Source) { s.ReviewID = "" }},
@@ -56,19 +48,14 @@ func TestPriceSourceRejectsUnauditedFinalFee(t *testing.T) {
 	}
 }
 
-// 计费回退路径（无核定金额时按实际计量计价）没有在这里测：它需要一份有效的
-// charging.Spec.Scheme 才能得出金额，凭空构造的 Spec 会被 SettleSession 正确地
-// 以 ErrInvalidPricing 拒绝。写一个"随便造点数据"的用例只会教人这里能糊弄过去，
-// 宁可不写。计量计价本身由 domain/charging 的测试覆盖。
+// 实际计量计价由 domain/charging 测试覆盖；本测试只检查人工金额是否合法。
 
-// TestPriceSourceAcceptsBoundaryAmounts 确认边界值可用：电费或服务费为 0
-// 合法（只有电费的站、只有服务费的站都存在），合计恰好等于档位标价也合法。
+// TestPriceSourceAcceptsBoundaryAmounts 验证电费或服务费为零、合计等于档位标价时仍合法。
 func TestPriceSourceAcceptsBoundaryAmounts(t *testing.T) {
 	offer := &charging.Offer{ID: 1, PriceCents: 1000}
 	cases := []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
-		// fee 复核后费用输入，电费、服务费及合计均以分为单位，用于合法金额边界判断。
+		// fee 保存核定电费、服务费和合计，单位均为分。
 		fee charging.Fee
 	}{
 		{"只有电费", charging.Fee{ElectricCents: 1000, TotalCents: 1000}},
@@ -85,7 +72,7 @@ func TestPriceSourceAcceptsBoundaryAmounts(t *testing.T) {
 			}
 		})
 	}
-	// 超过标价一分的必须拒绝——多收一分钱也是错的。
+	// 超过档位标价一分也必须拒绝。
 	f := charging.Fee{ElectricCents: 400, ServiceCents: 601, TotalCents: 1001}
 	s := Source{FinalFee: &f, ReviewID: "RV-1", Offer: offer}
 	if _, err := PriceSource(s); err == nil {

@@ -2,11 +2,9 @@ package protocol
 
 import "context"
 
-// CommandKind 标识一条与厂商协议无关的命令。
-//
-// 它是 worker 与 gateway 之间的 wire contract：worker 的 JSON 响应里带这个
-// 字符串，gateway 据此分派处理，两端的取值必须一致。新增取值时
-// worker/charge/cards.go 与 gateway/control/cards.go 要同步。
+// CommandKind 标识与厂商协议无关的命令类型。
+// worker 返回的 JSON 和 gateway 的处理逻辑必须使用相同取值；
+// 新增卡回复类型时，同步修改 worker/charge/cards.go 和 gateway/control/cards.go。
 type CommandKind string
 
 const (
@@ -14,16 +12,14 @@ const (
 	CommandCardBalance CommandKind = "card_balance"
 )
 
-// CommandStart / CommandStop / CommandReboot 供 gateway 运行时内部使用，
-// 不经 worker 传递，故不与上面两个 wire 取值放在一起。
+// CommandStart、CommandStop 和 CommandReboot 仅由 gateway 使用，不经 worker 传递。
 const (
 	CommandStart  CommandKind = "start"
 	CommandStop   CommandKind = "stop"
 	CommandReboot CommandKind = "reboot"
 )
 
-// Command 表示与厂商协议无关的命令，须由领域层持久化并鉴权后发送。
-// 每个字段都会被 dc589 翻译成该协议的帧，故本结构不含任何协议细节。
+// Command 表示设备命令；业务用例先鉴权并保存，再由适配器编码为厂商协议帧。
 type Command struct {
 	ConsumerType     uint8
 	CardNumber       uint32

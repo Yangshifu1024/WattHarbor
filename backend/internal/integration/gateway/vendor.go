@@ -13,12 +13,12 @@ import (
 	"time"
 )
 
-// vendorUnavailable 返回新的统一厂商依赖错误，隐藏认证、响应正文及存储细节；无 IO。
+// vendorUnavailable 返回统一的厂商服务错误，隐藏凭据、响应正文和存储细节。
 func vendorUnavailable() *contract.VendorFailure {
 	return &contract.VendorFailure{Status: 503, Code: 5003, Message: "厂商服务暂时不可用，请稍后重试"}
 }
 
-// Vendors 在 ctx 下用 q 查询公开字典并传递 requestID；返回分页或原服务错误，无重试或业务写入。
+// Vendors 查询厂商列表并传递请求追踪号，不自动重试。
 func (c *Client) Vendors(ctx context.Context, q contract.VendorListRequest, requestID string) (contract.VendorListReply, error) {
 	query := url.Values{"page": {strconv.Itoa(q.Page)}, "page_size": {strconv.Itoa(q.PageSize)}, "keyword": {q.Keyword}, "status": {q.Status}}
 	if len(q.IDs) > 0 {
@@ -33,7 +33,7 @@ func (c *Client) Vendors(ctx context.Context, q contract.VendorListRequest, requ
 	return out, err
 }
 
-// Vendor 在 ctx 下读取 id 的公开字典并传递 requestID；返回原事实或公开错误，错误身份不接受，不重试。
+// Vendor 查询指定厂商并核对响应编号，传递请求追踪号，不自动重试。
 func (c *Client) Vendor(ctx context.Context, id uint64, requestID string) (contract.VendorReply, error) {
 	var out contract.VendorReply
 	err := c.requestVendor(ctx, http.MethodGet, "/"+strconv.FormatUint(id, 10), nil, nil, &out, requestID)
@@ -43,14 +43,14 @@ func (c *Client) Vendor(ctx context.Context, id uint64, requestID string) (contr
 	return out, err
 }
 
-// CreateVendor 在 ctx 下原样提交 in 并传递 requestID，返回服务确认的公开字典或原错误；不添加幂等或重试。
+// CreateVendor 提交厂商配置并传递请求追踪号，不自动重试。
 func (c *Client) CreateVendor(ctx context.Context, in contract.VendorRequest, requestID string) (contract.VendorReply, error) {
 	var out contract.VendorReply
 	err := c.requestVendor(ctx, http.MethodPost, "", nil, in, &out, requestID)
 	return out, err
 }
 
-// UpdateVendor 在 ctx 下为 id 原样提交 in 并传递 requestID，返回原公开字典或错误；错误身份不接受，不重试。
+// UpdateVendor 更新指定厂商并核对响应编号，传递请求追踪号，不自动重试。
 func (c *Client) UpdateVendor(ctx context.Context, id uint64, in contract.VendorRequest, requestID string) (contract.VendorReply, error) {
 	var out contract.VendorReply
 	err := c.requestVendor(ctx, http.MethodPut, "/"+strconv.FormatUint(id, 10), nil, in, &out, requestID)
@@ -60,8 +60,8 @@ func (c *Client) UpdateVendor(ctx context.Context, id uint64, in contract.Vendor
 	return out, err
 }
 
-// requestVendor 在 ctx 下以 method/path/query 访问已知厂商契约，将 body 序列化并解析 out，requestID 仅追踪。
-// 返回原公开业务错误或统一依赖错误；十秒及一 MiB 限制，禁止重定向，复用进程传输池，不重试。
+// requestVendor 调用厂商接口并解码响应；公开业务错误保留，其他错误统一隐藏细节。
+// 请求最多十秒、响应最多 1 MiB，共享连接池，不跟随重定向或自动重试。
 func (c *Client) requestVendor(ctx context.Context, method, path string, query url.Values, body, out any, requestID string) error {
 	endpoint := c.baseURL + contract.VendorPath + path
 	if len(query) > 0 {
@@ -101,11 +101,11 @@ func (c *Client) requestVendor(ctx context.Context, method, path string, query u
 	if err != nil || len(raw) > limit {
 		return vendorUnavailable()
 	}
-	// vendorEnvelopeReply 保留原信封或数据的字段存在性，仅用于传输解码。
+	// vendorEnvelopeReply 保留响应中的字段是否存在，便于校验缺失字段。
 	type vendorEnvelopeReply struct {
-		Code    *int            `json:"code"`    // 原业务码，nil表示缺失
-		Message string          `json:"message"` // 原公开错误文案，依赖故障不透传
-		Data    json.RawMessage `json:"data"`    // 原端点数据，保留JSON精度
+		Code    *int            `json:"code"`    // 业务码，nil 表示缺失
+		Message string          `json:"message"` // 公开错误提示，依赖故障不透传
+		Data    json.RawMessage `json:"data"`    // 对应端点数据，保留JSON精度
 	}
 	var envelope vendorEnvelopeReply
 	if err := json.Unmarshal(raw, &envelope); err != nil {
@@ -129,7 +129,7 @@ func (c *Client) requestVendor(ctx context.Context, method, path string, query u
 	return nil
 }
 
-// validVendorResponse 核对 out 的厂商身份字段及分页边界；返回合法性，无 IO 或修改。
+// validVendorResponse 检查厂商编号、必需字段和分页范围。
 func validVendorResponse(out any) bool {
 	validRow := func(row contract.VendorReply) bool {
 		return row.ID > 0 && row.VendorCode != "" && row.VendorName != "" && row.AdapterClass != "" && row.Protocol != "" && (row.Status == "enabled" || row.Status == "disabled")

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// tariffLines 按 s 原冻结方案与 offer 原套餐生成资费文案，返回数组；不读取当前规则或执行计费。
+// tariffLines 按 s 冻结方案与 offer 套餐生成资费文案，返回数组；不读取当前规则或执行计费。
 func tariffLines(s charging.Scheme, offer *charging.Offer) []string {
 	lines := []string{}
 	if offer == nil {

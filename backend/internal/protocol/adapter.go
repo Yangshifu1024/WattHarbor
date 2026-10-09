@@ -1,5 +1,4 @@
-// Package protocol 定义与厂商无关的设备边界。每家厂商的适配器
-// 都可以挂到各自的 TCP 端口上，而不用改动充电逻辑。
+// Package protocol 定义设备事件、命令和连接接口，让充电逻辑独立于厂商协议。
 package protocol
 
 import (
@@ -42,14 +41,9 @@ type Event struct {
 	Port       uint8
 	ResultCode uint8
 	FaultCode  uint8
-	// EnergyMilliKWh 结束事件自报的累计电量。名字里的 Milli 是历史遗留：
-	// 厂商适配器写入的是 end.ChargedMWh/1000，即 Wh，不是 mWh。
-	// 落库换算据此成立——gateway/repo 写 telemetry.meter_kwh 时再 Shift(-3)，
-	// Wh 除以 1000 正好得到 kWh。
-	//
-	// 刻意保持原名：本结构没有 JSON 标签，会按 Go 字段名序列化进
-	// device_event.event_json，worker 取计量采样时再反序列化回来。
-	// 改名会让既有行的 "EnergyMilliKWh" 键读不出值，电量静默变成零并流进计费。
+	// EnergyMilliKWh 是结束事件的累计电量，实际单位为 Wh。
+	// 适配器将 mWh 除以 1000；入库时再将 Wh 除以 1000，转换为 kWh。
+	// 字段名也是历史事件 JSON 的键，不能直接改名，否则旧记录的电量会读成零。
 	EnergyMilliKWh uint32
 	PowerDeciWatts uint32
 	StopReason     uint8
@@ -80,8 +74,7 @@ type PortTelemetry struct {
 	PowerDeciWatts uint32
 }
 
-// Sink 负责鉴权与持久化。协议适配器只有在对应的 sink 调用
-// 成功之后，才可以确认（ack）一个帧。
+// Sink 负责设备鉴权和事件持久化；保存成功后适配器才能向设备确认帧。
 type Sink interface {
 	Register(context.Context, Registration) error
 	Record(context.Context, Event) error
@@ -106,7 +99,7 @@ const (
 	CloseContextEnded CloseReason = "context_ended"
 )
 
-// Adapter 用某一种厂商私有的线格式服务一条连接。
+// Adapter 处理一种厂商协议的设备连接。
 type Adapter interface {
 	Name() string
 	ServeConn(context.Context, net.Conn, Sink) error

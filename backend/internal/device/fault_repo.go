@@ -7,21 +7,20 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// FaultRepo 拥有报修状态与事件表，进程管理连接；调用方事务不由 repo 提交。
+// FaultRepo 保存报修状态和事件，事务提交及连接生命周期由调用方管理。
 type FaultRepo struct {
 	DB *gorm.DB /* 报修所属连接或调用方事务 */
 }
 
-// FaultRow 是报修状态流转所需的最小字段投影。
+// FaultRow 是报修状态变更所需的记录字段。
 type FaultRow struct {
 	ID         uint64  // 报修单主键
-	DeviceID   string  // 原报告设备身份，范围核对不接受调用方替换
+	DeviceID   string  // 报告设备编号，范围核对不接受调用方替换
 	Status     string  // 当前状态：open 待受理 / dispatched 已指派 / fixed 已修复 / closed 已关闭
 	AssignedTo *uint64 // 当前处理人 ID，nil 表示还没人接手
 }
 
-// scopedFaultQuery 仅在所属repo按 scope 和原设备元数据约束报告；不受限时保留未知设备的历史报告。
-// 返回内部查询，不向用例暴露builder，不写设备资料或自行取得业务权限。
+// scopedFaultQuery 通过现有设备资料限制报告范围；不受限账号保留未知设备的历史报告。
 func scopedFaultQuery(ctx context.Context, db *gorm.DB, scope operations.DataScope) *gorm.DB {
 	q := db.WithContext(ctx).Table("device_fault_report AS f").Where("f.deleted_at IS NULL")
 	if scope.Unrestricted {
@@ -31,14 +30,14 @@ func scopedFaultQuery(ctx context.Context, db *gorm.DB, scope operations.DataSco
 	return ScopeVendors(scope, ScopeStations(scope, q, "d.station_id"), "d.vendor_id")
 }
 
-// ScopedFaultExists 在 ctx 下读取 scope 可见的 id 存在性，返回事实或存储错误，不泄漏范围外的报告。
+// ScopedFaultExists 检查当前范围内是否存在报告，不泄漏范围外记录。
 func (s FaultRepo) ScopedFaultExists(ctx context.Context, scope operations.DataScope, id uint64) (bool, error) {
 	var n int64
 	err := scopedFaultQuery(ctx, s.DB, scope).Where("f.id=?", id).Count(&n).Error
 	return n > 0, err
 }
 
-// ListReports 在 ctx 下按 scope、status、page／pageSize 返回报告及总数；字段和顺序沿用原投影。
+// ListReports 按范围、状态分页读取报告和总数。
 func (s FaultRepo) ListReports(ctx context.Context, scope operations.DataScope, status string, page, pageSize int) ([]map[string]any, int64, error) {
 	q := scopedFaultQuery(ctx, s.DB, scope)
 	if status != "" {
@@ -53,7 +52,7 @@ func (s FaultRepo) ListReports(ctx context.Context, scope operations.DataScope, 
 	return rows, n, err
 }
 
-// LockFault 在调用方 tx 下按 id 当前读锁定未删除报修，返回原状态／处理人或缺失／读取错误，不提交。
+// LockFault 在调用方事务中锁读未删除报告的状态和处理人。
 func (s FaultRepo) LockFault(tx *gorm.DB, id uint64) (FaultRow, error) {
 	var row FaultRow
 	err := tx.Table("device_fault_report").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -61,8 +60,7 @@ func (s FaultRepo) LockFault(tx *gorm.DB, id uint64) (FaultRow, error) {
 	return row, err
 }
 
-// FaultEventInput 是一次报修流转要写入的事件。事件对用户可见，
-// 所以每个字段都要如实填写，不留空来暗示"没发生过"。
+// FaultEventInput 是用户可见的报修变更事件，须如实填写操作内容。
 type FaultEventInput struct {
 	ReportID    uint64  // 所属报修单
 	ActorID     uint64  // 操作的后台账号
@@ -74,8 +72,7 @@ type FaultEventInput struct {
 	UserVisible bool    // 是否对用户可见
 }
 
-// AppendFaultEvent 在调用方 tx 下保存 in 的原报修、操作人、流转、指派及可见性，返回写入错误。
-// 事件与主状态须同事务；本方法不判定状态机或自行提交。
+// AppendFaultEvent 在报告状态事务中保存操作人、状态、指派和可见性，状态是否合法由用例判断。
 func (s FaultRepo) AppendFaultEvent(tx *gorm.DB, in FaultEventInput) error {
 	return tx.Table("device_fault_report_event").Create(map[string]any{
 		"report_id": in.ReportID, "actor_id": in.ActorID, "event_type": in.EventType,
@@ -84,13 +81,11 @@ func (s FaultRepo) AppendFaultEvent(tx *gorm.DB, in FaultEventInput) error {
 	}).Error
 }
 
-// faultEventSelect 是报修历史要返回的列。event_id 是别名列，
-// 避免与主键 id 混淆。
+// faultEventSelect 指定历史展示字段，event_id 用别名避免与记录主键混淆。
 const faultEventSelect = "id AS event_id, event_type, actor_id, assigned_to, " +
 	"from_status, to_status, note, created_at, user_visible"
 
-// ListFaultEvents 在 ctx 下按 reportID 和已校验 page/pageSize 返回事件、总数或读取错误。
-// 原事件按 ID 倒序，后台保留所有可见性事实；无写入或指派。
+// ListFaultEvents 按报告分页倒序读取全部历史事件，不过滤后台可见性。
 func (s FaultRepo) ListFaultEvents(ctx context.Context, reportID uint64, page, pageSize int) ([]map[string]any, int64, error) {
 	query := s.DB.WithContext(ctx).Table("device_fault_report_event").Where("report_id=?", reportID)
 	total := int64(0)
@@ -105,7 +100,7 @@ func (s FaultRepo) ListFaultEvents(ctx context.Context, reportID uint64, page, p
 	return rows, total, nil
 }
 
-// UpdateReport 在调用方 tx 下将 id 报修写为 values 所属字段，返回写入错误，不提交或选择其他表。
+// UpdateReport 在调用方事务中更新报修固定字段。
 func (FaultRepo) UpdateReport(tx *gorm.DB, id uint64, values map[string]any) error {
 	return tx.Table("device_fault_report").Where("id=?", id).Updates(values).Error
 }

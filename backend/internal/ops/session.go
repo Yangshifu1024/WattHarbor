@@ -10,7 +10,7 @@ import (
 	"chargepilot/internal/platform/auth"
 )
 
-// AccessTTL 保留后台访问令牌八小时寿命，刷新会话仍按原七天绝对期限到期。
+// AccessTTL 是八小时访问令牌有效期，刷新会话保持七天绝对期限。
 const AccessTTL = 8 * time.Hour
 
 var (
@@ -18,60 +18,60 @@ var (
 	ErrPermission = errors.New("没有操作权限")       // 当前账号未持有请求的权限
 )
 
-// AuthenticationAccounts 提供所属账号事务与实时档案，不暴露SQL或敏感字段到HTTP。
+// AuthenticationAccounts 提供账号事务和当前资料，认证材料不暴露到 HTTP。
 type AuthenticationAccounts interface {
-	// Login 在ctx下验证username/password并记录ip，返回账号或凭据／锁定／存储错误。
+	// Login 验证用户名和密码，IP 用于登录审计。
 	Login(ctx context.Context, username, password, ip string) (AdminAccount, error)
-	// CompleteMFA 锁定identity账号并核对原版本、code及ip；成功前调用consume，错误不签发会话。
+	// CompleteMFA 锁定账号后核对版本和验证码，成功前删除挑战；失败不签发会话。
 	CompleteMFA(ctx context.Context, identity operations.AccountIdentity, code, ip string, consume func(context.Context) error) (AdminAccount, error)
-	// Profile 在ctx下读取id的当前有效档案及权限，返回凭据／存储错误，不写入。
+	// Profile 读取当前有效账号和权限。
 	Profile(ctx context.Context, id uint64) (operations.Profile, error)
-	// ChangePassword 校验id旧口令后更新newPassword和权限版本，ip用于同事务审计；错误回滚。
+	// ChangePassword 校验旧密码后更新新密码和认证版本，IP 用于同事务审计。
 	ChangePassword(ctx context.Context, id uint64, oldPassword, newPassword, ip string) error
 }
 
-// SessionRepository 是后台会话和原登录挑战的所属原子能力，不提供Redis客户端。
+// SessionRepository 管理后台会话和登录挑战，不暴露 Redis 客户端。
 type SessionRepository interface {
-	// Create 为ctx中的account新建会话，返回SID、刷新明文或随机／存储错误。
+	// Create 新建会话，返回 SID 和刷新令牌明文。
 	Create(ctx context.Context, account operations.AccountIdentity) (string, string, error)
-	// Rotate 竞争token原摘要，返回原身份、SID、新明文或凭据／存储错误，不延寿。
+	// Rotate 校验刷新令牌摘要后返回账号、SID 和新令牌，不延长首次到期时间。
 	Rotate(ctx context.Context, token string) (operations.AccountIdentity, string, string, error)
-	// Revoke 根据ctx下token当前或旧摘要删除会话，返回凭据／存储错误。
+	// Revoke 核对当前或旧刷新摘要后删除会话。
 	Revoke(ctx context.Context, token string) error
-	// RevokeSession 删除ctx下sid会话，返回空身份／存储错误。
+	// RevokeSession 删除指定 SID 的会话。
 	RevokeSession(ctx context.Context, sid string) error
-	// Exists 在ctx下读取sid是否存活，返回事实或Redis错误；不写入。
+	// Exists 检查 SID 会话是否存活。
 	Exists(ctx context.Context, sid string) (bool, error)
-	// Matches 在ctx下核对sid原id／version，返回事实或读取错误，只读。
+	// Matches 检查 SID 对应的账号 ID 和认证版本。
 	Matches(ctx context.Context, sid string, id, version uint64) (bool, error)
-	// BeginMFA 为ctx中的account保存短期挑战，返回随机挑战或存储错误。
+	// BeginMFA 为账号保存短期挑战并返回挑战码。
 	BeginMFA(ctx context.Context, account operations.AccountIdentity) (string, error)
-	// ResolveMFA 在ctx下读取token的原挑战身份及CAS凭据，返回缺失／格式／存储错误。
+	// ResolveMFA 读取挑战中的账号资料和读取时的完整文本。
 	ResolveMFA(ctx context.Context, token string) (MFAChallenge, error)
-	// ConsumeMFA 在ctx下原子消费challenge原凭据，返回已消费／存储错误，拒绝替换后的记录。
+	// ConsumeMFA 比较读取的挑战并原子删除，拒绝已替换记录。
 	ConsumeMFA(ctx context.Context, challenge MFAChallenge) error
 }
 
-// LoginLimiter 只提供计数事实，一分钟五次的准入规则由SessionService决定。
+// LoginLimiter 仅统计次数；每分钟五次的限制由 SessionService 判断。
 type LoginLimiter interface {
-	// CountLogin 在ctx下增加ip来源计数并保留原一分钟窗口，返回计数或存储错误。
+	// CountLogin 统计 IP 登录次数，保持首次一分钟窗口。
 	CountLogin(ctx context.Context, ip string) (int, error)
 }
 
 // AccessTokens 只签发／校验后台访问令牌，角色权限仍从实时档案读取。
 type AccessTokens interface {
-	// Sign 用profile身份、sid和now签发八小时令牌，返回签名或错误，无存储。
+	// Sign 根据账号、SID 和当前时间签发八小时访问令牌。
 	Sign(profile operations.Profile, sid string, now time.Time) (string, error)
-	// Verify 校验token后台类型及当前时间，返回id、sid或凭据错误，无存储。
+	// Verify 校验后台令牌类型和时间，返回账号 ID 和 SID。
 	Verify(token string) (uint64, string, error)
 }
 
-// JWTAccess 适配进程拥有的JWT，认证业务不直接操作通用声明。
+// JWTAccess 适配进程拥有的 JWT，认证业务不直接操作通用声明。
 type JWTAccess struct {
-	JWT *auth.JWT /* cmd注入的签发校验器 */
+	JWT *auth.JWT /* cmd 注入的签发校验器 */
 }
 
-// Sign 按profile、sid及now生成原admin声明，返回签名或配置／声明错误，不写会话。
+// Sign 根据账号、SID 和当前时间签发后台令牌，不写会话。
 func (a JWTAccess) Sign(profile operations.Profile, sid string, now time.Time) (string, error) {
 	if a.JWT == nil {
 		return "", auth.ErrInvalidToken
@@ -79,7 +79,7 @@ func (a JWTAccess) Sign(profile operations.Profile, sid string, now time.Time) (
 	return a.JWT.Sign(auth.Claims{Subject: strconv.FormatUint(profile.ID, 10), Kind: "admin", SessionID: sid, RoleIDs: []uint64{profile.RoleID}, IssuedAt: now.Unix(), ExpiresAt: now.Add(AccessTTL).Unix()})
 }
 
-// Verify 校验token的原后台类型与时间，返回原ID／SID或凭据错误；不信任声明内角色授权。
+// Verify 校验后台类型和有效期，返回 ID 和 SID；令牌内的角色不能作为授权依据。
 func (a JWTAccess) Verify(token string) (uint64, string, error) {
 	if a.JWT == nil {
 		return 0, "", auth.ErrInvalidToken
@@ -95,31 +95,31 @@ func (a JWTAccess) Verify(token string) (uint64, string, error) {
 	return id, claims.SessionID, nil
 }
 
-// AccessReply 保留后台原公开字段；Profile不包含密码、密钥及权限版本。
+// AccessReply 是后台令牌响应，Profile 排除密码、密钥和认证版本。
 type AccessReply struct {
 	operations.Profile        // 当前账号、显示名、角色与实时权限
-	Token              string `json:"token"`         // 原访问令牌兼容字段
+	Token              string `json:"token"`         // 访问令牌兼容字段
 	AccessToken        string `json:"access_token"`  // 同一访问签名
-	RefreshToken       string `json:"refresh_token"` // 原刷新明文，仅返回客户端
+	RefreshToken       string `json:"refresh_token"` // 刷新明文，仅返回客户端
 	ExpiresIn          int64  `json:"expires_in"`    // 访问寿命，秒
 }
 
-// LoginOutcome 区分待二次验证和已签发的结果；HTTP按原两种响应形状输出。
+// LoginOutcome 区分待 MFA 和已签发会话，HTTP 返回对应结果。
 type LoginOutcome struct {
-	Challenge string      // 仅MFA账号返回的五分钟挑战
-	Access    AccessReply // 非MFA账号的完整回执
+	Challenge string      // 仅 MFA 账号返回的五分钟挑战
+	Access    AccessReply // 非 MFA 账号的完整回执
 }
 
-// SessionService 拥有认证、实时权限、轮换、挑战消费和签发失败清理的完整顺序。
+// SessionService 负责登录、当前权限校验、令牌轮换、挑战删除和签发失败清理。
 type SessionService struct {
 	Accounts AuthenticationAccounts // 所属账号及权限事务
-	Sessions SessionRepository      // 所属会话与挑战原子能力
+	Sessions SessionRepository      // 后台会话和挑战管理接口
 	Tokens   AccessTokens           // 后台专属签发校验能力
 	Limits   LoginLimiter           // 来源计数能力
 }
 
-// CheckRate 在ctx下计数ip认证调用；超过五次返回ErrLoginRate，存储故障原样失败关闭。
-// HTTP在解码前调用以保持原坏输入也计数的行为。
+// CheckRate 统计 IP 认证次数，超过每分钟五次返回 ErrLoginRate；存储失败拒绝登录。
+// HTTP 解码前调用，非法输入也计数。
 func (s SessionService) CheckRate(ctx context.Context, ip string) error {
 	if s.Limits == nil {
 		return errors.New("login limiter unavailable")
@@ -134,7 +134,7 @@ func (s SessionService) CheckRate(ctx context.Context, ip string) error {
 	return nil
 }
 
-// Login 在ctx下验证username/password和ip，返回原挑战或会话；失败不返回凭据材料。
+// Login 校验用户名、密码和 IP，成功返回 MFA 挑战或会话，失败不返回认证材料。
 func (s SessionService) Login(ctx context.Context, username, password, ip string) (LoginOutcome, error) {
 	account, err := s.Accounts.Login(ctx, username, password, ip)
 	if err != nil {
@@ -148,9 +148,9 @@ func (s SessionService) Login(ctx context.Context, username, password, ip string
 	return LoginOutcome{Access: access}, err
 }
 
-// VerifyMFA 在ctx下恢复challenge原身份，锁后核对版本／锁定与code；ip进入认证审计。
-// 好码后在同一账号事务内CAS消费挑战，只有赢家可写成功审计并发会话；坏码允许原挑战重试。
-// Redis消费不与SQL原子提交，消费后SQL失败只回滚SQL且不发会话，调用方须重新密码登录。
+// VerifyMFA 锁定挑战账号后核对版本、锁定状态和验证码。
+// 好码在同一账号事务内比较并删除挑战，只有成功删除者可记录登录成功并创建会话；坏码可重试。
+// Redis 删除不与 SQL 原子提交，SQL 失败须重新密码登录。
 func (s SessionService) VerifyMFA(ctx context.Context, token, code, ip string) (AccessReply, error) {
 	challenge, err := s.Sessions.ResolveMFA(ctx, token)
 	if err != nil {
@@ -165,7 +165,7 @@ func (s SessionService) VerifyMFA(ctx context.Context, token, code, ip string) (
 	return s.completeLogin(ctx, account)
 }
 
-// completeLogin 在ctx下重读account当前档案，再创建与当前版本一致的会话并签发；错误不返回令牌。
+// completeLogin 读取当前账号资料，创建与认证版本一致的会话并签发令牌。
 func (s SessionService) completeLogin(ctx context.Context, account AdminAccount) (AccessReply, error) {
 	profile, err := s.Accounts.Profile(ctx, account.ID)
 	if err != nil {
@@ -181,7 +181,7 @@ func (s SessionService) completeLogin(ctx context.Context, account AdminAccount)
 	return s.issue(ctx, profile, sid, refresh)
 }
 
-// Refresh 在ctx下轮换token后重读原账号档案／版本，再签发；凭据或读取失败尽力撤销新摘要。
+// Refresh 轮换刷新令牌后再核对账号和版本并签发，失败时尝试撤销新摘要。
 func (s SessionService) Refresh(ctx context.Context, token string) (AccessReply, error) {
 	account, sid, refresh, err := s.Sessions.Rotate(ctx, token)
 	if err != nil {
@@ -198,8 +198,8 @@ func (s SessionService) Refresh(ctx context.Context, token string) (AccessReply,
 	return s.issue(ctx, profile, sid, refresh)
 }
 
-// issue 在ctx下为profile/sid签发并返回refresh及八小时寿命；签发失败尽力撤销同一会话。
-// 清理使用原请求context且可能失败，不把签发失败报告为已完成注销。
+// issue 签发访问和刷新令牌，有效期八小时；失败时尝试撤销同一会话。
+// 清理使用首次请求 context，失败时不能声称已注销。
 func (s SessionService) issue(ctx context.Context, profile operations.Profile, sid, refresh string) (AccessReply, error) {
 	token, err := s.Tokens.Sign(profile, sid, time.Now())
 	if err != nil {
@@ -209,8 +209,8 @@ func (s SessionService) issue(ctx context.Context, profile operations.Profile, s
 	return AccessReply{Profile: profile, Token: token, AccessToken: token, RefreshToken: refresh, ExpiresIn: int64(AccessTTL / time.Second)}, nil
 }
 
-// Authenticate 在ctx下核对token类型、当前档案、sid原身份／版本和permission，返回档案／SID或错误。
-// JWT中的角色和权限不用于准入；停用、改密、角色版本及权限删除下一请求即时生效。
+// Authenticate 核对令牌类型、最新账号权限及会话账号和版本。
+// 不使用 JWT 中的旧角色或权限；停用、改密、角色版本和权限删除在下一请求生效。
 func (s SessionService) Authenticate(ctx context.Context, token, permission string) (operations.Profile, string, error) {
 	if s.Tokens == nil || s.Accounts == nil || s.Sessions == nil {
 		return operations.Profile{}, "", operations.ErrCredentials
@@ -243,13 +243,12 @@ func (s SessionService) Authenticate(ctx context.Context, token, permission stri
 	return profile, sid, nil
 }
 
-// Logout 在ctx下撤销已鉴权sid，返回空身份／存储错误，完成后该会话的所有访问签名失效。
+// Logout 撤销已鉴权会话，使该 SID 的所有访问令牌失效。
 func (s SessionService) Logout(ctx context.Context, sid string) error {
 	return s.Sessions.RevokeSession(ctx, sid)
 }
 
-// ChangePassword 在ctx下为当前id核对oldPassword并更新newPassword，ip用于同事务审计。
-// 长度／不同口令规则和权限版本变更由所属账号事务执行，返回凭据或存储错误。
+// ChangePassword 验证旧密码并更新新密码，认证版本与审计在账号事务中保存。
 func (s SessionService) ChangePassword(ctx context.Context, id uint64, oldPassword, newPassword, ip string) error {
 	return s.Accounts.ChangePassword(ctx, id, oldPassword, newPassword, ip)
 }

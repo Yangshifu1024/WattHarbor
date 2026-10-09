@@ -19,29 +19,29 @@ import (
 
 var ErrDeviceNotProvisioned = errors.New("device is not provisioned for this protocol")
 
-// MySQLSink 实现原设备注册、事件与连接终态持久能力，并提供网关命令和读模型操作；连接池由装配方管理，事务边界以各方法约定为准。
+// MySQLSink 实现设备注册、事件与连接终态持久能力，并提供网关命令和查询结果操作；连接池由装配方管理，事务边界以各方法约定为准。
 type MySQLSink struct {
 	// DB 装配方提供的 gateway GORM 连接句柄；连接池由资源装配方管理，事务边界以具体方法为准。
 	DB *gorm.DB
 }
 
-// HasChargingPorts 接收 ctx 与 deviceID，查询未删除且 charging 的端口是否存在，返回布尔值和 SQL 错误，无写入。
+// HasChargingPorts 查询未删除且 charging 的端口是否存在，返回布尔值和 SQL 错误，不写库。
 func (s MySQLSink) HasChargingPorts(ctx context.Context, deviceID string) (bool, error) {
 	var count int64
 	err := s.DB.WithContext(ctx).Model(&devicePortRow{}).Where("device_id=? AND status='charging' AND deleted_at IS NULL", deviceID).Count(&count).Error
 	return count > 0, err
 }
 
-// cardDeliveryRow 仅映射 card_event_delivery 原事件键，供持久设备卡事件时幂等建立投递记录。
+// cardDeliveryRow 仅映射 card_event_delivery 事件键，供持久设备卡事件时幂等建立投递记录。
 type cardDeliveryRow struct {
-	// EventKey 原持久事件幂等键。
+	// EventKey 持久事件幂等键。
 	EventKey string `gorm:"column:event_key;primaryKey"`
 }
 
-// TableName 返回原固定表名 card_event_delivery，供 GORM 定位模型；无数据库 IO。
+// TableName 返回固定表名 card_event_delivery，供 GORM 定位模型。
 func (cardDeliveryRow) TableName() string { return "card_event_delivery" }
 
-// Register 接收 ctx 与设备注册事实，核对启用设备及厂商适配器后写入固件与登记时间；缺配置、未开通或 SQL 失败返回错误，不发送协议报文。
+// Register 接收 ctx 与设备注册信息，核对启用设备及厂商适配器后写入固件与登记时间；缺配置、未开通或 SQL 失败返回错误，不发送协议报文。
 func (s MySQLSink) Register(ctx context.Context, registration protocol.Registration) error {
 	if s.DB == nil {
 		return errors.New("gateway database is unavailable")
@@ -70,7 +70,7 @@ func (s MySQLSink) Register(ctx context.Context, registration protocol.Registrat
 	return nil
 }
 
-// Record 接收 ctx 与协议 event，以原事件身份在 READ COMMITTED 事务中保存事件、Outbox、命令回执及遥测；返回校验、编码或 SQL 错误，不执行 TCP 确认。
+// Record 在 READ COMMITTED 事务内保存事件、Outbox、命令回执和遥测；提交成功后由适配器确认设备帧。
 func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	if s.DB == nil {
 		return errors.New("gateway database is unavailable")
@@ -83,8 +83,8 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 		return fmt.Errorf("marshal device event: %w", err)
 	}
 	key := eventKey(event)
-	// Outbox 使用统一事件信封：event_id、event_type、source、occurred_at 和 data。
-	// 消费者按信封路由；device_event.event_json 另行保留解码事件及原始载荷，供诊断和重放。
+	// Outbox 使用统一事件结构：event_id、event_type、source、occurred_at 和 data。
+	// 调用方按事件字段路由；device_event.event_json 另行保留解码事件及原始载荷，供诊断和重放。
 	envelope, err := json.Marshal(map[string]any{
 		"event_id":    key,
 		"event_type":  string(event.Type),
@@ -147,10 +147,10 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
-// stopAckAccepted 接收协议结果 code，仅 0x10 和 0x01 返回停止终态 true；其余返回 false，无 IO。
+// stopAckAccepted 接收协议结果 code，仅 0x10 和 0x01 返回停止终态 true；其余返回 false。
 func stopAckAccepted(code uint8) bool { return code == 0x10 || code == 0x01 }
 
-// applyUserStopAck 接收 ctx、所属 tx 和 STOP event，按设备、端口与命令会话锁定用户停机命令；写入确认或拒绝状态，未匹配返回 nil，SQL 失败返回错误，不提交事务。
+// applyUserStopAck 按设备、端口和会话锁定用户停机命令，保存确认或拒绝结果；无匹配命令则跳过。
 func applyUserStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	var command chargeStopCommandRow
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -180,7 +180,7 @@ func applyUserStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) er
 	return nil
 }
 
-// applyStartAck 接收 ctx、所属 tx 和 START event，锁定匹配命令并按原状态推进确认或拒绝与端口归属；未匹配返回 nil，身份或 SQL 失败返回错误，不提交事务。
+// applyStartAck 锁定匹配的启动命令，更新确认或拒绝状态及端口占用；无匹配命令则跳过。
 func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	var command chargeCommandRow
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -218,7 +218,7 @@ func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error
 	return nil
 }
 
-// applyStopAck 接收 ctx、所属 tx 和补偿 STOP event，仅匹配 stopping 命令且结果为停止终态时拒绝原启动并释放原归属端口；返回身份或 SQL 错误，不提交事务。
+// applyStopAck 只处理 stopping 命令的停止终态回执，拒绝启动并释放该订单占用的端口。
 func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	var command chargeCommandRow
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -250,7 +250,7 @@ func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error 
 	return nil
 }
 
-// insertMeasurements 接收 ctx、所属 tx 和 event，将原协议单位转为十进制遥测并维护两种聚合；返回 SQL 错误，不自行提交事务。
+// insertMeasurements 在调用方事务内转换协议单位，保存遥测并更新两类汇总。
 func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	if event.Type != protocol.Heartbeat && event.Type != protocol.ChargeEnd && len(event.ChargingPorts) == 0 {
 		return nil
@@ -305,7 +305,7 @@ func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) 
 	return refreshAggregates(ctx, tx, rollup)
 }
 
-// requireOne 接收 GORM result，保留原 SQL 错误，影响行数不为一时返回记录缺失，否则返回 nil，无额外 IO。
+// requireOne 接收 GORM result，保留 SQL 错误，影响行数不为一时返回记录缺失，否则返回 nil。
 func requireOne(result *gorm.DB) error {
 	if result.Error != nil {
 		return result.Error
@@ -316,7 +316,7 @@ func requireOne(result *gorm.DB) error {
 	return nil
 }
 
-// eventKey 接收 event，刷卡复用有效 UUID、独立遥测生成新 UUID，其余按原协议载荷及适用接收时刻生成摘要；返回事件键，不访问存储。
+// eventKey 接收 event，刷卡复用有效 UUID、独立遥测生成新 UUID，其余按协议载荷及适用接收时刻生成摘要；返回事件键，不访问存储。
 func eventKey(event protocol.Event) string {
 	if (event.Type == protocol.CardSwipe || event.Type == protocol.CardBalanceQuery) && uuid.Validate(event.EventID) == nil {
 		return event.EventID

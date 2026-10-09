@@ -37,7 +37,7 @@ func (idleScheduler) CleanupHistory(context.Context) error { return nil }
 // RunDue 忽略传入的 context，立即返回 nil，无资金、调度或存储副作用。
 func (idleScheduler) RunDue(context.Context) error { return nil }
 
-// TestHTTPBindFailureStopsAllWorkerLoops 使用 t 占用 HTTP 地址，确认应用返回绑定错误且等待三个 worker 循环退出；测试关闭监听，注入空任务，不访问存储。
+// TestHTTPBindFailureStopsAllWorkerLoops 验证 HTTP 绑定失败时返回错误，并等待三个 worker 循环退出；使用空任务，不连接存储。
 func TestHTTPBindFailureStopsAllWorkerLoops(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

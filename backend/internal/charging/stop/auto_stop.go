@@ -43,8 +43,8 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 		if len(orders) == 0 {
 			break
 		}
-		// 已提交截止点就是恢复凭据。先恢复原决定，再对尚未冻结的订单取证；
-		// 网关取证不可用或历史快照缺失不能阻断原订单的 STOP 重试。
+		// 已提交截止点就是恢复凭据。先恢复决定，再对尚未冻结的订单取证。
+		// 网关取证不可用或历史快照缺失不能阻断订单的 STOP 重试。
 		pending := make([]AutoStopOrder, 0, len(orders))
 		for _, row := range orders {
 			if err := ctx.Err(); err != nil {
@@ -84,7 +84,7 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 // stopOrder 判定一笔尚未冻结的订单，并在提交截止点后请求网关持久受理。
 // ctx 取消数据库及网关调用；row 是订单快照，samples 是完整分页证据，now 为 UTC 判定时刻。
 // 返回 true、nil 仅表示 STOP 已受理；false、nil 表示尚不应停机，错误保留下一轮恢复入口。
-// 受理不推进订单结束；单笔错误由 Run 汇总，不阻挡其他独立订单。
+// 受理不更新订单结束；单笔错误由 Run 汇总，不阻挡其他独立订单。
 func (s AutoStopper) stopOrder(ctx context.Context, row AutoStopOrder, samples []protocol.Event, now time.Time) (bool, error) {
 	order := row
 	var contract struct {
@@ -157,7 +157,7 @@ func (s AutoStopper) stopOrder(ctx context.Context, row AutoStopOrder, samples [
 			row["electric_cents"] = frozenFee.ElectricCents
 			row["service_cents"] = frozenFee.ServiceCents
 		}
-		// 锁定当前订单状态后原子首写。并发冻结保留原费用与截止点；
+		// 锁定当前订单状态后原子首写。并发冻结保留费用与截止点。
 		// 事务提交失败不得请求 STOP，提交后请求失败由下一轮 cutoff 恢复。
 		eligible := false
 		err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

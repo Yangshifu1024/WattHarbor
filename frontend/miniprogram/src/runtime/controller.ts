@@ -3,8 +3,7 @@ import { useLoad, useDidShow, useDidHide, useUnload, usePullDownRefresh, useReac
 
 export function defineController<T>(value: T): T { return value }
 
-// Keeps the existing payment/session race guards while React owns rendering
-// and Taro owns page lifecycle. A fresh controller exists for each route visit.
+// 每次进入页面创建新控制器，保留支付和会话的并发保护；React 渲染界面，Taro 管理页面生命周期。
 export function useController(definition: any) {
   const [, redraw] = useReducer(n => n + 1, 0)
   const ref = useRef<any>(null)
@@ -31,8 +30,7 @@ export function useController(definition: any) {
   usePullDownRefresh(() => { page.onPullDownRefresh?.() })
   useReachBottom(() => { page.onReachBottom?.() })
   const event = (name: string, dataset: any = {}) => (value: any) => {
-    // React/Taro DOM data-* values may stringify numeric IDs. The controller
-    // receives the original typed values used to render this row.
+    // DOM 的 data-* 可能把数字 ID 转成字符串；向控制器传递渲染时的原始值和类型。
     const currentTarget = { ...value.currentTarget, dataset: { ...value.currentTarget?.dataset, ...dataset } }
     return page[name]?.({ ...value, currentTarget, detail: value.detail || {} })
   }

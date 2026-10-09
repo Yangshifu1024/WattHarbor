@@ -6,13 +6,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// QueryFeeRepo 向订单读取能力提供所属结算回执，不把模型或 GORM builder 暴露给订单用例。
+// QueryFeeRepo 向订单用例提供结算费用，排除数据库模型和 GORM 查询对象。
 type QueryFeeRepo struct {
 	DB *gorm.DB /* 所属结算连接或调用方事务 */
 }
 
-// Fees 在 ctx 下用一次查询读取 ids 原回执，返回成功解码金额映射或读取错误，无资金写入。
-// 缺失及无法解码的回执不进入映射，保持原历史未确认费用为空的语义；空 ids 不查询。
+// Fees 批量读取并解码订单费用，缺失或非法回执不进入结果；空订单集合不查询。
 func (s QueryFeeRepo) Fees(ctx context.Context, ids []uint64) (map[uint64]order.FeeFacts, error) {
 	out := make(map[uint64]order.FeeFacts, len(ids))
 	if len(ids) == 0 {

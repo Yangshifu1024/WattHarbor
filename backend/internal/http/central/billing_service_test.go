@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestDispatchRejectsInvalidServiceCredentialsBeforeStorage 用t核对真实注册的计费路由及原401／1001。
+// TestDispatchRejectsInvalidServiceCredentialsBeforeStorage 核对真实注册的计费路由及 401／1001。
 // 依赖未装配，空配置、缺凭据及坏凭据必须在业务访问前返回；不验证计费或数据库事务。
 func TestDispatchRejectsInvalidServiceCredentialsBeforeStorage(t *testing.T) {
 	gin.SetMode(gin.TestMode)

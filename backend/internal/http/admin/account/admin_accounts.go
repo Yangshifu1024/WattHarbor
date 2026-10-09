@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Register 在r挂载原账号读取和管理路径，创建路径仍由运营族注册，避免重复注册。
+// Register 在 r 挂载账号读取和管理路径，创建路径仍由运营族注册，避免重复注册。
 func (a AdminAccounts) Register(r *gin.Engine) {
 	r.GET("/api/v1/admin/admin-users", a.Auth.Require("admin_user.read"), a.listAdminUsers)
 	r.PUT("/api/v1/admin/admin-users/:id", a.Auth.Require("admin_user.update"), a.updateAdminUser)
@@ -18,7 +18,7 @@ func (a AdminAccounts) Register(r *gin.Engine) {
 	r.POST("/api/v1/admin/admin-users/:id/mfa", a.Auth.Require("admin_user.update"), a.adminUserMFA)
 }
 
-// listAdminUsers 从c提取原分页及当前档案，返回所属账号列表或原错误映射。
+// listAdminUsers 从请求提取分页及当前档案，返回账号列表或错误映射。
 func (a AdminAccounts) listAdminUsers(c *gin.Context) {
 	page, ok := adminhttp.ReadAdminPage(c, "active disabled locked")
 	if !ok {
@@ -32,7 +32,7 @@ func (a AdminAccounts) listAdminUsers(c *gin.Context) {
 	httpapi.OK(c, reply)
 }
 
-// updateAdminUser 从c提取id及严格更新输入，将原审计事实交给所属完整事务，返回原撤销标识。
+// updateAdminUser 从请求提取 id 及严格更新输入，将审计信息交给用例事务，返回撤销标识。
 func (a AdminAccounts) updateAdminUser(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {
@@ -50,7 +50,7 @@ func (a AdminAccounts) updateAdminUser(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id, "sessions_revoked": revoked})
 }
 
-// deleteAdminUser 将c原目标与审计事实交给所属软删事务，返回原deleted标识或状态拒绝。
+// deleteAdminUser 将 c 目标与审计信息交给软删事务，返回 deleted 标识或状态拒绝。
 func (a AdminAccounts) deleteAdminUser(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {
@@ -63,7 +63,7 @@ func (a AdminAccounts) deleteAdminUser(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id, "deleted": true})
 }
 
-// unlockAdminUser 将c原目标与审计事实交给所属解锁事务，返回原unlocked标识或错误。
+// unlockAdminUser 将 c 目标与审计信息交给解锁事务，返回 unlocked 标识或错误。
 func (a AdminAccounts) unlockAdminUser(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {
@@ -76,14 +76,14 @@ func (a AdminAccounts) unlockAdminUser(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id, "unlocked": true})
 }
 
-// resetAdminPassword 从c严格提取原新口令、目标及审计事实，返回所属重置成功标识，不生成散列或快照。
+// resetAdminPassword 从请求严格读取新口令、目标及审计信息，返回重置成功标识，不生成散列或快照。
 func (a AdminAccounts) resetAdminPassword(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {
 		return
 	}
 	var input struct {
-		NewPassword string `json:"new_password"` /* 12–72字节新口令，仅交给所属重置 */
+		NewPassword string `json:"new_password"` /* 12–72 字节新口令，仅交给重置 */
 	}
 	if !httpapi.DecodeResource(c, &input) {
 		return
@@ -95,7 +95,7 @@ func (a AdminAccounts) resetAdminPassword(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id, "sessions_revoked": true})
 }
 
-// adminUserMFA 从c提取原目标及证明，输出所属事务的原登记／确认／关闭形状，不读取账号密钥。
+// adminUserMFA 从请求提取目标及证明，输出调用方事务的登记／确认／关闭形状，不读取账号密钥。
 func (a AdminAccounts) adminUserMFA(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

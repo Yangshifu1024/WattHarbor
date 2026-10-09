@@ -45,7 +45,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 		t.Fatalf("permission=%d %v", permission, err)
 	}
 	for _, seed := range []struct {
-		table string         /* 所属事实表 */
+		table string         /* 事实表 */
 		row   map[string]any /* 本测试记录 */
 	}{
 		{"role", map[string]any{"id": id + 30, "code": "identity-reader-" + tag, "name": "identity reader", "is_builtin": false}},
@@ -110,7 +110,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 	}
 	service := identity.UserQueryService{DB: tx, Recharges: wallet.RechargeHistoryService{Payments: payment.RechargeHistoryRepo{DB: tx}}}
 	actor := operations.Profile{Permissions: []string{"user.read"}}
-	// 列表仅两次分页查询与三次批量投影，增加当页人数不得增加 SQL 次数。
+	// 列表仅两次分页查询与三次批量查询，增加当页人数不得增加 SQL 次数。
 	queries := 0
 	const countName = "identity_query_count"
 	count := func(db *gorm.DB) { queries++ }
@@ -151,7 +151,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 		t.Fatalf("detail=%d %s", w.Code, w.Body)
 	}
 	var detail struct {
-		Data identity.ChargeUserDetail `json:"data"` /* 原档案公开数据 */
+		Data identity.ChargeUserDetail `json:"data"` /* 档案公开数据 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 		t.Fatalf("recharges=%d %s", w.Code, w.Body)
 	}
 	var page struct {
-		Data persist.Page[wallet.AdminRechargeRow] `json:"data"` /* 所属钱包历史页 */
+		Data persist.Page[wallet.AdminRechargeRow] `json:"data"` /* 钱包历史页 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)

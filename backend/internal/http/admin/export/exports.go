@@ -11,13 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ExportTask 只持有所属导出服务及请求鉴权，不读取数据库路径或执行文件／状态事务。
+// ExportTask 只持有导出服务及请求鉴权，不读取数据库路径或执行文件／状态事务。
 type ExportTask struct {
 	Service export.ExportService /* 任务、生成和下载完整用例 */
-	Auth    authhttp.AdminAuth   /* 原HTTP鉴权 */
+	Auth    authhttp.AdminAuth   /* HTTP 鉴权 */
 }
 
-// Register 在r挂载原五条导出路由，保留finance.read／export.create权限及公开URL。
+// Register 在 r 挂载五条导出路由，保留 finance.read／export.create 权限及公开 URL。
 func (t ExportTask) Register(r *gin.Engine) {
 	r.GET("/api/v1/admin/exports", t.Auth.Require("finance.read"), t.listTasks)
 	r.GET("/api/v1/admin/exports/:id", t.Auth.Require("finance.read"), t.detailTask)
@@ -26,7 +26,7 @@ func (t ExportTask) Register(r *gin.Engine) {
 	r.GET("/api/v1/admin/exports/resources", t.Auth.Require("export.create"), t.listResources)
 }
 
-// failure 将err映射原参数400、权限403、状态409／到期410及公共存储错误，不暴露IO细节。
+// failure 将 err 映射参数 400、权限 403、状态 409／到期 410 及公共存储错误，不暴露 IO 细节。
 func failure(c *gin.Context, err error) {
 	var input *export.InputError
 	var denied *export.ForbiddenError
@@ -47,7 +47,7 @@ func failure(c *gin.Context, err error) {
 	}
 }
 
-// detailTask 从c提取原id及身份，返回所属任务状态或原错误，不返回服务端路径。
+// detailTask 从请求提取 id 及身份，返回任务状态或错误，不返回服务端路径。
 func (t ExportTask) detailTask(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {
@@ -61,7 +61,7 @@ func (t ExportTask) detailTask(c *gin.Context) {
 	httpapi.OK(c, row)
 }
 
-// listTasks 从c提取原分页和身份，返回所属全局任务分页或原错误，不构造SQL。
+// listTasks 从请求提取分页和身份，返回全局任务分页或错误，不构造 SQL。
 func (t ExportTask) listTasks(c *gin.Context) {
 	page, ok := adminhttp.ReadAdminPage(c, "pending running completed failed expired")
 	if !ok {
@@ -75,7 +75,7 @@ func (t ExportTask) listTasks(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// listResources 将c当前身份传给所属资源准入，输出原清单、格式和上限，不决定业务范围。
+// listResources 将当前账号身份传给资源权限检查，输出清单、格式和上限，不决定业务范围。
 func (t ExportTask) listResources(c *gin.Context) {
 	out, err := t.Service.Resources(c.Request.Context(), adminhttp.AdminAuditContext(c).Actor)
 	if err != nil {
@@ -85,15 +85,15 @@ func (t ExportTask) listResources(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// createTask 从c严格提取原申请及审计事实，返回所属同步回执或错误，不组合事务／文件。
+// createTask 从请求严格读取申请及审计信息，返回同步回执或错误，不组合事务／文件。
 func (t ExportTask) createTask(c *gin.Context) {
 	var in export.CreateInput
 	if !httpapi.DecodeResource(c, &in) {
 		return
 	}
-	// 不支持格式仍先于身份IO拒绝；其它业务验证及默认值由服务执行。
+	// 不支持格式仍先于身份 IO 拒绝；其它业务验证及默认值由服务执行。
 	audit := adminhttp.AdminAuditContext(c)
-	audit.RequestID = c.GetHeader("X-Request-ID") // 原创建审计使用原请求头，不补造关联号
+	audit.RequestID = c.GetHeader("X-Request-ID") // 创建审计使用请求头，不补造关联号
 	out, err := t.Service.Create(c.Request.Context(), audit, in)
 	if err != nil {
 		failure(c, err)
@@ -106,7 +106,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 	httpapi.OK(c, gin.H{"task_no": out.TaskNo, "status": out.Status, "row_count": out.RowCount, "expires_at": out.ExpiresAt})
 }
 
-// downloadTask 从c提取id／身份，流式输出所属用例授权的句柄；请求结束关闭文件，不再使用数据库路径。
+// downloadTask 从请求提取 id／身份，流式输出用例授权的句柄；请求结束关闭文件，不再使用数据库路径。
 func (t ExportTask) downloadTask(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

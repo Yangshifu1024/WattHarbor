@@ -21,8 +21,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestSyncMarkBatchRollsBackAfterCancellation 验证实际注册端点的首行写入后取消会回滚整批，恢复和重复身份仍按实际推进数返回。
-// 只提交随机命令／事件夹具，请求退出后按完整主键清理并核对零残留；不调用设备或中央资金接口。
+// TestSyncMarkBatchRollsBackAfterCancellation 验证实际注册端点的首行写入后取消会回滚整批，恢复和重复身份仍按实际影响行数返回。
+// 只提交随机命令／事件夹具，请求退出后按全部主键字段清理并核对零残留；不调用设备或中央资金接口。
 func TestSyncMarkBatchRollsBackAfterCancellation(t *testing.T) {
 	for _, table := range []string{"charge_command", "device_event"} {
 		t.Run(table, func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestSyncMarkBatchRollsBackAfterCancellation(t *testing.T) {
 			defer cancel()
 			callback := "test:sync-mark-cancel-" + uuid.NewString()
 			writes := 0
-			// 等待单行更新的默认事务回调结束，再取消；缺失外层整批事务时，首行会已提交，测试能检出部分推进。
+			// 等待单行更新的默认事务回调结束，再取消；缺失外层整批事务时，首行会已提交，测试能检出部分更新。
 			if err := db.Callback().Update().After("gorm:commit_or_rollback_transaction").Register(callback, func(update *gorm.DB) {
 				if update.Statement.Table == table && update.Error == nil && update.RowsAffected == 1 {
 					writes++
@@ -100,8 +100,8 @@ func TestSyncMarkBatchRollsBackAfterCancellation(t *testing.T) {
 			for _, want := range []int{2, 0} {
 				out = call(context.Background())
 				var reply struct {
-					Code int                       `json:"code"` // 原 HTTP 业务码。
-					Data gatewaycontract.MarkReply `json:"data"` // 原实际推进数。
+					Code int                       `json:"code"` // HTTP 业务码。
+					Data gatewaycontract.MarkReply `json:"data"` // 实际影响行数。
 				}
 				if err := json.Unmarshal(out.Body.Bytes(), &reply); err != nil || out.Code != http.StatusOK || reply.Code != 0 || reply.Data.Marked != want {
 					t.Fatalf("recovery/replay %d: status=%d reply=%+v err=%v body=%s", want, out.Code, reply, err, out.Body.String())
@@ -114,7 +114,7 @@ func TestSyncMarkBatchRollsBackAfterCancellation(t *testing.T) {
 	}
 }
 
-// TestLateReleaseCannotFreeNewOrder 验证真实端口在释放重放后被新订单占用时，迟到旧回执保持409且不改新占用。
+// TestLateReleaseCannotFreeNewOrder 验证真实端口在释放重放后被新订单占用时，迟到旧回执保持 409 且不改新占用。
 // 夹具仅在外层事务中可见并回滚，不将模拟的订单归属写入当作中央结算或设备执行证据。
 func TestLateReleaseCannotFreeNewOrder(t *testing.T) {
 	db := gatewayContractDB(t)

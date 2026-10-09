@@ -18,12 +18,12 @@ type DevelopmentAPI struct {
 	Service payment.SimulationService // 仅 simulation 模式装配的确认用例
 }
 
-// Register 向 r 注册模拟支付确认端点，无返回值或业务 IO；调用方只在 simulation 模式装配。
+// Register 向 r 注册模拟支付确认端点，只注册路由；调用方只在 simulation 模式装配。
 func (a DevelopmentAPI) Register(r *gin.Engine) {
 	r.POST("/api/v1/user/development/payments/confirm", a.confirm)
 }
 
-// confirm 从 c 验证身份、绑定商户订单号并调用所属模拟确认用例，成功写回执。
+// confirm 校验当前用户身份、绑定商户订单号并调用模拟确认用例，成功写回执。
 // 参数错误为 400、缺失支付为 404、非模拟单或通知冲突为 409、读取及确认故障为 503；到账事务由用例执行。
 func (a DevelopmentAPI) confirm(c *gin.Context) {
 	user, ok := a.Auth.Authenticate(c)

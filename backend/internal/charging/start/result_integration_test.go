@@ -28,10 +28,8 @@ func TestBalanceStartRejectionRefundsOnce(t *testing.T) {
 	orderNo := "C-START-" + rand.Text()
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	for _, seed := range []struct {
-		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
 		table string
-		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
-		row map[string]any
+		row   map[string]any
 	}{
 		{"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 100, "status": "active"}},
 		{"payment_order", map[string]any{"id": id, "order_no": "P-" + orderNo, "biz_type": "charge", "biz_id": id, "user_id": id, "pay_method": "balance", "total_cents": 1000, "paid_cents": 1000, "status": "paid", "created_month": month}},
@@ -60,7 +58,7 @@ func TestBalanceStartRejectionRefundsOnce(t *testing.T) {
 	var payment struct {
 		// RefundedCents 从 payment_order 读取的已退款金额，单位为分，用于核对启动失败只退款一次。
 		RefundedCents int64
-		// Status 支付单当前持久支付／退款状态，用于核对启动拒绝退款完成。
+		// Status 支付单当前持久支付、退款状态，用于核对启动拒绝退款完成。
 		Status string
 	}
 	if err := tx.Table("payment_order").Where("id=?", id).Take(&payment).Error; err != nil || payment.RefundedCents != 1000 || payment.Status != "refunded" {
@@ -74,10 +72,8 @@ func TestBalanceStartRejectionRefundsOnce(t *testing.T) {
 		t.Fatalf("order=%+v err=%v", order, err)
 	}
 	for _, check := range []struct {
-		// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
 		table, where string
-		// arg 当前条件占位符对应的订单、设备或用户身份值，不转换其数值类型。
-		arg any
+		arg          any
 	}{
 		{"wallet_txn", "user_id=?", id}, {"refund_record", "biz_id=?", id},
 		{"charge_start_receipt", "charge_order_id=?", id}, {"charge_event_log", "charge_order_id=?", id},

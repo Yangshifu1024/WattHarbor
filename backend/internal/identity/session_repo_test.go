@@ -9,7 +9,7 @@ import (
 // TestSessionUserIDJSONPreservesPrecisionAndLegacyRecords 核对新字符串及旧整数记录精度，拒绝零值与溢出。
 func TestSessionUserIDJSONPreservesPrecisionAndLegacyRecords(t *testing.T) {
 	for _, sample := range []struct {
-		raw  string // 原持久 JSON 身份文本
+		raw  string // 持久 JSON 身份文本
 		want uint64 // 应恢复的精确身份
 	}{
 		{`42`, 42}, {`"42"`, 42},

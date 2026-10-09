@@ -16,21 +16,21 @@ import (
 
 // recoveryOrders 只记录投递调用；真实资金入账由既有 BillingOrders 并发测试覆盖。
 type recoveryOrders struct {
-	applied int // 已尝试投递原费用的次数，补账单不得再次推进
+	applied int // 已尝试投递费用的次数，补账单不能增加该计数
 }
 
-// Due 返回无新任务、无错误；测试只允许恢复已有投递，不访问数据库。
+// Due 返回空任务，确保测试只恢复已有费用投递。
 func (o *recoveryOrders) Due(context.Context) ([]uint64, error) { return nil, nil }
 
-// Read 对任一 context 下的订单读取报错，确保补账单未重新计算费用。
+// Read 始终报错，确保补账单不会重新计算费用。
 func (o *recoveryOrders) Read(context.Context, uint64) (Source, error) {
 	return Source{}, errors.New("unexpected calculation")
 }
 
-// Apply 接收原 Result，增加投递计数并返回 nil；不模拟实际资金写入。
+// Apply 只记录投递次数，不执行资金写入。
 func (o *recoveryOrders) Apply(context.Context, Result) error { o.applied++; return nil }
 
-// Defer 对任一 context、订单、状态及原因报错；本场景不得重排计算任务。
+// Defer 始终报错，确保恢复场景不重排计费任务。
 func (o *recoveryOrders) Defer(context.Context, uint64, string, string) error {
 	return errors.New("unexpected defer")
 }
@@ -41,7 +41,7 @@ type failingBillIssuer struct {
 	fail     bool // 是否在出账边界返回故障
 }
 
-// Issue 用 ctx 为订单 id 申请实际账单，返回账单、符合出账条件标志及错误；故障时不创建账单。
+// Issue 调用真实出账逻辑；注入故障时不创建账单。
 func (b *failingBillIssuer) Issue(ctx context.Context, id uint64) (Bill, bool, error) {
 	if b.fail {
 		return Bill{}, false, errors.New("bill IO boundary unavailable")
@@ -49,8 +49,7 @@ func (b *failingBillIssuer) Issue(ctx context.Context, id uint64) (Bill, bool, e
 	return b.BillRepo.Issue(ctx, id)
 }
 
-// TestDeliveredFeeCanRecoverMissingBill 验证 backlog 确认后出账失败不会丢失恢复入口。
-// 第一次只标记原投递，下一次补账单不重新 Apply；全部数据使用外层 tx 回滚。
+// TestDeliveredFeeCanRecoverMissingBill 验证费用已确认后出账失败仍可恢复，下一次只补账单、不重入账；造数外层回滚。
 func TestDeliveredFeeCanRecoverMissingBill(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -71,8 +70,8 @@ func TestDeliveredFeeCanRecoverMissingBill(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, seed := range []struct {
-		table string         // 原订单、费用及待投递所属表
-		row   map[string]any // 同一原结算身份的必需事实
+		table string         // 同一订单、费用及待投递所属表
+		row   map[string]any // 同一结算身份的必需事实
 	}{
 		{"charge_order", map[string]any{"id": id, "order_no": no, "user_id": source.UserID, "device_id": no, "port_no": 1, "status": "completed", "payment_status": "paid", "started_at": source.Meter.StartedAt, "ended_at": at, "created_month": at.Format("2006-01") + "-01"}},
 		{"charge_fee_receipt", map[string]any{"charge_order_id": id, "calculation_no": result.CalculationNo, "result_json": string(payload), "shortfall_cents": 0}},

@@ -1,5 +1,4 @@
-// 把 scripts/db/backup.mjs 产出的备份恢复到配置好的各个库。
-// 破坏性是刻意设计的：先 DROP 每个库，恢复才不会和陈旧数据悄悄合并。
+// 恢复 backup.mjs 生成的备份；先删除并重建目标库，避免混入旧数据。
 // 除非 RESTORE_CONFIRM 等于归档声明的库名清单，否则拒绝执行。
 // gzip 解压由 node:zlib 提供，不依赖外部 gzip 命令。
 //
@@ -47,15 +46,13 @@ function runSql(sqlText) {
   return spawnSync(cmd, [...prefix, '-N', '-e', sqlText], { cwd: ROOT, encoding: 'utf8', env: nativeEnv });
 }
 
-// 归档才是「要替换掉什么」的准绳，操作者必须确认的正是这几个库。
-// 只扫归档头部：找到 schemas 声明行即停止解压。
+// 从归档头部读取 schemas，确定要替换的数据库；找到声明后停止解压。
 function declaredSchemas() {
   return new Promise((resolve, reject) => {
     const lines = createInterface({ input: createReadStream(archive).pipe(createGunzip()), crlfDelay: Infinity });
     lines.on('line', line => {
       if (line.startsWith('-- schemas: ')) {
-        // 先兑现结果再关流：close 事件会同步触发兜底 resolve('')，
-        // 顺序颠倒会让空值抢先成为 Promise 的兑现值。
+        // 先 resolve 结果再关闭流，避免 close 事件先用空字符串完成 Promise。
         const declared = line.slice('-- schemas: '.length).trim();
         resolve(declared);
         lines.close();
@@ -117,8 +114,7 @@ for (const schema of schemas) {
   console.log(`restored ${schema}: ${counted.stdout.trim()} tables`);
 }
 
-// 各服务在启动时读取配置与引导状态。恢复把管理后台的表清空后，在重启之前
-// 没有人能登录，所以这里明确提示，而不是让人撞上无声的锁死。
+// 恢复后提示重启服务，使配置和管理员初始化流程重新执行。
 console.log('');
 console.log('restart the services so they reload the restored data:');
 console.log('  docker compose restart central gateway worker   # development stack');

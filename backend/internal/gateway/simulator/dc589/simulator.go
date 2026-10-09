@@ -299,7 +299,7 @@ func (b *board) now() time.Time {
 	return dc589.Civil(time.Now().Add(offset))
 }
 
-// setClock 将服务器时间保存为相对宿主时钟的偏移，保留真实时间推进速率。
+// setClock 将服务器时间保存为相对宿主时钟的偏移，保留真实时间更新速率。
 func (b *board) setClock(server time.Time) {
 	offset := server.Sub(time.Now())
 	b.mu.Lock()
@@ -346,7 +346,7 @@ func (b *board) register(ctx context.Context) error {
 	return nil
 }
 
-// loop 处理下行命令、心跳及充电状态推进。
+// loop 处理下行命令、心跳及充电状态更新。
 func (b *board) loop(ctx context.Context) error {
 	frames := make(chan dc589.Frame, 16)
 	readErr := make(chan error, 1)
@@ -373,9 +373,9 @@ func (b *board) loop(ctx context.Context) error {
 		defer timer.Stop()
 		reconnect = timer.C
 	}
-	// 退出时通过闭包停止当前 ticker；平台更新周期可能已替换原 ticker。
+	// 退出时通过闭包停止当前 ticker；平台更新周期可能已替换 ticker。
 	defer func() { b.heartbeat.Stop() }()
-	// 计量按自己的节奏推进，这样即便服务器不催，
+	// 计量按自己的节奏更新，这样即便服务器不催，
 	// 充电在两次心跳之间也在走。
 	meter := time.NewTicker(time.Second)
 	defer meter.Stop()
@@ -420,8 +420,8 @@ func (b *board) loop(ctx context.Context) error {
 	}
 }
 
-// meterSeconds 返回本次计量应推进的整秒数，保留不足一秒的余量供后续累计。
-// 首次 tick 推进一秒；重复或早到的 tick 不改变已计量时刻。
+// meterSeconds 返回本次计量应更新的整秒数，保留不足一秒的余量供后续累计。
+// 首次 tick 更新一秒；重复或早到的 tick 不改变已计量时刻。
 func (b *board) meterSeconds(tick time.Time) int {
 	if b.lastMeter.IsZero() {
 		b.lastMeter = tick
@@ -519,8 +519,8 @@ func (b *board) handle(ctx context.Context, frame dc589.Frame) error {
 		if err := b.writer.send(dc589.BuildHeartbeatSetReply(ok)); err != nil {
 			return err
 		}
-		// Registration/reconfiguration immediately reports actual port state so
-		// the gateway can choose 15s for a resumed charge or 60s for idle.
+		// 注册或重新配置后立即上报端口状态，让网关选择充电时 15 秒、空闲时 60 秒的心跳周期。
+		// 恢复中的充电使用充电心跳周期。
 		b.sendHeartbeat()
 		return nil
 	case dc589.SetConfig:
@@ -559,7 +559,7 @@ func (b *board) setHeartbeat(seconds uint16) {
 	b.heartbeatInterval = time.Duration(seconds) * time.Second
 }
 
-// applyConfig 校验参数范围；拒绝时保留原参数表，供 C4 失败应答测试使用。
+// applyConfig 校验参数范围；拒绝时保留参数表，供 C4 失败应答测试使用。
 func (b *board) applyConfig(frame dc589.Frame) error {
 	code := configCode(frame)
 	if code != 0 {
@@ -713,7 +713,7 @@ func (b *board) remainingSecs(running *charge) uint32 {
 	return uint32(uint64(running.remainingMilliWh()) * deciWattSecondsPerMilliWh / uint64(b.power(running.port)))
 }
 
-// advance 把每一笔进行中的充电向前推进一秒模拟时间。
+// advance 把每一笔进行中的充电向前更新一秒模拟时间。
 func (b *board) advance() {
 	now := b.now()
 	var finished []*charge

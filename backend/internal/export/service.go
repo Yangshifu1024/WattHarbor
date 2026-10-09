@@ -16,64 +16,64 @@ import (
 	"gorm.io/gorm"
 )
 
-// InputError 保留原导出输入拒绝文案，不包含存储细节。
+// InputError 表示导出请求参数不合法，提示不含存储细节。
 type InputError struct {
-	Message string /* 原公开参数提示 */
+	Message string /* 公开参数提示 */
 }
 
-// Error 返回e原公开输入提示，无IO。
+// Error 返回请求参数提示。
 func (e *InputError) Error() string { return e.Message }
 
-// ForbiddenError 表示当前权限、归属或范围不足，HTTP映射403。
+// ForbiddenError 表示当前权限、归属或范围不足，HTTP 映射403。
 type ForbiddenError struct {
-	Message string /* 原公开拒绝提示 */
+	Message string /* 公开拒绝提示 */
 }
 
-// Error 返回e原公开准入提示，不包含账号或存储材料。
+// Error 返回公开权限提示，不含账号或存储材料。
 func (e *ForbiddenError) Error() string { return e.Message }
 
-// DownloadError 表示导出状态不提供下载；Expired区分410与原409。
+// DownloadError 表示当前状态不允许下载，过期返回 410，其他状态返回 409。
 type DownloadError struct {
-	Message string /* 原状态提示 */
-	Expired bool   /* 原24小时截止或expired状态 */
+	Message string /* 当前状态提示 */
+	Expired bool   /* 24 小时截止或 expired 状态 */
 }
 
-// Error 返回e原公开下载状态提示，无IO。
+// Error 返回公开下载状态提示。
 func (e *DownloadError) Error() string { return e.Message }
 
-// CreateInput 保留原导出申请字段，Format空值默认为CSV，Filter原null与空对象不同。
+// CreateInput 是导出申请，空格式默认 CSV，过滤条件保留 null 与空对象区别。
 type CreateInput struct {
-	RequestID string         `json:"request_id"` // 完整UUID，原任务身份
+	RequestID string         `json:"request_id"` // 完整 UUID，任务号
 	Resource  string         `json:"resource"`   // 已登记只读资源
-	Format    string         `json:"format"`     // csv／xlsx，空值默认csv
-	Filter    map[string]any `json:"filter"`     // 原筛选，账单限定from／to
+	Format    string         `json:"format"`     // csv／xlsx，空值默认 csv
+	Filter    map[string]any `json:"filter"`     // 筛选，账单限定 from／to
 }
 
-// CreateResult 是原同步创建／重放结果；Message非空时HTTP只返回failed及公开提示。
+// CreateResult 是同步创建或重放结果，Message 非空时 HTTP 返回 failed 和公开提示。
 type CreateResult struct {
-	TaskNo    string  // 原任务号
-	Status    string  // 原同步状态
+	TaskNo    string  // 同一任务号
+	Status    string  // 同步状态
 	RowCount  uint32  // 实际行数，普通成功／重放回执保留零
-	ExpiresAt *string // 原可空公开截止字符串
+	ExpiresAt *string // 可空公开截止字符串
 	Message   string  // 已持久失败的公开提示
 }
 
-// ResourcesResult 是原可导出资源清单，不向HTTP暴露SQL构造器或表名。
+// ResourcesResult 返回可导出资源，不暴露来源表或 SQL 查询对象。
 type ResourcesResult struct {
 	Items   []string `json:"items"`    // 当前权限及范围允许的资源
-	Formats []string `json:"formats"`  // 原csv／xlsx清单
+	Formats []string `json:"formats"`  // csv／xlsx 清单
 	MaxRows int      `json:"max_rows"` // 单次上限
 }
 
-// ExportService 拥有同步任务、文件发布和准入；没有未受管理的goroutine或独立worker。
+// ExportService 校验导出请求并同步生成、发布文件，不另起后台任务。
 type ExportService struct {
-	DB        *gorm.DB         // 所属任务及跨模块只读投影数据库
-	ExportDir string           // cmd注入的可信文件根目录，空值沿用系统临时目录
-	MaxRows   int              // 原单次上限，非正数默认50000
-	Clock     func() time.Time // 可注入测试时钟，nil使用实际墙钟；到期准入须在等待锁后调用
+	DB        *gorm.DB         // 中央导出任务及来源查询连接
+	ExportDir string           // cmd 注入的可信文件根目录，空值沿用系统临时目录
+	MaxRows   int              // 单次上限，非正数默认50000
+	Clock     func() time.Time // 可注入测试时钟，nil 使用实际墙钟；到期检查须在等待锁后调用
 }
 
-// now 返回s当前UTC时刻，在需要判定的业务步骤求值，不缓存请求开始时间。
+// now 在每个需要判断的步骤读取 UTC 当前时间，不缓存请求开始时间。
 func (s ExportService) now() time.Time {
 	if s.Clock != nil {
 		return s.Clock().UTC()
@@ -81,7 +81,7 @@ func (s ExportService) now() time.Time {
 	return time.Now().UTC()
 }
 
-// maxRows 返回s原单次上限，无IO。
+// maxRows 返回单次导出行数上限。
 func (s ExportService) maxRows() int {
 	if s.MaxRows > 0 {
 		return s.MaxRows
@@ -89,7 +89,7 @@ func (s ExportService) maxRows() int {
 	return 50000
 }
 
-// exportDir 返回s原可信根目录，不接受数据库路径或请求参数。
+// exportDir 返回配置的可信根目录，不采用数据库路径或请求参数。
 func (s ExportService) exportDir() string {
 	if s.ExportDir != "" {
 		return s.ExportDir
@@ -97,10 +97,10 @@ func (s ExportService) exportDir() string {
 	return filepath.Join(os.TempDir(), "chargepilot-exports")
 }
 
-// repo 返回s所属连接的仓储，不打开新池。
+// repo 返回当前连接的仓储，不创建新连接池。
 func (s ExportService) repo() ExportRepo { return ExportRepo{DB: s.DB} }
 
-// actor 在ctx下重读original账号及原版本并要求permission，返回当前档案或凭据／权限／存储错误。
+// actor 重新读取账号，核对认证版本和当前所需权限。
 func (s ExportService) actor(ctx context.Context, original operations.Profile, permission string) (operations.Profile, error) {
 	if s.DB == nil {
 		return operations.Profile{}, errors.New("export unavailable")
@@ -118,8 +118,8 @@ func (s ExportService) actor(ctx context.Context, original operations.Profile, p
 	return p, nil
 }
 
-// lockedActor 在tx下按集合→账号→角色／权限当前锁读original，返回permission所需档案或准入错误。
-// 与管理变更沿用相同锁序，防止旧RR快照或角色变化使文件发布继承旧权限。
+// lockedActor 按角色集合→账号→角色及权限加锁并当前读，沿用管理写入锁序。
+// 发布文件前核对最新权限，避免旧 RR 快照或角色变化使撤销权限仍生效。
 func (s ExportService) lockedActor(tx *gorm.DB, original operations.Profile, permission string) (operations.Profile, error) {
 	repo := ops.AccountRepo{DB: tx}
 	if err := repo.LockCustomerAdminRole(tx); err != nil {
@@ -153,7 +153,7 @@ func (s ExportService) lockedActor(tx *gorm.DB, original operations.Profile, per
 	return p, nil
 }
 
-// Resources 在ctx下核对original当前权限和范围，返回原清单或准入／存储错误，不生成任务。
+// Resources 核对当前权限和范围后返回可导出资源，不创建任务。
 func (s ExportService) Resources(ctx context.Context, original operations.Profile) (ResourcesResult, error) {
 	p, err := s.actor(ctx, original, "export.create")
 	if err != nil {
@@ -172,7 +172,7 @@ func (s ExportService) Resources(ctx context.Context, original operations.Profil
 	return out, nil
 }
 
-// List 在ctx下核对original的finance.read及page，返回原全局任务分页或输入／准入／存储错误。
+// List 核对 finance.read 权限和分页参数后读取全局导出任务。
 func (s ExportService) List(ctx context.Context, original operations.Profile, page persist.PageQuery) (persist.Page[ExportTaskRow], error) {
 	if page.Page < 1 || page.Page > 1000000 || page.PageSize < 1 || page.PageSize > 100 {
 		return persist.Page[ExportTaskRow]{}, &InputError{"分页参数无效"}
@@ -187,7 +187,7 @@ func (s ExportService) List(ctx context.Context, original operations.Profile, pa
 	return persist.Page[ExportTaskRow]{Items: rows, Total: total, Page: page.Page, PageSize: page.PageSize}, err
 }
 
-// Detail 在ctx下核对original的finance.read，按id返回原任务状态或准入／缺失／存储错误。
+// Detail 核对 finance.read 权限后读取任务状态。
 func (s ExportService) Detail(ctx context.Context, original operations.Profile, id uint64) (ExportTaskRow, error) {
 	if _, err := s.actor(ctx, original, "finance.read"); err != nil {
 		return ExportTaskRow{}, err
@@ -195,7 +195,7 @@ func (s ExportService) Detail(ctx context.Context, original operations.Profile, 
 	return s.repo().FindExportTaskByID(s.DB.WithContext(ctx), id)
 }
 
-// validate 核对in原UUID、资源、格式和账单窗口，返回默认格式及所属声明或原参数错误，无IO。
+// validate 检查 UUID、资源、格式和账单时间范围，返回默认格式及资源定义。
 func (in CreateInput) validate() (CreateInput, ExportSpec, error) {
 	if !operations.ValidRequestID(in.RequestID) {
 		return in, ExportSpec{}, &InputError{"请提供 UUID 格式的请求号"}
@@ -216,8 +216,8 @@ func (in CreateInput) validate() (CreateInput, ExportSpec, error) {
 	return in, spec, nil
 }
 
-// Create 在ctx下按audit及in受理完整UUID并同步生成，返回原回执或输入／准入／事务错误。
-// 唯一键登记后当前读取原申请，申请和首次审计一起提交；pending重放可恢复，failed／completed不换任务号。
+// Create 使用完整 UUID 受理并同步生成，登记、当前读重放和首次审计同事务。
+// pending 可用同请求恢复，failed／completed 重放不换任务号。
 func (s ExportService) Create(ctx context.Context, audit ops.AuditContext, in CreateInput) (CreateResult, error) {
 	in, spec, err := in.validate()
 	if err != nil {
@@ -268,7 +268,7 @@ func (s ExportService) Create(ctx context.Context, audit ops.AuditContext, in Cr
 			return nil
 		}
 		audit.Actor = p
-		// 原导出创建审计目标ID仍为0、原X-Request-ID由HTTP传入，不补换资源任务号。
+		// 创建审计的目标 ID 保持为 0，X-Request-ID 由 HTTP 传入，不能用资源任务号替换。
 		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: "create", Target: "export_task", After: map[string]any{"resource": in.Resource, "task_no": taskNo}})
 	})
 	if err != nil {
@@ -290,13 +290,13 @@ func (s ExportService) Create(ctx context.Context, audit ops.AuditContext, in Cr
 	return CreateResult{TaskNo: taskNo, Status: row.Status, RowCount: row.RowCount, ExpiresAt: row.ExpiresAt}, nil
 }
 
-// generationFailure 表示原错误已伴随failed状态持久化，公开回执仍是原200／failed。
+// generationFailure 表示生成错误及 failed 状态已保存，HTTP 仍返回 200 和 failed 结果。
 type generationFailure struct {
-	cause error /* 原生成取消、IO或查询错误 */
+	cause error /* 生成取消、IO 或查询错误 */
 }
 
-// Error 返回e内部生成原因，仅用于错误链和日志，不作为公开回执。
+// Error 返回内部生成原因，仅用于错误链和日志。
 func (e *generationFailure) Error() string { return e.cause.Error() }
 
-// Unwrap 返回e原取消、IO或查询错误，支持errors.Is／As，不改变持久状态。
+// Unwrap 返回底层取消、文件或查询错误，支持 errors.Is／As。
 func (e *generationFailure) Unwrap() error { return e.cause }

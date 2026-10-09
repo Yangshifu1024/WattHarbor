@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// TestBillingMarketingStorageFailureRollsBackFunds 验证营销读取故障返回原资金事务并回滚已写费用，而正常不适用仍可完成原结算。
+// TestBillingMarketingStorageFailureRollsBackFunds 验证发券查询故障连同已写费用一起回滚，而规则不适用仍可完成结算。
 func TestBillingMarketingStorageFailureRollsBackFunds(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -31,8 +31,8 @@ func TestBillingMarketingStorageFailureRollsBackFunds(t *testing.T) {
 	contract, _ := json.Marshal(map[string]any{"rule": rule, "offer": charging.Offer{ID: 1, PriceCents: 10000}})
 	meter, _ := json.Marshal(charging.EndMeter{EndedAt: at, ChargedWh: 5000, ChargedSeconds: 3600})
 	for _, seed := range []struct {
-		table string         // 原订单及冻结证据所属表
-		row   map[string]any // 原身份、时刻及人工最终费用
+		table string         // 同一订单及冻结证据所属表
+		row   map[string]any // 身份、时刻及人工最终费用
 	}{
 		{"payment_order", map[string]any{"id": id, "order_no": "P-" + no, "user_id": id, "biz_type": "charge", "biz_id": id, "pay_method": "wechat", "status": "paid", "total_cents": 10000, "paid_cents": 10000, "created_month": "2026-10-01"}},
 		{"charge_order", map[string]any{"id": id, "order_no": no, "user_id": id, "device_id": no, "port_no": 1, "status": "completed", "payment_status": "paid", "payment_order_id": id, "started_at": at.Add(-time.Hour), "ended_at": at, "created_month": "2026-10-01"}},

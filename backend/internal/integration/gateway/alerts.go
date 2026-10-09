@@ -11,8 +11,8 @@ import (
 	contract "chargepilot/internal/contracts/gateway"
 )
 
-// DeviceFaults 在ctx下读取原100条待处理批，返回原主键／载荷或传输／契约错误，无重试。
-// 使用受管理Transport、最多5秒且禁止重定向；单条协议解码与处理由所属用例决定。
+// DeviceFaults 查询最多 100 条待处理故障，ID 必须递增。
+// 请求最多五秒，不跟随重定向或自动重试；协议解析由调用方负责。
 func (c *Client) DeviceFaults(ctx context.Context) ([]contract.DeviceFaultReport, error) {
 	data, err := queryData[contract.DeviceFaultsReply](ctx, c, contract.DeviceFaultsPath+"?limit=100", "reports")
 	if err != nil {
@@ -31,8 +31,7 @@ func (c *Client) DeviceFaults(ctx context.Context) ([]contract.DeviceFaultReport
 	return data.Reports, nil
 }
 
-// MarkDeviceFaults 在ctx下推进ids原主键，返回实际推进条数或准入／传输／契约错误。
-// 0是并发或回复丢失重放的合法结果；不把未确认业务的主键加入请求，不重试或更换身份。
+// MarkDeviceFaults 标记已处理的故障事件，返回实际更新条数；参数或响应无效时返回错误。
 func (c *Client) MarkDeviceFaults(ctx context.Context, ids []uint64) (int64, error) {
 	if len(ids) == 0 || len(ids) > contract.MaxDeviceFaultBatch {
 		return 0, fmt.Errorf("invalid fault marks")
@@ -55,9 +54,9 @@ func (c *Client) MarkDeviceFaults(ctx context.Context, ids []uint64) (int64, err
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	transport.HTTP = &httpClient
 	copyClient.transport = transport
-	// markDeviceFaultsWireReply 只校验原进度字段是否存在，不把缺失当正常零值。
+	// markDeviceFaultsWireReply 只校验进度字段是否存在，不把缺失当正常零值。
 	type markDeviceFaultsWireReply struct {
-		Marked *int64 `json:"marked"` /* 必须存在的实际推进条数 */
+		Marked *int64 `json:"marked"` /* 必须存在的实际更新条数 */
 	}
 	data, err := post[markDeviceFaultsWireReply](ctx, &copyClient, contract.MarkDeviceFaultsPath, contract.MarkDeviceFaultsRequest{IDs: ids}, http.StatusOK)
 	if err != nil {
@@ -69,8 +68,9 @@ func (c *Client) MarkDeviceFaults(ctx context.Context, ids []uint64) (int64, err
 	return *data.Marked, nil
 }
 
-// HeartbeatAfterKey 在ctx下按deviceID和key原水印取原证据；返回原时刻／载荷或输入／传输／契约错误。
-// 原键缺失明确无水印，无心跳不补正常值；found时强制接收时刻晚于水印，协议与设备身份由用例核对。
+// HeartbeatAfterKey 查询指定事件之后的最新心跳；返回心跳时间和内容。
+// 找到心跳时，接收时间必须晚于该事件；事件不存在或没有后续心跳时保留空值。
+// 协议内容和设备编号由调用方核对。
 func (c *Client) HeartbeatAfterKey(ctx context.Context, deviceID, key string) (contract.HeartbeatAfterKeyReply, error) {
 	if deviceID == "" || len(deviceID) > 64 || strings.TrimSpace(deviceID) != deviceID || key == "" || len(key) > 64 {
 		return contract.HeartbeatAfterKeyReply{}, fmt.Errorf("invalid heartbeat watermark")

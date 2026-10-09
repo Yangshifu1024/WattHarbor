@@ -9,19 +9,19 @@ import (
 	"time"
 )
 
-// retryFixture 注入仅测试使用的原两项重试能力，不替换生产定时器或依赖装配。
+// retryFixture 注入仅测试使用的两项重试能力，不替换生产定时器或依赖装配。
 type retryFixture struct {
-	Compensate func(context.Context) error // 原补偿步骤，接收运行时传入的同一context。
-	Pending    func(context.Context) error // 原用户STOP步骤，用于核对顺序和取消边界。
+	Compensate func(context.Context) error // 补偿步骤，接收运行时传入的同一 context。
+	Pending    func(context.Context) error // 用户 STOP 步骤，用于核对顺序和取消边界。
 }
 
-// RetryStopping 在 ctx 下调用 s.Compensate，返回其结果；生命周期由运行时及同步测试bubble管理。
+// RetryStopping 调用 s.Compensate，返回其结果；生命周期由运行时及同步测试 bubble 管理。
 func (s retryFixture) RetryStopping(ctx context.Context) error { return s.Compensate(ctx) }
 
-// RetryPending 在 ctx 下调用 s.Pending，返回其结果，不另建goroutine或改变原任务身份。
+// RetryPending 调用 s.Pending，返回其结果，不另建 goroutine 或改变任务身份。
 func (s retryFixture) RetryPending(ctx context.Context) error { return s.Pending(ctx) }
 
-// TestRetryStopsKeepsFiveSecondOrderAndContinuesAfterFailures 使用标准同步测试时钟跑原五秒ticker。
+// TestRetryStopsKeepsFiveSecondOrderAndContinuesAfterFailures 使用标准同步测试时钟跑五秒 ticker。
 // 首轮两项失败不阻断后项或次轮，次轮主动取消结束；不缩短生产间隔或轮换恢复能力实例。
 func TestRetryStopsKeepsFiveSecondOrderAndContinuesAfterFailures(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -58,7 +58,7 @@ func TestRetryStopsKeepsFiveSecondOrderAndContinuesAfterFailures(t *testing.T) {
 	})
 }
 
-// TestRetryStopsDoesNotEnterPendingAfterCancellation 验证补偿中取消时不进入同轮用户STOP，原五秒首轮保持。
+// TestRetryStopsDoesNotEnterPendingAfterCancellation 验证补偿中取消时不进入同轮用户 STOP，五秒首轮保持。
 func TestRetryStopsDoesNotEnterPendingAfterCancellation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -74,7 +74,7 @@ func TestRetryStopsDoesNotEnterPendingAfterCancellation(t *testing.T) {
 	})
 }
 
-// TestRetryStopsWithCanceledContextRunsNoTask 核对进入前取消的context立即退出，两项实际入口计数均为零。
+// TestRetryStopsWithCanceledContextRunsNoTask 核对进入前取消的 context 立即退出，两项实际入口计数均为零。
 func TestRetryStopsWithCanceledContextRunsNoTask(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -91,7 +91,7 @@ func TestRetryStopsWithCanceledContextRunsNoTask(t *testing.T) {
 }
 
 // TestRetryStopsWaitsForInFlightCompensation 验证取消后仍等待正在执行的补偿返回，不提前释放其上层资源。
-// synctest.Wait确认补偿已阻塞于受管理出口；全部测试goroutine由bubble等待退出。
+// synctest.Wait 确认补偿已阻塞于受管理出口；全部测试 goroutine 由 bubble 等待退出。
 func TestRetryStopsWaitsForInFlightCompensation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())

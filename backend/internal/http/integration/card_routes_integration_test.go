@@ -60,7 +60,7 @@ func cardRouteDB(t *testing.T, env string) *gorm.DB {
 // cardRouteSessions 只模拟会话存活；JWT 及当前账号状态使用真实实现，不证明 Redis 生命周期。
 type cardRouteSessions struct{}
 
-// Exists 返回 ctx 下 sid 非空的会话 fixture，无外部 IO。
+// Exists 返回 ctx 下 sid 非空的会话 fixture。
 func (cardRouteSessions) Exists(ctx context.Context, sid string) (bool, error) { return sid != "", nil }
 
 // sameCardJSON 对 a/b 使用精确 JSON 数字解码后规范序列化，返回字段和值是否完全相同。
@@ -104,7 +104,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	raw, _ := json.Marshal(charging.Spec{Scheme: &scheme})
 	eventRaw, _ := json.Marshal(protocol.Event{EventID: key, Type: protocol.CardBalanceQuery, DeviceID: deviceID, CardNumber: uint32(id%4000000000 + 1), ReceivedAt: time.Now()})
 	for _, seed := range []struct {
-		// db 该记录所属的真实 MySQL 测试连接。
+		// db 该记录的真实 MySQL 测试连接。
 		db *gorm.DB
 		// table 本断言写入、读取或清理的真实表名。
 		table string
@@ -266,7 +266,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 		Attempts uint32
 		// Status 本断言核对的业务状态。
 		Status string
-		// ResponseJSON 已持久化的原幂等响应，用于形状与重放核对。
+		// ResponseJSON 已持久化的幂等响应，用于形状与重放核对。
 		ResponseJSON string
 	}
 	if err := gateway.Table("card_event_delivery").Where("event_key=?", key).Take(&delivery).Error; err != nil || delivery.Attempts != 1 || delivery.Status != "pending" || !sameCardJSON(t, delivery.ResponseJSON, frozen.ResponseJSON) {

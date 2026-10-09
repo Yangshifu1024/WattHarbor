@@ -1,10 +1,5 @@
-// 计价模型集中放在这一处：线上的数据结构，以及把存下来的 Spec 换算成运营脑子里
-// 装得下的东西的那套算术。
-//
-// 编辑器以「元」和 HH:mm 时间展示，本模型保留「结束分钟」并提供时间换算。
-// 电费换算成引擎实际存的「分」也集中在这里。后端强制的链条不变量在这里
-// 一起校验，并且报错要点名是哪一段出问题——服务端只回一句"参数无效"，等于没告诉
-// 运营任何能照着改的东西。
+// 统一处理计价数据、单位换算和表单校验。
+// 页面展示元和 HH:mm，接口保存分和结束分钟；校验错误须指出具体时段或档位。
 
 export type ChargeMode =
   | 'server_realtime_power' | 'server_max_power' | 'server_energy'
@@ -90,8 +85,7 @@ export const tierRateUnits = (mode: ChargeMode) => ({
 });
 export const modeLabel = (mode?: string) => (mode && MODE_META[mode as ChargeMode] ? MODE_META[mode as ChargeMode].label : (mode || '—'));
 
-// 走功率阶梯计价的服务费读的是各档位单价，所以在没有阶梯可读的电价模板上这个选项
-// 根本不存在。
+// 功率阶梯服务费依赖各档位单价，无阶梯数据的电价模板不提供此选项。
 export const SERVICE_OPTIONS: { value: ServiceBasis; label: string; unit: string }[] = [
   { value: 'none', label: '不收服务费', unit: '' },
   { value: 'energy', label: '按电量（元/度）', unit: '元/度' },
@@ -105,8 +99,7 @@ export const DEFAULT_DISPLAY: Display = {
   fee_split_inline: true, show_fee_on_end: true, show_method: true, show_rule: false, hide_unit: false,
 };
 
-// 详情页必须用运营的说法讲清楚充电用户会看到什么。直接把字段名印出来等于什么都没说：
-// 没人会靠读 "show_tariff" 来决定要不要显示电价。
+// 详情使用业务说明展示选项，例如“是否向用户显示电价”，避免直接显示字段名。
 const DISPLAY_LABELS: Record<keyof Display, string> = {
   show_energy: '显示充电电量',
   show_power: '展示充电功率',
@@ -308,7 +301,7 @@ export function formToSpec(form: SpecForm): Spec {
     if (Number(form.spend_cap_yuan) > 0) spec.spend_cap_cents = toCents(form.spend_cap_yuan);
     if (Number(form.stop_grace_seconds) > 0) spec.stop_grace_seconds = Number(form.stop_grace_seconds);
   } else {
-    // 设备侧计价的模板根本不带费率：后端会拒绝，而一个没人读的费率比没有费率更糟。
+    // 设备自行计价的模板不提交费率，后端会拒绝多余的费率字段。
     if (form.mode === 'device_duration') {
       spec.time_charge = {
         stop_when_full: !!form.time_charge.stop_when_full,
@@ -414,9 +407,7 @@ export function removeTier(tiers: TierForm[], at: number): TierForm[] {
 
 const isMoney = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10000;
 
-// validateSpecForm 与后端 ValidateSpec 对齐，并且点名是第几行出的问题。每条提示都
-// 说清要改什么，因为服务端唯一的回答是一句笼统的"参数无效"，运营没法从十四个字段里
-// 猜它说的是哪一个。
+// validateSpecForm 使用与后端 ValidateSpec 相同的校验规则，并指出错误所在行和修改要求。
 export function validateSpecForm(form: SpecForm): string[] {
   const errors: string[] = [];
   if (!form.mode || !MODE_META[form.mode]) {

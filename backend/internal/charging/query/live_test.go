@@ -13,20 +13,20 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// liveFixture 同时提供可计数读取和故障注入，仅证明组合规则，不替代真实网关／数据库。
+// liveFixture 同时提供可计数读取和故障注入，仅证明组合规则，不替代真实网关、数据库。
 type liveFixture struct {
 	evidenceCalls int                                       // 已发起证据批数
 	snapshotCalls int                                       // 已发起快照批数
 	purchaseCalls int                                       // 已发起卡购买批数
-	sizes         []int                                     // 原请求每批项数
-	raw           []byte                                    // 原冻结套餐 JSON
-	cards         map[uint64]charging.OrderCardPurchase     // 原卡累计购买
-	fault         string                                    // 指定存储／证据故障阶段
+	sizes         []int                                     // 请求每批项数
+	raw           []byte                                    // 冻结套餐 JSON
+	cards         map[uint64]charging.OrderCardPurchase     // 卡累计购买
+	fault         string                                    // 指定存储、证据故障阶段
 	cancel        context.CancelFunc                        // 首批返回后取消的受管理测试上下文
 	mutate        func([]gatewaycontract.EvidencePageReply) // 指定端口、完整性与缺失响应变异
 }
 
-// ChargingEvidence 为 ctx 下 q 生成原身份的60秒心跳，返回页或指定故障，并记录调用次数。
+// ChargingEvidence 为 ctx 下 q 生成标识的60秒心跳，返回页或指定故障，并记录调用次数。
 func (f *liveFixture) ChargingEvidence(ctx context.Context, q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {
 	f.evidenceCalls++
 	f.sizes = append(f.sizes, len(q))
@@ -49,7 +49,7 @@ func (f *liveFixture) ChargingEvidence(ctx context.Context, q []gatewaycontract.
 	return out, nil
 }
 
-// Snapshots 为 ctx 下 ids 返回原冻结 JSON，或指定存储错误；记录批数，无真实写入。
+// Snapshots 为 ctx 下 ids 返回冻结 JSON，或指定数据库错误；记录批数，无真实写入。
 func (f *liveFixture) Snapshots(ctx context.Context, ids []uint64) (map[uint64][]byte, error) {
 	f.snapshotCalls++
 	if f.fault == "snapshot" {
@@ -65,7 +65,7 @@ func (f *liveFixture) Snapshots(ctx context.Context, ids []uint64) (map[uint64][
 	return out, nil
 }
 
-// Purchases 在 ctx 下返回 f 的原累计购买，或指定存储错误；记录批数，无真实扣款。
+// Purchases 返回 f 的累计购买，或指定数据库错误；记录批数，无真实扣款。
 func (f *liveFixture) Purchases(ctx context.Context, _ []uint64) (map[uint64]charging.OrderCardPurchase, error) {
 	f.purchaseCalls++
 	if f.fault == "purchase" {
@@ -77,7 +77,7 @@ func (f *liveFixture) Purchases(ctx context.Context, _ []uint64) (map[uint64]cha
 	return f.cards, nil
 }
 
-// liveRows 为 n 构造相同开始时刻、不同原身份的 charging 读模型，无 IO。
+// liveRows 为 n 构造相同开始时刻、不同标识的 charging 查询结果。
 func liveRows(n int, start time.Time) []order.OrderView {
 	rows := make([]order.OrderView, n)
 	for i := range rows {
@@ -86,7 +86,7 @@ func liveRows(n int, start time.Time) []order.OrderView {
 	return rows
 }
 
-// durationSnapshot 为 t 生成600分／60分钟原冻结套餐；失败终止测试，无持久化。
+// durationSnapshot 为 t 生成600分、60分钟冻结套餐；失败终止测试，无持久化。
 func durationSnapshot(t *testing.T) []byte {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{"rule": charging.Rule{Spec: charging.Spec{Mode: charging.ModeDeviceDuration}}, "offer": charging.Offer{ID: 1, StationID: 1, Name: "frozen", Mode: "duration", PriceCents: 600, DurationMinutes: 60}})
@@ -121,14 +121,14 @@ func TestLiveBatchKeepsObservedFeesAndBoundsCalls(t *testing.T) {
 	}
 }
 
-// TestLiveMissingFactsNeverBecomeConfirmedZero 验证缺口、错身份、无快照、卡零购买及存储故障保留原缺失语义。
+// TestLiveMissingFactsNeverBecomeConfirmedZero 验证缺口、错标识、无快照、卡零购买及存储故障保留缺失语义。
 func TestLiveMissingFactsNeverBecomeConfirmedZero(t *testing.T) {
 	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name        string             // 用例身份
 		configure   func(*liveFixture) // 对指定响应事实或故障的修改
 		wantView    bool               // 是否应保留已观测计量
-		wantFee     string             // 原费用不可估算文案
+		wantFee     string             // 费用不可估算文案
 		unavailable bool               // 是否应标记整体读取失败
 	}{
 		{"incomplete", func(f *liveFixture) {

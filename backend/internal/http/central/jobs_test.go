@@ -15,16 +15,16 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// registeredJobStopper 仅提供停机数量与错误的窄能力fixture，不访问订单、计费库或真实设备。
+// registeredJobStopper 仅提供停机数量与错误的测试替身，不访问订单、计费库或真实设备。
 type registeredJobStopper struct {
-	progress  int                // Run 返回的原扫描处理数量，测试期间不变。
-	failure   error              // Run 返回的原未完成错误，测试期间不变。
+	progress  int                // Run 返回的扫描处理数量，测试期间不变。
+	failure   error              // Run 返回的未完成错误，测试期间不变。
 	calls     atomic.Int64       // 已执行业务扫描的次数，用于证明服务令牌先行拒绝。
-	remaining chan time.Duration // 捕获真实注册处理器派生的context期限；只传递时长，不持有请求context。
+	remaining chan time.Duration // 捕获真实注册处理器派生的 context 期限；只传递时长，不持有请求 context。
 }
 
-// Run 接收真实HTTP处理器派生的ctx，记录调用及期限，返回fixture的progress和failure。
-// 不执行资金、停止命令或数据库IO；只能证明装配、令牌顺序、期限与公开回执契约。
+// Run 接收真实 HTTP 处理器派生的 ctx，记录调用及期限，返回 fixture 的 progress 和 failure。
+// 不执行资金、停止命令或数据库 IO；只能证明装配、令牌顺序、期限与公开回执契约。
 func (f *registeredJobStopper) Run(ctx context.Context) (int, error) {
 	f.calls.Add(1)
 	deadline, ok := ctx.Deadline()
@@ -36,13 +36,13 @@ func (f *registeredJobStopper) Run(ctx context.Context) (int, error) {
 	return f.progress, f.failure
 }
 
-// TestRegisteredJobContracts 用t和真实Register路由核对具名客户端的停机回执与退款禁用回执。
+// TestRegisteredJobContracts 用真实 Register 路由核对专用客户端的停机回执与退款禁用回执。
 // 三条资金任务路由均须先拒绝坏令牌；计费依赖刻意未装配，仅核对其鉴权，完整计费由真库测试验收。
 func TestRegisteredJobContracts(t *testing.T) {
 	for _, tc := range []struct {
 		name     string // 停机扫描成功或未完成场景。
-		progress int    // fixture声明的合法处理数量。
-		failure  error  // fixture声明的未完成错误，不包含真实设备状态。
+		progress int    // fixture 声明的合法处理数量。
+		failure  error  // fixture 声明的未完成错误，不包含真实设备状态。
 	}{
 		{"completed", 3, nil},
 		{"incomplete", 2, errors.New("stop fixture incomplete")},

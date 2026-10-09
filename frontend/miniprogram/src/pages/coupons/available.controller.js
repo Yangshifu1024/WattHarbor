@@ -3,8 +3,7 @@ const couponApp = getApp();
 
 // 支付前可用券：只读展示服务端判定的当前可用券。
 // 后端未提供用户领取端点，发放由活动自动发放与后台完成，本页不受理领取。
-// 优惠口径（立减 / 折扣 / 时长）由 discount_type 表达，具体金额不随此接口返回，
-// 因此不在客户端推算可省多少钱。
+// discount_type 表示立减、折扣或赠送时长；接口不返回优惠金额，页面不自行估算。
 const typeLabels = { amount: '立减券', percentage: '折扣券', time_free: '免费时长券' };
 function view(item) {
   return { ...item, typeText: typeLabels[item.discount_type] || item.discount_type,

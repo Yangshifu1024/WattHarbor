@@ -14,7 +14,7 @@ import (
 )
 
 // registerMeterReviews 挂载计量核实的三个接口。列表只读，要求 finance.read；
-// 提交核实和裁决核实均要求billing.meter.review，r挂载路由层准入，服务继续核对实时权限。
+// 提交核实和裁决核实均要求 billing.meter.review，r 挂载路由层鉴权，服务继续核对实时权限。
 func (a API) registerMeterReviews(r *gin.Engine) {
 	r.GET("/api/v1/admin/billing/meter-reviews", a.Auth.Require("finance.read"), a.meterReviews)
 	r.POST("/api/v1/admin/billing/meter-reviews/:id/propose", a.Auth.Require("billing.meter.review"), a.proposeMeter)
@@ -89,7 +89,7 @@ func meterFailure(c *gin.Context, err error) {
 	admin.AdminResourceFailure(c, err)
 }
 
-// proposeMeter 从c提交计量核实申请，路径id是原待核实订单的charge_order_id。
+// proposeMeter 从 c 提交计量核实申请，路径 id 是待核实订单的 charge_order_id。
 // 分段必须连续覆盖原始时段、总电量一致、且各段不跨不同费率，上限 10080 段
 // （七天按分钟切分）；request_id 必须是 UUID，用来保证重放同一次提交不会产生多条核实记录。
 func (a API) proposeMeter(c *gin.Context) {
@@ -101,7 +101,7 @@ func (a API) proposeMeter(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 所属MeterReviewService保存输入及核实回执，HTTP不直接写核实记录。
+	// MeterReviewService 保存输入及核实回执，HTTP 不直接写核实记录。
 	var in settlement.MeterProposalInput
 	if !httpapi.DecodeResource(c, &in) {
 		return
@@ -119,7 +119,7 @@ func (a API) proposeMeter(c *gin.Context) {
 	httpapi.OK(c, row)
 }
 
-// decideMeter 校验核实记录所属订单，并用 Approve 指针区分缺失字段与拒绝。
+// decideMeter 校验核实记录订单，并用 Approve 指针区分缺失字段与拒绝。
 // 拒绝必须填写原因；通过前复查首次核实人的账号和权限是否仍有效。
 func (a API) decideMeter(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)

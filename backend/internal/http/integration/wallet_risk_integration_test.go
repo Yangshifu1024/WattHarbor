@@ -34,12 +34,12 @@ const (
 	riskBalance   = int64(100000)
 	riskEachCents = int64(1000)
 	riskLimit     = 3
-	// rechargeCents 是原充值可退额度。故意小于钱包余额，
-	// 让「原充值还剩多少可退」成为唯一的约束——测的就是这一条。
+	// rechargeCents 是充值可退额度。故意小于钱包余额，
+	// 让「充值还剩多少可退」成为唯一的约束——测的就是这一条。
 	rechargeCents = int64(10000)
 )
 
-// seedWalletForRisk 在 db 写入测试钱包和已支付充值单，t 报告造数失败；没有返回值，仅供独立真库并发退款验证。
+// seedWalletForRisk 在 db 写入测试钱包和已支付充值单，t 报告造数失败；仅供独立真库并发退款验证。
 func seedWalletForRisk(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Table("wallet_account").Create(map[string]any{
@@ -48,7 +48,7 @@ func seedWalletForRisk(t *testing.T, db *gorm.DB) {
 	}).Error; err != nil {
 		t.Fatalf("造钱包账户失败：%v", err)
 	}
-	// ReserveRefund 按「原充值可退额度」核销：只认 biz_type=wallet_recharge、
+	// ReserveRefund 按「充值可退额度」核销：只认 biz_type=wallet_recharge、
 	// status=paid、paid=total、带渠道流水号的支付单。缺了它每笔都判冲突。
 	if err := db.Table("payment_order").Create(map[string]any{
 		"id": 71001, "order_no": "P-WALLET-RISK", "biz_type": "wallet_recharge", "biz_id": 0,
@@ -60,7 +60,7 @@ func seedWalletForRisk(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// cleanupWalletForRisk 从 db 删除本测试用户及指定请求号前缀的数据并核对剩余行数，t 报告清理错误；没有返回值，不用于开发库。
+// cleanupWalletForRisk 从 db 删除本测试用户及指定请求号前缀的数据并核对剩余行数，t 报告清理错误；不用于开发库。
 func cleanupWalletForRisk(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, q := range []struct {
@@ -108,8 +108,8 @@ func (walletUser) Active(context.Context, uint64) (bool, error) {
 	return true, nil
 }
 
-// postRefund 用 router、token 和 requestID 提交固定分值的退款 JSON，t 标记辅助调用，返回 HTTP 状态与解析后的信封。
-// 请求执行业务路由及所属真库用例；仅供测试，信封解析错误沿用原助手处理。
+// postRefund 用 router、token 和 requestID 提交固定分值的退款 JSON，t 标记辅助调用，返回 HTTP 状态与解析后的响应。
+// 请求执行业务路由及真库用例；仅供测试，信封解析错误沿用助手处理。
 func postRefund(t *testing.T, router *gin.Engine, token, requestID string) (int, map[string]any) {
 	t.Helper()
 	body := fmt.Sprintf(`{"request_id":%q,"amount_cents":%d,"reason":"并发频次测试"}`, requestID, riskEachCents)
@@ -195,10 +195,10 @@ func concurrentWalletReplies(t *testing.T, first, second *gorm.DB, jwt *auth.JWT
 	return out
 }
 
-// walletRouteReply 保留并发请求的状态码与原业务 JSON，按启动顺序核对结果。
+// walletRouteReply 保留并发请求的状态码与业务 JSON，按启动顺序核对结果。
 type walletRouteReply struct {
 	code int            // 实际注册 HTTP 状态码
-	body map[string]any // 原业务响应信封
+	body map[string]any // 业务响应信封
 }
 
 // walletRiskToken 用 jwt 为固定测试用户签发会话令牌；t 报告错误，不调用真实身份服务。
@@ -254,7 +254,7 @@ func TestConcurrentWalletRefundRequestsEnforceFrequencyLimit(t *testing.T) {
 }
 
 // TestConcurrentWalletRefundsDoNotExceedRecharge 确认首笔 8000 分提交后，次笔不能占用同充值的剩余 2000 分。
-// 钱包余额高于原渠道来源，以便由在途退款当前读而非余额总额决定第二笔拒绝；清理已提交的真实行。
+// 钱包余额高于渠道来源，以便由在途退款当前读而非余额总额决定第二笔拒绝；清理已提交的真实行。
 func TestConcurrentWalletRefundsDoNotExceedRecharge(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()

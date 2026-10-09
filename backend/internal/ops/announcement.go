@@ -9,17 +9,17 @@ import (
 	"time"
 )
 
-// AnnouncementInput 保留原发布输入；目标是站点／城市字符串，不从名称推断数值身份。
+// AnnouncementInput 是公告发布参数，站点和城市目标保留字符串。
 type AnnouncementInput struct {
 	Title     string     `json:"title"`      // 必填标题，最多128字符
 	Content   string     `json:"content"`    // 必填正文，最多20000字符
 	Scope     string     `json:"scope"`      // global／station／city
 	TargetIDs []string   `json:"target_ids"` // 非全局必填，最多100项，每项64字符
-	StartAt   time.Time  `json:"start_at"`   // 原生效时刻，必填
-	EndAt     *time.Time `json:"end_at"`     // 原可空失效时刻，非空必须晚于生效时刻
+	StartAt   time.Time  `json:"start_at"`   // 生效时刻，必填
+	EndAt     *time.Time `json:"end_at"`     // 可空失效时刻，非空必须晚于生效时刻
 }
 
-// validate 核对in原内容、范围与时间，返回原输入文案；无IO，不核对不存在的城市字典。
+// validate 检查公告内容、目标范围和有效时间，不查询城市字典。
 func (in AnnouncementInput) validate() error {
 	contentValid := operations.ValidText(in.Title, 128) && operations.ValidText(in.Content, 20000)
 	scopeValid := in.Scope == "global" || in.Scope == "station" || in.Scope == "city"
@@ -39,12 +39,12 @@ func (in AnnouncementInput) validate() error {
 	return nil
 }
 
-// AnnouncementService 拥有公告发布准入及同事务审计，列表保留全局announcement.read权限。
+// AnnouncementService 负责公告发布校验和同事务审计，列表使用全局 announcement.read 权限。
 type AnnouncementService struct {
 	DB *gorm.DB /* 所属公告与后台账号数据库 */
 }
 
-// List 在ctx下核对actor当前读取权限，返回原公告清单或准入／取消／存储错误，不写入。
+// List 核对 announcement.read 权限后读取公告。
 func (s AnnouncementService) List(ctx context.Context, actor operations.Profile) ([]AnnouncementRow, error) {
 	if _, err := readManagementActor(ctx, s.DB, actor, "announcement.read"); err != nil {
 		return nil, err
@@ -52,8 +52,7 @@ func (s AnnouncementService) List(ctx context.Context, actor operations.Profile)
 	return (AnnouncementRepo{DB: s.DB}).List(ctx)
 }
 
-// Create 在ctx下核对audit当前发布权限及in，返回原ID或输入／准入／存储错误。
-// 原公告立即published，目标JSON与created_by由所属repo写入；发布和审计同事务，不创建异步任务。
+// Create 核对发布权限和内容后立即保存 published 公告，与审计同事务提交。
 func (s AnnouncementService) Create(ctx context.Context, audit AuditContext, in AnnouncementInput) (uint64, error) {
 	if err := in.validate(); err != nil {
 		return 0, err
@@ -72,7 +71,7 @@ func (s AnnouncementService) Create(ctx context.Context, audit AuditContext, in 
 		if err != nil {
 			return err
 		}
-		// 保留原审计中目标JSON文本、发布状态及创建人，数据库列写入仍只在所属repo。
+		// 审计保存目标 JSON、发布状态和创建人，数据库字段由仓储写入。
 		targets, err := json.Marshal(in.TargetIDs)
 		if err != nil {
 			return err

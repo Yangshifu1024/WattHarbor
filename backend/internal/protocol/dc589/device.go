@@ -14,7 +14,7 @@ import (
 // 板号校验比通用 device_id 规则严格，不能接受其他长度或字符。
 const BoardIDDigits = 16
 
-// DeviceIdentity 是主板在 A0 中传递的固定身份信息。
+// DeviceIdentity 是主板在 A0 中传递的固定设备信息。
 type DeviceIdentity struct {
 	BoardID         string
 	HardwareVersion string
@@ -63,8 +63,7 @@ type PortStatus struct {
 	Charging     []protocol.PortTelemetry
 }
 
-// BuildHeartbeat 编码 A4。status 传 nil 产出 17 字节短格式；传一个则
-// 产出服务端在 A6 上启用后的扩展格式。
+// BuildHeartbeat 编码 A4；status=nil 时使用 17 字节短格式，否则使用 A6 启用的扩展格式。
 func BuildHeartbeat(identity DeviceIdentity, status *PortStatus) (Frame, error) {
 	board, err := encodeBCD(identity.BoardID)
 	if err != nil {
@@ -108,7 +107,7 @@ func BuildHeartbeat(identity DeviceIdentity, status *PortStatus) (Frame, error) 
 		entry[3] = byte(port.RemainingSecs % 60)
 		binary.LittleEndian.PutUint16(entry[4:6], uint16(port.ChargedSeconds/60))
 		entry[6] = byte(port.ChargedSeconds % 60)
-		// 线上单位是毫瓦时的千分之一，与服务端一致。
+		// 协议电量单位为 Wh；内部 mWh 除以 1000 后写入帧。
 		binary.LittleEndian.PutUint16(entry[7:9], uint16(port.RemainingMWh/1000))
 		binary.LittleEndian.PutUint16(entry[9:11], uint16(port.ChargedMWh/1000))
 		binary.LittleEndian.PutUint16(entry[11:13], uint16(port.PowerDeciWatts))
@@ -128,8 +127,7 @@ func BuildCommandResult(command, code, port byte) (Frame, error) {
 // ChargeEndReport 是充电结束时主板上报的内容，或是自行结束，或是被叫停。
 type ChargeEndReport struct {
 	Port byte
-	// OrderBCD 是从启动本次充电的 B7 原样抄来的 8 个字节。主板不
-	// 解释它；原样回显才把结束帧与这笔订单绑在一起。
+	// OrderBCD 原样回显启动命令中的 8 字节订单号，用于把结束帧关联到同一订单。
 	OrderBCD       [8]byte
 	StartedAt      time.Time
 	EndedAt        time.Time
@@ -139,8 +137,7 @@ type ChargeEndReport struct {
 	ConsumerType   byte
 }
 
-// BuildChargeEnd 编码 BB，固定 44 字节 payload。服务端会读的每个字段
-// 都写在文档规定的偏移上；空出来的位置是保留位，一律发零。
+// BuildChargeEnd 编码 BB 的 44 字节载荷，各字段使用协议规定的偏移，保留位填零。
 func BuildChargeEnd(report ChargeEndReport) (Frame, error) {
 	if report.Port == 0 || report.EndedAt.Before(report.StartedAt) {
 		return Frame{}, ErrPayload
@@ -161,8 +158,7 @@ func BuildChargeEnd(report ChargeEndReport) (Frame, error) {
 	return Frame{Command: ChargeEnd, Data: data}, nil
 }
 
-// BuildFault 编码 C0。payload 是 5 字节：出问题的端口、厂商故障码，
-// 外加 3 个服务端不读的保留字节。
+// BuildFault 编码 C0 的 5 字节载荷：端口、故障码和 3 个保留字节。
 func BuildFault(port, code byte) (Frame, error) {
 	if port == 0 {
 		return Frame{}, ErrPayload
@@ -244,8 +240,7 @@ func ParseStopCommand(frame Frame) (port byte, err error) {
 	return frame.Data[0], nil
 }
 
-// encodeBCD 把十进制数字压成 BCD，凡是服务端的解码器读不回去的
-// 一律拒绝。
+// encodeBCD 将十进制数字编码为 BCD，不可被服务端解码的值直接报错。
 func encodeBCD(digits string) ([]byte, error) {
 	if len(digits)%2 != 0 {
 		return nil, ErrPayload

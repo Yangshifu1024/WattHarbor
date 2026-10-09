@@ -18,46 +18,47 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// PaymentIntent 是支付持久凭据向 checkout 返回的冻结业务视图。
+// PaymentIntent 保存支付申请冻结的套餐、价格与关联信息，供付款准备使用。
 type PaymentIntent struct {
-	IntentID        string            `json:"intent_id"`                 // 原支付意图 UUID
-	MerchantOrderNo string            `json:"merchant_order_no"`         // 原商户支付单号，重试沿用
+	IntentID        string            `json:"intent_id"`                 // 支付意图 UUID
+	MerchantOrderNo string            `json:"merchant_order_no"`         // 商户支付单号，重试沿用
 	PaymentOrderID  uint64            `json:"payment_order_id"`          // 关联支付主键
-	UserID          uint64            `json:"user_id,string"`            // 申请所属用户，公开投影为十进制字符串
-	OpenID          string            `json:"-"`                         // 原付款人微信身份，不公开
+	UserID          uint64            `json:"user_id,string"`            // 申请所属用户，对外返回十进制字符串
+	OpenID          string            `json:"-"`                         // 付款人微信身份，不公开
 	DeviceID        string            `json:"device_id"`                 // 冻结目标设备编号
 	PortNo          uint8             `json:"port_no"`                   // 冻结端口号，从 1 开始
 	PortCode        string            `json:"port_id"`                   // 冻结端口业务编码
 	StationID       uint64            `json:"station_id"`                // 冻结站点身份
 	Estimate        charging.Estimate `json:"estimate"`                  // 首次冻结的费用及设备执行量
-	ExpiresAt       time.Time         `json:"expires_at"`                // 原意图有效期 UTC 时刻
+	ExpiresAt       time.Time         `json:"expires_at"`                // 支付意图有效期 UTC 时刻
 	Status          string            `json:"status"`                    // 意图 initiated、expired、paid 或 refund_required
-	CouponGrantID   uint64            `json:"coupon_grant_id,omitempty"` // 原优惠券权益 ID，0 表示无券；当前套餐不允许组合券
+	CouponGrantID   uint64            `json:"coupon_grant_id,omitempty"` // 优惠券权益 ID，0 表示无券；当前套餐不允许组合券
 	DiscountCents   int64             `json:"discount_cents"`            // 冻结减免金额，分
 	PayableCents    int64             `json:"payable_cents"`             // 实际应付金额，分，等于优惠前总费减减免
 }
 
-// IntentInput 提供首次支付申请的用户、端口及完整套餐身份。
+// IntentInput 包含首次支付申请的用户、端口、套餐与优惠券编号。
+// 优惠券编号参与历史请求重放比对；新套餐申请暂不支持叠加优惠券。
 type IntentInput struct {
-	UserID          uint64           // 申请所属用户，公开投影为十进制字符串
+	UserID          uint64           // 申请所属用户，对外返回十进制字符串
 	ClientRequestID string           // 用户范围内的申请 UUID，同内容重放
-	Port            money.ScanResult // 准入时设备及端口事实，必须可用且身份一致
+	Port            money.ScanResult // 校验时读取的设备及端口信息，必须可用且身份一致
 	Energy          string           // 历史非套餐输入电量，kWh 十进制文本；当前仅接受套餐
 	Minutes         uint16           // 历史非套餐时长，分钟；当前仅接受套餐
-	Rule            charging.Rule    // 当前准入方案及规则版本，首次创建冻结
+	Rule            charging.Rule    // 当前生效方案及规则版本，首次创建冻结
 	Offer           *charging.Offer  // 后台发布的套餐，当前申请必须非空
-	// 券身份参与历史请求重放核对；当前套餐创建不允许组合券。
-	CouponGrantID uint64 // 原优惠券权益 ID，0 表示无券；当前套餐不允许组合券
+	// 优惠券编号参与历史请求重放核对；当前套餐创建不允许组合券。
+	CouponGrantID uint64 // 优惠券权益 ID，0 表示无券；当前套餐不允许组合券
 }
 
-// PaymentIntentRepo 拥有支付意图、原支付和端口短期预占事务。
+// PaymentIntentRepo 负责支付意图、支付和端口短期预占事务。
 type PaymentIntentRepo struct {
 	DB *gorm.DB // central 支付连接，由进程管理
 }
 
-// Replay 在 ctx 下按 userID、requestID 查询原支付，以 portID、offerID、couponID 核对同内容。
-// 返回冻结意图；nil、nil 表示尚未创建，异内容、失效、损坏快照返回冲突，存储错误原样返回。
-// 不重新读取当前方案或准入事实，不创建支付或延长原有效期。
+// Replay 按 userID、requestID 查询支付，以 portID、offerID、couponID 核对同内容。
+// 返回已保存的支付申请；nil、nil 表示尚未创建，异内容、失效、损坏快照返回冲突，数据库错误原样返回。
+// 不重新读取当前方案或相关条件，不创建支付或延长有效期。
 func (s PaymentIntentRepo) Replay(ctx context.Context, userID uint64, requestID, portID string, offerID, couponID uint64) (*PaymentIntent, error) {
 	if s.DB == nil || userID == 0 || uuid.Validate(requestID) != nil {
 		return nil, ErrPaymentIntentConflict
@@ -88,9 +89,8 @@ func (s PaymentIntentRepo) Replay(ctx context.Context, userID uint64, requestID,
 		CouponGrantID: row.CouponGrantID, DiscountCents: row.DiscountCents, PayableCents: row.TotalCents - row.DiscountCents}, nil
 }
 
-// Reserve 在 ctx 下按 input 验证原身份、方案及套餐后原子创建支付和短期端口预占。
-// 返回冻结意图或输入、同请求内容、端口占用、套餐或存储错误；失败不留下支付。
-// READ COMMITTED 事务内锁端口预占，冻结五分钟期限及价格，订单仅由验签到账回调创建。
+// Reserve 校验用户、设备、方案及套餐后，在 READ COMMITTED 事务中创建支付与五分钟端口预占。
+// 冻结价格与有效期，失败不留下支付记录；充电订单仅在验签到账后创建。
 func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (PaymentIntent, error) {
 	if s.DB == nil || input.UserID == 0 || uuid.Validate(input.ClientRequestID) != nil ||
 		input.Port.Kind != "port" || input.Port.Port == nil || !input.Port.Port.Available ||
@@ -116,7 +116,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 			return PaymentIntent{}, charging.ErrInvalidPricing
 		}
 		// 固定时长套餐由设备倒计时停机；金额预算由平台根据计量执行计费和停机。
-		// 下发的最大时长是设备安全上限，不替代平台的消费封顶规则。
+		// 下发的最大时长是设备安全上限，不替代平台的费用封顶规则。
 		if input.Rule.Spec.Scheme == nil {
 			return PaymentIntent{}, charging.ErrInvalidPricing
 		}
@@ -150,7 +150,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 	var merchantOrderNo string
 	expiresAt := time.Now().UTC().Add(5 * time.Minute).Truncate(time.Millisecond)
 	snapshot, err := json.Marshal(struct {
-		Rule       charging.Rule     `json:"rule"`            // 当前准入方案及规则版本，首次创建冻结
+		Rule       charging.Rule     `json:"rule"`            // 当前生效方案及规则版本，首次创建冻结
 		Estimate   charging.Estimate `json:"estimate"`        // 首次冻结的费用及设备执行量
 		Offer      *charging.Offer   `json:"offer,omitempty"` // 后台发布的套餐，当前申请必须非空
 		ComputedAt time.Time         `json:"computed_at"`     // 首次冻结方案和执行量的 UTC 时刻
@@ -171,7 +171,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 			return err
 		}
 		var identity struct {
-			OpenID string `gorm:"column:openid"` // 原付款人微信身份，不公开
+			OpenID string `gorm:"column:openid"` // 付款人微信身份，不公开
 		}
 		if err := tx.Table("user").Select("openid").Where("id = ? AND status = 'active' AND deleted_at IS NULL", input.UserID).Take(&identity).Error; err != nil {
 			return err
@@ -220,8 +220,8 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 		CouponGrantID: input.CouponGrantID, DiscountCents: discount, PayableCents: estimate.TotalCents - discount}, nil
 }
 
-// existingIntent 按 input 逐项核对已存在的 row，返回原冻结意图或 ErrPaymentIntentConflict。
-// 端口、套餐、券、期限及历史非套餐数量必须一致；不使用当前规则替换原快照，无 IO。
+// existingIntent 按 input 逐项核对已存在的 row，返回已保存的支付申请或 ErrPaymentIntentConflict。
+// 端口、套餐、券、期限及历史非套餐数量必须一致；不使用当前规则替换快照。
 func existingIntent(row PaymentIntentRecord, input IntentInput) (PaymentIntent, error) {
 	if row.PortCode != input.Port.Port.PortID || row.DeviceID != input.Port.DeviceID || row.Status != "initiated" || time.Now().After(row.ExpiresAt) {
 		return PaymentIntent{}, ErrPaymentIntentConflict
@@ -263,8 +263,8 @@ func existingIntent(row PaymentIntentRecord, input IntentInput) (PaymentIntent, 
 		CouponGrantID: row.CouponGrantID, DiscountCents: row.DiscountCents, PayableCents: row.TotalCents - row.DiscountCents}, nil
 }
 
-// PrepayParams 在 ctx 下读取 paymentOrderID 的首次参数，返回原参数或存储／载荷错误。
-// 无参数返回 gorm.ErrRecordNotFound，渠道和预支付身份不能为空；不请求渠道。
+// PrepayParams 读取 paymentOrderID 的首次参数，返回参数或存储、载荷错误。
+// 无参数返回 gorm.ErrRecordNotFound，渠道和预支付编号不能为空；不请求渠道。
 func (s PaymentIntentRepo) PrepayParams(ctx context.Context, paymentOrderID uint64) (PrepayParams, error) {
 	var record ChargePrepayRecord
 	if err := s.DB.WithContext(ctx).Where("payment_order_id = ?", paymentOrderID).Take(&record).Error; err != nil {
@@ -277,8 +277,8 @@ func (s PaymentIntentRepo) PrepayParams(ctx context.Context, paymentOrderID uint
 	return params, nil
 }
 
-// SavePrepay 在 ctx 下为 paymentOrderID 首写 params，以支付唯一键忽略并发后写。
-// 返回输入、序列化或存储错误；成功不表示传入值赢得首写，调用方须重读原参数。
+// SavePrepay 首次保存支付参数，支付唯一键使并发后写不覆盖已有值。
+// 输入无效或保存失败返回错误；成功后须重读首次参数，不能直接使用本次传入值。
 func (s PaymentIntentRepo) SavePrepay(ctx context.Context, paymentOrderID uint64, params PrepayParams) error {
 	if s.DB == nil || paymentOrderID == 0 || params.PrepayID == "" || params.Provider == "" {
 		return ErrPaymentIntentConflict

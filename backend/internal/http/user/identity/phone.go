@@ -11,17 +11,17 @@ import (
 
 // PhoneAPI 只提取用户及请求，正式／开发来源与号码事务由 identity 拥有。
 type PhoneAPI struct {
-	Auth    authhttp.SessionAuthenticator // 原请求身份能力
-	Service identity.PhoneService         // cmd 装配来源及所属号码数据能力
+	Auth    authhttp.SessionAuthenticator // 请求编号能力
+	Service identity.PhoneService         // cmd 装配来源及号码数据能力
 }
 
-// Register 在 r 注册原用户绑定／解绑端点，不打开资源。
+// Register 在 r 注册用户绑定／解绑端点，不打开资源。
 func (a PhoneAPI) Register(r *gin.Engine) {
 	r.POST("/api/v1/user/phone/bind", a.bind)
 	r.POST("/api/v1/user/phone/unbind", a.unbind)
 }
 
-// bind 从 c 读取当前身份与原号码字段，调用用例并保持原错误状态及成功掩码。
+// bind 从请求读取当前身份与号码字段，调用用例并保持错误状态及成功掩码。
 func (a PhoneAPI) bind(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -51,7 +51,7 @@ func (a PhoneAPI) bind(c *gin.Context) {
 	}
 }
 
-// unbind 从 c 提取用户并调用所属解绑事务，返回原标志或存储错误，不交换号码。
+// unbind 从请求提取用户并调用解绑事务，返回标志或存储错误，不交换号码。
 func (a PhoneAPI) unbind(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {

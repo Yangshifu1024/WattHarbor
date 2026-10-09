@@ -8,7 +8,7 @@ import (
 	"chargepilot/internal/http/admin"
 )
 
-// TestRetiredPermissionsPreserveFeedbackWalletAndDeviceAlerts 验证移除退休权限时保留意见反馈、钱包与设备告警的现有权限。
+// TestRetiredPermissionsPreserveFeedbackWalletAndDeviceAlerts 验证移除已移除权限时保留意见反馈、钱包与设备告警的现有权限。
 func TestRetiredPermissionsPreserveFeedbackWalletAndDeviceAlerts(t *testing.T) {
 	codes := []string{
 		"customer_service.read", "feedback.read", "customer_service.create", "feedback.reply", "customer_service.update", "wallet.read", "customer_service.delete",

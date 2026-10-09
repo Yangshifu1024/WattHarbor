@@ -7,9 +7,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// generationTransaction 在ctx下取得连接并执行action，返回取消、事务或action错误，不启动后台任务。
-// Begin的生命周期仅由同步回调提交／回滚；SQL及文件操作仍用原ctx，取消不得使database/sql提前释放文件锁。
-// 已有外层事务时采用保存点，外层调用者须保证事务直到同步回调退出才回滚；cmd注入普通池。
+// generationTransaction 同步执行事务回调，提交或回滚由回调退出后手动完成。
+// SQL 和文件仍响应请求取消，但取消不能提前释放保护文件的任务锁。
+// 已有外层事务时用保存点，调用方须等回调退出才回滚外层事务。
 func (s ExportService) generationTransaction(ctx context.Context, action func(*gorm.DB) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -19,7 +19,7 @@ func (s ExportService) generationTransaction(ctx context.Context, action func(*g
 			return errors.Join(action(tx), ctx.Err())
 		})
 	}
-	// 连接等待响应原ctx；只为已取得连接的Begin保留手动结束权，不继续取消后的取数或编码。
+	// 等待连接响应请求取消；取得连接后手动结束事务，但不能在取消后继续查询或编码。
 	return s.DB.WithContext(ctx).Connection(func(connection *gorm.DB) error {
 		return connection.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
 			return errors.Join(action(tx.WithContext(ctx)), ctx.Err())

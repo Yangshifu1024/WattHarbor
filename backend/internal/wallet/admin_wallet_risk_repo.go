@@ -8,9 +8,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 风控 repo 提供申请、冻结、审核及解冻的持久事实；角色、权限及状态决策由 RiskService 负责。
+// 风控 repo 提供申请、冻结、审核及解冻的已保存的数据；角色、权限及状态决策由 RiskService 负责。
 
-// WalletRiskRequest 是审核与解冻共同依赖的退款申请最小投影。
+// WalletRiskRequest 是审核与解冻共同依赖的退款申请最小查询结果。
 type WalletRiskRequest struct {
 	RequestID   string  // 请求号，业务主键，审核、解冻、幂等都按它定位
 	UserID      uint64  // 申请退款的用户 ID，冻结与退款记录都挂在该用户上
@@ -18,7 +18,7 @@ type WalletRiskRequest struct {
 	Reason      *string // 申请原因，可空
 }
 
-// WalletRiskWallet 是 wallet_account 一行的最小投影，用于定位钱包并恢复其状态。
+// WalletRiskWallet 是 wallet_account 一行的最小查询结果，用于定位钱包并恢复其状态。
 type WalletRiskWallet struct {
 	ID     uint64 // 钱包主键
 	UserID uint64 // 钱包所属用户
@@ -33,7 +33,7 @@ type WalletRiskFreeze struct {
 	TriggerRule string // 触发规则，只有 wallet_refund_frequency 走人工审核
 }
 
-// WalletRiskPriorReview 是一段已存在的审核或解冻结论。ResponseJSON 是首次返回体，
+// WalletRiskPriorReview 是一段已存在的审核或解冻结论。ResponseJSON 是首次返回体。
 // 幂等重放时原样回给调用方。
 type WalletRiskPriorReview struct {
 	ActorID      uint64 // 首次操作人 ID
@@ -54,7 +54,8 @@ const walletRiskSelect = "r.request_id, r.user_id, r.amount_cents, r.reason, r.c
 	"x.response_json AS release_json, x.created_at AS release_created_at, " +
 	"f.status AS freeze_status, f.trigger_rule, l.freeze_id"
 
-// ListWalletRisks 在 ctx 下按 status、page、pageSize 返回关联冻结的风险申请及总数；reviewed 取已有审核，其余取未审核，读取错误返回 error，不写入状态，操作资格由用例计算。
+// ListWalletRisks 分页读取关联冻结的退款申请；reviewed 查已审核，其余查未审核。
+// 审核、解冻按钮是否可用由用例按权限与当前状态判断。
 func (s RiskRepo) ListWalletRisks(ctx context.Context, status string, page, pageSize int) ([]map[string]any, int64, error) {
 	query := s.DB.WithContext(ctx).Table("wallet_refund_request r").
 		Joins("LEFT JOIN wallet_risk_review v ON v.request_id=r.request_id").
@@ -79,7 +80,7 @@ func (s RiskRepo) ListWalletRisks(ctx context.Context, status string, page, page
 	return rows, total, nil
 }
 
-// LockRefundRequest 在调用方 tx 中按 requestID 锁原退款申请，返回用户及金额事实或读取错误；缺行返回 gorm.ErrRecordNotFound，审核、预占与审计须同事务提交。
+// LockRefundRequest 在调用方事务中按 requestID 锁退款申请，返回用户及金额事实；缺行返回 gorm.ErrRecordNotFound，审核、预占与审计须同事务提交。
 func (s RiskRepo) LockRefundRequest(tx *gorm.DB, requestID string) (WalletRiskRequest, error) {
 	var row WalletRiskRequest
 	err := tx.Table("wallet_refund_request").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -87,13 +88,13 @@ func (s RiskRepo) LockRefundRequest(tx *gorm.DB, requestID string) (WalletRiskRe
 	return row, err
 }
 
-// FindRiskReview 在调用方 tx 中按 requestID 读取原审核回执，返回 Exists=true 的事实；缺行返回 gorm.ErrRecordNotFound，其他错误不能按首次审核处理，无写入。
+// FindRiskReview 在调用方事务中按 requestID 读取审核回执，返回 Exists=true 的事实；缺行返回 gorm.ErrRecordNotFound，其他错误不能按首次审核处理。
 func (s RiskRepo) FindRiskReview(tx *gorm.DB, requestID string) (WalletRiskPriorReview, error) {
 	var row struct {
-		ActorID      uint64 // 原审核或解冻账号 ID
-		Approved     bool   // 原审核是否通过，解冻记录无此值
-		Comment      string // 原动作依据，重放须相同
-		ResponseJSON string // 原首次回执，重放保持内容
+		ActorID      uint64 // 审核或解冻账号 ID
+		Approved     bool   // 审核是否通过，解冻记录无此值
+		Comment      string // 动作依据，重放须相同
+		ResponseJSON string // 首次回执，重放保持内容
 	}
 	err := tx.Table("wallet_risk_review").Where("request_id=?", requestID).Take(&row).Error
 	if err != nil {
@@ -102,7 +103,7 @@ func (s RiskRepo) FindRiskReview(tx *gorm.DB, requestID string) (WalletRiskPrior
 	return WalletRiskPriorReview{ActorID: row.ActorID, Approved: row.Approved, Comment: row.Comment, ResponseJSON: row.ResponseJSON, Exists: true}, nil
 }
 
-// CountFrequencyFreezes 在调用方 tx 中返回 requestID 关联且属于 userID 的 wallet_refund_frequency 冻结数及读取错误；用例要求恰好一条，不在此做批准或解冻。
+// CountFrequencyFreezes 在调用方事务中返回 requestID 关联且属于 userID 的 wallet_refund_frequency 冻结数及读取错误；用例要求恰好一条，不在此做批准或解冻。
 func (s RiskRepo) CountFrequencyFreezes(tx *gorm.DB, requestID string, userID uint64) (int64, error) {
 	var count int64
 	err := tx.Table("wallet_risk_freeze_link l").
@@ -112,7 +113,7 @@ func (s RiskRepo) CountFrequencyFreezes(tx *gorm.DB, requestID string, userID ui
 	return count, err
 }
 
-// InsertRiskReview 在调用方 tx 中保存 requestID、actorID、approved、comment 及 responseJSON 原审核；返回唯一键或插入错误，与资金预占及审计原子提交。
+// InsertRiskReview 保存首次审核人、结论、依据与回执；与资金预占及审计同事务提交。
 func (s RiskRepo) InsertRiskReview(tx *gorm.DB, requestID string, actorID uint64, approved bool, comment, responseJSON string) error {
 	return tx.Table("wallet_risk_review").Create(map[string]any{
 		"request_id": requestID, "actor_id": actorID, "approved": approved,
@@ -120,19 +121,19 @@ func (s RiskRepo) InsertRiskReview(tx *gorm.DB, requestID string, actorID uint64
 	}).Error
 }
 
-// CountRiskReviews 在调用方 tx 中返回 requestID 的审核记录数及读取错误；解冻用例要求恰好一次，本方法不判断角色或操作状态。
+// CountRiskReviews 统计申请的审核记录；解冻用例要求恰好一条。
 func (s RiskRepo) CountRiskReviews(tx *gorm.DB, requestID string) (int64, error) {
 	var count int64
 	err := tx.Table("wallet_risk_review").Where("request_id=?", requestID).Count(&count).Error
 	return count, err
 }
 
-// FindRiskRelease 在调用方 tx 中按 requestID 读取首次解冻回执，返回 Exists=true 的事实；缺行返回 gorm.ErrRecordNotFound，其他读取错误不能触发再次解冻。
+// FindRiskRelease 在调用方事务中按 requestID 读取首次解冻回执，返回 Exists=true 的事实；缺行返回 gorm.ErrRecordNotFound，其他读取错误不能触发再次解冻。
 func (s RiskRepo) FindRiskRelease(tx *gorm.DB, requestID string) (WalletRiskPriorReview, error) {
 	var row struct {
-		ActorID      uint64 // 原审核或解冻账号 ID
-		Comment      string // 原动作依据，重放须相同
-		ResponseJSON string // 原首次回执，重放保持内容
+		ActorID      uint64 // 审核或解冻账号 ID
+		Comment      string // 动作依据，重放须相同
+		ResponseJSON string // 首次回执，重放保持内容
 	}
 	err := tx.Table("wallet_risk_release").Where("request_id=?", requestID).Take(&row).Error
 	if err != nil {
@@ -141,7 +142,8 @@ func (s RiskRepo) FindRiskRelease(tx *gorm.DB, requestID string) (WalletRiskPrio
 	return WalletRiskPriorReview{ActorID: row.ActorID, Comment: row.Comment, ResponseJSON: row.ResponseJSON, Exists: true}, nil
 }
 
-// LockWallet 在调用方 tx 中锁 userID 未删除的钱包，返回主键、所属用户及状态或读取错误；缺行返回 gorm.ErrRecordNotFound，解冻条件由用例核对。
+// LockWallet 锁定未删除钱包并读取用户与状态；没有账户时返回 gorm.ErrRecordNotFound。
+// 可否解冻由用例判断。
 func (s RiskRepo) LockWallet(tx *gorm.DB, userID uint64) (WalletRiskWallet, error) {
 	var row WalletRiskWallet
 	err := tx.Table("wallet_account").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -149,7 +151,7 @@ func (s RiskRepo) LockWallet(tx *gorm.DB, userID uint64) (WalletRiskWallet, erro
 	return row, err
 }
 
-// LockFreeze 在调用方 tx 中锁 requestID 关联的冻结，返回原用户、状态及触发规则或读取错误；用例核对同用户且仍冻结，本方法不改变状态。
+// LockFreeze 锁定申请关联的冻结记录，读取用户、状态与触发规则，供用例核对归属与冻结条件。
 func (s RiskRepo) LockFreeze(tx *gorm.DB, requestID string) (WalletRiskFreeze, error) {
 	var row WalletRiskFreeze
 	err := tx.Table("risk_freeze_log f").Select("f.id, f.user_id, f.status, f.trigger_rule").
@@ -158,23 +160,23 @@ func (s RiskRepo) LockFreeze(tx *gorm.DB, requestID string) (WalletRiskFreeze, e
 	return row, err
 }
 
-// Unfreeze 在调用方 tx 中将 freezeID 置为 unfrozen 并记 at UTC 解冻时刻；返回更新错误，与钱包状态、原回执及审计一并提交，不释放渠道退款预占。
+// Unfreeze 在调用方事务中将 freezeID 置为 unfrozen 并记 at UTC 解冻时刻；返回更新错误，与钱包状态、首次回执及审计一并提交，不释放渠道退款预占。
 func (s RiskRepo) Unfreeze(tx *gorm.DB, freezeID uint64, at time.Time) error {
 	return tx.Table("risk_freeze_log").Where("id=?", freezeID).
 		Updates(map[string]any{"status": "unfrozen", "unfreeze_at": at}).Error
 }
 
-// CountActiveFreezes 在已锁钱包的 tx 中当前读 userID 仍为 frozen 的记录数及读取错误。
-// 零值才允许继续恢复钱包资格核对；逐行锁定读取避免旧 RR 快照遗漏新冻结，不写入或提交。
+// CountActiveFreezes 在已锁钱包的事务中当前读 userID 仍为 frozen 的记录数及读取错误。
+// 零值才允许继续恢复钱包资格核对；逐行锁定读取避免旧 RR 快照遗漏新冻结。
 func (s RiskRepo) CountActiveFreezes(tx *gorm.DB, userID uint64) (int64, error) {
 	var rows []struct {
-		ID uint64 // 当前仍生效的冻结主键
+		ID uint64 // 当前仍生效的冻结记录 ID
 	}
 	err := tx.Table("risk_freeze_log").Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id=? AND status='frozen'", userID).Find(&rows).Error
 	return int64(len(rows)), err
 }
 
-// UserStatus 在调用方 tx 中读取 userID 未删除身份的当前状态，返回状态或读取错误；缺行返回 gorm.ErrRecordNotFound，非 active 不能恢复钱包。
+// UserStatus 读取未删除用户的状态；用户未启用时不能恢复钱包使用。
 func (s RiskRepo) UserStatus(tx *gorm.DB, userID uint64) (string, error) {
 	var row struct {
 		Status string // 用户当前状态，只有 active 才可恢复钱包
@@ -183,13 +185,13 @@ func (s RiskRepo) UserStatus(tx *gorm.DB, userID uint64) (string, error) {
 	return row.Status, err
 }
 
-// ActivateWallet 在调用方 tx 中将 walletID 置为 active 并推进一次版本，返回更新错误；调用方已核对用户及剩余冻结，不改变资金分值。
+// ActivateWallet 在调用方事务中将 walletID 置为 active 并增加一次版本号；调用方已核对用户及剩余冻结，不改变资金金额（分）。
 func (s RiskRepo) ActivateWallet(tx *gorm.DB, walletID uint64) error {
 	return tx.Table("wallet_account").Where("id=?", walletID).
 		Updates(map[string]any{"status": "active", "version": gorm.Expr("version+1")}).Error
 }
 
-// InsertRiskRelease 在调用方 tx 中保存 requestID、actorID、comment 与 responseJSON 首次解冻回执；返回唯一键或插入错误，与冻结、钱包及审计共同提交。
+// InsertRiskRelease 保存首次解冻人、依据与回执，与冻结、钱包状态及审计同事务提交。
 func (s RiskRepo) InsertRiskRelease(tx *gorm.DB, requestID string, actorID uint64, comment, responseJSON string) error {
 	return tx.Table("wallet_risk_release").Create(map[string]any{
 		"request_id": requestID, "actor_id": actorID, "comment": comment, "response_json": responseJSON,

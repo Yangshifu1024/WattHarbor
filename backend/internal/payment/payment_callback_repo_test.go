@@ -7,17 +7,8 @@ import (
 	"time"
 )
 
-// TestEntryRejectedCoversEveryGuard 逐条验证支付回调的入口判定。
-//
-// 这段判断决定"什么回调可以被接受"：渠道、商户、应用、金额、openid、
-// 时间窗任一不符都必须拒绝。误放行的后果是把一笔验签通过的回调结算到
-// 别的订单上，钱和电都会错——所以每一项都要单独钉住。
-//
-// 判别依据是**返回值本身**，不依赖 gorm 行为。这一点是被迫学到的：
-// 早先三版判据分别依赖"err != nil"、"不 panic"、DryRun 的查询/事务计数，
-// 全部失败（0/6 有判别力）——因为 Apply 内部的事务在 DryRun 下根本不执行，
-// 而事务体里的其他条件又返回同一个哨兵错误。抽出 entryRejected 之后，
-// 判据不再需要经过 gorm，直接测就够。
+// TestEntryRejectedCoversEveryGuard 验证渠道、商户、应用、金额、openid 与时间条件。
+// 直接断言 entryRejected 的返回值，只覆盖通知校验，不证明数据库入账或渠道验签。
 func TestEntryRejectedCoversEveryGuard(t *testing.T) {
 	now := time.Now().UTC()
 	valid := VerifiedPayment{
@@ -32,13 +23,12 @@ func TestEntryRejectedCoversEveryGuard(t *testing.T) {
 	}
 
 	cases := []struct {
-		// name 当前边界场景名称，供 t.Run 区分断言；不作为业务身份或数据库条件。
 		name string
-		// mutate 覆写当前测试输入的回调，用于构造金额或已验证支付事实的非法边界；nil 时保留基准输入。
+		// mutate 覆写当前测试输入的回调，用于构造金额或已验证支付信息的非法边界；nil 时保留基准输入。
 		mutate func(*VerifiedPayment)
 		// store 覆写支付回调服务所期望渠道身份的可选回调；nil 时保留基准身份，不访问存储。
 		store func(*CallbackService)
-		// reject 预期入口是否拒绝当前已验证支付事实，只针对纯准入函数断言。
+		// reject 预期入口是否拒绝当前已验证支付信息，只针对纯校验函数断言。
 		reject bool
 	}{
 		{"基准：全部合规应放行", nil, nil, false},
@@ -97,8 +87,7 @@ func TestEntryRejectedNeedsDB(t *testing.T) {
 	}
 }
 
-// TestCallbackDigestDistinguishesIdentityFields 确认摘要只依赖业务身份。
-// 渠道、商户、应用、openid、渠道单号、渠道流水号、金额任一变化，摘要必须变。
+// TestCallbackDigestDistinguishesIdentityFields 验证渠道、商户、应用、付款人、支付单号、交易号或金额变化都会改变摘要。
 func TestCallbackDigestDistinguishesIdentityFields(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	base := VerifiedPayment{
@@ -131,10 +120,10 @@ func TestCallbackDigestDistinguishesIdentityFields(t *testing.T) {
 // TestCallbackDigestIgnoresPaidAt 确认摘要**刻意不含支付时间**。
 //
 // 渠道重发同一笔通知时 PaidAt 会有微小差异（网关时钟、亚毫秒），而幂等判定
-// 应当只依赖业务身份。含时间会把合法重放判成"同一流水号内容不一致"而报冲突，
+// 应当只依赖业务编号。含时间会把合法重放判成"同一流水号内容不一致"而报冲突。
 // 资金就卡在回调里退不出去。
 //
-// 这条断言是写测试时才发现的：我最初断言"改时间摘要应变"，跑出来是 FAIL，
+// 这条断言是写测试时才发现的：我最初断言"改时间摘要应变"，跑出来是 FAIL。
 // 查实现才确认设计是对的、断言是错的。
 func TestCallbackDigestIgnoresPaidAt(t *testing.T) {
 	base := VerifiedPayment{
@@ -153,7 +142,7 @@ func TestCallbackDigestIgnoresPaidAt(t *testing.T) {
 	}
 }
 
-// longString 接收非负字节长度 n，返回由 n 个 ASCII x 组成的字符串；零返回空串，负数由 make 触发 panic，无错误返回或外部 IO。
+// longString 接收非负字节长度 n，返回由 n 个 ASCII x 组成的字符串；零返回空串，负数由 make 触发 panic，无错误返回或外部 I/O。
 func longString(n int) string {
 	b := make([]byte, n)
 	for i := range b {

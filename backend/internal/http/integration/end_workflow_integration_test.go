@@ -46,31 +46,31 @@ type endWorkflowFixture struct {
 	CentralWriter *gorm.DB
 	// CentralObserver 不共享写连接或外层事务，用来证明中央提交状态。
 	CentralObserver *gorm.DB
-	// GatewayWriter 真实网关写连接，实际注册端点使用它执行原 SQL。
+	// GatewayWriter 真实网关写连接，实际注册端点使用它执行 SQL。
 	GatewayWriter *gorm.DB
 	// GatewayObserver 独立观察网关冻结、占用与处理标记的提交状态。
 	GatewayObserver *gorm.DB
-	// ID 私有随机大订单身份，偏移用于端口、事件与第二订单，均保留超过 2^53 的精度。
+	// ID 私有随机大订单编号，偏移用于端口、事件与第二订单，均保留超过 2^53 的精度。
 	ID uint64
-	// PortID 私有网关端口主键，中央原启动凭据引用同一身份。
+	// PortID 私有网关端口主键，中央启动凭据引用同一身份。
 	PortID uint64
 	// EventID 私有结束事件主键，冻结与处理标记始终复用它。
 	EventID uint64
 	// DeviceID 私有设备业务编号，网关事件 Scope 只收取此设备。
 	DeviceID string
-	// OrderNo 私有原业务订单号，重放时保持不变。
+	// OrderNo 私有业务订单号，重放时保持不变。
 	OrderNo string
 	// NewOrderNo 新占用的私有订单号，迟到旧回执不得释放它。
 	NewOrderNo string
-	// StartCommand 原已成功启动命令 UUID，中央和网关事实相同。
+	// StartCommand 已成功启动命令 UUID，中央和网关事实相同。
 	StartCommand string
-	// StopCommand 原停止命令 UUID，同时是中央结束日志与 Outbox 的幂等身份。
+	// StopCommand 停止命令 UUID，同时是中央结束日志与 Outbox 的去重标识。
 	StopCommand string
-	// StartedAt 原 UTC 毫秒启动时刻，网关 ack 与中央启动时刻保持相同。
+	// StartedAt UTC 毫秒启动时刻，网关 ack 与中央启动时刻保持相同。
 	StartedAt time.Time
-	// EndedAt 原 UTC 毫秒结束时刻，设备秒数及中央计量由此核对。
+	// EndedAt UTC 毫秒结束时刻，设备秒数及中央计量由此核对。
 	EndedAt time.Time
-	// Month 原订单完整复合主键的分区日期，清理不能省略它。
+	// Month 订单完整复合主键的分区日期，清理不能省略它。
 	Month string
 }
 
@@ -97,7 +97,7 @@ type endWorkflowTransport struct {
 }
 
 // RoundTrip 接收 req，调用 Base 获取真实响应并记录顺序；中央成功时保留真实 Reply，必要时丢弃已收到回包并返回故障。
-// 读取后恢复原响应正文供具名客户端自己验证，不构造成功 Reply，不更换请求身份或重试。
+// 读取后恢复响应正文供专用客户端自己验证，不构造成功 Reply，不更换请求编号或重试。
 func (p endWorkflowTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	p.Trace.mu.Lock()
 	p.Trace.Calls = append(p.Trace.Calls, p.Service+" "+req.Method+" "+req.URL.Path)
@@ -114,7 +114,7 @@ func (p endWorkflowTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	var envelope struct {
 		// Code 实际中央 HTTP 信封业务码，成功必须为零。
 		Code int `json:"code"`
-		// Data 实际 EndResultAPI 返回的具名 Reply，测试只记录不更改。
+		// Data 实际 EndResultAPI 返回的专用 Reply，测试只记录不更改。
 		Data centralcontract.ResultReply `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -137,7 +137,7 @@ func (p *endWorkflowTrace) reset() {
 	p.Calls, p.Replies = nil, nil
 }
 
-// assert 接收 t、f、release、mark 与 reply，核对这一轮完整实际请求序列和真实中央成功 Reply。
+// assert 核对这一轮完整实际请求序列和真实中央成功 Reply。
 // reply 为 nil 表示这一轮未收到中央成功回复；不推断被丢失确认对 worker 的可见性。
 func (p *endWorkflowTrace) assert(t *testing.T, f *endWorkflowFixture, release, mark bool, reply *centralcontract.ResultReply) {
 	t.Helper()
@@ -168,7 +168,7 @@ func (p *endWorkflowTrace) assert(t *testing.T, f *endWorkflowFixture, release, 
 	}
 }
 
-// newEndWorkflowFixture 接收 t，用两个写池和两个观察池创建并提交私有充电事实，先注册精确清理。
+// newEndWorkflowFixture 用两个写池和两个观察池创建并提交私有充电记录，先注册精确清理。
 // 所有真实库必须配置；只创建订单、启动凭据、占用及网关事件／命令／端口，不访问支付或执行资金算法。
 func newEndWorkflowFixture(t *testing.T) *endWorkflowFixture {
 	t.Helper()
@@ -218,7 +218,7 @@ func newEndWorkflowFixture(t *testing.T) *endWorkflowFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 同库另一私有设备的有效结束事件是隔离哨兵；若 Scope 失效，真实 EndSynchronizer 会多发 by-order 请求而破坏路径断言。
+	// 同库另一私有设备的有效结束事件是隔离检查记录；若 Scope 失效，真实 EndSynchronizer 会多发 by-order 请求而破坏路径断言。
 	foreign := event
 	foreign.EventID, foreign.DeviceID, foreign.OrderNumber = uuid.NewString(), f.DeviceID+"x", strconv.FormatUint(f.ID+11, 10)
 	foreignRaw, err := json.Marshal(foreign)
@@ -242,7 +242,7 @@ func newEndWorkflowFixture(t *testing.T) *endWorkflowFixture {
 	return f
 }
 
-// cleanup 接收 t，按私有完整主键或先枚举的完整主键清理提交夹具，逐表核对零残留；失败记录到当前测试。
+// cleanup 按私有全部主键字段或先枚举的全部主键字段清理提交夹具，逐表核对零残留；失败记录到当前测试。
 // Outbox 使用既有 DeleteOutbox；不扫描删除其它设备／订单或通过清库隔离测试。
 func (f *endWorkflowFixture) cleanup(t *testing.T) {
 	t.Helper()
@@ -262,13 +262,13 @@ func (f *endWorkflowFixture) cleanup(t *testing.T) {
 		}
 	}
 	for _, item := range []struct {
-		// db 本清理表所属的真实写连接，context 已限定退出时间。
+		// db 本清理表的真实写连接，context 已限定退出时间。
 		db *gorm.DB
-		// table 原真实表名；不由外部输入提供。
+		// table 真实表名；不由外部输入提供。
 		table string
 		// where 完整私有主键与必要归属条件。
 		where string
-		// args 原私有身份参数，用于删除与后续零残留检查。
+		// args 测试记录的编号参数，用于删除与后续零残留检查。
 		args []any
 	}{
 		{central, "charge_billing_job", "charge_order_id=?", []any{f.ID}},
@@ -300,8 +300,8 @@ func (f *endWorkflowFixture) cleanup(t *testing.T) {
 	}
 }
 
-// servers 接收 t，真实注册两侧端点并返回 URL 和两种前置故障开关；不替换业务 Service。
-// Scope 只为 device_event 原查询附加私有设备筛选，保留真实 SQL、事务与其它表访问。
+// servers 真实注册两侧端点并返回 URL 和两种前置故障开关；不替换业务 Service。
+// Scope 只为 device_event 查询附加私有设备筛选，保留真实 SQL、事务与其它表访问。
 func (f *endWorkflowFixture) servers(t *testing.T) (string, string, *atomic.Bool, *atomic.Bool) {
 	t.Helper()
 	denyCentral, denyRelease := &atomic.Bool{}, &atomic.Bool{}
@@ -343,7 +343,7 @@ func (f *endWorkflowFixture) servers(t *testing.T) (string, string, *atomic.Bool
 	return centralServer.URL, gatewayServer.URL, denyCentral, denyRelease
 }
 
-// synchronizer 接收 t、trace 与真实 URL，创建全新具名客户端和 EndSynchronizer，返回消费实例。
+// synchronizer 接收 t、trace 与真实 URL，创建全新专用客户端和 EndSynchronizer，返回同步器实例。
 // 每次调用重建 worker 内存依赖，Transport 仍只执行真实 HTTP；连接池交 t 清理。
 func (f *endWorkflowFixture) synchronizer(t *testing.T, trace *endWorkflowTrace, centralURL, gatewayURL string) workercharge.EndSynchronizer {
 	t.Helper()
@@ -362,18 +362,18 @@ func (f *endWorkflowFixture) synchronizer(t *testing.T, trace *endWorkflowTrace,
 	return workercharge.EndSynchronizer{Gateway: gateway, Central: central}
 }
 
-// assertCentral 接收 t 与 ended，独立观察原订单和全部四项结束输出计数，并核对原中央占用释放。
+// assertCentral ended，独立观察订单和全部四项结束输出计数，并核对中央占用释放。
 // 只证明结束记录与计费排队，不执行计费、扣款、退款或 Outbox 发布。
 func (f *endWorkflowFixture) assertCentral(t *testing.T, ended bool) {
 	t.Helper()
 	var order struct {
-		// Status 独立连接看到的原订单状态。
+		// Status 独立连接看到的订单状态。
 		Status string
-		// EndedAt 原结束时刻，尚未结束时须为 NULL。
+		// EndedAt 结束时刻，尚未结束时须为 NULL。
 		EndedAt sql.NullTime
-		// ChargedKWh 原十进制千瓦时文本，真实 Apply 从 Wh 换算。
+		// ChargedKWh 十进制千瓦时文本，真实 Apply 从 Wh 换算。
 		ChargedKWh sql.NullString `gorm:"column:charged_kwh"`
-		// ChargedSeconds 原充电时长秒，尚未结束时须为 NULL。
+		// ChargedSeconds 充电时长秒，尚未结束时须为 NULL。
 		ChargedSeconds sql.NullInt64
 	}
 	if err := f.CentralObserver.Table("charge_order").Where("id=? AND created_month=?", f.ID, f.Month).Take(&order).Error; err != nil {
@@ -404,7 +404,7 @@ func (f *endWorkflowFixture) assertCentral(t *testing.T, ended bool) {
 	}
 	if ended {
 		var receipt struct {
-			// StopCommandID 实际结束凭据的原停止身份，不允许重放换号。
+			// StopCommandID 实际结束凭据的停机命令编号，不允许重放换号。
 			StopCommandID string
 			// MeterJSON 实际 Apply 保存的计量，不用测试响应替代持久证据。
 			MeterJSON string
@@ -417,11 +417,11 @@ func (f *endWorkflowFixture) assertCentral(t *testing.T, ended bool) {
 			t.Fatalf("central original meter=%+v: %v", expected.Meter, err)
 		}
 		var outbox struct {
-			// Stream 原结束任务目标 stream，证明真实事务排队路径。
+			// Stream 结束任务目标 stream，证明真实事务排队路径。
 			Stream string
-			// Status 原任务发布前状态；本回归不运行发布器。
+			// Status 任务发布前状态；本回归不运行发布器。
 			Status string
-			// EnvelopeJSON 与原冻结请求相同身份的完整业务载荷。
+			// EnvelopeJSON 与冻结请求相同一标识的完整业务载荷。
 			EnvelopeJSON string
 		}
 		if err := f.CentralObserver.Table("event_outbox").Where("event_id=?", f.StopCommand).Take(&outbox).Error; err != nil || outbox.Stream != "charge_ended_stream" || outbox.Status != "pending" {
@@ -434,7 +434,7 @@ func (f *endWorkflowFixture) assertCentral(t *testing.T, ended bool) {
 		var job struct {
 			// Status 实际结束事务创建的待计费状态，尚未执行结算。
 			Status string
-			// Attempts 原任务初始尝试数，回执重放不应推进它。
+			// Attempts 任务初始尝试数，回执重放不应更新它。
 			Attempts uint32
 		}
 		if err := f.CentralObserver.Table("charge_billing_job").Where("charge_order_id=?", f.ID).Take(&job).Error; err != nil || job.Status != "pending" || job.Attempts != 0 {
@@ -443,7 +443,7 @@ func (f *endWorkflowFixture) assertCentral(t *testing.T, ended bool) {
 	}
 }
 
-// endWorkflowMeterJSON 使用 t 将实际 result.Meter 序列化供持久 JSON 精确比较；失败终止测试，无数据库或网络 IO。
+// endWorkflowMeterJSON 将实际 result.Meter 序列化供持久 JSON 精确比较；失败终止测试，无数据库或网络 IO。
 func endWorkflowMeterJSON(t *testing.T, result centralcontract.EndResultRequest) string {
 	t.Helper()
 	raw, err := json.Marshal(result.Meter)
@@ -454,7 +454,7 @@ func endWorkflowMeterJSON(t *testing.T, result centralcontract.EndResultRequest)
 }
 
 // assertGateway 接收 t、owner 和 processed，从独立连接检查端口、事件及唯一冻结记录，返回存量 JSON。
-// owner 为空只允许 idle/NULL，否则须为 charging 且原占用号匹配；冻结身份精确保留 uint64 大整数。
+// owner 为空只允许 idle/NULL，否则须为 charging 且占用号匹配；冻结身份精确保留 uint64 大整数。
 func (f *endWorkflowFixture) assertGateway(t *testing.T, owner string, processed bool) string {
 	t.Helper()
 	var port gatewayrepo.SyncPortRow
@@ -477,7 +477,7 @@ func (f *endWorkflowFixture) assertGateway(t *testing.T, owner string, processed
 		t.Fatalf("Scope modified another private device event=%+v: %v", foreign, err)
 	}
 	var frozen struct {
-		// ChargeOrderID 唯一冻结记录引用的原中央订单大整数。
+		// ChargeOrderID 唯一冻结记录引用的中央订单大整数。
 		ChargeOrderID uint64
 		// PayloadJSON 首次冻结的完整结束请求，后续候选不能替换它。
 		PayloadJSON string
@@ -493,7 +493,7 @@ func (f *endWorkflowFixture) assertGateway(t *testing.T, owner string, processed
 }
 
 // TestEndWorkflowRebuildReplaysCommittedResultBeforeRelease 使用真实两服务与独立两库观察，证明失败不提前释放及未知确认重放。
-// 提交后的回包丢失由网络装饰层制造；不替换 Apply、资金结果或具名客户端验证，全部提交夹具精确清理。
+// 提交后的回包丢失由网络装饰层制造；不替换 Apply、资金结果或专用客户端验证，全部提交夹具精确清理。
 func TestEndWorkflowRebuildReplaysCommittedResultBeforeRelease(t *testing.T) {
 	f := newEndWorkflowFixture(t)
 	trace := &endWorkflowTrace{}
@@ -519,7 +519,7 @@ func TestEndWorkflowRebuildReplaysCommittedResultBeforeRelease(t *testing.T) {
 	if current := f.assertGateway(t, f.OrderNo, false); !sameCardJSON(t, current, frozen) {
 		t.Fatal("lost confirmation changed frozen evidence")
 	}
-	// 首次冻结以后才落库的较早心跳满足原证据窗口；重建的 worker 会生成不同分段候选，冻结仍返回首份证据。
+	// 首次冻结以后才落库的较早心跳满足证据窗口；重建的 worker 会生成不同分段候选，冻结仍返回首份证据。
 	heartbeat := protocol.Event{EventID: uuid.NewString(), Protocol: "dc589", Type: protocol.Heartbeat, DeviceID: f.DeviceID, ReceivedAt: f.StartedAt.Add(30 * time.Minute), ChargingPorts: []protocol.PortTelemetry{{Port: 1, ChargedSeconds: 1800, ChargedMWh: 600000, PowerDeciWatts: 12000}}}
 	raw, err := json.Marshal(heartbeat)
 	if err != nil {
@@ -553,8 +553,8 @@ func TestEndWorkflowRebuildReplaysCommittedResultBeforeRelease(t *testing.T) {
 	}
 }
 
-// TestEndWorkflowLateReplayCannotReleaseNewOwner 使用真实结束确认后网关释放前的可控 503，保留原事件入口。
-// 新订单重新占用同一端口后，原冻结重放在真实 release 端点得到 409；中央和网关新占用均不得被迟到回执修改。
+// TestEndWorkflowLateReplayCannotReleaseNewOwner 使用真实结束确认后网关释放前的可控 503，保留事件入口。
+// 新订单重新占用同一端口后，冻结重放在真实 release 端点得到 409；中央和网关新占用均不得被迟到回执修改。
 func TestEndWorkflowLateReplayCannotReleaseNewOwner(t *testing.T) {
 	f := newEndWorkflowFixture(t)
 	trace := &endWorkflowTrace{}

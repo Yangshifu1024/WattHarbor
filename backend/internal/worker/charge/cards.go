@@ -13,36 +13,36 @@ import (
 	"strconv"
 )
 
-// CardGateway 只提供原事件清单、冻结、原回复、推进及端口码，不暴露网络配置或数据库。
+// CardGateway 只提供事件清单、冻结、回复、更新及端口码，不暴露网络配置或数据库。
 type CardGateway interface {
-	// CardEvents 在 context 下返回原待投递集合及冻结值，失败返回错误；不推进。
+	// CardEvents 在 context 下返回待投递集合及冻结值，失败返回错误；不更新。
 	CardEvents(context.Context) ([]gateway.CardEvent, error)
-	// FreezeCardResponse 在 context 下按原请求首写并返回权威 JSON，失败返回错误。
+	// FreezeCardResponse 在 context 下按请求首次写入并返回已保存的 JSON，失败返回错误。
 	FreezeCardResponse(context.Context, gateway.CardFreezeRequest) (gateway.CardFreezeReply, error)
-	// AdvanceCardEvent 在 context 下按原事件重排或完成，失败返回错误。
+	// AdvanceCardEvent 在 context 下按事件重排或完成，失败返回错误。
 	AdvanceCardEvent(context.Context, gateway.CardAdvanceRequest) error
-	// ReplyCard 在 context 下向原设备会话发送原回复，失败返回错误。
+	// ReplyCard 在 context 下向设备会话发送回复，失败返回错误。
 	ReplyCard(context.Context, gateway.CardReplyRequest) error
-	// ResolveCardPort 在 context 下读取原设备及端口序号的业务码或错误。
+	// ResolveCardPort 在 context 下读取设备及端口序号的业务码或错误。
 	ResolveCardPort(context.Context, string, uint8) (gateway.CardPortReply, error)
 }
 
-// CardCentral 只提供原事件决策和原卡余额，不执行投递或拥有设备连接。
+// CardCentral 只提供事件决策和卡余额，不执行投递或拥有设备连接。
 type CardCentral interface {
-	// SwipeCard 在 context 下执行原事件并返回原操作、明确拒绝或未知结果错误。
+	// SwipeCard 在 context 下执行事件并返回操作、明确拒绝或未知结果错误。
 	SwipeCard(context.Context, central.CardSwipeRequest) (central.CardOperationReply, error)
-	// CardBalance 在 context 下返回原卡有效性及可花费分值或错误。
+	// CardBalance 在 context 下返回卡有效性及可花费分值或错误。
 	CardBalance(context.Context, string) (central.CardBalanceReply, error)
 }
 
-// CardDispatcher 编排原卡事件决策和回复；冻结完成后只重发原回复及原 event_key。
+// CardDispatcher 编排卡事件决策和回复；冻结完成后只重发回复及 event_key。
 type CardDispatcher struct {
-	Gateway CardGateway // cmd 注入的具名 gateway 客户端
-	Central CardCentral // cmd 注入的具名 central 客户端
+	Gateway CardGateway // cmd 注入的专用 gateway 客户端
+	Central CardCentral // cmd 注入的专用 central 客户端
 }
 
-// Run 在 ctx 下处理一页原卡事件，返回已推进数与首个失败；每次失败按原事件重排。
-// 成功决策先首写冻结，再发送拒绝／余额回复，最后推进；任一步未知结果保留原号供下一轮恢复。
+// Run 处理一页卡事件，返回已更新数与首个失败；每次失败按事件重排。
+// 成功决策先首次写入冻结，再发送拒绝／余额回复，最后更新；任一步未知结果保留号供下一轮恢复。
 func (d CardDispatcher) Run(ctx context.Context) (int, error) {
 	if d.Gateway == nil || d.Central == nil {
 		return 0, errors.New("card dispatcher is not configured")
@@ -79,8 +79,8 @@ func (d CardDispatcher) Run(ctx context.Context) (int, error) {
 	return done, first
 }
 
-// decisionFor 在 ctx 下恢复 key 对应 frozen 或解析 payload 决策并首写冻结，返回权威回复或错误。
-// 竞争失败使用胜出回复，不根据当前余额重算；本方法不推进投递，发送后未知由原冻结值恢复。
+// decisionFor 恢复 key 对应 frozen 或解析 payload 决策并首次写入冻结，返回最终回复或错误。
+// 竞争失败使用胜出回复，不根据当前余额重算；本方法不更新投递，发送后未知由冻结值恢复。
 func (d CardDispatcher) decisionFor(ctx context.Context, key, payload, frozen string) (gateway.CardReplyRequest, error) {
 	var reply gateway.CardReplyRequest
 	if frozen != "" {
@@ -107,8 +107,8 @@ func (d CardDispatcher) decisionFor(ctx context.Context, key, payload, frozen st
 	return reply, nil
 }
 
-// decide 在 ctx 下按原 e 卡事件获取 central 决定或余额，返回原协议回复或未知结果错误。
-// 明确不足余额映射原非无效卡拒绝；协议金额单位和饱和继续复用 dc589 规则，不复制资金逻辑。
+// decide 按 e 卡事件获取 central 决定或余额，返回协议回复或未知结果错误。
+// 明确不足余额映射非无效卡拒绝；协议金额单位和饱和继续复用 dc589 规则，不复制资金逻辑。
 func (d CardDispatcher) decide(ctx context.Context, e protocol.Event) (gateway.CardReplyRequest, error) {
 	reply := gateway.CardReplyRequest{DeviceID: e.DeviceID, Session: hex.EncodeToString(e.SessionID[:]), CardNumber: e.CardNumber}
 	cardNo := strconv.FormatUint(uint64(e.CardNumber), 10)

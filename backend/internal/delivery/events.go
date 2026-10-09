@@ -12,9 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Event 是与厂商无关的交换对象。
-// 面向具体客户的适配器之后可以
-// 把它的 Data 翻译成平台自己的字段名。
+// Event 是通用事件结构；平台适配器负责将 Data 转为对接方要求的字段。
 type Event struct {
 	EventID    string          `json:"event_id" validate:"required,uuid"`
 	ObjectType string          `json:"object_type" validate:"required,oneof=operator station device order alert battery"`
@@ -62,8 +60,7 @@ type batteryData struct {
 
 var validate = validator.New()
 
-// ValidateEvent 校验事件信封与对象载荷，返回规范化后的 data 字节。
-// 校验规则由投递方与入队方共用，保证队列里只有格式一致的事件。
+// ValidateEvent 校验事件结构和载荷，返回规范化后的 data 字节；入队和发送使用同一规则。
 func ValidateEvent(event Event) ([]byte, error) {
 	if err := validate.Struct(event); err != nil {
 		return nil, fmt.Errorf("invalid event envelope: %w", err)

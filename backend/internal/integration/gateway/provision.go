@@ -12,8 +12,8 @@ import (
 	contract "chargepilot/internal/contracts/gateway"
 )
 
-// Provision 在 ctx 下同步开通 devices 原身份，最多等待十秒，返回网络或原状态失败。
-// 沿用原导入语义：只以 HTTP 200 确认成功，不用未知响应重建新的设备身份；业务调用方保存失败状态。
+// Provision 同步开通设备，最多等待十秒，仅 HTTP 200 表示成功。
+// 结果不确定时不生成新设备编号，调用方保存失败状态。
 func (c *Client) Provision(ctx context.Context, devices []contract.ProvisionDevice) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

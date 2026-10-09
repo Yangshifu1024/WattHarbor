@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// resources 持有后台进程打开的连接，所有受管理请求及清理循环退出后按 Close 释放。
+// resources 持有本进程的连接，初始化失败或应用完全退出后统一关闭。
 type resources struct {
 	DB           *sql.DB       // central SQL 连接池，最后释放
 	ORM          *gorm.DB      // 同一 SQL 池的 GORM 入口，无独立连接生命周期
@@ -21,9 +21,7 @@ type resources struct {
 	InternalHTTP *http.Client  // 有界内部调用连接池，受管理请求退出后释放闲置连接
 }
 
-// openResources 在 ctx 下按 cfg 初始化数据库、缓存及内部 HTTP 池，返回资源或初始化错误。
-// 任一步失败会释放此前打开的资源，不留下启动失败后的连接。
-// cfg 提供数据库与缓存 URL；ctx 传入连接可达性检查，成功后所有权交给返回的资源，失败时返回 nil 与合并清理错误。
+// openResources 打开本进程的数据库、Redis 和 HTTP 客户端；失败时释放已打开的资源。
 func openResources(ctx context.Context, cfg config.Admin) (_ *resources, err error) {
 	r := &resources{}
 	defer func() {
@@ -52,7 +50,8 @@ func openResources(ctx context.Context, cfg config.Admin) (_ *resources, err err
 	return r, nil
 }
 
-// Close 关闭 r 内部 HTTP 闲置连接、Redis 及 SQL 池，返回所有释放错误；调用前须等待请求和循环退出。
+// Close 依次清理 HTTP 空闲连接、Redis 和 SQL 池，返回合并后的关闭错误。
+// 调用前必须等待请求和清理任务退出。
 func (r *resources) Close() error {
 	var failures []error
 	if r.InternalHTTP != nil {

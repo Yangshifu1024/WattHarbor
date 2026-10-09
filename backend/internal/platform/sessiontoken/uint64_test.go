@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestJSONUint64ExactBoundaries 验证新字符串和旧数字的完整uint64边界，以及错误不能改写已读身份。
+// TestJSONUint64ExactBoundaries 验证新字符串和旧数字的完整 uint64 范围，以及错误不能改变已读入的 ID。
 func TestJSONUint64ExactBoundaries(t *testing.T) {
 	for _, raw := range []string{`18446744073709551615`, `"18446744073709551615"`} {
 		var value JSONUint64

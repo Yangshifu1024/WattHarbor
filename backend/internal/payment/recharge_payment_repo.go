@@ -11,14 +11,13 @@ import (
 	"time"
 )
 
-// RechargePaymentRepo 实现钱包消费的支付能力，原支付和参数由 payment 所有。
+// RechargePaymentRepo 实现钱包充值的支付能力，支付和参数由 payment 所有。
 type RechargePaymentRepo struct {
 	DB       *gorm.DB       // 提交后复用预支付参数的 central 连接
-	Provider PrepayProvider // 原渠道预支付能力；nil 时请求明确失败
+	Provider PrepayProvider // 渠道预支付能力；nil 时请求明确失败
 }
 
-// rechargePaymentView 将 r 的支付事实转换为无 ORM 映射的钱包投影，无副作用。
-// 返回原主键、单号、分值、状态及可空 UTC 截止，保持已有接口语义。
+// rechargePaymentView 将支付记录转换为钱包所需的编号、金额（分）、状态与可选 UTC 有效期。
 func rechargePaymentView(r PaymentOrderRecord) wallet.RechargePayment {
 	var expiry *time.Time
 	if r.ExpiredAt.Valid {
@@ -27,16 +26,16 @@ func rechargePaymentView(r PaymentOrderRecord) wallet.RechargePayment {
 	return wallet.RechargePayment{ID: r.ID, OrderNo: r.OrderNo, AmountCents: r.TotalCents, Status: r.Status, ExpiresAt: expiry}
 }
 
-// LoadInTx 在调用方 tx 中读取 id 的原充值支付，不修改支付状态。
-// 返回业务投影或数据库错误；调用方已核对充值申请所有人并负责事务生命周期。
+// LoadInTx 在调用方事务中读取 id 的充值支付，不修改支付状态。
+// 返回业务查询结果或数据库错误；调用方已核对充值申请所有人并负责事务生命周期。
 func (RechargePaymentRepo) LoadInTx(tx *gorm.DB, id uint64) (wallet.RechargePayment, error) {
 	var r PaymentOrderRecord
 	err := tx.Where("id=?", id).Take(&r).Error
 	return rechargePaymentView(r), err
 }
 
-// CreateInTx 在调用方 tx 内为 userID 创建 amountCents 分的充值支付及原单号。
-// 返回已分配身份或编号／插入错误；有效期保持 30 分钟，不在事务内调用渠道。
+// CreateInTx 在调用方事务中为 userID 创建 amountCents 分的充值支付及原单号。
+// 返回已分配身份或编号、插入错误；有效期保持 30 分钟，不在事务内调用渠道。
 func (RechargePaymentRepo) CreateInTx(tx *gorm.DB, userID uint64, amountCents int64) (wallet.RechargePayment, error) {
 	no, err := NewOrderNumber(tx)
 	if err != nil {
@@ -51,7 +50,7 @@ func (RechargePaymentRepo) CreateInTx(tx *gorm.DB, userID uint64, amountCents in
 }
 
 // Prepare 为已提交的 pay 复用或准备渠道参数；openID 是已核对申请人的微信身份。
-// ctx 取消 IO；返回合法渠道参数 JSON，数据库、渠道或载荷错误时返回空参数和错误。
+// ctx 取消 I/O；返回合法渠道参数 JSON，数据库、渠道或载荷错误时返回空参数和错误。
 // 并发保存以 payment_order_id 唯一键仲裁，重读首次参数；未知结果沿用原单号重试。
 func (s RechargePaymentRepo) Prepare(ctx context.Context, pay wallet.RechargePayment, openID string) (json.RawMessage, error) {
 	if s.DB == nil || pay.ExpiresAt == nil {

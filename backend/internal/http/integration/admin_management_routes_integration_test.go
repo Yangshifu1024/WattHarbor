@@ -25,8 +25,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRegisteredAdminManagement 使用实际账号／角色注册路由和真实SQL／Redis验证输入、状态、撤权及安全审计。
-// SQL造数在外层回滚，随机SID单独注销；保留bootstrap及原内置权限，不更改开发账号。
+// TestRegisteredAdminManagement 使用实际账号／角色注册路由和真实 SQL／Redis 验证输入、状态、撤权及安全审计。
+// SQL 造数在外层回滚，随机 SID 单独注销；保留 bootstrap 及内置权限，不更改开发账号。
 func TestRegisteredAdminManagement(t *testing.T) {
 	tx := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
 	if tx.Error != nil {
@@ -122,7 +122,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 		return reply.ID
 	}
 	base := "/api/v1/admin/"
-	// 注册路由保留原公告空值、审计筛选及看板故障503；业务造数由外层事务回滚。
+	// 注册路由保留公告空值、审计筛选及看板故障 503；业务造数由外层事务回滚。
 	announcementInput := map[string]any{"title": "registered_" + tag, "content": "中文公告", "scope": "global", "start_at": time.Now().UTC()}
 	badAnnouncement := map[string]any{"title": "无效", "content": "内容", "scope": "global", "start_at": time.Now().UTC(), "unknown": true}
 	call("POST", base+"announcements", badAnnouncement, 400)
@@ -173,7 +173,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 		t.Fatalf("partial dashboard %s", raw)
 	}
 	tx.Callback().Query().Remove(dashboardCallback)
-	// 鉴权首次读取后才撤权／提升版本，使服务第二次读取真正遇到准入变化。
+	// 鉴权首次读取后才撤权／提升版本，使服务第二次读取真正遇到权限变化。
 	for _, versionChange := range []bool{false, true} {
 		changed := false
 		key := "registered-dashboard-admission-" + tag
@@ -264,7 +264,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	call("DELETE", userPath, nil, 404)
 	call("DELETE", base+fmt.Sprint("roles/", role), nil, 200)
 	call("DELETE", base+fmt.Sprint("roles/", role), nil, 404)
-	// 实际注册处理器的审计失败必须回滚整个创建，返回公开503而非暴露存储细节。
+	// 实际注册处理器的审计失败必须回滚整个创建，返回公开 503 而非暴露存储细节。
 	failure := errors.New("registered management private audit failure")
 	callback := "registered-management-audit"
 	if err := tx.Callback().Create().Before("gorm:create").Register(callback, func(q *gorm.DB) {
@@ -300,7 +300,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 			}
 		}
 	}
-	// 删除实际权限关联后，同一原JWT在下一受保护请求立即拒绝。
+	// 删除实际权限关联后，同一 JWT 在下一受保护请求立即拒绝。
 	if err := tx.Exec("DELETE rp FROM role_permission rp JOIN permission p ON p.id=rp.permission_id WHERE rp.role_id=? AND p.code='admin_user.read'", id+1).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -14,20 +14,20 @@ import (
 	"net/http"
 )
 
-// CardAPI 适配内部刷卡及设备余额端点，业务执行由所属卡服务拥有。
+// CardAPI 适配内部刷卡及设备余额端点，业务执行由卡服务拥有。
 type CardAPI struct {
-	Swipe        card.SwipeService      // 原设备刷卡事件完整用例，由cmd注入。
-	Status       card.CardStatusService // 设备侧卡状态和余额读取，由cmd注入。
-	ServiceToken string                 // 内部请求令牌，仅在HTTP准入使用。
+	Swipe        card.SwipeService      // 设备刷卡事件完整用例，由 cmd 注入。
+	Status       card.CardStatusService // 设备侧卡状态和余额读取，由 cmd 注入。
+	ServiceToken string                 // 内部请求令牌，仅在 HTTP 鉴权使用。
 }
 
-// RegisterInternal 在r挂载原刷卡POST及余额GET端点，无返回值或注册期业务IO。
+// RegisterInternal 在 r 挂载刷卡 POST 及余额 GET 端点，只注册路由。
 func (a CardAPI) RegisterInternal(r *gin.Engine) {
 	r.POST(contract.CardSwipePath, a.swipe)
 	r.GET(contract.CardBalancePath, a.balance)
 }
 
-// internal 从c校验原服务令牌，成功返回true；失败写唯一401后返回false，调用方立即返回。
+// internal 从 c 校验服务令牌，成功返回 true；失败写唯一 401 后返回 false，调用方立即返回。
 // 不读取卡数据或执行设备命令。
 func (a CardAPI) internal(c *gin.Context) bool {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
@@ -37,8 +37,8 @@ func (a CardAPI) internal(c *gin.Context) bool {
 	return true
 }
 
-// swipe 校验c服务令牌及JSON，将原卡号、事件、端口和时刻交给请求context下的所属刷卡用例。
-// 返回原操作回执或按阶段映射400／409／503，原事件幂等、扣款和下发由用例拥有。
+// swipe 校验 请求中的服务令牌及 JSON，将卡号、事件、端口和时刻交给请求 context 下的刷卡用例。
+// 返回操作回执或按阶段映射 400／409／503，事件幂等、扣款和下发由用例拥有。
 func (a CardAPI) swipe(c *gin.Context) {
 	if !a.internal(c) {
 		return
@@ -56,8 +56,8 @@ func (a CardAPI) swipe(c *gin.Context) {
 	httpapi.OK(c, contract.CardOperationReply{OperationID: op.OperationID, DeviceID: op.DeviceID, EventID: op.EventID, ChargeOrderID: op.ChargeOrderID, CardID: op.CardID, Kind: op.Kind, PriceCents: op.PriceCents, Minutes: op.Minutes, Status: op.Status})
 }
 
-// swipeFailure 将err刷卡阶段写入c原400／409／503响应，不执行IO或重试。
-// 仅原事务业务冲突分支附insufficient_balance，不把持久失败当作可重新扣款。
+// swipeFailure 将 err 刷卡阶段写入 c400／409／503 响应，不执行 IO 或重试。
+// 仅事务业务冲突分支附 insufficient_balance，不把持久失败当作可重新扣款。
 func swipeFailure(c *gin.Context, err error) {
 	var failure *card.SwipeError
 	if !errors.As(err, &failure) {

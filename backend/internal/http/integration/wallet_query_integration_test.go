@@ -19,7 +19,7 @@ import (
 )
 
 // TestRegisteredWalletRefundQueryPreservesApprovalAndJSON 使用实际注册路由验证鉴权及公开退款回执。
-// 会话及用户准入为 fixture，申请和审核为真实 MySQL；外层回滚，未向真实支付渠道请求。
+// 会话及用户状态检查为 fixture，申请和审核为真实 MySQL；外层回滚，未向真实支付渠道请求。
 func TestRegisteredWalletRefundQueryPreservesApprovalAndJSON(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -56,19 +56,19 @@ func TestRegisteredWalletRefundQueryPreservesApprovalAndJSON(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 	var out struct {
-		Code int `json:"code"` // 原业务响应码
+		Code int `json:"code"` // 业务响应码
 		Data struct {
-			UserID string `json:"user_id"` // 大整数身份必须为字符串
+			UserID string `json:"user_id"` // 大整数编号必须为字符串
 			Items  []struct {
 				Status       string `json:"status"`        // 审核通过仍为待渠道退款
 				RefundOrders []any  `json:"refund_orders"` // 无渠道分笔时为空数组
 				Review       struct {
-					Approved bool   `json:"approved"` // 原审核通过结论，尚不代表渠道已退款
-					ActorID  uint64 `json:"actor_id"` // 原用户视图中的数值审核人身份
-					Comment  string `json:"comment"`  // 原审核意见
-				} `json:"review"` // 原结论，审核人保留数值契约
+					Approved bool   `json:"approved"` // 审核通过结论，尚不代表渠道已退款
+					ActorID  uint64 `json:"actor_id"` // 用户视图中的数值审核人身份
+					Comment  string `json:"comment"`  // 审核意见
+				} `json:"review"` // 结论，审核人保留数值契约
 			} `json:"items"` // 当前页本用户申请
-		} `json:"data"` // 原响应信封
+		} `json:"data"` // 响应信封
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)

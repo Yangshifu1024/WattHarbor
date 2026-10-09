@@ -37,8 +37,8 @@ func TestRiskApprovalSeesRechargeCommittedDuringWalletLockWait(t *testing.T) {
 	defer func() {
 		for _, q := range []struct {
 			table string // 本测试实际提交的表
-			where string // 唯一业务身份，避免删除已有开发数据
-			arg   any    // 筛选用户或原请求号
+			where string // 唯一业务 ID，避免删除已有开发数据
+			arg   any    // 筛选用户或首次请求号
 		}{{"wallet_refund_part", "request_id=?", request}, {"wallet_risk_review", "request_id=?", request}, {"wallet_risk_freeze_link", "request_id=?", request}, {"wallet_refund_request", "request_id=?", request}, {"risk_freeze_log", "user_id=?", id}, {"refund_record", "user_id=?", id}, {"event_outbox", "envelope_json LIKE ?", "%" + recharge + "%"}, {"audit_log", "request_id=?", request}, {"wallet_txn", "user_id=?", id}, {"wallet_recharge_request", "request_id=?", recharge}, {"payment_callback_idempotent", "wechat_transaction_id=?", "TX-" + no}, {"payment_order", "id=?", id}, {"wallet_account", "id=?", id}, {"user", "id=?", id}} {
 			var err error
 			if q.table == "event_outbox" {
@@ -56,7 +56,7 @@ func TestRiskApprovalSeesRechargeCommittedDuringWalletLockWait(t *testing.T) {
 		}
 	}()
 	for _, row := range []struct {
-		table  string         // 原用户、钱包、支付及申请所属表
+		table  string         // 用户、钱包、支付及申请所属表
 		values map[string]any // 仅提供测试必需的业务事实
 	}{{"user", map[string]any{"id": id, "openid": openid, "status": "active"}}, {"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 0, "frozen_cents": 0, "status": "frozen", "version": 1}}, {"payment_order", map[string]any{"id": id, "order_no": no, "biz_type": "wallet_recharge", "biz_id": 0, "user_id": id, "pay_method": "wechat", "total_cents": 700, "paid_cents": 0, "status": "initiated", "created_month": time.Now().UTC().Format("2006-01") + "-01"}}, {"wallet_recharge_request", map[string]any{"request_id": recharge, "user_id": id, "amount_cents": 700, "payment_order_id": id}}} {
 		if err := setup.Table(row.table).Create(row.values).Error; err != nil {

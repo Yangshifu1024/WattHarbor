@@ -16,8 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestRechargeCancellationAfterBalanceWriteRollsBackAllFunds 在真实余额 UPDATE 完成后取消原回调请求。
-// 使用用例管理的顶层事务，验证支付、摘要、钱包及流水整体回滚；未请求渠道，造数显式清理为零。
+// TestRechargeCancellationAfterBalanceWriteRollsBackAllFunds 验证余额写入后取消回调，支付、摘要、钱包和流水一起回滚；不请求渠道，仅清理本测试数据。
 func TestRechargeCancellationAfterBalanceWriteRollsBackAllFunds(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -48,8 +47,8 @@ func TestRechargeCancellationAfterBalanceWriteRollsBackAllFunds(t *testing.T) {
 		}
 	}()
 	for _, row := range []struct {
-		table  string         // 原用户、资金与申请表
-		values map[string]any // 原充值申请必需事实
+		table  string         // 用户、资金与申请表
+		values map[string]any // 充值申请必需事实
 	}{{"user", map[string]any{"id": id, "openid": openid, "status": "active"}}, {"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 100, "frozen_cents": 0, "version": 1, "status": "frozen"}}, {"payment_order", map[string]any{"id": id, "order_no": no, "biz_type": "wallet_recharge", "biz_id": 0, "user_id": id, "pay_method": "wechat", "total_cents": 500, "paid_cents": 0, "status": "initiated", "created_month": time.Now().UTC().Format("2006-01") + "-01"}}, {"wallet_recharge_request", map[string]any{"request_id": request, "user_id": id, "amount_cents": 500, "payment_order_id": id}}} {
 		if err := db.Table(row.table).Create(row.values).Error; err != nil {
 			t.Fatal(err)

@@ -28,7 +28,7 @@ import (
 )
 
 // TestConcurrentEndFreezeKeepsFirstEvidence 让两个实际注册请求先读到缺失，再以真实唯一键竞争首次冻结。
-// 同一身份的不同计量片段只能保留首写事实，1062后重读；高位整数身份冲突仍拒绝，夹具按自身主键清理。
+// 同一身份的不同计量片段只能保留首次写入结果，1062 后重读；高位整数编号冲突仍拒绝，夹具按自身主键清理。
 func TestConcurrentEndFreezeKeepsFirstEvidence(t *testing.T) {
 	db := gatewayContractDB(t)
 	id := testfixture.NewID()
@@ -91,8 +91,8 @@ func TestConcurrentEndFreezeKeepsFirstEvidence(t *testing.T) {
 	})
 	// freezeOutcome 收集已退出的客户端请求结果，测试断言仅由主测试协程执行。
 	type freezeOutcome struct {
-		reply gatewaycontract.FreezeEndDeliveryReply // 原首次／重放标志及权威载荷。
-		err   error                                  // 原传输或业务错误。
+		reply gatewaycontract.FreezeEndDeliveryReply // 首次／重放标志及最终采用的载荷。
+		err   error                                  // 传输或业务错误。
 	}
 	results := make(chan freezeOutcome, 2)
 	fact := centralcontract.EndResultRequest{ChargeOrderID: id, OrderNo: "FREEZE-" + uuid.NewString(), PortID: id + 2, Meter: charging.EndMeter{ChargedWh: 1000}}
@@ -163,17 +163,17 @@ func TestConcurrentEndFreezeKeepsFirstEvidence(t *testing.T) {
 	}
 }
 
-// TestEndFreezeKeepsReadAndWriteFailureMessages 验证真实注册端点保留初读取消与数据库拒绝非法JSON的不同503消息。
+// TestEndFreezeKeepsReadAndWriteFailureMessages 验证真实注册端点保留初读取消与数据库拒绝非法 JSON 的不同 503 消息。
 // 内部数据库错误不进入响应，无记录写入；失败分类不能把取消或冻结失败包装成成功重放。
 func TestEndFreezeKeepsReadAndWriteFailureMessages(t *testing.T) {
 	db := gatewayContractDB(t)
 	router := httpapi.NewRouter()
 	(TelemetryAPI{DB: db, ServiceToken: "freeze-failure-test"}).Register(router)
 	for _, tc := range []struct {
-		name     string // 原失败阶段。
-		payload  string // 待冻结原载荷。
+		name     string // 失败阶段。
+		payload  string // 待冻结载荷。
 		canceled bool   // 是否在读取前取消请求。
-		message  string // 原公开失败消息。
+		message  string // 公开失败消息。
 	}{
 		{"initial-read-canceled", `{}`, true, "结束回执暂不可读取"},
 		{"invalid-json-write", "not-json", false, "结束回执冻结失败"},

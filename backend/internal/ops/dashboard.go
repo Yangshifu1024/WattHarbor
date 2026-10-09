@@ -7,16 +7,16 @@ import (
 	"time"
 )
 
-// dashboardBeijing 固定东八区业务日界，不依赖进程所在地或数据库连接时区。
+// dashboardBeijing 固定北京时间日界，不依赖进程或数据库时区。
 var dashboardBeijing = time.FixedZone("Asia/Shanghai", 8*3600)
 
-// DashboardQueryService 拥有看板权限、北京时间窗口和七格补零，只读跨模块原事实。
+// DashboardQueryService 校验看板权限、换算北京时间区间并补齐七天趋势。
 type DashboardQueryService struct {
-	DB *gorm.DB /* 同一central数据库的看板投影 */
+	DB *gorm.DB /* 中央看板数据库连接 */
 }
 
-// Read 在ctx下核对actor当前dashboard.read权限，按now读取原当日与七日指标，返回完整快照或错误。
-// 多条只读SQL不宣称同一数据库事务快照；任一失败都拒绝输出。费用仅取已有结算，不补造确认金额。
+// Read 核对 dashboard.read 权限后读取当日和七日指标，任一查询失败即拒绝返回。
+// 多个查询不保证同一事务快照；费用只取已保存的结算金额。
 func (s DashboardQueryService) Read(ctx context.Context, actor operations.Profile, now time.Time) (DashboardMetrics, error) {
 	if _, err := readManagementActor(ctx, s.DB, actor, "dashboard.read"); err != nil {
 		return DashboardMetrics{}, err

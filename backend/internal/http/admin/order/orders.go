@@ -13,7 +13,7 @@ import (
 
 // 本文件只保留后台订单输入、身份适配与公开响应，基础查询由 order.QueryService 执行。
 
-// orders 解析 c 中分页、筛选和后台身份，输出原订单页或公开输入／权限／读取错误；不写业务数据。
+// orders 解析请求中的分页、筛选和后台身份，输出订单页或公开输入／权限／读取错误；不写业务数据。
 func (a API) orders(c *gin.Context) {
 	page, ok := adminhttp.ReadAdminPage(c, "pending_payment paid charging completed cancelled failed refunding refunded")
 	if !ok {

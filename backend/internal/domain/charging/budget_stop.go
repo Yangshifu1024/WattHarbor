@@ -32,7 +32,7 @@ func BudgetStopAtMeter(rule Rule, offer *Offer, meter ActualMeter) (StopPlan, *F
 	}
 	plan.Reason = "budget_exhausted"
 	if !exact {
-		// A stop decision does not authorize inventing the electric/service split.
+		// 预算停机判断不能代替最终电费、服务费的拆分。
 		return plan, nil, nil
 	}
 	electric, service := splitFee(fee, offer.PriceCents)
@@ -50,8 +50,7 @@ func budgetBound(rule Rule, meter ActualMeter, upper bool) (Fee, error) {
 	for pi := range line.Periods {
 		period := &line.Periods[pi]
 		if rule.Spec.Mode == ModeServerEnergy {
-			// Unknown boundary energy gets the cheapest (or most expensive)
-			// possible unit rates, never energy apportioned by elapsed time.
+			// 缺少边界电量时，用最低或最高单价计算费用范围，不按时长分摊电量。
 			for _, candidate := range rule.Spec.Electric.Periods {
 				period.ElectricCents = boundRate(period.ElectricCents, candidate.ElectricCents, upper)
 				period.ServiceCents = boundRate(period.ServiceCents, candidate.ServiceCents, upper)
@@ -67,8 +66,7 @@ func budgetBound(rule Rule, meter ActualMeter, upper bool) (Fee, error) {
 			if rule.Spec.Mode == ModeServerRealtimePower && !upper && ti > 0 {
 				continue
 			}
-			// For peak power, an unobserved peak can only be higher than the
-			// observed one. Non-monotonic tier prices still need a lower bound.
+			// 缺测区间可能出现更高峰值。阶梯价格不随功率递增时，仍须计算费用下界。
 			for _, candidate := range rule.Spec.Electric.Periods[pi].Tiers[first:] {
 				period.Tiers[ti].ElectricCents = boundRate(period.Tiers[ti].ElectricCents, candidate.ElectricCents, upper)
 				period.Tiers[ti].ServiceCents = boundRate(period.Tiers[ti].ServiceCents, candidate.ServiceCents, upper)

@@ -11,12 +11,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// MeterReview 冻结人工计量核实前后的证据，二签只接受原订单及未变化的证据。
+// MeterReview 保存人工计量核实前后证据；二签须核对同一订单及未改变的证据。
 type MeterReview struct {
 	ID               uint64          `json:"id"`                 // 核实记录主键
 	RequestID        string          `json:"request_id"`         // 提案 UUID，同号同内容重放
-	ChargeOrderID    uint64          `json:"charge_order_id"`    // 所属原订单，不接受跨订单核实 ID
-	OriginalJSON     json.RawMessage `json:"original"`           // 原计量及价格证据 JSON，二签时复核未变化
+	ChargeOrderID    uint64          `json:"charge_order_id"`    // 所属同一订单，不接受跨订单核实 ID
+	OriginalJSON     json.RawMessage `json:"original"`           // 设备计量及价格证据 JSON，二签时复核未变化
 	CorrectedJSON    json.RawMessage `json:"corrected"`          // 仅替换计量分段的修正证据 JSON
 	Reason           string          `json:"reason"`             // 提案依据，1–500 字
 	Status           string          `json:"status"`             // awaiting_second、approved 或 rejected
@@ -30,14 +30,13 @@ type MeterReview struct {
 // TableName 返回计量核实记录所属表，不执行查询或修改。
 func (MeterReview) TableName() string { return "charge_meter_review" }
 
-// ProposeMeter 在 ctx 下为订单 id 登记 actor 的 request UUID、reason 依据及 segments 计量修正。
-// 返回原提案或首次提案；异内容、非人工状态、已有有效提案或缺截止证据返回业务错误，存储失败回滚。
-// 锁原计费任务后保存完整原始及修正证据；不直接入账，实时权限及同事务审计由外层服务负责。
+// ProposeMeter 锁定计费任务后保存设备计量和修正提案，相同请求复用首次结果。
+// 内容不同、状态不符、已有有效提案或截止点证据缺失时拒绝；外层服务核对权限并保存审计。
 func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, request, reason string, segments []charging.MeterSegment) (MeterReview, error) {
 	var out MeterReview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct {
-			Status string // 原计费任务状态，仅 manual_review 可新建核实
+			Status string // 计费任务状态，仅 manual_review 可新建核实
 		}
 		if err := tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&job).Error; err != nil {
 			return err
@@ -86,13 +85,13 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 	return out, err
 }
 
-// ReviewMeter 在 ctx 下对订单 id 的 reviewID 由 actor 执行 approve 或 reason 驳回。
-// 相同二签决定允许重放，状态、原证据、修正范围或审核人冲突返回 ErrBillingConflict，写入失败回滚。
-// 锁原任务后推进核实及任务状态；通过仍待后续计费，首签实时权限与审计由外层服务在同事务核对。
+// ReviewMeter 锁定任务后执行计量二签，相同决定允许重放。
+// 订单、首次计费证据、修正范围或审核人不符返回 ErrBillingConflict；批准后仍须异步计费。
+// 外层服务在同一事务核对首签权限并保存审计。
 func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint64, approve bool, reason string) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct {
-			Status string // 原计费任务状态，通过核实后才重新排队
+			Status string // 计费任务状态，通过核实后才重新排队
 		}
 		if err := tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&job).Error; err != nil {
 			return err
@@ -153,33 +152,29 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 	})
 }
 
-// LockMeterReviewJob 锁定 tx 中 id 的计费任务，串行核实、裁决及其审计；不提交事务。
-// 缺任务或读取失败返回错误，调用方不得继续核实。
+// LockMeterReviewJob 锁定计费任务，串行处理核实、金额裁决和审计；缺任务时不得继续。
 func LockMeterReviewJob(tx *gorm.DB, id uint64) error {
 	var job struct {
-		Status string /* 原任务状态 */ // awaiting_second、approved 或 rejected
+		Status string /* 同一任务状态 */ // awaiting_second、approved 或 rejected
 	}
 	return tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&job).Error
 }
 
-// MeterProposalExists 在已持任务锁的 tx 中当前读 requestID 是否有原提案。
-// 返回存在标志或存储错误，不依赖事务先前的 RR 快照，不写入或提交事务。
+// MeterProposalExists 在任务锁内用当前读检查提案，避免旧 RR 快照遗漏已提交记录。
 func MeterProposalExists(tx *gorm.DB, requestID string) (bool, error) {
 	var row MeterReview
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", requestID).Take(&row).Error
 	return err == nil, ignoreMissingReview(err)
 }
 
-// ManualAmountExists 在已持任务锁的 tx 中当前读订单 id 或 requestID 的金额凭据。
-// 返回存在标志或存储错误，不依赖事务先前的 RR 快照，不写入或提交事务。
+// ManualAmountExists 在任务锁内用当前读检查金额凭据，避免旧 RR 快照遗漏已提交记录。
 func ManualAmountExists(tx *gorm.DB, id uint64, requestID string) (bool, error) {
 	var row ManualSettlement
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=? OR request_id=?", id, requestID).Take(&row).Error
 	return err == nil, ignoreMissingReview(err)
 }
 
-// ignoreMissingReview 将存在性读取的缺行 err 转为 nil，保留连接、取消等真实错误。
-// 调用方同时使用存在标志；不能把数据库故障当成首次申请并继续写入。
+// ignoreMissingReview 仅将记录缺失转为 nil；连接和取消错误不能当作首次申请。
 func ignoreMissingReview(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil

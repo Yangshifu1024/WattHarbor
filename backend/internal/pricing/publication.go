@@ -16,53 +16,52 @@ import (
 	"gorm.io/gorm"
 )
 
-// PublicationService 拥有范围、原请求凭据、设备兼容、规则发布与审计的完整事务。
+// PublicationService 在同一事务内检查范围、请求重放、设备兼容，再保存规则和审计。
 type PublicationService struct {
 	DB *gorm.DB /* central 规则连接，由进程管理 */
 }
 
-// PublishInput 保留原方案发布 JSON，同请求逐原始内容比对，不重新绑定当前模板。
+// PublishInput 保存发布请求 JSON，重放须逐项比对，不重新读取当前模板替换首次内容。
 type PublishInput struct {
-	RequestID       string           `json:"request_id"`       // 客户端 UUID，同号同内容恢复原发布
+	RequestID       string           `json:"request_id"`       // 客户端 UUID，同号同内容恢复发布
 	StationID       uint64           `json:"station_id"`       // 目标所属站点
 	DeviceID        string           `json:"device_id"`        // 设备覆盖规则；空为整站默认
 	TemplateID      uint64           `json:"template_id"`      // 非零使用现存模板，与 Scheme 二选一
 	TemplateVersion uint32           `json:"template_version"` // 使用模板时必须匹配共享锁下当前版本
-	ExpectedVersion uint32           `json:"expected_version"` // 原目标规则版本，零为首次发布
+	ExpectedVersion uint32           `json:"expected_version"` // 目标规则版本，零为首次发布
 	Scheme          *charging.Scheme `json:"scheme,omitempty"` // 直接发布的完整方案；模板发布为空
 }
 
-// PublicationResult 返回新发布或同请求恢复的原结果。
+// PublicationResult 返回新发布或同请求恢复的首次结果。
 type PublicationResult struct {
-	ID       uint64 `json:"id"`       // 原规则主键
-	Version  uint32 `json:"version"`  // 原规则版本
-	Replayed bool   `json:"replayed"` // true 表示复用原请求凭据，没有重复审计或发布
+	ID       uint64 `json:"id"`       // 既定规则主键
+	Version  uint32 `json:"version"`  // 既定规则版本
+	Replayed bool   `json:"replayed"` // true 表示复用首次请求凭据，没有重复审计或发布
 }
 
-// InheritInput 是设备撤销自有覆盖、重新继承站点默认的原公开输入。
+// InheritInput 是设备撤销自有覆盖、重新继承站点默认的请求内容。
 type InheritInput struct {
 	DeviceID        string `json:"device_id"`        // 所属站点中的目标设备
 	ExpectedVersion uint32 `json:"expected_version"` // 当前设备自有规则版本
 }
 
-// TargetScopeError 保留原范围拒绝提示，同时标记无权操作，不泄露数据库错误。
+// TargetScopeError 表示目标超出权限范围，提示不含数据库错误。
 type TargetScopeError struct {
-	Reason string /* 原站点或厂商范围提示 */
+	Reason string /* 站点或厂商范围提示 */
 }
 
-// Error 返回范围提示，无 IO 或修改。
+// Error 返回范围提示。
 func (e TargetScopeError) Error() string { return e.Reason }
 
 // Unwrap 返回共享权限哨兵，接口可据此映射 403。
 func (e TargetScopeError) Unwrap() error { return operations.ErrForbidden }
 
-// CheckTargetScope 在 ctx 下按显式 scope 核对 station／device 的作用范围，返回拒绝或读取错误。
-// 无厂商限制允许站点默认；厂商受限必须选择所属设备。仅查询归属，不取得业务写锁。
+// CheckTargetScope 检查站点和设备范围；没有厂商限制可管理站点默认，厂商受限时须选择所属设备。
 func CheckTargetScope(ctx context.Context, db *gorm.DB, scope operations.DataScope, station uint64, deviceID string) error {
 	if !scope.AllowsStation(station) {
 		return TargetScopeError{Reason: "该站点不在您的数据范围内"}
 	}
-	// 沿用原后台规则：无厂商限制即可管理整站默认，不改为只允许单站范围。
+	// 没有厂商限制时允许管理整站默认规则。
 	if scope.Unrestricted || len(scope.VendorIDs) == 0 {
 		return nil
 	}
@@ -79,9 +78,8 @@ func CheckTargetScope(ctx context.Context, db *gorm.DB, scope operations.DataSco
 	return nil
 }
 
-// Publish 在 ctx 下以 audit 实时身份及 scope 目标范围发布 in，返回原规则结果。
-// 先锁站点，再检查原请求、模板共享锁、计量兼容和目标版本；规则、凭据和审计同事务。
-// 重放不读取当前模板或替换历史快照；任一校验或审计失败全部回滚，不向设备发网络请求。
+// Publish 先核对当前权限和范围，再锁站点、检查请求重放、模板版本及设备兼容。
+// 规则、请求凭据和审计同事务，失败整体回滚；重放保留首次快照，不重新读取模板，不下发设备指令。
 func (s PublicationService) Publish(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, in PublishInput) (PublicationResult, error) {
 	if !audit.Actor.HasPermission("pricing.rule.create") {
 		return PublicationResult{}, operations.ErrForbidden
@@ -156,9 +154,8 @@ func (s PublicationService) Publish(ctx context.Context, audit ops.AuditContext,
 	return out, err
 }
 
-// Assign 在 ctx 下将 station 的 in.DeviceID 恢复继承整站规则，audit／scope 提供实时权限和范围。
-// 先锁站点再核对当前站点规则、设备兼容和期望版本；停用自有规则与审计同事务。
-// 返回权限、格式、版本、规则或存储错误，已有订单及支付快照不受影响。
+// Assign 核对当前权限和范围，锁站点并检查站点规则、设备兼容和期望版本后停用设备规则。
+// 设备恢复继承站点规则，停用和审计同事务；已有订单及支付快照不变。
 func (s PublicationService) Assign(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, station uint64, in InheritInput) error {
 	if !audit.Actor.HasPermission("pricing.rule.update") {
 		return operations.ErrForbidden

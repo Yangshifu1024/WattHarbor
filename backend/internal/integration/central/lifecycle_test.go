@@ -14,7 +14,8 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestAuthorizationWireIdentityAndNullableAbsence 使用 t与本地 HTTP夹具验证原授权路径、服务令牌、大整数身份及设备参数解码；不证明真实权限、数据库占用或设备启动。
+// TestAuthorizationWireIdentityAndNullableAbsence 验证授权路径、服务令牌、大整数 ID 和设备参数，以及可为空的响应字段。
+// 使用本地 HTTP 服务，不验证实际授权、端口占用或设备启动。
 func TestAuthorizationWireIdentityAndNullableAbsence(t *testing.T) {
 	client := centralForServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" || r.Header.Get("X-Service-Token") != "secret" {
@@ -42,16 +43,16 @@ func TestAuthorizationWireIdentityAndNullableAbsence(t *testing.T) {
 	}
 }
 
-// TestAuthorizationRejectsConflictAndWrongIdentity 使用 t验证本地404／409准入拒绝、身份失配、缺字段及401分类，保留原断言；不执行真实授权用例。
+// TestAuthorizationRejectsConflictAndWrongIdentity 验证 404、409、401、编号不匹配和缺字段均返回对应错误。
 func TestAuthorizationRejectsConflictAndWrongIdentity(t *testing.T) {
 	for _, tc := range []struct {
-		// name 原子测试场景名，用于定位对应输入及错误断言。
+		// name 子测试名称。
 		name string
-		// status 该场景模拟服务实际返回的 HTTP 状态，用于原成功／失败契约核对。
+		// status 测试服务返回的 HTTP 状态。
 		status int
-		// body 该场景原响应 JSON正文，不修改测试值或业务断言。
+		// body 该场景响应 JSON正文，不修改测试值或业务断言。
 		body string
-		// want 该场景预期错误分类，nil时仅要求原测试指定的失败条件。
+		// want 是预期错误分类，nil 时只检查调用失败。
 		want error
 	}{
 		{"not found", 404, `{}`, centralcontract.ErrAuthorizationDenied},
@@ -82,7 +83,8 @@ func TestAuthorizationRejectsConflictAndWrongIdentity(t *testing.T) {
 	}
 }
 
-// TestResultDeliveryPreservesIdentifiersMeterAndReplay 使用 t验证原JSON请求身份、UTC毫秒时刻、Wh／秒及分段原值和接受／重放 Reply；夹具不证明真实持久事务。
+// TestResultDeliveryPreservesIdentifiersMeterAndReplay 验证回执中的编号、UTC 毫秒时间、Wh、秒、分段计量和重复提交标志保持一致。
+// 使用本地 HTTP 服务，不验证实际事务提交。
 func TestResultDeliveryPreservesIdentifiersMeterAndReplay(t *testing.T) {
 	stamp := time.Date(2026, 10, 5, 4, 0, 0, 123000000, time.UTC)
 	client := centralForServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -123,16 +125,16 @@ func TestResultDeliveryPreservesIdentifiersMeterAndReplay(t *testing.T) {
 	}
 }
 
-// TestResultDeliveryRequiresPersistenceAcceptance 使用 t验证客户端拒绝缺字段、未接受、202、冲突及非法JSON；本地回复只用于wire边界，不确认数据库提交。
+// TestResultDeliveryRequiresPersistenceAcceptance 验证缺字段、未接受、HTTP 202、冲突和无效 JSON 响应均被拒绝。
 func TestResultDeliveryRequiresPersistenceAcceptance(t *testing.T) {
 	for _, tc := range []struct {
-		// name 原子测试场景名，用于定位对应输入及错误断言。
+		// name 子测试名称。
 		name string
-		// status 该场景模拟服务实际返回的 HTTP 状态，用于原成功／失败契约核对。
+		// status 测试服务返回的 HTTP 状态。
 		status int
-		// body 该场景原响应 JSON正文，不修改测试值或业务断言。
+		// body 该场景响应 JSON正文，不修改测试值或业务断言。
 		body string
-		// want 该场景预期错误分类，nil时仅要求原测试指定的失败条件。
+		// want 是预期错误分类，nil 时只检查调用失败。
 		want error
 	}{
 		{"missing code", 200, `{"data":{"accepted":true}}`, ErrInvalidResponse},

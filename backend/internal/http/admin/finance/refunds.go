@@ -13,7 +13,7 @@ import (
 
 // registerRefunds 注册人工退款、列表、复核和重试路由。
 // 分别要求 order.refund.create、finance.refund.read、order.refund.review、finance.refund.retry 权限。
-// r只挂载HTTP适配；建单重放、双人复核、执行重投及审计事务由settlement拥有。
+// r 只挂载 HTTP 适配；建单重放、双人复核、执行重投及审计事务由 settlement 拥有。
 func (a API) registerRefunds(r *gin.Engine) {
 	r.POST("/api/v1/admin/orders/:id/refunds", a.Auth.Require("order.refund.create"), a.manualRefund)
 	r.GET("/api/v1/admin/billing/refunds", a.Auth.Require("finance.refund.read"), a.refunds)
@@ -22,7 +22,7 @@ func (a API) registerRefunds(r *gin.Engine) {
 	r.POST("/api/v1/admin/billing/refunds/:refund_no/retry", a.Auth.Require("finance.refund.retry"), a.retryRefund)
 }
 
-// asConflict 将err中的退款或发票冲突转为后台409哨兵，其余错误原样返回。
+// asConflict 将 err 中的退款或发票冲突转为后台 409 对应的错误类型，其余错误原样返回。
 func asConflict(err error) error {
 	if errors.Is(err, settlement.ErrRefundConflict) ||
 		errors.Is(err, settlement.ErrInvoiceConflict) {
@@ -31,7 +31,7 @@ func asConflict(err error) error {
 	return err
 }
 
-// manualRefund 创建待双人复核的人工退款。同一 request_id、相同内容返回原退款单；同号不同内容返回冲突。
+// manualRefund 创建待双人复核的人工退款。同一 request_id、相同内容返回退款单；同号不同内容返回冲突。
 func (a API) manualRefund(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -54,8 +54,8 @@ func (a API) manualRefund(c *gin.Context) {
 	httpapi.OK(c, gin.H{"created": created, "refund_no": refundNo, "request_id": in.RequestID})
 }
 
-// refunds 校验c原状态、单号与分页，输出所属退款查询回执；非法输入或读取失败返回原错误。
-// 实际复核与重投准入由对应写入服务核对，不以列表字段替代当前权限。
+// refunds 校验 c 原状态、单号与分页，输出退款查询回执；非法输入或读取失败返回错误。
+// 实际复核与重投权限由对应写入服务核对，不以列表字段替代当前权限。
 func (a API) refunds(c *gin.Context) {
 	q, ok := admin.ReadAdminPage(c, "pending processing success failed rejected")
 	if !ok {
@@ -76,7 +76,7 @@ func (a API) refunds(c *gin.Context) {
 }
 
 // reviewRefund 按路由后缀执行通过或驳回。首签进入 awaiting_second；不同审核人
-// 第二签由settlement服务读取实时身份后推进approved并安排执行；
+// 第二签由 settlement 服务读取实时身份后更新 approved 并安排执行；
 // 驳回写入 refund_rejection 并置 rejected，无需第二签。
 func (a API) reviewRefund(c *gin.Context) {
 	_, ok := admin.RequireFinanceActor(c, "order.refund.review")

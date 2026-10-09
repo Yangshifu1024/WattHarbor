@@ -113,7 +113,7 @@ func TestRegisteredSchemeRoutesPreserveAuthorizationAndResults(t *testing.T) {
 		t.Fatalf("role=%d %v", role, err)
 	}
 	for _, seed := range []struct {
-		table string         /* 原身份及范围归属表 */
+		table string         /* 身份及范围归属表 */
 		row   map[string]any /* 唯一测试身份及必需字段 */
 	}{
 		{"admin_user", map[string]any{"id": id, "username": "pricing-route-" + sid, "password_hash": "fixture", "role_id": role, "status": "active", "auth_version": 1}},
@@ -166,7 +166,7 @@ func TestRegisteredSchemeRoutesPreserveAuthorizationAndResults(t *testing.T) {
 		t.Fatalf("create=%d %s", w.Code, w.Body.String())
 	}
 	var created struct {
-		Data pricing.SchemeResult `json:"data"` /* 原 HTTP 保存结果 */
+		Data pricing.SchemeResult `json:"data"` /* HTTP 保存结果 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil || created.Data.ID == 0 || created.Data.Version != 1 {
 		t.Fatalf("create result=%+v %v", created, err)
@@ -176,7 +176,7 @@ func TestRegisteredSchemeRoutesPreserveAuthorizationAndResults(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		w = call("POST", base+"/apply", string(payload), token)
 		var out struct {
-			Data pricing.PublicationResult `json:"data"` /* 原发布结果和重放标志 */
+			Data pricing.PublicationResult `json:"data"` /* 发布结果和重放标志 */
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 || out.Data.ID == 0 || out.Data.Version != 1 || out.Data.Replayed != (i == 1) {
 			t.Fatalf("publish=%d %s %v", w.Code, w.Body.String(), err)

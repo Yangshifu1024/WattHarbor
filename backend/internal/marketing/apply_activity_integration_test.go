@@ -10,14 +10,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// 活动发券的端到端行为：真表、真唯一键、真事务。
-//
-// 前面几组测试验的是"选哪条规则"，这里验的是"发出去之后留下什么"——
-// 事务原子性、唯一键冲突与幂等重放。这三样单测一个都覆盖不到：
-// 它们只在真库的约束和真事务的回滚行为下才存在。
+// 真库发券测试验证保存结果、唯一键重放和事务回滚。
 
-// seedCoupon 接收测试句柄 t、调用方事务 tx、固定券主键 id、小时有效期 validHours 与可选结束时间 endAt。
-// 在 tx 插入五百分抵扣券；endAt 非 nil 覆写默认结束时间，nil 保持默认。无返回值，插入失败由 t.Fatal 终止，提交或回滚由调用方负责。
+// seedCoupon 在调用方事务中创建抵扣 500 分的券模板，可覆盖默认结束时间。
 func seedCoupon(t *testing.T, tx *gorm.DB, id uint64, validHours int, endAt *time.Time) {
 	t.Helper()
 	row := map[string]any{
@@ -35,7 +30,7 @@ func seedCoupon(t *testing.T, tx *gorm.DB, id uint64, validHours int, endAt *tim
 	}
 }
 
-// grantCount 接收测试句柄 t 与调用方句柄 tx，委托 grantCountFor 统计当前可见的全部发券记录并返回数量；不限制用户，查询错误由 t.Fatal 终止，不修改数据。
+// grantCount 统计当前连接可见的全部发放记录。
 func grantCount(t *testing.T, tx *gorm.DB) int64 { return grantCountFor(t, tx, 0) }
 
 // grantCountFor 统计某个用户拿到的券数；userID=0 表示不限用户全表统计。
@@ -52,10 +47,7 @@ func grantCountFor(t *testing.T, tx *gorm.DB, userID uint64) int64 {
 	return n
 }
 
-// TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay 钉住同一事件重放的行为。
-//
-// source_event_id 上有唯一键，重放会撞唯一约束。撞了之后会怎样，
-// 决定了「用户重试支付」是幂等地返回原结果，还是把整个业务事务拖失败。
+// TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay 验证同一事件重放不新增券，且不导致调用方事务失败。
 func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -80,9 +72,7 @@ func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
 	t.Logf("重放结果=%+v 错误=%v", replay, replayErr)
 
 	if replayErr != nil {
-		// 唯一键冲突会冒泡成错误，整笔业务事务随之失败。
-		// 支付回调与计费都在同一个事务里调用这里，
-		// 意味着上游重试会被当成真实故障。
+		// 重放若返回唯一键错误，会使同事务中的支付或计费回滚。
 		t.Errorf("重放同一事件返回错误 %v；这会让上游事务失败，幂等应返回原结果", replayErr)
 	}
 	if n := grantCount(t, tx); n != 1 {
@@ -95,9 +85,7 @@ func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
 	}
 }
 
-// TestApplyActivityRulesRespectsPerUserLimit 钉住单人份数上限。
-//
-// per_user_limit=1 时同一用户第二次参与该活动不应再拿到券。
+// TestApplyActivityRulesRespectsPerUserLimit 验证单人限一份时第二次参与不再发券。
 func TestApplyActivityRulesRespectsPerUserLimit(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -121,9 +109,7 @@ func TestApplyActivityRulesRespectsPerUserLimit(t *testing.T) {
 	}
 }
 
-// TestApplyActivityRulesRespectsBudget 钉住活动总发放上限。
-//
-// max_grants=1 时第二个不同用户参与，该活动预算耗尽，不应再发券。
+// TestApplyActivityRulesRespectsBudget 验证总量限一份时第二个用户参与不再发券。
 func TestApplyActivityRulesRespectsBudget(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -147,10 +133,7 @@ func TestApplyActivityRulesRespectsBudget(t *testing.T) {
 	}
 }
 
-// TestApplyActivityRulesSkipsDeletedCoupon 钉住券被删除后规则不再发券。
-//
-// 删券不会自动删规则。若发券路径不校验券本身，
-// 会生成一张永远核销不了的记录，白白消耗掉活动预算。
+// TestApplyActivityRulesSkipsDeletedCoupon 验证券模板删除后，即使活动规则还在也不发券。
 func TestApplyActivityRulesSkipsDeletedCoupon(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -176,9 +159,7 @@ func TestApplyActivityRulesSkipsDeletedCoupon(t *testing.T) {
 	}
 }
 
-// TestApplyActivityRulesInviteRewardSkipsOnlyInviter 钉住邀请人达上限时的部分发放。
-//
-// 邀请人拿不到自己的奖励，不应牵连被邀请人：两者的额度是各自独立的。
+// TestApplyActivityRulesInviteRewardSkipsOnlyInviter 验证邀请人额度用尽时，被邀请人仍可领取自己的奖励。
 func TestApplyActivityRulesInviteRewardSkipsOnlyInviter(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -218,7 +199,7 @@ func TestApplyActivityRulesInviteRewardSkipsOnlyInviter(t *testing.T) {
 	}
 }
 
-// TestApplyActivityRulesRejectsSelfInvite 钉住自邀在真库路径上确实被拦下。
+// TestApplyActivityRulesRejectsSelfInvite 验证自邀在真库路径上确实被拦下。
 func TestApplyActivityRulesRejectsSelfInvite(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)
@@ -242,13 +223,8 @@ func TestApplyActivityRulesRejectsSelfInvite(t *testing.T) {
 	}
 }
 
-// TestApplyActivityRulesReplayWithPerUserLimitAboveOne 钉住单人上限大于 1 时的重放。
-//
-// 默认单人上限是 1，重放会被"该用户已领过"这条挡在插入之前，
-// 于是唯一键根本不会被碰到。把上限配成 2 或更多时这条就不成立了——
-// 重放会一路走到插入，撞上 coupon_grant.source_event_id 的唯一约束。
-// 撞约束的错误会一路冒泡回 ApplyActivityRules，把调用方整个事务拖失败。
-// 支付回调与计费都在自己的事务里调用这里，失败会连带回滚入账。
+// TestApplyActivityRulesReplayWithPerUserLimitAboveOne 验证单人限额大于一时，事件重放仍不重复发券。
+// 不能只靠单人限额挡住重放；唯一键命中须复用原结果，不能连带回滚支付或计费。
 func TestApplyActivityRulesReplayWithPerUserLimitAboveOne(t *testing.T) {
 	db := testDB(t)
 	tx := txRollback(t, db)

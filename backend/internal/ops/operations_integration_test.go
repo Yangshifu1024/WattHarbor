@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-// TestOperationsAnnouncementAuditAndBeijingDashboard 使用真实SQL校验公告、原审计及东八区完整指标。
-// fixture只给自身角色赋权，业务造数外层回滚；持续限定各来源表为自身身份，保留共享数据和日界SQL。
+// TestOperationsAnnouncementAuditAndBeijingDashboard 用真库验证公告、审计和北京时间指标。
+// 仅给自身角色赋权，来源查询限制本测试数据，全部造数外层回滚。
 func TestOperationsAnnouncementAuditAndBeijingDashboard(t *testing.T) {
 	db, _, _, audit, _ := managementFixture(t)
 	ctx := context.Background()
@@ -43,9 +43,9 @@ func TestOperationsAnnouncementAuditAndBeijingDashboard(t *testing.T) {
 	start, end := today.UTC(), today.AddDate(0, 0, 1).UTC()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	seeds := []struct {
-		// table 测试种子写入的目标表，与同一项 row 的列映射配对。
+		// table 指定测试种子表，与 row 的列和值配对。
 		table string
-		// row 该目标表的原列名到测试值映射；由所属测试显式指定身份与状态，不由生产路径生成。
+		// row 指定本测试记录的列和值。
 		row map[string]any
 	}{
 		{"user", map[string]any{"id": id, "openid": board, "created_at": start}},
@@ -61,11 +61,11 @@ func TestOperationsAnnouncementAuditAndBeijingDashboard(t *testing.T) {
 		}
 	}
 	orders := []struct {
-		// created,started,ended created 为订单创建时刻，started 为开始时刻，ended 为结束时刻；零结束时间表示尚未结束，用于统计日界限条件。
+		// created、started、ended 分别为创建、开始、结束时间；零结束时间表示尚未结束。
 		created, started, ended time.Time
 		// status 该测试充电订单状态，与时间范围共同决定统计归属。
 		status string
-		// fee 测试订单的 total_cents，整数金额以分为单位；nil 表示 SQL NULL，用于核对汇总的空值处理。
+		// fee 是订单总费用，单位分；nil 表示 SQL NULL，用于核对汇总空值处理。
 		fee any
 	}{
 		{start.Add(-time.Millisecond), start.Add(-time.Millisecond), start.Add(-time.Millisecond), "completed", int64(120)},

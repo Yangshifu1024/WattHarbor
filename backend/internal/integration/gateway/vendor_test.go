@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// TestVendorProxyForwardsConfigurationAndTrace 核对具名更新客户端的原配置、服务身份及追踪号，loopback 不验证持久化。
+// TestVendorProxyForwardsConfigurationAndTrace 验证更新厂商时传递配置、服务令牌和追踪号；本地响应不验证数据库写入。
 func TestVendorProxyForwardsConfigurationAndTrace(t *testing.T) {
 	want := contract.VendorReply{ID: 7, VendorCode: "vendor_a", VendorName: "厂商 A", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
 	input := contract.VendorRequest{VendorCode: "vendor_a", VendorName: "厂商 A", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}
@@ -38,11 +38,11 @@ func TestVendorProxyForwardsConfigurationAndTrace(t *testing.T) {
 	}
 }
 
-// TestVendorProxyFailsClosed 核对原公开业务错误及私有错误、响应缺失和超限的安全映射。
+// TestVendorProxyFailsClosed 核对公开业务错误及私有错误、响应缺失和超限的安全映射。
 func TestVendorProxyFailsClosed(t *testing.T) {
 	for _, test := range []struct {
-		name, raw    string // 错误场景名称及原响应正文
-		status, want int    // 原服务状态及期望安全状态
+		name, raw    string // 错误场景名称及响应正文
+		status, want int    // 服务返回的状态和预期公开状态
 	}{
 		{"invalid", `{"code":1005,"message":"编码无效"}`, 400, 400},
 		{"missing", `{"code":1004,"message":"厂商不存在"}`, 404, 404},
@@ -103,7 +103,7 @@ func TestVendorProxyHonorsCancellation(t *testing.T) {
 	}
 }
 
-// vendorTestClient 为 t 在 url 的 loopback 服务建立具名客户端并注入 token；配置错误终止，无业务写入。
+// vendorTestClient 为本地测试服务创建 gateway 客户端并注入令牌。
 func vendorTestClient(t *testing.T, url, token string) *Client {
 	t.Helper()
 	client, err := NewClient(serviceclient.Client{}, url, token)
@@ -113,7 +113,7 @@ func vendorTestClient(t *testing.T, url, token string) *Client {
 	return client
 }
 
-// TestVendorClientRejectsUnexpectedIdentity 核对读取与更新不能把请求的原厂商身份替换为其他合法字典。
+// TestVendorClientRejectsUnexpectedIdentity 核对读取与更新不能把请求的厂商编号替换为其他合法字典。
 func TestVendorClientRejectsUnexpectedIdentity(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.VendorReply{ID: 8, VendorCode: "other", VendorName: "其他厂商", AdapterClass: "dc589", Protocol: "tcp", Status: "enabled"}})
@@ -134,7 +134,7 @@ func TestVendorClientRejectsUnexpectedIdentity(t *testing.T) {
 	}
 }
 
-// TestVendorListEscapesQueryAndKeepsPage 验证具名列表原关键词转义、厂商集合及分页响应，不信任上游权限字段。
+// TestVendorListEscapesQueryAndKeepsPage 验证具名列表关键词转义、厂商集合及分页响应，不信任上游权限字段。
 func TestVendorListEscapesQueryAndKeepsPage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

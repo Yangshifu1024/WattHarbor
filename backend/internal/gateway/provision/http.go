@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 )
 
-// API 适配内部设备开通和厂商管理接口；开通由仓储执行原整批事务，HTTP保留服务鉴权与字段校验。
+// API 适配内部设备开通和厂商管理接口；开通由仓储执行整批事务，HTTP 保留服务鉴权与字段校验。
 type API struct {
 	// DB 装配方提供的 gateway GORM 连接句柄；本适配器不关闭连接池，开通批次的事务由仓储管理。
 	DB *gorm.DB
@@ -22,14 +22,14 @@ type API struct {
 	ServiceToken string
 }
 
-// Register 接收非 nil router，注册本类型原路由与处理器，无数据库或设备 IO，不启动 HTTP 监听。
+// Register 在 router 注册路由；调用方须提供非 nil router。
 func (a API) Register(r *gin.Engine) {
 	r.POST(contract.ProvisionPath, a.provision)
 	a.registerVendors(r)
 }
 
-// provision 接收 c，鉴权并校验有界开通请求，将五项原身份字段按输入顺序交仓储；成功写原 provisioned 数量（含重放）。
-// 校验、冲突或 SQL／取消失败写原 400、401、409、503；不发送设备命令，不确认物理设备上线。
+// provision 鉴权并校验设备批次，按输入顺序完成开通；返回 provisioned 数量，包含重复请求中已开通的设备。
+// 校验、冲突或 SQL／取消失败写 400、401、409、503；不发送设备命令，不确认物理设备上线。
 func (a API) provision(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

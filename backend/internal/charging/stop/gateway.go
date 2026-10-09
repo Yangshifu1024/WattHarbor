@@ -11,16 +11,16 @@ import (
 
 // Gateway 是停止用例所需的设备侧能力；实现负责传输与响应契约校验。
 type Gateway interface {
-	// ChargingEvidence 在 context 期限内按请求顺序返回完整页及推进游标；传输或契约失败返回错误。
+	// ChargingEvidence 在 context 期限内按请求顺序返回完整页及更新游标；传输或契约失败返回错误。
 	ChargingEvidence(context.Context, []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
-	// RequestStop 在 context 期限内用原订单身份请求持久 STOP；返回受理凭据或错误，不证明设备结束。
+	// RequestStop 在 context 期限内用订单编号请求持久 STOP；返回受理凭据或错误，不证明设备结束。
 	RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopReply, error)
 }
 
-// ErrEvidenceIncomplete 表示取证响应身份、分页游标或页数不可信，不能据此停机。
+// ErrEvidenceIncomplete 表示取证响应标识、分页游标或页数不可信，不能据此停机。
 var ErrEvidenceIncomplete = errors.New("charging evidence incomplete")
 
-// 单批订单取证的最多翻页次数；7 天窗口按每分钟一条心跳计通常一页足够，
+// 单批订单取证的最多翻页次数；7 天窗口按每分钟一条心跳计通常一页足够。
 // 翻页上限防止异常高密度心跳把一次停机扫描拖死。
 const autoStopEvidenceMaxPages = 8
 
@@ -81,8 +81,8 @@ func (s AutoStopper) evidence(ctx context.Context, orders []AutoStopOrder) (map[
 	return out, nil
 }
 
-// requestStop 向 gateway 下发停机；gateway 受理后异步回执，
-// ctx 取消网络调用，order 提供不可变订单号与用户身份；错误时下一轮沿用原截止点重试。
+// requestStop 向 gateway 下发停机；gateway 受理后异步回执。
+// ctx 取消网络调用，order 提供不可变订单号与用户 ID；错误时下一轮沿用截止点重试。
 // 本调用只确认意图被受理（202），不确认端口已停。
 func (s AutoStopper) requestStop(ctx context.Context, order AutoStopOrder) error {
 	_, err := s.Gateway.RequestStop(ctx, gatewaycontract.StopRequest{

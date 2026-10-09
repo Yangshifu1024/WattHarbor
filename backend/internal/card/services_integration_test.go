@@ -21,13 +21,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// fixtureCutoff 当前读 fixture 复现注入接口；实际 stop 能力在外部包的两连接测试中覆盖。
+// 测试替身Cutoff 当前读 测试替身 复现注入接口；实际 stop 能力在外部包的两连接测试中覆盖。
 type fixtureCutoff struct{}
 
-// FrozenInTx 在 tx 下当前读取 id 截止；返回存在标志或存储错误，不写入或提交。
+// FrozenInTx 在事务中当前读取 id 截止；返回存在标志。
 func (fixtureCutoff) FrozenInTx(tx *gorm.DB, id uint64) (bool, error) {
 	var row struct {
-		ChargeOrderID uint64 /* 原订单 */
+		ChargeOrderID uint64 /* 订单 */
 	}
 	err := tx.Table("charge_billing_cutoff").Clauses(clause.Locking{Strength: "SHARE"}).Where("charge_order_id=?", id).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -68,38 +68,38 @@ func seedCardUser(t *testing.T, db *gorm.DB, id uint64, cents int64) {
 	}
 }
 
-// swipeFacts 是设备发现、能力和当前方案 fixture；仅数据库资金与状态是本测试真实实现。
+// swipeFacts 是设备发现、能力和当前方案 测试替身；仅数据库资金与状态是本测试真实实现。
 type swipeFacts struct {
-	port  money.ScanResult // 原设备端口事实
+	port  money.ScanResult // 设备端口信息
 	rule  charging.Rule    // 当前报价，续购测试故意替换此值
 	reads int              // 实际报价读取次数
 }
 
-// ResolveScan 返回 ctx/code 设备查询 fixture；不发送网络请求或写库。
+// ResolveScan 返回 ctx/code 设备查询 测试替身；不发送网络请求或写库。
 func (f *swipeFacts) ResolveScan(ctx context.Context, code string) (money.ScanResult, error) {
 	return f.port, nil
 }
 
-// Capabilities 返回 ctx/station/device 的 DC589 能力 fixture；无 IO。
+// Capabilities 返回 ctx/station/device 的 DC589 能力 测试替身。
 func (f *swipeFacts) Capabilities(ctx context.Context, station uint64, device string) (string, charging.Capabilities, error) {
 	cap, err := charging.ProtocolCapabilities("dc589")
 	return "dc589", cap, err
 }
 
-// ActiveDeviceRule 返回 ctx/station/device 当前报价 fixture，记录读取次数；无 IO。
+// ActiveDeviceRule 返回 ctx/station/device 当前报价 测试替身，记录读取次数。
 func (f *swipeFacts) ActiveDeviceRule(ctx context.Context, station uint64, device string) (charging.Rule, error) {
 	f.reads++
 	return f.rule, nil
 }
 
-// CheckDeviceScheme 按 ctx/station/device 的 DC589 fixture 核对 scheme；无 IO。
+// CheckDeviceScheme 按 ctx/station/device 的 DC589 测试替身 核对 scheme。
 func (f *swipeFacts) CheckDeviceScheme(ctx context.Context, station uint64, device string, scheme charging.Scheme) error {
 	cap, _ := charging.ProtocolCapabilities("dc589")
 	return scheme.ValidateCapabilities(cap)
 }
 
 // TestSwipeOwnsReplayFrozenExtensionCutoffAndFunds 使用真实卡、订单、支付和钱包表，外层回滚。
-// 设备事实为 fixture；不发送实际命令，不证明实机起充。相同事件恢复不重新检查时效／设备。
+// 设备信息为 测试替身；不发送实际命令，不证明实机起充。相同事件恢复不重新检查时效、设备。
 func TestSwipeOwnsReplayFrozenExtensionCutoffAndFunds(t *testing.T) {
 	db := cardConn(t)
 	tx := db.Begin()
@@ -182,7 +182,7 @@ func TestSwipeOwnsReplayFrozenExtensionCutoffAndFunds(t *testing.T) {
 	}
 }
 
-// TestCardManagementPreservesOwnershipReplayAndAtomicAudit 校验真实用户归属及人工／用户审计，外层回滚。
+// TestCardManagementPreservesOwnershipReplayAndAtomicAudit 校验真实用户归属及人工、用户审计，外层回滚。
 func TestCardManagementPreservesOwnershipReplayAndAtomicAudit(t *testing.T) {
 	db := cardConn(t)
 	tx := db.Begin()

@@ -12,12 +12,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// 退款成功入账的真库并发测试（RefundExecutor.apply 的 SUCCESS 分支）。
-//
-// apply 拿的是「钱包分摊行 → payment_order 行锁 → refund_record 行锁」，
-// 钱账的累加读 `p.RefundedCents` 走的是那把行锁的当前读，所以累加本身应当是安全的。
-// 单测只覆盖 receiptMatches 与 providerMatchesChannel 这两个纯函数，
-// 验不了「同一笔退款被并发入账两次」与「同一支付单上两笔退款并发累加」。
+// 真库测试覆盖 SUCCESS 退款入账的幂等和并发累加。
+// 资金按钱包分摊行→支付→退款加锁，累计已退金额须读取锁后的当前值。
 
 const (
 	execUserID   = uint64(43001)
@@ -26,10 +22,7 @@ const (
 	execPaid     = int64(10000)
 )
 
-// execRefund 造一条处于 processing 的自动退款单。
-//
-// biz_type 用 charge：那样 LockRefundWallet 与 SettleRefundWallet 会直接返回，
-// 测试要落的表就只有 payment_order、refund_record、charge_order 三张。
+// execRefund 构造 processing 的充电自动退款，只涉及支付、退款和充电订单，不走钱包分摊。
 func execRefund(t *testing.T, db *gorm.DB, id uint64, refundNo string, cents int64) {
 	t.Helper()
 	if err := db.Table("refund_record").Create(map[string]any{
@@ -43,8 +36,7 @@ func execRefund(t *testing.T, db *gorm.DB, id uint64, refundNo string, cents int
 	}
 }
 
-// seedExecutableRefund 接收测试句柄 t 与真库句柄 db，插入固定一万分实付支付单及对应 refunding 充电订单，供退款成功入账验证。
-// 无返回值，写入失败由 t.Fatal 终止；不创建退款单或新事务，调用方负责固定主键独占及已提交数据清理。
+// seedExecutableRefund 创建实付 10000 分的支付单和 refunding 充电订单；调用方负责固定身份独占与清理。
 func seedExecutableRefund(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Table("payment_order").Create(map[string]any{
@@ -68,11 +60,11 @@ func seedExecutableRefund(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// cleanupExecutableRefund 接收测试句柄 t、真库句柄 db 与退款主键切片 refundIDs，删除对应成功回执、退款记录及固定充电／支付单。
-// 发件箱只删除原退款来源与支付身份匹配的事件；无返回值，逐项错误由 t.Errorf 记录并继续，不重置数据库或关闭池。
+// cleanupExecutableRefund 清理本测试退款、成功回执、充电和支付记录。
+// Outbox 仅删除同时匹配退款来源及支付身份的事件，逐项报告失败。
 func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 	t.Helper()
-	// 仅清理由本测试退款身份生成的事件，避免删除其他包的开发或并发测试数据。
+	// 仅清理由本测试退款单号生成的事件，避免删除其他包的开发或并发测试数据。
 	if err := testfixture.DeleteOutbox(db, "stream=? AND JSON_EXTRACT(envelope_json,'$.payment_order_id')=?", "refund_succeeded_stream", execPayOrdID); err != nil {
 		t.Errorf("清理本测试发件箱失败：%v", err)
 	}
@@ -92,8 +84,7 @@ func cleanupExecutableRefund(t *testing.T, db *gorm.DB, refundIDs []uint64) {
 	}
 }
 
-// execRecord 接收退款主键 id、退款单号 refundNo 与分为单位的 cents，返回关联固定支付、用户与充电身份的 processing RefundRecord。
-// 不校验金额或写入数据库，无错误或外部副作用。
+// execRecord 构造关联固定支付、用户和订单的 processing 退款，金额单位为分。
 func execRecord(id uint64, refundNo string, cents int64) RefundRecord {
 	return RefundRecord{
 		ID: id, RefundNo: refundNo, PaymentOrderID: execPayOrdID, UserID: execUserID,
@@ -101,7 +92,7 @@ func execRecord(id uint64, refundNo string, cents int64) RefundRecord {
 	}
 }
 
-// execRequest 接收退款单号 refundNo 与分为单位的 cents，返回固定商户单号、渠道流水号及一万分总额的 RefundRequest；不校验额度、调用渠道或创建任务。
+// execRequest 构造固定商户单号、交易号和退款号的渠道请求，实付总额固定 10000 分。
 func execRequest(refundNo string, cents int64) pay.RefundRequest {
 	return pay.RefundRequest{
 		RefundNo: refundNo, MerchantOrderNo: "P-EXEC-1",
@@ -109,8 +100,7 @@ func execRequest(refundNo string, cents int64) pay.RefundRequest {
 	}
 }
 
-// execResult 接收退款单号 refundNo、分为单位的 cents 与渠道退款身份 refundID，返回固定 SUCCESS 状态及 UTC 成功时刻的 RefundResult。
-// 不调用渠道或确认到账，只为真实入账事务提供测试事实，无错误或 IO。
+// execResult 构造 SUCCESS 渠道回执和 UTC 成功时间供真库入账；不会实际请求渠道。
 func execResult(refundNo string, cents int64, refundID string) pay.RefundResult {
 	return pay.RefundResult{
 		RefundNo: refundNo, MerchantOrderNo: "P-EXEC-1", TransactionID: "SIM4200000002",
@@ -119,10 +109,7 @@ func execResult(refundNo string, cents int64, refundID string) pay.RefundResult 
 	}
 }
 
-// TestConcurrentApplySameRefundCreditsOnce 钉住同一笔退款并发入账只发生一次。
-//
-// 渠道结果未知时 executor 会反复重试，两次 apply 可能重叠。`refunded_cents`
-// 只能加一次，`refund_success_receipt` 只能有一条，钱不能加两遍。
+// TestConcurrentApplySameRefundCreditsOnce 验证同一退款并发入账只增加一次已退金额、只保存一条成功回执。
 func TestConcurrentApplySameRefundCreditsOnce(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -194,10 +181,7 @@ func TestConcurrentApplySameRefundCreditsOnce(t *testing.T) {
 	}
 }
 
-// TestConcurrentApplyTwoRefundsAccumulates 钉住同一支付单上两笔退款并发累加。
-//
-// 4000 与 6000 两笔退款并发成功，累加必须精确等于 10000，
-// 支付单随之置为 refunded。少加或多加都是资损。
+// TestConcurrentApplyTwoRefundsAccumulates 验证同一支付的 4000 分和 6000 分退款并发成功后累计 10000 分，并变为 refunded。
 func TestConcurrentApplyTwoRefundsAccumulates(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()
@@ -271,11 +255,7 @@ func TestConcurrentApplyTwoRefundsAccumulates(t *testing.T) {
 	}
 }
 
-// TestApplyRejectsRefundBeyondRemainingAmount 钉住退额上限校验。
-//
-// 支付单实付 10000、退满之后再来一笔 1000 的退款，必须判冲突。
-// 没有这条，`refunded_cents` 会被推到超过实付——退的钱比收的多。
-// 这条校验是唯一挡住它的东西，值得单独钉住。
+// TestApplyRejectsRefundBeyondRemainingAmount 验证实付 10000 分已全部退完后，再退 1000 分必须报冲突。
 func TestApplyRejectsRefundBeyondRemainingAmount(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()

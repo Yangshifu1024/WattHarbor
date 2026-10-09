@@ -22,7 +22,7 @@ import (
 type jobKind struct {
 	name  string // 具名客户端方法对应的测试场景名。
 	path  string // 已注册共享路径，核对真实请求目标。
-	field string // 已处理进度在原回复中的字段名。
+	field string // 响应中的处理进度字段名。
 }
 
 // jobKinds 返回三种端点的静态测试清单，无网络或资金副作用。
@@ -34,8 +34,7 @@ func jobKinds() []jobKind {
 	}
 }
 
-// callJob 使用 ctx、client 和 kind 调用真实具名方法，返回归一化的进度、退款启用标志和原错误。
-// 请求类型真正进入生产方法签名；该助手只供测试，不增加重试、身份或业务实现。
+// callJob 按测试类型调用计费、退款或停机客户端，统一返回进度、启用标志和错误。
 func callJob(ctx context.Context, client *centralclient.Client, kind jobKind) (int, *bool, error) {
 	switch kind.name {
 	case "billing":
@@ -60,16 +59,16 @@ func newJobClient(t *testing.T, server *httptest.Server) *centralclient.Client {
 	return client
 }
 
-// TestJobClientsPreserveWireAndPartialProgress 用 t 和回环 HTTP 服务核对原 POST 形状、零进度及部分进度。
-// 原未完成回执保留进度，业务码拒绝及其他HTTP状态不采信进度；错误分类及单次调用不依赖真库或资金执行。
+// TestJobClientsPreserveWireAndPartialProgress 验证任务 POST 的正文、零进度和部分进度。
+// 仅采信约定的未完成响应，本地 HTTP 测试不执行真实资金任务。
 func TestJobClientsPreserveWireAndPartialProgress(t *testing.T) {
 	for _, kind := range jobKinds() {
 		t.Run(kind.name, func(t *testing.T) {
 			for _, tc := range []struct {
-				name     string // 成功、部分失败或身份拒绝场景。
+				name     string // 成功、部分失败或鉴权拒绝场景。
 				status   int    // 服务实际返回的 HTTP 状态。
 				code     int    // 服务实际返回的业务码。
-				progress int    // 报文声明的数量；仅原成功或503／code=5003回执允许采信。
+				progress int    // 响应中的进度，只采信成功或 HTTP 503、code=5003 的响应。
 			}{
 				{"success", 200, 0, 3}, {"zero", 200, 0, 0},
 				{"incomplete", 503, 5003, 2}, {"business-rejected", 200, 2009, 1},
@@ -135,7 +134,7 @@ func TestJobClientsPreserveWireAndPartialProgress(t *testing.T) {
 	}
 }
 
-// TestJobClientsRejectInvalidReplies 用 t 核对缺失、null、负数、整数溢出、非完成状态和正文上限。
+// TestJobClientsRejectInvalidReplies 核对缺失、null、负数、整数溢出、非完成状态和正文上限。
 // 回环服务只返回指定报文，客户端失配时不得猜测部分进度或自动补发请求。
 func TestJobClientsRejectInvalidReplies(t *testing.T) {
 	for _, kind := range jobKinds() {
@@ -206,7 +205,7 @@ func TestJobClientsRejectInvalidReplies(t *testing.T) {
 }
 
 // TestJobClientsRejectTruncatedPartialBodies 用t模拟503已到达、正文在声明长度前结束的回环响应。
-// 即使已读取前缀包含完整进度JSON，也必须返回零值、原HTTP错误及读取错误，不推断资金状态或补发请求。
+// 即使已读取前缀包含完整进度JSON，也必须返回零值、HTTP错误及读取错误，不推断资金状态或补发请求。
 func TestJobClientsRejectTruncatedPartialBodies(t *testing.T) {
 	for _, kind := range jobKinds() {
 		t.Run(kind.name, func(t *testing.T) {
@@ -228,12 +227,12 @@ func TestJobClientsRejectTruncatedPartialBodies(t *testing.T) {
 	}
 }
 
-// TestRefundClientRequiresExplicitSuccessState 用 t 核对成功 enabled 必需为 bool、禁用零进度及失败可缺失的边界；无资金 IO。
+// TestRefundClientRequiresExplicitSuccessState 验证退款成功响应必须含布尔 enabled；禁用时进度为零，失败响应可缺少 enabled。
 func TestRefundClientRequiresExplicitSuccessState(t *testing.T) {
 	for _, tc := range []struct {
 		name   string // 退款启用状态与进度的组合场景。
 		data   string // 手写载荷，用于核对缺失、null 及错误类型。
-		status int    // 200 为成功，503 为原部分失败回执。
+		status int    // 200 为成功，503 为部分失败响应。
 		valid  bool   // 是否允许客户端接受该回执形状。
 	}{
 		{"disabled-zero", `{"processed":0,"enabled":false}`, 200, true},
@@ -276,10 +275,10 @@ func TestRefundClientRequiresExplicitSuccessState(t *testing.T) {
 // jobRoundTripper 是测试中观测实际请求 context 的窄传输包装，不实现重试或资金用例。
 type jobRoundTripper func(*http.Request) (*http.Response, error)
 
-// RoundTrip 把 request 交给指定函数，返回其原 HTTP 回执或错误；副作用仅为 fixture 指定的回环传输和观测。
+// RoundTrip 把 request 交给指定函数，返回其HTTP 响应或错误；只执行测试设置的本地传输和记录。
 func (f jobRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
 
-// TestJobClientTimeoutAndRedirectPolicy 用 t 验证30秒双期限、共享Transport和原HTTP客户端不变；重定向不能转发服务令牌。
+// TestJobClientTimeoutAndRedirectPolicy 验证请求和客户端均使用三十秒超时且共享连接池，重定向不能转发服务令牌。
 func TestJobClientTimeoutAndRedirectPolicy(t *testing.T) {
 	for _, kind := range jobKinds() {
 		t.Run(kind.name, func(t *testing.T) {
@@ -323,7 +322,7 @@ func TestJobClientTimeoutAndRedirectPolicy(t *testing.T) {
 	}
 }
 
-// TestJobClientsPropagateCancellation 用 t 和确定性到达闸门验证取消及更短deadline；错误时不得生成进度，处理器只等待请求退出。
+// TestJobClientsPropagateCancellation 验证调用方取消和更短超时会结束请求，失败时不凭空生成进度。
 func TestJobClientsPropagateCancellation(t *testing.T) {
 	for _, kind := range jobKinds() {
 		for _, mode := range []string{"cancel", "short-deadline"} {
@@ -374,7 +373,7 @@ func TestJobClientsPropagateCancellation(t *testing.T) {
 	}
 }
 
-// TestJobClientsDoNotRetryUnknownResults 用 t 让回环服务收到POST后关闭连接，验证未知结果仅返回错误和零进度。
+// TestJobClientsDoNotRetryUnknownResults 让回环服务收到POST后关闭连接，验证未知结果仅返回错误和零进度。
 // 每次显式调用只送达一次，无自动补发或新请求身份；此测试不能证明资金是否已经执行。
 func TestJobClientsDoNotRetryUnknownResults(t *testing.T) {
 	for _, kind := range jobKinds() {

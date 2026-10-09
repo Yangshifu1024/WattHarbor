@@ -14,10 +14,10 @@ type DeviceInput struct {
 	SerialNo          json.RawMessage `json:"serial_no"`           // 必填字段，可为 null 或最长 128 字符的序列号
 	WarrantyUntil     json.RawMessage `json:"warranty_until"`      // 必填字段，可空或带时区的有效日期
 	Tags              json.RawMessage `json:"tags"`                // 必填数组，可为空，最多二十项且无空项或重复
-	ExpectedUpdatedAt json.RawMessage `json:"expected_updated_at"` // 必填原资料更新时间，参与行锁内版本核对
+	ExpectedUpdatedAt json.RawMessage `json:"expected_updated_at"` // 必填资料更新时间，参与行锁内版本核对
 }
 
-// Metadata 将接收者完整请求解析为资料和 UTC 毫秒原版本；返回公开输入错误，不执行 IO 或修改持久数据。
+// Metadata 解析完整资料和 UTC 毫秒版本，缺字段或不合法时返回输入错误。
 func (in DeviceInput) Metadata() (Device, time.Time, error) {
 	var row Device
 	var expected time.Time
@@ -90,7 +90,7 @@ func (in DeviceInput) Metadata() (Device, time.Time, error) {
 	return row, *expectedAt, nil
 }
 
-// NextDeviceUpdateTime 以 previous 为原 UTC 毫秒版本，返回当前时间或原值加一毫秒，保证递增；无 IO。
+// NextDeviceUpdateTime 取当前时间与旧版本加一毫秒的较大值，保证版本递增。
 func NextDeviceUpdateTime(previous time.Time) time.Time {
 	next := time.Now().UTC().Truncate(time.Millisecond)
 	if !next.After(previous) {

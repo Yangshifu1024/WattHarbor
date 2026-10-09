@@ -163,7 +163,7 @@ const triggerLabel: Record<string, string> = {
   first_recharge: '首充优惠', invite_reward: '邀请有奖', threshold_redeem: '满减满返', holiday: '节日活动',
 };
 
-// 活动规则在这里配置而不是手写 SQL，这样活动窗口和预算就能在系统跑着的时候改。
+// 通过页面配置活动时间和预算，无需直接修改数据库。
 function ActivityRules({ coupons, reloadCoupons }: { coupons: Coupon[]; reloadCoupons: () => void }) {
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -190,7 +190,7 @@ function ActivityRules({ coupons, reloadCoupons }: { coupons: Coupon[]; reloadCo
   const onCreate = async () => {
     try {
       const v = await form.validateFields();
-      // 接口说的是 RFC3339，而选择器交回来的是 dayjs 对象。
+      // 将选择器返回的 dayjs 对象转为接口要求的 RFC3339 时间。
       const body = {
         ...v,
         start_at: v.start_at.toISOString(),

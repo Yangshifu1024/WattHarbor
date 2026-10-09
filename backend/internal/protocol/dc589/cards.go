@@ -12,7 +12,7 @@ const (
 type CardSwipe struct {
 	Port             byte
 	CardNumber       uint32
-	LocalDebitTenths byte // Hardware setting, never the platform's charge amount.
+	LocalDebitTenths byte // 设备本地设置的扣费额，不是平台实际收取的金额。
 }
 
 // 四个保留字节未定义事件序号或拔卡标志。
@@ -64,8 +64,8 @@ func BuildCardDenied(session [6]byte, card uint32, invalid bool, units uint16) (
 	return Frame{Command: OnlineCardDenied, Session: session, Data: d}, nil
 }
 
-// A wire balance is an informational floor to 0.1 yuan, capped to uint16.
-// Actual debits/refunds always retain integer cents in the wallet transaction.
+// 上报余额按 0.1 元向下取整，上限为 uint16；仅用于设备展示。
+// 钱包实际扣款和退款始终以整数分记账。
 func CardBalanceUnits(cents int64) uint16 {
 	if cents <= 0 {
 		return 0

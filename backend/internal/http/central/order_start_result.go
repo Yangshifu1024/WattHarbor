@@ -11,23 +11,23 @@ import (
 	"net/http"
 )
 
-// StartResultAPI 适配worker的原起充结果回执，状态及幂等写入由所属起充用例拥有。
+// StartResultAPI 适配 worker 的起充结果回执，状态及幂等写入由起充用例拥有。
 type StartResultAPI struct {
-	// Service 是cmd注入的起充回执窄能力，不暴露数据库或通用HTTP。
+	// Service 是 cmd 注入的起充回执接口，不暴露数据库或通用 HTTP。
 	Service interface {
-		// Apply 在请求context下保存原起充结果，返回是否重放或冲突／持久错误，完整事务由实现拥有。
+		// Apply 在请求 context 下保存起充结果，返回是否重放或冲突／持久错误，完整事务由实现拥有。
 		Apply(context.Context, chargestart.StartResult) (bool, error)
 	}
-	ServiceToken string // 原内部服务令牌，仅HTTP准入使用，不进入业务用例。
+	ServiceToken string // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 在router注册原起充回执POST路径，无返回值或业务IO。
+// Register 在 router 注册起充回执 POST 路径，只注册路由。
 func (a StartResultAPI) Register(router *gin.Engine) {
 	router.POST(centralcontract.StartResultRoute, a.handle)
 }
 
-// handle 校验c服务令牌、JSON及路径订单号一致性，将原回执交给请求context下的所属事务。
-// 成功返回accepted／replayed，输入400、身份冲突409、持久失败503；不自行持有事务。
+// handle 校验 请求中的服务令牌、JSON 及路径订单号一致性，将回执交给请求 context 下的调用方事务。
+// 成功返回 accepted／replayed，输入 400、标识冲突 409、持久失败 503；不自行持有事务。
 func (a StartResultAPI) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

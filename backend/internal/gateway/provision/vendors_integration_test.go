@@ -23,8 +23,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// TestVendorOperationsKeepConstraintsAndRollback 经实际注册路由和具名客户端核对完整厂商操作。
-// 使用独立网关真库，只创建私有厂商／设备；取消发生在更新SQL完成后，必须回滚同一事务的全部列。
+// TestVendorOperationsKeepConstraintsAndRollback 经实际注册路由使用专用客户端核对完整厂商操作。
+// 使用独立网关真库，只创建私有厂商／设备；取消发生在更新 SQL 完成后，必须回滚同一事务的全部列。
 func TestVendorOperationsKeepConstraintsAndRollback(t *testing.T) {
 	db, original, devices := provisionFixture(t)
 	router := vendorTestRouter(API{DB: db, ServiceToken: vendorTestToken})
@@ -36,7 +36,7 @@ func TestVendorOperationsKeepConstraintsAndRollback(t *testing.T) {
 	}
 	ctx := context.Background()
 	code := "VF" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	// 预登记未知提交结果的清理身份，实际账号等其它表不参与本测试。
+	// 预登记未知提交结果的待清理记录的编号，实际账号等其它表不参与本测试。
 	t.Cleanup(func() {
 		var ids []uint64
 		if err := db.Table("vendor").Where("vendor_code=?", code).Pluck("id", &ids).Error; err != nil {

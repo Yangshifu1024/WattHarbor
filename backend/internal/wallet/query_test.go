@@ -2,13 +2,13 @@ package wallet
 
 import "testing"
 
-// TestRefundViewUsesStoredApproval 防止接口丢弃原审核结论，把已批准的在途退款误标为拒绝。
+// TestRefundViewUsesStoredApproval 防止接口丢弃审核结论，把已批准的在途退款误标为拒绝。
 func TestRefundViewUsesStoredApproval(t *testing.T) {
 	row := WalletRefundRequestRow{RequestID: "request", AmountCents: 100}
 	for _, tc := range []struct {
 		name     string                // 验证的渠道及审核组合
-		parts    []WalletRefundPartRow // 原渠道结果
-		review   *RefundReviewView     // 原审核，可空
+		parts    []WalletRefundPartRow // 渠道结果
+		review   *RefundReviewView     // 审核，可空
 		links    int64                 // 风控冻结链接数
 		want     string                // 应展示的状态
 		refunded int64                 // 应展示已确认成功金额，分

@@ -75,6 +75,6 @@ func (a TelemetryAPI) historicalCurve(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.HistoricalCurveReply{OrderNo: orderID, DeviceID: deviceID, PortNo: uint8(portNo), StartedAt: from.UTC(), EndedAt: to.UTC(), Granularity: c.Query("granularity"), Series: series, Count: len(series), Summary: summary, BoundaryApproximate: !from.Equal(startBucket) || !to.Equal(endBucket)})
 }
 
-// curveSummaryValue 将 value 原DECIMAL文本编码为JSON字符串，返回精确原文本载荷，无IO或数值转换。
-// 字符串编码不会失败；摘要保持原公开字符串类型，不替换成浮点数。
+// curveSummaryValue 将 DECIMAL 文本编码为 JSON 字符串，保留小数精度。
+// 字符串编码不会失败；摘要保持公开字符串类型，不替换成浮点数。
 func curveSummaryValue(value string) json.RawMessage { raw, _ := json.Marshal(value); return raw }

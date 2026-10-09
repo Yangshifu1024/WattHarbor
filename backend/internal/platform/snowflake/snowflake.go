@@ -1,4 +1,4 @@
-// Package snowflake allocates numeric identifiers across central instances.
+// Package snowflake 在多个 central 实例间分配不重复的整数 ID。
 package snowflake
 
 import (
@@ -30,8 +30,7 @@ type state struct {
 
 func (state) TableName() string { return "snowflake_state" }
 
-// Next must run inside the caller's transaction in central_db. The singleton row
-// is provisioned by database initialization, rather than created on each call.
+// Next 必须在调用方的 central_db 事务内执行；编号状态行由数据库初始化创建。
 func Next(tx *gorm.DB) (uint64, error) {
 	var current state
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = 1").Take(&current).Error; err != nil {
@@ -49,7 +48,7 @@ func Next(tx *gorm.DB) (uint64, error) {
 	return id, nil
 }
 
-// NextSQL uses the same allocator for SQL-based development seed transactions.
+// NextSQL 为使用 database/sql 的示例数据事务分配 ID。
 func NextSQL(ctx context.Context, tx *sql.Tx) (uint64, error) {
 	var current state
 	if err := tx.QueryRowContext(ctx, "SELECT last_millisecond, sequence FROM snowflake_state WHERE id=1 FOR UPDATE").Scan(&current.LastMillisecond, &current.Sequence); err != nil {

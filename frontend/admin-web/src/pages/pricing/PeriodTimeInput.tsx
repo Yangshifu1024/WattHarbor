@@ -21,8 +21,7 @@ type PeriodTimeInputProps = {
   'aria-label'?: string;
 };
 
-// The form keeps integer minutes; unfinished or invalid text stays local so that
-// typing cannot silently replace a saved boundary with an invalid numeric value.
+// 表单保存整数分钟；未完成或无效的输入只留在编辑框，避免覆盖已保存的时间分界。
 export default function PeriodTimeInput({
   value, onChange, periods, index, fixed = false, readOnly = false, disabled = false, status, initialDraft, onDraftChange,
   onValidityChange, id, 'aria-describedby': describedBy, 'aria-labelledby': labelledBy,
@@ -52,8 +51,7 @@ export default function PeriodTimeInput({
   useEffect(() => {
     if (previousValue.current !== value) {
       previousValue.current = value;
-      // Our own valid edit should preserve exactly what is being typed until blur.
-      // External form resets and list changes should replace the local draft.
+      // 编辑时保留输入文字，失去焦点后再格式化；外部重置或列表变化时更新输入框。
       if (lastEmittedValue.current !== value || fixed) {
         lastEmittedValue.current = undefined;
         const text = value === undefined ? '' : minuteToClock(value);
@@ -62,9 +60,7 @@ export default function PeriodTimeInput({
         return;
       }
     }
-    // A neighboring boundary can make an earlier invalid draft valid again.
-    // Commit it as soon as it becomes valid, keeping the displayed value and form
-    // value consistent without requiring the user to type the same time twice.
+    // 相邻分界变化可能使当前输入变为有效；此时立即写入表单，无需重新输入。
     if (canEdit && parsed !== undefined && !error && parsed !== value && parsed !== lastEmittedValue.current) {
       lastEmittedValue.current = parsed;
       onChangeRef.current?.(parsed);

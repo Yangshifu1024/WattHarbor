@@ -170,7 +170,7 @@ CREATE TABLE `device_event` (
   KEY `idx_device_time` (`device_id`,`received_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备事件及原始上下文';
 
--- device_port：设备端口(每端口独立二维码)
+-- device_port：设备端口，每个端口使用独立二维码
 CREATE TABLE `device_port` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
   `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',

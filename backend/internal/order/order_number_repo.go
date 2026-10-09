@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// NewChargeOrderNumber 在调用方 tx 中为 device/port 按当前北京时间生成原充电单号并核对冲突。
-// 返回单号或设备／端口／同号／读取错误；仅检查，不插入订单，提交时唯一键仍负责最终仲裁。
+// NewChargeOrderNumber 在调用方事务中为 device/port 按当前北京时间生成充电单号并核对冲突。
+// 返回单号或设备、端口、同号、读取错误；仅检查，不插入订单，提交时唯一键仍负责最终仲裁。
 func NewChargeOrderNumber(tx *gorm.DB, device string, port uint8) (string, error) {
 	no, err := ChargeOrderNumber(time.Now(), device, port)
 	if err != nil {

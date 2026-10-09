@@ -9,19 +9,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// DeviceSummaryAPI 将所属网关 repo 的事实映射为共享摘要 DTO，只有服务令牌可读取。
+// DeviceSummaryAPI 将网关 repo 的事实映射为共享摘要 DTO，只有服务令牌可读取。
 type DeviceSummaryAPI struct {
-	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，具体事务由原方法管理。
-	DB           *gorm.DB // gateway 运行事实连接
+	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，具体事务由方法管理。
+	DB           *gorm.DB // 网关数据库连接
 	ServiceToken string   // 由进程注入的服务鉴权令牌
 }
 
-// Register 在 r 注册批量摘要端点；无返回值，不启动任务或读取数据库。
+// Register 在 r 注册批量摘要端点；不启动任务或读取数据库。
 func (a DeviceSummaryAPI) Register(r *gin.Engine) {
 	r.GET(contract.DeviceSummariesPath, a.list)
 }
 
-// list 从 c 校验令牌及最多一百台设备，读取所属两表并返回共享 DTO；失败写原 HTTP 错误。
+// list 从 c 校验令牌及最多一百台设备，读取两表并返回共享 DTO；失败写 HTTP 错误。
 func (a DeviceSummaryAPI) list(c *gin.Context) {
 	if !(SessionAPI{ServiceToken: a.ServiceToken}).authorized(c) {
 		return

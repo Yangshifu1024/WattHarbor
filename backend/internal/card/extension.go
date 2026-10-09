@@ -2,8 +2,7 @@ package card
 
 import "chargepilot/internal/domain/charging"
 
-// CanExtend 按 card/orderCard 原身份、p 冻结套餐、purchased/max 分钟数、balance 可花费分值和 pending 未确认状态判断能否续购。
-// 返回全部条件同时满足的标志；仅支持同卡正价时长套餐，不超累计上限，无 IO 或修改。
+// CanExtend 判断同卡是否可续购正价时长套餐：没有待确认扣款、余额足够，且加时不超过累计上限。
 func CanExtend(card, orderCard uint64, p charging.Package, purchased, max uint16, balance int64, pending bool) bool {
 	return card == orderCard && p.Mode == "duration" && p.PriceCents > 0 && p.Minutes > 0 && !pending && balance >= p.PriceCents && uint32(purchased)+uint32(p.Minutes) <= uint32(max)
 }

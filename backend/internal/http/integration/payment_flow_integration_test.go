@@ -27,9 +27,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// routeCheckoutFixture 仅替换准入事实与渠道响应，支付请求及参数持久化使用实际 MySQL。
+// routeCheckoutFixture 仅替换设备规则和兼容性校验结果与渠道响应，支付请求及参数持久化使用实际 MySQL。
 type routeCheckoutFixture struct {
-	port        money.ScanResult // 固定可用端口，具名客户端另有真实 loopback 契约测试
+	port        money.ScanResult // 固定可用端口，专用客户端另有真实 loopback 契约测试
 	rule        charging.Rule    // 固定有效套餐，计价规则不由此 fixture 重写
 	failed      bool             // 渠道本次是否丢失响应
 	unavailable bool             // 首次申请后，模拟当前设备与方案不可读取
@@ -44,7 +44,7 @@ func (f *routeCheckoutFixture) ResolveScan(ctx context.Context, code string) (mo
 	return f.port, ctx.Err()
 }
 
-// ActiveDeviceRule 返回 ctx 下 stationID、deviceID 的固定方案，模拟故障只拒绝新的准入。
+// ActiveDeviceRule 返回 ctx 下 stationID、deviceID 的固定方案，模拟故障只拒绝新请求。
 func (f *routeCheckoutFixture) ActiveDeviceRule(ctx context.Context, stationID uint64, deviceID string) (charging.Rule, error) {
 	if f.unavailable {
 		return charging.Rule{}, errors.New("pricing fixture unavailable")
@@ -66,7 +66,7 @@ func (f *routeCheckoutFixture) Prepay(ctx context.Context, req payment.PrepayReq
 	return payment.PrepayParams{Provider: "simulation", PrepayID: req.MerchantOrderNo, Package: "prepay_id=" + req.MerchantOrderNo}, ctx.Err()
 }
 
-// paymentRouteToken 为 userID 签发测试登录令牌；会话和用户准入沿用 fixture，t 报告签发错误。
+// paymentRouteToken 为 userID 签发测试登录令牌；会话和用户状态检查沿用 fixture，t 报告签发错误。
 func paymentRouteToken(t *testing.T, userID uint64) (authhttp.SessionAuthenticator, string) {
 	t.Helper()
 	jwt, err := auth.NewJWT("payment-route-secret-at-least-32-bytes")
@@ -81,8 +81,8 @@ func paymentRouteToken(t *testing.T, userID uint64) (authhttp.SessionAuthenticat
 	return authhttp.SessionAuthenticator{Auth: authhttp.NewAuthenticator(jwt, walletSession{}, walletUser{})}, token
 }
 
-// TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay 验证实际公开路由的严格输入、原号恢复及金额 JSON。
-// 准入与渠道为 fixture，支付唯一键、申请和参数为真库；全部造数在外层事务中回滚。
+// TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay 验证实际公开路由的严格输入、号恢复及金额 JSON。
+// 设备条件校验和支付渠道使用测试替身，支付唯一键、申请和参数为真库；全部造数在外层事务中回滚。
 func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()
@@ -97,7 +97,7 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 	if err := tx.Table("user").Create(map[string]any{"id": id, "openid": "route-" + rand.Text(), "status": "active"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// 原意图过期扫描只访问本测试用户，防止外层事务锁住其他包的测试历史。
+	// 意图过期扫描只访问本测试用户，防止外层事务锁住其他包的测试历史。
 	// Scopes 会被一次查询消费，不能保证后续过期 UPDATE 仍按本测试用户筛选。
 	// 在此独立连接的每次意图 UPDATE 前加同一条件，避免包间真库造数的范围锁互相阻塞。
 	const expiryScope = "route_checkout_expiry_scope"
@@ -147,7 +147,7 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 	f.failed, f.unavailable = false, true
 	w := post(body, token)
 	var out struct {
-		Code int                    `json:"code"` // 原业务响应码
+		Code int                    `json:"code"` // 业务响应码
 		Data payment.CheckoutResult `json:"data"` // 公开支付准备回执，不含 openid 或内部主键
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
@@ -161,7 +161,7 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 	}
 	replay := post(body, token)
 	var repeated struct {
-		Data payment.CheckoutResult `json:"data"` // 原业务回执；请求追踪号允许每次请求不同
+		Data payment.CheckoutResult `json:"data"` // 业务回执；请求追踪号允许每次请求不同
 	}
 	if err := json.Unmarshal(replay.Body.Bytes(), &repeated); err != nil {
 		t.Fatal(err)
@@ -182,11 +182,11 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 
 // routeNotificationFixture 替换 SDK 验签边界；不证明实际签名或解密正确，资金入账仍使用真库。
 type routeNotificationFixture struct {
-	transaction payment.VerifiedTransaction // 已验签通知事实，可逐项变异身份
+	transaction payment.VerifiedTransaction // 已验签通知记录，可逐项变异身份
 	err         error                       // 模拟验签失败，必须阻止任何资金写入
 }
 
-// VerifyNotification 在 ctx 下返回 request 对应的受控验签结果，无外部调用或数据库副作用。
+// VerifyNotification 返回 request 对应的受控验签结果，无外部调用或数据库副作用。
 func (f *routeNotificationFixture) VerifyNotification(ctx context.Context, request *http.Request) (payment.VerifiedTransaction, error) {
 	if f.err != nil {
 		return payment.VerifiedTransaction{}, f.err
@@ -209,8 +209,8 @@ func TestRegisteredRechargeNotificationRejectsForeignPayerAndReplaysOnce(t *test
 	openid := "payer-" + rand.Text()
 	requestID := uuid.NewString()
 	for _, row := range []struct {
-		table  string         // 本测试所属的真实表
-		values map[string]any // 原支付、钱包与申请必需事实
+		table  string         // 本测试的真实表
+		values map[string]any // 支付、钱包与申请必需事实
 	}{{"user", map[string]any{"id": id, "openid": openid, "status": "active"}}, {"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 100, "frozen_cents": 0, "version": 1, "status": "frozen"}}, {"payment_order", map[string]any{"id": id, "order_no": no, "biz_type": "wallet_recharge", "biz_id": 0, "user_id": id, "pay_method": "wechat", "total_cents": 500, "paid_cents": 0, "status": "initiated", "created_month": "2026-10-01"}}, {"wallet_recharge_request", map[string]any{"request_id": requestID, "user_id": id, "amount_cents": 500, "payment_order_id": id}}} {
 		if err := tx.Table(row.table).Create(row.values).Error; err != nil {
 			t.Fatal(err)
@@ -244,8 +244,8 @@ func TestRegisteredRechargeNotificationRejectsForeignPayerAndReplaysOnce(t *test
 		}
 	}
 	var walletRow struct {
-		BalanceCents int64  // 原余额 100 加一次到账 500
-		Version      uint64 // 一次资金更新推进一次版本
+		BalanceCents int64  // 余额 100 加一次到账 500
+		Version      uint64 // 一次资金更新更新一次版本
 		Status       string // 已冻结钱包仍接收已确认资金
 	}
 	if err := tx.Table("wallet_account").Where("id=?", id).Take(&walletRow).Error; err != nil {

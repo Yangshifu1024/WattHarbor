@@ -21,12 +21,12 @@ import (
 
 // faultEnvelopeReply 保留注册端点的原状态、消息及可空数据，用于指定持久操作回归。
 type faultEnvelopeReply struct {
-	Code    int             `json:"code"`    // 原业务码。
-	Message string          `json:"message"` // 原阶段消息。
-	Data    json.RawMessage `json:"data"`    // 原数据，失败须为null。
+	Code    int             `json:"code"`    // 业务码。
+	Message string          `json:"message"` // 阶段消息。
+	Data    json.RawMessage `json:"data"`    // 数据，失败须为 null。
 }
 
-// callFaultEndpoint 经实际TelemetryAPI.Register发送携令牌请求，ctx管理数据库取消，不启动异步请求。
+// callFaultEndpoint 经实际 TelemetryAPI.Register 发送携令牌请求，ctx 管理数据库取消，不启动异步请求。
 func callFaultEndpoint(t *testing.T, db *gorm.DB, method, path, body string, ctx context.Context) (int, faultEnvelopeReply) {
 	t.Helper()
 	router := httpapi.NewRouter()
@@ -43,8 +43,8 @@ func callFaultEndpoint(t *testing.T, db *gorm.DB, method, path, body string, ctx
 	return out.Code, reply
 }
 
-// TestFaultMarkKeepsTransactionAndReplay 验证真实批量更新后取消仍整批回滚，恢复和重复ID重放保持实际计数。
-// 私有原主键清理并检查零残留，不触发中央告警、资金或设备操作。
+// TestFaultMarkKeepsTransactionAndReplay 验证真实批量更新后取消仍整批回滚，恢复和重复 ID 重放保持实际计数。
+// 私有主键清理并检查零残留，不触发中央告警、资金或设备操作。
 func TestFaultMarkKeepsTransactionAndReplay(t *testing.T) {
 	db := gatewayContractDB(t)
 	id, board := testfixture.NewID(), "FAULT-MARK-"+uuid.NewString()
@@ -65,7 +65,7 @@ func TestFaultMarkKeepsTransactionAndReplay(t *testing.T) {
 		var processed any
 		kind, protocol := "fault", "dc589"
 		if i == 1 {
-			// 标记端点原来只按主键确认，不额外限定fault类型或协议。
+			// 标记端点原来只按主键确认，不额外限定 fault 类型或协议。
 			kind, protocol = "heartbeat", "other"
 		}
 		if i == 2 {
@@ -82,7 +82,7 @@ func TestFaultMarkKeepsTransactionAndReplay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	hook, writes := "test:fault-bulk-cancel-"+uuid.NewString(), 0
-	// 在唯一批量UPDATE的默认事务回调后取消；去掉外层事务会先提交两行，不能被错误回复掩盖。
+	// 在唯一批量 UPDATE 的默认事务回调后取消；去掉外层事务会先提交两行，不能被错误回复掩盖。
 	if err := db.Callback().Update().After("gorm:commit_or_rollback_transaction").Register(hook, func(update *gorm.DB) {
 		if update.Statement.Table == "device_event" && update.Error == nil && update.RowsAffected == 2 {
 			writes++
@@ -118,8 +118,8 @@ func TestFaultMarkKeepsTransactionAndReplay(t *testing.T) {
 	}
 }
 
-// TestHeartbeatReadKeepsWatermarkAndOrdering 验证原键优先、严格时间／协议／设备过滤、同刻ID倒序和原缺失／错误响应。
-// 所有证据位于外层回滚事务，JSON是原证据投影，不替代故障恢复的协议解释。
+// TestHeartbeatReadKeepsWatermarkAndOrdering 验证键优先、严格时间／协议／设备过滤、同刻 ID 倒序和缺失／错误响应。
+// 所有证据位于外层回滚事务，JSON 是证据记录，不替代故障恢复的协议解释。
 func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 	db := gatewayContractDB(t)
 	tx := db.Begin()
@@ -131,10 +131,10 @@ func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Millisecond).Add(-time.Hour)
 	latest := at.Add(time.Minute)
 	for i, seed := range []struct {
-		board    string    // 原持久设备身份。
-		protocol string    // 原证据协议，异协议不能当作dc589心跳。
-		kind     string    // 原事件类型。
-		at       time.Time // 原接收时刻，支持同刻ID仲裁。
+		board    string    // 持久设备编号。
+		protocol string    // 证据协议，异协议不能当作 dc589 心跳。
+		kind     string    // 事件类型。
+		at       time.Time // 接收时刻，支持同刻 ID 仲裁。
 	}{
 		{board, "dc589", "fault", at},
 		{board, "dc589", "heartbeat", at},
@@ -161,7 +161,7 @@ func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 		status, reply := callFaultEndpoint(t, tx, http.MethodGet, path+"?"+query, "", context.Background())
 		var result contract.HeartbeatAfterKeyReply
 		var payload struct {
-			Winner int `json:"winner"` /* 原回执载荷标识。 */
+			Winner int `json:"winner"` /* 回执载荷标识。 */
 		}
 		if err := json.Unmarshal(reply.Data, &result); err != nil {
 			t.Fatal(err)
@@ -173,7 +173,7 @@ func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 			t.Fatalf("heartbeat order/watermark: status=%d reply=%+v result=%+v payload=%+v", status, reply, result, payload)
 		}
 	}
-	// 严格 > 排除同刻心跳；直接after回复保留原偏移，只有SQL比较用UTC。
+	// 严格 > 排除同刻心跳；直接 after 回复保留偏移，只有 SQL 比较用 UTC。
 	offset := latest.In(time.FixedZone("UTC+8", 8*60*60)).Format(time.RFC3339Nano)
 	status, reply := callFaultEndpoint(t, tx, http.MethodGet, path+"?after="+url.QueryEscape(offset), "", context.Background())
 	var result contract.HeartbeatAfterKeyReply
@@ -192,9 +192,9 @@ func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 		}
 	}
 	for _, check := range []struct {
-		query   string // 原输入分支。
-		status  int    // 原HTTP结果。
-		message string // 原公开消息。
+		query   string // 输入分支。
+		status  int    // HTTP 结果。
+		message string // 公开消息。
 	}{
 		{"after=invalid", 400, "after 须为 RFC 3339 时间"},
 		{"after=0001-01-01T00:00:00Z", 503, "故障水印暂不可读取"},

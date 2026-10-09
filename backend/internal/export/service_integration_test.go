@@ -23,8 +23,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// exportFixture 用提交的私有账号／角色／站点验证恢复上下文，持续限定源查询为自身身份。
-// 清理只删除本fixture引用和任务，不接触bootstrap、开发库、资金或共享范围。
+// exportFixture 创建本测试私有账号、角色和站点，源查询始终限定自身数据。
+// 仅清理本测试任务及关联，不修改初始管理员、资金或共享范围。
 func exportFixture(t *testing.T) (ExportService, ops.AuditContext, uint64, uint64) {
 	t.Helper()
 	raw := os.Getenv("TEST_MYSQL_URL")
@@ -48,7 +48,7 @@ func exportFixture(t *testing.T) (ExportService, ops.AuditContext, uint64, uint6
 		}
 		for _, query := range []struct {
 			table, where string // 自有数据的表与删除条件
-			arg          any    // fixture精确身份
+			arg          any    // 测试夹具精确身份
 		}{
 			{"export_task", "requested_by=?", id}, {"admin_data_scope", "admin_user_id=?", id}, {"admin_field_mask", "role_id=?", id}, {"role_permission", "role_id=?", id}, {"admin_user", "id=?", id}, {"role", "id=?", id},
 		} {
@@ -61,7 +61,7 @@ func exportFixture(t *testing.T) (ExportService, ops.AuditContext, uint64, uint6
 		}
 	})
 	for _, seed := range []struct {
-		table string         // fixture目标表
+		table string         // 测试夹具目标表
 		row   map[string]any // 自有身份及必需字段
 	}{
 		{"role", map[string]any{"id": id, "code": name, "name": name, "is_builtin": false}},
@@ -94,7 +94,7 @@ func exportFixture(t *testing.T) (ExportService, ops.AuditContext, uint64, uint6
 	return ExportService{DB: db, ExportDir: t.TempDir(), MaxRows: 2}, ops.AuditContext{Actor: profile, RequestID: name}, id, id + 1
 }
 
-// TestExportPublishDownloadAndCurrentScope 验证真实同步发布、重启可读凭据、范围／mask收窄、路径及原回执。
+// TestExportPublishDownloadAndCurrentScope 验证同步发布、重启后下载、范围和脱敏收窄，以及路径和响应。
 func TestExportPublishDownloadAndCurrentScope(t *testing.T) {
 	s, audit, first, _ := exportFixture(t)
 	ctx := context.Background()
@@ -113,7 +113,7 @@ func TestExportPublishDownloadAndCurrentScope(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339Nano, *row.ExpiresAt); err != nil {
 		t.Fatalf("driver expiry shape %q %v", *row.ExpiresAt, err)
 	}
-	// 新服务实例完全从持久数据库及文件验证，不依赖生成时内存。
+	// 新服务只根据数据库记录和文件凭据校验，不依赖生成时的内存。
 	restarted := ExportService{DB: s.DB, ExportDir: s.ExportDir, MaxRows: 2}
 	download, err := restarted.GetDownload(ctx, audit.Actor, row.ID)
 	if err != nil {
@@ -185,7 +185,7 @@ func TestExportPublishDownloadAndCurrentScope(t *testing.T) {
 	}
 }
 
-// TestExportFailureRollbackAndPendingRecovery 验证审计回滚、超限、IO失败、取消及原pending同步恢复。
+// TestExportFailureRollbackAndPendingRecovery 验证审计回滚、超限、文件失败、取消和同 pending 申请恢复。
 func TestExportFailureRollbackAndPendingRecovery(t *testing.T) {
 	s, audit, _, _ := exportFixture(t)
 	ctx := context.Background()
@@ -220,7 +220,7 @@ func TestExportFailureRollbackAndPendingRecovery(t *testing.T) {
 	if entries, err := os.ReadDir(s.ExportDir); err != nil || len(entries) != 0 {
 		t.Fatalf("overflow files %v %v", entries, err)
 	}
-	// 已受理pending保留完整原UUID；重启后同申请恢复同步生成且不重复审计。
+	// pending 保留完整 UUID，重启后同申请可恢复同步生成且不重复审计。
 	s.MaxRows = 2
 	in.RequestID = uuid.NewString()
 	taskNo := "EXP" + strings.ToUpper(strings.ReplaceAll(in.RequestID, "-", ""))
@@ -232,7 +232,7 @@ func TestExportFailureRollbackAndPendingRecovery(t *testing.T) {
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("pending recovery %+v %v", result, err)
 	}
-	// 在实际取数返回后取消，失败状态用同步有界恢复context持久，不生成后续字节。
+	// 真实查询返回后取消，使用同步且有时限的恢复 context 保存失败状态，不再生成字节。
 	in.RequestID = uuid.NewString()
 	cancelled, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -258,7 +258,7 @@ func TestExportFailureRollbackAndPendingRecovery(t *testing.T) {
 			t.Fatalf("cancel artifact %s %v", suffix, err)
 		}
 	}
-	// 配置目录为已存在普通文件，IO失败应持久失败，原文件保持。
+	// 把导出目录配置为普通文件，验证失败状态可保存，已有文件不被改写。
 	blocked := filepath.Join(t.TempDir(), "blocked")
 	if err := os.WriteFile(blocked, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
@@ -274,7 +274,7 @@ func TestExportFailureRollbackAndPendingRecovery(t *testing.T) {
 	}
 }
 
-// TestExportPrivateManifestIntegrity 验证持久文件摘要及任务身份失配，不能因completed直接放行。
+// TestExportPrivateManifestIntegrity 验证文件摘要或任务号不匹配时，即使 completed 也拒绝下载。
 func TestExportPrivateManifestIntegrity(t *testing.T) {
 	s, audit, _, _ := exportFixture(t)
 	ctx := context.Background()

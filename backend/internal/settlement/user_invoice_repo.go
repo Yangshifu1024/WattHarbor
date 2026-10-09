@@ -14,17 +14,16 @@ import (
 // InvoiceApplyOrder 是申请发票时要核对的订单信息。
 type InvoiceApplyOrder struct {
 	ID     uint64 // 充电订单主键
-	UserID uint64 // 订单所属用户身份
-	Status string // 原订单生命周期状态，供用例判断是否可申请
+	UserID uint64 // 订单所属用户 ID
+	Status string // 同一订单生命周期状态，供用例判断是否可申请
 }
 
-// FindInvoiceableOrder 在 ctx 下用 db 读取 orderNo、userID 所属的未删除订单。
-// 返回身份与状态投影；缺记录返回 gorm.ErrRecordNotFound，其他查询错误原样返回，无写入。
+// FindInvoiceableOrder 按订单号和用户读取未删除订单；缺失返回 gorm.ErrRecordNotFound。
 func FindInvoiceableOrder(ctx context.Context, db *gorm.DB, orderNo string, userID uint64) (InvoiceApplyOrder, error) {
 	var row struct {
-		ID     uint64 `gorm:"column:id"`      // 原订单主键
-		UserID uint64 `gorm:"column:user_id"` // 所属用户身份
-		Status string `gorm:"column:status"`  // 原订单生命周期状态
+		ID     uint64 `gorm:"column:id"`      // 同一订单主键
+		UserID uint64 `gorm:"column:user_id"` // 所属用户 ID
+		Status string `gorm:"column:status"`  // 同一订单生命周期状态
 	}
 	err := db.WithContext(ctx).Table("charge_order").Select("id, user_id, status").
 		Where("order_no = ? AND user_id = ? AND deleted_at IS NULL", orderNo, userID).Take(&row).Error
@@ -40,29 +39,26 @@ type InvoiceApplyInput struct {
 	InvoiceNo   string // 稳定申请号，同号必须重放相同身份和内容
 	UserID      uint64 // 申请用户，必须为订单所有者
 	OrderID     uint64 // 申请来源充电订单主键
-	TotalCents  int64  // 原费用回执的实际开票额，分
+	TotalCents  int64  // 已确认费用回执的实际开票额，分
 	InvoiceType string // 票种，由用例校验支持范围
 	Title       string // 发票抬头
 	TaxNo       string // 税号，可按票种为空
 	Email       string // 通知邮箱，未填写为空字符串
 }
 
-// ApplyInvoice 在调用方 tx 中按 in 的发票号幂等登记申请，返回主键或重复／存储错误。
-// 已存在时必须同时核对申请人、订单、原费用与全部发票内容；异内容不返回其他申请的 ID。
-//
-// 调用方须使用 READ COMMITTED 事务并通过 order.LockInvoiceSourceInTx 锁定所属订单，
-// 串行化同订单的不同申请号；普通存在性查询不能单独承担并发唯一约束。
+// ApplyInvoice 在调用方事务中登记发票申请，重放须核对申请人、订单、费用和全部内容。
+// 使用 READ COMMITTED 并先由 order.LockInvoiceSourceInTx 锁定本人订单，防止同单不同请求号重复申请。
 func ApplyInvoice(tx *gorm.DB, in InvoiceApplyInput) (uint64, error) {
 	var existing struct {
-		ID          uint64 `gorm:"column:id"`           // 原申请主键
-		UserID      uint64 `gorm:"column:user_id"`      // 原申请人
-		BizType     string `gorm:"column:biz_type"`     // 原业务类型，必须为 charge
-		BizID       uint64 `gorm:"column:biz_id"`       // 原订单身份
-		TotalCents  int64  `gorm:"column:total_cents"`  // 原开票额，分
-		InvoiceType string `gorm:"column:invoice_type"` // 原票种
-		Title       string `gorm:"column:title"`        // 原抬头
-		TaxNo       string `gorm:"column:tax_no"`       // 原税号，未填写为空字符串
-		Email       string `gorm:"column:email"`        // 原通知邮箱，未填写为空字符串
+		ID          uint64 `gorm:"column:id"`           // 申请主键
+		UserID      uint64 `gorm:"column:user_id"`      // 申请人
+		BizType     string `gorm:"column:biz_type"`     // 业务类型，必须为 charge
+		BizID       uint64 `gorm:"column:biz_id"`       // 订单 ID
+		TotalCents  int64  `gorm:"column:total_cents"`  // 开票额，分
+		InvoiceType string `gorm:"column:invoice_type"` // 票种
+		Title       string `gorm:"column:title"`        // 抬头
+		TaxNo       string `gorm:"column:tax_no"`       // 税号，未填写为空字符串
+		Email       string `gorm:"column:email"`        // 通知邮箱，未填写为空字符串
 	}
 	if found := tx.Table("invoice_request").Where("invoice_no = ?", in.InvoiceNo).Take(&existing); found.Error == nil {
 		if existing.UserID != in.UserID || existing.BizType != "charge" || existing.BizID != in.OrderID || existing.TotalCents != in.TotalCents || existing.InvoiceType != in.InvoiceType || existing.Title != in.Title || existing.TaxNo != in.TaxNo || existing.Email != in.Email {
@@ -90,8 +86,7 @@ func ApplyInvoice(tx *gorm.DB, in InvoiceApplyInput) (uint64, error) {
 	return persist.LastInsertID(tx)
 }
 
-// ListUserInvoiceRequests 在 ctx 下用 db 分页读取 userID 的未删除申请，无写入。
-// page、pageSize 已由接口规范化；返回总数与倒序结果，任一数据库查询失败原样返回错误。
+// ListUserInvoiceRequests 分页倒序读取本人未删除的发票申请。
 func ListUserInvoiceRequests(ctx context.Context, db *gorm.DB, userID uint64, page, pageSize int) (persist.Page[map[string]any], error) {
 	out := persist.Page[map[string]any]{Items: []map[string]any{}, Page: page, PageSize: pageSize}
 	base := db.WithContext(ctx).Table("invoice_request").
@@ -105,8 +100,7 @@ func ListUserInvoiceRequests(ctx context.Context, db *gorm.DB, userID uint64, pa
 	return out, err
 }
 
-// LoadInvoiceFee 在 ctx 下读取 orderID 的原费用回执，不计算或更新费用。
-// db 可为事务，缺记录返回 gorm.ErrRecordNotFound，其他错误由申请用例分类。
+// LoadInvoiceFee 读取订单费用回执，缺失返回 gorm.ErrRecordNotFound。
 func LoadInvoiceFee(ctx context.Context, db *gorm.DB, orderID uint64) (ChargeFeeRecord, error) {
 	var receipt ChargeFeeRecord
 	err := db.WithContext(ctx).Where("charge_order_id=?", orderID).Take(&receipt).Error

@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-// cancellingOutput 模拟写入中请求断开；取消后的第二次写入不允许发生。
+// cancellingOutput 模拟首个写入时请求断开，第二次写入必须拒绝。
 type cancellingOutput struct {
 	cancel context.CancelFunc // 第一次输出时取消请求
 	writes int                // 已经发起的真实输出次数
 }
 
-// Write 接收p后取消请求并返回完整长度，后续写入会明确失败，不关闭输出。
+// Write 首次写入后取消请求，随后写入报错，不关闭输出。
 func (w *cancellingOutput) Write(p []byte) (int, error) {
 	w.writes++
 	if w.writes > 1 {

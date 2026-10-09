@@ -11,13 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminAuth 是后台认证HTTP适配；会话、实时权限和安全设置顺序由所属服务负责。
+// AdminAuth 是后台认证 HTTP 适配；会话、实时权限和安全设置顺序由服务负责。
 type AdminAuth struct {
 	Sessions ops.SessionService // 后台认证与实时授权
 	MFA      ops.MFAService     // 当前账号安全设置
 }
 
-// Register 在r挂载原认证和文档路径；除登录、挑战、刷新外均要求实时登录。
+// Register 在 r 挂载认证和文档路径；除登录、挑战、刷新外均要求实时登录。
 func (a AdminAuth) Register(r *gin.Engine) {
 	r.GET("/api/docs/admin.openapi.json", func(c *gin.Context) { c.Data(200, "application/json; charset=utf-8", OpenAPIDocument) })
 	r.POST("/api/v1/admin/auth/login", a.login)
@@ -29,7 +29,7 @@ func (a AdminAuth) Register(r *gin.Engine) {
 	r.GET("/api/v1/admin/auth/me", a.Require(""), func(c *gin.Context) { httpapi.OK(c, c.MustGet("admin_profile")) })
 }
 
-// rate 将c原IP交给所属频次准入，返回是否继续；超限保留原Retry-After及响应。
+// rate 根据请求 IP 检查频率限制；超限时返回 Retry-After 和错误响应。
 func (a AdminAuth) rate(c *gin.Context) bool {
 	err := a.Sessions.CheckRate(c.Request.Context(), c.ClientIP())
 	if err == nil {
@@ -44,13 +44,13 @@ func (a AdminAuth) rate(c *gin.Context) bool {
 	return false
 }
 
-// login 从c提取原账号、口令和IP，返回所属服务的挑战或会话回执，失败不输出凭据。
+// login 从请求提取账号、口令和 IP，返回服务的挑战或会话回执，失败不输出凭据。
 func (a AdminAuth) login(c *gin.Context) {
 	if !a.rate(c) {
 		return
 	}
 	var request struct {
-		Username string `json:"username" binding:"required,max=64"` // 原登录名
+		Username string `json:"username" binding:"required,max=64"` // 登录名
 		Password string `json:"password" binding:"required,max=72"` // 当前口令
 	}
 	if c.ShouldBindJSON(&request) != nil {
@@ -69,14 +69,14 @@ func (a AdminAuth) login(c *gin.Context) {
 	httpapi.OK(c, result.Access)
 }
 
-// verifyMFA 从c提取原挑战和验证码，返回所属服务消费成功后的回执或原错误映射。
+// verifyMFA 读取登录挑战和验证码，交服务验证后返回会话或错误。
 func (a AdminAuth) verifyMFA(c *gin.Context) {
 	if !a.rate(c) {
 		return
 	}
 	var request struct {
-		Challenge string `json:"mfa_challenge" binding:"required,max=128"` // 原密码验证挑战
-		Code      string `json:"code" binding:"required,max=16"`           // 当前TOTP验证码
+		Challenge string `json:"mfa_challenge" binding:"required,max=128"` // 密码验证挑战
+		Code      string `json:"code" binding:"required,max=16"`           // 当前 TOTP 验证码
 	}
 	if c.ShouldBindJSON(&request) != nil {
 		httpapi.BadRequest(c, "请输入验证码")
@@ -90,13 +90,13 @@ func (a AdminAuth) verifyMFA(c *gin.Context) {
 	httpapi.OK(c, reply)
 }
 
-// refresh 从c提取原刷新明文，返回所属轮换回执；坏输入及错误保留原响应。
+// refresh 从请求提取刷新明文，返回轮换回执；坏输入及错误保留响应。
 func (a AdminAuth) refresh(c *gin.Context) {
 	if !a.rate(c) {
 		return
 	}
 	var request struct {
-		RefreshToken string `json:"refresh_token" binding:"required,max=256"` /* 原刷新凭据 */
+		RefreshToken string `json:"refresh_token" binding:"required,max=256"` /* 刷新凭据 */
 	}
 	if c.ShouldBindJSON(&request) != nil {
 		httpapi.BadRequest(c, "invalid refresh token")
@@ -110,7 +110,7 @@ func (a AdminAuth) refresh(c *gin.Context) {
 	httpapi.OK(c, reply)
 }
 
-// Require 为permission返回中间件，从请求提取Bearer调用实时认证，成功写入原档案与SID。
+// Require 为 permission 返回中间件，从请求提取 Bearer 调用实时认证，成功写入档案与 SID。
 func (a AdminAuth) Require(permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := c.GetHeader("Authorization")
@@ -131,7 +131,7 @@ func (a AdminAuth) Require(permission string) gin.HandlerFunc {
 	}
 }
 
-// logout 将c已鉴权SID交给所属注销，成功返回原revoked标识，失败映射存储错误。
+// logout 将 c 已鉴权 SID 交给注销，成功返回 revoked 标识，失败映射存储错误。
 func (a AdminAuth) logout(c *gin.Context) {
 	if err := a.Sessions.Logout(c.Request.Context(), c.GetString("admin_sid")); err != nil {
 		a.failure(c, err)
@@ -140,7 +140,7 @@ func (a AdminAuth) logout(c *gin.Context) {
 	httpapi.OK(c, gin.H{"revoked": true})
 }
 
-// failure 将c中的err映射为原凭据、锁定、验证码、挑战或权限响应，其余503不公开内部材料。
+// failure 将 c 中的 err 映射为凭据、锁定、验证码、挑战或权限响应，其余 503 不公开内部材料。
 func (a AdminAuth) failure(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, operations.ErrCredentials), errors.Is(err, operations.ErrInvalidRefresh):
@@ -158,7 +158,7 @@ func (a AdminAuth) failure(c *gin.Context, err error) {
 	}
 }
 
-// changePassword 从c提取新旧口令并校验公开长度，将原账号和IP交给所属改密事务。
+// changePassword 从请求提取新旧口令并校验公开长度，将账号和 IP 交给改密事务。
 func (a AdminAuth) changePassword(c *gin.Context) {
 	var request struct {
 		OldPassword string `json:"old_password" binding:"required,max=72"`        // 当前口令

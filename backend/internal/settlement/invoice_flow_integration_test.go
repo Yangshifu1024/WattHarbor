@@ -30,7 +30,7 @@ func TestConcurrentInvoiceApplicationsSerializeOnOwnedOrder(t *testing.T) {
 	no := "C-IV-" + rand.Text()
 	defer func() {
 		for _, q := range []struct {
-			// table,where table 为本测试清理或计数的目标表；where 为限定本测试记录身份的参数化条件，保持两者原顺序。
+			// table、where 配对指定清理表和本测试条件。
 			table, where string
 		}{{"invoice_request", "biz_type='charge' AND biz_id=?"}, {"charge_fee_receipt", "charge_order_id=?"}, {"charge_order", "id=?"}} {
 			if err := setup.Table(q.table).Where(q.where, id).Delete(nil).Error; err != nil {
@@ -138,7 +138,7 @@ func TestInvoiceApplicationReplaysOnlyIdenticalOwnerAndContent(t *testing.T) {
 	if _, err := s.Create(context.Background(), refundUserID+1, in); !errors.Is(err, ErrInvoiceOrderLookup) {
 		t.Fatalf("foreign order accepted: %v", err)
 	}
-	// 独立核对持久化边界，即使另一个已验证订单的调用复用了请求号也不能获得原申请。
+	// 不同订单复用请求号时不能返回其他申请，即使该订单也已验证。
 	if _, err := ApplyInvoice(tx, InvoiceApplyInput{InvoiceNo: out.InvoiceNo, UserID: refundUserID + 1, OrderID: refundOrderID + 1, TotalCents: 400, InvoiceType: "normal", Title: in.Title, TaxNo: in.TaxNo, Email: in.Email}); !errors.Is(err, ErrInvoiceDuplicate) {
 		t.Fatalf("foreign invoice identity returned: %v", err)
 	}
@@ -149,8 +149,8 @@ func TestInvoiceApplicationReplaysOnlyIdenticalOwnerAndContent(t *testing.T) {
 	}
 }
 
-// TestInvoiceReviewAuditFailureRollsBackAndRevocationBlocksSecondSignature 验证双签及审计在原 MySQL 事务内。
-// 审核身份读取是可撤销 fixture，审核、审计及申请状态使用实际 repo，全部外层回滚。
+// TestInvoiceReviewAuditFailureRollsBackAndRevocationBlocksSecondSignature 验证双签和审计同事务回滚，首签撤权后不能二签。
+// 权限查询使用可控夹具，审核和审计使用真库，数据外层回滚。
 func TestInvoiceReviewAuditFailureRollsBackAndRevocationBlocksSecondSignature(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()

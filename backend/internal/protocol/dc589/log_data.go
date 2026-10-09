@@ -44,8 +44,8 @@ func telemetryData(ports []protocol.PortTelemetry) []map[string]any {
 	return result
 }
 
-// Allowlist decoded fields rather than serializing protocol structs, which can
-// contain card identities, balances, SIM identifiers or panel passwords.
+// 日志只记录允许的解码字段，不直接序列化协议结构体。
+// 避免泄露卡号、余额、SIM 标识和面板密码。
 func parsedLogData(f Frame) (map[string]any, error) {
 	d := f.Data
 	u16 := func(at int) uint16 { return binary.LittleEndian.Uint16(d[at : at+2]) }
@@ -233,7 +233,7 @@ func parsedLogData(f Frame) (map[string]any, error) {
 		if len(d) < 5 || d[4] == 0 || d[4] > 64 || len(d) < 5+int(d[4]) {
 			return nil, ErrPayload
 		}
-		// Reuse the A4 decoder: B1 is the same status block without the identity prefix.
+		// 复用 A4 解码器；B1 使用相同的状态块，只缺少身份前缀。
 		states := int(d[4])
 		block := append([]byte(nil), d...)
 		if len(block) == 5+states {

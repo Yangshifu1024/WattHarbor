@@ -29,7 +29,7 @@ type liveUser struct{}
 // Active 忽略输入 context 和用户编号，返回 true、nil，供停止路由隔离用户依赖；不访问数据库。
 func (liveUser) Active(context.Context, uint64) (bool, error) { return true, nil }
 
-// TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff 用 t 验证真实 JWT 和注册路由，将用户身份传给测试 HTTP gateway 并核对受理形状；会话与用户状态为固定 fixture，不证明设备已停电。
+// TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff 验证真实 JWT 和注册路由，将用户身份传给测试 HTTP gateway 并核对受理形状；会话与用户状态为固定 fixture，不证明设备已停电。
 func TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff(t *testing.T) {
 	jwt, err := auth.NewJWT("0123456789abcdef0123456789abcdef")
 	if err != nil {
@@ -81,7 +81,7 @@ func TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff(t *testing.T) {
 	}
 }
 
-// failingStopGateway 是停止路由错误映射的窄依赖，按 fixture 返回指定错误，不发送设备命令或产生停止事实。
+// failingStopGateway 是停止路由错误映射的测试替身，按 fixture 返回指定错误，不发送设备命令或产生停止事实。
 type failingStopGateway struct {
 	// err 指定的 gateway 错误 fixture，不访问真实设备。
 	err error
@@ -92,7 +92,7 @@ func (s failingStopGateway) RequestStop(context.Context, gatewaycontract.StopReq
 	return gatewaycontract.StopReply{}, s.err
 }
 
-// TestUserStopPreservesGatewayFailureMapping 用 t 验证注册路由对窄 gateway fixture 的各类失败映射；无真库、设备或网络投递。
+// TestUserStopPreservesGatewayFailureMapping 验证注册路由对窄 gateway fixture 的各类失败映射；无真库、设备或网络投递。
 func TestUserStopPreservesGatewayFailureMapping(t *testing.T) {
 	jwt, err := auth.NewJWT("0123456789abcdef0123456789abcdef")
 	if err != nil {

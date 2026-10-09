@@ -9,8 +9,8 @@ import (
 	contract "chargepilot/internal/contracts/central"
 )
 
-// SyncDeviceAlerts 在ctx下触发原同步用例，返回本轮新告警数或传输／契约错误。
-// 最多30秒，禁止重定向且使用受管理Transport；未知结果交由下一轮原事件重扫，不重试。
+// SyncDeviceAlerts 触发一次告警同步，返回新增告警数；请求最多三十秒。
+// 不跟随重定向，结果不确定时由下一轮重新扫描事件，不立即重试。
 func (c *Client) SyncDeviceAlerts(ctx context.Context) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -20,14 +20,14 @@ func (c *Client) SyncDeviceAlerts(ctx context.Context) (int, error) {
 	if transport.HTTP != nil {
 		httpClient = *transport.HTTP
 	}
-	// worker共用池原默认5秒；本触发允许central的25秒受管理轮次，复制请求Client覆盖期限而不新建Transport。
+	// 告警同步可能运行二十五秒，因此将请求超时从五秒改为三十秒，仍共用原连接池。
 	httpClient.Timeout = 30 * time.Second
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	transport.HTTP = &httpClient
 	copyClient.transport = transport
-	// deviceAlertSyncWireReply 只校验原进度字段是否存在，不把缺失当正常零值。
+	// deviceAlertSyncWireReply 只校验进度字段是否存在，不把缺失当正常零值。
 	type deviceAlertSyncWireReply struct {
-		Raised *int `json:"raised"` /* 必需的原新告警数 */
+		Raised *int `json:"raised"` /* 必需的新增告警数 */
 	}
 	data, err := post[deviceAlertSyncWireReply](ctx, &copyClient, contract.DeviceAlertSyncPath, nil)
 	if err != nil {

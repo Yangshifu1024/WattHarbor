@@ -11,9 +11,8 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// ResolveScan 在 ctx 期限内查询request.Code原设备／端口事实，不读取中央业务状态。
-// 返回原 JSON 读模型；404 返回 ErrScanNotFound，传输、业务码及身份缺失返回错误。
-// 响应仍限制为 64 KiB，不暴露 URL 或令牌给业务消费者。
+// ResolveScan 按二维码查询设备和端口，不读取中央运营状态。
+// HTTP 404 返回 ErrScanNotFound；其他请求或响应错误直接返回。响应最多 64 KiB。
 func (c *Client) ResolveScan(ctx context.Context, request gatewaycontract.ScanRequest) (gatewaycontract.ScanReply, error) {
 	status, body, err := c.transport.GetStatus(ctx, c.baseURL, c.token, gatewaycontract.ScanResolvePath+"?"+url.Values{"code": {request.Code}}.Encode())
 	if errors.Is(err, serviceclient.ErrNotFound) {
