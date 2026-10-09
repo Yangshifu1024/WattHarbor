@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/testfixture"
+	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 )
 

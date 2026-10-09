@@ -1,14 +1,14 @@
 package central
 
 import (
+	"chargepilot/internal/card"
+	contract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/order"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"

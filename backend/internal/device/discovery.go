@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/money"
 )
 
 // ScanReader 提供网关的连接及端口事实；ctx限制请求，request携原扫描身份。

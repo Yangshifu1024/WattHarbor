@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // deliverResult 接收 ctx、c、route、orderNo 与 payload，按原路径提交回执，返回中央接受／重放 Reply 或输入、HTTP／业务／响应错误。

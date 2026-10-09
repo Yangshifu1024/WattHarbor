@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
-	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	chargestart "chargepilot/internal/charging/start"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 

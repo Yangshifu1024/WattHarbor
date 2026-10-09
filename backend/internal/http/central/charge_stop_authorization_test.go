@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
+	chargestop "chargepilot/internal/charging/stop"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

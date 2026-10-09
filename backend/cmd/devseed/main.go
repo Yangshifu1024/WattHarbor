@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
+	"chargepilot/internal/platform/dbconn"
+	"chargepilot/internal/platform/snowflake"
 )
 
 // demoPrefix 标识本工具创建的记录，支持清理完整或部分写入的示例数据。

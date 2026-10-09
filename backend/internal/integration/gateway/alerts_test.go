@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	contract "chargepilot/internal/contracts/gateway"
 )
 
 // TestAlertClientsKeepOriginalIDsWatermarkAndReplay 用loopback验证原大整数、水印和零标记重放，不代表真库证据。

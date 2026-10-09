@@ -1,6 +1,10 @@
 package payment
 
 import (
+	"chargepilot/internal/domain/money"
+	"chargepilot/internal/marketing"
+	orderstore "chargepilot/internal/order"
+	"chargepilot/internal/wallet"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,17 +12,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"math"
 	"strconv"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"chargepilot/internal/ops"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	"chargepilot/internal/platform/dbutil"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

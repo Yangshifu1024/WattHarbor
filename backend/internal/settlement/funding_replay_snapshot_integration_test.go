@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

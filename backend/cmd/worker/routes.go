@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/worker/internaljob"
-	"github.com/ChargePilot2026/charge-pilot/internal/worker/outbox"
-	"github.com/ChargePilot2026/charge-pilot/internal/worker/schedule"
+	"chargepilot/internal/platform/config"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/worker/internaljob"
+	"chargepilot/internal/worker/outbox"
+	"chargepilot/internal/worker/schedule"
 	"github.com/gin-gonic/gin"
 )
 

@@ -1,11 +1,11 @@
 package query
 
 import (
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/order"
 	"context"
 	"encoding/json"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"time"
 )
 

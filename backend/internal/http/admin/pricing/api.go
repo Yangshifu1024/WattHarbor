@@ -1,9 +1,9 @@
 package pricing
 
 import (
-	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/pricing"
+	adminhttp "chargepilot/internal/http/admin"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/pricing"
 	"github.com/gin-gonic/gin"
 )
 

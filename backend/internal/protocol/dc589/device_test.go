@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // 验证设备编码与服务端解析的往返一致性，覆盖字段偏移、单位和固定宽度约束。

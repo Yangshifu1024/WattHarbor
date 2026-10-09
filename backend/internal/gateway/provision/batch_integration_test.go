@@ -12,12 +12,12 @@ import (
 	"sync"
 	"testing"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	client "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/gateway/repo"
+	client "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/platform/dbconn"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

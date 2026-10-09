@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 )
 

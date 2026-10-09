@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	gatewayrepo "chargepilot/internal/gateway/repo"
+	"chargepilot/internal/protocol"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"

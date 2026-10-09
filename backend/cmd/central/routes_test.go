@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/config"
+	"chargepilot/internal/platform/httpapi"
 )
 
 // TestCentralAssemblyRejectsInvalidServiceIdentityBeforeBusinessIO 核对t中的真实cmd装配：

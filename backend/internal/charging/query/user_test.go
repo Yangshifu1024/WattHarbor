@@ -1,12 +1,12 @@
 package query
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/order"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"testing"
 	"time"
 )

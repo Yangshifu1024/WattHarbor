@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/platform/config"
 )
 
 // TestAdminAssemblyRegistersDocumentedRoutes 使用 t 对照真实后台装配与 OpenAPI 的方法／路径，并拒绝注册其他业务族；文件读取或比对失败由 t 报告，不发业务请求。

@@ -2,9 +2,9 @@ package dc589
 
 import (
 	"bytes"
+	"chargepilot/internal/protocol"
 	"encoding/binary"
 	"encoding/hex"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/google/uuid"
 	"testing"
 )

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	contract "chargepilot/internal/contracts/gateway"
 )
 
 // stationSummaryFunc 只在给定ctx和ids下提供摘要fixture，不模拟数据库。

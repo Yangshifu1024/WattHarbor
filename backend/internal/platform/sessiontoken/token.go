@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
+	"chargepilot/internal/platform/auth"
 	"github.com/redis/go-redis/v9"
 )
 

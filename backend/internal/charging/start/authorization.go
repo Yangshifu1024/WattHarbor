@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
+	"chargepilot/internal/card"
 	"gorm.io/gorm"
 )
 

@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/order"
+	"chargepilot/internal/payment"
 )
 
 // TestPublicUserIDsRemainExactDecimalStrings 验证用户及订单读模型把超出JavaScript安全整数范围的用户号输出为精确十进制字符串。

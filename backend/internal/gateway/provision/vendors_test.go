@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	contract "chargepilot/internal/contracts/gateway"
+	gatewayrepo "chargepilot/internal/gateway/repo"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"

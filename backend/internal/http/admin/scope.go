@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

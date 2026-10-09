@@ -1,12 +1,12 @@
 package control
 
 import (
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
+	gatewayrepo "chargepilot/internal/gateway/repo"
 	"net/http"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

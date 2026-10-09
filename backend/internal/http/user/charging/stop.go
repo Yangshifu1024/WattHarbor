@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 

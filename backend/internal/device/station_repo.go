@@ -3,9 +3,9 @@ package device
 import (
 	"context"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/persist"
+	"chargepilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

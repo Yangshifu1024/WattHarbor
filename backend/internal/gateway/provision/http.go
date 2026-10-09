@@ -1,12 +1,12 @@
 package provision
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/device"
+	gatewayrepo "chargepilot/internal/gateway/repo"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"

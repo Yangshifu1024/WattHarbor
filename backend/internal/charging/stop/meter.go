@@ -4,11 +4,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/charging/measurement"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/charging/measurement"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	rules "chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/devices"
+	"chargepilot/internal/protocol"
 )
 
 // measuredMeter 用最新读数和遥测能佐证的各段数据，

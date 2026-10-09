@@ -1,9 +1,9 @@
 package marketing
 
 import (
-	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	adminhttp "chargepilot/internal/http/admin"
+	"chargepilot/internal/marketing"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

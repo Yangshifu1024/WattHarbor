@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	"chargepilot/internal/platform/dbutil"
+	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

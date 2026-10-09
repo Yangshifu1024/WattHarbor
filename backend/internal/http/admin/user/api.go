@@ -1,9 +1,9 @@
 package user
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
+	"chargepilot/internal/card"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/identity"
 	"github.com/gin-gonic/gin"
 )
 

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

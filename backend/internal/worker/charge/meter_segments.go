@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/charging/measurement"
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/charging/measurement"
+	centralcontract "chargepilot/internal/contracts/central"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/protocol"
 )
 
 // measuredSegments 接收原启动时刻 start、结束 terminal及原序 events，将协议电量／时长读数交领域计量规则，返回分段或 nil无有效证据。

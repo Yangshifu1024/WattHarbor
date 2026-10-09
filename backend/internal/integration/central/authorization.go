@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // orderPath 接收 route 与 orderNo，拒绝空、超长及含 /?# 的订单号，返回替换首个路径占位符后的 URL 编码路径或输入错误；无网络 IO。

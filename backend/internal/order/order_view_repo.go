@@ -1,9 +1,9 @@
 package order
 
 import (
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/persist"
 	"context"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"gorm.io/gorm"
 	"strings"
 	"time"

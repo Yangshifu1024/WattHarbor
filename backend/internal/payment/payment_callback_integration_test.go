@@ -3,15 +3,15 @@
 package payment
 
 import (
+	"chargepilot/internal/testfixture"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 )
 

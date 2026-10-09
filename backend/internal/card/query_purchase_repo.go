@@ -1,8 +1,8 @@
 package card
 
 import (
+	charging "chargepilot/internal/domain/charging"
 	"context"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 	"gorm.io/gorm"
 )
 

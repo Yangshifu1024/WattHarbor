@@ -3,9 +3,9 @@ package card
 import (
 	"errors"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/card"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

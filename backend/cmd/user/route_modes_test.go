@@ -10,9 +10,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/config"
 )
 
 // routeModeChannel 只提供真实装配要求的渠道接口，不执行预支付、验签或数据库操作。

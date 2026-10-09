@@ -1,9 +1,9 @@
 package gateway
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
 	"context"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"github.com/google/uuid"
 	"net/http"
 	"net/url"

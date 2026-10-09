@@ -1,12 +1,12 @@
 package control
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/gateway/repo"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/protocol"
 	"encoding/json"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"net/http"

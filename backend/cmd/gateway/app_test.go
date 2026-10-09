@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	gatewayruntime "github.com/ChargePilot2026/charge-pilot/internal/gateway/runtime"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	gatewayruntime "chargepilot/internal/gateway/runtime"
+	"chargepilot/internal/protocol"
 )
 
 // idleSink 提供不持久化的设备 sink，供应用启动失败路径装配。

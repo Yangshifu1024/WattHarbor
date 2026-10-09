@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/httpapi"
 )
 
 func TestChargeProcessRequiresServiceTokenAndValidBounds(t *testing.T) {

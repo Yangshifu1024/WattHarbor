@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/protocol"
 )
 
 // fakeGateway 仅以注入回调提供证据与停止响应，供纯编排检查，不执行服务间网络调用。

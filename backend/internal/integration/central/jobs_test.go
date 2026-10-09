@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	centralclient "chargepilot/internal/integration/central"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // jobKind 是测试中的端点选择，不参与生产客户端或资金算法。

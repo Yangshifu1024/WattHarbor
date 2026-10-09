@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // FaultMetric 把 dc589 故障事件翻译成告警维度：指标名、严重级别与说明。

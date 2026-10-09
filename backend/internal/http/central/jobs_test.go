@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	centralhttp "github.com/ChargePilot2026/charge-pilot/internal/http/central"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	centralhttp "chargepilot/internal/http/central"
+	centralclient "chargepilot/internal/integration/central"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // registeredJobStopper 仅提供停机数量与错误的窄能力fixture，不访问订单、计费库或真实设备。

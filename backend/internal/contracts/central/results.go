@@ -1,7 +1,7 @@
 package central
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"chargepilot/internal/domain/charging"
 	"time"
 )
 

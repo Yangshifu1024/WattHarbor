@@ -4,9 +4,9 @@ import (
 	"errors"
 	"strings"
 
-	userhttp "github.com/ChargePilot2026/charge-pilot/internal/http/user"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	userhttp "chargepilot/internal/http/user"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"

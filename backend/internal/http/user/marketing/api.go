@@ -1,8 +1,8 @@
 package marketing
 
 import (
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/marketing"
 	"github.com/gin-gonic/gin"
 )
 

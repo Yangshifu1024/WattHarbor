@@ -1,11 +1,11 @@
 package marketing
 
 import (
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/ops"
 	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"time"

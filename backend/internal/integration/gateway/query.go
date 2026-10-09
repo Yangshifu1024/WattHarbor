@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	contract "chargepilot/internal/contracts/gateway"
 )
 
 // queryData 在 ctx 下为 c 读取 path 的原查询信封，返回 T 或HTTP／业务／缺字段／解码错误。

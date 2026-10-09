@@ -5,10 +5,10 @@ import (
 	"errors"
 	"log"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/persist"
 	"gorm.io/gorm"
 )
 

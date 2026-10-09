@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"chargepilot/internal/platform/config"
+	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 )
 

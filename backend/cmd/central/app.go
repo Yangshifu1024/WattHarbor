@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	gatewayclient "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/config"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // run 接收受信号管理的 ctx，加载当前进程配置、打开资源并装配应用；ctx 用于初始化与应用取消。

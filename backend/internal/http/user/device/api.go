@@ -1,8 +1,8 @@
 package device
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
+	"chargepilot/internal/device"
+	authhttp "chargepilot/internal/http/auth"
 	"github.com/gin-gonic/gin"
 )
 

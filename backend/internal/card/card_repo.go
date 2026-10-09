@@ -1,21 +1,21 @@
 package card
 
 import (
+	money "chargepilot/internal/domain/money"
+	"chargepilot/internal/identity"
+	orderstore "chargepilot/internal/order"
+	pay "chargepilot/internal/payment"
+	"chargepilot/internal/wallet"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"strconv"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

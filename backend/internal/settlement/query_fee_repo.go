@@ -1,8 +1,8 @@
 package settlement
 
 import (
+	"chargepilot/internal/order"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
 	"gorm.io/gorm"
 )
 

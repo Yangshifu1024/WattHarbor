@@ -1,7 +1,7 @@
 package repo
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
 	"testing"
 )

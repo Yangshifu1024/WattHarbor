@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/sessiontoken"
 	"github.com/redis/go-redis/v9"
 )
 

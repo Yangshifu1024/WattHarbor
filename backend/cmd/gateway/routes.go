@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/provision"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/gateway/control"
+	"chargepilot/internal/gateway/provision"
+	"chargepilot/internal/gateway/repo"
+	"chargepilot/internal/gateway/session"
+	"chargepilot/internal/platform/config"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

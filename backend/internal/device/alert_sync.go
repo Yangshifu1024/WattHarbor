@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/protocol"
+	"chargepilot/internal/protocol/dc589"
 	"gorm.io/gorm"
 )
 

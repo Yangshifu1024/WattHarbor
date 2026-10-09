@@ -1,11 +1,11 @@
 package identity
 
 import (
+	"chargepilot/internal/persist"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/phone"
+	"chargepilot/internal/platform/dbutil"
+	"chargepilot/internal/platform/phone"
 	"gorm.io/gorm"
 	"time"
 )

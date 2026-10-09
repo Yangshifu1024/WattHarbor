@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
+	centralcontract "chargepilot/internal/contracts/central"
 )
 
 // authorizationClientStub 返回固定授权资料与可配置错误，用于网关错误映射检查，不连接中央服务。

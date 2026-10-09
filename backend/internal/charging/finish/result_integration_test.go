@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	rules "chargepilot/internal/domain/charging"
+	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 )
 

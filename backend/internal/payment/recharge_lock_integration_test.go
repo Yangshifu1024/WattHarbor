@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
+	"chargepilot/internal/testfixture"
+	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm/clause"
 )

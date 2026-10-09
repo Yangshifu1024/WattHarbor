@@ -1,16 +1,16 @@
 package settlement
 
 import (
+	"chargepilot/internal/ops"
+	orderstore "chargepilot/internal/order"
+	pay "chargepilot/internal/payment"
+	"chargepilot/internal/wallet"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"strings"
 	"time"
 

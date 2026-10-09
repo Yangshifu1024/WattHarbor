@@ -1,9 +1,9 @@
 package ops
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"chargepilot/internal/device"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/ops"
 	"github.com/gin-gonic/gin"
 )
 

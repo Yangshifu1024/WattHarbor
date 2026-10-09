@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"chargepilot/internal/domain/operations"
 	"gorm.io/gorm"
 )
 

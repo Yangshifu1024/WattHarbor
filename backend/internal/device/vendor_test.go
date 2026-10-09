@@ -1,13 +1,13 @@
 package device_test
 
 import (
+	"chargepilot/internal/device"
+	"chargepilot/internal/domain/operations"
+	gatewayclient "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/persist"
+	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"net/http"
 	"net/http/httptest"
 	"strconv"

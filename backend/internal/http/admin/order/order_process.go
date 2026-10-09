@@ -4,10 +4,10 @@ import (
 	"errors"
 	"strconv"
 
-	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	chargingquery "chargepilot/internal/charging/query"
+	"chargepilot/internal/domain/operations"
+	adminhttp "chargepilot/internal/http/admin"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

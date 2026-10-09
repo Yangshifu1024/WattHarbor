@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 var commandNames = map[byte]string{

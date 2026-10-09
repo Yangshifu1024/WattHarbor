@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	centralcontract "chargepilot/internal/contracts/central"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
 )
 
 // Synchronizer 在中央确认原启动结果后请求标记上报，必要时按原 START身份请求补偿；不持数据库、HTTP配置或进程资源。

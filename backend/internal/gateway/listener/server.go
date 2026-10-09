@@ -8,7 +8,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // Serve 在接收任何设备之前先把所有协议端口都绑定好。任何一个绑定失败

@@ -1,13 +1,13 @@
 package query
 
 import (
+	"chargepilot/internal/card"
+	"chargepilot/internal/charging/stop"
+	"chargepilot/internal/order"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/settlement"
 	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"gorm.io/gorm"
 )
 

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/money"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

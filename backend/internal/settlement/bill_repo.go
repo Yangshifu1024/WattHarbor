@@ -1,10 +1,10 @@
 package settlement
 
 import (
+	orderstore "chargepilot/internal/order"
 	"context"
 	"errors"
 	"fmt"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 
 	"time"
 

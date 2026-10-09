@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"chargepilot/internal/domain/charging"
 	"gorm.io/gorm"
 )
 

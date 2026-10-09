@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/control"
-	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/gateway/control"
+	gatewayclient "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/platform/dbconn"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
+	"chargepilot/internal/protocol"
 )
 
 // TestGatewayEvidenceReachesNoPowerDecision 贯通真库事件、实际注册路由、客户端和停机判断。

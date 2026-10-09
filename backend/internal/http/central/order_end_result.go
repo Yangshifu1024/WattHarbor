@@ -1,12 +1,12 @@
 package central
 
 import (
+	chargefinish "chargepilot/internal/charging/finish"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"errors"
-	chargefinish "github.com/ChargePilot2026/charge-pilot/internal/charging/finish"
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )

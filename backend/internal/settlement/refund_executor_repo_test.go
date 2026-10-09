@@ -3,7 +3,7 @@ package settlement
 import (
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	"chargepilot/internal/payment"
 )
 
 // TestReceiptMatchesRejectsAnyMismatch 逐项钉住渠道回执的核对。

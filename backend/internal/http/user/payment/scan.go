@@ -9,10 +9,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/device"
+	money "chargepilot/internal/domain/money"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

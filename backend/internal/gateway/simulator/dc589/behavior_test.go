@@ -3,9 +3,9 @@ package dc589sim
 import (
 	"bufio"
 	"bytes"
+	wire "chargepilot/internal/protocol/dc589"
 	"context"
 	"encoding/binary"
-	wire "github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"net"
 	"path/filepath"
 	"strings"

@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	usersettlement "github.com/ChargePilot2026/charge-pilot/internal/http/user/settlement"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	authhttp "chargepilot/internal/http/auth"
+	usersettlement "chargepilot/internal/http/user/settlement"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/settlement"
+	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
 )
 

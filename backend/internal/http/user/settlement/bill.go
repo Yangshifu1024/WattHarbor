@@ -4,9 +4,9 @@ import (
 	"errors"
 	"strconv"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 )
 

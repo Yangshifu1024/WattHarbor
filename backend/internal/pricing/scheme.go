@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/ops"
 	"gorm.io/gorm"
 )
 

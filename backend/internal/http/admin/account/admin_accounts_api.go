@@ -1,8 +1,8 @@
 package account
 
 import (
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/ops"
 )
 
 // AdminAccounts 是后台账号／角色HTTP适配，只持有所属服务与鉴权适配。

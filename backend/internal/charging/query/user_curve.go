@@ -1,10 +1,10 @@
 package query
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
 	"context"
 	"encoding/json"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"strings"
 	"time"
 )

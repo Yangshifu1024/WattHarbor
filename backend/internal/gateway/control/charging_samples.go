@@ -1,16 +1,16 @@
 package control
 
 import (
+	gatewayrepo "chargepilot/internal/gateway/repo"
 	"context"
 	"encoding/json"
 	"fmt"
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"strconv"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 )
 

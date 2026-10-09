@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

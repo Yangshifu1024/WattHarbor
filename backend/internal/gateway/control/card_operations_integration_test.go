@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	client "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	contract "chargepilot/internal/contracts/gateway"
+	client "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
+	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

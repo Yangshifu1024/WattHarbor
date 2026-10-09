@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	adminaccounthttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin/account"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	"chargepilot/internal/domain/operations"
+	adminaccounthttp "chargepilot/internal/http/admin/account"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 )
 

@@ -3,9 +3,9 @@ package marketing
 import (
 	"errors"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/marketing"
+	"chargepilot/internal/persist"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

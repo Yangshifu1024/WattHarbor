@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	charging "chargepilot/internal/domain/charging"
 )
 
 // BillingOrderProcessor 是计费调度所需的订单结算与持久任务能力。

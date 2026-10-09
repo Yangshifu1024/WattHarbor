@@ -4,9 +4,9 @@ package measurement
 import (
 	"time"
 
-	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	rules "chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/devices"
+	"chargepilot/internal/protocol"
 )
 
 // SessionSpanOf 将 e 的起止时刻、设备、端口、秒数及 milli-kWh 电量转换为收口证据。

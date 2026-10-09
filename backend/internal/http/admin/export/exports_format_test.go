@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
+	"chargepilot/internal/domain/operations"
+	exportpkg "chargepilot/internal/export"
 	"github.com/gin-gonic/gin"
 )
 

@@ -1,11 +1,11 @@
 package device
 
 import (
+	"chargepilot/internal/protocol"
 	"encoding/json"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
+	"chargepilot/internal/protocol/dc589"
 )
 
 // TestRecoveryRequiresExplicitNormalStates 只验证纯协议解码的存在性，缺字段和null不能被零值解码为正常设备或端口。

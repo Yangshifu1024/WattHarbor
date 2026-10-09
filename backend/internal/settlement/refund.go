@@ -1,10 +1,10 @@
 package settlement
 
 import (
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/persist"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

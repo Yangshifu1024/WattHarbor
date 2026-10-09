@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/gateway/repo"
+	gatewayclient "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // startContractService 为实际注册启动路由返回固定受理状态与错误的测试替身，只记录调用，不访问数据库或设备。

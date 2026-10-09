@@ -1,12 +1,12 @@
 package ops
 
 import (
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/platform/auth"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

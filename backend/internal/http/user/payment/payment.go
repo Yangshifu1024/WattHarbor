@@ -7,11 +7,11 @@ import (
 	"io"
 	"net/http"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	charging "chargepilot/internal/domain/charging"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/marketing"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )

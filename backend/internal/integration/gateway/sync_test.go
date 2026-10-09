@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
 )
 
 // TestSyncReadOperationsPreserveNullsAndEvidenceWindow 使用 t核对真实客户端到本地HTTP夹具的命令筛选URL编码、可空证据、大整数与UTC计量窗口；只验证wire，不证明真库查询。

@@ -1,8 +1,8 @@
 package query
 
 import (
+	charging "chargepilot/internal/domain/charging"
 	"fmt"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
 )
 
 // tariffLines 按 s 原冻结方案与 offer 原套餐生成资费文案，返回数组；不读取当前规则或执行计费。

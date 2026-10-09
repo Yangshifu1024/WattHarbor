@@ -1,8 +1,8 @@
 package identity
 
 import (
+	"chargepilot/internal/platform/auth"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
 	"strconv"
 	"time"
 )

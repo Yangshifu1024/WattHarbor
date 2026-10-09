@@ -6,9 +6,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/persist"
 	"gorm.io/gorm"
 )
 

@@ -3,8 +3,8 @@ package charge
 import (
 	"errors"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/protocol"
 	"testing"
 	"time"
 )

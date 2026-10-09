@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // TestNoPowerRequiresContinuousMinuteAndFreshHeartbeat 使用 t 核对零功率至少持续一分钟且心跳新鲜，正功率重置计时，缺少目标端口不能当作零功率；无返回值，失败由 t 报告，仅调用纯证据判断。

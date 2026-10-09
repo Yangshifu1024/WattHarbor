@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/redis/go-redis/v9"
 )
 

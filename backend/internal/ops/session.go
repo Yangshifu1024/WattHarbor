@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/platform/auth"
 )
 
 // AccessTTL 保留后台访问令牌八小时寿命，刷新会话仍按原七天绝对期限到期。

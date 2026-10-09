@@ -1,13 +1,13 @@
 package control
 
 import (
+	"chargepilot/internal/device"
+	gatewayrepo "chargepilot/internal/gateway/repo"
+	"chargepilot/internal/platform/httpapi"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"net/http"

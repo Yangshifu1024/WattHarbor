@@ -7,9 +7,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	"chargepilot/internal/device"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/testfixture"
 )
 
 // TestImportCompatibilityCachesAbsentRuleAndChecksWholeScheme 使用真实规则表及外层回滚。

@@ -1,12 +1,12 @@
 package control
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/gateway/session"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
+	"chargepilot/internal/protocol"
 	"encoding/hex"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/session"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )

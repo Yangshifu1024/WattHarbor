@@ -1,14 +1,14 @@
 package identity
 
 import (
+	"chargepilot/internal/wallet"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
+	"chargepilot/internal/platform/snowflake"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

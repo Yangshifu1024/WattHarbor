@@ -1,11 +1,11 @@
 package pricing
 
 import (
+	"chargepilot/internal/device"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"chargepilot/internal/domain/charging"
 	"gorm.io/gorm"
 )
 

@@ -2,9 +2,9 @@ package gateway
 
 import (
 	"bytes"
+	contract "chargepilot/internal/contracts/gateway"
 	"context"
 	"encoding/json"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
 	"io"
 	"net/http"
 	"net/url"

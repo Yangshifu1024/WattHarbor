@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/protocol"
 )
 
 // budgetHeartbeatFixture 造一段持续充电的心跳序列：设备 1500 W，每 15 秒一条。

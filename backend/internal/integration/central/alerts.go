@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
+	contract "chargepilot/internal/contracts/central"
 )
 
 // SyncDeviceAlerts 在ctx下触发原同步用例，返回本轮新告警数或传输／契约错误。

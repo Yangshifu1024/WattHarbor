@@ -1,18 +1,18 @@
 package finish
 
 import (
+	"chargepilot/internal/card"
+	"chargepilot/internal/ops"
+	orderstore "chargepilot/internal/order"
+	"chargepilot/internal/settlement"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
 	"math"
 	"time"
 
-	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	rules "chargepilot/internal/domain/charging"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/platform/dbutil"
+	"chargepilot/internal/protocol"
 )
 
 // deviceSessionRow 映射 device_session；created_month 为分区键和联合主键的一部分，读写必须保留。

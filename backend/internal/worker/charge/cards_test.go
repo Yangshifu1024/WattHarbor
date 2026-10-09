@@ -1,10 +1,10 @@
 package charge
 
 import (
+	centralclient "chargepilot/internal/integration/central"
+	"chargepilot/internal/platform/serviceclient"
+	"chargepilot/internal/protocol"
 	"context"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
 	"net/http"
 	"net/http/httptest"
 	"testing"

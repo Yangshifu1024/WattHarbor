@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"slices"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
+	"chargepilot/internal/domain/operations"
 )
 
 // taskFileIdentity 限定服务生成的十六进制任务号；兼容早期较短身份，但新申请完整保留UUID。

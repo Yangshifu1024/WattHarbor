@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strconv"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	centralcontract "chargepilot/internal/contracts/central"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/protocol"
 )
 
 // EndGateway 是消费方结束同步窄接口，提供取证、首写冻结、原占用释放及处理标记；执行顺序由 EndSynchronizer拥有。

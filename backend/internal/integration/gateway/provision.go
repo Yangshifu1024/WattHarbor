@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	contract "chargepilot/internal/contracts/gateway"
 )
 
 // Provision 在 ctx 下同步开通 devices 原身份，最多等待十秒，返回网络或原状态失败。

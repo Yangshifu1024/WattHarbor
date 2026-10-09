@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/dbconn"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"

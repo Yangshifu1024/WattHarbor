@@ -5,12 +5,12 @@ import (
 	"errors"
 	"strings"
 
-	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	userhttp "github.com/ChargePilot2026/charge-pilot/internal/http/user"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	chargingquery "chargepilot/internal/charging/query"
+	authhttp "chargepilot/internal/http/auth"
+	userhttp "chargepilot/internal/http/user"
+	orderstore "chargepilot/internal/order"
+	"chargepilot/internal/persist"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

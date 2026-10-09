@@ -1,12 +1,12 @@
 package device
 
 import (
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/persist"
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"gorm.io/gorm"
 	"time"
 )

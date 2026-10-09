@@ -3,9 +3,9 @@ package payment
 import (
 	"errors"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

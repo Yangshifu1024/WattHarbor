@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // ErrInvalidResponse 表示响应不满足端点的状态码、字段或受理约束。

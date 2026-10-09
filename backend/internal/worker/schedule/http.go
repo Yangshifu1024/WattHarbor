@@ -1,13 +1,13 @@
 package schedule
 
 import (
+	workerrepo "chargepilot/internal/worker/repo"
 	"errors"
-	workerrepo "github.com/ChargePilot2026/charge-pilot/internal/worker/repo"
 	"net/http"
 	"strings"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

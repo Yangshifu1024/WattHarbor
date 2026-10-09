@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 var ErrInvalidResponse = gatewaycontract.ErrInvalidResponse

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	workerruntime "github.com/ChargePilot2026/charge-pilot/internal/worker/runtime"
+	workerruntime "chargepilot/internal/worker/runtime"
 )
 
 // idleBatch 提供立即成功的空批任务，供 worker 生命周期检查。

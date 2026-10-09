@@ -1,8 +1,8 @@
 package settlement
 
 import (
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/order"
 	"testing"
 )
 

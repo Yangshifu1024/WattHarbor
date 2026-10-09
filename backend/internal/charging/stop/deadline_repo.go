@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
+	"chargepilot/internal/card"
+	"chargepilot/internal/order"
 	"gorm.io/gorm"
 )
 

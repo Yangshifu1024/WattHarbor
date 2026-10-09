@@ -1,10 +1,10 @@
 package central
 
 import (
+	contract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"net/http"
 	"net/http/httptest"
 	"testing"

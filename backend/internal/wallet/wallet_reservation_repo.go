@@ -1,10 +1,10 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"strconv"
 	"time"
 

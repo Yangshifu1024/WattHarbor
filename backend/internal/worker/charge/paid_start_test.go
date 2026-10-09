@@ -10,11 +10,11 @@ import (
 	"reflect"
 	"testing"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	centralclient "chargepilot/internal/integration/central"
+	gatewayclient "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // starterForServer 接收 t与 server，将同一本地HTTP服务注入两真实具名客户端并返回新的 PaidStarter；配置失败终止测试，无数据库或设备 IO。

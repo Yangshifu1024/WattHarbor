@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	userhttp "github.com/ChargePilot2026/charge-pilot/internal/http/user"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/device"
+	userhttp "chargepilot/internal/http/user"
+	"chargepilot/internal/persist"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

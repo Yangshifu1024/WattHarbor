@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/protocol"
 )
 
 // Gateway 是停止用例所需的设备侧能力；实现负责传输与响应契约校验。

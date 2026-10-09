@@ -1,9 +1,9 @@
 package finance
 
 import (
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/settlement"
+	"chargepilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 )
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	centralcontract "chargepilot/internal/contracts/central"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
 )
 
 // PaidStarter 顺序投递已支付待启动订单，保存本实例扫描游标；失败订单经后续空页归零重扫复用原订单幂等身份。

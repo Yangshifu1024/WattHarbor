@@ -1,18 +1,18 @@
 package settlement
 
 import (
+	orderstore "chargepilot/internal/order"
+	payment "chargepilot/internal/payment"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	payment "github.com/ChargePilot2026/charge-pilot/internal/payment"
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	"chargepilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

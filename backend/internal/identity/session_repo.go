@@ -1,11 +1,11 @@
 package identity
 
 import (
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/sessiontoken"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
 	"github.com/redis/go-redis/v9"
 	"strconv"
 	"time"

@@ -1,10 +1,10 @@
 package identity
 
 import (
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/persist"
+	"chargepilot/internal/wallet"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"gorm.io/gorm"
 )
 

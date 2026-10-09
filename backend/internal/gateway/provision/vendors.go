@@ -1,10 +1,10 @@
 package provision
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
+	gatewayrepo "chargepilot/internal/gateway/repo"
 	"encoding/json"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
 	"io"
 	"net/http"
 	"regexp"
@@ -13,8 +13,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"

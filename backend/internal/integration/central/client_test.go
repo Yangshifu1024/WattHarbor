@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // centralForServer 接收 t与 handler，创建本地 HTTP夹具和真实中央客户端并注册服务关闭；返回客户端，配置失败终止测试，不访问数据库。

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	rules "chargepilot/internal/domain/charging"
+	"chargepilot/internal/platform/dbconn"
+	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

@@ -1,8 +1,8 @@
 package settlement
 
 import (
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 )
 

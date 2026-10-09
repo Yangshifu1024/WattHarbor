@@ -1,6 +1,6 @@
 package gateway
 
-import "github.com/ChargePilot2026/charge-pilot/internal/protocol"
+import "chargepilot/internal/protocol"
 
 const (
 	CardEventsPath  = "/api/v1/internal/card-events"               // 原待投递卡事件清单

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	"chargepilot/internal/device"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/money"
 	"gorm.io/gorm"
 )
 

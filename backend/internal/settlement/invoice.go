@@ -1,12 +1,12 @@
 package settlement
 
 import (
+	orderrepo "chargepilot/internal/order"
+	"chargepilot/internal/persist"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	orderrepo "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"strings"
 
 	"github.com/google/uuid"

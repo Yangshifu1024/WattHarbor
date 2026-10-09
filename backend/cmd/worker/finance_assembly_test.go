@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
+	contract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/config"
 )
 
 // workerJobTransport 只记录实际cmd装配后的资金请求，不执行外部网络或业务写入。

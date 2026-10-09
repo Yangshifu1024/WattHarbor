@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	centralclient "chargepilot/internal/integration/central"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // TestAutoStopConsumerPreservesValidatedProgress 用 t 和真实具名客户端核对成功及未完成计数、原 wire 和一次调用。

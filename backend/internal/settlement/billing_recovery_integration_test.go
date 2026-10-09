@@ -3,7 +3,7 @@
 package settlement
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	"chargepilot/internal/testfixture"
 
 	"context"
 	"crypto/rand"

@@ -1,11 +1,11 @@
 package gateway
 
 import (
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"encoding/json"
 	"errors"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
 	"net/http"
 	"net/http/httptest"
 	"strings"

@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // 本文件实现 DC589 设备方向的编解码，与服务端 commands.go 和 measurements.go 配对。

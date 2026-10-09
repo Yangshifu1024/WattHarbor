@@ -7,10 +7,10 @@ import (
 	"errors"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/order"
+	"chargepilot/internal/protocol"
 )
 
 // EvidenceReader 是实时估算需要的有界网关取证能力，不携带 URL、令牌或通用传输。

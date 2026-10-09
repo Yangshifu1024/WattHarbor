@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // TestAuthorizationWireIdentityAndNullableAbsence 使用 t与本地 HTTP夹具验证原授权路径、服务令牌、大整数身份及设备参数解码；不证明真实权限、数据库占用或设备启动。

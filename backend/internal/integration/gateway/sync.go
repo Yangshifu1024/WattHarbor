@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
 )
 
 // get 接收 ctx、c 与 path，执行原 GET并验证HTTP200、明确 code0及非 nil data，返回 T 或传输／业务／解码／取消错误；不重试或写业务状态。

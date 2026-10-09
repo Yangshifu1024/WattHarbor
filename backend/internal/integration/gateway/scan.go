@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"net/url"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // ResolveScan 在 ctx 期限内查询request.Code原设备／端口事实，不读取中央业务状态。

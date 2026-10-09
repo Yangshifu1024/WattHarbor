@@ -1,10 +1,10 @@
 package settlement
 
 import (
+	"chargepilot/internal/domain/money"
+	"chargepilot/internal/ops"
 	"database/sql"
 	"encoding/json"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

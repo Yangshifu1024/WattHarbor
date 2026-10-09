@@ -1,6 +1,12 @@
 package start
 
 import (
+	"chargepilot/internal/card"
+	"chargepilot/internal/ops"
+	orderstore "chargepilot/internal/order"
+	pays "chargepilot/internal/payment"
+	"chargepilot/internal/settlement"
+	walletpkg "chargepilot/internal/wallet"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,16 +14,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	pays "github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
-	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"math"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	"chargepilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 )
 

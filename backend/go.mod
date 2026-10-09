@@ -1,4 +1,4 @@
-module github.com/ChargePilot2026/charge-pilot
+module chargepilot
 
 go 1.27.0
 

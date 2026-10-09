@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
+	centralcontract "chargepilot/internal/contracts/central"
 )
 
 // AutoStopClient 是 worker 停机触发所需的窄能力，网络配置及回执验证由注入实现负责。

@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
+	"chargepilot/internal/gateway/repo"
 )
 
 // registerDeviceFaults 把 device_event 故障证据暴露给 central 的告警同步：

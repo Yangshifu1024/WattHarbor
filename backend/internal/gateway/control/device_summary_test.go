@@ -1,7 +1,7 @@
 package control
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/httpapi"
 	"net/http/httptest"
 	"testing"
 )

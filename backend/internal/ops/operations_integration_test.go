@@ -3,10 +3,10 @@
 package ops
 
 import (
+	"chargepilot/internal/persist"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"strconv"

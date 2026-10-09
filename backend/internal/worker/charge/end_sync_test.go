@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	centralcontract "chargepilot/internal/contracts/central"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/protocol"
 )
 
 // endSyncScenario 是结束同步的内存窄能力fixture，按阶段注入故障并记录冻结、提交、释放和标记，不执行真实两库算法。

@@ -1,15 +1,15 @@
 package central
 
 import (
+	chargestop "chargepilot/internal/charging/stop"
+	centralcontract "chargepilot/internal/contracts/central"
 	"context"
 	"errors"
-	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"net/http"
 	"strconv"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

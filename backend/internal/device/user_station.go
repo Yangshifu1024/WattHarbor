@@ -6,8 +6,8 @@ import (
 	"math"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/ops"
 	"gorm.io/gorm"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
+	centralcontract "chargepilot/internal/contracts/central"
 )
 
 // DispatchClient 是计费任务触发所需的窄能力，回执验证及网络配置由注入实现拥有。

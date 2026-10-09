@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // clientForServer 接收 t与 handler，创建本地 HTTP服务及真实网关客户端并登记服务关闭，返回客户端；失败终止测试，不访问数据库或设备。

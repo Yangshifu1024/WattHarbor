@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/wallet"
 )
 
 // TestCanExtendRequiresEveryGuard 钉住"这张卡能不能给当前订单加时"的八项条件。

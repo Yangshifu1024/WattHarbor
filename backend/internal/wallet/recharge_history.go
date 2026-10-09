@@ -1,8 +1,8 @@
 package wallet
 
 import (
+	"chargepilot/internal/persist"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"time"
 )
 

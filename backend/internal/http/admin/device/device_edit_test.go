@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/device"
+	"chargepilot/internal/platform/httpapi"
 )
 
 // deviceEditPayload 返回包含全部必填字段的设备编辑基准载荷；每次新建map，供非法输入测试独立修改。

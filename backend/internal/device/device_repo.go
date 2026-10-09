@@ -1,14 +1,14 @@
 package device
 
 import (
+	"chargepilot/internal/persist"
 	"context"
 	"encoding/json"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 )
 

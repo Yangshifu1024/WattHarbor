@@ -3,9 +3,9 @@
 package card
 
 import (
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/testfixture"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"gorm.io/gorm"
 	"strconv"
 	"strings"

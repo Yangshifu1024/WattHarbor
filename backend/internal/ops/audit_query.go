@@ -1,9 +1,9 @@
 package ops
 
 import (
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/persist"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"gorm.io/gorm"
 )
 

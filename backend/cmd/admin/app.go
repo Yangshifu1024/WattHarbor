@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"time"
 
-	exportpkg "github.com/ChargePilot2026/charge-pilot/internal/export"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	exportpkg "chargepilot/internal/export"
+	authhttp "chargepilot/internal/http/auth"
+	gatewayclient "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/config"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 	"golang.org/x/sync/errgroup"
 )
 

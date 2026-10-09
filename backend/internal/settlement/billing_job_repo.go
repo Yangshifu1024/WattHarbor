@@ -1,23 +1,23 @@
 package settlement
 
 import (
+	chargingstore "chargepilot/internal/card"
+	"chargepilot/internal/marketing"
+	"chargepilot/internal/ops"
+	orderstore "chargepilot/internal/order"
+	pay "chargepilot/internal/payment"
+	walletpkg "chargepilot/internal/wallet"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	chargingstore "github.com/ChargePilot2026/charge-pilot/internal/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
-	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/wallet"
 
 	"reflect"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

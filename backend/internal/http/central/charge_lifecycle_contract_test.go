@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	chargefinish "github.com/ChargePilot2026/charge-pilot/internal/charging/finish"
-	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
-	chargestop "github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	chargefinish "chargepilot/internal/charging/finish"
+	chargestart "chargepilot/internal/charging/start"
+	chargestop "chargepilot/internal/charging/stop"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/domain/charging"
+	centralclient "chargepilot/internal/integration/central"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 const receiptStartID = "10000000-0000-4000-8000-000000000001"

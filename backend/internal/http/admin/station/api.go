@@ -1,9 +1,9 @@
 package station
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
+	"chargepilot/internal/device"
+	adminhttp "chargepilot/internal/http/admin"
+	authhttp "chargepilot/internal/http/auth"
 	"github.com/gin-gonic/gin"
 )
 

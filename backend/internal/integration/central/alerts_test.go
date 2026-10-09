@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	contract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // TestAlertTriggerOwnsDeadlineWithoutChangingPool 使用短caller期限证明触发只覆盖请求Client、保留Transport及取消，不需要长等待。

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	userhttp "github.com/ChargePilot2026/charge-pilot/internal/http/user"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	walletpkg "github.com/ChargePilot2026/charge-pilot/internal/wallet"
+	userhttp "chargepilot/internal/http/user"
+	"chargepilot/internal/platform/httpapi"
+	walletpkg "chargepilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 )
 

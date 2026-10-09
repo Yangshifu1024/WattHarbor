@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/platform/snowflake"
+	"chargepilot/internal/settlement"
 	"github.com/google/uuid"
 )
 

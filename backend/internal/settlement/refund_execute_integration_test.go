@@ -3,12 +3,12 @@
 package settlement
 
 import (
+	"chargepilot/internal/testfixture"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"testing"
 	"time"
 
-	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
+	pay "chargepilot/internal/payment"
 	"gorm.io/gorm"
 )
 

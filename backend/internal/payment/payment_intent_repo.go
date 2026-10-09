@@ -1,16 +1,16 @@
 package payment
 
 import (
+	money "chargepilot/internal/domain/money"
+	"chargepilot/internal/marketing"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	money "github.com/ChargePilot2026/charge-pilot/internal/domain/money"
-	"github.com/ChargePilot2026/charge-pilot/internal/marketing"
 	"time"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 

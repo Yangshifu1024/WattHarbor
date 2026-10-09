@@ -9,17 +9,17 @@ import (
 	"strings"
 	"testing"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	usercard "github.com/ChargePilot2026/charge-pilot/internal/http/user/card"
-	userdevice "github.com/ChargePilot2026/charge-pilot/internal/http/user/device"
-	useridentity "github.com/ChargePilot2026/charge-pilot/internal/http/user/identity"
-	usermarketing "github.com/ChargePilot2026/charge-pilot/internal/http/user/marketing"
-	userorder "github.com/ChargePilot2026/charge-pilot/internal/http/user/order"
-	userpayment "github.com/ChargePilot2026/charge-pilot/internal/http/user/payment"
-	usersettlement "github.com/ChargePilot2026/charge-pilot/internal/http/user/settlement"
-	userwallet "github.com/ChargePilot2026/charge-pilot/internal/http/user/wallet"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	authhttp "chargepilot/internal/http/auth"
+	usercard "chargepilot/internal/http/user/card"
+	userdevice "chargepilot/internal/http/user/device"
+	useridentity "chargepilot/internal/http/user/identity"
+	usermarketing "chargepilot/internal/http/user/marketing"
+	userorder "chargepilot/internal/http/user/order"
+	userpayment "chargepilot/internal/http/user/payment"
+	usersettlement "chargepilot/internal/http/user/settlement"
+	userwallet "chargepilot/internal/http/user/wallet"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/platform/httpapi"
 )
 
 // deniedUserIdentity 提供指定认证结果的窄能力fixture，不模拟业务查询或写入。

@@ -3,11 +3,11 @@
 package card_test
 
 import (
+	"chargepilot/internal/card"
+	"chargepilot/internal/charging/stop"
+	"chargepilot/internal/domain/money"
 	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	"github.com/ChargePilot2026/charge-pilot/internal/charging/stop"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"strings"

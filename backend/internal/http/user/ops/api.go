@@ -1,7 +1,7 @@
 package ops
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
+	"chargepilot/internal/ops"
 	"github.com/gin-gonic/gin"
 )
 

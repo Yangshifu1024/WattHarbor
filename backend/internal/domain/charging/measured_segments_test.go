@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
+	"chargepilot/internal/domain/devices"
 )
 
 // 本文件覆盖 MeasuredSegments 的起充时刻容差。

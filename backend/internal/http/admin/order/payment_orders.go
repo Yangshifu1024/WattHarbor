@@ -5,9 +5,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	adminhttp "chargepilot/internal/http/admin"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

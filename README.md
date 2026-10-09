@@ -4,7 +4,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台，支持扫�
 
 ## 仓库结构
 
-- `backend/`：后端 Go 模块（`cmd/`、`internal/`、`migrations/`、`go.mod`），服务镜像定义为 `backend/Dockerfile`，构建上下文即该目录。后端路径约定见 [AGENTS.md](AGENTS.md)。
+- `backend/`：后端 Go 模块 `chargepilot`（`cmd/`、`internal/`、`migrations/`、`go.mod`），服务镜像定义为 `backend/Dockerfile`，构建上下文即该目录。后端路径约定见 [AGENTS.md](AGENTS.md)。
 - `frontend/admin-web/`、`frontend/miniprogram/`：运营后台与用户端前端。
 - `docker/`：Compose 编排（`compose.dev.yaml`、`compose.prod.yaml`）、生产 Caddyfile 与 MySQL 初始化 SQL。
 - 仓库根：`scripts/`（跨平台 Node 脚本）、`docs/` 与根 `tasks.mjs`。

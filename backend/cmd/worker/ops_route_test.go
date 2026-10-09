@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/worker/schedule"
+	"chargepilot/internal/platform/config"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/worker/schedule"
 	"github.com/redis/go-redis/v9"
 )
 

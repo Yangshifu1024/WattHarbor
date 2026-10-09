@@ -1,11 +1,11 @@
 package order
 
 import (
-	chargingquery "github.com/ChargePilot2026/charge-pilot/internal/charging/query"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
+	chargingquery "chargepilot/internal/charging/query"
+	"chargepilot/internal/device"
+	authhttp "chargepilot/internal/http/auth"
+	ordercase "chargepilot/internal/order"
+	"chargepilot/internal/payment"
 	"github.com/gin-gonic/gin"
 )
 

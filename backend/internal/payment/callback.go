@@ -1,7 +1,7 @@
 package payment
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
+	"chargepilot/internal/domain/money"
 	"gorm.io/gorm"
 )
 

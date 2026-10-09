@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 var ErrOffline = errors.New("device is not connected")

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/httpapi"
 )
 
 // TestSelfMFASettingsRejectsClientSecretsAndInvalidProofs 验证自助MFA设置拒绝客户端指定密钥、账号及无效登记或验证码材料。

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/order"
+	"chargepilot/internal/protocol"
 )
 
 // liveFixture 同时提供可计数读取和故障注入，仅证明组合规则，不替代真实网关／数据库。

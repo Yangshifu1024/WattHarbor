@@ -3,9 +3,9 @@ package order
 import (
 	"errors"
 
-	userhttp "github.com/ChargePilot2026/charge-pilot/internal/http/user"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	userhttp "chargepilot/internal/http/user"
+	"chargepilot/internal/order"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )

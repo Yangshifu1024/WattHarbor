@@ -8,10 +8,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	rules "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	orderrepo "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/card"
+	rules "chargepilot/internal/domain/charging"
+	orderrepo "chargepilot/internal/order"
+	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
 )
 

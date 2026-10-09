@@ -1,10 +1,10 @@
 package central
 
 import (
+	"chargepilot/internal/card"
+	contract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/httpapi"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/card"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

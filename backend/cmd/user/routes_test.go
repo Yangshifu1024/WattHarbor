@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/platform/config"
 )
 
 // TestUserAssemblyRegistersDocumentedRoutes 使用 t 对照模拟模式 C 端装配与 OpenAPI 的方法／路径，并拒绝其他业务族；文件读取或比对失败由 t 报告，不执行支付或存储操作。

@@ -3,12 +3,12 @@
 package settlement
 
 import (
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/testfixture"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"testing"

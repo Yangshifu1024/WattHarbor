@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
+	"chargepilot/internal/contracts/central"
 )
 
 // TestJobReplyShapes 用 t 核对共享回复的原 JSON 形状，尤其退款失败不能增加 enabled；无网络或资金 IO。

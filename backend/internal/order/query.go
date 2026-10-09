@@ -1,11 +1,11 @@
 package order
 
 import (
+	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/persist"
 	"context"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 	"gorm.io/gorm"
 	"strings"
 )

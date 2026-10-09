@@ -3,7 +3,7 @@ package auth
 import (
 	"strings"
 
-	identity "github.com/ChargePilot2026/charge-pilot/internal/identity"
+	identity "chargepilot/internal/identity"
 	"github.com/gin-gonic/gin"
 )
 

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"strings"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
+	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/persist"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

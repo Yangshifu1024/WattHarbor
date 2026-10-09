@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"chargepilot/internal/platform/dbconn"
 	"github.com/pressly/goose/v3"
 )
 

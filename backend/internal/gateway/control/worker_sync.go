@@ -1,10 +1,10 @@
 package control
 
 import (
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	gatewayrepo "chargepilot/internal/gateway/repo"
+	"chargepilot/internal/platform/httpapi"
 	"errors"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"

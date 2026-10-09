@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
+	gatewayrepo "chargepilot/internal/gateway/repo"
 	"github.com/google/uuid"
 )
 

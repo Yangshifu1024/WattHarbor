@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/gateway/repo"
 )
 
 var ErrUnpaid = errors.New("charge order is not fully paid or has no device limit")

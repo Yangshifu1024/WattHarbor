@@ -3,9 +3,9 @@ package identity
 import (
 	"errors"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

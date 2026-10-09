@@ -1,9 +1,9 @@
 package payment
 
 import (
+	orderstore "chargepilot/internal/order"
+	"chargepilot/internal/persist"
 	"context"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 
 	"time"
 

@@ -3,7 +3,7 @@ package settlement
 import (
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"chargepilot/internal/domain/charging"
 )
 
 // TestPriceSourceRejectsUnauditedFinalFee 钉住人工核定金额的准入条件。

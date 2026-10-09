@@ -4,11 +4,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/domain/operations"
+	adminhttp "chargepilot/internal/http/admin"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

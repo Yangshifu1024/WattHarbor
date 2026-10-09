@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // TestSummaryClientRequiresSuccessfulEnvelope 核对 loopback 传输的身份、成功状态和完整 envelope；不代表真实网关数据。

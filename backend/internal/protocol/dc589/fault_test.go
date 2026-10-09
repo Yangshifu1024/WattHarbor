@@ -3,7 +3,7 @@ package dc589
 import (
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 func TestFaultMetricNamesDeviceAndPortFaults(t *testing.T) {

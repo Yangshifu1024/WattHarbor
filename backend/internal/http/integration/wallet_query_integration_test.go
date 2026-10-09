@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	userwallet "github.com/ChargePilot2026/charge-pilot/internal/http/user/wallet"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
+	authhttp "chargepilot/internal/http/auth"
+	userwallet "chargepilot/internal/http/user/wallet"
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/testfixture"
+	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 )
 

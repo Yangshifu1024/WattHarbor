@@ -1,8 +1,8 @@
 package payment
 
 import (
+	"chargepilot/internal/wallet"
 	"database/sql"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

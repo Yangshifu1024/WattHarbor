@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	chargestart "github.com/ChargePilot2026/charge-pilot/internal/charging/start"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	chargestart "chargepilot/internal/charging/start"
+	centralclient "chargepilot/internal/integration/central"
+	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 )
 

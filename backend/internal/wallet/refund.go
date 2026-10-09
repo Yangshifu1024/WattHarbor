@@ -1,10 +1,10 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/money"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"strings"

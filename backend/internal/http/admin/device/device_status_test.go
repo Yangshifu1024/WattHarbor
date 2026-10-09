@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	gatewayclient "github.com/ChargePilot2026/charge-pilot/internal/integration/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	"chargepilot/internal/device"
+	gatewayclient "chargepilot/internal/integration/gateway"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // TestDeviceStatusRejectsInvalidRequestsBeforeWriting 验证设备运营状态端点先拒绝缺值、非法状态、额外字段和多个JSON值。

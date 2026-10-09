@@ -1,10 +1,10 @@
 package ops
 
 import (
+	"chargepilot/internal/domain/operations"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"gorm.io/gorm"
 	"time"
 )

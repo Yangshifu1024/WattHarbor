@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

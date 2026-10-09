@@ -2,14 +2,14 @@
 package pricing
 
 import (
+	devicepkg "chargepilot/internal/device"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	devicepkg "github.com/ChargePilot2026/charge-pilot/internal/device"
 	"math"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	"chargepilot/internal/domain/charging"
 	"gorm.io/gorm"
 )
 

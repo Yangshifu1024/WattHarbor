@@ -1,7 +1,7 @@
 package charging
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/devices"
+	"chargepilot/internal/domain/devices"
 	"time"
 )
 

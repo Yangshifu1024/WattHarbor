@@ -1,12 +1,12 @@
 package pricing
 
 import (
+	"chargepilot/internal/persist"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
 
-	charging "github.com/ChargePilot2026/charge-pilot/internal/domain/charging"
+	charging "chargepilot/internal/domain/charging"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

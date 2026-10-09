@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/gateway/listener"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/gateway/listener"
+	"chargepilot/internal/protocol"
 )
 
 // Runtime 持有已装配的设备监听配置及两类停机恢复能力，执行同步的监听或定时恢复循环。

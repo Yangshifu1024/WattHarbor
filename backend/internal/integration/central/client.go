@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	centralcontract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 var ErrInvalidResponse = centralcontract.ErrInvalidResponse

@@ -2,11 +2,11 @@ package central
 
 import (
 	"bytes"
+	contract "chargepilot/internal/contracts/central"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
 	"github.com/google/uuid"
 	"io"
 	"net/http"

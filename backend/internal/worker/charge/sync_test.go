@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	centralcontract "chargepilot/internal/contracts/central"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
 )
 
 // startSyncScenario 是启动同步消费方的窄能力fixture，记录请求及顺序并注入原错误；不模拟真实SQL、设备或资金事务。

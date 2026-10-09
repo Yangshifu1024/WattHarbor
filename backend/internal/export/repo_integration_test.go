@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbconn"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/platform/dbconn"
 )
 
 // TestSourceQueryCancellation 使用真实连接验证源取数收到请求取消，不访问开发库或写入数据。

@@ -1,12 +1,12 @@
 package settlement
 
 import (
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
-	pay "github.com/ChargePilot2026/charge-pilot/internal/payment"
+	orderstore "chargepilot/internal/order"
+	pay "chargepilot/internal/payment"
 
+	"chargepilot/internal/platform/dbutil"
+	"chargepilot/internal/wallet"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"gorm.io/gorm"
 )
 

@@ -1,10 +1,10 @@
 package export
 
 import (
+	"chargepilot/internal/domain/operations"
 	"context"
 	"encoding/csv"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"github.com/xuri/excelize/v2"
 	"io"
 )

@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/netguard"
+	"chargepilot/internal/platform/netguard"
 )
 
 // Sender 是监管报送的投递适配器；Mode 记入 regulatory_report.delivered_mode。

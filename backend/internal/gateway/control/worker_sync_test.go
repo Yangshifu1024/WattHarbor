@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/httpapi"
 )
 
 // TestWorkerSyncAPIRequiresServiceToken 接收 t，通过实际注册的十三条同步路由验证缺失服务令牌返回 401；

@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/ops"
-	"github.com/ChargePilot2026/charge-pilot/internal/payment"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/ops"
+	"chargepilot/internal/payment"
+	"chargepilot/internal/testfixture"
+	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )

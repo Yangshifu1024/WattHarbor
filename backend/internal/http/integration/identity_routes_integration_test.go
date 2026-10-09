@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	useridentity "github.com/ChargePilot2026/charge-pilot/internal/http/user/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/identity"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
+	authhttp "chargepilot/internal/http/auth"
+	useridentity "chargepilot/internal/http/user/identity"
+	"chargepilot/internal/identity"
+	"chargepilot/internal/platform/auth"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/sessiontoken"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )

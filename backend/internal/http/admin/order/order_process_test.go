@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/httpapi"
 )
 
 // TestOrderProcessRejectsInvalidIdentityAndPaging 验证原路由输入拒绝空值、重复值与超限整数，无数据库访问。

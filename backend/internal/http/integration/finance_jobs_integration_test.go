@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	centralhttp "github.com/ChargePilot2026/charge-pilot/internal/http/central"
-	centralclient "github.com/ChargePilot2026/charge-pilot/internal/integration/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
-	"github.com/ChargePilot2026/charge-pilot/internal/testfixture"
+	contract "chargepilot/internal/contracts/central"
+	centralhttp "chargepilot/internal/http/central"
+	centralclient "chargepilot/internal/integration/central"
+	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/serviceclient"
+	"chargepilot/internal/settlement"
+	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
 )
 

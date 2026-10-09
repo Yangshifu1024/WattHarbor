@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	"chargepilot/internal/platform/httpapi"
 )
 
 // 校验批量取证端点的令牌与请求体边界；同时覆盖 TelemetryAPI 全量路由

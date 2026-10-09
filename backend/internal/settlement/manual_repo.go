@@ -1,9 +1,9 @@
 package settlement
 
 import (
+	orderstore "chargepilot/internal/order"
 	"context"
 	"errors"
-	orderstore "github.com/ChargePilot2026/charge-pilot/internal/order"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

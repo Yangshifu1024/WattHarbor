@@ -1,11 +1,11 @@
 package payment
 
 import (
+	"chargepilot/internal/wallet"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/ChargePilot2026/charge-pilot/internal/wallet"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"time"

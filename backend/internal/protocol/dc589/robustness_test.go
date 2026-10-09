@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // TestUnknownCommandDoesNotKillTheConnection 验证未知但格式正确的命令不会关闭连接。

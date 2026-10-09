@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/http/admin"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/http/admin"
 )
 
 // TestRetiredPermissionsPreserveFeedbackWalletAndDeviceAlerts 验证移除退休权限时保留意见反馈、钱包与设备告警的现有权限。

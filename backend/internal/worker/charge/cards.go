@@ -1,14 +1,14 @@
 package charge
 
 import (
+	central "chargepilot/internal/contracts/central"
+	gateway "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/protocol"
+	"chargepilot/internal/protocol/dc589"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	central "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	gateway "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol/dc589"
 	"github.com/google/uuid"
 	"strconv"
 )

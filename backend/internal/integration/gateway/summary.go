@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	contract "chargepilot/internal/contracts/gateway"
 )
 
 // DeviceSummaries 在 ctx 下查询 ids 的原运行事实；一至一百个非空、最长 64 字节的编号。

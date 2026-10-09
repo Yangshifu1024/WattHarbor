@@ -3,10 +3,10 @@ package central
 import (
 	"net/http"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/central"
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	contract "chargepilot/internal/contracts/central"
+	"chargepilot/internal/device"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

@@ -1,8 +1,8 @@
 package order
 
 import (
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/order"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/order"
 	"github.com/gin-gonic/gin"
 )
 

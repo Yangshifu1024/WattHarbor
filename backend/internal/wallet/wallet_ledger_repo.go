@@ -7,7 +7,7 @@ import (
 	"errors"
 	"math"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/dbutil"
+	"chargepilot/internal/platform/dbutil"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

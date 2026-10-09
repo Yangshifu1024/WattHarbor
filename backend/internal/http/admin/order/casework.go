@@ -3,12 +3,12 @@ package order
 import (
 	"errors"
 
-	devstore "github.com/ChargePilot2026/charge-pilot/internal/device"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
-	"github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	ordercase "github.com/ChargePilot2026/charge-pilot/internal/order"
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/httpapi"
+	devstore "chargepilot/internal/device"
+	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/http/admin"
+	ordercase "chargepilot/internal/order"
+	"chargepilot/internal/persist"
+	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
+	contract "chargepilot/internal/contracts/gateway"
 )
 
 // DeviceFaults 在ctx下读取原100条待处理批，返回原主键／载荷或传输／契约错误，无重试。

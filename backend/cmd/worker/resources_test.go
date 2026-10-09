@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/config"
+	"chargepilot/internal/platform/config"
 )
 
 // trackedConnector 提供共享关闭计数的 SQL 测试连接器，不连接外部数据库。

@@ -4,7 +4,7 @@ package payment
 import (
 	"strconv"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/snowflake"
+	"chargepilot/internal/platform/snowflake"
 	"gorm.io/gorm"
 )
 

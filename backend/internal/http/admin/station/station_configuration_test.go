@@ -4,7 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/http/admin"
+	"chargepilot/internal/http/admin"
 	"github.com/gin-gonic/gin"
 )
 

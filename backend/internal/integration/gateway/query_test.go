@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	contract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/serviceclient"
+	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/platform/serviceclient"
 )
 
 // TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision 用loopback信封验证原身份、单位、空值和64位游标精度，不代表真实网关取数。

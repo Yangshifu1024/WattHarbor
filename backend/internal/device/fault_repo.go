@@ -1,8 +1,8 @@
 package device
 
 import (
+	"chargepilot/internal/domain/operations"
 	"context"
-	"github.com/ChargePilot2026/charge-pilot/internal/domain/operations"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

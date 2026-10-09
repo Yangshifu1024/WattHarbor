@@ -1,8 +1,8 @@
 package control
 
 import (
-	gatewaycontract "github.com/ChargePilot2026/charge-pilot/internal/contracts/gateway"
-	gatewayrepo "github.com/ChargePilot2026/charge-pilot/internal/gateway/repo"
+	gatewaycontract "chargepilot/internal/contracts/gateway"
+	gatewayrepo "chargepilot/internal/gateway/repo"
 )
 
 // syncCommandDTO 接收原 row，将命令身份及可空端口、结果和 UTC 确认时刻映射为共享记录；返回记录，无 IO。

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/persist"
+	"chargepilot/internal/persist"
 	"gorm.io/gorm"
 )
 

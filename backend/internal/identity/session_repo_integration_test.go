@@ -3,10 +3,10 @@
 package identity
 
 import (
+	"chargepilot/internal/platform/sessiontoken"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ChargePilot2026/charge-pilot/internal/platform/sessiontoken"
 	"github.com/redis/go-redis/v9"
 	"os"
 	"sync"

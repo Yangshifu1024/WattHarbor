@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChargePilot2026/charge-pilot/internal/protocol"
+	"chargepilot/internal/protocol"
 )
 
 // testAdapter 通知真实 TCP 连接进入适配器并等待调用方取消，不解析设备帧。

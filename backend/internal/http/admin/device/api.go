@@ -1,10 +1,10 @@
 package device
 
 import (
-	"github.com/ChargePilot2026/charge-pilot/internal/device"
-	adminhttp "github.com/ChargePilot2026/charge-pilot/internal/http/admin"
-	authhttp "github.com/ChargePilot2026/charge-pilot/internal/http/auth"
-	"github.com/ChargePilot2026/charge-pilot/internal/settlement"
+	"chargepilot/internal/device"
+	adminhttp "chargepilot/internal/http/admin"
+	authhttp "chargepilot/internal/http/auth"
+	"chargepilot/internal/settlement"
 	"github.com/gin-gonic/gin"
 )
 
