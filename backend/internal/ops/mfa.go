@@ -163,7 +163,8 @@ func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string,
 			if pending.AdminID != account.ID || pending.AuthVersion != account.AuthVersion || pending.SessionID != sid || !time.Now().UTC().Before(pending.ExpiresAt) || subtle.ConstantTimeCompare([]byte(pending.ID), []byte(in.EnrollmentID)) != 1 {
 				return ErrMFAPending
 			}
-			if err := auth.VerifyTOTP(pending.Secret, in.Code, time.Now().UTC()); err != nil {
+			step, err := auth.VerifyTOTP(pending.Secret, in.Code, time.Now().UTC())
+			if err != nil {
 				return ErrMFAProof
 			}
 			// 更新前比较并原子删除读取过的挑战；坏码、过期或已替换挑战不能启用 MFA。
@@ -175,6 +176,14 @@ func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string,
 				return ErrMFAPending
 			}
 			if err := UpdateAdminMFASecret(tx, account.ID, &pending.Secret, true, true); err != nil {
+				return err
+			}
+			// 首次确认消费新密钥时间步；重新登录须等待验证器切换验证码。
+			updated, err := (AccountRepo{DB: tx}).LockActiveAdmin(tx, account.ID)
+			if err != nil {
+				return err
+			}
+			if err := consumeAdminTOTPStep(tx, updated, step); err != nil {
 				return err
 			}
 			// audit 只记录账号和动作，永不持久化密钥、验证码或密码。
@@ -190,8 +199,12 @@ func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string,
 			if !account.MFAEnabled || account.MFASecret == nil {
 				return ErrMFAState
 			}
-			if err := auth.VerifyTOTP(*account.MFASecret, in.Code, time.Now().UTC()); err != nil {
+			step, err := auth.VerifyTOTP(*account.MFASecret, in.Code, time.Now().UTC())
+			if err != nil || (account.MFALastStep != nil && step <= *account.MFALastStep) {
 				return ErrMFAProof
+			}
+			if err := consumeAdminTOTPStep(tx, account, step); err != nil {
+				return err
 			}
 			if err := s.Repo.ClearPending(ctx, account.ID); err != nil {
 				return err

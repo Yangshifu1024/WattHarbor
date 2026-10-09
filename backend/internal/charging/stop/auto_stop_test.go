@@ -7,6 +7,34 @@ import (
 	"chargepilot/internal/protocol"
 )
 
+// TestNoPowerRecoversOnlyAfterIndependentWindow 验证旧重复和乱序不永久阻断，异常前累计不能补入新窗口。
+func TestNoPowerRecoversOnlyAfterIndependentWindow(t *testing.T) {
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	at := func(seconds int) protocol.Event {
+		return protocol.Event{Type: protocol.Heartbeat, ReceivedAt: now.Add(time.Duration(seconds) * time.Second), ChargingPorts: []protocol.PortTelemetry{{Port: 1}}}
+	}
+	clean := []protocol.Event{at(-70), at(-55), at(-40), at(-25), at(-10), at(-2)}
+	for _, tc := range []struct {
+		name   string           // 恢复场景名称
+		prefix []protocol.Event // 不可拼接的历史证据
+		want   bool             // 新窗口是否可证明完整一分钟
+	}{
+		{"old duplicate", []protocol.Event{at(-7200), at(-7200)}, true},
+		{"old disorder", []protocol.Event{at(-7200), at(-7215)}, true},
+		{"recent duplicate", []protocol.Event{at(-70), at(-70)}, false},
+		{"disorder cannot move baseline", []protocol.Event{at(-20), at(-7200)}, false},
+		{"future invalidates input", []protocol.Event{at(1)}, false},
+		{"zero time invalidates input", []protocol.Event{{Type: protocol.Heartbeat}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			samples := append(append([]protocol.Event{}, tc.prefix...), clean...)
+			if got := noPowerForMinute(samples, 1, now); got != tc.want {
+				t.Fatalf("got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestNoPowerRequiresContinuousMinuteAndFreshHeartbeat 验证零功率须连续一分钟且末条心跳有效。
 // 正功率重置计时，缺少目标端口不能算作零功率。
 func TestNoPowerRequiresContinuousMinuteAndFreshHeartbeat(t *testing.T) {

@@ -66,7 +66,10 @@ func assemble(ctx context.Context, cfg config.Admin, r *resources) (*application
 	if err != nil {
 		return nil, err
 	}
-	router := newRouter(cfg, r, authAPI, gateway)
+	router, err := newRouter(cfg, r, authAPI, gateway)
+	if err != nil {
+		return nil, err
+	}
 	log.Printf("admin: http=%s gateway=%s export_dir=%s", cfg.HTTPAddr, cfg.GatewayInternalURL, cfg.ExportDir)
 	return &application{
 		Server: &http.Server{

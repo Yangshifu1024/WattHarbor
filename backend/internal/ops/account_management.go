@@ -329,8 +329,12 @@ func (s AccountService) MFA(ctx context.Context, audit AuditContext, id uint64, 
 			result = ManagedMFAReply{Secret: secret, URI: uri, Code: code}
 			action = "mfa_enrol"
 		case "confirm":
-			if account.MFASecret == nil || subtle.ConstantTimeCompare([]byte(*account.MFASecret), []byte(input.Secret)) != 1 || auth.VerifyTOTP(input.Secret, input.Code, now) != nil {
+			step, err := auth.VerifyTOTP(input.Secret, input.Code, now)
+			if account.MFASecret == nil || subtle.ConstantTimeCompare([]byte(*account.MFASecret), []byte(input.Secret)) != 1 || err != nil || (account.MFALastStep != nil && step <= *account.MFALastStep) {
 				return &ManagementInputError{"验证码校验失败"}
+			}
+			if err := consumeAdminTOTPStep(tx, account, step); err != nil {
+				return err
 			}
 			if err := UpdateAdminMFASecret(tx, id, account.MFASecret, true, !account.MFAEnabled); err != nil {
 				return err

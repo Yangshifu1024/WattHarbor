@@ -164,6 +164,10 @@ services:
       <<: *go-build
       args: { SERVICE: admin }
     restart: unless-stopped
+    networks:
+      default: {}
+      admin-proxy:
+        aliases: [admin-proxy-upstream]
     volumes:
       - export-files:/var/lib/chargepilot/exports
     environment:
@@ -173,6 +177,7 @@ services:
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
       DATABASE_URL_CENTRAL: mysql://chargepilot_admin:${DB_ADMIN_PASSWORD:?required}@chargepilot-mysql:3306/central_db
       EXPORT_DIR: /var/lib/chargepilot/exports
+      ADMIN_TRUSTED_PROXIES: ${CADDY_ADMIN_PROXY_IP:-172.30.81.2}
       REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
       JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
@@ -212,6 +217,10 @@ services:
   chargepilot-caddy:
     image: caddy:2.11-alpine
     restart: unless-stopped
+    networks:
+      default: {}
+      admin-proxy:
+        ipv4_address: ${CADDY_ADMIN_PROXY_IP:-172.30.81.2}
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?required}
     ports: ["80:80", "443:443"]
@@ -222,6 +231,14 @@ services:
       - caddy-config:/config
     depends_on:
       chargepilot-central: { condition: service_started }
+
+# 专用网段仅连接 Caddy 与 admin；后台只信任 Caddy 单一地址，其他服务不能伪造来源。
+networks:
+  admin-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${ADMIN_PROXY_SUBNET:-172.30.81.0/29}
 
 volumes:
   mysql-data:

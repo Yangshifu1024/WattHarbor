@@ -245,7 +245,7 @@ function OrderDetailsContent({ orderID, onClose, onChanged, onUserSelect, childr
           { key: 'refund', label: '退款进度', children: refunds[detail.refund_status] || detail.refund_status },
           { key: 'refunded', label: '退款金额', children: refundedAmount(detail.refunded_cents) },
         ]} />
-        {detail.refund_applicant_id && <ManualRefund key={detail.order_id} orderId={detail.order_id} orderNo={detail.order_no} actorId={detail.refund_applicant_id} onCreated={changed} />}
+        {detail.refund_applicant_id && <ManualRefund key={`${detail.order_id}:${detail.refund_applicant_id}:${session.current}`} orderId={detail.order_id} orderNo={detail.order_no} actorId={detail.refund_applicant_id} onCreated={changed} />}
           </Space> },
           { key: 'timeline', label: '事件时间线', children: <>
         {!timeline?.timeline.length && <Typography.Text type="secondary">暂无已记录的事件</Typography.Text>}

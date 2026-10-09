@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -14,8 +15,63 @@ import (
 	"chargepilot/internal/protocol"
 )
 
+// endBatchScenario 将两笔独立订单放入同一批，指定一笔端口释放失败；其余命名接口仍执行真实编排。
+type endBatchScenario struct {
+	*endSyncScenario        // 记录中央请求、处理标记及失败退避
+	failedOrder      uint64 // 要注入释放故障的订单
+	falseReply       bool   // 使用 Released=false 而非 HTTP 错误
+}
+
+func (s *endBatchScenario) EndEvents(context.Context) ([]gatewaycontract.SyncEvent, error) {
+	rows := []gatewaycontract.SyncEvent{}
+	for i := uint64(9); i <= 10; i++ {
+		event := s.event
+		event.OrderNumber = strconv.FormatUint(i, 10)
+		raw, _ := json.Marshal(event)
+		rows = append(rows, gatewaycontract.SyncEvent{ID: i + 68, Payload: string(raw)})
+	}
+	return rows, nil
+}
+func (s *endBatchScenario) ChargeCommand(_ context.Context, id uint64) (*gatewaycontract.SyncCommand, error) {
+	row := s.command
+	row.ChargeOrderID = id
+	row.OrderNo = "C-" + strconv.FormatUint(id, 10)
+	return &row, nil
+}
+func (s *endBatchScenario) MeterSamples(context.Context, gatewaycontract.MeterSamplesRequest) ([]gatewaycontract.SyncEvent, error) {
+	return nil, nil
+}
+func (s *endBatchScenario) FreezeEndDelivery(_ context.Context, r gatewaycontract.FreezeEndDeliveryRequest) (gatewaycontract.FreezeEndDeliveryReply, error) {
+	return gatewaycontract.FreezeEndDeliveryReply{Payload: r.Payload, Frozen: true}, nil
+}
+func (s *endBatchScenario) ReleasePort(_ context.Context, r gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortReply, error) {
+	s.releases = append(s.releases, r)
+	if r.OrderNo == "C-"+strconv.FormatUint(s.failedOrder, 10) {
+		if s.falseReply {
+			return gatewaycontract.ReleasePortReply{}, nil
+		}
+		return gatewaycontract.ReleasePortReply{}, errors.New("release unavailable")
+	}
+	return gatewaycontract.ReleasePortReply{Released: true}, nil
+}
+
+// TestEndBatchReleaseFailureDoesNotBlockIndependentEvent 覆盖失败位于首尾及负确认，只有独立成功项被标记。
+func TestEndBatchReleaseFailureDoesNotBlockIndependentEvent(t *testing.T) {
+	for _, failed := range []uint64{9, 10} {
+		for _, negative := range []bool{false, true} {
+			s := &endBatchScenario{endSyncScenario: newEndScenario(), failedOrder: failed, falseReply: negative}
+			n, err := (EndSynchronizer{Gateway: s, Central: s}).SyncBatch(context.Background())
+			want := uint64(87) - failed
+			if n != 1 || err == nil || !reflect.DeepEqual(s.marked, []uint64{want}) || len(s.results) != 2 || len(s.releases) != 2 || len(s.deferred) != 1 || s.deferred[0].Key != strconv.FormatUint(failed+68, 10) {
+				t.Fatalf("failed=%d negative=%v n=%d marked=%v defer=%v err=%v", failed, negative, n, s.marked, s.deferred, err)
+			}
+		}
+	}
+}
+
 // endSyncScenario 记录结束同步各阶段调用，按 fail 指定的阶段返回错误。
 type endSyncScenario struct {
+	deferred []gatewaycontract.DeferSyncDeliveryRequest // 记录独立投递退避，不表示实际持久化
 	// event 待同步协议结束事件 fixture，保留 Wh 与秒字段值。
 	event protocol.Event
 	// command 已确认 START 命令 fixture，调用方自行核对身份。
@@ -30,6 +86,12 @@ type endSyncScenario struct {
 	releases []gatewaycontract.ReleasePortRequest
 	// marked 收到的处理事件 ID 集合，不表示提交标记。
 	marked []uint64
+}
+
+// DeferSyncDelivery 记录固定分类，成功返回仅用于编排断言。
+func (s *endSyncScenario) DeferSyncDelivery(_ context.Context, r gatewaycontract.DeferSyncDeliveryRequest) error {
+	s.deferred = append(s.deferred, r)
+	return nil
 }
 
 // EndEvents 返回预设结束事件，事件 ID 为 77。

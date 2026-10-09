@@ -7,15 +7,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// ListStartResults 查询已回执但未上报的启动命令，可按 commandID 筛选；按更新时间升序最多 50 条。
+// ListStartResults 查询已回执且到期的未上报启动命令，可按 commandID 筛选；最多 50 条。
+// 首投按命令更新时间、重试按持久到期时间共同排序，异常首批和持续新投递均不能挤掉另一类记录。
 func ListStartResults(ctx context.Context, db *gorm.DB, commandID string) ([]SyncCommandRow, error) {
 	query := db.WithContext(ctx).Model(&SyncCommandRow{}).
-		Where("status IN ('acked','rejected') AND result_reported = FALSE AND result_code IS NOT NULL AND ack_at IS NOT NULL")
+		Select("charge_command.*").
+		Joins("LEFT JOIN sync_delivery_retry x ON x.kind='start' AND x.delivery_key=charge_command.command_id").
+		Where("charge_command.status IN ('acked','rejected') AND result_reported = FALSE AND result_code IS NOT NULL AND ack_at IS NOT NULL").
+		Where("x.next_attempt_at IS NULL OR x.next_attempt_at<=UTC_TIMESTAMP(3)")
 	if commandID != "" {
 		query = query.Where("command_id = ?", commandID)
 	}
 	var rows []SyncCommandRow
-	err := query.Order("updated_at").Limit(50).Find(&rows).Error
+	err := query.Order("COALESCE(x.next_attempt_at,charge_command.updated_at),charge_command.command_id").Limit(50).Find(&rows).Error
 	return rows, err
 }
 
@@ -55,13 +59,16 @@ func MarkDeviceEventsProcessed(ctx context.Context, db *gorm.DB, ids []uint64) (
 	return marked, err
 }
 
-// ListUnprocessedEndEvents 按 ID 升序读取最多 50 条未处理的 ConsumerType 2/3 结束事件。
+// ListUnprocessedEndEvents 读取最多 50 条未处理且到期的 ConsumerType 2/3 结束事件。
+// 首投接收时间与重试到期时间共同排序；不修改冻结载荷或事件处理状态。
 func ListUnprocessedEndEvents(ctx context.Context, db *gorm.DB) ([]SyncEventRow, error) {
 	var rows []SyncEventRow
 	err := db.WithContext(ctx).
-		Select("id, event_json").
+		Select("device_event.id, event_json").
+		Joins("LEFT JOIN sync_delivery_retry x ON x.kind='end' AND x.delivery_key=CAST(device_event.id AS CHAR)").
 		Where("event_type = 'charge_end' AND processed_at IS NULL AND JSON_EXTRACT(event_json, '$.ConsumerType') IN (2,3)").
-		Order("id").Limit(50).Find(&rows).Error
+		Where("x.next_attempt_at IS NULL OR x.next_attempt_at<=UTC_TIMESTAMP(3)").
+		Order("COALESCE(x.next_attempt_at,device_event.received_at),device_event.id").Limit(50).Find(&rows).Error
 	return rows, err
 }
 

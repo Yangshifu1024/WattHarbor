@@ -14,6 +14,8 @@ import (
 
 // EndGateway 提供结束事件、心跳读数、请求保存、端口释放及处理标记。
 type EndGateway interface {
+	// DeferSyncDelivery 保存事件失败分类与持久退避，冻结结束请求保持不变。
+	DeferSyncDelivery(context.Context, gatewaycontract.DeferSyncDeliveryRequest) error
 	// EndEvents 返回未处理结束事件页或读取错误；不修改事件。
 	EndEvents(context.Context) ([]gatewaycontract.SyncEvent, error)
 	// ChargeCommand 查询订单对应的 START 命令；不存在时返回 nil。
@@ -40,7 +42,7 @@ type EndSynchronizer struct {
 }
 
 // SyncBatch 核对结束事件与已确认的启动命令，再保存请求、提交中央、释放端口并标记事件。
-// 读取或提交失败时继续下一条；释放失败立即返回，此前事件也留待重新标记。
+// 读取、提交或释放失败时持久退避并继续独立事件；仅中央及释放均确认的项进入标记。
 // 返回端口已释放的数量；标记失败时保留计数并返回错误。
 func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 	if s.Gateway == nil || s.Central == nil {
@@ -53,38 +55,34 @@ func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 	count := 0
 	var first error
 	processed := make([]uint64, 0, len(items))
+	fail := func(item gatewaycontract.SyncEvent, category string, cause error) {
+		first = errors.Join(first, cause, s.Gateway.DeferSyncDelivery(ctx, gatewaycontract.DeferSyncDeliveryRequest{Kind: "end", Key: strconv.FormatUint(item.ID, 10), Category: category}))
+	}
 	for _, item := range items {
+		if err := ctx.Err(); err != nil {
+			return count, errors.Join(first, err)
+		}
 		var event protocol.Event
 		if err := json.Unmarshal([]byte(item.Payload), &event); err != nil {
-			if first == nil {
-				first = err
-			}
+			fail(item, "invalid", err)
 			continue
 		}
 		orderID, err := strconv.ParseUint(event.OrderNumber, 10, 64)
 		if err != nil || orderID == 0 || (event.ConsumerType != 2 && event.ConsumerType != 3) || event.EndedAt.IsZero() {
-			if first == nil {
-				first = errors.New("invalid dc589 charge end event")
-			}
+			fail(item, "invalid", errors.New("invalid dc589 charge end event"))
 			continue
 		}
 		command, err := s.Gateway.ChargeCommand(ctx, orderID)
 		if err != nil {
-			if first == nil {
-				first = err
-			}
+			fail(item, "retry", err)
 			continue
 		}
 		if command == nil {
-			if first == nil {
-				first = errors.New("charge end has no persisted start command")
-			}
+			fail(item, "dependency", errors.New("charge end has no persisted start command"))
 			continue
 		}
 		if command.ChargeOrderID != orderID || command.DeviceID != event.DeviceID || command.PortNo != event.Port || command.Status != "acked" || command.PortID == nil || *command.PortID <= 0 {
-			if first == nil {
-				first = errors.New("charge end does not match an acknowledged START")
-			}
+			fail(item, "unknown", errors.New("charge end does not match an acknowledged START"))
 			continue
 		}
 		result := centralcontract.EndResultRequest{OrderNo: command.OrderNo, ChargeOrderID: orderID, StartCommandID: command.CommandID, StopCommandID: command.StopCommandID, DeviceID: event.DeviceID, PortNo: event.Port, PortID: uint64(*command.PortID)}
@@ -92,30 +90,27 @@ func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 		result.Meter.EndedAt, result.Meter.StopReason = event.EndedAt, event.StopReason
 		result, err = s.freezeEndResult(ctx, s.Gateway, *command, item.ID, event, result)
 		if err != nil {
-			if first == nil {
-				first = err
-			}
+			fail(item, "retry", err)
 			continue
 		}
 		if _, err := s.Central.SubmitEndResult(ctx, result); err != nil {
-			if first == nil {
-				first = err
-			}
+			fail(item, "retry", err)
 			continue
 		}
 		release, err := s.Gateway.ReleasePort(ctx, gatewaycontract.ReleasePortRequest{PortID: result.PortID, OrderNo: result.OrderNo})
 		if err != nil || !release.Released {
 			if err == nil {
-				err = errors.New("gateway port could not be released after settlement")
+				err = errors.New("gateway did not confirm port release")
 			}
-			return count, fmt.Errorf("gateway port could not be released after settlement: %w", err)
+			fail(item, "retry", fmt.Errorf("gateway port could not be released after central acceptance: %w", err))
+			continue
 		}
 		processed = append(processed, item.ID)
 		count++
 	}
 	if len(processed) > 0 {
 		if _, err := s.Gateway.MarkDeviceEventsProcessed(ctx, processed); err != nil {
-			return count, err
+			return count, errors.Join(first, err)
 		}
 	}
 	return count, first

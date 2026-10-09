@@ -21,8 +21,25 @@ func TestVerifyTOTPAcceptsRFC6238Vectors(t *testing.T) {
 		{20000000000, "353130"},
 	}
 	for _, tc := range cases {
-		if err := VerifyTOTP(seed, tc.code, time.Unix(tc.seconds, 0)); err != nil {
+		if step, err := VerifyTOTP(seed, tc.code, time.Unix(tc.seconds, 0)); err != nil || step != tc.seconds/30 {
 			t.Errorf("code %s rejected at t=%d: %v", tc.code, tc.seconds, err)
+		}
+	}
+}
+
+// TestVerifyTOTPReturnsMatchingSkewStep 验证返回实际命中步骤，调用方不能误消费服务器当前步骤。
+func TestVerifyTOTPReturnsMatchingSkewStep(t *testing.T) {
+	const seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+	now := time.Unix(1790624000, 0)
+	for _, offset := range []int64{-1, 0, 1} {
+		at := time.Unix((now.Unix()/30+offset)*30, 0)
+		code, err := TOTPCode(seed, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		step, err := VerifyTOTP(seed, code, now)
+		if err != nil || step != at.Unix()/30 {
+			t.Fatalf("offset=%d step=%d err=%v", offset, step, err)
 		}
 	}
 }
@@ -31,7 +48,7 @@ func TestVerifyTOTPRejectsWrongCode(t *testing.T) {
 	const seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 	at := time.Unix(1111111109, 0)
 	for _, wrong := range []string{"000000", "0818041", "abcdef", "", "12345", "08180 "} {
-		if err := VerifyTOTP(seed, wrong, at); err == nil {
+		if _, err := VerifyTOTP(seed, wrong, at); err == nil {
 			t.Errorf("invalid code accepted: %q", wrong)
 		}
 	}
@@ -39,7 +56,7 @@ func TestVerifyTOTPRejectsWrongCode(t *testing.T) {
 
 func TestVerifyTOTPRejectsInvalidSecret(t *testing.T) {
 	for _, secret := range []string{"", "not-base32!!", "1111"} {
-		if err := VerifyTOTP(secret, "123456", time.Now()); err == nil {
+		if _, err := VerifyTOTP(secret, "123456", time.Now()); err == nil {
 			t.Errorf("invalid secret accepted: %q", secret)
 		}
 	}
@@ -49,7 +66,7 @@ func TestVerifyTOTPAllowsClockSkew(t *testing.T) {
 	const seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 	base := time.Unix(1111111111, 0)
 	// 此处只验证当前时间步的口令。
-	if err := VerifyTOTP(seed, "050471", base); err != nil {
+	if _, err := VerifyTOTP(seed, "050471", base); err != nil {
 		t.Fatalf("baseline code rejected: %v", err)
 	}
 }
@@ -64,7 +81,7 @@ func TestTOTPCodeRoundTripsThroughVerify(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyTOTP(secret, code, now); err != nil {
+	if _, err := VerifyTOTP(secret, code, now); err != nil {
 		t.Fatalf("generated code %s did not verify: %v", code, err)
 	}
 }

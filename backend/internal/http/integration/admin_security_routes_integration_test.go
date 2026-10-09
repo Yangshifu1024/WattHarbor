@@ -27,6 +27,11 @@ import (
 // TestRegisteredAdminSecurityLifecycle 使用真实 MySQL／Redis 和注册认证路由验证登记、确认、挑战和关闭。
 // 账号、权限、状态与审计使用外层回滚；随机 SID 及本测试绑定／租锁／频次键逐项清理，不改 bootstrap。
 func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
+	// 使用前一、当前、后一时间步依次确认、登录、关闭；避免测试主动重用已消费验证码。
+	// 若开始时即将跨步，等待边界后再执行，避免前一步在路由验证前过期。
+	if until := time.Until(time.Now().Truncate(30 * time.Second).Add(30 * time.Second)); until < 3*time.Second {
+		time.Sleep(until + 10*time.Millisecond)
+	}
 	tx := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
 	if tx.Error != nil {
 		t.Fatal(tx.Error)
@@ -131,7 +136,7 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 	if enrolled.Secret == "" || len(enrolled.EnrollmentID) != 43 || enrolled.ExpiresIn != 300 || !strings.HasPrefix(enrolled.OTPAuthURI, "otpauth://") || enrolled.MFAEnabled || enrolled.SessionsRevoked {
 		t.Fatal("enrollment contract changed")
 	}
-	code, err := auth.TOTPCode(enrolled.Secret, time.Now())
+	code, err := auth.TOTPCode(enrolled.Secret, time.Now().Add(-30*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +151,7 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 	badCode := ""
 	for candidate := 0; candidate < 10 && badCode == ""; candidate++ {
 		code := fmt.Sprintf("%06d", candidate)
-		if auth.VerifyTOTP(enrolled.Secret, code, time.Now()) != nil {
+		if _, err := auth.VerifyTOTP(enrolled.Secret, code, time.Now()); err != nil {
 			badCode = code
 		}
 	}
@@ -179,6 +184,9 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 		t.Fatal("MFA challenge contract changed")
 	}
 	t.Cleanup(func() { cache.Del(ctx, "admin:mfa:"+challenge.Challenge) })
+	if w := call("POST", "/api/v1/admin/auth/mfa", map[string]any{"mfa_challenge": challenge.Challenge, "code": code}, "", ""); w.Code != 401 {
+		t.Fatalf("enrollment proof replay=%d", w.Code)
+	}
 	code, err = auth.TOTPCode(enrolled.Secret, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +201,17 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 		t.Fatalf("challenge replay=%d", w.Code)
 	}
 	var disabled ops.MFASettingsReply
+	if w := call("POST", settings, map[string]any{"action": "disable", "password": password, "code": code}, verified.AccessToken, ""); w.Code != 400 {
+		t.Fatalf("login proof replay in disable=%d", w.Code)
+	}
+	// 此处额外验证一次重放，下一项单独核对成功关闭；只重置本夹具的设置频次键。
+	if err := cache.Del(ctx, "admin:mfa-settings:rate:"+strconv.FormatUint(id, 10)).Err(); err != nil {
+		t.Fatal(err)
+	}
+	code, err = auth.TOTPCode(enrolled.Secret, time.Now().Add(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
 	data(call("POST", settings, map[string]any{"action": "disable", "password": password, "code": code}, verified.AccessToken, ""), &disabled)
 	if disabled.MFAEnabled || !disabled.SessionsRevoked {
 		t.Fatal("disable contract changed")

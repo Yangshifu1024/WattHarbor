@@ -61,37 +61,40 @@ func TOTPURI(issuer, account, secret string) (string, error) {
 }
 
 // VerifyTOTP 校验六位动态口令，允许当前时间步前后各一步。
-// 检查所有允许时间步，并用固定时间比较减少时序信息泄露。
-func VerifyTOTP(secret, code string, now time.Time) error {
+// 返回命中的时间步及错误；多个时间步碰撞时选最大一步。失败的时间步不可使用。
+// 检查所有允许时间步，并用固定时间比较减少时序信息泄露；本函数不消费，调用方负责原子持久化。
+func VerifyTOTP(secret, code string, now time.Time) (int64, error) {
 	secret = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(secret), " ", ""))
 	code = strings.TrimSpace(code)
 	if len(code) != totpDigits {
-		return ErrInvalidTOTP
+		return 0, ErrInvalidTOTP
 	}
 	for _, r := range code {
 		if r < '0' || r > '9' {
-			return ErrInvalidTOTP
+			return 0, ErrInvalidTOTP
 		}
 	}
 	key, err := base32Encoding.DecodeString(secret)
 	if err != nil || len(key) == 0 {
-		return ErrInvalidTOTP
+		return 0, ErrInvalidTOTP
 	}
 	step := now.Unix() / int64(totpPeriod/time.Second)
 	var matched bool
+	var matchedStep int64
 	for offset := -totpSkew; offset <= totpSkew; offset++ {
 		expected, err := hotp(key, uint64(step+int64(offset)))
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if subtle.ConstantTimeCompare([]byte(expected), []byte(code)) == 1 {
 			matched = true
+			matchedStep = step + int64(offset)
 		}
 	}
 	if !matched {
-		return ErrInvalidTOTP
+		return 0, ErrInvalidTOTP
 	}
-	return nil
+	return matchedStep, nil
 }
 
 // hotp 按 RFC 4226 用 HMAC-SHA1 和动态截断生成六位口令。

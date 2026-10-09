@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Input, Modal } from 'antd';
 import axios from 'axios';
 import { apiPost } from '../api/client';
@@ -6,7 +6,11 @@ interface Request { request_id: string; amount_cents: number; reason: string }
 export default function ManualRefund({ orderId, orderNo, actorId, onCreated }: { orderId: number; orderNo: string; actorId: string; onCreated: () => void }) {
   const [open, setOpen] = useState(false), [amount, setAmount] = useState(''), [reason, setReason] = useState('');
   const [pending, setPending] = useState<Request | null>(null), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
-  const flight = useRef(false), session = useRef<string | null>(null);
+  const flight = useRef(false), session = useRef<string | null>(null), generation = useRef(0);
+  useEffect(() => {
+    const current = ++generation.current;
+    return () => { if (generation.current === current) generation.current++; };
+  }, [actorId, orderId]);
   const key = `cp_manual_refund_${actorId}_${orderId}`;
   function show() {
     setError(''); setNotice(''); session.current = localStorage.getItem('cp_session_epoch');
@@ -23,16 +27,20 @@ export default function ManualRefund({ orderId, orderNo, actorId, onCreated }: {
     const cents = match ? Number(match[1]) * 100 + Number((match[2] || '').padEnd(2, '0')) : 0;
     if (!pending && (!Number.isSafeInteger(cents) || cents <= 0 || cents > 2147483647 || !reason.trim() || reason.trim().length > 255)) { setError('请填写有效金额（最多两位小数）和退款依据'); return; }
     flight.current = true; setBusy(true); setError('');
+    const requestGeneration = generation.current, requestEpoch = session.current;
+    const current = () => requestGeneration === generation.current && requestEpoch === localStorage.getItem('cp_session_epoch');
     try {
       const body = pending || { request_id: crypto.randomUUID(), amount_cents: cents, reason: reason.trim() };
       localStorage.setItem(key, JSON.stringify(body)); setPending(body);
       const result = await apiPost<{ created: boolean; refund_no: string; request_id: string }>(`/api/v1/admin/orders/${orderId}/refunds`, body);
+      if (!current()) return;
       if (!result.refund_no || result.request_id !== body.request_id) throw Error('申请结果暂不确定，请重试同一申请');
       localStorage.removeItem(key); setPending(null); setOpen(false); setNotice(`申请 ${result.refund_no} 已创建，等待两名不同财务人员在退款审核页分别审核。`); onCreated();
     } catch (e) {
+      if (!current()) return;
       if (axios.isAxiosError(e) && [400, 409, 422].includes(e.response?.status || 0)) { localStorage.removeItem(key); setPending(null); }
       setError(e instanceof Error ? e.message : '提交失败，请重试同一申请');
-    } finally { flight.current = false; setBusy(false); }
+    } finally { if (current()) { flight.current = false; setBusy(false); } }
   }
   return <>
     <Button onClick={show}>发起人工退款</Button>

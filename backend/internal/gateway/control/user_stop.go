@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"gorm.io/gorm"
+	"log/slog"
 	"net/http"
 
 	gatewaycontract "chargepilot/internal/contracts/gateway"
@@ -116,5 +117,7 @@ func (a UserStopAPI) handle(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5001, "stop command unavailable", nil)
 		return
 	}
+	// 来源只作诊断标签，不代替中央的实时归属授权；重试可关联同一持久 STOP 命令。
+	slog.InfoContext(c.Request.Context(), "stop command accepted", "source", request.Source, "order_no", request.OrderNo, "command_id", stop.CommandID, "status", stop.Status)
 	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StopReply{Accepted: true, Stopped: false, CommandID: stop.CommandID, Status: stop.Status})
 }

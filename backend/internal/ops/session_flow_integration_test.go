@@ -373,6 +373,17 @@ func (r gatedChallenges) ResolveMFA(ctx context.Context, token string) (MFAChall
 
 // TestSecurityConcurrentMFAChallengeOneSession 验证同一挑战并发验证只有一次删除、登录审计和会话创建；不保证先启动者获胜。
 func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
+	testConcurrentMFAConsumption(t, false)
+}
+
+// TestSecurityDifferentChallengesCannotReuseTOTPStep 验证挑战号不同仍共享账号密钥的时间步消费锁。
+func TestSecurityDifferentChallengesCannotReuseTOTPStep(t *testing.T) {
+	testConcurrentMFAConsumption(t, true)
+}
+
+// testConcurrentMFAConsumption 让两个独立连接同时完成挑战读取，再竞争同一账号行锁。
+// Redis 删除次数不是时间步消费证据，另核对 SQL 登录审计、成功会话和剩余挑战数。
+func testConcurrentMFAConsumption(t *testing.T, different bool) {
 	first, second, repo, account, _, jwt := securityFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -388,6 +399,14 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { repo.Redis.Del(context.Background(), mfaKey(challenge)) })
+	challenges := []string{challenge, challenge}
+	if different {
+		challenges[1], err = repo.BeginMFA(ctx, account.Identity())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { repo.Redis.Del(context.Background(), mfaKey(challenges[1])) })
+	}
 	code, err := auth.TOTPCode(secret, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -400,10 +419,10 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 		err   error       // 并发挑战验证错误
 	}
 	results := make(chan result, 2)
-	for _, db := range []*gorm.DB{first, second} {
+	for i, db := range []*gorm.DB{first, second} {
 		go func() {
 			s := SessionService{Accounts: AccountRepo{DB: db}, Sessions: gated, Tokens: JWTAccess{JWT: jwt}}
-			reply, err := s.VerifyMFA(ctx, challenge, code, "concurrent")
+			reply, err := s.VerifyMFA(ctx, challenges[i], code, "concurrent")
 			results <- result{reply, err}
 		}()
 	}
@@ -428,7 +447,7 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 			if err := repo.RevokeSession(context.Background(), sid); err != nil {
 				t.Fatal(err)
 			}
-		} else if !errors.Is(r.err, operations.ErrInvalidMFAChallenge) {
+		} else if !errors.Is(r.err, operations.ErrInvalidMFAChallenge) && !errors.Is(r.err, operations.ErrInvalidTOTP) {
 			t.Fatal(r.err)
 		}
 	}
@@ -436,8 +455,55 @@ func TestSecurityConcurrentMFAChallengeOneSession(t *testing.T) {
 	if err := first.Table("audit_log").Where("actor_id=? AND action='login_mfa'", account.ID).Count(&count).Error; err != nil || count != 1 || winners != 1 {
 		t.Fatalf("winners=%d audits=%d err=%v", winners, count, err)
 	}
-	if _, err := repo.ResolveMFA(ctx, challenge); !errors.Is(err, operations.ErrInvalidMFAChallenge) {
-		t.Fatalf("consumed challenge retained %v", err)
+	remaining := 0
+	for _, token := range challenges {
+		if _, err := repo.ResolveMFA(ctx, token); err == nil {
+			remaining++
+		} else if !errors.Is(err, operations.ErrInvalidMFAChallenge) {
+			t.Fatal(err)
+		}
+	}
+	want := 0
+	if different {
+		want = 1
+	}
+	if remaining != want {
+		t.Fatalf("remaining challenges=%d want=%d", remaining, want)
+	}
+	if different {
+		var current AdminAccount
+		if err := first.Where("id=?", account.ID).Take(&current).Error; err != nil || current.MFALastStep == nil {
+			t.Fatal("consumption not saved", err)
+		}
+		last, version := *current.MFALastStep, current.MFASecretVersion
+		if err := UpdateAdminMFASecret(first, account.ID, &secret, true, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := first.Where("id=?", account.ID).Take(&current).Error; err != nil || current.MFALastStep == nil || *current.MFALastStep != last || current.MFASecretVersion != version {
+			t.Fatal("authentication version reset consumption", err)
+		}
+		consumed := 0
+		consume := func(context.Context) error { consumed++; return nil }
+		if _, err := (AccountRepo{DB: second}).CompleteMFA(ctx, current.Identity(), code, "replay", consume); !errors.Is(err, operations.ErrInvalidTOTP) || consumed != 0 {
+			t.Fatalf("new auth version replay=%v consumed=%d", err, consumed)
+		}
+		next, err := auth.TOTPCode(secret, time.Unix((last+1)*30, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (AccountRepo{DB: second}).CompleteMFA(ctx, current.Identity(), next, "next", consume); err != nil || consumed != 1 {
+			t.Fatalf("next step=%v consumed=%d", err, consumed)
+		}
+		newSecret, err := auth.NewTOTPSecret()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := UpdateAdminMFASecret(first, account.ID, &newSecret, true, false); err != nil {
+			t.Fatal(err)
+		}
+		if err := first.Where("id=?", account.ID).Take(&current).Error; err != nil || current.MFALastStep != nil || current.MFASecretVersion != version+1 {
+			t.Fatal("new secret consumption not reset", err)
+		}
 	}
 }
 

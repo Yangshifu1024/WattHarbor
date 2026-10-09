@@ -38,7 +38,7 @@ type financeOrderBoundary struct {
 }
 
 // Due 返回没有新增计算任务，保留本次投递恢复场景。
-func (*financeOrderBoundary) Due(context.Context) ([]uint64, error) { return nil, nil }
+func (*financeOrderBoundary) Due(context.Context) ([]settlement.BillingTask, error) { return nil, nil }
 
 // Read 拒绝新计算，防止恢复流程绕过持久费用载荷。
 func (*financeOrderBoundary) Read(context.Context, uint64) (settlement.Source, error) {
@@ -58,7 +58,7 @@ func (o *financeOrderBoundary) Apply(_ context.Context, result settlement.Result
 }
 
 // Defer 拒绝新计算任务重排，本 fixture 只能恢复 fee_delivery。
-func (*financeOrderBoundary) Defer(context.Context, uint64, string, string) error {
+func (*financeOrderBoundary) Defer(context.Context, settlement.BillingTask, string, string) error {
 	return errors.New("unexpected new calculation defer")
 }
 

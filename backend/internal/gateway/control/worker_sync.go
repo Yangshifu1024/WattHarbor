@@ -15,6 +15,7 @@ import (
 // 网关负责启动结果、结束事件、端口释放、计量读数和刷卡事件的读写。
 func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 	r.GET(gatewaycontract.StartResultsPath, a.startResults)
+	r.POST(gatewaycontract.DeferSyncDeliveryPath, a.deferSyncDelivery)
 	r.POST(gatewaycontract.MarkStartResultsPath, a.markStartResultsReported)
 	r.GET(gatewaycontract.EndEventsPath, a.endEvents)
 	r.GET(gatewaycontract.ChargeCommandRoute, a.chargeCommandByOrder)
@@ -29,7 +30,25 @@ func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 	r.GET(gatewaycontract.CardPortPath, a.resolvePort)
 }
 
-// startResults 鉴权后查询已回执但未上报的启动命令，可按 command_id 筛选；按更新时间升序最多 50 条。
+// deferSyncDelivery 鉴权并校验固定失败分类，将退避交由网关仓储持久化；失败返回503。
+// c 提供请求 context，取消不再提交；响应只确认退避，不覆盖命令或端口业务状态。
+func (a TelemetryAPI) deferSyncDelivery(c *gin.Context) {
+	if !a.authorized(c) {
+		return
+	}
+	var in gatewaycontract.DeferSyncDeliveryRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpapi.BadRequest(c, "投递退避请求无效")
+		return
+	}
+	if err := gatewayrepo.DeferSyncDelivery(c.Request.Context(), a.DB, in.Kind, in.Key, in.Category); err != nil {
+		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "投递退避暂不可用", nil)
+		return
+	}
+	httpapi.OK(c, gatewaycontract.DeferSyncDeliveryReply{Deferred: true})
+}
+
+// startResults 鉴权后查询到期且未上报的启动命令，可按 command_id 筛选；首投与重试共同排序，最多50条。
 func (a TelemetryAPI) startResults(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -70,7 +89,7 @@ func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 	httpapi.OK(c, gatewaycontract.MarkReply{Marked: marked})
 }
 
-// endEvents 鉴权后按 ID 升序返回最多 50 条未处理的 ConsumerType 2/3 结束事件。
+// endEvents 鉴权后返回最多50条到期且未处理的 ConsumerType 2/3 结束事件，首投与重试共同排序。
 func (a TelemetryAPI) endEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return

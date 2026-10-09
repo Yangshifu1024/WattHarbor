@@ -145,7 +145,7 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 			return err
 		}
 		if approve {
-			return tx.Table("charge_billing_job").Where("charge_order_id=?", id).Updates(map[string]any{"status": "pending", "next_attempt_at": time.Now().UTC(), "last_error": nil}).Error
+			return tx.Table("charge_billing_job").Where("charge_order_id=?", id).Updates(map[string]any{"status": "pending", "generation": gorm.Expr("generation+1"), "next_attempt_at": time.Now().UTC(), "last_error": nil}).Error
 		}
 		return nil
 	})

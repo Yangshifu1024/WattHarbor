@@ -13,6 +13,7 @@ import (
 
 // startSyncScenario 记录启动同步请求和次序，按配置返回错误。
 type startSyncScenario struct {
+	deferred []gatewaycontract.DeferSyncDeliveryRequest // 记录失败分类和投递身份
 	// rows 启动回执 fixture 列表，不表示数据库查询结果已经提交。
 	rows []gatewaycontract.SyncCommand
 	// deliverErr,compensateErr,markErr 分别控制中央投递、启动补偿和上报标记 fixture 的错误值。
@@ -23,6 +24,12 @@ type startSyncScenario struct {
 	// compensations,reported fixture 分别记录的补偿身份文本和请求上报命令集合，不代表已保存状态。
 	compensations, reported []string
 	calls                   []string
+}
+
+// DeferSyncDelivery 记录固定分类，不改变 START 回执。
+func (s *startSyncScenario) DeferSyncDelivery(_ context.Context, r gatewaycontract.DeferSyncDeliveryRequest) error {
+	s.deferred = append(s.deferred, r)
+	return nil
 }
 
 // StartResults 记录筛选条件，返回预设启动结果。
@@ -87,7 +94,7 @@ func TestStartSyncConflictCompensatesOnlySuccessfulStartAndNeverMarks(t *testing
 		}
 		s := &startSyncScenario{rows: []gatewaycontract.SyncCommand{row}, deliverErr: centralcontract.ErrResultConflict}
 		n, err := (Synchronizer{Gateway: s, Central: s}).SyncBatch(context.Background())
-		if n != 0 || len(s.reported) != 0 || (len(s.compensations) == 1) != success || (err == nil) != success {
+		if n != 0 || len(s.reported) != 0 || (len(s.compensations) == 1) != success || !errors.Is(err, centralcontract.ErrResultConflict) {
 			t.Fatalf("success=%t count=%d reported=%v compensation=%v err=%v", success, n, s.reported, s.compensations, err)
 		}
 		if success && (!reflect.DeepEqual(s.calls, []string{"central:start-1", "compensate:start-1"}) || s.compensations[0] != "C-9:start-1") {

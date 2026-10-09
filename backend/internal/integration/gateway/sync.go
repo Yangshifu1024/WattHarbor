@@ -56,6 +56,19 @@ func (c *Client) StartResults(ctx context.Context, commandID string) ([]gatewayc
 	return data.Items, nil
 }
 
+// DeferSyncDelivery 在 ctx 内按 request 身份及固定分类登记持久退避，不自动重试。
+// 只接受 HTTP200、code=0、deferred=true；失败或未知结果返回错误，不改变投递身份。
+func (c *Client) DeferSyncDelivery(ctx context.Context, request gatewaycontract.DeferSyncDeliveryRequest) error {
+	data, err := post[gatewaycontract.DeferSyncDeliveryReply](ctx, c, gatewaycontract.DeferSyncDeliveryPath, request, http.StatusOK)
+	if err != nil {
+		return err
+	}
+	if !data.Deferred {
+		return fmt.Errorf("%w: sync delivery not deferred", ErrInvalidResponse)
+	}
+	return nil
+}
+
 // EndEvents 查询未处理的结束事件；保留事件编号和 JSON，无记录返回空列表。
 func (c *Client) EndEvents(ctx context.Context) ([]gatewaycontract.SyncEvent, error) {
 	data, err := get[gatewaycontract.EventsReply](ctx, c, gatewaycontract.EndEventsPath)

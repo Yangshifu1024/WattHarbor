@@ -75,7 +75,7 @@ type EvidenceReply struct {
 type StopRequest struct {
 	OrderNo string `json:"order_no" binding:"required,max=64"`                  // 充电订单号，重试沿用
 	UserID  uint64 `json:"user_id" binding:"required"`                          // 订单所属用户 ID
-	Source  string `json:"source" binding:"required,oneof=user_app admin auto"` // 发起方标签，用于网关授权及审计
+	Source  string `json:"source" binding:"required,oneof=user_app admin auto"` // 发起方诊断标签；授权仍由中央核对归属与状态
 }
 
 // StopReply 只确认停止命令已受理，Stopped 保持 false；设备结束由异步回执确认。

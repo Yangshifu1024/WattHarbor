@@ -4,6 +4,7 @@ import "time"
 
 const (
 	StartResultsPath      = "/api/v1/internal/start-results"
+	DeferSyncDeliveryPath = "/api/v1/internal/sync-deliveries/defer"
 	MarkStartResultsPath  = "/api/v1/internal/start-results/mark-reported"
 	EndEventsPath         = "/api/v1/internal/end-events"
 	ChargeCommandRoute    = "/api/v1/internal/charge-commands/by-order/:order_id"
@@ -13,6 +14,18 @@ const (
 	FreezeEndDeliveryPath = "/api/v1/internal/charge-end-deliveries/freeze"
 	CompensateStartRoute  = "/api/v1/internal/charge-orders/:order_no/compensate"
 )
+
+// DeferSyncDeliveryRequest 仅登记同步投递失败分类，不提供业务状态修改能力。
+type DeferSyncDeliveryRequest struct {
+	Kind     string `json:"kind" binding:"required,oneof=start end"`                            // start 命令或 end 事件
+	Key      string `json:"key" binding:"required,max=64"`                                      // 命令 UUID 或事件十进制主键
+	Category string `json:"category" binding:"required,oneof=invalid unknown dependency retry"` // 固定脱敏分类
+}
+
+// DeferSyncDeliveryReply 确认退避已持久化，不表示业务回执已确认。
+type DeferSyncDeliveryReply struct {
+	Deferred bool `json:"deferred"` // true 表示元数据提交成功
+}
 
 // SyncCommand 保留端口、结果码和回执时间的空值，缺失记录不解码为零。
 type SyncCommand struct {

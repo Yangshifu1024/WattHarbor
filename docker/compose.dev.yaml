@@ -158,6 +158,8 @@ services:
       REDIS_CACHE_URL: redis://redis-cache:6379/0
       DATABASE_URL_CENTRAL: mysql://chargepilot_admin:${DB_ADMIN_PASSWORD:-chargepilot_admin_dev}@mysql:3306/central_db
       EXPORT_DIR: /var/lib/chargepilot/exports
+      # 开发后台由宿主机直连，不默认信任 Vite 或其他来源的转发头。
+      ADMIN_TRUSTED_PROXIES: ${ADMIN_TRUSTED_PROXIES:-}
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-admin}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-ChangeMe!Admin2026}
     depends_on:

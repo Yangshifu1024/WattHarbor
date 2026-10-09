@@ -58,7 +58,8 @@ func latestMeter(samples []protocol.Event, port uint8, now time.Time) (meterRead
 
 // noPowerForMinute 检查目标 port 是否连续一分钟上报零功率。
 // samples 必须保留入库顺序及端口缺失事件，now 为 UTC 判定时刻；不修改输入。
-// 未来、乱序或重复时间返回 false；缺端口、正功率或长间隔会重新开始累计零功率时长。
+// 未来或零时间返回 false；乱序与重复清空累计，后续须晚于已接受的最大时间才能建立独立新窗口。
+// 缺端口、正功率或长间隔会重新开始累计零功率时长，不继承异常前的证据。
 // 最后心跳须未过期；只计算心跳覆盖的时间，末次上报后的静默不算零功率。
 func noPowerForMinute(samples []protocol.Event, port uint8, now time.Time) bool {
 	if len(samples) == 0 {
@@ -69,8 +70,13 @@ func noPowerForMinute(samples []protocol.Event, port uint8, now time.Time) bool 
 		if e.Type != protocol.Heartbeat {
 			continue
 		}
-		if e.ReceivedAt.IsZero() || e.ReceivedAt.After(now) || (!previous.IsZero() && !e.ReceivedAt.After(previous)) {
+		if e.ReceivedAt.IsZero() || e.ReceivedAt.After(now) {
 			return false
+		}
+		if !previous.IsZero() && !e.ReceivedAt.After(previous) {
+			// 保留最大已接受时刻，异常样本不成为新起点，也不能把累计基准向过去移动。
+			since = time.Time{}
+			continue
 		}
 		if !previous.IsZero() && e.ReceivedAt.Sub(previous) > gatewaycontract.MaxChargingEvidenceGap {
 			since = time.Time{}

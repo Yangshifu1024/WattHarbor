@@ -90,6 +90,20 @@ func cleanupSeed(t *testing.T, db *gorm.DB, ruleIDs, couponIDs []uint64) {
 			t.Errorf("清理活动规则 %d 失败：%v", id, err)
 		}
 	}
+	for _, table := range []string{"coupon_grant_request", "coupon_grant", "coupon_activity_rule", "coupon"} {
+		key := "coupon_id"
+		if table == "coupon" {
+			key = "id"
+		}
+		var remaining int64
+		if err := db.Table(table).Where(key+" IN ?", couponIDs).Count(&remaining).Error; err != nil || remaining != 0 {
+			t.Errorf("%s 测试券残留 %d 条：%v", table, remaining, err)
+		}
+	}
+	var remaining int64
+	if err := db.Table("coupon_activity_rule").Where("id IN ?", ruleIDs).Count(&remaining).Error; err != nil || remaining != 0 {
+		t.Errorf("测试规则残留 %d 条：%v", remaining, err)
+	}
 }
 
 // sqlPair 将同一独立连接池与 GORM 配对，测试结束后关闭。
@@ -119,20 +133,23 @@ func (p *sqlPair) armOnce(t *testing.T, gate *lockGate, name string) {
 
 // TestConcurrentGrantsRespectBudgetUnderRowLock 验证限额一份时第二事务等待行锁，首笔提交后不再发券。
 func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
-	setup := testDB(t)
+	fixture := newActivityFixture(t)
+	setup := fixture.db
 	tx := txRollback(t, setup)
-	seedCoupon(t, tx, 2001, 24, nil)
-	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0,
-		withCoupon(2001), withMaxGrants(1))
+	seedCoupon(t, tx, fixture.id(2001), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerFirstRecharge, hours(-1), hours(1), 0,
+		withCoupon(fixture.id(2001)), withMaxGrants(1))
+	// 预置数据须提交让两连接可见，结束后单独清理。
+	janitor := testConn(t)
+	t.Cleanup(func() { cleanupSeed(t, janitor.orm, []uint64{fixture.id(1)}, []uint64{fixture.id(2001)}) })
 	if err := tx.Commit().Error; err != nil {
 		t.Fatalf("预置数据提交失败：%v", err)
 	}
-	// 预置数据须提交让两连接可见，结束后单独清理。
-	janitor := testConn(t)
-	t.Cleanup(func() { cleanupSeed(t, janitor.orm, []uint64{1}, []uint64{2001}) })
 
 	// 两条独立连接，各自开事务。
 	p1, p2 := testConn(t), testConn(t)
+	fixture.scope(t, p1.orm)
+	fixture.scope(t, p2.orm)
 	gate1 := newLockGate()
 	p1.armOnce(t, gate1, "test:gate1")
 	defer gate1.pass()
@@ -152,7 +169,7 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 	done1 := make(chan outcome, 1)
 	go func() {
 		res, err := (ActivityService{}).ApplyInTx(tx1, ActivityEvent{
-			TriggerType: TriggerFirstRecharge, UserID: 8001,
+			TriggerType: TriggerFirstRecharge, UserID: fixture.id(8001),
 			EventKey: "recharge:R-1", Now: fixedNow,
 		})
 		done1 <- outcome{res, err}
@@ -171,7 +188,7 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 	done2 := make(chan outcome, 1)
 	go func() {
 		res, err := (ActivityService{}).ApplyInTx(tx2, ActivityEvent{
-			TriggerType: TriggerFirstRecharge, UserID: 8002,
+			TriggerType: TriggerFirstRecharge, UserID: fixture.id(8002),
 			EventKey: "recharge:R-2", Now: fixedNow,
 		})
 		done2 <- outcome{res, err}
@@ -213,7 +230,7 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 	// 用一条干净的连接核对最终落库结果。
 	verify := testConn(t)
 	var total int64
-	if err := verify.orm.Table("coupon_grant").Count(&total).Error; err != nil {
+	if err := verify.orm.Table("coupon_grant").Where("coupon_id = ?", fixture.id(2001)).Count(&total).Error; err != nil {
 		t.Fatalf("统计发放记录失败：%v", err)
 	}
 	if total != 1 {
@@ -223,18 +240,21 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 
 // TestConcurrentGrantsBothSucceedWhenBudgetAllows 验证剩余份数充足时两个用户依次取得行锁，都能拿到券。
 func TestConcurrentGrantsBothSucceedWhenBudgetAllows(t *testing.T) {
-	setup := testDB(t)
+	fixture := newActivityFixture(t)
+	setup := fixture.db
 	tx := txRollback(t, setup)
-	seedCoupon(t, tx, 2002, 24, nil)
-	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0,
-		withCoupon(2002), withMaxGrants(5))
+	seedCoupon(t, tx, fixture.id(2002), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerFirstRecharge, hours(-1), hours(1), 0,
+		withCoupon(fixture.id(2002)), withMaxGrants(5))
+	janitor := testConn(t)
+	t.Cleanup(func() { cleanupSeed(t, janitor.orm, []uint64{fixture.id(1)}, []uint64{fixture.id(2002)}) })
 	if err := tx.Commit().Error; err != nil {
 		t.Fatalf("预置数据提交失败：%v", err)
 	}
-	janitor := testConn(t)
-	t.Cleanup(func() { cleanupSeed(t, janitor.orm, []uint64{1}, []uint64{2002}) })
 
 	p1, p2 := testConn(t), testConn(t)
+	fixture.scope(t, p1.orm)
+	fixture.scope(t, p2.orm)
 	gate1 := newLockGate()
 	p1.armOnce(t, gate1, "test:gate3")
 	defer gate1.pass()
@@ -256,7 +276,7 @@ func TestConcurrentGrantsBothSucceedWhenBudgetAllows(t *testing.T) {
 	done2 := make(chan outcome, 1)
 	go func() {
 		res, err := (ActivityService{}).ApplyInTx(tx1, ActivityEvent{
-			TriggerType: TriggerFirstRecharge, UserID: 8101,
+			TriggerType: TriggerFirstRecharge, UserID: fixture.id(8101),
 			EventKey: "recharge:R-A", Now: fixedNow,
 		})
 		done1 <- outcome{res, err}
@@ -265,7 +285,7 @@ func TestConcurrentGrantsBothSucceedWhenBudgetAllows(t *testing.T) {
 
 	go func() {
 		res, err := (ActivityService{}).ApplyInTx(tx2, ActivityEvent{
-			TriggerType: TriggerFirstRecharge, UserID: 8102,
+			TriggerType: TriggerFirstRecharge, UserID: fixture.id(8102),
 			EventKey: "recharge:R-B", Now: fixedNow,
 		})
 		done2 <- outcome{res, err}

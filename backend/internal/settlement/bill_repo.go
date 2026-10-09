@@ -85,9 +85,11 @@ func (s BillRepo) Issue(ctx context.Context, chargeOrderID uint64) (Bill, bool, 
 			RefundedCents int64 `gorm:"column:refunded_cents"` // 支付成功退回累计，分
 		}
 		if err := s.DB.WithContext(ctx).Table("payment_order").
-			Select("paid_cents, refunded_cents").Where("id = ?", *order.PaymentOrderID).Take(&payment).Error; err == nil {
-			prepaid, refunded = payment.PaidCents, payment.RefundedCents
+			Select("paid_cents, refunded_cents").Where("id = ?", *order.PaymentOrderID).Take(&payment).Error; err != nil {
+			// 关联支付缺失与读取故障均不能解释为零实付；尚未写账单或事件，可由 Missing 重试。
+			return Bill{}, false, fmt.Errorf("read bill payment %d: %w", *order.PaymentOrderID, err)
 		}
+		prepaid, refunded = payment.PaidCents, payment.RefundedCents
 	}
 	shortfall := receipt.ShortfallCents
 	if shortfall <= 0 && total > prepaid {
@@ -201,15 +203,13 @@ func (s BillRepo) ListBills(ctx context.Context, userID uint64, page, pageSize i
 	}
 	if len(rows) > 0 {
 		ids := make([]uint64, 0, len(rows))
-		months := make([]time.Time, 0, len(rows))
 		for _, row := range rows {
 			ids = append(ids, row.ID)
-			months = append(months, row.IssuedAt.UTC())
 		}
 		var reads []struct {
 			BillID uint64 `gorm:"column:bill_id"` // 已读凭据对应账单主键
 		}
-		// 账单已读记录使用账单 ID 和相同的分区月份共同寻址。
+		// 已读表无实际分区，按用户和账单 ID 查询；bill_id 是联合主键的左前缀。
 		if err := s.DB.WithContext(ctx).Table("charge_bill_read").
 			Select("bill_id").Where("user_id = ? AND bill_id IN ?", userID, ids).Find(&reads).Error; err == nil {
 			seen := map[uint64]bool{}
@@ -220,7 +220,6 @@ func (s BillRepo) ListBills(ctx context.Context, userID uint64, page, pageSize i
 				rows[i].Read = seen[rows[i].ID]
 			}
 		}
-		_ = months
 	}
 	return rows, total, nil
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"gorm.io/gorm"
+	"strconv"
 	"strings"
 )
 
@@ -126,6 +127,11 @@ func (s QueryService) Detail(ctx context.Context, actor operations.Profile, id u
 	row.SelectedPackage = selected
 	row.SelectedSchemeName = charging.SelectedSchemeName(selected)
 	row.SelectedPackageName = charging.SelectedPackageName(selected)
+	// 仅将实时具备创建权限的当前管理员身份提供给退款草稿；写入接口仍使用服务端审计身份。
+	if actor.HasPermission("order.refund.create") {
+		applicant := strconv.FormatUint(actor.ID, 10)
+		row.RefundApplicantID = &applicant
+	}
 	return row, nil
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -38,12 +39,15 @@ import (
 
 // newRouter 注册本进程的业务路由、指标和健康检查，不启动监听。
 // 健康检查使用请求 context，最多等待两秒。
-func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gateway *gatewayclient.Client) *gin.Engine {
+func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gateway *gatewayclient.Client) (*gin.Engine, error) {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
 	// /metrics 无需登录，包含请求、进程和数据库连接池统计。
 	metrics := httpapi.NewMetrics("admin", httpapi.DatabasePool{Schema: "central_db", DB: r.DB})
 	router := httpapi.NewRouter(metrics)
+	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("admin trusted proxies: %w", err)
+	}
 	metrics.Register(router)
 	router.GET("/health/live", func(c *gin.Context) { httpapi.OK(c, gin.H{"status": "live"}) })
 	router.GET("/health/ready", func(c *gin.Context) {
@@ -174,5 +178,5 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 	accounts.Register(router)
 	adminexport.ExportTask{Service: exportpkg.ExportService{DB: orm, ExportDir: cfg.ExportDir}, Auth: authAPI}.Register(router)
 
-	return router
+	return router, nil
 }

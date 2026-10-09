@@ -116,6 +116,8 @@ type User struct {
 // 后台不替用户登录或发起支付，因此不读取微信和支付凭据。
 type Admin struct {
 	DatabasePool
+	// TrustedProxies 仅列明确的反向代理 IP/CIDR，逗号分隔；空配置不信任转发头。
+	TrustedProxies []string `env:"ADMIN_TRUSTED_PROXIES" envSeparator:","`
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
 	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。

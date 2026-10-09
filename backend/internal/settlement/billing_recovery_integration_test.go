@@ -20,7 +20,7 @@ type recoveryOrders struct {
 }
 
 // Due 返回空任务，确保测试只恢复已有费用投递。
-func (o *recoveryOrders) Due(context.Context) ([]uint64, error) { return nil, nil }
+func (o *recoveryOrders) Due(context.Context) ([]BillingTask, error) { return nil, nil }
 
 // Read 始终报错，确保补账单不会重新计算费用。
 func (o *recoveryOrders) Read(context.Context, uint64) (Source, error) {
@@ -31,7 +31,7 @@ func (o *recoveryOrders) Read(context.Context, uint64) (Source, error) {
 func (o *recoveryOrders) Apply(context.Context, Result) error { o.applied++; return nil }
 
 // Defer 始终报错，确保恢复场景不重排计费任务。
-func (o *recoveryOrders) Defer(context.Context, uint64, string, string) error {
+func (o *recoveryOrders) Defer(context.Context, BillingTask, string, string) error {
 	return errors.New("unexpected defer")
 }
 

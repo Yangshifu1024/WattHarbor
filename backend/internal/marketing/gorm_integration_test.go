@@ -6,17 +6,51 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"chargepilot/internal/platform/dbconn"
+	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 真库测试通过 integration 标签显式运行，TEST_MYSQL_URL 缺失或连接失败直接终止。
 // 默认 node tasks.mjs check 不访问数据库；真库入口使用 node scripts/db/test-integration.mjs。
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
+
+// activityFixture 为每个测试预留独立编号空间；规则查询只扫描本夹具，保留生产筛选、排序与行锁。
+// 开发库中其他活动不参与本用例，也不因测试而被停用或删除。
+type activityFixture struct {
+	base uint64
+	db   *gorm.DB
+}
+
+func newActivityFixture(t *testing.T) activityFixture {
+	t.Helper()
+	f := activityFixture{base: testfixture.NewID() & ^uint64((1<<20)-1)}
+	f.db = f.scope(t, testDB(t))
+	return f
+}
+
+func (f activityFixture) id(offset uint64) uint64 { return f.base + offset }
+
+// scope 对每条独立测试连接显式限定活动候选范围，不替换业务查询或修改其资格条件。
+func (f activityFixture) scope(t *testing.T, db *gorm.DB) *gorm.DB {
+	t.Helper()
+	if err := db.Callback().Query().Before("gorm:query").Register("test:private-activity", func(q *gorm.DB) {
+		if strings.Split(q.Statement.Table, " ")[0] == "coupon_activity_rule" {
+			q.Statement.AddClause(clause.Where{Exprs: []clause.Expression{
+				clause.Expr{SQL: "id BETWEEN ? AND ?", Vars: []any{f.base, f.id((1 << 20) - 1)}},
+			}})
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
 
 // testDB 打开 central_db 真库连接，配置或连接失败即终止测试。
 func testDB(t *testing.T) *gorm.DB {

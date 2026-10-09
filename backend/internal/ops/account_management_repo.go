@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/persist"
 	"context"
 	"time"
@@ -170,11 +171,36 @@ func SoftDeleteAdminUser(tx *gorm.DB, id, operatorID uint64, at time.Time) error
 // UpdateAdminMFASecret 更新 MFA 密钥和启用状态，nil 密钥表示清空，按需撤销旧会话。
 // 调用方锁读并验证证明，同事务保存审计；首次未启用登记不提升版本。
 func UpdateAdminMFASecret(tx *gorm.DB, id uint64, secret *string, enabled bool, bumpAuthVersion bool) error {
+	// 以锁内当前密钥定义代际，启用同一密钥或改密/强制下线不能重置消费记录。
+	var current AdminAccount
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&current).Error; err != nil {
+		return err
+	}
 	values := map[string]any{"mfa_secret": secret, "mfa_enabled": enabled}
+	changed := (current.MFASecret == nil) != (secret == nil) || (current.MFASecret != nil && secret != nil && *current.MFASecret != *secret)
+	if changed {
+		values["mfa_secret_version"] = gorm.Expr("mfa_secret_version + 1")
+		values["mfa_last_step"] = nil
+	}
 	if bumpAuthVersion {
 		values["auth_version"] = gorm.Expr("auth_version + 1")
 	}
 	return tx.Table("admin_user").Where("id = ? AND deleted_at IS NULL", id).Updates(values).Error
+}
+
+// consumeAdminTOTPStep 在调用方持有账号行锁的事务内消费 account 当前密钥代际的 step。
+// step 为 VerifyTOTP 的成功结果；拒绝旧步或重复步。错误由调用方回滚安全状态及审计。
+// ctx 沿用 tx；函数不提交事务、不写日志或返回密钥，版本及步数失配返回验证码错误。
+func consumeAdminTOTPStep(tx *gorm.DB, account AdminAccount, step int64) error {
+	res := tx.Table("admin_user").Where("id=? AND mfa_secret_version=? AND (mfa_last_step IS NULL OR mfa_last_step<?)", account.ID, account.MFASecretVersion, step).
+		Update("mfa_last_step", step)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return operations.ErrInvalidTOTP
+	}
+	return nil
 }
 
 // LockActiveAdmin 锁读启用账号及认证字段；调用方须比对会话的 AuthVersion，不得将密码散列或密钥返回 HTTP 或写入审计。
