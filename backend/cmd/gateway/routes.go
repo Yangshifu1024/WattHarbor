@@ -21,8 +21,7 @@ func newRouter(cfg config.Gateway, r *resources, deviceConnections *session.Regi
 	sink := repo.MySQLSink{DB: orm}
 	gin.SetMode(gin.ReleaseMode)
 	// 在注册路由前安装指标中间件，覆盖全部 HTTP 请求。
-	// 指标与健康端点先于业务路由注册，与其余四个进程保持一致；
-	// 指标端点无需运营会话，仅暴露路由模板、状态码与耗时。
+	// /metrics 无需登录，包含请求、进程和数据库连接池统计。
 	metrics := httpapi.NewMetrics("gateway", httpapi.DatabasePool{Schema: "gateway_db", DB: r.DB})
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
@@ -53,7 +52,7 @@ func newRouter(cfg config.Gateway, r *resources, deviceConnections *session.Regi
 	control.UserStopAPI{Service: userStops, ServiceToken: token}.Register(router)
 	control.ScanAPI{Scanner: sink, ServiceToken: token}.Register(router)
 	control.DeviceSummaryAPI{DB: orm, ServiceToken: token}.Register(router)
-	// 遥测窗口、采样点数与静默会话阈值为进程内固定策略，随装配显式声明。
+	// 在此设置遥测查询的时间和点数上限，以及会话无数据的超时阈值。
 	control.TelemetryAPI{
 		DB:           orm,
 		MaxWindow:    24 * time.Hour,

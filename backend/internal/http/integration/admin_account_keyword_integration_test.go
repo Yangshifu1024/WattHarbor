@@ -79,7 +79,7 @@ func TestRegisteredAdminAccountKeywordUsesLiteralCharacters(t *testing.T) {
 		username string // 本测试创建的合法登录名，最长不超过 64 字节。
 		display  string // ASCII 显示名，含目标符号或相邻干扰字符。
 		status   string // active 或 disabled 状态，供真实筛选。
-		deleted  bool   // 是否种下软删除事实，不能进入列表。
+		deleted  bool   // 是否软删除；删除后不能出现在列表。
 	}
 	rows := []keywordAccount{
 		{10, prefix + "u_needle", "plain username target", "active", false},

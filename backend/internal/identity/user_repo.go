@@ -20,7 +20,7 @@ type UserRepo struct {
 }
 
 // Login 按 openID 恢复或创建用户。
-// MySQL 死锁或锁等待最多重试五次；已有用户更新登录时间，新用户与零余额钱包同事务创建。
+// 最多执行五次登录事务，重试 MySQL 死锁或锁等待；新用户和零余额钱包同事务创建。
 func (s UserRepo) Login(ctx context.Context, openID, unionID string) (User, error) {
 	if openID == "" || len(openID) > 64 || len(unionID) > 64 {
 		return User{}, errors.New("invalid WeChat identity")
@@ -45,7 +45,7 @@ func retryableMySQL(err error) bool {
 	return errors.As(err, &mysqlErr) && (mysqlErr.Number == 1213 || mysqlErr.Number == 1205)
 }
 
-// loginOnce 先以自动提交创建 openID 唯一编号，再在事务中恢复用户或创建用户及钱包。
+// loginOnce 先保存 openID 加锁记录，再在事务中读取用户或创建用户和钱包。
 func (s UserRepo) loginOnce(ctx context.Context, openID, unionID string) (User, error) {
 	// 身份行先自动提交，避免事务中 INSERT IGNORE 在取得行锁前因缺失键间隙锁发生死锁。
 	if err := s.DB.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&LoginIdentity{OpenID: []byte(openID)}).Error; err != nil {

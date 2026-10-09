@@ -11,10 +11,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// SessionAPI 提供设备会话审计及遗留会话清理接口。
-// 正常连接由进程关闭，进程退出后遗留的开放记录由运维清理。
+// SessionAPI 查询和清理数据库中的静默连接记录，不关闭实际 TCP 连接。
 type SessionAPI struct {
-	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，完整读写和事务由 repo 管理。
+	// DB 是网关数据库连接。
 	DB *gorm.DB
 	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
@@ -45,7 +44,7 @@ type IdleSession struct {
 	SessionID string `json:"session_id"`
 	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// Protocol 设备或连接的协议名称。
+	// Protocol 表示连接传输方式，如 tcp。
 	Protocol string `json:"protocol"`
 	// RemoteAddr 设备连接远端地址。
 	RemoteAddr string `json:"remote_addr"`
@@ -71,8 +70,7 @@ func (a SessionAPI) limit() int {
 	return 500
 }
 
-// listIdle 接收 c 中的服务令牌，返回阈值筛选的设备连接会话、条数和阈值秒数，空列表保持 []。
-// 鉴权失败返回 401，读取失败返回 503；仅转换数据库记录，不修改会话记录或实际 TCP 连接。
+// listIdle 返回超过静默阈值且尚未关闭的数据库连接记录。
 func (a SessionAPI) listIdle(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -105,8 +103,7 @@ func (a SessionAPI) listIdle(c *gin.Context) {
 	})
 }
 
-// cleanupIdle 鉴权后在同一事务内关闭静默会话记录，返回关闭数和阈值秒数。
-// 事务失败不输出中间计数；此操作不关闭实际 TCP 连接。
+// cleanupIdle 在同一事务中关闭静默连接记录；失败时不返回中间计数。
 func (a SessionAPI) cleanupIdle(c *gin.Context) {
 	if !a.authorized(c) {
 		return

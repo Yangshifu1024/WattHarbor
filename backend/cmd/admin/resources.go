@@ -16,9 +16,9 @@ import (
 // resources 持有本进程的连接，初始化失败或应用完全退出后统一关闭。
 type resources struct {
 	DB           *sql.DB       // central SQL 连接池，最后释放
-	ORM          *gorm.DB      // 同一 SQL 池的 GORM 入口，无独立连接生命周期
+	ORM          *gorm.DB      // 与 DB 共用连接池，无需单独关闭
 	Cache        *redis.Client // 后台会话及缓存 Redis 连接
-	InternalHTTP *http.Client  // 有界内部调用连接池，受管理请求退出后释放闲置连接
+	InternalHTTP *http.Client  // 内部 HTTP 客户端，请求结束后清理空闲连接
 }
 
 // openResources 打开本进程的数据库、Redis 和 HTTP 客户端；失败时释放已打开的资源。

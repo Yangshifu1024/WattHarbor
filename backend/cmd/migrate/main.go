@@ -1,3 +1,4 @@
+// 命令 migrate 按 Goose 记录执行各数据库的初始化 SQL，默认处理 gateway、central 和 worker 三个库。
 package main
 
 import (
@@ -64,6 +65,7 @@ func run(selected, directory string) error {
 	return nil
 }
 
+// migrateOne 核对目标库名和迁移记录，拒绝无 Goose 记录的非空库及版本大于 1 的旧库。
 func migrateOne(ctx context.Context, db *sql.DB, schema, directory string) error {
 	if err := db.PingContext(ctx); err != nil {
 		return err

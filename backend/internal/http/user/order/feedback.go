@@ -10,8 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// submitFeedback 从请求读取用户、订单引用和 JSON，调用完整反馈用例，保持输入与状态文案。
-// 业务单号预查仍先于 JSON 绑定；数字主键的归属及状态由同一提交事务核对。
+// submitFeedback 提交当前用户的订单反馈。
+// 业务订单号先查询再绑定 JSON；数字 ID 的归属和状态在提交事务中核对。
 func (a FeedbackAPI) submitFeedback(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {

@@ -6,8 +6,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// 端口号与端口编码的互查。设备侧上传的心跳与历史数据带的是端口号，
-// 但协议报文的地址是端口编码（设备号-端口），两者的映射只在这里维护。
+// 设备报文使用端口序号，业务接口使用端口编码（设备号-端口号）。
+// 本文件查询二者的对应关系。
 
 // PortCodeByNumber 读取未删除端口编码；缺失保留空串，返回编码及 SQL 错误，不写库。
 func PortCodeByNumber(ctx context.Context, db *gorm.DB, deviceID string, portNo uint8) (string, error) {

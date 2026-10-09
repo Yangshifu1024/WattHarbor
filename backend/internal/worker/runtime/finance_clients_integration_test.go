@@ -88,7 +88,7 @@ func (p *financeBatchProbe) Run(ctx context.Context) (int, error) {
 	return p.count, p.failure
 }
 
-// financeDispatchProbe 记录 runtime 是否进入派发调用方，取消后不能以 HTTP 未发出替代入口未调用的证明。
+// financeDispatchProbe 记录是否进入派发方法，检查取消后不再调用下一项任务。
 type financeDispatchProbe struct {
 	next    Dispatcher // 实际 worker 计费或退款调用方。
 	calls   int        // runtime 实际调用次数。
@@ -141,7 +141,7 @@ func registeredFinanceServer(t *testing.T, db *gorm.DB, orders *financeOrderBoun
 
 // TestFinanceConsumersUseRegisteredJobsAndOriginalRecovery 验证真实注册 API、专用调用方与 financeOnce 顺序。
 // 停机及计费失败仍进入退款；到期前不重投、更新同一身份后恢复、完成重放不重入账。
-// 资金 Apply 与停机为测试替身，退款实际走禁用渠道；只证明编排和投递 SQL，不替代资金或实机验收。
+// 资金 Apply 与停机为测试替身，退款实际走禁用渠道；本测试覆盖任务次序和投递 SQL，不执行真实扣款或设备停机。
 func TestFinanceConsumersUseRegisteredJobsAndOriginalRecovery(t *testing.T) {
 	url := os.Getenv("TEST_MYSQL_URL")
 	if url == "" {

@@ -11,18 +11,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrEndDeliveryReadFailed 表示首次读取冻结载荷失败，底层原因由返回错误保留。
+// ErrEndDeliveryReadFailed 表示查询已保存结束请求失败。
 var ErrEndDeliveryReadFailed = errors.New("read frozen end delivery failed")
 
-// ErrEndDeliveryFreezeFailed 表示插入失败或唯一键冲突后未能读取存量；不把未知写结果重试为新写入。
+// ErrEndDeliveryFreezeFailed 表示保存失败，或主键冲突后无法读取原请求。
 var ErrEndDeliveryFreezeFailed = errors.New("freeze end delivery failed")
 
-// ErrEndDeliveryIdentityConflict 表示存量与候选载荷在忽略 meter.segments 后的 JSON 规范化比较不一致。
+// ErrEndDeliveryIdentityConflict 表示忽略 meter.segments 后，两份结束请求内容仍不一致。
 var ErrEndDeliveryIdentityConflict = errors.New("frozen end result identity conflict")
 
-// FreezeEndDelivery 先读存量，缺失才插入，只有 1062 才重读。
-// 返回首次写入的载荷和 false，或关键字段一致的存量载荷和 true；读、冻结、标识冲突按错误类型分类，SQL 原因保留。
-// 保留请求取消链和 JSON 身份规则，不另加事务、行锁或重试，不更换事件或订单编号。
+// FreezeEndDelivery 保存首次结束请求；已有内容一致时返回原请求和 true。
+// 只在主键冲突（1062）后重新读取；比较时忽略计量分段，其余内容必须一致。
 func FreezeEndDelivery(
 	ctx context.Context,
 	db *gorm.DB,
@@ -57,7 +56,7 @@ func FreezeEndDelivery(
 	return stored, true, nil
 }
 
-// frozenEndPayload 读取已保存的结束载荷；无记录返回空串和 nil，SQL 失败返回错误，不写库。
+// frozenEndPayload 读取已保存的结束请求；不存在时返回空串。
 func frozenEndPayload(ctx context.Context, db *gorm.DB, deviceEventID uint64) (string, error) {
 	var row struct {
 		// PayloadJSON 冻结结束回执 JSON 字节。
@@ -81,8 +80,8 @@ func insertFrozenEndDelivery(db *gorm.DB, deviceEventID, chargeOrderID uint64, p
 	}).Error
 }
 
-// sameEndIdentity 接收存量与候选原文，使用精确 JSON 数字并仅忽略 meter.segments 后规范化比较；返回是否一致。
-// 无效 JSON 沿用原文比较，不增加字段验证或修改任一载荷。
+// sameEndIdentity 忽略 meter.segments 后比较 JSON，保留整数精度。
+// 无效 JSON 直接比较原文。
 func sameEndIdentity(stored, candidate string) bool {
 	strip := func(raw string) string {
 		var value map[string]any

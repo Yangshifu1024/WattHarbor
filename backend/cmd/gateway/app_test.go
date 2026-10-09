@@ -15,10 +15,8 @@ import (
 // idleSink 提供不持久化的设备 sink，供应用启动失败路径装配。
 type idleSink struct{}
 
-// Register 是忽略注册数据的空实现。
 func (idleSink) Register(context.Context, protocol.Registration) error { return nil }
 
-// Record 是忽略设备事件的空实现。
 func (idleSink) Record(context.Context, protocol.Event) error { return nil }
 
 // idleAdapter 提供立即退出的协议夹具，不解析或持久化设备数据。
@@ -27,16 +25,12 @@ type idleAdapter struct{}
 // idleStops 提供立即成功的停止恢复夹具，供进程组取消检查。
 type idleStops struct{}
 
-// RetryStopping 是不发送设备命令的空实现。
 func (idleStops) RetryStopping(context.Context) error { return nil }
 
-// RetryPending 是不发送设备命令的空实现。
 func (idleStops) RetryPending(context.Context) error { return nil }
 
-// Name 返回测试协议名 test。
 func (idleAdapter) Name() string { return "test" }
 
-// ServeConn 立即返回，连接由监听服务关闭。
 func (idleAdapter) ServeConn(context.Context, net.Conn, protocol.Sink) error { return nil }
 
 // TestTCPBindFailureStopsHTTPAndRetryLoop 验证设备端口绑定失败时，应用取消 HTTP 和停止重试，并等待两者退出。

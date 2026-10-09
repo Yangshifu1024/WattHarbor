@@ -59,7 +59,7 @@ func (s AccountRepo) ListAdminUsers(ctx context.Context, q persist.PageQuery) (p
 // 须先于目标账号加锁；后续权限和剩余数量仍用当前读，行锁不会刷新旧 RR 快照。
 func (s AccountRepo) LockCustomerAdminRole(tx *gorm.DB) error {
 	var row struct {
-		ID uint64 /* 内置角色串行点主键 */
+		ID uint64 /* 用于串行处理管理变更的内置角色主键 */
 	}
 	return tx.Table("role").Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("active_code = ?", "customer_admin").Take(&row).Error
@@ -80,20 +80,20 @@ type AdminUserSnapshot struct {
 	ID               uint64     `json:"id"`                 // 账号主键
 	Username         string     `json:"username"`           // 登录名
 	DisplayName      *string    `json:"display_name"`       // 可空显示名
-	RoleID           *uint64    `json:"role_id"`            // 可空角色，不使用浮点身份转换
+	RoleID           *uint64    `json:"role_id"`            // 可空角色 ID，按整数保存
 	Phone            *string    `json:"phone"`              // 联系号码
 	Email            *string    `json:"email"`              // 可空邮箱
 	Status           string     `json:"status"`             // 有效／停用／锁定状态
-	MFAEnabled       bool       `json:"mfa_enabled"`        // 启用事实，不含密钥
+	MFAEnabled       bool       `json:"mfa_enabled"`        // 是否启用 MFA，不含密钥
 	LastLoginAt      *time.Time `json:"last_login_at"`      // 可空登录时刻
 	LockedUntil      *time.Time `json:"locked_until"`       // 可空锁定截止
 	FailedLoginCount uint32     `json:"failed_login_count"` // 失败计数
-	AuthVersion      uint64     `json:"auth_version"`       // 权限版本，用于验证敏感变更
+	AuthVersion      uint64     `json:"auth_version"`       // 认证版本，敏感变更后递增，使旧会话失效
 	DeletedAt        *time.Time `json:"deleted_at"`         // 可空删除时刻
 	DeletedBy        *uint64    `json:"deleted_by"`         // 可空删除操作人
 }
 
-// LockAdminUser 锁读未删除账号的管理资料，排除密码和 MFA 材料。
+// LockAdminUser 锁读未删除账号的管理资料，排除密码散列和 MFA 密钥。
 func (s AccountRepo) LockAdminUser(tx *gorm.DB, id uint64) (AdminUserSnapshot, error) {
 	var before AdminUserSnapshot
 	err := tx.Table("admin_user").Select("id,username,display_name,role_id,phone,email,status,mfa_enabled,last_login_at,locked_until,failed_login_count,auth_version,deleted_at,deleted_by").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -101,7 +101,7 @@ func (s AccountRepo) LockAdminUser(tx *gorm.DB, id uint64) (AdminUserSnapshot, e
 	return before, err
 }
 
-// InsertAdminUser 落一个后台账号，返回新账号 ID。密码散列由调用方算好传入。
+// InsertAdminUser 创建后台账号并返回主键，密码散列由调用方生成。
 func (s AccountRepo) InsertAdminUser(tx *gorm.DB, values map[string]any) (uint64, error) {
 	if err := tx.Table("admin_user").Create(values).Error; err != nil {
 		return 0, err
@@ -142,7 +142,7 @@ func (s AccountRepo) ResetManagementPassword(tx *gorm.DB, id uint64, hash string
 	return UpdateAdminUser(tx, id, values, true)
 }
 
-// LockManagementAccount 锁读 MFA 管理所需的认证材料；不得作为审计或 HTTP 响应。
+// LockManagementAccount 锁读账号密码散列和 MFA 密钥等认证字段，不得直接写入审计或 HTTP 响应。
 func (s AccountRepo) LockManagementAccount(tx *gorm.DB, id uint64) (AdminAccount, error) {
 	var account AdminAccount
 	err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&account).Error
@@ -177,7 +177,7 @@ func UpdateAdminMFASecret(tx *gorm.DB, id uint64, secret *string, enabled bool, 
 	return tx.Table("admin_user").Where("id = ? AND deleted_at IS NULL", id).Updates(values).Error
 }
 
-// LockActiveAdmin 锁读有效账号的认证材料；调用方须比对会话的 AuthVersion，材料不得返回 HTTP 或写入审计。
+// LockActiveAdmin 锁读启用账号及认证字段；调用方须比对会话的 AuthVersion，不得将密码散列或密钥返回 HTTP 或写入审计。
 func (s AccountRepo) LockActiveAdmin(tx *gorm.DB, id uint64) (AdminAccount, error) {
 	var row AdminAccount
 	err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).

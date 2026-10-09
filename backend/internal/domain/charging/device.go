@@ -27,7 +27,7 @@ const (
 	StopRemote           StopReason = "remote"            // 远程停止
 	StopSmoke            StopReason = "smoke"             // 烟感停止
 	StopOverheat         StopReason = "overheat"          // 高温停止
-	StopServerDisconnect StopReason = "server_disconnect" // 平台失联兜底
+	StopServerDisconnect StopReason = "server_disconnect" // 平台失联停止
 	StopUser             StopReason = "user"              // 用户主动结束
 	// StopUnknown 表示本版本无法识别的停止原因编码，原始值继续保留。
 	StopUnknown StopReason = "unknown"
@@ -37,29 +37,27 @@ const (
 // 设备计费指令不包含服务端费率。
 type ControlInstruction struct {
 	Mode ChargeMode `json:"mode"`
-	// Minutes 是 device_duration 的控制量。
+	// Minutes 是设备时长额度，单位分钟。
 	Minutes uint16 `json:"minutes,omitempty"`
-	// EnergyMilliWh 是 device_energy 的控制量。
+	// EnergyMilliWh 是设备电量额度，单位 mWh。
 	EnergyMilliWh uint64 `json:"energy_milli_wh,omitempty"`
 	// BalanceCents 是 device_power 的设备额度，等于用户实际付款金额。
 	BalanceCents int64 `json:"balance_cents,omitempty"`
-	// TierCentsPerHour 随余额一起下发，设备据此把当前抽取的功率换算成
-	// 运行中的累计花费。
+	// TierCentsPerHour 是设备功率档位单价，单位分/小时。
 	TierCentsPerHour []int64 `json:"tier_cents_per_hour,omitempty"`
 	// StopWhenFull 与 MaxMinutes 决定按时长计费的充电怎么结束。
 	StopWhenFull bool   `json:"stop_when_full,omitempty"`
 	MaxMinutes   uint16 `json:"max_minutes,omitempty"`
 }
 
-// Valid 报告这条指令能否执行，也是唯一知道「哪个字段属于哪个模式」的地方。
+// Valid 校验当前设备模式要求的额度字段和范围。
 func (c ControlInstruction) Valid() bool {
 	if !c.Mode.Valid() || !c.Mode.Executor().IsDevice() {
 		return false
 	}
 	switch c.Mode {
 	case ModeDeviceDuration:
-		// 余额与阶梯必须缺席：按时长计费的充电是按时间走的，带着余额就等于
-		// 给后面某个环节留了一次再定价的机会。
+		// 时长模式只允许 1–4320 分钟，不允许余额或功率档位。
 		return c.Minutes > 0 && c.Minutes <= 4320 && c.BalanceCents == 0 && len(c.TierCentsPerHour) == 0
 	case ModeDeviceEnergy:
 		return c.EnergyMilliWh > 0 && c.BalanceCents == 0 && len(c.TierCentsPerHour) == 0
@@ -95,8 +93,8 @@ type Settlement struct {
 	StopReason string `json:"stop_reason,omitempty"`
 }
 
-// SettleSession 统一生成充电结算。
-// 服务端计费使用 Cost 结果；设备计费基于已支付金额及实际执行结果计算消费和退款，避免重复计价。
+// SettleSession 按购买时的 spec 和 paid 计算结算金额，不执行资金写入。
+// 时长按完整分钟折算，电量按实测 Wh 折算，金额套餐最多收购买价；无效规则或计量返回错误。
 func SettleSession(spec Spec, meter ActualMeter, paid *Offer, actual *SessionActual) (Settlement, error) {
 	if meter.ReviewRequired {
 		return Settlement{}, ErrMeterReview
@@ -161,7 +159,7 @@ func SettleSession(spec Spec, meter ActualMeter, paid *Offer, actual *SessionAct
 		if err != nil {
 			return Settlement{}, err
 		}
-		// 金额方案按现行费率计算，费用上限只压低账单，不增加费用。
+		// 金额套餐使用传入的冻结费率，费用最多为购买金额。
 		total := fee.TotalCents
 		if paid != nil {
 			if !paid.Valid() {
@@ -222,7 +220,7 @@ type StopPlan struct {
 	Reason string
 	// AccruedCents 为判断时的累计总费用，单位分。
 	AccruedCents int64
-	// GraceSeconds 是平台要求设备停止之后，等多久才把这次充电视为失控。
+	// GraceSeconds 是费用封顶后建议等待的秒数；本结构不确认停机结果。
 	GraceSeconds int
 }
 

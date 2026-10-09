@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ScanPort 保存扫描端口编码、设备端口及业务状态与在线可用查询结果，不持有充电受理结果。
+// ScanPort 保存扫码结果中的设备、端口、业务状态和在线状态。
 type ScanPort struct {
 	// PortID 二维码端口编码，对外字段保持 port_id 文本，不是 device_port 自增 id。
 	PortID string `json:"port_id"`
@@ -25,7 +25,7 @@ type ScanPort struct {
 	Available bool `json:"available"`
 }
 
-// ScanResult 保存扫描到的端口或设备及站点查询结果，单端口与端口集合保持空值语义。
+// ScanResult 返回扫描到的设备及端口；端口码命中时使用 Port，设备号命中时使用 Ports。
 type ScanResult struct {
 	// Kind 扫描对象种类，port 或 device。
 	Kind string `json:"kind"`
@@ -35,10 +35,11 @@ type ScanResult struct {
 	StationID uint64 `json:"station_id"`
 	// Port 为命中端口编码时的单端口查询结果；按设备号命中时保留 nil。
 	Port *ScanPort `json:"port,omitempty"`
-	// Ports 设备端口记录，保留集合空值语义。
+	// Ports 是设备下的端口集合。
 	Ports []ScanPort `json:"ports,omitempty"`
 }
 
+// ErrScanNotFound 扫描码未匹配到可用设备或端口。
 var ErrScanNotFound = errors.New("scan code not found")
 
 // ResolveScan 先按启用端口编码查询，再按启用设备号读取端口列表；返回扫描查询结果或 ErrScanNotFound、SQL 错误，不创建命令。

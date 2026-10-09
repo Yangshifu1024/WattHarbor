@@ -32,7 +32,7 @@ func (s AnnouncementQueryService) List(ctx context.Context, page, size int) ([]P
 	return publicAnnouncements(rows, 0), nil
 }
 
-// StationAnnouncements 返回站点可见的前 50 条全局或站点公告；没有城市信息时不返回城市公告，非法目标 JSON 不匹配。
+// StationAnnouncements 从最新 50 条全局或站点公告中筛选本站可见项，不返回城市公告，非法目标 JSON 不匹配。
 func (s AnnouncementQueryService) StationAnnouncements(ctx context.Context, stationID uint64) ([]PublicAnnouncement, error) {
 	rows, err := (AnnouncementQueryRepo{DB: s.DB}).Active(ctx, time.Now().UTC(), 0, 50, true)
 	if err != nil {

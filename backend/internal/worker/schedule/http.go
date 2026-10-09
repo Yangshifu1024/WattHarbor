@@ -12,19 +12,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// API 适配 worker 定时任务查询与手动触发端点，执行编排委托 Scheduler。
+// API 提供 worker 定时任务查询和手动触发接口。
 type API struct {
 	Scheduler    Scheduler // 已登记处理器及 worker 仓储连接，不在 HTTP 创建业务任务。
 	ServiceToken string    // 内部服务身份，配置为空仍拒绝。
 }
 
-// Register 在 router 挂载 GET last-run 与 POST trigger 路径，保留先鉴权后读取，无启动期 IO。
+// Register 注册最近执行查询和手动触发接口，均先校验服务令牌。
 func (a API) Register(router *gin.Engine) {
 	router.GET("/api/v1/internal/scheduled-tasks/:task_code/last-run", a.authorized(), a.lastRun)
 	router.POST("/api/v1/internal/scheduled-tasks/:task_code/trigger", a.authorized(), a.trigger)
 }
 
-// authorized 返回服务令牌中间件，身份失败写唯一 401 并 Abort，成功继续后续处理器；不访问业务库。
+// authorized 校验服务令牌；失败时返回 401 并停止后续处理。
 func (a API) authorized() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
@@ -36,8 +36,8 @@ func (a API) authorized() gin.HandlerFunc {
 	}
 }
 
-// task 校验 c 的 task_code 和处理器登记后读取任务，返回记录和可继续标志。
-// 无效、未登记、缺行或读取失败写 400／404／503 并返回 false，不领取租约或执行处理器。
+// task 校验任务编码和已登记处理器，再读取任务。
+// 输入无效、处理器或任务不存在、读取失败时分别返回 400、404、503，并返回 false。
 func (a API) task(c *gin.Context) (Task, bool) {
 	code := strings.TrimSpace(c.Param("task_code"))
 	if code == "" || len(code) > 64 {
@@ -60,8 +60,7 @@ func (a API) task(c *gin.Context) (Task, bool) {
 	return task, true
 }
 
-// lastRun 在请求内读取任务及最近执行日志，输出时间、状态、错误、失败数及下次计划字段。
-// 未执行过保留 null 形状；读取失败映射 503，不执行任务或修改记录。
+// lastRun 返回任务最近执行时刻、状态、耗时、错误和下次计划。没有执行记录时，执行相关字段返回 null。
 func (a API) lastRun(c *gin.Context) {
 	task, ok := a.task(c)
 	if !ok {
@@ -87,8 +86,7 @@ func (a API) lastRun(c *gin.Context) {
 		"consecutive_fail_count": task.ConsecutiveFailCount, "next_run_at": task.NextRunAt})
 }
 
-// trigger 校验 c 的任务与 trigger_reason／force 后调用 Scheduler.execute，输出成功或错误响应。
-// 未领取或暂停映射 409，执行失败 503，输入失败 400；实际日志、租约及处理器副作用由调度用例拥有。
+// trigger 校验 trigger_reason 和 force 后执行任务；未领取租约时返回 409，执行失败返回 503。
 func (a API) trigger(c *gin.Context) {
 	task, ok := a.task(c)
 	if !ok {

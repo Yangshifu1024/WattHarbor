@@ -13,15 +13,13 @@ import (
 	"chargepilot/internal/platform/config"
 )
 
-// workerJobTransport 只记录实际cmd装配后的资金请求，不执行外部网络或业务写入。
+// workerJobTransport 检查启动代码创建的客户端请求，并返回固定响应。
 type workerJobTransport struct {
-	paths []string // 测试 goroutine 记录的请求顺序。
-	token string   // 客户端应携带的服务令牌。
+	paths []string
+	token string
 }
 
-// RoundTrip 核对中央地址与身份并返回端点真实成功形状，未知路径失败；不重试或创建业务任务。
-// r 为客户端实际发出的请求；成功返回 200 与对应 JSON 信封，地址、身份或路径不匹配返回 nil 与固定错误。
-// 已通过地址与身份检查的路径会追加到 s.paths；响应体由调用客户端关闭。
+// RoundTrip 核对服务地址、令牌和路径，返回对应任务的成功 JSON；不发送网络请求。
 func (s *workerJobTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.URL.Host != "central.invalid" || r.Header.Get("X-Service-Token") != s.token {
 		return nil, errors.New("assembled finance client used wrong address or identity")
@@ -43,11 +41,11 @@ func (s *workerJobTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 
 // workerUnexpectedTransport 记录错误连接池使用，任何资金请求进入查询连接池即失败。
 type workerUnexpectedTransport struct {
-	calls int // 同一调用goroutine里的意外请求数量。
+	calls int
 }
 
 // RoundTrip 记录调用后拒绝，不访问外部网络。
-// 忽略传入的请求；返回 nil 响应与固定错误，并增加 s.calls，不启动任务。
+
 func (s *workerUnexpectedTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	s.calls++
 	return nil, errors.New("finance task used internal query transport")

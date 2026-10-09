@@ -1,4 +1,4 @@
-// 遥测样本转换与会话时间范围校验，供用户查询结果和 worker 同步复用。
+// Package measurement 转换设备心跳与结束事件，生成充电计量分段。
 package measurement
 
 import (
@@ -53,7 +53,7 @@ func ReadingSamplesOf(events []protocol.Event) []devices.ReadingSample {
 }
 
 // MeasuredSegmentsOf 按输入顺序转换心跳，结合起充与结束时间生成计量分段。
-// 起止时间或分段证据无效时返回 nil，不补造读数。
+// 起止时间或读数无效时返回 nil，不补造计量。
 func MeasuredSegmentsOf(start time.Time, terminal protocol.Event, events []protocol.Event) []rules.MeterSegment {
 	span, ok := SessionSpanOf(terminal)
 	if !ok {

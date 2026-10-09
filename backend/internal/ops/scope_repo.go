@@ -33,7 +33,7 @@ func LoadDataScope(ctx context.Context, db *gorm.DB, p operations.Profile) (oper
 	return readDataScope(ctx, db, p)
 }
 
-// LockDataScopeInTx 用共享锁读取最新范围，保证导出凭据与实际查询范围一致。
+// LockDataScopeInTx 用共享锁读取最新站点和厂商范围，使导出文件与保存的范围记录一致。
 // 调用方先锁角色集合和账号，所有锁保持到发布事务结束。
 func LockDataScopeInTx(ctx context.Context, tx *gorm.DB, p operations.Profile) (operations.DataScope, error) {
 	return readDataScope(ctx, tx.Clauses(clause.Locking{Strength: "SHARE"}), p)

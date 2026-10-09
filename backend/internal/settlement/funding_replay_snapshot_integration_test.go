@@ -32,8 +32,8 @@ func oldFundingSnapshot(t *testing.T, db *gorm.DB, table, column string, id uint
 	return tx
 }
 
-// TestManualRefundAndSecondSignatureSeeCommittedReceipts 验证独立连接提交申请和首签后，旧快照内仍能重放申请并继续二签。
-// 首签权限使用可控夹具，仅清理本测试提交数据。
+// TestManualRefundAndSecondSignatureSeeCommittedReceipts 验证其他连接提交申请和第一次审核后，旧快照内仍能重放申请并完成第二次审核。
+// 首位审核人的权限由测试回调提供，仅清理本测试提交数据。
 func TestManualRefundAndSecondSignatureSeeCommittedReceipts(t *testing.T) {
 	writer, closeWriter := testConn(t)
 	defer closeWriter()
@@ -206,7 +206,7 @@ func TestWalletRefundReceiptAndLedgerUseCurrentFacts(t *testing.T) {
 }
 
 // TestBillingApplyReplaysAfterOldSnapshot 验证支付锁前建立旧快照后，仍能看到已提交的结算回执。
-// 证据、入账和余款退款使用真实提交，重放仅修复任务确认，不重复费用、退款或事件。
+// 价格、计量、费用和余款退款由其他连接提交；重试仅补齐任务确认，不重复费用、退款或事件。
 func TestBillingApplyReplaysAfterOldSnapshot(t *testing.T) {
 	writer, closeWriter := testConn(t)
 	defer closeWriter()
@@ -247,7 +247,7 @@ func TestBillingApplyReplaysAfterOldSnapshot(t *testing.T) {
 		}
 	}()
 	for _, seed := range []struct {
-		table string         // 同一订单及冻结证据所属表
+		table string         // 同一订单及其价格、计量快照所在表
 		row   map[string]any // 身份、时刻及人工最终费用
 	}{
 		{"payment_order", map[string]any{"id": id, "order_no": "P-" + no, "user_id": id, "biz_type": "charge", "biz_id": id, "pay_method": "wechat", "status": "paid", "total_cents": 10000, "paid_cents": 10000, "created_month": "2026-10-01"}},

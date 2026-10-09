@@ -32,7 +32,6 @@ func starterForServer(t *testing.T, server *httptest.Server) PaidStarter {
 	return PaidStarter{Orders: central, Gateway: gateway}
 }
 
-// TestPaidStarterRetriesAfterFullScanAndKeepsCursorOnListFailure 使用实际专用客户端、本地 HTTP 失败页及受理回复，验证同实例游标保持／空页归零重扫及订单重投；不证明真库幂等。
 func TestPaidStarterRetriesAfterFullScanAndKeepsCursorOnListFailure(t *testing.T) {
 	var cursors []string
 	listCalls, startCalls := 0, 0
@@ -60,7 +59,6 @@ func TestPaidStarterRetriesAfterFullScanAndKeepsCursorOnListFailure(t *testing.T
 				t.Error("start must use POST")
 			}
 			var body struct {
-				// OrderNo START 请求订单号，只用于本地 HTTP 夹具核对重投身份。
 				OrderNo string `json:"order_no"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.OrderNo != "C-7" {
@@ -81,10 +79,8 @@ func TestPaidStarterRetriesAfterFullScanAndKeepsCursorOnListFailure(t *testing.T
 	defer server.Close()
 	s := starterForServer(t, server)
 	for i, want := range []struct {
-		// count 该轮期望客户端受理条数，不代表设备已启动。
 		count int
-		// fail 该轮期望返回错误是否非 nil，保留失败序列。
-		fail bool
+		fail  bool
 	}{{0, true}, {0, true}, {0, false}, {1, false}} {
 		got, err := s.DispatchBatch(context.Background())
 		if got != want.count || (err != nil) != want.fail {
@@ -96,7 +92,6 @@ func TestPaidStarterRetriesAfterFullScanAndKeepsCursorOnListFailure(t *testing.T
 	}
 }
 
-// TestPaidStarterRejectsMalformedListBeforeDispatch 验证非法页拒绝先于 START 请求且不更新本实例游标，所有回复值保持；无真实订单或设备写入。
 func TestPaidStarterRejectsMalformedListBeforeDispatch(t *testing.T) {
 	for _, reply := range []string{
 		`{"data":{"items":[]}}`,
@@ -124,20 +119,19 @@ func TestPaidStarterRejectsMalformedListBeforeDispatch(t *testing.T) {
 	}
 }
 
-// pendingStub 是单批已支付页的测试替身，只返回配置记录，无 SQL 或网络。
+// pendingStub 返回预设的待启动订单页。
 type pendingStub struct {
 	// items 固定有序待启动页，测试替身原样返回，不模拟真实查询。
 	items []centralcontract.PaidStartOrder
 }
 
-// PaidStarts 接收但不使用 ctx 和 afterID，返回配置的 items 及 nil 错误；仅供单批继续行为的测试替身。
+// PaidStarts 返回预设订单，不按游标筛选。
 func (s pendingStub) PaidStarts(context.Context, uint64) ([]centralcontract.PaidStartOrder, error) {
 	return s.items, nil
 }
 
-// dispatchStub 是记录 START 尝试并按订单注入一次拒绝的测试替身，不实现真实受理或持久幂等。
+// dispatchStub 记录启动请求，对 C-7 返回预设拒绝。
 type dispatchStub struct {
-	// orders fixture 记录已尝试的订单号，用于核对调用顺序。
 	orders []string
 	// rejection 仅对 C-7 返回的 fixture 错误，不表示真实网关状态。
 	rejection error
@@ -152,7 +146,6 @@ func (s *dispatchStub) RequestStart(_ context.Context, request gatewaycontract.S
 	return gatewaycontract.StartReply{OrderNo: request.OrderNo, CommandID: "cmd-8", Status: "pending"}, nil
 }
 
-// TestPaidStarterContinuesBatchAfterFailedOrder 使用测试替身验证单个订单失败后继续本页、受理数、首个错误及游标，不能据此推断网关持久幂等。
 func TestPaidStarterContinuesBatchAfterFailedOrder(t *testing.T) {
 	rejection := errors.New("gateway unavailable")
 	gateway := &dispatchStub{rejection: rejection}

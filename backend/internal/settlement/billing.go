@@ -1,3 +1,4 @@
+// Package settlement 按订单价格和计量结算费用，处理余款退款、账单和人工审核。
 package settlement
 
 import (
@@ -14,7 +15,7 @@ import (
 type BillingOrderProcessor interface {
 	// Due 返回当前待执行订单 ID。
 	Due(context.Context) ([]uint64, error)
-	// Read 读取订单下单时的价格快照和计量证据。
+	// Read 读取订单下单价格和结束计量。
 	Read(context.Context, uint64) (Source, error)
 	// Apply 幂等入账，资金、回执和事件同事务；失败不能标记已投递。
 	Apply(context.Context, Result) error
@@ -39,7 +40,7 @@ type BillIssuer interface {
 
 // Run 依次恢复待投递费用、结算到期订单、补齐缺失账单。
 // 返回成功投递笔数；补账单失败不扣减该计数，下次只补账单。
-// 计量证据不足转人工核实，依赖失败保留同一任务重试；取消后停止后续操作。
+// 计量不足或价格无效转人工核实，数据库等依赖失败保留原任务重试；ctx 取消后停止后续操作。
 func (s BillingService) Run(ctx context.Context) (int, error) {
 	delivered, deliveryErr := s.deliverPending(ctx)
 	ids, err := s.Orders.Due(ctx)

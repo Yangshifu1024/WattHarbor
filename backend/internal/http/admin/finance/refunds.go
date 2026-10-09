@@ -11,9 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// registerRefunds 注册人工退款、列表、复核和重试路由。
-// 分别要求 order.refund.create、finance.refund.read、order.refund.review、finance.refund.retry 权限。
-// r 只挂载 HTTP 适配；建单重放、双人复核、执行重投及审计事务由 settlement 拥有。
+// registerRefunds 注册人工退款申请、列表、审核和重试接口，并校验各自权限。
 func (a API) registerRefunds(r *gin.Engine) {
 	r.POST("/api/v1/admin/orders/:id/refunds", a.Auth.Require("order.refund.create"), a.manualRefund)
 	r.GET("/api/v1/admin/billing/refunds", a.Auth.Require("finance.refund.read"), a.refunds)
@@ -54,8 +52,7 @@ func (a API) manualRefund(c *gin.Context) {
 	httpapi.OK(c, gin.H{"created": created, "refund_no": refundNo, "request_id": in.RequestID})
 }
 
-// refunds 校验 c 原状态、单号与分页，输出退款查询回执；非法输入或读取失败返回错误。
-// 实际复核与重投权限由对应写入服务核对，不以列表字段替代当前权限。
+// refunds 按状态、退款单号和分页查询退款记录。
 func (a API) refunds(c *gin.Context) {
 	q, ok := admin.ReadAdminPage(c, "pending processing success failed rejected")
 	if !ok {
@@ -75,9 +72,8 @@ func (a API) refunds(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// reviewRefund 按路由后缀执行通过或驳回。首签进入 awaiting_second；不同审核人
-// 第二签由 settlement 服务读取实时身份后更新 approved 并安排执行；
-// 驳回写入 refund_rejection 并置 rejected，无需第二签。
+// reviewRefund 按路由执行通过或驳回。第一次通过后返回 awaiting_second；第二位审核人通过后，
+// 将执行策略改为 automatic 并安排退款，接口返回 approved。驳回只需一人，退款状态改为 rejected。
 func (a API) reviewRefund(c *gin.Context) {
 	_, ok := admin.RequireFinanceActor(c, "order.refund.review")
 	if !ok {

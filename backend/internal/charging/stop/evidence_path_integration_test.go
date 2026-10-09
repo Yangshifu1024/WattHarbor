@@ -55,18 +55,18 @@ func TestGatewayEvidenceReachesNoPowerDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	// 超过端点每页 10080 行，在第二页首条缺失端口，确保分页不能抹去中断事实。
+	// 超过端点每页 10080 行，在第二页首条缺失端口，验证跨页缺失端口会中断零功率计时。
 	boundarySeconds := make([]int, 10084)
 	for i := range boundarySeconds {
 		boundarySeconds[i] = (i-len(boundarySeconds)+1)*15 - 2
 	}
 	for _, tc := range []struct {
 		name string
-		// seconds 相对本轮检查时刻的心跳接收偏移，单位秒，负数表示过去；顺序用于验证跨页连续证据。
+		// seconds 相对本轮检查时刻的心跳接收偏移，单位秒，负数表示过去；顺序用于验证跨页心跳连续性。
 		seconds []int
 		// missing 应从样本中省略目标端口的索引；负一表示全部样本具有目标端口。
 		missing int
-		// want 该组完整证据是否应满足连续一分钟零功率的预期结果。
+		// want 该组心跳是否应满足连续一分钟零功率的预期结果。
 		want bool
 	}{
 		{"continuous", []int{-70, -55, -40, -25, -10, -2}, -1, true},

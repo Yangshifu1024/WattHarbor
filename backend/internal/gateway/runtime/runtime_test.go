@@ -9,16 +9,16 @@ import (
 	"time"
 )
 
-// retryFixture 注入仅测试使用的两项重试能力，不替换生产定时器或依赖装配。
+// retryFixture 为停止重试循环提供两个测试任务。
 type retryFixture struct {
 	Compensate func(context.Context) error // 补偿步骤，接收运行时传入的同一 context。
 	Pending    func(context.Context) error // 用户 STOP 步骤，用于核对顺序和取消边界。
 }
 
-// RetryStopping 调用 s.Compensate，返回其结果；生命周期由运行时及同步测试 bubble 管理。
+// RetryStopping 调用预设补偿任务。
 func (s retryFixture) RetryStopping(ctx context.Context) error { return s.Compensate(ctx) }
 
-// RetryPending 调用 s.Pending，返回其结果，不另建 goroutine 或改变任务身份。
+// RetryPending 调用预设用户停止任务。
 func (s retryFixture) RetryPending(ctx context.Context) error { return s.Pending(ctx) }
 
 // TestRetryStopsKeepsFiveSecondOrderAndContinuesAfterFailures 使用标准同步测试时钟跑五秒 ticker。
@@ -58,7 +58,6 @@ func TestRetryStopsKeepsFiveSecondOrderAndContinuesAfterFailures(t *testing.T) {
 	})
 }
 
-// TestRetryStopsDoesNotEnterPendingAfterCancellation 验证补偿中取消时不进入同轮用户 STOP，五秒首轮保持。
 func TestRetryStopsDoesNotEnterPendingAfterCancellation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -74,7 +73,6 @@ func TestRetryStopsDoesNotEnterPendingAfterCancellation(t *testing.T) {
 	})
 }
 
-// TestRetryStopsWithCanceledContextRunsNoTask 核对进入前取消的 context 立即退出，两项实际入口计数均为零。
 func TestRetryStopsWithCanceledContextRunsNoTask(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())

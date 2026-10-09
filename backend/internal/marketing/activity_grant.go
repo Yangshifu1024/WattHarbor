@@ -20,14 +20,14 @@ type ActivityEvent struct {
 	EventKey    string    // 充值请求号或订单号生成的稳定事件键
 	AmountCents int64     // 已确认金额，分；仅门槛规则读取
 	InviterID   uint64    // 邀请人主键，非邀请触发不读取
-	Now         time.Time // 本次受控 UTC 求值时刻
+	Now         time.Time // 调用方提供的本次判断时间
 }
 
 // ActivityResult 是规则和券模板的发放结果，重放不会新增券。
 type ActivityResult struct {
-	RuleID     uint64 `json:"rule_id"`          // 既定规则主键
+	RuleID     uint64 `json:"rule_id"`          // 本次匹配的活动规则 ID
 	CouponID   uint64 `json:"coupon_id"`        // 奖励模板
-	InviterGot bool   `json:"inviter_rewarded"` // 邀请人奖励已受理或同键重放
+	InviterGot bool   `json:"inviter_rewarded"` // 本次已给邀请人发券，或此前已发过同一事件奖励
 	Already    bool   `json:"already_granted"`  // 受益人发放键已存在
 }
 
@@ -36,8 +36,8 @@ type activityGrant struct {
 	CouponID  uint64    // 奖励模板
 	UserID    uint64    // 受益用户
 	Source    string    // 活动或邀请来源
-	ExpiresAt time.Time // 模板与活动窗口封顶后的 UTC 时刻
-	EventID   string    // 既定规则／用户／事件键确定的32字符凭据
+	ExpiresAt time.Time // 自发放起算的有效期，最晚不超过模板和活动的结束时间
+	EventID   string    // 由规则、用户和事件键生成的稳定 32 字符发放号
 }
 
 // ApplyInTx 按规则主键→模板主键→发放行加锁，再检查总量和单人额度并发券。
@@ -83,7 +83,7 @@ func usableActivityCoupon(coupon activityCoupon, now time.Time) bool {
 	return coupon.ID != 0 && coupon.Status == "active" && (!coupon.StartAt.Valid || !now.Before(coupon.StartAt.Time)) && (!coupon.EndAt.Valid || now.Before(coupon.EndAt.Time))
 }
 
-// activityExpiry 取已锁活动和券模板的最早截止时间。
+// activityExpiry 取发放后有效小时、模板结束和活动结束三个时间中的最早值。
 func activityExpiry(rule activityRule, coupon activityCoupon, now time.Time) time.Time {
 	var end *time.Time
 	if coupon.EndAt.Valid {
@@ -92,8 +92,8 @@ func activityExpiry(rule activityRule, coupon activityCoupon, now time.Time) tim
 	return ActivityGrantExpiry(now, coupon.ValidHours, end, rule.EndAt)
 }
 
-// grantFromRule 在规则和模板锁内检查资格并发放，预算耗尽时跳过，重放不重复发券。
-// 邀请人资格不符时跳过整条邀请规则。
+// grantFromRule 在规则和模板锁内检查资格并发券，份数达到上限时跳过，重试不重复发券。
+// 邀请人未完成过充电或到账充值时整条规则不发券；邀请人的券不可用或份数用尽时只跳过邀请人奖励。
 func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent, coupons map[uint64]activityCoupon) (ActivityResult, error) {
 	out := ActivityResult{RuleID: rule.ID, CouponID: rule.CouponID}
 	eventID := activityEventID(rule.ID, event)

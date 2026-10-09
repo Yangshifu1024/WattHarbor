@@ -27,7 +27,7 @@ type RefundInput struct {
 	Reason      string `json:"reason"`       // 退款依据，最多 255 字，比较前去除首尾空白
 }
 
-// RechargeSource 是可原路退回的已支付充值事实，数据库映射留在 payment。
+// RechargeSource 保存可原路退款的充值支付金额与交易号是否存在；由 payment 查询。
 type RechargeSource struct {
 	ID                   uint64 // 支付主键
 	BizID                uint64 // 充值业务编号
@@ -37,7 +37,7 @@ type RechargeSource struct {
 	TransactionConfirmed bool   // 是否具有渠道交易号
 }
 
-// RechargeSourceReader 按有钱包→支付锁顺序读取渠道来源。
+// RechargeSourceReader 在已锁钱包的事务中锁定充值支付。
 type RechargeSourceReader interface {
 	// LockRechargeSources 在事务中锁 userID 的有效微信充值支付，按主键递增返回。
 	// 无来源返回空集合、nil；数据库错误要求整个预占事务回滚。
@@ -58,7 +58,7 @@ type RefundRecorder interface {
 type RefundService struct {
 	DB       *gorm.DB             // 所属 central 数据库；请求及预占事务由本用例管理
 	Sources  RechargeSourceReader // 支付来源及行锁，由 payment 实现
-	Recorder RefundRecorder       // 退款凭据及预占当前读，由 settlement 实现
+	Recorder RefundRecorder       // 退款记录创建及在途金额查询，由 settlement 实现
 }
 
 // Request 提交用户余额退款，重放同一请求时返回首次回执，内容不同报冲突。

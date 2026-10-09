@@ -10,7 +10,9 @@ import (
 )
 
 var (
-	ErrPortIdentity             = errors.New("start receipt has no port identity")
+	// ErrPortIdentity 表示启动回执没有有效的网关端口 ID。
+	ErrPortIdentity = errors.New("start receipt has no port identity")
+	// ErrBillingCutoffUnavailable 表示计费截止时刻保存失败。
 	ErrBillingCutoffUnavailable = errors.New("billing cutoff persistence unavailable")
 )
 

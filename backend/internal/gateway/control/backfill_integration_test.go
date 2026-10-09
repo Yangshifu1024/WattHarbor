@@ -206,7 +206,7 @@ func TestBackfillRollsBackSamplesWhenAggregationIsCanceled(t *testing.T) {
 	}
 }
 
-// TestBackfillConcurrentReplayKeepsFirstSamples 用独立连接和真实设备锁等待证明并发重放只累计一次。
+// TestBackfillConcurrentReplayKeepsFirstSamples 用独立连接和真实设备行锁验证并发重放只累计一次。
 func TestBackfillConcurrentReplayKeepsFirstSamples(t *testing.T) {
 	first, board := backfillFixture(t)
 	second, observer := gatewayContractDB(t), gatewayContractDB(t)
@@ -273,7 +273,7 @@ func TestBackfillConcurrentReplayKeepsFirstSamples(t *testing.T) {
 			t.Fatalf("%s=%+v err=%v", table, row, err)
 		}
 	}
-	// 直接写入设备级重复样本必须被唯一键拒绝，不能只证明应用锁有效。
+	// 直接插入设备级重复样本，检查唯一键也能阻止重复记录。
 	if err := observer.Table("telemetry").Create(map[string]any{"device_id": board, "port_no": nil, "metric": "voltage_v", "value_num": "999", "ts": at}).Error; err == nil {
 		t.Fatal("设备级重复样本绕过唯一键")
 	}

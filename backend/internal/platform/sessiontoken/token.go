@@ -1,3 +1,4 @@
+// Package sessiontoken 生成刷新令牌，并提供 Redis 会话轮换和撤销脚本。
 package sessiontoken
 
 import (
@@ -10,7 +11,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Layout 配置令牌和 Redis 键前缀。
+// Layout 设置令牌和 Redis 会话键的前缀。
 // 令牌格式为 <TokenPrefix><sid>.<secret>，存储只保存 secret 的 SHA-256 摘要。
 type Layout struct {
 	TokenPrefix string // 调用方定义的令牌来源前缀

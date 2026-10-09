@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestAdministratorMFAEndpointStillRejectsSelfOperation 验证管理他人 MFA 的端点对当前账号返回 409，不能替代自助设置。
 func TestAdministratorMFAEndpointStillRejectsSelfOperation(t *testing.T) {
 	router := httpapi.NewRouter()
 	router.POST("/admin-users/:id/mfa", func(c *gin.Context) {

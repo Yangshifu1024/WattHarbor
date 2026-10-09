@@ -10,14 +10,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// registerOnlineCards 在 r 注册卡列表及管理路由；权限中间件每次重读当前权限。
+// registerOnlineCards 注册在线卡查询、绑定和状态修改接口。
 func (a API) registerOnlineCards(r *gin.Engine) {
 	r.GET("/api/v1/admin/online-cards", a.Auth.Require("user.read"), a.onlineCards)
 	r.POST("/api/v1/admin/online-cards/bind", a.Auth.Require("online_card.manage"), a.bindOnlineCard)
 	r.POST("/api/v1/admin/online-cards/:id/status", a.Auth.Require("online_card.manage"), a.onlineCardStatus)
 }
 
-// onlineCards 从 c 取实时身份调用卡列表用例，写列表和本地权限或公开错误。
+// onlineCards 返回当前管理员可读取的卡列表和权限。
 func (a API) onlineCards(c *gin.Context) {
 	actor := c.MustGet("admin_profile").(operations.Profile)
 	rows, err := a.Cards.List(c.Request.Context(), actor)
@@ -28,7 +28,7 @@ func (a API) onlineCards(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows, "permissions": actor.Permissions})
 }
 
-// bindOnlineCard 从 c 严格解析绑定依据和全部主键字段，调用用例，写卡 ID 或错误。
+// bindOnlineCard 校验绑定请求，绑定在线卡并返回卡 ID。
 func (a API) bindOnlineCard(c *gin.Context) {
 	var in struct {
 		CardNo string            `json:"card_no"` // 非零 32 位无符号十进制卡号
@@ -50,7 +50,7 @@ func (a API) bindOnlineCard(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// onlineCardStatus 从请求解析主键及状态依据，调用原子状态用例并保留响应。
+// onlineCardStatus 修改指定在线卡状态并返回结果。
 func (a API) onlineCardStatus(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

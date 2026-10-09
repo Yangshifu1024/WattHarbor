@@ -1,3 +1,4 @@
+// Package card 管理在线卡绑定和状态，处理刷卡扣款、续购及启动结果。
 package card
 
 import (
@@ -22,7 +23,7 @@ type SwipePorts interface {
 type SwipePricing interface {
 	// ActiveDeviceRule 读取 station、device 的当前方案；失败不得创建扣款。
 	ActiveDeviceRule(ctx context.Context, station uint64, device string) (charging.Rule, error)
-	// CheckDeviceScheme 核对同一目标的 scheme，返回兼容或事实读取错误。
+	// CheckDeviceScheme 检查目标设备是否支持 scheme，返回不兼容或读取错误。
 	CheckDeviceScheme(ctx context.Context, station uint64, device string, scheme charging.Scheme) error
 }
 
@@ -51,7 +52,7 @@ func (e *SwipeError) Error() string {
 // Unwrap 返回原始原因，支持 errors.Is/As。
 func (e *SwipeError) Unwrap() error { return e.Cause }
 
-// SwipeService 负责事件校验及完整扣款事务；外部事实只在事务前读取。
+// SwipeService 校验刷卡事件并提交扣款事务；设备状态和首次购买方案在事务前读取。
 type SwipeService struct {
 	DB      *gorm.DB                      // central 连接；由进程管理，服务提交或回滚刷卡事务
 	Ports   SwipePorts                    // cmd 注入的设备发现用例

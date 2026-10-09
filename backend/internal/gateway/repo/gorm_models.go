@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// deviceRow 仅读取 device 自增主键，供设备登记校验与按主键更新登记事实。
+// deviceRow 读取设备自增 ID，供登记校验和更新设备资料。
 type deviceRow struct {
 	// ID device 表的自增主键。
 	ID uint64 `gorm:"column:id;primaryKey"`

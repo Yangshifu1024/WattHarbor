@@ -18,7 +18,7 @@ type deviceSessionRow struct {
 	SessionID string `gorm:"column:session_id"`
 	// DeviceID 设备业务编号。
 	DeviceID string `gorm:"column:device_id"`
-	// Protocol 设备或连接的协议名称。
+	// Protocol 是连接传输方式，如 tcp。
 	Protocol string `gorm:"column:protocol"`
 	// RemoteAddr 设备连接远端地址。
 	RemoteAddr string `gorm:"column:remote_addr"`
@@ -45,7 +45,8 @@ type deviceSessionRow struct {
 // TableName 返回固定表名 device_session，供 GORM 定位模型。
 func (deviceSessionRow) TableName() string { return "device_session" }
 
-// RecordSession 按连接 session_id 和开始日期对应分区更新或插入终态；返回缺配置、身份或 SQL 错误，跨月不重建身份，不提供并发首次写入事务保证。
+// RecordSession 按会话号和开始月份更新或新增连接结束记录。
+// 已有记录只更新结束和流量字段；月份始终取开始时间，跨月结束也使用同一分区。
 func (s MySQLSink) RecordSession(ctx context.Context, record protocol.SessionRecord) error {
 	if s.DB == nil {
 		return errors.New("gateway database is unavailable")

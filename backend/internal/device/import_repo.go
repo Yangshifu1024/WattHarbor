@@ -27,7 +27,7 @@ func (s ImportRepo) ListImportJobs(ctx context.Context, limit int) ([]ImportJob,
 // ErrImportConflict 表示同一导入号或设备号被用于不同内容，或设备已属于其他站点、厂商；HTTP 返回 409。
 var ErrImportConflict = errors.New("导入内容与既有记录不一致")
 
-// LockImportJob 执行期间锁定任务，失败与中央设备资料一起回滚；重放核对网关已保存的设备登记记录。
+// LockImportJob 在调用方事务中锁定导入任务；锁保持到网关调用和中央状态保存结束。
 func (s ImportRepo) LockImportJob(tx *gorm.DB, importID string) (ImportJob, error) {
 	var row ImportJob
 	err := tx.Table("device_import").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -100,7 +100,7 @@ func (s ImportRepo) CreateImportedDevice(tx *gorm.DB, d ImportDevice) error {
 		"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID,
 		"model": d.Model, "status": "enabled", "protocol_adapter": d.ProtocolAdapter,
 	}
-	// 计费方式留空表示不覆盖已有配置，新建时沿用设备侧默认规则。
+	// 新建设备未提交计费模式时，使用 device_meta.charge_mode 的数据库默认值。
 	if d.ChargeMode != "" {
 		row["charge_mode"] = d.ChargeMode
 	}

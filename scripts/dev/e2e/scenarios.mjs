@@ -1,5 +1,5 @@
-// 隔离栈端到端场景驱动：走真实用户 API、真实 worker 循环与真实 TCP 模拟器，
-// 场景结束后直接查询测试库，对持久事实逐项断言。场景矩阵与逐表断言说明见
+// 在开发栈调用用户 API、运行 worker 任务，并通过 TCP 设备模拟器执行充电场景。
+// 场景结束后查询开发数据库，检查订单、费用和退款记录。场景及断言说明见
 // docs/operations.md「全链路场景验收」。
 //
 // 前置：开发栈已启动（node tasks.mjs dev-up）且 prepare.mjs 已建立厂商、站点、设备与
@@ -12,7 +12,7 @@
 // 用法：node scripts/dev/e2e/scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>
 //   budget  创建并应用「E2E预算方案」（10 分金额套餐），仅 s4 前需要执行一次。
 // 断言统一取库中最新一笔订单，因此不得并行运行多个场景；每个场景自建订单、
-// 自行轮询闭环、输出一行 E2E-RESULT JSON，任何断言失败以非零码退出。
+// 轮询直到订单处理完成，输出 E2E-RESULT JSON；任何断言失败以非零码退出。
 // 模拟支付与模拟器结果不构成实机、真实微信商户或监管投递的验收。
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -23,10 +23,10 @@ const ADMIN = 'http://127.0.0.1:8081/api/v1';
 const SIM = 'http://127.0.0.1:9190';
 // prepare.mjs 导入的 1 号模拟器设备的 1 号端口业务编码。
 const PORT_CODE = '5348240514082652-1';
-// 与开发栈同源编排；s7 对 worker 容器执行 SIGKILL 并重新拉起。
+// 使用开发栈 Compose 配置；s7 强制停止 worker 容器后再启动。
 const COMPOSE = ['compose', '-f', 'docker/compose.dev.yaml'];
 
-// 大整数身份按原 JSON 文本保留为 BigInt，再以 rawJSON 写回请求，不经 Number。
+// 将不安全的大整数按原 JSON 文本读为 BigInt，写请求时保留整数文本。
 const readJSON = text => JSON.parse(text, (_k, v, ctx) =>
   typeof v === 'number' && Number.isInteger(v) && !Number.isSafeInteger(v) ? BigInt(ctx.source) : v);
 const writeJSON = v => JSON.stringify(v, (_k, i) => typeof i === 'bigint' ? JSON.rawJSON(i.toString()) : i);
@@ -72,7 +72,7 @@ const latestOrder = () => sql('central_db',
   'SELECT id, order_no, status, started_at, ended_at, charged_kwh, charged_seconds FROM charge_order ORDER BY id DESC LIMIT 1');
 const orderEvents = id => sql('central_db',
   `SELECT event FROM charge_event_log WHERE charge_order_id = ${id} ORDER BY id`);
-// 退款与支付单经 biz_type/biz_id 多态关联订单；本库只有 charge 一类业务，按 biz_id 即可定位。
+// 本场景用 charge 业务的订单 ID 查询支付与退款；只按 biz_id 筛选，运行时须避免其他业务 ID 混入。
 const orderRefunds = id => sql('central_db',
   `SELECT refund_cents, status FROM refund_record WHERE biz_id = ${id} ORDER BY id`);
 const orderPayment = id => sql('central_db',
@@ -162,7 +162,7 @@ async function budget() {
   console.log('E2E-RESULT ' + writeJSON({ scenario: '预算方案应用', verdict: 'PASS', detail: applied }));
 }
 
-// S3 拒绝起充：设备回拒绝后订单退款闭环。
+// S3 拒绝启动：设备返回拒绝回执后，检查订单全额退款。
 async function s3() {
   const token = await login();
   const fail = [];
@@ -241,7 +241,7 @@ async function s2() {
   return verdict('S2 用户停机自动计费差额退款', done, fail, { cutoff, job, fee, pay, refunds, meter });
 }
 
-// S5 掉电零功率：起充后立即拔出，满一分钟零功率证据后自动停机并全额退款。
+// S5 零功率：启动后立即模拟拔出，连续一分钟功率为零后应自动停机并全额退款。
 async function s5() {
   const token = await login();
   const fail = [];
@@ -266,11 +266,9 @@ async function s5() {
   return verdict('S5 掉电零功率自动停机', done, fail, { cutoff, fee, pay, refunds });
 }
 
-// S7 worker 中断恢复：SIGKILL 在途 worker 容器，滞留事实由重启补齐。
-// 容器编排下以 docker kill 的 KILL 信号终止 worker，与进程级 SIGKILL 等价；
-// 断言两点：缺席期间中央保持 charging 且无结束回执（滞留属实），重启后
-// 结束回执、事件与费用在同一闭环内补齐。超短会话没有心跳采样，分段为空
-// 属预期，不据此断言分段数。
+// S7 worker 中断恢复：先强制停止 worker，再请求设备停止充电。
+// worker 停止期间订单应保持 charging 且没有结束回执；重启后应保存结束回执并完成计费。
+// 会话过短可能没有心跳，因此不检查分段数量。
 async function s7() {
   const token = await login();
   const fail = [];
@@ -280,7 +278,7 @@ async function s7() {
   execFileSync('docker', [...COMPOSE, 'kill', '--signal=KILL', 'worker'], { cwd: ROOT, stdio: 'pipe' });
   await sleep(3000);
   await call(USER, 'POST', '/user/charge/stop', { order_no: o.order_no }, token);
-  // worker 缺席：给同步链路 12 秒，中央必须仍然停在 charging 且无结束回执。
+  // 等待 12 秒，检查 worker 停止期间订单是否仍为 charging 且没有结束回执。
   await sleep(12000);
   const stuck = rows1(await latestOrder());
   const stuckReceipt = await orderEndReceipt(id);
@@ -325,7 +323,7 @@ async function s4() {
   return verdict('S4 预算封顶', done, fail, { cutoff, job, fee, pay, meter });
 }
 
-// S8 断线重连：reconnect 场景下充电，验证证据缺口不触发误停、停机计费闭环正常。
+// S8 断线重连：心跳中断不应被当作零功率；用户停机后应正常计费。
 async function s8() {
   const token = await login();
   const fail = [];

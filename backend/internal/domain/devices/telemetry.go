@@ -28,17 +28,15 @@ type ReadingSample struct {
 	Readings   []Reading
 }
 
-// SessionSpan 是一次充电过程在设备侧的起止与总量，作为分段计费的收口证据。
+// SessionSpan 保存设备上报的开始、结束、总时长和总电量，用于校验分段合计。
 type SessionSpan struct {
 	DeviceID  string
 	Port      uint8
 	StartedAt time.Time
 	EndedAt   time.Time
-	// ChargedSeconds 设备侧累计秒数。与 EndedAt-StartedAt 不一致说明
-	// 证据自相矛盾，计费必须拒绝而不是取其一。
+	// ChargedSeconds 是设备累计秒数；必须等于 EndedAt 与 StartedAt 的时间差。
 	ChargedSeconds uint32
 	// EnergyWh 是设备累计电量，单位 Wh，用于校验分段合计。
-	// 旧名称 EnergyMilliKWh 与实际单位不符，这里统一按 Wh 读取。
-	// protocol.Event.EnergyMilliKWh 同样保存 Wh，但字段名已写入历史 event_json，不能直接改名。
+	// 来源 protocol.Event.EnergyMilliKWh 虽含 MilliKWh，实际保存 Wh。
 	EnergyWh uint32
 }

@@ -154,7 +154,7 @@ func TestManualGrantCurrentBudgetAndReplay(t *testing.T) {
 	}
 }
 
-// TestActivitySharedTemplateSerializesDifferentRules 使用两连接和锁闸门验证不同触发共用模板／来源预算只发一份。
+// TestActivitySharedTemplateSerializesDifferentRules 使用两连接和锁闸门验证不同触发共用券模板、来源及一份限额时，只发一张券。
 func TestActivitySharedTemplateSerializesDifferentRules(t *testing.T) {
 	setup := testConn(t).orm
 	tag := "marketing-shared-" + uuid.NewString()
@@ -337,7 +337,7 @@ func TestActivityInviterKeyAndOriginalReceipt(t *testing.T) {
 	}
 }
 
-// TestActivityStorageFailureRollsBackPartialGrant 验证请求凭据保存失败返回错误，调用方须回滚已插入的券。
+// TestActivityStorageFailureRollsBackPartialGrant 验证请求记录保存失败时返回错误，调用方须回滚已插入的券。
 func TestActivityStorageFailureRollsBackPartialGrant(t *testing.T) {
 	tx := txRollback(t, testDB(t))
 	seedCoupon(t, tx, 4201, 24, nil)

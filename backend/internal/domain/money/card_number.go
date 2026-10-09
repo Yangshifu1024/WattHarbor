@@ -1,11 +1,11 @@
 package money
 
-// MaxPANLength 是卡号的最大位数，取 ISO/IEC 7812 的 PAN 上限 19 位。
-// 库里的列是 varchar(64)，那是存储余量，不是"卡号可以到 64 位"。
+// MaxPANLength 限制卡号最多 19 位。
+// 数据库列长度为 64，不改变业务校验上限。
 const MaxPANLength = 19
 
 // CanonicalCardNumber 校验 1–19 位十进制卡号，拒绝前导零。
-// 逐字符校验，不转整数，避免截断长卡号；规范形式与协议 BCD 编码一一对应。
+// 逐字符校验，不转整数，避免长卡号溢出。
 func CanonicalCardNumber(card string) bool {
 	if card == "" || len(card) > MaxPANLength {
 		return false

@@ -1,3 +1,4 @@
+// Package payment 提供匿名扫码报价、登录支付和支付通知接口。
 package payment
 
 import (
@@ -16,19 +17,19 @@ import (
 	"github.com/google/uuid"
 )
 
-// StartAPI 只绑定支付申请、提取用户身份并映射用例结果。
+// StartAPI 提供匿名报价和登录后的支付申请接口。
 type StartAPI struct {
 	Auth     authhttp.SessionAuthenticator // 当前用户身份适配
 	Checkout payment.CheckoutService       // 匿名报价及登录支付准备用例
 }
 
-// Register 在 router 上保持匿名报价与登录创建支付的 URL。
+// Register 注册匿名报价和登录支付路由。
 func (a StartAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/user/scan/offers", a.offers)
 	router.POST("/api/v1/user/scan/start", a.start)
 }
 
-// offers 绑定 c 的匿名端口报价请求，业务拒绝由 Checkout 分类后映射。
+// offers 返回指定端口当前可购买的充电方案。
 func (a StartAPI) offers(c *gin.Context) {
 	var body struct {
 		PortID string `json:"port_id"` /* 二维码端口编码 */
@@ -62,7 +63,7 @@ func (a StartAPI) offers(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// start 提取 c 的登录身份并严格绑定请求，调用用例后返回公开形状。
+// start 读取当前用户身份并创建支付申请，金额和方案由支付服务核对。
 func (a StartAPI) start(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -91,8 +92,7 @@ func (a StartAPI) start(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// checkoutFailure 将 err 的业务阶段及领域错误映射到支付状态、code 和文案。
-// c 的错误响应不包含存储错误正文或渠道敏感信息。
+// checkoutFailure 按失败阶段返回公开支付提示，隐藏存储原因和渠道敏感信息。
 func checkoutFailure(c *gin.Context, err error) {
 	var failure *payment.CheckoutError
 	if errors.As(err, &failure) {
@@ -148,25 +148,25 @@ func checkoutFailure(c *gin.Context, err error) {
 	}
 }
 
-// NotificationVerifier 是公开渠道通知验签和解密的接口，HTTP 只接受已验证的到账身份。
+// NotificationVerifier 验证支付通知签名并解密订单信息。
 type NotificationVerifier interface {
-	// VerifyNotification 在 context 下验证 HTTP 请求的渠道签名并解密，返回已验证的到账身份或错误；不写资金，失败不得调用回调用例。
+	// VerifyNotification 验证渠道签名并解密通知；失败时不得确认到账。
 	VerifyNotification(context.Context, *http.Request) (payment.VerifiedTransaction, error)
 }
 
-// WechatCallbackAPI 将公开微信通知先验签再交给支付回调用例，资金及幂等事务归用例执行。
+// WechatCallbackAPI 先验证微信支付通知，再交给支付服务确认到账。
 type WechatCallbackAPI struct {
 	Verifier  NotificationVerifier    // cmd 注入的签名校验与解密能力
 	Callbacks payment.CallbackService // 已验签通知的资金用例，不接受客户端自报到账
 }
 
-// Register 在 router 上保持公开渠道通知端点；通知不使用用户会话。
+// Register 注册公开微信支付通知路由；渠道签名用于确认来源。
 func (a WechatCallbackAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/public/payments/wechat/callback", a.callback)
 }
 
-// callback 用 c 的请求验签，再调用唯一资金入口；成功及相同通知重放均返回 204。
-// 验签失败为 400，资金标识冲突为 409，依赖或持久化故障为 503，不泄露渠道通知正文。
+// callback 先验签再确认到账；成功或同一通知重复提交均返回 204。
+// 验签失败返回 400，订单冲突返回 409，其余失败返回 503。
 func (a WechatCallbackAPI) callback(c *gin.Context) {
 	if a.Verifier == nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "payment callback unavailable", nil)

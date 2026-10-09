@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// AlertRepo 承接设备告警的同步落库与恢复判定。
+// AlertRepo 保存设备告警、读取待恢复告警并更新状态；恢复条件由用例检查。
 type AlertRepo struct {
 	DB *gorm.DB /* 所属 central 连接或调用方事务，不自行关闭 */
 }
@@ -43,7 +43,7 @@ func (s AlertRepo) InsertAlert(tx *gorm.DB, values map[string]any) error {
 	return tx.Table("alert_event").Create(values).Error
 }
 
-// ListRecoverableAlerts 读取 active 或 acknowledged 告警，是否恢复由用例核对证据。
+// ListRecoverableAlerts 读取 active 或 acknowledged 告警，是否恢复由用例核对后续心跳。
 func (s AlertRepo) ListRecoverableAlerts(ctx context.Context) ([]DeviceAlert, error) {
 	rows := []DeviceAlert{}
 	err := s.DB.WithContext(ctx).Table("alert_event").
@@ -54,7 +54,7 @@ func (s AlertRepo) ListRecoverableAlerts(ctx context.Context) ([]DeviceAlert, er
 }
 
 // AutoResolveAlert 按主键、分区月份和最新事件键写恢复时间。
-// 事件键已改变时不更新，避免旧恢复证据覆盖新故障。
+// 事件键已改变时不更新，避免用旧心跳清除新故障。
 func (s AlertRepo) AutoResolveAlert(tx *gorm.DB, row DeviceAlert, at time.Time) error {
 	return tx.Table("alert_event").
 		Where("id = ? AND created_month = ? AND event_id = ? AND status IN ('active','acknowledged')",

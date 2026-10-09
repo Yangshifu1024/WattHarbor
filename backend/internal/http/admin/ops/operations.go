@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// registerOperations 在 r 注册运营路由；服务执行公告、账号和设备事务，HTTP 只适配输入与结果。
+// registerOperations 注册账号创建、告警查询和认领、公告查询和发布接口。
 func (a API) registerOperations(r *gin.Engine) {
 	r.GET("/api/v1/admin/alerts", a.Auth.Require("alert.read"), a.listAlerts)
 	r.GET("/api/v1/admin/announcements", a.Auth.Require("announcement.read"), a.listAnnouncements)
@@ -17,7 +17,7 @@ func (a API) registerOperations(r *gin.Engine) {
 	r.POST("/api/v1/admin/announcements", a.Auth.Require("announcement.create"), a.createAnnouncement)
 }
 
-// createUser 从请求严格读取账号输入及审计信息，输出创建事务的 ID，不计算散列或校验角色集合。
+// createUser 创建后台账号并返回 ID。
 func (a API) createUser(c *gin.Context) {
 	var input ops.AccountCreateInput
 	if !httpapi.DecodeResource(c, &input) {
@@ -31,7 +31,7 @@ func (a API) createUser(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// listAlerts 将当前账号身份传给设备范围查询，输出归一化 items，无 SQL 或告警事务。
+// listAlerts 查询当前管理员设备范围内的告警。
 func (a API) listAlerts(c *gin.Context) {
 	rows, err := a.Alerts.List(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
@@ -42,7 +42,7 @@ func (a API) listAlerts(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// ackAlert 将当前账号身份、路径和审计值传给设备认领事务，输出 acknowledged，不写表。
+// ackAlert 认领指定告警，成功返回 acknowledged=true。
 func (a API) ackAlert(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -55,7 +55,7 @@ func (a API) ackAlert(c *gin.Context) {
 	httpapi.OK(c, gin.H{"acknowledged": true})
 }
 
-// listAnnouncements 将当前账号身份交给公告列表，返回 items 或鉴权或存储错误，无 SQL。
+// listAnnouncements 返回当前管理员可读取的公告列表。
 func (a API) listAnnouncements(c *gin.Context) {
 	rows, err := a.Announcements.List(c.Request.Context(), admin.AdminAuditContext(c).Actor)
 	if err != nil {
@@ -65,7 +65,7 @@ func (a API) listAnnouncements(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// createAnnouncement 从请求严格读取发布字段及审计值，返回用例事务的 ID／published 或错误。
+// createAnnouncement 发布公告并返回 ID 和 published 状态。
 func (a API) createAnnouncement(c *gin.Context) {
 	var in ops.AnnouncementInput
 	if !httpapi.DecodeResource(c, &in) {

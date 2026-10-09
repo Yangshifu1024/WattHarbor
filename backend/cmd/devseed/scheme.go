@@ -81,7 +81,7 @@ func seedOrderContract(ctx context.Context, db *sql.DB, id, user int64, u demoUs
 		}
 		// charge_payment_intent 的 electric/service/total 三列都是 NOT NULL 且无默认值，
 		// 支付意图必须自带完整金额拆分。示例订单用时长方案，包费全部计入服务费，
-		// 与上面 charge_order 的拆分口径一致：电费 0、服务费即包价。
+		// 与 charge_order 一致：电费为 0，套餐价全部计入服务费。
 		if _, err := tx.ExecContext(ctx, `INSERT INTO charge_payment_intent(intent_id,client_request_id,merchant_order_no,payment_order_id,user_id,openid,device_id,port_no,port_code,station_id,pricing_rule_id,pricing_rule_version,pricing_snapshot,estimated_kwh,estimated_minutes,electric_cents,service_cents,total_cents,charge_mode,charge_quantity,status,expires_at,paid_at,created_at,charge_order_id,offer_id) VALUES(?,?,?,?,?,?,?,1,?,?,?,1,?,'0.000',?,?,?,?,0,?,?,?,?,?,?,?)`, intent, uuid.NewString(), merchant, pid, user, u.openid, device, port, station, ruleID, string(snapshot), minutes, 0, price, price, minutes, intentStatus(o.status), created.Add(15*time.Minute), created, created, id, offer.ID); err != nil {
 			return err
 		}

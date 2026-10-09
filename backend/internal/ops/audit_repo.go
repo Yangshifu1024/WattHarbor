@@ -8,12 +8,12 @@ import (
 
 // AuditEntryInput 是已编码的安全审计输入；表、列与分区月份由所属仓储决定。
 type AuditEntryInput struct {
-	ActorID    uint64 // 操作人身份
+	ActorID    uint64 // 操作的后台账号 ID
 	ActorName  string // 操作时账号名
 	Module     string // 所属业务模块
 	Action     string // 操作名称
 	TargetType string // 目标类型
-	TargetID   string // 十进制或文本目标身份
+	TargetID   string // 目标 ID，使用十进制或业务编号文本
 	BeforeJSON []byte // 变更前安全快照的 JSON
 	AfterJSON  []byte // 变更后安全快照的 JSON
 	ClientIP   string // 首次请求客户端地址

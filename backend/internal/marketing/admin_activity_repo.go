@@ -23,8 +23,8 @@ type AdminActivityRuleRow struct {
 	MaxGrants       int        `json:"max_grants" gorm:"column:max_grants"`               // 券与来源共享上限，0 表示不限量
 	PerUserLimit    int        `json:"per_user_limit" gorm:"column:per_user_limit"`       // 单人份数，0 默认 1 份
 	Status          string     `json:"status" gorm:"column:status"`                       // 业务状态
-	StartAt         time.Time  `json:"start_at" gorm:"column:start_at"`                   // 开始时刻，可空表示立即
-	EndAt           *time.Time `json:"end_at" gorm:"column:end_at"`                       // 截止时刻，可空表示长期
+	StartAt         time.Time  `json:"start_at" gorm:"column:start_at"`                   // 活动开始时刻
+	EndAt           *time.Time `json:"end_at" gorm:"column:end_at"`                       // 活动结束时刻；历史记录可空
 	CreatedAt       time.Time  `json:"created_at" gorm:"column:created_at"`               // 创建 UTC 时刻
 	// GrantedCount 是活动券的累计发放份数，由 ListActivityRules 单独聚合回填。
 	GrantedCount int64 `json:"granted_count" gorm:"-"` // 已发份数
@@ -40,8 +40,8 @@ type AdminActivityRuleInput struct {
 	MaxGrants       int       // 券与来源共享上限，0 表示不限量
 	PerUserLimit    int       // 单人份数，0 默认 1 份
 	Status          string    // 业务状态
-	StartAt         time.Time // 开始时刻，可空表示立即
-	EndAt           time.Time // 截止时刻，可空表示长期
+	StartAt         time.Time // 活动开始时刻
+	EndAt           time.Time // 活动结束时刻
 }
 
 // AdminActivityRepo 是后台活动规则的读写入口。
@@ -92,7 +92,7 @@ func couponIDs(rows []AdminActivityRuleRow) []uint64 {
 	return ids
 }
 
-// activityGrantedCounts 按券 ID 聚合活动类发放数量。
+// activityGrantedCounts 按券模板汇总 activity 和 invite_reward 两种来源的发放份数。
 // 不同活动引用同一张券时共享该券的累计计数。
 func activityGrantedCounts(db *gorm.DB, couponIDs []uint64) (map[uint64]int64, error) {
 	counts := map[uint64]int64{}
@@ -152,8 +152,8 @@ func (s AdminActivityRepo) UpdateActivityRule(ctx context.Context, id uint64, in
 			MaxGrants       int        `gorm:"column:max_grants"`        // 券与来源共享上限，0 表示不限量
 			PerUserLimit    int        `gorm:"column:per_user_limit"`    // 单人份数，0 默认 1 份
 			Status          string     `gorm:"column:status"`            // 业务状态
-			StartAt         time.Time  `gorm:"column:start_at"`          // 开始时刻，可空表示立即
-			EndAt           *time.Time `gorm:"column:end_at"`            // 截止时刻，可空表示长期
+			StartAt         time.Time  `gorm:"column:start_at"`          // 活动开始时刻
+			EndAt           *time.Time `gorm:"column:end_at"`            // 活动结束时刻；历史记录可空
 		}
 		// 取具体类型而非接口：GORM 反射 nil 接口会 panic。
 		if err := tx.Table("coupon_activity_rule").Clauses(clause.Locking{Strength: "UPDATE"}).

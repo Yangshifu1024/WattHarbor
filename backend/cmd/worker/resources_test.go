@@ -14,45 +14,35 @@ import (
 
 // trackedConnector 提供共享关闭计数的 SQL 测试连接器，不连接外部数据库。
 type trackedConnector struct {
-	// closes 测试共享的原子关闭计数，不代表外部数据库连接。
 	closes *atomic.Int32
 }
 
-// Connect 返回共用关闭计数器的测试连接，不连接数据库。
 func (c trackedConnector) Connect(context.Context) (driver.Conn, error) {
 	return trackedConnection{c.closes}, nil
 }
 
-// Driver 返回共用关闭计数器的测试驱动。
 func (c trackedConnector) Driver() driver.Driver { return trackedDriver{c.closes} }
 
 // trackedDriver 提供共享关闭计数的 SQL 测试驱动，不解析或使用外部连接地址。
 type trackedDriver struct {
-	// closes 测试共享的原子关闭计数，不代表外部数据库连接。
 	closes *atomic.Int32
 }
 
-// Open 返回共用关闭计数器的测试连接，不使用连接地址。
 func (d trackedDriver) Open(string) (driver.Conn, error) { return trackedConnection{d.closes}, nil }
 
 // trackedConnection 提供关闭计数与固定拒绝的 SQL 测试连接，不支持语句或事务。
 type trackedConnection struct {
-	// closes 测试共享的原子关闭计数，不代表外部数据库连接。
 	closes *atomic.Int32
 }
 
-// Close 将共享关闭计数加一。
 func (c trackedConnection) Close() error { c.closes.Add(1); return nil }
 
-// Prepare 返回 unsupported 错误，不支持语句。
 func (c trackedConnection) Prepare(string) (driver.Stmt, error) {
 	return nil, errors.New("unsupported")
 }
 
-// Begin 返回 unsupported 错误，不支持事务。
 func (c trackedConnection) Begin() (driver.Tx, error) { return nil, errors.New("unsupported") }
 
-// Ping 直接返回成功，模拟连接检查。
 func (c trackedConnection) Ping(context.Context) error { return nil }
 
 // TestInitializationFailureClosesEveryOpenedDatabase 验证第二、第三数据库或 Redis 初始化失败时，保留错误并关闭此前打开的连接。

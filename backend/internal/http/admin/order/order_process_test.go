@@ -8,7 +8,6 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// TestOrderProcessRejectsInvalidIdentityAndPaging 验证路由输入拒绝空值、重复值与超限整数，无数据库访问。
 func TestOrderProcessRejectsInvalidIdentityAndPaging(t *testing.T) {
 	router := httpapi.NewRouter()
 	router.GET("/orders/:id/process", (API{}).orderProcess)
@@ -26,7 +25,6 @@ func TestOrderProcessRejectsInvalidIdentityAndPaging(t *testing.T) {
 	}
 }
 
-// TestOrderProcessRouteRequiresAuthentication 验证实际注册端点缺会话时返回 401，无外部调用。
 func TestOrderProcessRouteRequiresAuthentication(t *testing.T) {
 	router := httpapi.NewRouter()
 	(API{}).Register(router)

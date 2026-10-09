@@ -14,7 +14,7 @@ type RechargeSources struct{}
 // 事务须为 READ COMMITTED，或在钱包锁后首次建立 RR 快照，避免漏掉刚到账的来源。
 // 先不加锁读取已支付候选 ID，再用 PRIMARY 索引按候选 ID 锁定并复核状态。
 // 不能直接按支付状态扫描加锁，否则可能锁到待支付记录，与到账事务形成死锁。
-// 固定两次查询；调用方负责提交或回滚。
+// 无来源只查询一次，有候选时再查询并加锁；调用方负责提交或回滚。
 func (RechargeSources) LockRechargeSources(tx *gorm.DB, userID uint64) ([]wallet.RechargeSource, error) {
 	var ids []uint64
 	if err := tx.Table("payment_order").Where("user_id=? AND biz_type='wallet_recharge' AND pay_method='wechat' AND status IN ('paid','partial_refunded') AND deleted_at IS NULL", userID).Order("id").Pluck("id", &ids).Error; err != nil {

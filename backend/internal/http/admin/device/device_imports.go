@@ -13,14 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// registerImports 将 r 绑定导入列表、创建及重试路径，三者继续使用 device.import 权限。
+// registerImports 注册设备导入列表、创建和重试接口，均要求 device.import 权限。
 func (a API) registerImports(r *gin.Engine) {
 	r.GET("/api/v1/admin/device-imports", a.Auth.Require("device.import"), a.imports)
 	r.POST("/api/v1/admin/device-imports", a.Auth.Require("device.import"), a.createImport)
 	r.POST("/api/v1/admin/device-imports/:import_id/retry", a.Auth.Require("device.import"), a.retryImport)
 }
 
-// imports 在请求内返回最近一百个任务或读取失败，不输出存档清单，也不执行任务。
+// imports 返回最近一百个设备导入任务。
 func (a API) imports(c *gin.Context) {
 	rows, err := a.Imports.List(c.Request.Context())
 	if err != nil {
@@ -30,7 +30,7 @@ func (a API) imports(c *gin.Context) {
 	httpapi.OK(c, rows)
 }
 
-// createImport 解码批量请求，取得当前范围并调用完整受理／同步执行用例，返回任务或一次错误响应。
+// createImport 校验导入请求和管理员当前范围，创建任务并同步执行。
 func (a API) createImport(c *gin.Context) {
 	var in device.ImportInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -52,7 +52,7 @@ func (a API) createImport(c *gin.Context) {
 	importResponse(c, out)
 }
 
-// retryImport 在请求内校验任务号及实时范围，以任务清单同步恢复；不重新解析当前厂商配置。
+// retryImport 按任务中保存的设备清单重试导入。
 func (a API) retryImport(c *gin.Context) {
 	id := c.Param("import_id")
 	if !admin.RequestIDPattern.MatchString(id) {
@@ -71,7 +71,7 @@ func (a API) retryImport(c *gin.Context) {
 	importResponse(c, out)
 }
 
-// importAudit 从 c 取得可信当前身份、请求号及地址，不把 gin 注入业务事务。
+// importAudit 取得已鉴权的管理员、客户端 IP 和请求编号。
 func importAudit(c *gin.Context) ops.AuditContext {
 	return ops.AuditContext{Actor: c.MustGet("admin_profile").(operations.Profile), ClientIP: c.ClientIP(), RequestID: httpapi.RequestID(c)}
 }
@@ -85,7 +85,7 @@ func importResponse(c *gin.Context, out device.ImportJob) {
 	httpapi.OK(c, out)
 }
 
-// importFailure 保留输入、范围、厂商及兼容的公开码；其他错误交给统一适配，绝不在事务里写响应。
+// importFailure 将导入参数、范围和厂商错误转换为接口响应。
 func importFailure(c *gin.Context, err error) {
 	var input device.ImportInputError
 	var vendor *contract.VendorFailure

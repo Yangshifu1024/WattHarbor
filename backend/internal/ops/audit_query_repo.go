@@ -27,14 +27,14 @@ type AuditRow struct {
 	ID         uint64    `json:"id"`          // 审计记录主键
 	ActorID    uint64    `json:"actor_id"`    // 操作的后台账号 ID
 	ActorName  string    `json:"actor_name"`  // 操作人登录名（当时的快照）
-	Module     string    `json:"module"`      // 所属模块，等于目标类型，如 auth / coupon
+	Module     string    `json:"module"`      // 所属模块，如 auth 或 coupon；认证审计的模块与目标类型不同
 	Action     string    `json:"action"`      // 动作，如 login / update / grant
 	TargetType *string   `json:"target_type"` // 目标类型；指针，未指定对象时为 null
 	TargetID   *string   `json:"target_id"`   // 目标主键（字符串形式）；指针，未指定时为 null
 	RequestID  *string   `json:"request_id"`  // 关联请求号；指针，取不到时为 null
 	ClientIP   *string   `json:"client_ip"`   // 客户端 IP；指针，取不到时为 null
-	BeforeJSON *string   `json:"before_json"` // 变更前快照；指针，新建记录时为 null
-	AfterJSON  *string   `json:"after_json"`  // 变更后快照；指针，新建记录时为 null
+	BeforeJSON *string   `json:"before_json"` // 变更前 JSON 文本；SQL NULL 为 nil，JSON null 为文本 null
+	AfterJSON  *string   `json:"after_json"`  // 变更后 JSON 文本；SQL NULL 为 nil，JSON null 为文本 null
 	CreatedAt  time.Time `json:"created_at"`  // 记录时间
 }
 

@@ -11,23 +11,22 @@ import (
 	"net/http"
 )
 
-// StartResultAPI 适配 worker 的起充结果回执，状态及幂等写入由起充用例拥有。
+// StartResultAPI 接收 worker 提交的启动回执，交给启动服务处理。
 type StartResultAPI struct {
-	// Service 是 cmd 注入的起充回执接口，不暴露数据库或通用 HTTP。
+	// Service 保存启动回执并更新订单。
 	Service interface {
-		// Apply 在请求 context 下保存起充结果，返回是否重放或冲突／持久错误，完整事务由实现拥有。
+		// Apply 保存启动结果；重复请求返回已处理标记，内容冲突时报错。
 		Apply(context.Context, chargestart.StartResult) (bool, error)
 	}
 	ServiceToken string // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 在 router 注册起充回执 POST 路径，只注册路由。
+// Register 注册内部启动回执提交路由。
 func (a StartResultAPI) Register(router *gin.Engine) {
 	router.POST(centralcontract.StartResultRoute, a.handle)
 }
 
-// handle 校验 请求中的服务令牌、JSON 及路径订单号一致性，将回执交给请求 context 下的调用方事务。
-// 成功返回 accepted／replayed，输入 400、标识冲突 409、持久失败 503；不自行持有事务。
+// handle 核对路径与请求中的订单号一致后，提交启动结果。
 func (a StartResultAPI) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

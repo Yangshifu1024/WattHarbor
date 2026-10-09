@@ -14,23 +14,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// StopAuthorization 适配网关读取本用户停机命令编号，授权与计费截止点由停机用例负责。
+// StopAuthorization 为网关提供停机授权；停机服务会核对用户归属并固定计费截止时间。
 type StopAuthorization struct {
-	// Service 是 cmd 注入的停机授权接口，不暴露数据库或通用 HTTP。
+	// Service 核对订单并保存计费截止时间。
 	Service interface {
-		// Stop 以请求 context、订单号及用户 ID 核对归属并冻结截止点，返回停机结果或状态／持久错误。
+		// Stop 核对用户与订单，返回允许停止的订单及启动命令编号。
 		Stop(context.Context, string, uint64) (chargestop.ActiveStopAuthorization, error)
 	}
 	ServiceToken string // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 将停机授权 GET 路径挂到 router，只注册路由。
+// Register 注册内部停机授权路由。
 func (a StopAuthorization) Register(router *gin.Engine) {
 	router.GET(centralcontract.StopAuthorizationRoute, a.handle)
 }
 
-// handle 从 c 核对服务令牌、订单号及正整数 user_id，传请求 context 执行停止授权。
-// 返回端口／启动命令标识；输入 400、状态或端口 409、截止点及存储 503，不在 HTTP 组合事务。
+// handle 校验令牌、订单号和用户 ID，返回停机授权。
 func (a StopAuthorization) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

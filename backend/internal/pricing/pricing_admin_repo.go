@@ -29,7 +29,7 @@ type PricingTemplateInput struct {
 	Name        string // 已规范化模板名称
 	Remark      string // 完整方案备注
 	SpecJSON    string // 已通过领域校验的完整方案 JSON
-	DisplayJSON string // 展示开关 JSON，不包含渠道凭据
+	DisplayJSON string // 用户端展示开关 JSON
 }
 
 // SavePricingTemplate 在调用方事务中创建或更新模板，ID=0 创建版本 1。
@@ -90,10 +90,10 @@ func (s Repo) ChangePricingTemplateStatus(tx *gorm.DB, id uint64, expectedVersio
 	return before, nil
 }
 
-// PricingPublication 是下发结果的幂等凭据。
+// PricingPublication 保存请求号对应的发布结果，重试时核对操作者和内容摘要。
 type PricingPublication struct {
-	RequestID   string // 客户端请求号，同一次下发重放沿用同一个
-	ActorID     uint64 // 发起下发的管理员 ID
+	RequestID   string // 客户端请求号，同一次发布重试沿用同一个
+	ActorID     uint64 // 发起发布的管理员 ID
 	PayloadHash string // 请求体摘要；同一个请求号配不同内容即冲突
 	RuleID      uint64 // 本次发布的定价规则 ID
 	Version     uint32 // 本次发布的规则版本
@@ -128,7 +128,7 @@ func (s Repo) ActivePricingTemplate(tx *gorm.DB, id uint64) (PricingTemplateRow,
 	return row, err
 }
 
-// PricingTemplateScheme 解析模板完整方案，缺规则或空方案返回 charging.ErrInvalidPricing，不能下发。
+// PricingTemplateScheme 解析模板 JSON 并要求包含 Scheme；不检查方案数值，调用方还须 Validate。
 func PricingTemplateScheme(row PricingTemplateRow) (charging.Scheme, error) {
 	var spec charging.Spec
 	if err := json.Unmarshal(row.SpecJSON, &spec); err != nil || spec.Scheme == nil {

@@ -1,3 +1,4 @@
+// Package delivery 定义报送事件校验和发送适配器，由调用方配置并使用。
 package delivery
 
 import (

@@ -8,7 +8,10 @@ import (
 	"chargepilot/internal/gateway/repo"
 )
 
+// ErrUnpaid 订单未满足启动所需的支付或设备额度条件。
 var ErrUnpaid = errors.New("charge order is not fully paid or has no device limit")
+
+// ErrNotCharging 订单不属于该用户，或当前不可停止。
 var ErrNotCharging = errors.New("charge order is not charging for this user")
 
 // PaidOrderAuthorizer 查询中央服务，确认订单是否允许启动。

@@ -195,7 +195,7 @@ func TestStopRecoversCommittedCutoffWithoutEvidence(t *testing.T) {
 			if err != nil || before.CutoffAt == nil {
 				t.Fatalf("cutoff=%+v err=%v", before, err)
 			}
-			// 清除快照，模拟恢复期间取证或计价依据不可用。截止记录已足以继续决定。
+			// 清除价格快照，验证已保存截止记录的订单仍能重试 STOP。
 			if err := tx.Table("charge_order_pricing").Where("charge_order_id IN ?", []uint64{id, id + 1}).Delete(nil).Error; err != nil {
 				t.Fatal(err)
 			}

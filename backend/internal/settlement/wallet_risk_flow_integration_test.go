@@ -57,7 +57,7 @@ func TestRiskApprovalSeesRechargeCommittedDuringWalletLockWait(t *testing.T) {
 	}()
 	for _, row := range []struct {
 		table  string         // 用户、钱包、支付及申请所属表
-		values map[string]any // 仅提供测试必需的业务事实
+		values map[string]any // 测试所需字段
 	}{{"user", map[string]any{"id": id, "openid": openid, "status": "active"}}, {"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 0, "frozen_cents": 0, "status": "frozen", "version": 1}}, {"payment_order", map[string]any{"id": id, "order_no": no, "biz_type": "wallet_recharge", "biz_id": 0, "user_id": id, "pay_method": "wechat", "total_cents": 700, "paid_cents": 0, "status": "initiated", "created_month": time.Now().UTC().Format("2006-01") + "-01"}}, {"wallet_recharge_request", map[string]any{"request_id": recharge, "user_id": id, "amount_cents": 700, "payment_order_id": id}}} {
 		if err := setup.Table(row.table).Create(row.values).Error; err != nil {
 			t.Fatal(err)

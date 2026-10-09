@@ -1,3 +1,4 @@
+// Package admin 提供后台接口共用的参数校验、数据范围、错误响应和审计信息。
 package admin
 
 import (

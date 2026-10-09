@@ -35,7 +35,7 @@ func (RechargePaymentRepo) LoadInTx(tx *gorm.DB, id uint64) (wallet.RechargePaym
 }
 
 // CreateInTx 在调用方事务中为 userID 创建 amountCents 分的充值支付及原单号。
-// 返回已分配身份或编号、插入错误；有效期保持 30 分钟，不在事务内调用渠道。
+// 返回支付主键、单号和状态，或分配、插入错误；有效期 30 分钟，不调用渠道。
 func (RechargePaymentRepo) CreateInTx(tx *gorm.DB, userID uint64, amountCents int64) (wallet.RechargePayment, error) {
 	no, err := NewOrderNumber(tx)
 	if err != nil {
@@ -50,7 +50,7 @@ func (RechargePaymentRepo) CreateInTx(tx *gorm.DB, userID uint64, amountCents in
 }
 
 // Prepare 为已提交的 pay 复用或准备渠道参数；openID 是已核对申请人的微信身份。
-// ctx 取消 I/O；返回合法渠道参数 JSON，数据库、渠道或载荷错误时返回空参数和错误。
+// ctx 控制数据库和渠道调用；返回参数 JSON 或读取、渠道、解码错误。
 // 并发保存以 payment_order_id 唯一键仲裁，重读首次参数；未知结果沿用原单号重试。
 func (s RechargePaymentRepo) Prepare(ctx context.Context, pay wallet.RechargePayment, openID string) (json.RawMessage, error) {
 	if s.DB == nil || pay.ExpiresAt == nil {

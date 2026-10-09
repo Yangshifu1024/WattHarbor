@@ -12,7 +12,7 @@ import (
 )
 
 // registerWorkerSync 注册 worker 所需的内部同步接口，要求服务令牌。
-// 网关负责启动结果、结束事件、端口释放、计量证据和刷卡事件的读写。
+// 网关负责启动结果、结束事件、端口释放、计量读数和刷卡事件的读写。
 func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 	r.GET(gatewaycontract.StartResultsPath, a.startResults)
 	r.POST(gatewaycontract.MarkStartResultsPath, a.markStartResultsReported)

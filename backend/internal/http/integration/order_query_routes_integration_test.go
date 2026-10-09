@@ -50,8 +50,8 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	no := "OR" + tag
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	for _, seed := range []struct {
-		table string         /* 事实表 */
-		row   map[string]any /* 自身事实 */
+		table string
+		row   map[string]any
 	}{
 		{"user", map[string]any{"id": id, "openid": tag, "status": "active"}},
 		{"user", map[string]any{"id": id + 1, "openid": tag + "-other", "status": "active"}},
@@ -264,8 +264,8 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 
 	// C 端组合读取使用真实两库和实际网关注册，确认零与补充观测保持独立。
 	for _, seed := range []struct {
-		table string         /* 表 */
-		row   map[string]any /* 自身事实 */
+		table string /* 表 */
+		row   map[string]any
 	}{
 		{"payment_order", map[string]any{"id": id, "order_no": "PAY" + tag, "biz_type": "charge", "biz_id": id, "user_id": id, "pay_method": "balance", "total_cents": 100, "paid_cents": 100, "refunded_cents": 99, "status": "partial_refunded", "created_month": month}},
 		{"refund_record", map[string]any{"id": id, "refund_no": "RF" + tag, "payment_order_id": id, "user_id": id, "biz_type": "charge", "biz_id": id, "refund_cents": 99, "status": "success", "reason": "original query refund", "created_month": month}},

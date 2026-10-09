@@ -2,8 +2,7 @@ import { defineController, getApp, wx } from "../../runtime";
 import { formatBill } from '../../utils/bill';
 const billApp = getApp();
 
-// 账单详情：按用户归属读取单张账单，并在成功展示后写已读凭据。
-// 读取与已读是两个独立事实：账单读不到时不写已读；已读保存失败保留详情并单独提示。
+// 先读取并展示账单，再标记已读；标记失败时保留详情，单独提示错误。
 export default defineController({
   data: { bill: null, loading: false, error: '', needsLogin: false, readSaving: false, readNotice: '', readError: '' },
   onLoad(query) {
@@ -27,13 +26,12 @@ export default defineController({
       const view = formatBill(bill);
       if (this._readBillID === bill.id && this._readConfirmed) view.unread = false;
       this.setData({ bill: view });
-      // 账单已渲染后再等待已读凭据：保存失败不影响展示，读取与已读仍是两个独立事实。
+      // 先展示详情，避免标记已读失败时无法查看账单。
       if (!bill.read_at && bill.read !== true) await this.markRead();
     } catch (e) { if (!this._gone && generation === this._generation) this.setData({ error: e.message || '账单详情加载失败', needsLogin: !billApp.globalData.token }); }
     finally { if (!this._gone && generation === this._generation) this.setData({ loading: false }); }
   },
-  // 同一账单只允许一个已读请求在途，成功后立即显示已读，不受页面加载版本影响。
-  // 失败时清除在途标记，下次加载可重试。
+  // 同一账单的已读请求未结束时不重复发送；失败后可在下次加载时重试。
   markRead() {
     if (this._readBillID === this._id && (this._readPending || this._readConfirmed)) return this._readPending;
     this._readBillID = this._id;

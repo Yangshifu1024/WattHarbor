@@ -1,3 +1,4 @@
+// Package ops 提供公告、审计日志、告警和账号创建接口。
 package ops
 
 import (
@@ -9,8 +10,8 @@ import (
 
 // API 适配后台账号创建、公告、审计和告警，业务流程与事务由注入服务拥有。
 type API struct {
-	Accounts      ops.AccountService      // 账号创建完整事务
-	Alerts        device.AlertService     // 告警查询与认领完整事务
+	Accounts      ops.AccountService      // 后台账号创建
+	Alerts        device.AlertService     // 告警查询与认领
 	Announcements ops.AnnouncementService // 公告发布和读取完整入口
 	Audits        ops.AuditQueryService   // 审计分页与实时权限检查
 	Auth          authhttp.AdminAuth      // 后台请求实时授权适配，不承担业务事务

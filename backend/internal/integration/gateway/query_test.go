@@ -65,9 +65,9 @@ func TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision(t *testing.T) {
 // TestQueryClientsRejectMalformedDataAndRespectCancellation 验证缺字段、业务错误、坏游标、重定向及取消不伪装成空页或泄露令牌。
 func TestQueryClientsRejectMalformedDataAndRespectCancellation(t *testing.T) {
 	for _, tc := range []struct {
-		name  string // 故障身份
-		body  string // 指定响应正文
-		valid bool   // 是否为合法空页
+		name  string
+		body  string
+		valid bool
 	}{
 		{"empty", `{"code":0,"data":{"items":[],"next_after_id":null}}`, true},
 		{"no_code", `{"data":{"items":[],"next_after_id":null}}`, false},

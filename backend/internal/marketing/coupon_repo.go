@@ -9,9 +9,13 @@ import (
 )
 
 var (
-	ErrCouponNotFound   = errors.New("优惠券不存在或未发放给该账号")
-	ErrCouponExhausted  = errors.New("优惠券已过期或已使用")
-	ErrCouponThreshold  = errors.New("未达到该优惠券的使用门槛")
+	// ErrCouponNotFound 表示券不属于该用户、模板不可用或优惠配置不合法。
+	ErrCouponNotFound = errors.New("优惠券不存在或未发放给该账号")
+	// ErrCouponExhausted 表示券已使用、已到期或核销时状态不再为 unused。
+	ErrCouponExhausted = errors.New("优惠券已过期或已使用")
+	// ErrCouponThreshold 表示原价非正或低于券的使用门槛。
+	ErrCouponThreshold = errors.New("未达到该优惠券的使用门槛")
+	// ErrCouponExceedsFee 定义优惠超额错误；当前优惠计算会封顶到原价，不返回此错误。
 	ErrCouponExceedsFee = errors.New("优惠金额不能超过订单金额")
 )
 
@@ -22,13 +26,13 @@ type CouponGrant struct {
 	Name               string    `json:"name" gorm:"column:name"`                                 // 业务名称
 	GrantID            uint64    `json:"grant_id" gorm:"column:grant_id"`                         // 发放主键
 	Status             string    `json:"status" gorm:"column:status"`                             // 业务状态
-	ExpiresAt          time.Time `json:"expires_at" gorm:"column:expired_at"`                     // 权益 UTC 截止时刻
+	ExpiresAt          time.Time `json:"expires_at" gorm:"column:expired_at"`                     // 券的 UTC 到期时刻
 	MinCharge          int64     `json:"min_charge_cents" gorm:"column:min_charge_cents"`         // 使用门槛，分
 	Type               string    `json:"discount_type" gorm:"column:discount_type"`               // 优惠类型
 	Amount             *int64    `json:"discount_value_cents" gorm:"column:discount_value_cents"` // 减免分值，可空
-	Percent            *float64  `json:"discount_percent" gorm:"column:discount_percent"`         // 优惠百分比，可空
+	Percent            *float64  `json:"discount_percent" gorm:"column:discount_percent"`         // 应付比例百分数，80 表示八折；可空
 	FreeMinutes        uint32    `json:"free_minutes" gorm:"column:free_minutes"`                 // 模板免费分钟，不读取金额列
-	UsedPaymentOrderID *uint64   `json:"-" gorm:"column:used_payment_order_id"`                   // 已用支付身份，空值未核销
+	UsedPaymentOrderID *uint64   `json:"-" gorm:"column:used_payment_order_id"`                   // 核销时的支付订单 ID，空值表示未核销
 }
 
 // TableName 指定优惠券发放表。

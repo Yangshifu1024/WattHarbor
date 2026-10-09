@@ -1,5 +1,6 @@
 package money
 
+// ScanPort 保存扫码结果中的端口编号、设备状态和可用性。
 type ScanPort struct {
 	PortID       string `json:"port_id"`
 	DeviceID     string `json:"device_id"`
@@ -10,6 +11,7 @@ type ScanPort struct {
 	DeviceStatus string `json:"device_status"`
 }
 
+// ScanResult 保存扫码解析结果；Kind 区分设备和端口，Port 或 Ports 保存对应端口信息。
 type ScanResult struct {
 	Kind         string     `json:"kind"`
 	DeviceID     string     `json:"device_id"`

@@ -1,3 +1,4 @@
+// Package outbox 将数据库中待发布事件推送到 Redis 流并记录发布状态。
 package outbox
 
 import (
@@ -10,16 +11,16 @@ import (
 	"time"
 )
 
-// Publisher 在数据库事务内将事件队列发布到 Redis，不改变事件标识或消息去重规则。
+// Publisher 将数据库事件队列推送到 Redis，并保存发送结果。
 type Publisher struct {
 	Source string        // 原来源标识；非空即可，表选择由 worker repo 保持规则。
 	DB     *gorm.DB      // 来源队列的受管理连接，行锁和状态更新共用事务。
 	Stream *redis.Client // 受管理的目标事件流客户端，不由本用例关闭。
 }
 
-// PublishBatch 发布一批事件，返回已推送并更新状态的数量及配置、事务或写入错误。
-// 保留 RC 事务、领取行锁、单次 Redis 三秒期限及退避；提交失败时也保留本轮数量。
-// Redis 已接收而 MySQL 提交失败可能产生重复消息，消息处理方仍须按 event_id 去重。
+// PublishBatch 在 READ COMMITTED 事务内锁定待发布事件，每次 Redis 请求最多等待 3 秒。
+// 失败事件记录退避时间，其余继续发布；返回已推送并更新状态的数量及事务错误。
+// 提交失败仍保留本轮计数，Redis 已接收的消息可能重复发布，处理方须按 event_id 去重。
 func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 	if p.DB == nil || p.Stream == nil || p.Source == "" {
 		return 0, fmt.Errorf("outbox publisher is not configured")
@@ -56,7 +57,7 @@ func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 	return published, nil
 }
 
-// truncate 按字节上限 max 截断 value，返回串或前缀；无 IO，不改为字符计数。
+// truncate 按字节截断文本，最多保留 max 字节。
 func truncate(value string, max int) string {
 	if len(value) > max {
 		return value[:max]
@@ -64,7 +65,7 @@ func truncate(value string, max int) string {
 	return value
 }
 
-// DefaultBusinessStreams 是 worker 运维统计使用的业务流清单，不建立死信或重放机制。
+// DefaultBusinessStreams 列出 worker 运维接口统计长度的业务流。
 var DefaultBusinessStreams = []string{
 	"charge_events_stream",
 	"charge_ended_stream",

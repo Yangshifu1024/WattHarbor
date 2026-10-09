@@ -60,9 +60,9 @@ type MarkDeviceEventsRequest struct {
 	IDs []uint64 `json:"ids" binding:"required,min=1,max=100"` // 本批事件 ID，最多 100 条
 }
 
-// MarkReply.Marked 可以为 0，表示重复请求未再次更新记录。
+// MarkReply 返回实际更新条数；重复请求可以为零。
 type MarkReply struct {
-	Marked int `json:"marked"` // 本次实际更新数；0 表示重复提交，没有更新
+	Marked int `json:"marked"` // 本次实际更新条数；已被标记的记录不会再次计数
 }
 
 // ReleasePortRequest 以端口主键和订单号限定网关占用释放，防止迟到结束流程释放后来订单的占用。
@@ -77,7 +77,7 @@ type ReleasePortReply struct {
 	Already  bool `json:"already"`  // 端口是否此前已释放
 }
 
-// MeterSamplesRequest 以结束事件 ID 与 UTC 时间固定证据窗口。
+// MeterSamplesRequest 用启动、结束时间和结束事件 ID 限定计量记录范围。
 type MeterSamplesRequest struct {
 	DeviceID string    // 设备编号
 	AckAt    time.Time // 启动确认时间，UTC
@@ -92,7 +92,7 @@ type FreezeEndDeliveryRequest struct {
 	Payload       string `json:"payload" binding:"required,max=65535"` // 首次保存的事件 JSON，字段和单位保持不变
 }
 
-// Frozen=false 表示首次冻结成功，Frozen=true 表示返回既有冻结，两者均有效。
+// FreezeEndDeliveryReply 返回首次保存的数据；Frozen=true 表示此前已保存。
 type FreezeEndDeliveryReply struct {
 	Payload string `json:"payload"` // 首次保存的事件 JSON，字段和单位保持不变
 	Frozen  bool   `json:"frozen"`  // false 表示首次保存，true 表示返回已保存的数据
@@ -103,7 +103,7 @@ type CompensateStartRequest struct {
 	CommandID string `json:"command_id" binding:"required,uuid"` // 已保存的命令 UUID，重试沿用
 }
 
-// 补偿停止受理不证明设备从未启动，也不授权资金退款。
+// CompensateStartReply 确认网关已接受补偿停止请求；不代表设备已停止或可以退款。
 type CompensateStartReply struct {
 	Accepted bool `json:"accepted"` // 是否已保存请求；不代表设备操作或资金处理已完成
 }

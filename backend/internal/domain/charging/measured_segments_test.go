@@ -65,7 +65,7 @@ func m2Samples(readings []m2Reading) []devices.ReadingSample {
 	return samples
 }
 
-// m2Span 是设备在结束帧自报的收口证据：22:49:54 起、22:53:08 止、194 秒、8 Wh。
+// m2Span 保存设备结束帧的计量：22:49:54 起、22:53:08 止、194 秒、8 Wh。
 // 结束帧的时长与累计秒数必须自洽，这一条实测成立，也是能构造分段的前提。
 func m2Span() devices.SessionSpan {
 	return devices.SessionSpan{
@@ -88,7 +88,7 @@ func TestMeasuredSegmentsAcceptsDeviceStartOneSecondBeforeRecordedStart(t *testi
 	if !segments[0].StartedAt.Equal(m2RecordedStart) {
 		t.Fatalf("首段起点 %s 应等于中央记录的起充时刻 %s", segments[0].StartedAt, m2RecordedStart)
 	}
-	// 末段必须收口到设备自报的结束时刻，最后 7 秒的电量也要有归属。
+	// 最后一段须延续到设备上报的结束时刻，并计入最后 7 秒的电量。
 	if !segments[len(segments)-1].EndedAt.Equal(m2Span().EndedAt) {
 		t.Fatalf("末段终点 %s 应等于结束时刻 %s", segments[len(segments)-1].EndedAt, m2Span().EndedAt)
 	}
@@ -155,7 +155,7 @@ const (
 	skewRewindAfterStart
 )
 
-// startSkewFixture 造一组最小证据：设备在 base 开始计量，服务器在 start 记录起充。
+// startSkewFixture 构造设备从 base 计时、服务器在 start 记录起充的心跳。
 // 心跳按每 20 秒一条上报，接收时刻比设备秒表位置晚 1 秒。
 // startOffset 是 start 相对设备自报起点的秒差，正值表示中央记录更晚。
 func startSkewFixture(startOffset int, shape skewShape) (time.Time, devices.SessionSpan, []devices.ReadingSample) {

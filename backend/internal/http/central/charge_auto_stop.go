@@ -11,23 +11,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AutoStopAPI 适配 worker 的停机扫描意图，判定、计费截止点冻结与停机下发由用例执行。
+// AutoStopAPI 接收 worker 的自动停机扫描请求。
 type AutoStopAPI struct {
 	// Stopper 是受请求生命周期管理的停机扫描能力。
 	Stopper interface {
-		// Run 在有界 context 下执行停机扫描，返回处理数量或未完成错误，停止命令及截止点由实现管理。
+		// Run 扫描应停止的订单，保存计费截止时间并请求停机；失败时保留处理数量。
 		Run(context.Context) (int, error)
 	}
 	ServiceToken string // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 在 r 挂载自动停机 POST 路径。
+// Register 注册自动停机扫描路由。
 func (a AutoStopAPI) Register(r *gin.Engine) {
 	r.POST(centralcontract.AutoStopPath, a.autoStop)
 }
 
-// autoStop 核对 请求中的服务令牌后，以请求派生的 25 秒 context 执行一轮停机扫描。
-// 返回 stopped 数量，未完成映射 503 并保留已处理数量；取消和重试由受管理流程负责。
+// autoStop 校验服务令牌，并在 25 秒内执行一轮扫描。
+// 未完成时返回 503，仍返回已处理数量。
 func (a AutoStopAPI) autoStop(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

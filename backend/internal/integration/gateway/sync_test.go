@@ -124,9 +124,8 @@ func TestSyncMutationsRequirePositiveAcceptanceAndAllowReplay(t *testing.T) {
 // TestSyncClientRejectsMissingAcknowledgements 验证客户端拒绝缺确认、编号不匹配和非法进度。
 func TestSyncClientRejectsMissingAcknowledgements(t *testing.T) {
 	for _, tc := range []struct {
-		// name,body 是子测试名称和服务响应 JSON。
 		name, body string
-		// call 是待验证的客户端调用。
+
 		call func(*Client) error
 	}{
 		{"missing list", `{"code":0,"data":{}}`, func(c *Client) error { _, err := c.EndEvents(context.Background()); return err }},

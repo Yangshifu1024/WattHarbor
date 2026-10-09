@@ -1,3 +1,4 @@
+// Package marketing 提供优惠券模板、发放和活动规则管理接口。
 package marketing
 
 import (
@@ -12,25 +13,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// API 仅持有营销业务服务与当前后台鉴权，不拥有数据库事务。
+// API 提供优惠券和活动规则接口，依赖营销服务和后台鉴权。
 type API struct {
 	Coupons    marketing.CouponService   // 模板及人工发放用例
 	Activities marketing.ActivityService // 活动配置及列表用例
 	Auth       authhttp.AdminAuth        // 实时权限及会话验证
 }
 
-// Register 将 a 券与活动路径注册到 r，无存储或网络 IO。
+// Register 注册优惠券和活动规则接口。
 func (a API) Register(r *gin.Engine) { a.registerCoupons(r); a.registerActivityRules(r) }
 
-// actor 从 c 后台上下文读取身份，返回已授权 Profile。
+// actor 取得请求中已鉴权的管理员资料。
 func actor(c *gin.Context) operations.Profile { return c.MustGet("admin_profile").(operations.Profile) }
 
-// audit 从 c 鉴权与请求适配取得审计值，返回安全上下文，不发起事务。
+// audit 取得已鉴权的管理员、客户端 IP 和请求编号。
 func audit(c *gin.Context) ops.AuditContext {
 	return ops.AuditContext{Actor: actor(c), ClientIP: c.ClientIP(), RequestID: httpapi.RequestID(c)}
 }
 
-// failure 将 err 输入／权限／存储结果映射到 c，业务故障不伪装成鉴权失败。
+// failure 将参数、权限和存储错误转换为接口响应。
 func failure(c *gin.Context, err error) {
 	var input *marketing.InputError
 	if errors.As(err, &input) {

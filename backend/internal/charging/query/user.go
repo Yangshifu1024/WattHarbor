@@ -19,7 +19,7 @@ type UserOrders interface {
 type UserStateReader interface {
 	// Frozen 组合已授权 row 的冻结记录，返回状态。
 	Frozen(ctx context.Context, row order.ChargeOrderRecord) (FrozenState, error)
-	// Funds 组合已授权 row 的支付、退款事实，返回状态或分阶段数据库错误，无资金写入。
+	// Funds 读取已授权 row 的支付金额、状态和退款列表，不修改资金。
 	Funds(ctx context.Context, row order.ChargeOrderRecord) (DetailFunds, error)
 }
 
@@ -42,13 +42,13 @@ type UserService struct {
 	Orders         UserOrders       // 所属订单隔离读取
 	Fees           order.FeeReader  // 所属结算确认费用，不计算实时估价
 	State          UserStateReader  // 冻结方案、计费进度、截止及资金摘要
-	Gateway        UserCurveReader  // cmd 注入的具名网关读取
+	Gateway        UserCurveReader  // cmd 注入的网关曲线查询
 	Live           UserLiveReader   // cmd 注入与后台使用相同规则的实时估算
 	AllowedWindows []string         // 允许的既定回看窗口；空值使用三个默认窗口
 	Now            func() time.Time // 可选受控时钟；空值使用当前 UTC 时刻
 }
 
-// UserReadError 标记组合查询阶段，供 HTTP 映射文案；Cause 保留取消、缺行事实。
+// UserReadError 保存失败查询的阶段和原因，供 HTTP 区分费用、支付、退款和曲线错误。
 type UserReadError struct {
 	Stage string // fee、state、payment、refund、curve或history_curve
 	Cause error  // 所属读取错误
@@ -105,7 +105,7 @@ type PaymentBrief struct {
 	Status        string `json:"status"`         // 支付状态
 }
 
-// DetailFunds 是支付、退款事实，不提供资金执行能力。
+// DetailFunds 保存支付摘要和退款列表，只供查询展示。
 type DetailFunds struct {
 	Payment *PaymentBrief    // 无支付记录为空
 	Refunds []map[string]any // 退款查询结果；无记录为空数组
@@ -135,14 +135,14 @@ type UserOrderView struct {
 	RuleDescription          *string                 `json:"rule_description,omitempty"`    // 显示规则时备注，允许空串
 	BillingStatus            string                  `json:"billing_status"`                // 计费任务状态
 	CardOperations           []CardOperation         `json:"card_operations"`               // 刷卡操作数组
-	StartConfirmationPending bool                    `json:"start_confirmation_pending"`    // paid待启动事实
+	StartConfirmationPending bool                    `json:"start_confirmation_pending"`    // 订单为 paid，正在等待启动确认
 	BillingCutoff            BillingCutoff           `json:"billing_cutoff"`                // 首次截止
 	Payment                  *PaymentBrief           `json:"payment,omitempty"`             // 详情支付信息；快照省略
 	Refunds                  *[]map[string]any       `json:"refunds,omitempty"`             // 详情退款数组；快照省略
 	PollContinue             *bool                   `json:"poll_continue,omitempty"`       // 快照paid、charging继续轮询
 	NextPollAfterMS          *int                    `json:"next_poll_after_ms,omitempty"`  // 快照轮询间隔，毫秒
 	TelemetryAvailable       *bool                   `json:"telemetry_available,omitempty"` // 快照是否有功率或电量观测
-	ElapsedSeconds           *int64                  `json:"elapsed_seconds,omitempty"`     // 展示墙钟秒数，不进入计费
+	ElapsedSeconds           *int64                  `json:"elapsed_seconds,omitempty"`     // 当前时间减启动时间的秒数，只供展示
 	TelemetryAt              *time.Time              `json:"telemetry_at,omitempty"`        // 最近有效观测 UTC 时刻
 	CurrentPowerW            *float64                `json:"current_power_w,omitempty"`     // 观测 W，可为零
 	VoltageV                 *float64                `json:"voltage_v,omitempty"`           // 观测 V，可为零
@@ -240,7 +240,7 @@ func (s UserService) Detail(ctx context.Context, userID uint64, raw string) (Use
 
 // Snapshot 先校验订单属于当前用户，再补充最近两分钟的端口观测与实时估价。
 // 网关失败时仍返回已有订单信息，并设 telemetry_available=false；数据库错误不能伪装为空值。
-// 墙钟时长仅供展示，估价不覆盖确认费用；已结束订单不再读取遥测或估价。
+// 经过时长只供展示，预估费用不覆盖结算金额；已结束订单不再查询遥测或估费。
 func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (UserOrderView, error) {
 	row, err := s.Orders.Resolve(ctx, userID, raw)
 	if err != nil {
@@ -263,7 +263,7 @@ func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (U
 		return out, err
 	}
 	if s.Live != nil {
-		// 先完成用户归属校验，再向既有估价用例传入该单身份；确认金额字段保持原值。
+		// 归属已核对，向估费用例传入该单的设备、端口和开始时刻；保留结算金额。
 		rows := []order.OrderView{{OrderID: row.ID, DeviceID: row.DeviceID, PortNo: row.PortNo, Status: row.Status, StartedAt: out.StartedAt}}
 		s.Live.Fill(ctx, rows)
 		out.Live, out.LiveUnavailable = rows[0].Live, rows[0].LiveUnavailable

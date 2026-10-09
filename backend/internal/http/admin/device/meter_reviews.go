@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// registerMeterReviews 挂载计量核实的三个接口。列表只读，要求 finance.read；
-// 提交核实和裁决核实均要求 billing.meter.review，r 挂载路由层鉴权，服务继续核对实时权限。
+// registerMeterReviews 注册计量复核列表、提交、审核和人工定金额接口。
+// 列表要求 finance.read，其余要求 billing.meter.review，服务会再次核对当前权限。
 func (a API) registerMeterReviews(r *gin.Engine) {
 	r.GET("/api/v1/admin/billing/meter-reviews", a.Auth.Require("finance.read"), a.meterReviews)
 	r.POST("/api/v1/admin/billing/meter-reviews/:id/propose", a.Auth.Require("billing.meter.review"), a.proposeMeter)
@@ -22,7 +22,7 @@ func (a API) registerMeterReviews(r *gin.Engine) {
 	r.POST("/api/v1/admin/billing/meter-reviews/:id/resolve-amount", a.Auth.Require("billing.meter.review"), a.resolveMeterAmount)
 }
 
-// resolveMeterAmount 绑定 c 的最终金额裁决，覆盖订单与操作人身份后调用结算用例并返回排队回执。
+// resolveMeterAmount 由财务提交人工确定的结算金额，订单 ID 取自路径。
 func (a API) resolveMeterAmount(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -46,7 +46,7 @@ func (a API) resolveMeterAmount(c *gin.Context) {
 	httpapi.OK(c, gin.H{"queued": true})
 }
 
-// meterReviews 解析 c 的 pending／resolved 与分页筛选；用例批量补充本页计量核实，接口仅转换公开身份 JSON。
+// meterReviews 分页返回待复核或已复核记录，载荷内的用户 ID 转为字符串。
 func (a API) meterReviews(c *gin.Context) {
 	q, ok := admin.ReadAdminPage(c, "pending resolved")
 	if !ok {

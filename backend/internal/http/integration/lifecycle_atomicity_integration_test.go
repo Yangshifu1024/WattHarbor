@@ -25,24 +25,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// lifecycleAtomicFixture 持有已提交的私有中央订单与独立观察池，仅证明生命周期事务，不执行渠道或计费入账。
+// lifecycleAtomicFixture 保存已提交的测试订单，以及独立的写入和观察连接。
 type lifecycleAtomicFixture struct {
 	Writer       *gorm.DB  // 真正 Apply 使用的中央池，事务由生产用例开启并提交。
-	Observer     *gorm.DB  // 不共享 Writer 的物理连接，观察已提交或回滚的持久事实。
+	Observer     *gorm.DB  // 不共享 Writer 的物理连接，观察写入是否提交或回滚。
 	ID           uint64    // 私有大订单及支付身份，所有偏移均在 NewID 预留范围内。
 	PortID       uint64    // 私有中央端口主键，成功启动写入及结束释放必须匹配它。
-	OtherOwner   uint64    // 同私有端口上的另一订单编号，用于证明旧结束不能释放新占用。
+	OtherOwner   uint64    // 同私有端口上的另一订单编号，用于检查旧结束请求不能释放新占用。
 	DeviceID     string    // 私有设备编号，避免唯一设备端口与其他测试相撞。
 	OrderNo      string    // 业务订单号，重复调用不改变。
 	StartCommand string    // 启动 UUID，也是启动事件及 Outbox 身份。
 	StopCommand  string    // 结束 UUID，也是结束事件及 Outbox 身份。
-	StartedAt    time.Time // UTC 毫秒启动事实。
-	EndedAt      time.Time // UTC 毫秒结束事实，晚于启动一小时。
+	StartedAt    time.Time // UTC 毫秒启动时刻。
+	EndedAt      time.Time // UTC 毫秒结束时刻，晚于启动一小时。
 	Month        string    // 订单及支付复合主键的 UTC 月首，清理不得省略。
 }
 
-// newLifecycleAtomicFixture 创建 paid 或 charging 私有订单及凭据，提供两个独立中央数据库连接。
-// 复用必需真库配置，不建表；支付仅为成功启动的参考事实，不调用支付、退款或资金算法，清理在关池之前执行。
+// newLifecycleAtomicFixture 创建 paid 或 charging 测试订单及启动凭据，使用独立连接观察提交。
+// 不调用支付或退款渠道，清理后关闭连接池。
 func newLifecycleAtomicFixture(t *testing.T, charging bool) *lifecycleAtomicFixture {
 	t.Helper()
 	id := testfixture.NewID()
@@ -89,12 +89,12 @@ func newLifecycleAtomicFixture(t *testing.T, charging bool) *lifecycleAtomicFixt
 	return f
 }
 
-// startRequest 返回 f 的成功启动请求，无 IO，不产生新命令标识或时间。
+// startRequest 构造该订单的成功启动请求，复用原命令编号和时刻。
 func (f *lifecycleAtomicFixture) startRequest() centralcontract.StartResultRequest {
 	return centralcontract.StartResultRequest{CommandID: f.StartCommand, ChargeOrderID: f.ID, OrderNo: f.OrderNo, DeviceID: f.DeviceID, PortNo: 1, PortID: f.PortID, Success: true, ResultCode: 0, OccurredAt: f.StartedAt}
 }
 
-// endResult 返回 f 的结束业务值，计量为 1200Wh／3600 秒，无 IO 或计费计算。
+// endResult 构造该订单的结束请求，电量为 1200 Wh，时长为 3600 秒。
 func (f *lifecycleAtomicFixture) endResult() finish.EndResult {
 	return finish.EndResult{OrderNo: f.OrderNo, ChargeOrderID: f.ID, StartCommandID: f.StartCommand, StopCommandID: f.StopCommand, DeviceID: f.DeviceID, PortNo: 1, PortID: f.PortID,
 		Meter: rules.EndMeter{ChargedWh: 1200, ChargedSeconds: 3600, EndedAt: f.EndedAt, StopReason: 7}}
@@ -170,7 +170,7 @@ func (f *lifecycleAtomicFixture) assertState(t *testing.T, charging, applied boo
 	f.assertCount(t, "charge_event_log", "charge_order_id=? AND event_id=? AND event=? AND actor='gateway'", 1, f.ID, command, event)
 	var outbox struct {
 		Stream       string `gorm:"column:stream"`        // 目标流标签，不随 repo 抽取改变。
-		EnvelopeJSON string `gorm:"column:envelope_json"` // 最终回执 JSON，专用请求与业务值形状保持。
+		EnvelopeJSON string `gorm:"column:envelope_json"` // 最终回执 JSON，核对请求字段和值未改变。
 	}
 	if err := f.Observer.Table("event_outbox").Where("event_id=?", command).Take(&outbox).Error; err != nil || outbox.Stream != stream {
 		t.Fatalf("original outbox=%+v: %v", outbox, err)

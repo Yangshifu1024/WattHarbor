@@ -10,8 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// 支付单的列表查询结果与分页查询。支付状态与金额语义由订单/资金域定义。
-// 这里只负责取数与查询结果。
+// 本文件查询支付单列表和摘要，金额取已保存的支付及退款记录。
 
 // PaymentOrderView 包含实际支付、余额扣费与充值记录；充电生命周期由关联充电单展示。
 type PaymentOrderView struct {
@@ -31,7 +30,7 @@ type PaymentOrderView struct {
 	ChargeOrderNo  *string    `json:"charge_order_no"`  // 当前有效关联充电单号，充值或无关联为空
 }
 
-// PaymentOrderQuery 是已校验的列表输入，不提供跨用户写入能力。
+// PaymentOrderQuery 保存支付单列表的分页和筛选条件。
 type PaymentOrderQuery struct {
 	persist.PageQuery            // 页号、页大小及通用筛选；本查询使用页号和页大小
 	UserID            uint64     // 内部用户范围；0 表示不筛选，通用支付单接口不读取此字段。

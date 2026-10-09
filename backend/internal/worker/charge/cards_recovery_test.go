@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// recoveryCards 仅模拟持久投递接口，不宣称证明真实库的冻结或设备消费。
+// recoveryCards 用内存保存首次卡回复，模拟首次回复响应丢失。
 type recoveryCards struct {
 	event          gateway.CardEvent            // 事件及模拟持久冻结值
 	replies        []gateway.CardReplyRequest   // 发送的回复
@@ -21,7 +21,7 @@ type recoveryCards struct {
 	loseFirstReply bool                         // 模拟首个回复发送后响应丢失
 }
 
-// CardEvents 返回 ctx 下同一个待投递事件 fixture。
+// CardEvents 返回固定待投递事件。
 func (f *recoveryCards) CardEvents(ctx context.Context) ([]gateway.CardEvent, error) {
 	return []gateway.CardEvent{f.event}, nil
 }
@@ -39,7 +39,7 @@ func (f *recoveryCards) FreezeCardResponse(ctx context.Context, in gateway.CardF
 	return gateway.CardFreezeReply{Stored: stored, ResponseJSON: f.event.Response}, nil
 }
 
-// AdvanceCardEvent 记录 ctx 下 in 的更新；不清除已保存回复。
+// AdvanceCardEvent 记录事件更新请求，保留已保存的回复。
 func (f *recoveryCards) AdvanceCardEvent(ctx context.Context, in gateway.CardAdvanceRequest) error {
 	f.advances = append(f.advances, in)
 	return nil
@@ -54,7 +54,7 @@ func (f *recoveryCards) ReplyCard(ctx context.Context, in gateway.CardReplyReque
 	return nil
 }
 
-// ResolveCardPort 返回 ctx/device/port 的端口 fixture。
+// ResolveCardPort 返回固定端口。
 func (f *recoveryCards) ResolveCardPort(ctx context.Context, device string, port uint8) (gateway.CardPortReply, error) {
 	return gateway.CardPortReply{Found: true, PortCode: "original-port"}, nil
 }
@@ -71,13 +71,12 @@ func (f *recoveryCentral) SwipeCard(ctx context.Context, in central.CardSwipeReq
 	return central.CardOperationReply{}, &central.CardDeclineReply{InsufficientBalance: true}
 }
 
-// CardBalance 返回 ctx/card 卡当前余额 fixture，记录次数。
+// CardBalance 记录查询次数并返回预设卡余额。
 func (f *recoveryCentral) CardBalance(ctx context.Context, card string) (central.CardBalanceReply, error) {
 	f.balances++
 	return central.CardBalanceReply{Valid: true, BalanceCents: f.cents}, nil
 }
 
-// TestFrozenCardReplyIsUsedWithoutNewDecision 核对已经冻结的设备、会话及余额回复，禁止再次决策。
 func TestFrozenCardReplyIsUsedWithoutNewDecision(t *testing.T) {
 	key := uuid.NewString()
 	original := gateway.CardReplyRequest{DeviceID: "original-device", Session: "010203040506", Kind: protocol.CommandCardBalance, CardNumber: 17, BalanceUnits: 88}
@@ -93,7 +92,6 @@ func TestFrozenCardReplyIsUsedWithoutNewDecision(t *testing.T) {
 	}
 }
 
-// TestLostCardReplyReusesFrozenOriginalBalance 模拟发送后响应丢失及事件重排，余额变化不得改写回复。
 func TestLostCardReplyReusesFrozenOriginalBalance(t *testing.T) {
 	key := uuid.NewString()
 	event := protocol.Event{EventID: key, Type: protocol.CardSwipe, DeviceID: "device", CardNumber: 17, Port: 1}

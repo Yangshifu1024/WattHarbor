@@ -15,24 +15,24 @@ type ActivityInput struct {
 	TriggerType     string  `json:"trigger_type"`      // first_recharge、invite_reward、threshold_redeem 或 holiday
 	CouponID        uint64  `json:"coupon_id"`         // 奖励券模板，须未删除且启用
 	InviterCouponID *uint64 `json:"inviter_coupon_id"` // 邀请人模板，邀请有奖必填，其他类型可空
-	ThresholdCents  int64   `json:"threshold_cents"`   // 门槛金额，满减为正，其他既定类型按既定规则校验
-	MaxGrants       int     `json:"max_grants"`        // 活动来源总量，0 表示不限量
+	ThresholdCents  int64   `json:"threshold_cents"`   // 触发门槛，分；满减须为正，首充和节日须为零，邀请奖励允许非负值但不使用
+	MaxGrants       int     `json:"max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
 	PerUserLimit    int     `json:"per_user_limit"`    // 单人配置，0沿用默认一份
 	Status          string  `json:"status"`            // active 或 disabled；空值补 active
 	StartAt         string  `json:"start_at"`          // RFC3339 开始时刻
-	EndAt           string  `json:"end_at"`            // RFC3339 结束时刻，晚于开始且不超过一年
+	EndAt           string  `json:"end_at"`            // RFC3339 结束时刻，须晚于开始且不超过当前时间 365 天后
 }
 
-// ActivityView 是活动查询结果，预算按优惠券和发放来源统计。
+// ActivityView 是活动查询结果，发放上限按券模板和发放来源统计。
 type ActivityView struct {
-	ID              uint64     `json:"id"`                // 既定规则主键
+	ID              uint64     `json:"id"`                // 活动规则主键
 	Name            string     `json:"name"`              // 活动名称
 	TriggerType     string     `json:"trigger_type"`      // 固定触发类型
 	CouponID        uint64     `json:"coupon_id"`         // 奖励券主键
 	CouponName      string     `json:"coupon_name"`       // 关联模板名称
 	InviterCouponID *uint64    `json:"inviter_coupon_id"` // 可选邀请人奖励券主键
 	ThresholdCents  int64      `json:"threshold_cents"`   // 门槛，分
-	MaxGrants       int        `json:"max_grants"`        // 活动来源总量上限，0 表示不限量
+	MaxGrants       int        `json:"max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
 	PerUserLimit    int        `json:"per_user_limit"`    // 单人份数配置，0由活动引擎归一为1
 	Status          string     `json:"status"`            // active 或 disabled
 	StartAt         time.Time  `json:"start_at"`          // 开始时刻
@@ -44,7 +44,7 @@ type ActivityView struct {
 // ActivityService 负责活动配置校验和同事务审计。
 type ActivityService struct {
 	DB  *gorm.DB         // 所属中央连接或调用方事务，由进程管理
-	Now func() time.Time // 可选受控时钟，空值使用当前 UTC
+	Now func() time.Time // 可注入测试时钟，nil 使用当前 UTC 时间
 }
 
 // normalize 校验活动请求并将时间转换为 UTC 写入参数。

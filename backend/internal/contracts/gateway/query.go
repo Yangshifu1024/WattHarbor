@@ -42,7 +42,7 @@ type TelemetryReply struct {
 	Bucket      string       `json:"bucket"`      // 实际聚合桶时长文本
 }
 
-// HistoricalCurveRequest 的窗口由已授权订单事实确定，调用者只选择既定聚合粒度。
+// HistoricalCurveRequest 使用已校验归属的订单起止时间，查询指定粒度的历史曲线。
 type HistoricalCurveRequest struct {
 	DeviceID    string    // 设备编号
 	OrderNo     string    // 业务订单号，对应 order_id 查询字段
@@ -72,7 +72,7 @@ type OrderProcessRequest struct {
 	OrderNo  string // 业务订单号
 	DeviceID string // 设备编号
 	PortNo   uint8  // 物理端口号
-	AfterID  uint64 // 已消费的最后过程行主键，首读为0
+	AfterID  uint64 // 上页最后一条记录的 ID，首次查询为 0
 	Limit    uint16 // 单页点数，1–2000
 }
 

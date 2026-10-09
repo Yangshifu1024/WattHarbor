@@ -82,7 +82,7 @@ func (routeSessionHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redi
 	return func(ctx context.Context, cmds []redis.Cmder) error { return errors.New("unexpected session pipeline") }
 }
 
-// TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit 验证完整注册路由、当前角色、严格输入和首签撤权。
+// TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit 验证完整注册路由、当前角色、严格输入和第一次审核后撤权。
 // 会话存在性为 fixture，账号／角色／权限／审核／审计均为真实 MySQL；外层事务回滚全部造数。
 func TestRegisteredInvoiceReviewKeepsRealAuthorizationAndAtomicAudit(t *testing.T) {
 	url := os.Getenv("TEST_MYSQL_URL")

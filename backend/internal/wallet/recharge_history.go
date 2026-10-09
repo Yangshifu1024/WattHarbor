@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// AdminRechargeRow 保留后台用户充值历史的公开支付字段，金额以支付确认事实为准。
+// AdminRechargeRow 保存后台充值历史的支付字段；PaidCents 是已确认到账金额。
 type AdminRechargeRow struct {
 	PaymentOrderID uint64     `json:"payment_order_id"` // 支付主键，保持既有整数契约
 	OrderNo        string     `json:"order_no"`         // 商户支付单号

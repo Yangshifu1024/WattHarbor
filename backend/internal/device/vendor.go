@@ -27,7 +27,7 @@ type VendorGateway interface {
 // VendorService 核对中央账号厂商范围，厂商写入事务由网关管理。
 type VendorService struct {
 	DB      *gorm.DB      // central 审计及站点存在性连接，不访问 gateway 表
-	Gateway VendorGateway // 具名厂商客户端，由 cmd 注入
+	Gateway VendorGateway // 由 cmd 注入，向网关查询和更新厂商资料
 }
 
 // VendorNotVisible 表示目标厂商超出范围，HTTP 返回 404。

@@ -1,3 +1,4 @@
+// Package repo 提供 worker 定时任务、执行日志和事件发布队列的表操作。
 package repo
 
 import (
@@ -6,7 +7,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// 本仓储在发布事务内领取及更新事件状态队列，记录形状使用 ops.EventOutboxRecord。
+// 发布事务通过本仓储领取事件、保存发布状态和失败次数。
 // 行锁持续到调用方完成 Redis 发布及 MySQL 事务退出，不创建死信或重放游标。
 
 // outboxBatch 一次领取多少条待发布事件。
@@ -21,8 +22,8 @@ func outboxTable(source string) string {
 	return "event_outbox"
 }
 
-// ListPublishableOutbox 在 tx 中按 source 选择队列，返回最多 100 条到期未发布事件或读取错误。
-// 保留 ID 顺序和 FOR UPDATE SKIP LOCKED；锁由调用方事务持有，不提交或延长租约。
+// ListPublishableOutbox 按 ID 领取最多 100 条到期待发布事件，跳过其他事务已锁定的行。
+// 调用方须使用事务，行锁持续到该事务结束。
 func ListPublishableOutbox(tx *gorm.DB, source string) ([]ops.EventOutboxRecord, error) {
 	rows := []ops.EventOutboxRecord{}
 	err := tx.Table(outboxTable(source)).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
@@ -31,8 +32,7 @@ func ListPublishableOutbox(tx *gorm.DB, source string) ([]ops.EventOutboxRecord,
 	return rows, err
 }
 
-// MarkOutboxPublished 在 tx 中把 source 队列的 id 标记为 published，设置数据库时间并清空失败原因。
-// 返回写入错误，不自行提交或判断 Redis 是否已经接收；主键未命中沿用零行成功行为。
+// MarkOutboxPublished 在调用方事务内标记事件已发布，记录时间并清空错误。
 func MarkOutboxPublished(tx *gorm.DB, source string, id uint64) error {
 	return tx.Table(outboxTable(source)).Where("id = ?", id).
 		Updates(map[string]any{
@@ -40,8 +40,7 @@ func MarkOutboxPublished(tx *gorm.DB, source string, id uint64) error {
 		}).Error
 }
 
-// MarkOutboxFailed 在 tx 中更新 source 队列的 id：失败次数加 1，保存 lastError，并按 backoffSeconds 延后。
-// 返回写入错误，不提交或重试；退避上限仍由发布用例计算，主键未命中沿用零行成功行为。
+// MarkOutboxFailed 在调用方事务内记录发送错误、增加重试次数，并延后指定秒数。
 func MarkOutboxFailed(tx *gorm.DB, source string, id uint64, lastError string, backoffSeconds int) error {
 	return tx.Table(outboxTable(source)).Where("id = ?", id).Updates(map[string]any{
 		"status": "failed", "retry_count": gorm.Expr("retry_count + 1"),

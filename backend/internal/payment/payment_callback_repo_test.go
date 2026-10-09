@@ -69,8 +69,7 @@ func TestEntryRejectedCoversEveryGuard(t *testing.T) {
 	}
 }
 
-// TestEntryRejectedNeedsDB 单独覆盖 DB 句柄缺失这条——它在表驱动用例里
-// 与其他条件耦合，拆出来测。
+// TestEntryRejectedNeedsDB 检查未配置数据库时拒绝支付通知。
 func TestEntryRejectedNeedsDB(t *testing.T) {
 	now := time.Now().UTC()
 	store := CallbackService{

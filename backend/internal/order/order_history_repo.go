@@ -14,7 +14,7 @@ type UserOrderHistoryRow struct {
 	OrderNo        string     `json:"order_no" gorm:"column:order_no"`               // 业务充电单号
 	DeviceID       string     `json:"device_id" gorm:"column:device_id"`             // 设备全局编号
 	PortNo         uint8      `json:"port_no" gorm:"column:port_no"`                 // 设备端口号，从 1 开始
-	Status         string     `json:"status" gorm:"column:status"`                   // 持久化生命周期，不以退款申请代替成功事实
+	Status         string     `json:"status" gorm:"column:status"`                   // 订单状态；申请退款不等于退款成功
 	StartedAt      *time.Time `json:"started_at" gorm:"column:started_at"`           // 实际启动 UTC 时刻，未开始为空
 	EndedAt        *time.Time `json:"ended_at" gorm:"column:ended_at"`               // 结束 UTC 时刻，未结束为空
 	ChargedKWh     *string    `json:"charged_kwh" gorm:"column:charged_kwh"`         // 累计电量，kWh，保持DECIMAL字符串；缺失为空

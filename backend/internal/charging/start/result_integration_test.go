@@ -65,7 +65,7 @@ func TestBalanceStartRejectionRefundsOnce(t *testing.T) {
 		t.Fatalf("payment=%+v err=%v", payment, err)
 	}
 	var order struct {
-		// Status,PaymentStatus Status 为充电订单状态，PaymentStatus 为订单关联支付状态；启动拒绝后两者均与退款完成事实比对。
+		// Status,PaymentStatus 分别为订单和支付状态；启动拒绝并退回余额后两者须为 refunded。
 		Status, PaymentStatus string
 	}
 	if err := tx.Table("charge_order").Where("id=?", id).Take(&order).Error; err != nil || order.Status != "refunded" || order.PaymentStatus != "refunded" {
@@ -88,7 +88,7 @@ func TestBalanceStartRejectionRefundsOnce(t *testing.T) {
 
 const testMySQLURLEnv = "TEST_MYSQL_URL"
 
-// testConn 接收测试句柄 t，从必需的 TEST_MYSQL_URL 以十秒初始化 context 打开真实 SQL 池并包装 GORM。
+// testConn 使用 t 记录初始化错误，从必需的 TEST_MYSQL_URL 以十秒初始化 context 打开真实 SQL 池并包装 GORM。
 // 成功返回 ORM 与关闭函数，由调用方在事务及任务结束后调用；缺配置、连接或包装错误由 t.Fatal 终止，不跳过测试。
 func testConn(t *testing.T) (*gorm.DB, func()) {
 	t.Helper()

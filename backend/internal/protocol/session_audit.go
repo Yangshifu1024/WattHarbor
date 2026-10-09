@@ -7,7 +7,9 @@ import "time"
 type Transport string
 
 const (
-	TransportTCP  Transport = "tcp"
+	// TransportTCP 表示 TCP 传输。
+	TransportTCP Transport = "tcp"
+	// TransportMQTT 表示 MQTT 传输。
 	TransportMQTT Transport = "mqtt"
 )
 

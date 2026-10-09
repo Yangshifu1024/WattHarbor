@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	CardSwipePath   = "/api/v1/internal/cards/swipe"   // 原刷卡扣款决策端点
+	CardSwipePath   = "/api/v1/internal/cards/swipe"   // 刷卡扣款接口
 	CardBalancePath = "/api/v1/internal/cards/balance" // 在线卡可用余额接口
 )
 
@@ -23,7 +23,7 @@ type CardOperationReply struct {
 	OperationID   string `json:"operation_id"`    // 操作 UUID
 	DeviceID      string `json:"device_id"`       // 设备编号
 	EventID       string `json:"event_id"`        // 刷卡事件
-	ChargeOrderID uint64 `json:"charge_order_id"` // 原充电订单主键
+	ChargeOrderID uint64 `json:"charge_order_id"` // 充电订单 ID
 	CardID        uint64 `json:"card_id"`         // 在线卡 ID
 	Kind          string `json:"kind"`            // start 首购或 extend 续购
 	PriceCents    int64  `json:"price_cents"`     // 本次实付金额，分
@@ -40,7 +40,7 @@ type CardBalanceReply struct {
 // ErrCardDeclined 表示收到 HTTP 409 且业务码为 2009 的明确拒绝；网络结果不确定时不返回此错误。
 var ErrCardDeclined = errors.New("card operation declined")
 
-// CardDeclineReply 保留拒绝时的余额不足语义，其他拒绝不得当成可补余额后重试。
+// CardDeclineReply 区分余额不足与其他拒绝原因，供刷卡后提示用户。
 type CardDeclineReply struct {
 	InsufficientBalance bool /* 余额不足标志 */
 }

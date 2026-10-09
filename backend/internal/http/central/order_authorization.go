@@ -15,24 +15,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// StartAuthorization 适配网关按订单号读取起充授权，支付／在线卡资格由用例核对。
-// 只返回执行所需编号、模式及数量，不发起起充命令或更新支付状态。
+// StartAuthorization 为网关提供订单启动授权，返回编号、模式和额度。
 type StartAuthorization struct {
-	// Service 是 cmd 注入的起充授权接口，不暴露数据库或通用 HTTP。
+	// Service 核对订单是否允许启动。
 	Service interface {
-		// Start 以请求 context 及订单号读取授权，返回执行事实或资格／快照／存储错误，不下发命令。
+		// Start 读取订单启动授权；订单状态或卡资料无效时返回错误。
 		Start(context.Context, string) (chargestart.StartAuthorization, error)
 	}
 	ServiceToken string // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 将起充授权 GET 路径挂到 router，只注册路由。
+// Register 注册内部启动授权查询路由。
 func (a StartAuthorization) Register(router *gin.Engine) {
 	router.GET(centralcontract.StartAuthorizationRoute, a.handle)
 }
 
-// handle 从 c 校验服务令牌及订单号，调用授权读取，输出整数编号和 DC589 卡余额单位。
-// 坏输入 400、订单状态 409、存储或卡快照 503；写一次响应后返回，不持有业务事务。
+// handle 校验令牌和订单号，返回授权；卡余额转换为设备使用的 0.1 元单位。
 func (a StartAuthorization) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

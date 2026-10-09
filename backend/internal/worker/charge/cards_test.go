@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// TestBalanceQueryAndInvalidPortProduceNativeReplies 用本地 HTTP 服务核对卡号查询、协议单位换算和无效端口回复。
 func TestBalanceQueryAndInvalidPortProduceNativeReplies(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("card_no") != "17564161" {

@@ -11,10 +11,13 @@ import (
 // 大 ID 必须以字符串传输，避免 JavaScript number 在请求发送前丢失精度。
 type DecimalID uint64
 
+// MarshalJSON 将 ID 编码为十进制字符串，避免 JavaScript 丢失整数精度。
 func (id DecimalID) MarshalJSON() ([]byte, error) {
 	return json.Marshal(strconv.FormatUint(uint64(id), 10))
 }
 
+// UnmarshalJSON 接受十进制字符串，或不超过 2^53-1 的 JSON 整数。
+// 拒绝前导零、负数、小数和超出 uint64 范围的值。
 func (id *DecimalID) UnmarshalJSON(data []byte) error {
 	value := string(data)
 	quoted := len(data) > 0 && data[0] == '"'
@@ -43,7 +46,7 @@ func (id *DecimalID) UnmarshalJSON(data []byte) error {
 }
 
 // DecimalizeIDField 将 JSON 对象中指定的整数 ID 转为十进制字符串，避免前端丢失精度。
-// 用于原始 JSON 和审计快照；字段缺失或不是整数时保持原样。
+// 字段缺失或无法解码为 uint64 时保持其值；字段为 null 时按零处理。
 func DecimalizeIDField(raw []byte, field string) ([]byte, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return raw, nil

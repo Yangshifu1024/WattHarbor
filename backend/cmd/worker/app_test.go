@@ -13,28 +13,22 @@ import (
 // idleBatch 提供立即成功的空批任务，供 worker 生命周期检查。
 type idleBatch struct{}
 
-// Run 忽略传入的 context，立即返回零数量与 nil，无任务或存储副作用。
 func (idleBatch) Run(context.Context) (int, error) { return 0, nil }
 
-// DispatchBatch 忽略传入的 context，立即返回零数量与 nil，无任务或存储副作用。
 func (idleBatch) DispatchBatch(context.Context) (int, error) { return 0, nil }
 
-// SyncBatch 忽略传入的 context，立即返回零数量与 nil，无任务或存储副作用。
 func (idleBatch) SyncBatch(context.Context) (int, error) { return 0, nil }
 
 // idleDispatch 提供立即成功的空资金派发任务，不执行资金写入。
 type idleDispatch struct{}
 
-// Run 忽略传入的 context，立即返回 nil，无资金、调度或存储副作用。
 func (idleDispatch) Run(context.Context) error { return nil }
 
 // idleScheduler 提供立即成功的空调度任务，不访问调度表。
 type idleScheduler struct{}
 
-// CleanupHistory 忽略传入的 context，立即返回 nil，无资金、调度或存储副作用。
 func (idleScheduler) CleanupHistory(context.Context) error { return nil }
 
-// RunDue 忽略传入的 context，立即返回 nil，无资金、调度或存储副作用。
 func (idleScheduler) RunDue(context.Context) error { return nil }
 
 // TestHTTPBindFailureStopsAllWorkerLoops 验证 HTTP 绑定失败时返回错误，并等待三个 worker 循环退出；使用空任务，不连接存储。

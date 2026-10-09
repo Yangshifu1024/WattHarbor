@@ -1,3 +1,4 @@
+// Package export 校验导出权限和数据范围，同步生成文件，并负责下载校验和到期清理。
 package export
 
 import (
@@ -29,7 +30,7 @@ type ForbiddenError struct {
 	Message string /* 公开拒绝提示 */
 }
 
-// Error 返回公开权限提示，不含账号或存储材料。
+// Error 返回权限拒绝提示，不包含数据库错误。
 func (e *ForbiddenError) Error() string { return e.Message }
 
 // DownloadError 表示当前状态不允许下载，过期返回 410，其他状态返回 409。
@@ -53,7 +54,7 @@ type CreateInput struct {
 type CreateResult struct {
 	TaskNo    string  // 同一任务号
 	Status    string  // 同步状态
-	RowCount  uint32  // 实际行数，普通成功／重放回执保留零
+	RowCount  uint32  // 任务已保存的导出行数，尚未完成时为零
 	ExpiresAt *string // 可空公开截止字符串
 	Message   string  // 已持久失败的公开提示
 }
@@ -68,7 +69,7 @@ type ResourcesResult struct {
 // ExportService 校验导出请求并同步生成、发布文件，不另起后台任务。
 type ExportService struct {
 	DB        *gorm.DB         // 中央导出任务及来源查询连接
-	ExportDir string           // cmd 注入的可信文件根目录，空值沿用系统临时目录
+	ExportDir string           // 导出根目录；空值使用系统临时目录下的 chargepilot-exports
 	MaxRows   int              // 单次上限，非正数默认50000
 	Clock     func() time.Time // 可注入测试时钟，nil 使用实际墙钟；到期检查须在等待锁后调用
 }

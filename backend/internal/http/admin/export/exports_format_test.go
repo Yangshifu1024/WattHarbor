@@ -14,13 +14,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestExportPeriod 验证导出日期格式、起止顺序及允许的最长日期范围。
 func TestExportPeriod(t *testing.T) {
 	for _, tc := range []struct {
-		// filter 是包含日期边界的导出筛选。
 		filter map[string]any
-		// ok 表示日期窗口是否应被接受。
-		ok bool
+		ok     bool
 	}{
 		{map[string]any{"from": "2026-09-01", "to": "2026-09-30"}, true},
 		{map[string]any{"from": "2026-09-30", "to": "2026-09-01"}, false},
@@ -33,7 +30,6 @@ func TestExportPeriod(t *testing.T) {
 	}
 }
 
-// TestExportRejectsUnsupportedFormats 验证编码器与申请端点拒绝未支持格式，既不输出文件内容也不访问数据库。
 func TestExportRejectsUnsupportedFormats(t *testing.T) {
 	for _, format := range []string{"pdf", "unknown"} {
 		t.Run(format, func(t *testing.T) {

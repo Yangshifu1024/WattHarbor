@@ -12,10 +12,10 @@ import (
 // PaidChargeOrder 是待下发起充指令的一笔订单。
 type PaidChargeOrder struct {
 	ID      uint64 `gorm:"column:id" json:"id"`             // 订单主键，作为递增游标
-	OrderNo string `gorm:"column:order_no" json:"order_no"` // 订单号，用于具名启动请求
+	OrderNo string `gorm:"column:order_no" json:"order_no"` // 充电订单号，随网关启动请求发送
 }
 
-// paidStartBatchSize 一次扫多少笔。游标按订单主键递增，重复调用会从上次位置继续。
+// paidStartBatchSize 限制每页待启动订单数，调用方用最后一条主键查询下一页。
 const paidStartBatchSize = 100
 
 // PendingOrders 查询已付清但尚未启动的订单，供 worker 有界扫描。

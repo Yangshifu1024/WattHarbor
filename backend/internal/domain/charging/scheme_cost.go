@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// costUsage 先对整场充电计算完整分钟，再按秒分配边界分钟，不逐片段取整。
-// 不同费率间的电量分配必须有计量证据，不能按经过时间估算。
+// costUsage 的功率计费先取整场充电的完整分钟，再按秒分配到费率时段，不逐段取整。
+// 电量分段内费率必须相同，不能按时长拆分电量。
 func costUsage(spec Spec, usage Usage) (Fee, error) {
 	if ValidateSpec(spec) != nil {
 		return Fee{}, ErrInvalidPricing
@@ -121,8 +121,8 @@ func costUsage(spec Spec, usage Usage) (Fee, error) {
 	return fee, nil
 }
 
-// CutoffMeter 从原始计量证据生成计费截止片段，物理总量由其他字段保留。
-// 截止点位于电量片段内部时缺乏可靠累计读数，须核实；功率和时长可直接裁剪。
+// CutoffMeter 返回截至 cutoff 的计量；截止点不早于结束时原样返回，早于开始时返回 ErrMeterReview。
+// 电量计费须有截止读数；功率计费须有该段功率，最大功率还要求该段峰值不高于该功率。
 func CutoffMeter(spec Spec, m ActualMeter, cutoff time.Time) (ActualMeter, error) {
 	if !cutoff.Before(m.EndedAt) {
 		return m, nil
@@ -151,7 +151,7 @@ func CutoffMeter(spec Spec, m ActualMeter, cutoff time.Time) (ActualMeter, error
 			if s.PowerW == nil || spec.Mode == ModeServerMaxPower && s.PeakW > *s.PowerW {
 				return ActualMeter{}, ErrMeterReview
 			}
-			// 功率计费不使用电量，但仍保留完整分段作为充电证据，不推算电量。
+			// 仅缩短功率计费区间，保留该段电量原值，不按时长估算电量。
 			s.EndedAt = cutoff
 		}
 		segments = append(segments, s)

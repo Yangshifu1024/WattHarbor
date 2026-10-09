@@ -1,3 +1,4 @@
+// Package stop 检查停止条件，保存计费截止时刻并请求网关停止设备。
 package stop
 
 import (
@@ -15,17 +16,17 @@ import (
 	"gorm.io/gorm"
 )
 
-// AutoStopper 在 central 侧根据持久化订单与设备证据判定停机。
+// AutoStopper 按订单已购额度和设备心跳检查自动停止条件。
 // 停机判定通过后先持久化计费截止点，再向 gateway 请求停机。
-// 设备心跳证据经 gateway 批量端点按订单拉取，不直读 gateway 库。
+// 心跳按订单从 gateway 批量查询，不直接读取网关数据库。
 type AutoStopper struct {
 	DB      *gorm.DB // central 订单及截止点事务连接，生命周期由进程管理
-	Gateway Gateway  // 提供端口证据及持久受理 STOP 的设备侧能力
+	Gateway Gateway  // 查询端口心跳并保存 STOP 请求
 }
 
-// Run 根据持久化订单和设备证据停机。
-// ctx 取消取证、数据库事务及请求；返回本轮已受理的 STOP 数及汇总错误。
-// 单笔失败继续扫描；系统性取证失败保留已完成数，下一轮从持久截止点恢复。
+// Run 逐页查询充电中订单，检查心跳和额度后请求停止。
+// ctx 控制心跳查询、数据库事务和网关请求；返回本轮受理 STOP 的次数和汇总错误。
+// 单笔失败继续扫描，批量心跳查询失败结束本轮；下轮先重试已保存截止记录的订单。
 // 断电判定要求设备心跳未过期，不能仅凭网络断开认定用户拔枪。
 func (s AutoStopper) Run(ctx context.Context) (int, error) {
 	if s.DB == nil || s.Gateway == nil {
@@ -43,8 +44,7 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 		if len(orders) == 0 {
 			break
 		}
-		// 已提交截止点就是恢复凭据。先恢复决定，再对尚未冻结的订单取证。
-		// 网关取证不可用或历史快照缺失不能阻断订单的 STOP 重试。
+		// 已保存截止记录的订单先重试 STOP，不依赖心跳或价格快照；其他订单再查询心跳判断。
 		pending := make([]AutoStopOrder, 0, len(orders))
 		for _, row := range orders {
 			if err := ctx.Err(); err != nil {
@@ -82,7 +82,7 @@ func (s AutoStopper) Run(ctx context.Context) (int, error) {
 }
 
 // stopOrder 判定一笔尚未冻结的订单，并在提交截止点后请求网关持久受理。
-// ctx 取消数据库及网关调用；row 是订单快照，samples 是完整分页证据，now 为 UTC 判定时刻。
+// ctx 控制数据库和网关调用；row 是订单信息，samples 是全部分页心跳，now 是 UTC 判断时刻。
 // 返回 true、nil 仅表示 STOP 已受理；false、nil 表示尚不应停机，错误保留下一轮恢复入口。
 // 受理不更新订单结束；单笔错误由 Run 汇总，不阻挡其他独立订单。
 func (s AutoStopper) stopOrder(ctx context.Context, row AutoStopOrder, samples []protocol.Event, now time.Time) (bool, error) {

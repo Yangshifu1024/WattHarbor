@@ -38,7 +38,7 @@ func NewDataScope(adminUserID uint64, rows []DataScope) DataScope {
 	return scope
 }
 
-// AllowsStation 判断站点是否在可见范围内，供详情接口执行归属校验。
+// AllowsStation 检查站点 ID；未限制范围或 StationIDs 为空时返回 true。
 func (s DataScope) AllowsStation(id uint64) bool {
 	if s.Unrestricted || len(s.StationIDs) == 0 {
 		return true
@@ -51,7 +51,7 @@ func (s DataScope) AllowsStation(id uint64) bool {
 	return false
 }
 
-// AllowsVendor 判断厂商是否在可见范围内。
+// AllowsVendor 检查厂商 ID；未限制范围或 VendorIDs 为空时返回 true。
 func (s DataScope) AllowsVendor(id uint64) bool {
 	if s.Unrestricted || len(s.VendorIDs) == 0 {
 		return true
@@ -65,17 +65,17 @@ func (s DataScope) AllowsVendor(id uint64) bool {
 }
 
 // CanManageStationDefault 判断该范围是否能改站点的计费默认配置。
-// 不受限的账号可以；有站点范围限制时必须恰好只管一个站点。
+// 不受限的账号可以；受限账号须只有一个站点，且没有厂商范围。
 func (s DataScope) CanManageStationDefault() bool {
 	return s.Unrestricted || (len(s.StationIDs) == 1 && len(s.VendorIDs) == 0)
 }
 
-// ValidScopeType 判断范围类型是否为已知类型，空范围（未配置）也算合法。
+// ValidScopeType 只接受 station 和 vendor，空字符串返回 false。
 func ValidScopeType(scopeType string) bool {
 	return scopeType == ScopeStation || scopeType == ScopeVendor
 }
 
-// ValidScopeIDs 校验范围 ID 列表：空表示未配置，数量不得超过 MaxScopeItems，且不允许出现零值主键。
+// ValidScopeIDs 要求 1–MaxScopeItems 个非零 ID；不检查重复项。
 func ValidScopeIDs(ids []uint64) bool {
 	if len(ids) == 0 || len(ids) > MaxScopeItems {
 		return false
@@ -129,7 +129,7 @@ func (m FieldMask) MaskRow(resource string, row map[string]any) map[string]any {
 	return row
 }
 
-// MaskSlice 对一个列表响应里的每一行套用 MaskRow，原地修改并返回。
+// MaskSlice 调用 MaskRow 对列表中的每一行脱敏，原地修改并返回。
 func (m FieldMask) MaskSlice(resource string, rows []map[string]any) []map[string]any {
 	for i := range rows {
 		m.MaskRow(resource, rows[i])

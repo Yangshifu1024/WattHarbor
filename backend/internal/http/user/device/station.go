@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// nearbyStations 从请求解析分页／定位／半径，调用服务并返回公开查询结果或错误。
+// nearbyStations 根据可选定位和搜索半径返回站点列表。
 func (a API) nearbyStations(c *gin.Context) {
 	longitude, latitude, located, ok := readCoordinates(c)
 	if !ok {
@@ -47,7 +47,7 @@ func (a API) nearbyStations(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// stationDetail 从请求解析站点 ID 并调用完整组合用例，不在 HTTP 读取或推断业务事实。
+// stationDetail 返回站点详情、公告和设备；各类查询失败使用对应提示。
 func (a API) stationDetail(c *gin.Context) {
 	id, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
 	if err != nil || id == 0 {

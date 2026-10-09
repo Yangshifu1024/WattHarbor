@@ -23,7 +23,7 @@ type CardEventsReply struct {
 }
 
 // CardReplyRequest 将首次保存的结果回复给设备。
-// Accepted=true 表示 central 已接受卡操作，无需另发拒绝或余额命令。
+// Accepted=true 表示 central 已接受卡操作，worker 会跳过拒绝或余额回复。
 type CardReplyRequest struct {
 	Accepted     bool                 `json:"accepted"`      // central 是否已接受卡操作，不代表设备确认
 	DeviceID     string               `json:"device_id"`     // 设备编号
@@ -31,7 +31,7 @@ type CardReplyRequest struct {
 	Kind         protocol.CommandKind `json:"kind"`          // card_denied 或 card_balance 命令
 	CardNumber   uint32               `json:"card_number"`   // 协议中的整数卡号
 	BalanceUnits uint16               `json:"balance_units"` // 余额单位为 0.1 元，由协议规则转换并限制最大值
-	Invalid      bool                 `json:"invalid"`       // 原无效卡／拒绝标志
+	Invalid      bool                 `json:"invalid"`       // 是否为无效卡或拒绝操作
 }
 
 // CardFreezeRequest 请求按事件号保存首次处理结果的完整 JSON。
@@ -49,8 +49,8 @@ type CardFreezeReply struct {
 // CardAdvanceRequest 按事件编号标记完成或安排重试，并记录重试原因。
 type CardAdvanceRequest struct {
 	EventKey string `json:"event_key" binding:"required,max=64"`         // 事件 UUID
-	Outcome  string `json:"outcome" binding:"required,oneof=retry done"` // 原重排或完成状态
-	Error    string `json:"error" binding:"omitempty,max=255"`           // 原有界错误，非凭据
+	Outcome  string `json:"outcome" binding:"required,oneof=retry done"` // retry 安排重试，done 标记完成
+	Error    string `json:"error" binding:"omitempty,max=255"`           // 重试原因，最多 255 字符，不得包含凭据
 }
 
 // CardAdvanceReply 返回本次是否更新了投递状态。
@@ -58,9 +58,9 @@ type CardAdvanceReply struct {
 	Advanced bool `json:"advanced"` /* true 表示更新了一行 */
 }
 
-// CardDeliveryReply 只确认本次连接发送完成，不承诺设备消费确认。
+// CardDeliveryReply 确认回复已写入设备连接；不代表设备已收到或执行。
 type CardDeliveryReply struct {
-	Accepted bool `json:"accepted"` /* true 表示网关已发送回复 */
+	Accepted bool `json:"accepted"` /* true 表示已写入设备连接 */
 }
 
 // CardPortReply 返回设备端口是否开通及其二维码编码。

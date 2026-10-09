@@ -9,13 +9,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// RefundAdminService 拥有人工退款申请、双人复核与重投事务，不请求外部渠道。
+// RefundAdminService 保存人工退款申请、双人审核和重试请求，不调用外部退款渠道。
 type RefundAdminService struct {
 	DB         *gorm.DB         // central 资金及审计连接，由进程管理
-	ReviewRepo RefundReviewRepo // 退款状态能力及实时首签人查询，由 cmd 装配
+	ReviewRepo RefundReviewRepo // 退款状态写入和首位审核人权限查询，由 cmd 装配
 }
 
-// List 按 finance.refund.read 权限分页读取全局退款记录和执行进度。
+// List 分页读取全局退款记录和执行进度；调用方须先检查 finance.refund.read 权限。
 func (s RefundAdminService) List(ctx context.Context, q RefundListQuery) (persist.Page[map[string]any], error) {
 	return ListRefunds(ctx, s.DB, q)
 }
@@ -24,7 +24,7 @@ func (s RefundAdminService) List(ctx context.Context, q RefundListQuery) (persis
 type ManualRefundRequest struct {
 	RequestID   string `json:"request_id"`   // 客户端 UUID，首次请求重放沿用
 	AmountCents int64  `json:"amount_cents"` // 申请退款额，分，必须为正
-	Reason      string `json:"reason"`       // 退款因，1–255 字
+	Reason      string `json:"reason"`       // 退款原因，1–255 字
 }
 
 // RefundReviewInput 是审核／驳回意见，不保存操作人的会话凭据。
@@ -33,9 +33,9 @@ type RefundReviewInput struct {
 	Reason         string `json:"reason"`          // 驳回的理由
 }
 
-// RefundRetryInput 是重投审计依据，不改变退款金额或状态。
+// RefundRetryInput 保存退款重试原因，供审计使用。
 type RefundRetryInput struct {
-	Reason string `json:"reason"` /* 重投因，1–255 字 */
+	Reason string `json:"reason"` /* 重试原因，1–255 字 */
 }
 
 // Request 在支付锁内登记人工退款及首次审计，相同请求返回首次退款号和 created=false。
@@ -72,7 +72,7 @@ func (s RefundAdminService) Request(ctx context.Context, audit ops.AuditContext,
 	return created, refundNo, err
 }
 
-// Review 按支付→退款加锁，核对申请快照和首签人的当前权限，审核与审计同事务。
+// Review 按支付→退款加锁，核对申请快照和首位审核人的当前权限，审核与审计同事务。
 // 批准不表示渠道到账。
 func (s RefundAdminService) Review(ctx context.Context, audit ops.AuditContext, refundNo string, approve bool, in RefundReviewInput) (string, error) {
 	if !audit.Actor.HasPermission("order.refund.review") || audit.Actor.Role != "customer_finance" {

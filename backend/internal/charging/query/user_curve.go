@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// CurvePoint 定义曲线中的遥测点，保留单位、UTC 时刻与缺测空值；不作为计费证据。
+// CurvePoint 保存展示曲线的读数，时间为 UTC，未上报字段为空；不用于计费。
 type CurvePoint struct {
 	TS           time.Time `json:"ts"`            // 观测或聚合桶 UTC 时刻
 	PowerW       *float64  `json:"power_w"`       // 功率 W，未上报为空
@@ -46,9 +46,9 @@ type HistoricalView struct {
 	OrderID             uint64                     `json:"order_id"`             // 中央订单主键，保持现有整数契约
 	OrderNo             string                     `json:"order_no"`             // 已授权业务单号
 	Granularity         string                     `json:"granularity"`          // 请求15min或hourly
-	Series              []HistoricalPoint          `json:"series"`               // 按输入顺序返回的聚合点，不充当最终计费证据
+	Series              []HistoricalPoint          `json:"series"`               // 按输入顺序返回的统计点，不用于计费
 	Summary             map[string]json.RawMessage `json:"summary"`              // 摘要JSON，保留数字精度及空值
-	BoundaryApproximate bool                       `json:"boundary_approximate"` // 聚合边界不完全对齐事实
+	BoundaryApproximate bool                       `json:"boundary_approximate"` // 统计区间是否与订单起止时刻有偏差
 }
 
 // windowDuration 校验曲线窗口，返回窗口名称与时长。

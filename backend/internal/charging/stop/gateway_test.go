@@ -10,9 +10,9 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// fakeGateway 仅以注入回调提供证据与停止响应，供调用顺序检查，不执行服务间网络调用。
+// fakeGateway 仅以注入回调提供心跳与停止响应，供调用顺序检查，不执行服务间网络调用。
 type fakeGateway struct {
-	// evidence 证据分页回调，接收查询切片并返回分页回复或错误，仅用于调用顺序检查。
+	// evidence 心跳分页回调，接收查询切片并返回分页回复或错误，仅用于调用顺序检查。
 	evidence func([]gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
 	// stop 停止回调，接收请求并返回受理回复或错误，不实际发送设备指令。
 	stop func(gatewaycontract.StopRequest) (gatewaycontract.StopReply, error)
@@ -81,7 +81,7 @@ func TestEvidenceBatchesAtGatewayLimit(t *testing.T) {
 	}
 }
 
-// TestEvidenceRejectsPartialOrInvalidPages 验证缺项、身份错配、无效游标、页数超限或网关错误均拒绝取证。
+// TestEvidenceRejectsPartialOrInvalidPages 验证缺项、身份错配、无效游标、页数超限或网关错误均拒绝使用返回心跳。
 // 仅覆盖内存编排，不代表 HTTP 或数据库验证。
 func TestEvidenceRejectsPartialOrInvalidPages(t *testing.T) {
 	cases := []struct {
@@ -89,7 +89,7 @@ func TestEvidenceRejectsPartialOrInvalidPages(t *testing.T) {
 		result func([]gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
 		// want 当前非法分页或网关失败预期匹配的错误，按 errors.Is 比对。
 		want error
-		// calls 期望的证据查询调用次数，用于确认拒绝点、游标停滞或页数上限。
+		// calls 期望的心跳查询次数，用于确认拒绝点、游标停滞或页数上限。
 		calls int
 	}{
 		{"missing entry", func(q []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error) {

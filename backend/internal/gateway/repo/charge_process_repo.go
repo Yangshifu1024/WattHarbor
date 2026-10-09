@@ -37,7 +37,7 @@ func recordHeartbeatState(ctx context.Context, tx *gorm.DB, event protocol.Event
 		Updates(map[string]any{"reported_status": gorm.Expr(state.String(), args...), "reported_status_at": at}).Error
 }
 
-// chargeProcessRow 映射 charge_process 的持久充电采样，保留订单关联、整数单位及可空协议扩展证据。
+// chargeProcessRow 保存订单心跳采样，电量单位 mWh、功率单位 0.1 W。
 type chargeProcessRow struct {
 	// ID charge_process 表的自增主键。
 	ID uint64 `gorm:"primaryKey"`
@@ -65,7 +65,7 @@ type chargeProcessRow struct {
 	RemainingMWh uint32 `gorm:"column:remaining_mwh"`
 	// SignalStrength 设备信号强度，保留未知可空映射。
 	SignalStrength uint8
-	// PortStatus 端口协议状态，nil 表示未提供该证据。
+	// PortStatus 是上报端口状态，nil 表示未上报。
 	PortStatus *uint8
 	// VoltageV 设备电压值，保留可空扩展块。
 	VoltageV *uint16

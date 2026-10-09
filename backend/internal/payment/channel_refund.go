@@ -12,7 +12,7 @@ import (
 // ErrRefundNotFound 表示渠道按退款号确认无记录，执行器此时才允许创建同号退款。
 var ErrRefundNotFound = errors.New("refund does not exist at provider")
 
-// RefundRequest 来自已领取的退款凭据；查询与创建始终使用相同交易、单号和金额（分）。
+// RefundRequest 保存已领取退款的交易号、退款单号和金额（分）；查询和创建沿用同一份内容。
 type RefundRequest struct {
 	RefundNo        string // 退款单号，渠道幂等编号
 	MerchantOrderNo string // 商户支付号
@@ -70,7 +70,7 @@ func (w *WechatDirect) QueryRefund(ctx context.Context, r RefundRequest) (Refund
 }
 
 // CreateRefund 用 r 交易、退款号及 CNY 金额（分）申请退款，返回完整回执或输入、SDK 错误。
-// 调用前必须提交持久 claim，调用失败可能已受理，不在此改写资金或换退款号。
+// 调用前须提交退款领取记录；失败时渠道可能已受理，后续应先查询同一退款号。
 func (w *WechatDirect) CreateRefund(ctx context.Context, r RefundRequest) (RefundResult, error) {
 	if r.RefundNo == "" || r.TransactionID == "" || r.TotalCents <= 0 || r.RefundCents <= 0 || r.RefundCents > r.TotalCents {
 		return RefundResult{}, ErrInvalidPayment

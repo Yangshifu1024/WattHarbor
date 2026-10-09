@@ -1,3 +1,4 @@
+// Package charging 定义充电方案、购买额度和计量规则，计算费用及停止条件。
 package charging
 
 import (
@@ -10,10 +11,14 @@ import (
 )
 
 var (
-	ErrInvalidPricing  = errors.New("invalid quote input or pricing rule")
-	ErrMeterReview     = errors.New("实际计量不足或矛盾，需补充分时计量后核算")
+	// ErrInvalidPricing 表示规则、价格或用量参数不符合计算要求。
+	ErrInvalidPricing = errors.New("invalid quote input or pricing rule")
+	// ErrMeterReview 表示读数缺失、分段不连续或合计不符，须人工核对计量。
+	ErrMeterReview = errors.New("实际计量不足或矛盾，需补充分时计量后核算")
+	// ErrRuleUnavailable 表示站点没有可用的已发布计费规则。
 	ErrRuleUnavailable = errors.New("active station pricing rule unavailable")
-	ErrLegacyPricing   = errors.New("实时功率模板使用旧版电价，请先编辑并转换为元/度后再保存、复制或应用")
+	// ErrLegacyPricing 表示模板包含旧版实时功率价格，须先转换价格单位。
+	ErrLegacyPricing = errors.New("实时功率模板使用旧版电价，请先编辑并转换为元/度后再保存、复制或应用")
 
 	beijing = time.FixedZone("Asia/Shanghai", 8*3600)
 )
@@ -21,7 +26,7 @@ var (
 const maxRateCents = 1000000
 
 // Tier 表示功率阶梯的一个档位，仅保存上界；下界由上一档上界加 1 W 推导。
-// 连续上界表示保证阶梯不重叠、不留计价空档。
+// 每档从上一档上界加 1 W 开始，第一档从 0 W 开始。
 type Tier struct {
 	// MaxWatts 是含端点的上界。第一档下限为 0，各档上界必须严格递增。
 	MaxWatts int `json:"max_watts"`
@@ -31,7 +36,7 @@ type Tier struct {
 	ServiceCents int64 `json:"service_cents,omitempty"`
 }
 
-// Period 表示一天中的费率时段，以严格递增的结束分钟组成连续覆盖链。
+// Period 保存一天内一个费率时段；开始分钟取上一时段的结束分钟，第一段从零点开始。
 type Period struct {
 	ServiceCents int64 `json:"service_cents,omitempty"`
 	// EndMinute 是从零点起的结束分钟，取值 1..1440；必须严格递增，最后一项为 1440。
@@ -48,8 +53,7 @@ type ElectricLine struct {
 	Periods []Period    `json:"periods"`
 }
 
-// ServiceLine 定义服务费算法；nil 和 ServiceNone 均不收费。
-// 指针保留未配置与显式配置零费率的区别，供编辑器往返保存。
+// ServiceLine 保存旧版独立服务费配置；当前 Cost 从 Period 或 Tier 读取服务费。
 type ServiceLine struct {
 	Basis           ServiceBasis `json:"basis"`
 	CentsPerKWh     int64        `json:"cents_per_kwh,omitempty"`
@@ -57,16 +61,19 @@ type ServiceLine struct {
 	CentsPerSession int64        `json:"cents_per_session,omitempty"`
 }
 
-// Channel 是这次充电的启动入口，它决定套用哪一套费率倍率。
+// Channel 标记启动入口；当前 Cost 不按此字段调整费用。
 type Channel string
 
 const (
+	// ChannelDefault 表示未区分扫码或刷卡的入口。
 	ChannelDefault Channel = "default"
-	ChannelTemp    Channel = "temp"
-	ChannelCard    Channel = "card"
+	// ChannelTemp 表示扫码临时充电入口。
+	ChannelTemp Channel = "temp"
+	// ChannelCard 表示刷卡入口。
+	ChannelCard Channel = "card"
 )
 
-// ChannelMultiplier 以基点表示电费倍率，10000 为 1.0；不影响服务费。
+// ChannelMultiplier 保存旧版电费渠道倍率，10000 表示 1 倍；当前 Cost 不使用。
 type ChannelMultiplier struct {
 	TempBP int32 `json:"temp_bp"`
 	CardBP int32 `json:"card_bp"`
@@ -89,9 +96,9 @@ func (m *ChannelMultiplier) electricBP(channel Channel) int32 {
 type TimeCharge struct {
 	// StopWhenFull 启用设备充满自停，不等待时长耗尽。
 	StopWhenFull bool `json:"stop_when_full"`
-	// MaxMinutes 限制按时长计费的最长分钟数，0 表示不限。
+	// MaxMinutes 是最长充电分钟数，0 表示不限。
 	MaxMinutes uint16 `json:"max_minutes,omitempty"`
-	// FloatPowerDeciWatts 与 FloatSeconds 描述电池不再接受满电流之后的低电流尾段。
+	// FloatPowerDeciWatts 与 FloatSeconds 保存设备浮充阈值（0.1 W）和持续秒数。
 	FloatPowerDeciWatts uint16 `json:"float_power_deci_watts,omitempty"`
 	FloatSeconds        uint16 `json:"float_seconds,omitempty"`
 }
@@ -102,25 +109,24 @@ type Spec struct {
 	Mode   ChargeMode `json:"mode"`
 	// Electric 仅用于服务端计费；设备计费必须为零值，ValidateSpec 拒绝无效费率配置。
 	Electric *ElectricLine `json:"electric,omitempty"`
-	// Service 定义独立的服务费，可与电费按不同计价方式组合。
+	// Service 保留旧版独立服务费配置；当前 Cost 不使用，新模板必须为空。
 	Service *ServiceLine `json:"service,omitempty"`
-	// Multiplier 是一张独立的费率卡，归电费所有。
+	// Multiplier 保留旧版渠道倍率；当前 Cost 不使用，新模板必须为空。
 	Multiplier *ChannelMultiplier `json:"multiplier,omitempty"`
-	// TierPriceBasis 只被 BasisRealtimePower 读取。新模板固定为 TierPerKWh。
-	// 旧版值及省略值只为已发布规则和冻结的订单快照保留历史计算行为。
+	// TierPriceBasis 保留旧版阶梯价格单位标记；当前 Cost 不使用，新模板必须为空。
 	TierPriceBasis TierPriceBasis `json:"tier_price_basis,omitempty"`
-	// LossRateBP 按比例抬高计费电量以覆盖线损，10000 表示无损耗。
+	// LossRateBP 保留旧版损耗系数（基点）；当前 Cost 不使用，新模板必须为 0。
 	LossRateBP int32 `json:"loss_rate_bp,omitempty"`
 	// FreeMinutes 表示充电在这么多分钟内结束时整单免单，0 表示不启用该免单。
 	FreeMinutes int `json:"free_minutes,omitempty"`
 	// MinElectricCents 为电费最低收费，单位为分，不调整服务费。
 	MinElectricCents int64 `json:"min_electric_cents,omitempty"`
-	// TimeCharge 只对按时长计费的充电生效。
+	// TimeCharge 保存停止条件；DecideStop 使用其中的 MaxMinutes 判断最长时长。
 	TimeCharge *TimeCharge `json:"time_charge,omitempty"`
 	// SpendCapCents 是服务端计费的费用上限，单位为分；0 表示未配置。
 	// 未配置时仍保留设备下发的时间或电量额度限制。
 	SpendCapCents int64 `json:"spend_cap_cents,omitempty"`
-	// StopGraceSeconds 是平台要求设备停止之后，等待多久才把这次充电视为失控。
+	// StopGraceSeconds 是费用封顶停机计划附带的等待秒数；本包不判断设备是否已停。
 	StopGraceSeconds int `json:"stop_grace_seconds,omitempty"`
 	// DefaultChargeWay 是本设备上充电默认的鉴权方式，属于展示与策略，不参与计算。
 	DefaultChargeWay string `json:"default_charge_way,omitempty"`
@@ -130,18 +136,17 @@ type Spec struct {
 	Display Display `json:"display"`
 }
 
-// Sample 是一段始终落在同一费率时段内的连续用电。无法保证这一点的调用方必须在
-// 调用 Cost 之前先切分。
+// Sample 保存连续区间的用量。电量计费要求区间内费率不变，功率计费由 Cost 按时段切分。
 type Sample struct {
 	PowerKnown bool
 	Start      time.Time
 	End        time.Time
 	EnergyWh   uint64
-	// PowerW 是这段用电的功率。0 表示「用电量与时长反推」。
-	// 预估只能这么做。
+	// PowerW 是区间功率，单位 W；为 0 且 PowerKnown=false 时不能用于功率计费。
 	PowerW uint32
 }
 
+// Usage 是 Cost 的用量输入；时间跨度最多 7 天，电量单位为 Wh。
 type Usage struct {
 	Start    time.Time
 	End      time.Time
@@ -258,7 +263,7 @@ func ValidateTemplateSpec(spec Spec) error {
 	return nil
 }
 
-// compilePeriods 将时段链展开为按分钟索引的费率表。
+// compilePeriods 把全天时段展开为按分钟索引的费率表。
 // 结束分钟必须严格递增并覆盖 [0, 1440)，保证全天无空档或重叠。
 func compilePeriods(periods []Period) ([1440]Period, error) {
 	var schedule [1440]Period
@@ -327,10 +332,10 @@ func clockMinute(value string) (int, error) {
 	return hour*60 + minute, nil
 }
 
-// specIsUniformOver 判断区间内计费规则是否恒定；恒定时未分段电量可均摊结算。
+// specIsUniformOver 比较区间内的费率；电量费率相同时可直接使用区间总电量。
 func specIsUniformOver(spec Spec, start, end time.Time) bool {
 	if spec.Electric == nil || (spec.Electric.Basis != BasisEnergy && spec.Electric.Basis != BasisRealtimePower) {
-		// 峰值功率及全天固定费率不依赖时段变化，均摊不会改变计费结果。
+		// 此检查只比较电量和实时功率费率；其他模式直接返回 true。
 		return true
 	}
 	schedule, err := compilePeriods(spec.Electric.Periods)

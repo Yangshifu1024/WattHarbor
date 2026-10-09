@@ -149,7 +149,6 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 		t.Fatalf("detail %d calls=%d %s", w.Code, calls, w.Body)
 	}
 	var reply struct {
-		// Data 公开 HTTP 信封的业务载荷，仅用于响应形状断言。
 		Data struct {
 			// Announcements 站点详情公开公告集合。
 			Announcements []map[string]any `json:"announcements"`

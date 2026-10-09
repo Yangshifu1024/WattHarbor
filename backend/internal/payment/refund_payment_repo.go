@@ -18,7 +18,7 @@ type RefundPayment struct {
 	TotalCents          int64          // 应付总额，分
 	PaidCents           int64          // 已确认到账金额，分
 	RefundedCents       int64          // 已确认渠道退回累计金额，分
-	Status              string         // 支付状态，待退款不提前修改到账事实
+	Status              string         // 支付状态；申请退款不等于退款成功
 }
 
 // LockPaymentForRefund 在调用方事务中锁 id 的未删除支付信息，缺行或读取失败返回错误。
@@ -30,7 +30,7 @@ func LockPaymentForRefund(tx *gorm.DB, id uint64) (RefundPayment, error) {
 }
 
 // LockPaymentForRefundReceipt 锁 id 的支付，包括后来软删除的记录，以恢复已确认渠道回执。
-// tx 属于调用方完整回执事务；返回当前事实或错误，不请求渠道或提交事务。
+// 返回当前支付记录或读取错误；tx 由调用方提交，不请求渠道。
 func LockPaymentForRefundReceipt(tx *gorm.DB, id uint64) (RefundPayment, error) {
 	var out RefundPayment
 	err := tx.Table("payment_order").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&out).Error

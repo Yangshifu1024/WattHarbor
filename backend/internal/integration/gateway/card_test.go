@@ -14,10 +14,10 @@ import (
 // TestCardClientsRequireDecisionFields 核对冻结／开通缺字段不成为正常 false，重复调用返回的 false 仍可恢复。
 func TestCardClientsRequireDecisionFields(t *testing.T) {
 	for _, tc := range []struct {
-		name   string // 用例身份
-		body   string // HTTP 响应
-		freeze bool   // 是否请求冻结端点
-		valid  bool   // 是否符合原契约
+		name   string
+		body   string
+		freeze bool
+		valid  bool
 	}{
 		{"missing stored", `{"code":0,"data":{"response_json":"{}"}}`, true, false},
 		{"null stored", `{"code":0,"data":{"stored":null,"response_json":"{}"}}`, true, false},

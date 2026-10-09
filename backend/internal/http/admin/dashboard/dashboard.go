@@ -1,3 +1,4 @@
+// Package dashboard 提供后台经营看板接口。
 package dashboard
 
 import (

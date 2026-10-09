@@ -1,3 +1,4 @@
+// Package settlement 提供当前用户的账单和发票申请接口。
 package settlement
 
 import (

@@ -49,7 +49,7 @@ func loadGrant(ctx context.Context, db *gorm.DB, userID, grantID uint64, locked 
 	return grant, err
 }
 
-// redemptionReceipt 保存已核销券对应的支付凭据。
+// redemptionReceipt 保存首次核销的支付订单、用户和优惠金额，供重试比对。
 type redemptionReceipt struct {
 	CouponID      uint64 `gorm:"column:coupon_id"`      // 券模板主键
 	UserID        uint64 `gorm:"column:user_id"`        // 支付用户
@@ -65,7 +65,7 @@ func findRedemption(tx *gorm.DB, paymentID uint64) (redemptionReceipt, error) {
 	return row, err
 }
 
-// saveRedemption 在事务中将券标为已用并保存支付凭据，失败须整体回滚。
+// saveRedemption 在事务中将券标为已用并保存核销记录，失败须整体回滚。
 func saveRedemption(tx *gorm.DB, grant CouponGrant, ref RedeemRef, reference string) error {
 	updated := tx.Table("coupon_grant").Where("id=? AND user_id=? AND status='unused'", ref.CouponGrantID, ref.UserID).
 		Updates(map[string]any{"status": "used", "used_payment_order_id": ref.PaymentOrder, "used_at": time.Now().UTC()})

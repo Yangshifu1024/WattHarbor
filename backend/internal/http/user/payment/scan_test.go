@@ -41,7 +41,6 @@ func (s scanOperation) DeviceStatus(context.Context, string) (string, error) {
 	return string(s), nil
 }
 
-// TestScanIsPublicAndReturnsOnlyGatewayReadResult 验证真实注册的匿名扫码及端口路由与测试 HTTP gateway 契约；核对服务令牌及公开查询结果，不访问真库或设备。
 func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/internal/scan/resolve" || r.URL.Query().Get("code") != "board:1" || r.Header.Get("X-Service-Token") != "service-token" {
@@ -88,7 +87,6 @@ func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {
 	}
 }
 
-// TestScanShowsOperationalStateAndFailsClosed 验证扫码发现对运行状态测试替身 的状态组合及错误关闭行为；使用测试 HTTP gateway，不证明真实数据库或设备状态。
 func TestScanShowsOperationalStateAndFailsClosed(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"kind":"device","device_id":"board","ports":[{"port_id":"board:1","device_id":"board","port_no":1,"port_status":"idle","online":true,"available":true},{"port_id":"board:2","device_id":"board","port_no":2,"port_status":"charging","online":true,"available":false}]}}`))
@@ -122,7 +120,6 @@ func TestScanShowsOperationalStateAndFailsClosed(t *testing.T) {
 	}
 }
 
-// TestDisabledDeviceCannotReadOffers 验证暂停设备在注册报价路由上被拒绝；运行态来自测试替身，不执行支付或真实设备查询。
 func TestDisabledDeviceCannotReadOffers(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"kind":"port","device_id":"board","port":{"port_id":"board:1","device_id":"board","port_no":1,"port_status":"idle","online":true,"available":true}}}`))
@@ -137,13 +134,11 @@ func TestDisabledDeviceCannotReadOffers(t *testing.T) {
 	}
 }
 
-// TestCanonicalScanCode 验证裸码及 HTTPS 二维码链接的纯文本解析边界；不访问网络或数据库。
 func TestCanonicalScanCode(t *testing.T) {
 	for _, tc := range []struct {
 		// raw,code 原始二维码文本与预期解析编码。
 		raw, code string
-		// valid 预期解析结果是否合法。
-		valid bool
+		valid     bool
 	}{
 		{"board:1", "board:1", true},
 		{"https://charge.example/scan?code=board%3A1", "board:1", true},

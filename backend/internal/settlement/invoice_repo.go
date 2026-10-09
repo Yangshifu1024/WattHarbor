@@ -12,30 +12,30 @@ import (
 // ErrInvoiceConflict 表示开票审核的状态、签名或内容冲突。
 var ErrInvoiceConflict = errors.New("invoice review conflict")
 
-// ReviewerStatus 是审核人的实时身份快照，由调用方（admin 授权域）注入查询。
-// 第二签必须核对前一审核人的实时角色与权限，不沿用首签时的会话结论。
+// ReviewerStatus 保存查询时审核人的角色和权限，由后台账号用例提供。
+// 第二次审核时重新查询首位审核人的角色和权限。
 type ReviewerStatus struct {
-	Role      string // 当前有效角色，第二签要求 customer_finance
+	Role      string // 当前角色，第二次审核要求 customer_finance
 	Permitted bool   // 当前是否仍有发票复核权限
 }
 
 // InvoiceReviewRepo 在调用方事务内执行发票双人复核，由用例同时保存审计。
 type InvoiceReviewRepo struct {
-	DB *gorm.DB // 结算数据库句柄；写方法使用用例显式传入的事务
-	// LookupReviewer 查询审核人的实时角色与权限；nil 时第二签一律冲突。
+	DB *gorm.DB // 结算数据库连接；写方法使用用例传入的事务
+	// LookupReviewer 查询首位审核人的当前角色和权限，不使用审核时保存的角色；nil 时拒绝第二次审核。
 	LookupReviewer func(ctx context.Context, reviewerID uint64) (ReviewerStatus, error)
 }
 
 // InvoiceDecision 是一笔开票审核决定；Approve=true 走双人通过，false 为单人驳回。
 type InvoiceDecision struct {
 	Approve    bool   // true 为双人通过流程，false 为单人驳回
-	InvoiceURL string // 通过时的发票文件链接，第二签必须与首签一致
-	Reason     string // 驳回因，仅驳回分支使用
+	InvoiceURL string // 通过时的发票链接，第二次审核须与第一次提交的一致
+	Reason     string // 驳回原因，仅驳回时使用
 	ActorID    uint64 // 当前审核管理员 ID，由用例实时授权
 }
 
 // Review 锁定发票申请后执行审核，返回决定和审核前快照供审计使用。
-// 通过须由两个不同且仍有权限的人签名，第二签发票链接须与首签一致；驳回只需一人。
+// 通过须经两名不同且仍有权限的人审核，两次提交的发票链接须一致；驳回只需一人。
 // 状态或审核条件不符返回 ErrInvoiceConflict。
 func (s InvoiceReviewRepo) Review(ctx context.Context, tx *gorm.DB, id uint64, in InvoiceDecision) (string, map[string]any, error) {
 	status := "rejected"

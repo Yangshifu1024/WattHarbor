@@ -36,7 +36,7 @@ type routeCheckoutFixture struct {
 	calls       int              // 向渠道申请次数，持久参数恢复后不再调用
 }
 
-// ResolveScan 返回 ctx 下 code 的固定端口；当前事实不可读时返回故障，无数据库写入。
+// ResolveScan 返回固定端口；配置读取故障时返回错误。
 func (f *routeCheckoutFixture) ResolveScan(ctx context.Context, code string) (money.ScanResult, error) {
 	if f.unavailable {
 		return money.ScanResult{}, errors.New("device fixture unavailable")
@@ -180,13 +180,13 @@ func TestRegisteredCheckoutPreservesOriginalRequestAfterUnknownPrepay(t *testing
 	}
 }
 
-// routeNotificationFixture 替换 SDK 验签边界；不证明实际签名或解密正确，资金入账仍使用真库。
+// routeNotificationFixture 返回固定验签结果，资金入账仍使用真实 MySQL。
 type routeNotificationFixture struct {
 	transaction payment.VerifiedTransaction // 已验签通知记录，可逐项变异身份
 	err         error                       // 模拟验签失败，必须阻止任何资金写入
 }
 
-// VerifyNotification 返回 request 对应的受控验签结果，无外部调用或数据库副作用。
+// VerifyNotification 返回预设验签结果。
 func (f *routeNotificationFixture) VerifyNotification(ctx context.Context, request *http.Request) (payment.VerifiedTransaction, error) {
 	if f.err != nil {
 		return payment.VerifiedTransaction{}, f.err
@@ -210,7 +210,7 @@ func TestRegisteredRechargeNotificationRejectsForeignPayerAndReplaysOnce(t *test
 	requestID := uuid.NewString()
 	for _, row := range []struct {
 		table  string         // 本测试的真实表
-		values map[string]any // 支付、钱包与申请必需事实
+		values map[string]any // 测试支付单、钱包和退款申请所需字段
 	}{{"user", map[string]any{"id": id, "openid": openid, "status": "active"}}, {"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 100, "frozen_cents": 0, "version": 1, "status": "frozen"}}, {"payment_order", map[string]any{"id": id, "order_no": no, "biz_type": "wallet_recharge", "biz_id": 0, "user_id": id, "pay_method": "wechat", "total_cents": 500, "paid_cents": 0, "status": "initiated", "created_month": "2026-10-01"}}, {"wallet_recharge_request", map[string]any{"request_id": requestID, "user_id": id, "amount_cents": 500, "payment_order_id": id}}} {
 		if err := tx.Table(row.table).Create(row.values).Error; err != nil {
 			t.Fatal(err)

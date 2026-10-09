@@ -25,7 +25,7 @@ func FreezePricingInTx(tx *gorm.DB, in ChargePricingSnapshotRecord) error {
 	return tx.Create(&in).Error
 }
 
-// AppendEventInTx 在事务中保存 in 的订单生命周期凭据；事件编号必须沿用业务请求。
+// AppendEventInTx 保存订单状态变化事件；事件号沿用业务请求，失败须回滚 tx。
 // 错误要求调用方回滚状态及资金，函数不提交事务或发布网络事件。
 func AppendEventInTx(tx *gorm.DB, in ChargeEventLogRecord) error { return tx.Create(&in).Error }
 

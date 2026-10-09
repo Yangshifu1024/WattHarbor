@@ -112,7 +112,7 @@ func (e RefundExecutor) failPermanent(ctx context.Context, id uint64, reason str
 		Updates(map[string]any{"status": "failed", "failure_reason": reason}).Error
 }
 
-// claim 按钱包（适用时）→支付→退款加锁，核对身份和当前可退额度。
+// claim 按钱包（适用时）→支付→退款加锁，核对用户、业务关联、金额和渠道。
 // 领取时保存 processing、尝试次数和有界退避时间，然后提交；持锁期间不请求渠道。
 // 未领取时不能发新请求，错误整体回滚，首次单号保持不变。
 func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay.RefundRequest, bool, error) {
@@ -178,7 +178,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 			return ErrRefundConflict
 		}
 		request = pay.RefundRequest{RefundNo: r.RefundNo, MerchantOrderNo: p.OrderNo, TransactionID: p.WechatTransactionID.String, TotalCents: p.TotalCents, RefundCents: r.RefundCents}
-		// 持久租约保证崩溃后仍按有上限的指数退避恢复。
+		// 下次执行延后 30×2^n 秒，n 最大为 7；领取后崩溃仍沿用保存的重试时间。
 		delay := time.Duration(30*(1<<min(r.RetryCount, uint32(7)))) * time.Second
 		update := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "processing", "retry_count": gorm.Expr("retry_count+1"), "next_attempt_at": time.Now().UTC().Add(delay)})
 		if update.Error != nil {
@@ -206,8 +206,8 @@ func providerMatchesChannel(providerName, transactionID string) bool {
 	return (providerName == "simulation") == simulated
 }
 
-// apply 核对退款单号、金额和渠道回执后入账，按钱包（适用时）→支付→退款加锁。
-// PROCESSING 等待查询，失败只释放钱包预占；SUCCESS 同时保存资金、回执、订单和 Outbox。
+// apply 核对渠道回执；PROCESSING 保留原状态，CLOSED/ABNORMAL 在钱包→退款锁内释放预占。
+// SUCCESS 按钱包（适用时）→支付→退款加锁，保存已退款金额、回执、订单和 Outbox。
 // 重放不重复出账，错误整体回滚，事务内不请求渠道。
 func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.RefundRequest, result pay.RefundResult) error {
 	if !receiptMatches(request, result) {

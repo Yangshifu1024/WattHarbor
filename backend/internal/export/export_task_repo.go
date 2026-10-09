@@ -69,7 +69,7 @@ var exportRegistry = map[string]ExportSpec{
 		Permission: "station.read",
 		Table:      "station",
 		Columns: []ExportColumn{
-			// 站点导出使用主键 ID，不查询已删除的 code 字段。
+			// 站点 ID 仅用于范围筛选，文件只包含名称、地址和状态。
 			{"名称", "name"}, {"地址", "address"}, {"状态", "status"},
 		},
 		builder: func(scope operations.DataScope, q *gorm.DB) *gorm.DB {
@@ -112,7 +112,7 @@ type ExportRepo struct {
 	DB *gorm.DB // 中央导出数据库连接，由 cmd 管理
 }
 
-// ListExportTasks 按状态分页倒序读取任务和总数，不返回路径。
+// ListExportTasks 按状态分页倒序读取完整任务和总数，路径字段不参与 JSON 输出。
 // 计数用独立查询会话，分页和状态由服务校验，连接须带请求 context。
 func (s ExportRepo) ListExportTasks(db *gorm.DB, status string, page, pageSize int) ([]ExportTaskRow, int64, error) {
 	query := db.Table("export_task")
@@ -213,7 +213,7 @@ func (s ExportRepo) sourceQuery(ctx context.Context, table string) *gorm.DB {
 	return s.DB.WithContext(ctx).Table(table)
 }
 
-// ClaimExportTask 按完整 UUID 唯一键登记首次请求，不覆盖已有任务。
+// ClaimExportTask 按任务号唯一键登记首次请求，不覆盖已有任务。
 // 不要先锁缺失行；重复插入等待提交后，由 LockExportTaskByNo 当前读核对。
 func (s ExportRepo) ClaimExportTask(db *gorm.DB, in ExportTaskInsert) (bool, error) {
 	res := db.Exec("INSERT INTO export_task(task_no,resource,file_format,status,requested_by,filter_json,expires_at) VALUES (?,?,?,'pending',?,?,?) ON DUPLICATE KEY UPDATE task_no=task_no", in.TaskNo, in.Resource, in.FileFormat, in.RequestedBy, in.FilterJSON, in.ExpiresAt)
@@ -238,7 +238,7 @@ func (s ExportRepo) Expiration(db *gorm.DB, id uint64) (*time.Time, error) {
 }
 
 // CompleteInTx 在任务锁内将 pending／running 改为 completed，并保存行数、路径和完成时间。
-// 仅在文件和私有范围凭据已发布后调用；SQL 提交未确认前不能声称可下载。
+// 仅在内容文件及范围、脱敏和摘要校验文件已发布后调用；事务提交后才能下载。
 func (s ExportRepo) CompleteInTx(db *gorm.DB, taskNo string, rowCount int, path string, now time.Time) error {
 	res := db.Model(&ExportTaskRow{}).Where("task_no=? AND status IN ('pending','running')", taskNo).Updates(map[string]any{"status": "completed", "row_count": rowCount, "file_path": path, "completed_at": now, "error_msg": nil})
 	if res.Error != nil {

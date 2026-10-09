@@ -30,8 +30,7 @@ func (a API) invoices(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// reviewInvoice 从 c 适配审批和驳回的输入、权限及错误，输出审核状态。
-// 双审、申请单状态和审计写入的完整事务由 settlement 服务拥有。
+// reviewInvoice 按路由执行发票审核通过或驳回，返回审核状态。
 func (a API) reviewInvoice(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {

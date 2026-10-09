@@ -1,3 +1,4 @@
+// Package auth 校验用户及后台会话，并将认证错误转换为 HTTP 响应。
 package auth
 
 import (

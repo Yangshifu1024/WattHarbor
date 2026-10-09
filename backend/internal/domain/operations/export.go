@@ -1,4 +1,4 @@
-// Package operations 承载运营后台的业务概念：后台账号、角色权限、数据范围、审计与导出。
+// 导出共用的日期与单元格检查。
 package operations
 
 import (
@@ -7,9 +7,6 @@ import (
 	"strings"
 	"time"
 )
-
-// 导出的参数校验与单元格安全处理。导出文件会被运营人员下载后用 Excel 打开。
-// 因此单元格内容必须当作不可信输入处理。
 
 // MaxExportPeriod 是导出允许的最大时间跨度。
 const MaxExportPeriod = 30 * 24 * time.Hour
@@ -29,8 +26,8 @@ func ValidExportPeriod(filter map[string]any) bool {
 	return err1 == nil && err2 == nil && !to.Before(from) && to.Sub(from) <= MaxExportPeriod
 }
 
-// NextExportDate 把结束日推一天，用于把 issued_at 的右开区间凑成整天的闭区间。
-// 入参不是 YYYY-MM-DD 时原样返回，交给上层按非法参数处理，不在这里猜。
+// NextExportDate 返回结束日的下一天，供 issued_at < 日期 的查询包含整个结束日。
+// 无法解析为 YYYY-MM-DD 时返回原文本，由调用方拒绝非法参数。
 func NextExportDate(raw any) string {
 	parsed, err := time.Parse(ExportDateLayout, fmt.Sprint(raw))
 	if err != nil {

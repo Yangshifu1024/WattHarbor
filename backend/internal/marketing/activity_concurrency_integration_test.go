@@ -16,7 +16,7 @@ import (
 )
 
 // 真库并发测试用独立连接和锁闸门固定执行顺序。
-// 先锁活动和模板，再统计发放量并写入，防止预算一份却并发发出两张券。
+// 先锁活动和模板，再统计份数并发券，防止限额一份却并发发出两张。
 
 // lockGate 用来在拿到行锁后暂停一个事务。
 type lockGate struct {
@@ -117,7 +117,7 @@ func (p *sqlPair) armOnce(t *testing.T, gate *lockGate, name string) {
 	}
 }
 
-// TestConcurrentGrantsRespectBudgetUnderRowLock 验证一份预算下第二事务等待行锁，首个发放提交后发现预算已用尽。
+// TestConcurrentGrantsRespectBudgetUnderRowLock 验证限额一份时第二事务等待行锁，首笔提交后不再发券。
 func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 	setup := testDB(t)
 	tx := txRollback(t, setup)
@@ -198,7 +198,7 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 		t.Fatalf("事务一提交失败：%v", err)
 	}
 
-	// 事务二此时才拿到锁，重数时应看到预算已用尽。
+	// 事务二此时才取得锁，重新计数应看到份数已达上限。
 	second := <-done2
 	if second.err != nil {
 		t.Fatalf("事务二因预算耗尽而跳过不该报错：%v", second.err)
@@ -221,7 +221,7 @@ func TestConcurrentGrantsRespectBudgetUnderRowLock(t *testing.T) {
 	}
 }
 
-// TestConcurrentGrantsBothSucceedWhenBudgetAllows 验证预算充足时两个用户依次取得行锁，都能拿到券。
+// TestConcurrentGrantsBothSucceedWhenBudgetAllows 验证剩余份数充足时两个用户依次取得行锁，都能拿到券。
 func TestConcurrentGrantsBothSucceedWhenBudgetAllows(t *testing.T) {
 	setup := testDB(t)
 	tx := txRollback(t, setup)

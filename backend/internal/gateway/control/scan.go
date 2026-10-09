@@ -15,23 +15,23 @@ import (
 
 var scanCodePattern = regexp.MustCompile(`^[A-Za-z0-9_:-]{1,64}$`)
 
-// ScanAPI 适配内部扫描码读取，仅依赖 ResolveScan 接口并输出共享扫描响应，不创建业务命令。
+// ScanAPI 提供内部扫描码查询，返回设备或端口信息。
 type ScanAPI struct {
-	// Scanner 仅解析扫描码的接口，不创建充电命令。
+	// Scanner 解析扫描码并查询设备或端口。
 	Scanner interface {
-		// ResolveScan 接收请求 context 与扫描码，返回扫描设备或端口查询结果及缺失、读取错误；不创建充电或支付命令。
+		// ResolveScan 查询扫描码；未匹配到设备或端口时返回错误。
 		ResolveScan(context.Context, string) (repo.ScanResult, error)
 	}
 	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
 }
 
-// Register 在 router 注册路由；调用方须提供非 nil router。
+// Register 注册内部扫码查询路由。
 func (a ScanAPI) Register(router *gin.Engine) {
 	router.GET(contract.ScanResolvePath, a.resolve)
 }
 
-// resolve 鉴权并校验扫描码后通过 Scanner 读取事实，转换共享响应；写 200、400、401、404 或 503，无命令写入。
+// resolve 校验服务令牌和扫描码，返回设备或端口；查不到返回 404。
 func (a ScanAPI) resolve(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)
@@ -65,7 +65,7 @@ func (a ScanAPI) resolve(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// scanPortReply 将 row 端口查询结果映射为共享子记录，保留单位与身份。
+// scanPortReply 将端口查询结果转换为共享响应。
 func scanPortReply(row repo.ScanPort) contract.ScanPort {
 	return contract.ScanPort{PortID: row.PortID, DeviceID: row.DeviceID, PortNo: row.PortNo, Status: row.Status, Online: row.Online, Available: row.Available}
 }

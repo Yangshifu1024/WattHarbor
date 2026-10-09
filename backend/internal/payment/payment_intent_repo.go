@@ -28,11 +28,11 @@ type PaymentIntent struct {
 	DeviceID        string            `json:"device_id"`                 // 冻结目标设备编号
 	PortNo          uint8             `json:"port_no"`                   // 冻结端口号，从 1 开始
 	PortCode        string            `json:"port_id"`                   // 冻结端口业务编码
-	StationID       uint64            `json:"station_id"`                // 冻结站点身份
+	StationID       uint64            `json:"station_id"`                // 申请时保存的站点 ID
 	Estimate        charging.Estimate `json:"estimate"`                  // 首次冻结的费用及设备执行量
 	ExpiresAt       time.Time         `json:"expires_at"`                // 支付意图有效期 UTC 时刻
 	Status          string            `json:"status"`                    // 意图 initiated、expired、paid 或 refund_required
-	CouponGrantID   uint64            `json:"coupon_grant_id,omitempty"` // 优惠券权益 ID，0 表示无券；当前套餐不允许组合券
+	CouponGrantID   uint64            `json:"coupon_grant_id,omitempty"` // 优惠券权益 ID，0 表示无券；当前套餐不允许使用优惠券
 	DiscountCents   int64             `json:"discount_cents"`            // 冻结减免金额，分
 	PayableCents    int64             `json:"payable_cents"`             // 实际应付金额，分，等于优惠前总费减减免
 }
@@ -42,13 +42,13 @@ type PaymentIntent struct {
 type IntentInput struct {
 	UserID          uint64           // 申请所属用户，对外返回十进制字符串
 	ClientRequestID string           // 用户范围内的申请 UUID，同内容重放
-	Port            money.ScanResult // 校验时读取的设备及端口信息，必须可用且身份一致
+	Port            money.ScanResult // 校验时读取的设备及端口信息，必须可用且设备、站点和端口编号一致
 	Energy          string           // 历史非套餐输入电量，kWh 十进制文本；当前仅接受套餐
 	Minutes         uint16           // 历史非套餐时长，分钟；当前仅接受套餐
 	Rule            charging.Rule    // 当前生效方案及规则版本，首次创建冻结
 	Offer           *charging.Offer  // 后台发布的套餐，当前申请必须非空
 	// 优惠券编号参与历史请求重放核对；当前套餐创建不允许组合券。
-	CouponGrantID uint64 // 优惠券权益 ID，0 表示无券；当前套餐不允许组合券
+	CouponGrantID uint64 // 优惠券权益 ID，0 表示无券；当前套餐不允许使用优惠券
 }
 
 // PaymentIntentRepo 负责支付意图、支付和端口短期预占事务。
@@ -99,8 +99,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	if input.Offer != nil && input.CouponGrantID != 0 {
-		// 套餐返还按实付金额处理。
-		// 券的分摊需要另立一份契约，才能与固定价套餐组合。
+		// 当前套餐不支持优惠券，拒绝同时传入套餐和券编号。
 		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	var previous PaymentIntentRecord
@@ -115,8 +114,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 		if !input.Offer.Valid() || input.Offer.StationID != input.Port.StationID {
 			return PaymentIntent{}, charging.ErrInvalidPricing
 		}
-		// 固定时长套餐由设备倒计时停机；金额预算由平台根据计量执行计费和停机。
-		// 下发的最大时长是设备安全上限，不替代平台的费用封顶规则。
+		// 时长套餐下发购买分钟，电量套餐下发 Wh；金额套餐下发最长时长，并由平台检查费用上限。
 		if input.Rule.Spec.Scheme == nil {
 			return PaymentIntent{}, charging.ErrInvalidPricing
 		}

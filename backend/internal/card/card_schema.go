@@ -8,7 +8,7 @@ import (
 
 // 本文件定义在线卡、刷卡会话与操作记录，保存绑定、扣款、累计时长及退款所需信息。
 
-// OnlineCard 映射在线卡绑定记录，以规范卡号关联用户及可用状态，协议卡号范围仍由刷卡校验校验。
+// OnlineCard 保存卡号、绑定用户和卡状态；刷卡用例另行检查协议卡号范围。
 type OnlineCard struct {
 	ID     uint64 `json:"id"`             // 在线卡主键
 	CardNo string `json:"card_no"`        // 绑定卡号的规范十进制文本；协议刷卡仍校验其32位范围
@@ -30,9 +30,9 @@ type CardCharge struct {
 	PackageJSON      []byte  // 首次完整套餐 JSON，续购不使用当前发布价格
 }
 
-// CardOperation 保存一次首购或续购的扣款凭据，以设备和事件判重；confirming 状态不表示设备已确认启动。
+// CardOperation 保存一次首购或续购结果，按设备和事件号判重；confirming 表示仍待启动确认。
 type CardOperation struct {
-	OperationID   string `json:"operation_id"`    // 首次操作 UUID，同事件回复和资金凭据
+	OperationID   string `json:"operation_id"`    // 首次操作 UUID，同事件重试沿用
 	DeviceID      string `json:"device_id"`       // 设备编号，与 EventID 共同判重
 	EventID       string `json:"event_id"`        // 刷卡事件号，重试不得替换
 	ChargeOrderID uint64 `json:"charge_order_id"` // 首次操作所属充电订单主键

@@ -1,4 +1,4 @@
-// Package central 定义 central 内部 HTTP 接口的请求与响应契约。
+// Package central 定义 central 内部 HTTP 接口的路径、请求和响应结构。
 package central
 
 const PaidStartsPath = "/api/v1/internal/charge-orders/paid-starts"

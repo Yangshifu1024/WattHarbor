@@ -236,7 +236,7 @@ func TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark(t *testing.T) {
 	if err != nil || raised != 0 {
 		t.Fatalf("lost response recovery=%d %v", raised, err)
 	}
-	// 重扫响应丢失时的同一故障证据，不能新建告警。
+	// 重新处理确认响应丢失时的同一故障事件，不能新建告警。
 	if err := gateway.Table("device_event").Where("event_key=?", first).Update("processed_at", nil).Error; err != nil {
 		t.Fatal(err)
 	}

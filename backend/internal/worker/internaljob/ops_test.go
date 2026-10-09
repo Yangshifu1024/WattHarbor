@@ -15,7 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// opsRedisSpy 仅替代 XLen，记录真实注册路由的命令和请求 context；不连接 Redis。
+// opsRedisSpy 记录 XLen 的流名和 context，返回预设长度或错误。
 type opsRedisSpy struct {
 	// UniversalClient 仅满足已有客户端接口，未覆盖的方法不可调用。
 	redis.UniversalClient
@@ -23,13 +23,12 @@ type opsRedisSpy struct {
 	lengths map[string]int64
 	// failures 为指定流返回的错误。
 	failures map[string]error
-	// calls 按请求执行顺序记录流名。
-	calls []string
+	calls    []string
 	// contexts 保存传入 XLen 的 context，用于核对请求取消传播。
 	contexts []context.Context
 }
 
-// XLen 接收请求 ctx 和流名，记录调用后返回固定长度、指定错误或取消错误，无网络副作用。
+// XLen 记录请求，返回预设流长度、错误或 context 取消错误。
 func (s *opsRedisSpy) XLen(ctx context.Context, name string) *redis.IntCmd {
 	s.calls = append(s.calls, name)
 	s.contexts = append(s.contexts, ctx)
@@ -44,17 +43,14 @@ func (s *opsRedisSpy) XLen(ctx context.Context, name string) *redis.IntCmd {
 	return cmd
 }
 
-// opsEnvelopeReply 读取实际 HTTP 信封，只用于核对响应边界。
+// opsEnvelopeReply 保存 HTTP 响应的业务码、消息和数据。
 type opsEnvelopeReply struct {
-	// Code 为既有业务状态码。
-	Code int `json:"code"`
-	// Message 为既有公开消息。
-	Message string `json:"message"`
-	// Data 保留 JSON 数据，失败时应为 null。
-	Data json.RawMessage `json:"data"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
 }
 
-// opsStreamsReply 读取实际成功响应；Pending 是流长度而非未消费数。
+// opsStreamsReply 保存流长度和查询时刻，Pending 表示长度而非未处理消息数。
 type opsStreamsReply struct {
 	// Pending 按流名保存 XLen 返回值。
 	Pending map[string]int64 `json:"pending"`
@@ -62,7 +58,7 @@ type opsStreamsReply struct {
 	CheckedAt time.Time `json:"checked_at"`
 }
 
-// callOpsRoute 为 t 实际注册 api 并以 ctx 和 token 请求路径，返回记录器。
+// callOpsRoute 注册接口并携令牌请求路径，返回响应记录器。
 func callOpsRoute(t *testing.T, api OpsAPI, token string, ctx context.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	router := httpapi.NewRouter()
@@ -91,10 +87,8 @@ func decodeOpsReply(t *testing.T, response *httptest.ResponseRecorder) opsEnvelo
 	return reply
 }
 
-// TestOpsRouteRejectsBeforeRedis 以真实 Register 验证拒绝身份仅返回一次 401 且不进入 Redis。
 func TestOpsRouteRejectsBeforeRedis(t *testing.T) {
 	cases := []struct {
-		// name 标识不同拒绝边界。
 		name string
 		// configured 为服务配置令牌。
 		configured string
@@ -122,7 +116,6 @@ func TestOpsRouteRejectsBeforeRedis(t *testing.T) {
 	}
 }
 
-// TestOpsRouteReportsStreamLengths 核对真实成功响应、令牌精确比较、redis.Nil 跳过和 context 传递；不宣称真实 Redis 语义。
 func TestOpsRouteReportsStreamLengths(t *testing.T) {
 	spy := &opsRedisSpy{lengths: map[string]int64{"one": 2, "two": 7}, failures: map[string]error{"nil": redis.Nil}}
 	ctx := t.Context()
@@ -150,7 +143,6 @@ func TestOpsRouteReportsStreamLengths(t *testing.T) {
 	}
 }
 
-// TestOpsRouteRedisFailureAndCancellation 核对 503 映射、隐藏内部错误、失败后停止读取以及取消 context 传播，无真实 Redis IO。
 func TestOpsRouteRedisFailureAndCancellation(t *testing.T) {
 	for _, canceled := range []bool{false, true} {
 		name := "redis_failure"

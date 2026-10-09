@@ -41,8 +41,8 @@ func TestVendorProxyForwardsConfigurationAndTrace(t *testing.T) {
 // TestVendorProxyFailsClosed 核对公开业务错误及私有错误、响应缺失和超限的安全映射。
 func TestVendorProxyFailsClosed(t *testing.T) {
 	for _, test := range []struct {
-		name, raw    string // 错误场景名称及响应正文
-		status, want int    // 服务返回的状态和预期公开状态
+		name, raw    string
+		status, want int
 	}{
 		{"invalid", `{"code":1005,"message":"编码无效"}`, 400, 400},
 		{"missing", `{"code":1004,"message":"厂商不存在"}`, 404, 404},
@@ -74,7 +74,7 @@ func TestVendorProxyFailsClosed(t *testing.T) {
 	}
 }
 
-// TestVendorProxyDoesNotFollowRedirects 验证具名读取不会向重定向目标转发服务令牌。
+// TestVendorProxyDoesNotFollowRedirects 验证厂商查询不会向重定向地址转发服务令牌。
 func TestVendorProxyDoesNotFollowRedirects(t *testing.T) {
 	forwarded := false
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { forwarded = true }))
@@ -134,7 +134,7 @@ func TestVendorClientRejectsUnexpectedIdentity(t *testing.T) {
 	}
 }
 
-// TestVendorListEscapesQueryAndKeepsPage 验证具名列表关键词转义、厂商集合及分页响应，不信任上游权限字段。
+// TestVendorListEscapesQueryAndKeepsPage 检查厂商列表的查询编码、筛选和分页，并忽略响应中的权限字段。
 func TestVendorListEscapesQueryAndKeepsPage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

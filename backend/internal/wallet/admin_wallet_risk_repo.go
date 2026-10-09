@@ -80,7 +80,8 @@ func (s RiskRepo) ListWalletRisks(ctx context.Context, status string, page, page
 	return rows, total, nil
 }
 
-// LockRefundRequest 在调用方事务中按 requestID 锁退款申请，返回用户及金额事实；缺行返回 gorm.ErrRecordNotFound，审核、预占与审计须同事务提交。
+// LockRefundRequest 按 requestID 锁定退款申请并返回用户、金额；缺行返回 gorm.ErrRecordNotFound。
+// 审核、预占和审计须在 tx 内一并提交。
 func (s RiskRepo) LockRefundRequest(tx *gorm.DB, requestID string) (WalletRiskRequest, error) {
 	var row WalletRiskRequest
 	err := tx.Table("wallet_refund_request").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -88,7 +89,8 @@ func (s RiskRepo) LockRefundRequest(tx *gorm.DB, requestID string) (WalletRiskRe
 	return row, err
 }
 
-// FindRiskReview 在调用方事务中按 requestID 读取审核回执，返回 Exists=true 的事实；缺行返回 gorm.ErrRecordNotFound，其他错误不能按首次审核处理。
+// FindRiskReview 读取 requestID 的审核记录；有记录时 Exists=true，缺行返回 gorm.ErrRecordNotFound。
+// 其他读取错误不能当作尚未审核。
 func (s RiskRepo) FindRiskReview(tx *gorm.DB, requestID string) (WalletRiskPriorReview, error) {
 	var row struct {
 		ActorID      uint64 // 审核或解冻账号 ID
@@ -128,7 +130,8 @@ func (s RiskRepo) CountRiskReviews(tx *gorm.DB, requestID string) (int64, error)
 	return count, err
 }
 
-// FindRiskRelease 在调用方事务中按 requestID 读取首次解冻回执，返回 Exists=true 的事实；缺行返回 gorm.ErrRecordNotFound，其他读取错误不能触发再次解冻。
+// FindRiskRelease 读取 requestID 的首次解冻记录；有记录时 Exists=true，缺行返回 gorm.ErrRecordNotFound。
+// 其他读取错误不能触发再次解冻。
 func (s RiskRepo) FindRiskRelease(tx *gorm.DB, requestID string) (WalletRiskPriorReview, error) {
 	var row struct {
 		ActorID      uint64 // 审核或解冻账号 ID

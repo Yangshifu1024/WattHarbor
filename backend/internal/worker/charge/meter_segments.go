@@ -12,8 +12,8 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// measuredSegments 将设备累计电量和时长转为计量分段；证据不足时返回 nil。
-// 心跳 ChargedMWh 的单位是 mWh，分段电量换算为 Wh；功率以 0.1 W 上报，四舍五入为 W。
+// measuredSegments 根据设备累计电量和时长计算各时间段的用电量。
+// 心跳电量从 mWh 换算为 Wh，功率从 0.1 W 四舍五入为 W；读数无法验证时返回 nil。
 func measuredSegments(start time.Time, terminal protocol.Event, events []protocol.Event) []charging.MeterSegment {
 	span, ok := measurement.SessionSpanOf(terminal)
 	if !ok {
@@ -22,14 +22,13 @@ func measuredSegments(start time.Time, terminal protocol.Event, events []protoco
 	return charging.MeasuredSegments(start, span, measurement.ReadingSamplesOf(events))
 }
 
-// meterSegments 读取 ack_at 至 end.ReceivedAt 的心跳，只取 ID 不超过 endID 的记录。
-// 缺启动时刻或确认时间、超过 10080 条、领域证据不成立均返回 nil,nil；读取或载荷解码失败返回错误，不写数据库。
-// 采样按序计算候选分段；重复尝试使用首次保存的分段，不把缺失读数当成零电量。
+// meterSegments 读取启动确认至结束事件接收期间的心跳，且 ID 不超过结束事件 ID。
+// 缺少时间、超过 10080 条或读数无法验证时不生成分段；查询或 JSON 解码失败返回错误。
 func (s EndSynchronizer) meterSegments(ctx context.Context, gateway EndGateway, command gatewaycontract.SyncCommand, endID uint64, end protocol.Event) ([]charging.MeterSegment, error) {
 	if command.AckAt == nil || end.StartedAt.IsZero() {
 		return nil, nil
 	}
-	// 结束事件 ID 限定本次心跳查询范围；多次尝试最终都使用网关首次保存的载荷。
+	// 只使用结束事件之前已保存的心跳，减少重试时新增读数的影响。
 	items, err := gateway.MeterSamples(ctx, gatewaycontract.MeterSamplesRequest{DeviceID: end.DeviceID, AckAt: *command.AckAt, EndAt: end.ReceivedAt, EndID: endID})
 	if err != nil {
 		return nil, err
@@ -48,9 +47,8 @@ func (s EndSynchronizer) meterSegments(ctx context.Context, gateway EndGateway, 
 	return measuredSegments(*command.AckAt, end, samples), nil
 }
 
-// freezeEndResult 计算候选计量分段，请网关保存首次结束请求，并返回网关已保存的请求。
-// 取证、序列化、冻结或解码失败返回当前候选与错误；存量身份比较及首次写入优先由网关拥有，本层不补偿或重试未知写入。
-// 冻结请求复用事件／订单编号，存量载荷保留首次分段；成功不代表中央已确认或端口可释放。
+// freezeEndResult 生成分段并保存首次结束请求，后续处理读取同一份请求。
+// 保存成功后还须提交中央服务，不能在此时释放端口。
 func (s EndSynchronizer) freezeEndResult(ctx context.Context, gateway EndGateway, command gatewaycontract.SyncCommand, id uint64, event protocol.Event, candidate centralcontract.EndResultRequest) (centralcontract.EndResultRequest, error) {
 	segments, err := s.meterSegments(ctx, gateway, command, id, event)
 	if err != nil {

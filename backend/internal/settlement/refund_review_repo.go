@@ -17,18 +17,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SignerStatus 是审核人的实时身份快照，由调用方（admin 授权域）注入查询。
-// 双人复核的第二签必须核对前一审核人的实时角色与权限，不沿用首签时的会话结论。
+// SignerStatus 保存查询时审核人的角色和权限，由后台账号用例提供。
+// 第二次审核时重新查询首位审核人的角色和权限。
 type SignerStatus struct {
-	Role      string // 当前有效角色；第二签要求 customer_finance
+	Role      string // 当前角色；第二次审核要求 customer_finance
 	Permitted bool   // 当前是否仍有退款复核权限
 }
 
 // RefundReviewRepo 在调用方事务内处理人工退款建单、双审和重投。
 // RefundAdminService 负责实时权限与同事务审计，HTTP 只转换请求和响应。
 type RefundReviewRepo struct {
-	DB *gorm.DB // 结算数据库句柄；写方法使用显式传入的事务
-	// LookupSigner 查询审核人的实时角色与权限；nil 时第二签一律冲突。
+	DB *gorm.DB // 结算数据库连接；写方法使用传入的事务
+	// LookupSigner 查询首位审核人的当前角色和权限，不使用审核时保存的角色；nil 时拒绝第二次审核。
 	LookupSigner func(ctx context.Context, signerID uint64) (SignerStatus, error)
 }
 
@@ -38,7 +38,7 @@ type ManualRefundInput struct {
 	OrderID     uint64 // 已终止的充电订单主键
 	RequestID   string // 人工申请幂等号，同号必须提交相同内容
 	AmountCents int64  // 本次申请退款额，分；由用例校验为正数
-	Reason      string // 退款业务因，参与重放内容核对
+	Reason      string // 退款原因，重试时须一致
 }
 
 // manualRefundNo 根据请求 ID 生成稳定退款号。
@@ -70,7 +70,7 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 			PayloadJSON string // 同一 request_id 首次提交时的请求体快照，重放时用于逐字段比对内容是否一致
 			RefundNo    string // 首次生成的退款单号，重放时直接返回它，保证同号始终对应同一笔退款
 		}
-		// 支付锁不会刷新前面的订单快照，重放凭据须当前读，否则会把相同申请误判为新退款。
+		// 支付行锁不刷新之前的查询快照；锁定读取请求记录，避免漏掉其他事务刚提交的相同申请。
 		e := tx.Table("manual_refund_request").Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", in.RequestID).Take(&receipt).Error
 		if e == nil {
 			var x, y any
@@ -122,19 +122,19 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 // ReviewDecision 是一笔复核决定；Approve=true 走双人通过，false 为单人驳回。
 type ReviewDecision struct {
 	Approve        bool   // true 为双人通过流程，false 为单人驳回
-	ApproveComment string // 通过意见，分别保存为首签或第二签意见
-	Reason         string // 驳回因，仅驳回分支使用
+	ApproveComment string // 通过意见，按审核顺序分别保存
+	Reason         string // 驳回原因，仅驳回时使用
 	ActorID        uint64 // 当前审核管理员 ID，须由用例实时授权
 }
 
 // reviewRow 是退款复核记录，每笔退款至多一条。
 type reviewRow struct {
 	RefundRecordID uint64  // 关联的退款记录主键 refund_record.id，一对一
-	SnapshotJSON   string  // 第一签时冻结的退款要素 JSON，第二签据此比对，内容不一致即冲突
+	SnapshotJSON   string  // 第一次审核时保存的退款金额和业务关联 JSON，第二次审核核对未变
 	FirstSigner    uint64  // 第一审核人 ID
 	FirstComment   string  // 第一审核人的审核意见
-	SecondSigner   *uint64 // 第二审核人 ID，nil 表示第二签还没做
-	SecondComment  *string // 第二审核人的审核意见，nil 表示第二签还没做
+	SecondSigner   *uint64 // 第二位审核人 ID，nil 表示尚未审核
+	SecondComment  *string // 第二位审核人的意见，nil 表示尚未审核
 }
 
 // refundSnapshot 将退款支付、用户、业务 ID 和金额编码为双审快照。
@@ -145,8 +145,8 @@ func refundSnapshot(r RefundRecord) string {
 }
 
 // Review 在调用方事务中按支付→退款加锁，仅审核 pending/manual_review 退款。
-// 首签进入 awaiting_second；不同且仍有权限的人二签后改为 automatic 并安排执行。
-// 驳回只需一人，写入拒绝记录；状态、快照或首签身份不符返回 ErrRefundConflict。
+// 第一次通过返回 awaiting_second；另一名有权限的人再次通过后，退款改为 automatic 并安排执行。
+// 驳回只需一人，写入拒绝记录；状态、快照或首位审核人权限不符返回 ErrRefundConflict。
 func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo string, in ReviewDecision) (string, uint64, error) {
 	status := "rejected"
 	recordID := uint64(0)
@@ -169,7 +169,7 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 		return status, recordID, ErrRefundConflict
 	}
 	var v reviewRow
-	// 首次退款读取可能建立旧 RR 快照；支付及退款锁内读取实际首签，不能重复创建复核行。
+	// 首次读取可能建立旧 RR 快照；锁定读取审核记录，以免漏掉其他事务刚提交的第一次审核。
 	e := tx.Table("refund_review").Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_record_id=?", r.ID).Take(&v).Error
 	if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
 		return status, recordID, e

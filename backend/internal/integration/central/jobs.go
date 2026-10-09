@@ -122,8 +122,7 @@ type jobEnvelopeReply struct {
 	Data json.RawMessage `json:"data"` // 成功或未完成时须包含对象；鉴权拒绝时为 null，进度字段由对应解码器检查。
 }
 
-// decodeBillingJob 校验 data 中明确、非负且未溢出的 completed，返回计费回执或失配错误。
-// success 不改变 completed 的必需性，失败回执同样必须明确声明进度。
+// decodeBillingJob 要求 completed 为非负整数，成功和失败响应都必须提供。
 func decodeBillingJob(data json.RawMessage, _ bool) (centralcontract.BillingDispatchReply, error) {
 	var wire struct {
 		Completed *int `json:"completed"` // 计费数量；nil 表示缺失或 null，不能推定为零。
@@ -137,11 +136,11 @@ func decodeBillingJob(data json.RawMessage, _ bool) (centralcontract.BillingDisp
 	return centralcontract.BillingDispatchReply{Completed: *wire.Completed}, nil
 }
 
-// decodeRefundJob 校验 data 中明确非负的 processed，success 时还要求明确 enabled。
-// 未启用且有正进度是失配；失败回执允许不提供 enabled。返回合法回执或错误。
+// decodeRefundJob 要求 processed 为非负整数，成功时还须提供 enabled。
+// enabled=false 时数量必须为零；失败时可省略 enabled，但不能将其设为 null。
 func decodeRefundJob(data json.RawMessage, success bool) (centralcontract.RefundDispatchReply, error) {
 	var wire struct {
-		Enabled   json.RawMessage `json:"enabled"`   // 成功必需、失败可缺失；显式 null 或非 bool 一律失配。
+		Enabled   json.RawMessage `json:"enabled"`   // 成功时必需，失败时可省略；null 或非布尔值无效。
 		Processed *int            `json:"processed"` // 必需已处理数量；nil 不能当作零。
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
@@ -162,8 +161,7 @@ func decodeRefundJob(data json.RawMessage, success bool) (centralcontract.Refund
 	return centralcontract.RefundDispatchReply{Enabled: enabled, Processed: *wire.Processed}, nil
 }
 
-// decodeAutoStopJob 校验 data 中明确、非负且未溢出的 stopped，返回扫描回执或失配错误。
-// success 不改变 stopped 的必需性，失败回执同样必须明确声明进度。
+// decodeAutoStopJob 要求 stopped 为非负整数，成功和失败响应都必须提供。
 func decodeAutoStopJob(data json.RawMessage, _ bool) (centralcontract.AutoStopReply, error) {
 	var wire struct {
 		Stopped *int `json:"stopped"` // 扫描数量；nil 表示缺失或 null，不能推定为零。

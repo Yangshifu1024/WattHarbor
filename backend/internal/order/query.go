@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// FeeFacts 是所属费用回执的已确认金额，不代表实时计量估算。
+// FeeFacts 保存已结算的电费、服务费和总额，单位分。
 type FeeFacts struct {
 	OrderID        uint64 // 充电订单编号
 	ElectricCents  int64  // 已确认电费，分
@@ -31,7 +31,7 @@ type QueryError struct {
 	Cause error  /* 读取错误 */
 }
 
-// QueryInputError 保留订单引用与筛选的公开校验错误文案，不含存在性事实。
+// QueryInputError 保存订单号或筛选参数的校验错误，不表示订单是否存在。
 type QueryInputError struct {
 	Message string /* 公开输入错误 */
 }

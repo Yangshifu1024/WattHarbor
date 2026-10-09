@@ -15,16 +15,15 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// registeredJobStopper 仅提供停机数量与错误的测试替身，不访问订单、计费库或真实设备。
+// registeredJobStopper 返回预设停机数量和错误。
 type registeredJobStopper struct {
 	progress  int                // Run 返回的扫描处理数量，测试期间不变。
 	failure   error              // Run 返回的未完成错误，测试期间不变。
-	calls     atomic.Int64       // 已执行业务扫描的次数，用于证明服务令牌先行拒绝。
+	calls     atomic.Int64       // 调用次数，用于检查错误令牌未进入任务。
 	remaining chan time.Duration // 捕获真实注册处理器派生的 context 期限；只传递时长，不持有请求 context。
 }
 
-// Run 接收真实 HTTP 处理器派生的 ctx，记录调用及期限，返回 fixture 的 progress 和 failure。
-// 不执行资金、停止命令或数据库 IO；只能证明装配、令牌顺序、期限与公开回执契约。
+// Run 记录调用次数和请求期限，返回预设数量和错误。
 func (f *registeredJobStopper) Run(ctx context.Context) (int, error) {
 	f.calls.Add(1)
 	deadline, ok := ctx.Deadline()

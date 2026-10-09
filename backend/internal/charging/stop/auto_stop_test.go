@@ -32,7 +32,7 @@ func TestNoPowerRequiresContinuousMinuteAndFreshHeartbeat(t *testing.T) {
 	}
 }
 
-// TestNoPowerRejectsInterruptedEvidence 验证静默、乱序及缺失事实不能补足一分钟。
+// TestNoPowerRejectsInterruptedEvidence 检查未上报、乱序及端口缺失不能补足一分钟。
 func TestNoPowerRejectsInterruptedEvidence(t *testing.T) {
 	now := time.Now().UTC()
 	at := func(seconds int, ports ...protocol.PortTelemetry) protocol.Event {
@@ -41,7 +41,7 @@ func TestNoPowerRejectsInterruptedEvidence(t *testing.T) {
 	z := protocol.PortTelemetry{Port: 1}
 	for _, tc := range []struct {
 		name string
-		// events 按给定顺序构造的心跳事实，用于检查静默、缺端口或时间中断不能满足连续零功率。
+		// events 按给定顺序构造的心跳，用于检查静默、缺端口或时间中断不能满足连续零功率。
 		events []protocol.Event
 	}{
 		{"reconnect", []protocol.Event{at(-70, z), at(-2, z)}},

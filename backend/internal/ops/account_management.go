@@ -60,17 +60,17 @@ func (in AccountUpdateInput) Validate() error {
 // ManagedMFAInput 是管理员 MFA 操作参数；确认密钥须匹配服务端登记的密钥。
 type ManagedMFAInput struct {
 	Action string `json:"action"` // enrol／confirm／disable 动作
-	Secret string `json:"secret"` // 确认时回传服务端登记材料
+	Secret string `json:"secret"` // 确认时回传服务端登记的 TOTP 密钥
 	Code   string `json:"code"`   // 确认时 TOTP 证明
 }
 
-// ManagedMFAReply 返回 MFA 登记材料或启用结果。
+// ManagedMFAReply 返回新密钥、验证器 URI 和验证码，或操作后的启用状态。
 type ManagedMFAReply struct {
 	ID      uint64 // 目标账号，仅确认／关闭输出
-	Secret  string // 服务端新登记材料，仅登记输出
+	Secret  string // 服务端新建 TOTP 密钥，仅登记时返回
 	URI     string // 目标登录名的验证器 URI，仅登记输出
 	Code    string // 管理登记响应的当前验证码，不写审计
-	Enabled bool   // 变更后的启用事实
+	Enabled bool   // 操作后是否启用 MFA
 }
 
 // AccountService 负责账号管理的权限校验、变更和审计事务。
@@ -276,8 +276,8 @@ func (s AccountService) ResetPassword(ctx context.Context, audit AuditContext, i
 	})
 }
 
-// MFA 核对更新权限后管理账号 MFA，确认密钥须匹配加锁后读取的登记材料。
-// 响应可含登记材料，审计仅保存排除敏感字段的快照。
+// MFA 核对更新权限后管理账号 MFA，确认时提交的密钥须与锁定账号后读出的密钥一致。
+// 登记响应含密钥和验证码，审计不保存密码、密钥或验证码。
 func (s AccountService) MFA(ctx context.Context, audit AuditContext, id uint64, input ManagedMFAInput) (ManagedMFAReply, error) {
 	if id == audit.Actor.ID {
 		return ManagedMFAReply{}, ErrSelfMFA

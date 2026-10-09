@@ -12,7 +12,7 @@ import (
 )
 
 // measuredMeter 用订单开始时刻、最新读数与完整心跳生成运行中计量。
-// 费用封顶与结算共用这些证据，不补造测量。
+// 使用与结算相同的分段校验，不补造读数。
 func measuredMeter(order AutoStopOrder, latest meterReading, samples []protocol.Event) rules.ActualMeter {
 	ended := latest.at
 	meter := rules.ActualMeter{
@@ -21,7 +21,7 @@ func measuredMeter(order AutoStopOrder, latest meterReading, samples []protocol.
 		ChargedWh:      latest.wh,
 		ChargedSeconds: latest.seconds,
 	}
-	// 把当前读数当作收口证据交给计量校验，不生成额外测量。
+	// 用最新读数校验分段总量，并由累计秒数推算设备开始时刻。
 	span := devices.SessionSpan{
 		DeviceID: order.DeviceID, Port: order.PortNo,
 		StartedAt:      ended.Add(-time.Duration(latest.seconds) * time.Second),
@@ -32,7 +32,7 @@ func measuredMeter(order AutoStopOrder, latest meterReading, samples []protocol.
 	return meter
 }
 
-// meterReading 保存一条合格心跳的接收时刻、累计电量 Wh 与时长秒，供停止计量取证；单条读数不构成完整连续窗口。
+// meterReading 保存一次心跳的接收时刻、累计 Wh 和累计秒数，供检查费用上限。
 type meterReading struct {
 	at      time.Time // 遥测接收的 UTC 时刻
 	wh      uint32    // 累计电量，单位 Wh
@@ -41,7 +41,7 @@ type meterReading struct {
 
 // latestMeter 从按入库顺序排列的 samples 中取目标 port 的最新可用计量。
 // now 为 UTC 判定时刻；拒绝未来、陈旧及不能整除为 Wh 的读数，第二返回值表示是否找到。
-// 不执行 I/O，不以零值代替缺失证据。
+// 没有合格读数时返回 false，不把缺失当作零用量。
 func latestMeter(samples []protocol.Event, port uint8, now time.Time) (meterReading, bool) {
 	for _, e := range slices.Backward(samples) {
 		if e.ReceivedAt.After(now) || now.Sub(e.ReceivedAt) > gatewaycontract.MaxChargingEvidenceGap {
@@ -56,10 +56,10 @@ func latestMeter(samples []protocol.Event, port uint8, now time.Time) (meterRead
 	return meterReading{}, false
 }
 
-// noPowerForMinute 判断目标 port 是否有连续一分钟的零功率心跳证据。
+// noPowerForMinute 检查目标 port 是否连续一分钟上报零功率。
 // samples 必须保留入库顺序及端口缺失事件，now 为 UTC 判定时刻；不修改输入。
-// 返回 false 表示证据不足或不可信，包括未来、乱序、重复时刻、间隔过大及末条陈旧。
-// 连续窗口以末条证据为结束，不能把末条之后的静默时间计作已观测零功率。
+// 未来、乱序或重复时间返回 false；缺端口、正功率或长间隔会重新开始累计零功率时长。
+// 最后心跳须未过期；只计算心跳覆盖的时间，末次上报后的静默不算零功率。
 func noPowerForMinute(samples []protocol.Event, port uint8, now time.Time) bool {
 	if len(samples) == 0 {
 		return false

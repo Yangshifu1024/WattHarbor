@@ -32,7 +32,7 @@ type OrderView struct {
 	StartedAt           *time.Time              `json:"started_at"`                          // 实际开始充电时间；指针，未开始为 null
 	EndedAt             *time.Time              `json:"ended_at"`                            // 结束充电时间；指针，未结束为 null
 	DurationSeconds     *uint64                 `json:"duration_seconds"`                    // 计费时长（秒）；指针，计费完成后才有
-	MeterKWh            *string                 `json:"meter_kwh" gorm:"column:meter_kwh"`   // 电表读数（kWh）；用字符串承载 DECIMAL，避免浮点丢精度
+	MeterKWh            *string                 `json:"meter_kwh" gorm:"column:meter_kwh"`   // 电表读数（kWh）；使用 DECIMAL 文本，避免浮点丢精度
 	ElectricFeeCents    *int64                  `json:"electric_fee_cents"`                  // 电费（分）；指针，尚未计费为 null
 	ServiceFeeCents     *int64                  `json:"service_fee_cents"`                   // 服务费（分）；指针，尚未计费为 null
 	TotalFeeCents       *int64                  `json:"total_fee_cents"`                     // 应收合计（分）；指针，尚未计费为 null
@@ -65,14 +65,14 @@ type OrderQuery struct {
 // orderStartSourceSQL 仅用于固定订单、支付别名 c/p 的启动来源查询结果，卡记录优先。
 const orderStartSourceSQL = `(CASE WHEN EXISTS (SELECT 1 FROM card_charge cc WHERE cc.charge_order_id=c.id) THEN 'card' WHEN p.pay_method='balance' THEN 'balance' WHEN p.pay_method='wechat' THEN 'payment' ELSE NULL END)`
 
-// orderColumns 固定后台订单查询结果列，金额与退款进度只读取已持久化事实。
+// orderColumns 列出后台订单查询列；金额与退款进度来自已保存的支付和退款记录。
 const orderColumns = `c.id AS order_id,c.order_no,c.user_id,c.device_id,c.port_no,i.station_id,c.status,c.business_status,c.payment_status,` + orderStartSourceSQL + ` AS start_source,c.created_at,c.started_at,c.ended_at,
  c.charged_seconds AS duration_seconds,c.charged_kwh AS meter_kwh,c.electric_cents AS electric_fee_cents,c.service_cents AS service_fee_cents,c.total_cents AS total_fee_cents,
  c.payment_order_id,p.order_no AS payment_order_no,p.status AS payment_order_status,p.paid_cents,p.refunded_cents,c.failure_reason,
  CASE WHEN EXISTS (SELECT 1 FROM refund_record r WHERE r.payment_order_id=p.id AND r.status IN ('pending','processing') AND r.deleted_at IS NULL) THEN 'processing' WHEN c.payment_status='refunded' THEN 'refunded' WHEN c.status='refunding' THEN 'processing' WHEN p.refunded_cents>0 THEN 'partial_refunded' ELSE 'none' END AS refund_status`
 
 // orderBaseQuery 用 db 构造包内固定订单、支付、意图只读查询结果，排除软删除。
-// 返回包内 builder，不执行 I/O 或写入；完整分页与详情由对应仓储 执行，不向其它业务暴露 builder。
+// 返回未执行的 GORM 查询，供本包列表和详情复用；不读取或写入数据。
 func orderBaseQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("charge_order AS c").Joins("LEFT JOIN payment_order AS p ON p.id=c.payment_order_id AND p.user_id=c.user_id AND p.deleted_at IS NULL").Joins("LEFT JOIN charge_payment_intent AS i ON i.charge_order_id=c.id").Where("c.deleted_at IS NULL")
 }
@@ -143,7 +143,7 @@ func orderTimeRange(query *gorm.DB, from, to *time.Time) *gorm.DB {
 	return query.Where("(("+strings.Join(started, " AND ")+") OR ("+strings.Join(created, " AND ")+"))", args...)
 }
 
-// FillOrderStations 用 db 按 rows 当页站点身份一次读取名称并原位回填。
+// FillOrderStations 批量查询 rows 中的站点 ID，原位填入名称。
 // 空关联不查询；缺失、已删除站点保留 nil，正常缺失不报错。
 func FillOrderStations(ctx context.Context, db *gorm.DB, rows []OrderView) error {
 	ids := []uint64{}

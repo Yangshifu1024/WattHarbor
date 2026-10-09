@@ -1,3 +1,4 @@
+// Package user 提供充电用户资料、充值记录和在线卡管理接口。
 package user
 
 import (

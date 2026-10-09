@@ -11,27 +11,27 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// MeterReview 保存人工计量核实前后证据；二签须核对同一订单及未改变的证据。
+// MeterReview 保存修正前后的价格和计量；第二次审核须确认原数据未变且只修正分段。
 type MeterReview struct {
 	ID               uint64          `json:"id"`                 // 核实记录主键
 	RequestID        string          `json:"request_id"`         // 提案 UUID，同号同内容重放
 	ChargeOrderID    uint64          `json:"charge_order_id"`    // 所属同一订单，不接受跨订单核实 ID
-	OriginalJSON     json.RawMessage `json:"original"`           // 设备计量及价格证据 JSON，二签时复核未变化
-	CorrectedJSON    json.RawMessage `json:"corrected"`          // 仅替换计量分段的修正证据 JSON
+	OriginalJSON     json.RawMessage `json:"original"`           // 原价格和设备计量 JSON，第二次审核时核对未变
+	CorrectedJSON    json.RawMessage `json:"corrected"`          // 只替换分段后的价格和计量 JSON
 	Reason           string          `json:"reason"`             // 提案依据，1–500 字
 	Status           string          `json:"status"`             // awaiting_second、approved 或 rejected
-	FirstReviewerID  uint64          `json:"first_reviewer_id"`  // 首签财务账号 ID
-	SecondReviewerID *uint64         `json:"second_reviewer_id"` // 二签财务账号 ID；未决定为空，必须不同于首签
+	FirstReviewerID  uint64          `json:"first_reviewer_id"`  // 首次提交的财务账号 ID
+	SecondReviewerID *uint64         `json:"second_reviewer_id"` // 第二次审核的财务账号 ID；未决定为空，须与首次提交人不同
 	RejectReason     *string         `json:"reject_reason"`      // 驳回依据，通过或未决定为空
 	CreatedAt        time.Time       `json:"created_at"`         // 提案创建 UTC 时刻
-	ReviewedAt       *time.Time      `json:"reviewed_at"`        // 二签决定 UTC 时刻，未决定为空
+	ReviewedAt       *time.Time      `json:"reviewed_at"`        // 第二次审核的 UTC 时刻，未决定为空
 }
 
 // TableName 返回计量核实记录所属表，不执行查询或修改。
 func (MeterReview) TableName() string { return "charge_meter_review" }
 
 // ProposeMeter 锁定计费任务后保存设备计量和修正提案，相同请求复用首次结果。
-// 内容不同、状态不符、已有有效提案或截止点证据缺失时拒绝；外层服务核对权限并保存审计。
+// 请求内容不一致、任务非待核实、已有待审核或已批准提案、缺截止读数时拒绝；外层服务授权并审计。
 func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, request, reason string, segments []charging.MeterSegment) (MeterReview, error) {
 	var out MeterReview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -70,8 +70,7 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 		}
 		original, _ := json.Marshal(source)
 		source.Meter.Segments = segments
-		// 缺失计费截止点证据只能通过有审计的最终金额裁决解决；
-		// 补充物理结束分段不能证明较早的计费截止点。
+		// 缺少截止时刻的读数时，补充结束分段也无法算出截止用量；须另行登记人工最终金额。
 		if source.Meter.ReviewRequired {
 			return charging.ErrMeterReview
 		}
@@ -85,9 +84,9 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 	return out, err
 }
 
-// ReviewMeter 锁定任务后执行计量二签，相同决定允许重放。
-// 订单、首次计费证据、修正范围或审核人不符返回 ErrBillingConflict；批准后仍须异步计费。
-// 外层服务在同一事务核对首签权限并保存审计。
+// ReviewMeter 锁定任务后保存第二次计量审核结果，相同决定可重试。
+// 订单、原价格和计量、修正内容或审核人不符时返回 ErrBillingConflict；批准后重新排队计费。
+// 外层服务通过 LookupReviewer 查询首位审核人的当前权限；审核记录和审计在业务事务内保存。
 func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint64, approve bool, reason string) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct {
@@ -152,10 +151,10 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 	})
 }
 
-// LockMeterReviewJob 锁定计费任务，串行处理核实、金额裁决和审计；缺任务时不得继续。
+// LockMeterReviewJob 锁定计费任务，使计量核实、人工金额和审计按顺序处理；缺任务返回错误。
 func LockMeterReviewJob(tx *gorm.DB, id uint64) error {
 	var job struct {
-		Status string /* 同一任务状态 */ // awaiting_second、approved 或 rejected
+		Status string /* 计费任务状态：pending、manual_review 或 done */
 	}
 	return tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&job).Error
 }
@@ -167,7 +166,7 @@ func MeterProposalExists(tx *gorm.DB, requestID string) (bool, error) {
 	return err == nil, ignoreMissingReview(err)
 }
 
-// ManualAmountExists 在任务锁内用当前读检查金额凭据，避免旧 RR 快照遗漏已提交记录。
+// ManualAmountExists 在任务锁内加锁查询人工最终金额，避免旧 RR 快照遗漏已提交记录。
 func ManualAmountExists(tx *gorm.DB, id uint64, requestID string) (bool, error) {
 	var row ManualSettlement
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=? OR request_id=?", id, requestID).Take(&row).Error

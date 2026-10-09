@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// ErrUnauthorized 表示被调用方拒收了共享的 service token。
+// ErrUnauthorized 表示服务返回 HTTP 401 或 403。
 var ErrUnauthorized = errors.New("service token rejected")
 
 // ErrNotFound 表示被调用方有应答，但资源不存在。
@@ -24,16 +24,18 @@ type HTTPError struct {
 	Path       string
 }
 
+// Error 返回调用路径和 HTTP 状态码。
 func (e *HTTPError) Error() string {
 	return fmt.Sprintf("service call %s returned %d", e.Path, e.StatusCode)
 }
 
+// Is 将 HTTP 401、403 归为 ErrUnauthorized，404 归为 ErrNotFound。
 func (e *HTTPError) Is(target error) bool {
 	return (target == ErrUnauthorized && (e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden)) ||
 		(target == ErrNotFound && e.StatusCode == http.StatusNotFound)
 }
 
-// Client 执行无需签名、仅以 service token 鉴权的内部调用。
+// Client 用 X-Service-Token 请求头调用内部服务。
 type Client struct {
 	HTTP    *http.Client
 	Timeout time.Duration
@@ -70,7 +72,7 @@ func (c Client) GetStatus(ctx context.Context, baseURL, serviceToken, path strin
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		// 消耗有界错误正文以复用连接；正文读取失败不覆盖已收到的 HTTP 状态。
+		// 读取并丢弃最多 4 MiB 错误正文，尽量复用连接；读取失败仍返回 HTTP 错误。
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<20))
 		return response.StatusCode, nil, &HTTPError{StatusCode: response.StatusCode, Path: path}
 	}
@@ -81,7 +83,7 @@ func (c Client) GetStatus(ctx context.Context, baseURL, serviceToken, path strin
 	return response.StatusCode, body, nil
 }
 
-// GetJSON 把一次成功的 GET 解码进 out。
+// GetJSON 将成功响应解码到 out；out 为 nil 时只检查请求是否成功。
 func (c Client) GetJSON(ctx context.Context, baseURL, serviceToken, path string, out any) error {
 	body, err := c.Get(ctx, baseURL, serviceToken, path)
 	if err != nil {
@@ -102,7 +104,7 @@ func (c Client) Post(ctx context.Context, baseURL, serviceToken, path string, pa
 	return err
 }
 
-// PostStatus 与 Post 共用传输行为，并返回 HTTP 状态码供专用客户端校验受理语义。
+// PostStatus 发送 JSON POST，返回 HTTP 状态并将成功响应解码到 out。
 // 请求未收到响应时状态码为 0；收到响应后的读取、解码或服务错误保留状态码。
 func (c Client) PostStatus(ctx context.Context, baseURL, serviceToken, path string, payload any, out any) (int, error) {
 	body, err := json.Marshal(payload)

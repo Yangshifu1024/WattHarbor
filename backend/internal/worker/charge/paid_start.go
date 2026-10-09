@@ -11,17 +11,17 @@ import (
 // PaidStarter 分页请求启动已支付订单，并保存当前扫描游标。
 // 失败订单在读到空页、游标归零后重新尝试，始终使用同一订单号。
 type PaidStarter struct {
-	// Orders 调用方待启动订单页读取能力，不持中央数据库或 HTTP 配置。
+	// Orders 分页读取已支付的待启动订单。
 	Orders interface {
-		// PaidStarts 返回待启动订单页或读取错误；空页须是非 nil 列表，不修改订单。
+		// PaidStarts 按订单 ID 升序读取下一页；空页必须返回非 nil 列表。
 		PaidStarts(context.Context, uint64) ([]centralcontract.PaidStartOrder, error)
 	}
-	// Gateway 调用方 START 受理能力，订单幂等由网关拥有。
+	// Gateway 按订单号保存并下发启动命令。
 	Gateway interface {
-		// RequestStart 接收 ctx 与订单请求，返回网关受理 Reply 或错误；可产生持久命令及设备下发，不代表中央已充电。
+		// RequestStart 按同一订单号请求启动；受理成功还须等待设备回执。
 		RequestStart(context.Context, gatewaycontract.StartRequest) (gatewaycontract.StartReply, error)
 	}
-	// cursor 本实例上一已尝试订单 ID；本页下发失败仍更新，只有读到空页才归零重扫，不跨实例持久化。
+	// cursor 保存本实例最后尝试的订单 ID；空页归零，下发失败也前进。
 	cursor uint64
 }
 

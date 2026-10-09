@@ -47,7 +47,7 @@ func (s SessionRepo) Create(ctx context.Context, account operations.AccountIdent
 	return sid, token, nil
 }
 
-// Rotate 比较当前摘要后轮换刷新令牌，旧摘要仅能用于注销，失配返回 ErrInvalidRefresh。
+// Rotate 比较当前摘要后轮换刷新令牌，摘要不匹配时返回 ErrInvalidRefresh；旧令牌仍可用于注销。
 // 旧 JSON 的数字 ID 和版本保持精度，连续轮换不延长绝对 TTL。
 func (s SessionRepo) Rotate(ctx context.Context, token string) (operations.AccountIdentity, string, string, error) {
 	sid, oldSecret, ok := adminTokens.Parse(token)

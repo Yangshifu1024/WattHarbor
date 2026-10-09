@@ -29,16 +29,22 @@ type Input struct {
 	Quantity    uint16            `json:"quantity"`
 	Reply       chan Result       `json:"-"`
 }
+
+// Result 返回模拟操作后的状态或错误提示。
 type Result struct {
 	State *Snapshot `json:"state,omitempty"`
 	Error string    `json:"error,omitempty"`
 }
+
+// PhysicalPort 保存模拟端口的插接、功率、故障和在场卡号。
 type PhysicalPort struct {
 	Connected bool   `json:"connected"`
 	Power     uint32 `json:"power_deciwatts"`
 	Fault     byte   `json:"fault"`
 	Card      uint32 `json:"present_card"`
 }
+
+// Snapshot 保存可写入状态文件的设备配置、端口、充电和待确认报文。
 type Snapshot struct {
 	Online           bool                   `json:"online"`
 	Smoke            bool                   `json:"smoke"`
@@ -56,11 +62,15 @@ type Snapshot struct {
 	HeartbeatSeconds uint16                 `json:"heartbeat_seconds"`
 	Pending          []wire.Frame           `json:"pending_reports"`
 }
+
+// CardStatus 保存模拟设备显示的卡有效性、余额和拒绝状态。
 type CardStatus struct {
 	Valid        bool   `json:"valid"`
 	BalanceUnits uint16 `json:"balance_tenths"`
 	Denied       bool   `json:"denied"`
 }
+
+// ChargeState 保存恢复充电所需的额度、已用电量和检测计时。
 type ChargeState struct {
 	Port           byte
 	Order          [8]byte

@@ -2,7 +2,7 @@ package gateway
 
 import "time"
 
-// 告警证据与处理标记端点由gateway提供；设备协议载荷保持原始 JSON，不在契约解析故障语义。
+// 网关提供故障事件查询和处理标记接口；故障类型由调用方解析原始 JSON。
 const (
 	DeviceFaultsPath     = "/api/v1/internal/device-faults"
 	MarkDeviceFaultsPath = DeviceFaultsPath + "/mark-processed"
@@ -21,7 +21,7 @@ type DeviceFaultReport struct {
 
 // DeviceFaultsReply 按 ID 递增返回待处理故障；无记录时返回空数组。
 type DeviceFaultsReply struct {
-	Reports []DeviceFaultReport `json:"reports"` /* 原待处理事件 */
+	Reports []DeviceFaultReport `json:"reports"` /* 待处理的故障事件 */
 }
 
 // MarkDeviceFaultsRequest 指定已经处理成功、需要标记的事件 ID。
@@ -29,7 +29,7 @@ type MarkDeviceFaultsRequest struct {
 	IDs []uint64 `json:"ids"` /* 1至100个事件 ID */
 }
 
-// MarkDeviceFaultsReply 是本次实际首次更新条数，并发重放可为零。
+// MarkDeviceFaultsReply 返回实际更新条数；已被标记的事件不会再次计数。
 type MarkDeviceFaultsReply struct {
 	Marked int64 `json:"marked"` /* 实际改变的行数，非负 */
 }
@@ -38,7 +38,7 @@ type MarkDeviceFaultsReply struct {
 // 事件存在但没有后续心跳时，found=false 且 AfterReceivedAt 有值；事件不存在时该字段为空。
 type HeartbeatAfterKeyReply struct {
 	Found           bool       `json:"found"`                       // 是否存在接收时间晚于指定事件的心跳
-	AfterReceivedAt *time.Time `json:"after_received_at,omitempty"` // 事件键或 after 指定的时间，缺失不补造
+	AfterReceivedAt *time.Time `json:"after_received_at,omitempty"` // 查询起点时间；未找到对应事件时省略
 	ReceivedAt      *time.Time `json:"received_at,omitempty"`       // 最新心跳时刻，found时必须存在
 	Payload         string     `json:"payload,omitempty"`           // 心跳原始 JSON，found时必须存在
 }

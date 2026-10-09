@@ -23,7 +23,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// BillingOrders 查询计费任务和证据，并保存结算资金。
+// BillingOrders 查询计费任务、订单价格和计量，保存费用并退回未使用金额。
 type BillingOrders struct {
 	DB *gorm.DB // central 任务及资金连接，由进程管理
 }
@@ -46,7 +46,7 @@ func (s BillingOrders) Read(ctx context.Context, id uint64) (Source, error) {
 	return readBillingSource(s.DB.WithContext(ctx), id)
 }
 
-// readBillingSource 读取计费证据，并应用已批准且首次计费证据未变的分段核实；人工最终金额优先。
+// readBillingSource 读取价格和计量；已有最终金额时直接返回，否则使用经批准且原数据未变的修正分段。
 func readBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	source, err := readOriginalBillingSource(db, id)
 	if err != nil {
@@ -81,7 +81,7 @@ func readBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	return source, nil
 }
 
-// readOriginalBillingSource 读取结束订单的下单、结束、卡累计和截止点证据。
+// readOriginalBillingSource 读取已结束订单的价格快照、结束计量、刷卡累计购买和计费截止记录。
 // 截止点无法用真实计量确定时保留 ReviewRequired；卡操作未确认时拒绝计算。
 func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	var order orderstore.ChargeOrderRecord
@@ -131,7 +131,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	}
 	var cutoff struct {
 		CutoffAt      time.Time // 首次计费截止 UTC 时刻，零表示未冻结
-		Reason        string    // 截止因，预算冻结使用 budget_exhausted
+		Reason        string    // 停止原因；预算耗尽时为 budget_exhausted
 		ElectricCents *int64    // 已冻结预算电费，分，无预算冻结为空
 		ServiceCents  *int64    // 已冻结预算服务费，分，无预算冻结为空
 	}
@@ -161,9 +161,9 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 		source.ReviewID = "budget:" + cutoff.CutoffAt.UTC().Format(time.RFC3339Nano)
 	}
 	var manual struct {
-		RequestID     string // 人工最终金额裁决 UUID
-		ElectricCents int64  // 裁决电费，分
-		ServiceCents  int64  // 裁决服务费，分
+		RequestID     string // 人工最终金额请求 UUID
+		ElectricCents int64  // 人工确定电费，分
+		ServiceCents  int64  // 人工确定服务费，分
 	}
 	if err := db.Table("charge_manual_settlement").Where("charge_order_id=?", id).Find(&manual).Error; err != nil {
 		return source, err
@@ -175,7 +175,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	return source, nil
 }
 
-// Apply 重新核对价格、计量和身份后幂等入账。
+// Apply 核对 result 的订单、用户、价格、计量和费用，再保存结算结果；重复调用不重复退款。
 // 资金、费用回执、余款退款、订单、任务和 Outbox 同事务提交，错误整体回滚。
 // 余额支付按钱包→支付→订单加锁；在途退款用当前读，重放不重复退余款或发券。
 func (s BillingOrders) Apply(ctx context.Context, result Result) error {
@@ -309,7 +309,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 	})
 }
 
-// settlementNotice 根据订单身份、下单展示快照和结算金额构造通知，金额单位为分。
+// settlementNotice 用订单编号、下单展示开关和结算金额生成通知；金额单位分。
 // 遵守下单时保存的展示开关；调用方在资金结算后追加 Outbox。
 func settlementNotice(eventID string, order orderstore.ChargeOrderRecord, display charging.Display, fee charging.Fee, refund int64) map[string]any {
 	data := map[string]any{"event_id": eventID, "charge_order_id": order.ID, "order_no": order.OrderNo, "user_id": order.UserID, "status": "settled", "display": display}
@@ -356,10 +356,10 @@ func EnqueueManualFeeReview(tx *gorm.DB, in ManualFeeReviewInput) error {
 type ManualFeeReviewInput struct {
 	ChargeOrderID uint64 // 同一订单主键，入队幂等键
 	OrderNo       string // 充电单号
-	Reason        string // 缺证据或价格无效的已脱敏因
+	Reason        string // 计量不足或价格无效的原因，不包含敏感信息
 	EnergyWh      uint32 // 已确认电量，Wh
 	CreatedMonth  string // 核实队列月份，YYYY-MM
-	SourceJSON    string // 完整计费证据 JSON
+	SourceJSON    string // 下单价格和实际计量 JSON
 }
 
 // FeeDeliveryRow 是一笔待送达的计费结果。送达失败会推迟重试而不是丢弃。

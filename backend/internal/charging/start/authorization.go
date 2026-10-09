@@ -11,8 +11,10 @@ import (
 )
 
 var (
+	// ErrCardSessionUnavailable 表示无法读取刷卡执行快照。
 	ErrCardSessionUnavailable = errors.New("card execution snapshot unavailable")
-	ErrInvalidCardNumber      = errors.New("invalid frozen card number")
+	// ErrInvalidCardNumber 表示快照中的卡号不是非零 uint32 整数。
+	ErrInvalidCardNumber = errors.New("invalid frozen card number")
 )
 
 // AuthorizationService 校验启动充电操作；协议单位由 HTTP 适配器转换。
@@ -22,7 +24,7 @@ type AuthorizationService struct {
 
 // StartAuthorization 汇集已付订单归属与可选刷卡首购快照，供网关组装 START；授权不改变订单状态，也不证明设备已经启动。
 type StartAuthorization struct {
-	PaidStartAuthorization        // 已核对支付、用户及设备归属的订单执行事实
+	PaidStartAuthorization        // 已核对支付、用户、设备和执行额度的订单信息
 	ConsumerType           uint8  // 设备启动来源，2 扫码、3 在线卡
 	CardNumber             uint32 // 冻结卡号的协议整数；扫码启动为 0
 	WalletAfterCents       int64  // 刷卡扣款后的余额快照，单位分；扫码不使用

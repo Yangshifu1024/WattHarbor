@@ -47,7 +47,7 @@ func seedFeedbackOrder(t *testing.T, db *gorm.DB) (uint64, uint64) {
 	}
 	t.Cleanup(func() {
 		for _, spec := range []struct {
-			table, column string /* 自身事实表与身份列 */
+			table, column string /* 本测试记录所在表和订单 ID 列 */
 		}{{"feedback", "order_id"}, {"charge_order", "id"}} {
 			if err := db.Table(spec.table).Where(spec.column+"=?", id).Delete(map[string]any{}).Error; err != nil {
 				t.Error(err)

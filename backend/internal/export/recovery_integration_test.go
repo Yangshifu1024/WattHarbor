@@ -68,7 +68,7 @@ func TestExportSQLFailureAndHistoricalFiles(t *testing.T) {
 	if err != nil || result.Status != "completed" {
 		t.Fatalf("retry persisted pending %+v %v", result, err)
 	}
-	// 旧根目录文件无凭据，仅当前全局且无需脱敏时可下载；新 v1 文件不能按旧文件放行。
+	// 旧根目录文件缺少校验文件时，仅全局且无需脱敏的账号可下载；v1 文件必须有校验文件。
 	oldNo := "EXP" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", ""))
 	legacy := filepath.Join(s.ExportDir, oldNo+".csv")
 	if err := os.WriteFile(legacy, []byte("历史内容\n"), 0o600); err != nil {

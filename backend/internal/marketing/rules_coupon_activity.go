@@ -31,7 +31,7 @@ type ActivityRule struct {
 	CouponID        uint64  // 活动发放的券
 	InviterCouponID *uint64 // 邀请人奖励券；邀请有奖必填
 	ThresholdCents  int64   // 触发门槛（分）
-	MaxGrants       int     // 活动总发放上限，0 表示不限
+	MaxGrants       int     // 同券模板和发放来源共享的份数上限，0 表示不限
 	PerUserLimit    int     // 单用户可领份数，0 沿用默认一份
 	Status          string  // active / disabled；留空时按 active 处理
 	StartAt         string  // RFC3339
@@ -39,8 +39,8 @@ type ActivityRule struct {
 }
 
 // NormalizeActivity 校验活动并将时间统一为 UTC，空状态默认 active。
-// 满减门槛须为正，其他触发门槛须为零；邀请奖励须配置邀请人券。
-// 结束时间不得超过当前时间一年后，当前时间由调用方提供。
+// 满减门槛须为正，首充和节日门槛须为零；邀请奖励须配置邀请人券，金额门槛只要求非负。
+// 结束时间不得超过调用方提供的当前时间 365 天后。
 func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, string, error) {
 	var zero time.Time
 	if rule.Name == "" || len([]rune(rule.Name)) > MaxActivityNameLength {
@@ -95,7 +95,7 @@ func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, 
 // 活动规则统一计算发券资格、单人份数和有效期。
 
 // ActivityGrantExpiry 取发券起算 validHours 小时、券模板结束、活动结束三者最早时间。
-// 券模板缺失时调用方使用活动结束时间。
+// 未设置模板结束时间时，只比较有效小时和活动结束时间。
 func ActivityGrantExpiry(now time.Time, validHours int, couponEnd *time.Time, ruleEnd time.Time) time.Time {
 	expires := now.Add(time.Duration(validHours) * time.Hour)
 	if couponEnd != nil && couponEnd.Before(expires) {

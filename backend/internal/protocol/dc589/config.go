@@ -9,7 +9,8 @@ import (
 const (
 	// 空闲设备心跳周期为 60 秒，充电时为 15 秒。
 	// 读超时按连续缺失三次心跳计算，随申请周期调整。
-	DefaultHeartbeatSeconds  = 60
+	DefaultHeartbeatSeconds = 60
+	// ChargingHeartbeatSeconds 是充电设备请求使用的 15 秒心跳周期。
 	ChargingHeartbeatSeconds = 15
 	// MissedHeartbeatsBeforeReset 为设备连续未收到心跳应答后重新登录的次数阈值。
 	MissedHeartbeatsBeforeReset = 3
@@ -18,6 +19,7 @@ const (
 // ErrConfigRejected 表示设备拒绝参数表；错误码指示越界字段。
 type ErrConfigRejected struct{ Code byte }
 
+// Error 返回设备拒绝的配置项名称及错误码。
 func (e ErrConfigRejected) Error() string {
 	if field, ok := configErrorField(e.Code); ok {
 		return fmt.Sprintf("设备拒绝参数下发：%s (code %d)", field, e.Code)

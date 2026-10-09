@@ -10,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// registerActivityRules 将 a 的活动配置路径注册到 r，保留读取／管理权限。
+// registerActivityRules 注册优惠券活动规则查询、创建和修改接口。
 func (a API) registerActivityRules(r *gin.Engine) {
 	r.GET("/api/v1/admin/coupon-activities", a.Auth.Require("coupon.activity.read"), a.listActivityRules)
 	r.POST("/api/v1/admin/coupon-activities", a.Auth.Require("coupon.activity.manage"), a.createActivityRule)
 	r.PUT("/api/v1/admin/coupon-activities/:id", a.Auth.Require("coupon.activity.manage"), a.updateActivityRule)
 }
 
-// listActivityRules 解析 c 分页并调用列表，输出页或映射错误，不写库。
+// listActivityRules 分页查询活动规则。
 func (a API) listActivityRules(c *gin.Context) {
 	q, ok := adminhttp.ReadAdminPage(c, "active disabled")
 	if !ok {
@@ -31,7 +31,7 @@ func (a API) listActivityRules(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// createActivityRule 绑定 c 规则请求并调用完整创建事务，输出主键或映射错误，不拥有事务。
+// createActivityRule 创建活动规则并返回 ID。
 func (a API) createActivityRule(c *gin.Context) {
 	var in marketing.ActivityInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -45,7 +45,7 @@ func (a API) createActivityRule(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// updateActivityRule 绑定 c 路径与规则请求并调用完整修改事务，输出主键或缺失／映射错误。
+// updateActivityRule 更新指定活动规则并返回 ID。
 func (a API) updateActivityRule(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

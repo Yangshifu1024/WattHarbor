@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestCreateStationRejectsRetiredOpeningHours 验证已移除的 open_hours 在数据库操作前由严格 JSON 输入返回 400。
 func TestCreateStationRejectsRetiredOpeningHours(t *testing.T) {
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)

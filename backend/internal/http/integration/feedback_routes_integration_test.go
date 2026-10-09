@@ -44,8 +44,8 @@ func TestRegisteredFeedbackRoutesPreserveOwnerTransitionsAndAudit(t *testing.T) 
 	orderNo := "RF" + tag
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	for _, seed := range []struct {
-		table string         /* 事实表 */
-		row   map[string]any /* 本测试事实 */
+		table string
+		row   map[string]any
 	}{
 		{"user", map[string]any{"id": id, "openid": tag, "status": "active"}},
 		{"user", map[string]any{"id": id + 1, "openid": tag + "-other", "status": "active"}},

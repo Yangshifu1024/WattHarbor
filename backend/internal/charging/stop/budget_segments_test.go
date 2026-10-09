@@ -57,7 +57,7 @@ func TestBudgetStopReachesDecisionWithSampledSegments(t *testing.T) {
 	}
 	meter := measuredMeter(order, latest, samples)
 
-	// 修复前这一项为 0，整段证据被丢弃、封顶路径不可达。
+	// 起充时间相差 1.5 秒仍须生成计量分段，供费用上限判断使用。
 	if len(meter.Segments) == 0 {
 		t.Fatal("心跳序列应能构造计量分段；为空说明起充时刻容差又收紧了")
 	}
@@ -76,7 +76,7 @@ func TestBudgetStopReachesDecisionWithSampledSegments(t *testing.T) {
 		t.Fatalf("预算已被超出时应当判停：plan=%+v err=%v", plan, err)
 	}
 	// 结算侧 readOriginalBillingSource 要求冻结费用严格等于套餐价。
-	// 不等会直接判 ErrBillingConflict。这是刚被启用的路径必须守住的不变量。
+	// 分项合计不符时返回 ErrBillingConflict。
 	if frozen == nil {
 		t.Fatal("封顶时应冻结费用，供结算直接采用而不重算")
 	}
@@ -93,8 +93,7 @@ func TestBudgetStopStillRejectsEvidenceWithoutSegments(t *testing.T) {
 	order, samples, rule, offer := budgetHeartbeatFixture(t)
 	latest, _ := latestMeter(samples, order.PortNo, samples[len(samples)-1].ReceivedAt)
 	meter := measuredMeter(order, latest, samples)
-	// 剥掉分段还原修复前的状态：兜底分支要求 len(Segments) > 0。
-	// 因此必须仍然拒绝，而不是悄悄放行一个没有证据的停机决策。
+	// 清除分段后无法计算功率费用，须返回计量核实错误。
 	meter.Segments = nil
 	if _, _, err := charging.BudgetStopAtMeter(rule, offer, meter); !errors.Is(err, charging.ErrMeterReview) {
 		t.Fatalf("无分段时仍应要求计量复核，得到 %v", err)

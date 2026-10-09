@@ -18,8 +18,8 @@ import (
 // 所有业务依赖均为空，确保鉴权失败时不会进入业务处理。
 func TestCentralAssemblyRejectsInvalidServiceIdentityBeforeBusinessIO(t *testing.T) {
 	routes := []struct {
-		method string // 已注册的 HTTP 方法。
-		path   string // 路由模板，测试使用固定订单号。
+		method string
+		path   string
 	}{
 		{http.MethodGet, "/api/v1/internal/charge-orders/paid-starts"},
 		{http.MethodGet, "/api/v1/internal/charge-orders/:order_no/start-authorization"},
@@ -38,13 +38,13 @@ func TestCentralAssemblyRejectsInvalidServiceIdentityBeforeBusinessIO(t *testing
 			t.Run(mode+"/configured="+configured, func(t *testing.T) {
 				router := newRouter(config.Central{PaymentMode: mode, ServiceToken: configured}, &resources{}, payment.PaymentChannel{}, nil)
 				expected := append([]struct {
-					method string // 测试副本的原方法。
-					path   string // 测试副本的原模板。
+					method string
+					path   string
 				}{}, routes...)
 				if mode == "simulation" {
 					expected = append(expected, struct {
-						method string // 模拟回调方法。
-						path   string // 只在模拟模式注册的内部回调路径。
+						method string
+						path   string
 					}{http.MethodPost, "/api/v1/internal/payments/simulate-success"})
 				}
 				registered := make(map[string]bool)

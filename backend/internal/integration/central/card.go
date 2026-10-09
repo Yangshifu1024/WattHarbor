@@ -29,8 +29,8 @@ func (c *Client) SwipeCard(ctx context.Context, in contract.CardSwipeRequest) (c
 func (c *Client) CardBalance(ctx context.Context, cardNo string) (contract.CardBalanceReply, error) {
 	// cardBalanceWireReply 保留响应中的字段是否存在，便于校验缺失字段。
 	type cardBalanceWireReply struct {
-		Valid        *bool  `json:"valid"`         // 卡是否有效，nil 为契约缺失
-		BalanceCents *int64 `json:"balance_cents"` // 可花费分值，nil 或负数不得当作零余额
+		Valid        *bool  `json:"valid"`         // 卡是否有效，nil 表示响应缺少该字段
+		BalanceCents *int64 `json:"balance_cents"` // 可用余额，分；缺失或负数时拒绝响应
 	}
 	var data cardBalanceWireReply
 	err := c.cardRequest(ctx, http.MethodGet, contract.CardBalancePath+"?card_no="+url.QueryEscape(cardNo), nil, &data, false)
@@ -89,7 +89,7 @@ func (c *Client) cardRequest(ctx context.Context, method, path string, payload, 
 		if envelope.Code == nil || *envelope.Code != 2009 {
 			return ErrInvalidResponse
 		}
-		// cardDeclineWireReply 保留响应中的字段是否存在，便于校验缺失字段。
+		// 余额不足标志缺失时为 false，不将其他拒绝原因当作余额不足。
 		type cardDeclineWireReply struct {
 			InsufficientBalance bool `json:"insufficient_balance"` // 明确的余额不足标志
 		}

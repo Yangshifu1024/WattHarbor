@@ -35,18 +35,18 @@ type ImportCompatibility interface {
 type ImportService struct {
 	DB            *gorm.DB                                                                // central 导入任务与运营元数据连接，由进程管理
 	Gateway       ImportGateway                                                           // 厂商读取及同步开通客户端，由 cmd 注入
-	Compatibility ImportCompatibility                                                     // 所属站点规则兼容能力，由 cmd 注入 pricing repo
+	Compatibility ImportCompatibility                                                     // 站点计费规则与设备协议兼容检查，由 cmd 注入 pricing repo
 	LoadScope     func(context.Context, operations.Profile) (operations.DataScope, error) // 执行前重读当前范围，保留受理与执行之间的二次核对
 }
 
-// List 按全局 device.import 权限返回最近 100 个任务；不返回清单，不执行导入，不追加受理时的范围过滤。
+// List 返回最近 100 个任务，不按站点或厂商筛选；调用方须检查 device.import 权限。
 func (s ImportService) List(ctx context.Context) ([]ImportJob, error) {
 	return (ImportRepo{DB: s.DB}).ListImportJobs(ctx, 100)
 }
 
 // ImportInput 是批量导入请求，协议和能力以服务端厂商字典为准。
 type ImportInput struct {
-	ImportID string         `json:"import_id"` // 请求 UUID，同一任务及重试身份
+	ImportID string         `json:"import_id"` // 请求 UUID，重试时用于找到同一任务
 	Devices  []ImportDevice `json:"devices"`   // 一至一百台设备编号，批内大小写不敏感判重
 }
 
@@ -99,7 +99,7 @@ func ValidateImportInput(in ImportInput) error {
 	return nil
 }
 
-// Create 核对权限和范围，保存厂商协议、设备资料、任务和受理审计，再同步执行清单。
+// Create 核对权限和范围，保存含协议信息的清单、设备首次登记记录和受理审计，再同步开通设备。
 // 网关失败可保存 failed 任务；中央写入失败整体回滚，保留 pending 供同号重试。
 func (s ImportService) Create(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, in ImportInput) (ImportJob, error) {
 	if !audit.Actor.HasPermission("device.import") {

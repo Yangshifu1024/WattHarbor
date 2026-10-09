@@ -71,7 +71,7 @@ func TestDeliveredFeeCanRecoverMissingBill(t *testing.T) {
 	}
 	for _, seed := range []struct {
 		table string         // 同一订单、费用及待投递所属表
-		row   map[string]any // 同一结算身份的必需事实
+		row   map[string]any // 同一订单的结算记录字段
 	}{
 		{"charge_order", map[string]any{"id": id, "order_no": no, "user_id": source.UserID, "device_id": no, "port_no": 1, "status": "completed", "payment_status": "paid", "started_at": source.Meter.StartedAt, "ended_at": at, "created_month": at.Format("2006-01") + "-01"}},
 		{"charge_fee_receipt", map[string]any{"charge_order_id": id, "calculation_no": result.CalculationNo, "result_json": string(payload), "shortfall_cents": 0}},

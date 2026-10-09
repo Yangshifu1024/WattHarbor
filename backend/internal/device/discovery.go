@@ -16,8 +16,8 @@ type ScanReader interface {
 
 // DiscoveryService 将网关连接信息和中央运营状态合并为匿名扫码结果。
 type DiscoveryService struct {
-	Gateway    ScanReader            // cmd 注入的具名网关客户端
-	Operations DeviceOperationReader // device 元数据读取能力，不替代物理端口状态
+	Gateway    ScanReader            // 由 cmd 注入，向网关查询扫码对应的设备或端口
+	Operations DeviceOperationReader // 中央设备运营状态查询，不替代物理端口状态
 }
 
 // ResolveScan 查询扫码内容，再按中央运营状态限制可用性；未知状态不能视为 enabled，物理状态保持不变。

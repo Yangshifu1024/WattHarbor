@@ -38,10 +38,8 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	id := testfixture.NewID()
 	tag := strings.ReplaceAll(uuid.NewString(), "-", "_")
 	for _, seed := range []struct {
-		// table 本断言写入、读取或清理的真实表名。
 		table string
-		// row 写入该表的隔离测试记录。
-		row map[string]any
+		row   map[string]any
 	}{
 		{"role", map[string]any{"id": id + 1, "code": "registered_" + tag, "name": "注册管理操作者", "is_builtin": false}},
 		{"admin_user", map[string]any{"id": id, "username": "management_" + tag, "password_hash": "private_hash_fixture", "role_id": id + 1, "status": "active", "auth_version": 9007199254741111, "mfa_secret": "private_mfa_fixture"}},
@@ -99,7 +97,6 @@ func TestRegisteredAdminManagement(t *testing.T) {
 			t.Fatalf("%s %s status=%d want=%d body=%s", method, path, w.Code, status, w.Body)
 		}
 		var envelope struct {
-			// Data 公开 HTTP 信封的业务载荷，仅用于响应形状断言。
 			Data json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil {
@@ -113,7 +110,6 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	readID := func(raw json.RawMessage) uint64 {
 		t.Helper()
 		var reply struct {
-			// ID 返回的业务记录主键。
 			ID uint64 `json:"id"`
 		}
 		if err := json.Unmarshal(raw, &reply); err != nil || reply.ID == 0 {
@@ -128,7 +124,6 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	call("POST", base+"announcements", badAnnouncement, 400)
 	announcement := readID(call("POST", base+"announcements", announcementInput, 200))
 	var announcements struct {
-		// Items 本断言核对的列表记录。
 		Items []ops.AnnouncementRow `json:"items"`
 	}
 	if err := json.Unmarshal(call("GET", base+"announcements", nil, 200), &announcements); err != nil {
@@ -148,9 +143,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 	}
 	call("GET", base+"audit-logs?from=invalid", nil, 400)
 	var audits struct {
-		// Total 本断言核对的分页总数。
-		Total int64 `json:"total"`
-		// Items 本断言核对的列表记录。
+		Total int64          `json:"total"`
 		Items []ops.AuditRow `json:"items"`
 	}
 	if err := json.Unmarshal(call("GET", base+"audit-logs?module=announcement&actor="+profile.Username, nil, 200), &audits); err != nil || audits.Total != 1 || len(audits.Items) != 1 || audits.Items[0].BeforeJSON == nil || *audits.Items[0].BeforeJSON != "null" {
@@ -243,8 +236,7 @@ func TestRegisteredAdminManagement(t *testing.T) {
 		// Secret 本测试启用 MFA 的验证密钥，不是生产凭据。
 		Secret string `json:"secret"`
 		// URI 本测试核对的 MFA 配置 URI。
-		URI string `json:"otpauth_uri"`
-		// Code 本断言核对的响应业务码或 MFA 验证码。
+		URI  string `json:"otpauth_uri"`
 		Code string `json:"code"`
 		// Enabled 本断言核对的 MFA 启用状态。
 		Enabled bool `json:"enabled"`

@@ -13,11 +13,10 @@ import (
 
 // observedListener 包装真实 TCP 监听并仅通知一次关闭事件，供 HTTP 停机顺序验证。
 type observedListener struct {
-	// net.Listener 被包装的真实 TCP 监听，关闭结果保持原样。
 	net.Listener
-	// closed 首次关闭时被关闭的通知通道，由观察监听负责关闭。
+
 	closed chan struct{}
-	// once 保证关闭通知仅发送一次，底层 Close 仍按每次调用执行。
+
 	once sync.Once
 }
 

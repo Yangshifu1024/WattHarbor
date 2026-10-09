@@ -58,7 +58,7 @@ func TestActiveRulesThresholdRedeemUsesInclusiveThreshold(t *testing.T) {
 	tx := txRollback(t, db)
 	seedRule(t, tx, 1, TriggerThresholdRedeem, hours(-1), hours(1), 5000)
 	seedRule(t, tx, 2, TriggerThresholdRedeem, hours(-1), hours(1), 10000)
-	seedRule(t, tx, 3, TriggerThresholdRedeem, hours(-1), hours(1), 0) // 门槛为零等于无条件发券
+	seedRule(t, tx, 3, TriggerThresholdRedeem, hours(-1), hours(1), 0) // 非法零门槛，查询必须排除
 
 	t.Run("金额等于门槛时达标", func(t *testing.T) {
 		rules, err := activeRules(tx, ActivityEvent{

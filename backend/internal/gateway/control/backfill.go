@@ -24,7 +24,7 @@ const (
 	backfillMaxAge = 365 * 24 * time.Hour
 )
 
-// backfillFrame 承载补传 JSON 帧的设备、可空端口、消息类型、采样时刻及指标载荷，由控制层校验。
+// backfillFrame 保存一条补传的设备读数，端口为空表示设备级指标。
 type backfillFrame struct {
 	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
@@ -38,8 +38,7 @@ type backfillFrame struct {
 	Payload map[string]json.RawMessage `json:"payload"`
 }
 
-// backfill 鉴权并校验离线读数，再交仓储批量写入。
-// 返回 inserted/skipped；设备、端口及存储失败按顺序映射 404、400、503，解析失败写 400，不持有事务。
+// backfill 校验离线读数并批量保存，返回新增和跳过数量。
 func (a TelemetryAPI) backfill(c *gin.Context) {
 	if !a.authorized(c) {
 		return

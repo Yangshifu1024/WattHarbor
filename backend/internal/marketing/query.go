@@ -24,12 +24,12 @@ type UserCoupon struct {
 	GrantID            uint64    `json:"grant_id"`             // 发放主键
 	DiscountType       string    `json:"discount_type"`        // 优惠类型
 	DiscountValueCents *int64    `json:"discount_value_cents"` // 减免分值，其他优惠类型为空
-	DiscountPercent    *float64  `json:"discount_percent"`     // 百分比，其他优惠类型为空
-	MinChargeCents     int64     `json:"min_charge_cents"`     // 门槛金额
+	DiscountPercent    *float64  `json:"discount_percent"`     // 应付比例百分数，80 表示八折；其他优惠类型为空
+	MinChargeCents     int64     `json:"min_charge_cents"`     // 使用门槛，分
 	Status             string    `json:"status"`               // used／unused，未用已到期展示 expired
 	ExpiredAt          time.Time `json:"expired_at"`           // 截止兼容字段
 	ExpiresAt          time.Time `json:"expires_at"`           // 截止兼容字段，与 expired_at 相同
-	Usable             bool      `json:"usable"`               // 未用且未到期事实，不推断未来订单是否达门槛
+	Usable             bool      `json:"usable"`               // 是否尚未使用且未到期；支付时还须检查使用门槛
 }
 
 // CouponPage 保留 count、total 字段，筛选后分页，空页返回数组。

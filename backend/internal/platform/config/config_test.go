@@ -113,12 +113,12 @@ func TestLoadCentralKeepsRequiredInputs(t *testing.T) {
 // 测试仅执行配置加载，直连成功用例不代表私钥文件可读或微信渠道已验收。
 func TestLoadCentralKeepsPaymentValidation(t *testing.T) {
 	tests := []struct {
-		name      string // 子测试名称，标识所验证的配置边界。
-		mode      string // 设置的支付模式；空值表示未配置，沿用默认 disabled。
-		wechat    bool   // 是否先提供全部通过校验的直连参数。
-		missing   string // 待移除的商户参数名称；空值表示不移除。
-		shortKey  bool   // 是否将 APIv3 密钥改为 31 字节，验证长度约束。
-		wantError string // 预期错误文本片段；空值表示应成功加载。
+		name      string
+		mode      string
+		wechat    bool
+		missing   string
+		shortKey  bool
+		wantError string
 	}{
 		{name: "disabled_default"},
 		{name: "simulation", mode: "simulation"},

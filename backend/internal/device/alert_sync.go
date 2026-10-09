@@ -27,7 +27,7 @@ type AlertEvidence interface {
 // AlertSyncService 负责中央告警同步和恢复，通过专用网关接口跨库读取，协议解释由 dc589 负责。
 type AlertSyncService struct {
 	DB      *gorm.DB      // 所属 central 连接，生命周期由进程管理
-	Gateway AlertEvidence // cmd 装配的具名 gateway 证据能力
+	Gateway AlertEvidence // cmd 注入的网关故障、心跳查询和处理确认接口
 }
 
 // Run 在最多 25 秒内顺序处理 100 条故障，提交成功后确认事件，再核对恢复。
@@ -168,7 +168,7 @@ func (s AlertSyncService) resolveRecovered(ctx context.Context) error {
 }
 
 // decodeRecoveryPayload 解码心跳并检查恢复所需字段。
-// 设备状态缺失或 null 不能视为正常，端口数组中的 null 不能视为空闲；nil 端口仍表示没有证据。
+// 设备状态缺失或 null 不能视为正常，端口数组中的 null 不能视为空闲；nil 表示未收到端口状态。
 func decodeRecoveryPayload(payload, metric string) (protocol.Event, error) {
 	var event protocol.Event
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {

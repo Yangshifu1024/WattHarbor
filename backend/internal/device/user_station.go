@@ -20,7 +20,7 @@ type StationAnnouncementReader interface {
 // UserStationService 组合公开站点资料和运行状态，依赖由 cmd 注入。
 type UserStationService struct {
 	DB            *gorm.DB                  // 所属站点／设备只读连接
-	Announcements StationAnnouncementReader // ops 所属公告能力
+	Announcements StationAnnouncementReader // ops 提供的公开站点公告查询
 	Summaries     SummaryReader             // 网关设备摘要；不可用保留未知
 }
 
@@ -85,14 +85,14 @@ type stationRuntimeView struct {
 	Status           string     `json:"status"`            // 中央运营状态
 	LastHeartbeatAt  *time.Time `json:"last_heartbeat_at"` // 心跳；未知为 null
 	Online           bool       `json:"online"`            // 已知且心跳在1小时内
-	RuntimeAvailable bool       `json:"runtime_available"` // 是否获得该设备的网关事实
+	RuntimeAvailable bool       `json:"runtime_available"` // 是否读取到该设备的网关摘要
 }
 
 // StationDetail 返回站点、公告和设备，后两项为非 nil 数组，不附加距离字段。
 type StationDetail struct {
 	stationView                            // 公开资料
 	Announcements []ops.PublicAnnouncement `json:"announcements"` // 当前可见公告
-	Devices       []stationRuntimeView     `json:"devices"`       // 站点设备与 nullable 运行态
+	Devices       []stationRuntimeView     `json:"devices"`       // 站点设备及运行状态；未收到心跳时返回 null
 }
 
 // Nearby 分页查询启用站点，有定位时按距离排序后截页。
@@ -157,7 +157,7 @@ func (s UserStationService) Detail(ctx context.Context, id uint64) (StationDetai
 	return StationDetail{stationPublicView(row), announcements, devices}, nil
 }
 
-// runtime 按设备顺序每 100 台查询一次摘要，总计最多五秒。
+// runtime 按设备顺序每 100 台查询一次摘要，共用五秒请求超时。
 // 失败批次保留未知，不合并额外或重复设备；取消后不继续查询，结果为非 nil 数组。
 func (s UserStationService) runtime(ctx context.Context, rows []stationDeviceRow) ([]stationRuntimeView, error) {
 	heartbeats := map[string]contract.DeviceSummary{}

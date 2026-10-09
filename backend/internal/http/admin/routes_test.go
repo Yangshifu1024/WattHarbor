@@ -23,7 +23,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestRetiredAdminRoutesAreRemoved 验证各后台业务族的已移除路由为 404、保留路由仍鉴权，OpenAPI 不再登记退休路径。
 func TestRetiredAdminRoutesAreRemoved(t *testing.T) {
 	router := gin.New()
 	ops.API{}.Register(router)

@@ -12,7 +12,7 @@ import (
 // maxURLLength 是对外链接的整串长度上限。
 const maxURLLength = 512
 
-// uuidPattern 是客户端幂等请求号的形状。
+// uuidPattern 匹配客户端 UUID 请求号。
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // ValidText 校验自由文本字段：去掉首尾空白后不能为空，且按 rune 计数不超过 max。

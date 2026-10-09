@@ -1,4 +1,4 @@
-// Package gateway 实现 gateway 内部 HTTP 接口的有类型客户端。
+// Package gateway 提供 gateway 内部接口的调用方法，并校验响应。
 package gateway
 
 import (
@@ -13,18 +13,19 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
+// ErrInvalidResponse 表示服务响应不符合接口要求。
 var ErrInvalidResponse = gatewaycontract.ErrInvalidResponse
 
-// BusinessError 保留网关共享业务错误类型及业务码，供 errors.As 分类；不携内部正文或令牌。
+// BusinessError 与 gateway 接口共用错误类型，可用 errors.As 读取业务错误码。
 type BusinessError = gatewaycontract.BusinessError
 
 // Client 通过注入的 HTTP 客户端和服务令牌调用 gateway；连接池由进程管理。
 type Client struct {
-	// transport 注入的 HTTP 调用配置，共享连接池；由进程负责关闭。
+	// transport 复用进程提供的 HTTP 连接池。
 	transport serviceclient.Client
-	// baseURL 已通过构造校验且去除尾部斜杠的目标服务地址，只用于拼接既有内部端点。
+	// baseURL 是已校验并去掉末尾斜杠的服务地址。
 	baseURL string
-	// token 服务令牌，写入请求头，不进入业务参数或日志。
+	// token 写入 X-Service-Token 请求头。
 	token string
 }
 
@@ -79,7 +80,7 @@ type envelopeReply[T any] struct {
 }
 
 // RequestStart 提交订单启动请求，拒绝空、超长或两侧带空白的订单号。
-// 响应须为 HTTP 202，订单号、命令、状态和 acked 标志必须一致；不自动重发。
+// 响应须为 HTTP 202 且订单号匹配、命令和状态非空；仅 acked 状态可标记设备已确认。不会自动重发。
 func (c *Client) RequestStart(ctx context.Context, request gatewaycontract.StartRequest) (gatewaycontract.StartReply, error) {
 	if request.OrderNo == "" || len(request.OrderNo) > 64 || strings.TrimSpace(request.OrderNo) != request.OrderNo {
 		return gatewaycontract.StartReply{}, errors.New("invalid paid charge order number")

@@ -14,17 +14,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 停机判定取证的上界：窗口内单设备单端口最多回传的心跳证据行数
-// （每分钟一条可覆盖 7 天）。批量端点按条数乘该上界界定响应体积。
+// 每页最多返回 10080 条心跳；每分钟一条时可覆盖 7 天。
 const chargingEvidenceMaxRows = 10080
 
-// chargingEvidenceWindow 是最远可回溯的取证窗口，与分区保留策略对齐。
+// chargingEvidenceWindow 限制心跳查询最多回溯 7 天。
 const chargingEvidenceWindow = 7 * 24 * time.Hour
 
-// collectChargingSamples 读取设备+端口在 [from, 当前] 窗口内的心跳证据，
-// 按 id 升序返回。afterID > 0 时只取 id 更大的行，用于游标翻页；
-// complete 为真表示窗口内证据已取完，为假时调用方应以返回的
-// nextAfterID 继续取下一段。单段行数上限 chargingEvidenceMaxRows。
+// collectChargingSamples 按 ID 升序读取时间窗口内的心跳，只返回目标端口的读数。
+// complete=false 时，使用 nextAfterID 继续读取 ID 更大的记录。
 func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string, port uint8, from time.Time, afterID uint64, limit int) ([]gatewaycontract.EvidenceSample, uint64, bool, error) {
 	now := time.Now().UTC()
 	rows, err := gatewayrepo.ListHeartbeatsInWindow(ctx, a.DB, device, from, now, afterID, limit)
@@ -46,7 +43,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 		if e.DeviceID != device || e.Type != protocol.Heartbeat {
 			continue
 		}
-		// 即使本次心跳缺失目标端口也保留事件，使调用方能中断连续证据。
+		// 心跳未包含目标端口时也返回空读数，使停机判断中断连续计数。
 		// 只输出目标端口，不泄露其他端口遥测、卡号或原始载荷。
 		sample := gatewaycontract.EvidenceSample{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: e.ReceivedAt, ChargingPorts: []protocol.PortTelemetry{}}
 		for _, p := range e.ChargingPorts {
@@ -64,8 +61,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 	return samples, nextAfterID, complete, nil
 }
 
-// chargingSamples 返回指定端口的有限条心跳，不含原始载荷和卡号。
-// after_id 为游标：传入上一段返回的 next_after_id 可续取更早的证据。
+// chargingSamples 分页读取指定端口的心跳；after_id 继续读取 ID 更大的记录。
 func (a TelemetryAPI) chargingSamples(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -99,9 +95,8 @@ func (a TelemetryAPI) chargingSamples(c *gin.Context) {
 	httpapi.OK(c, gin.H{"samples": samples, "complete": complete, "next_after_id": nextAfterID})
 }
 
-// chargingEvidence 一次为多个设备+端口取证，供停机判定循环批量拉取，
-// 避免每订单一次 HTTP 调用。单条上限与 GET 相同，条目数上限
-// gatewaycontract.MaxEvidenceBatch；任一请求体无效则整体拒绝。
+// chargingEvidence 批量读取各订单的端口心跳，减少停机扫描中的 HTTP 调用。
+// 每条最多返回 10080 条记录；任一请求参数无效则整批拒绝。
 func (a TelemetryAPI) chargingEvidence(c *gin.Context) {
 	if !a.authorized(c) {
 		return

@@ -100,10 +100,10 @@ type recoverablePrepay struct {
 
 // checkoutFixture 提供固定设备和套餐，报价使用夹具；申请、回调和退款使用真库。
 type checkoutFixture struct {
-	port        money.ScanResult // 端口号、连接事实及中央运营状态
+	port        money.ScanResult // 端口号、连接状态及中央运营状态
 	rule        charging.Rule    // 测试时冻结的完整套餐
 	unavailable bool             // 首次申请之后模拟当前方案／设备读取不可用
-	reads       int              // 发现读取次数，重放不得重新取当前事实
+	reads       int              // 端口查询次数，重试不再读取当前端口信息
 }
 
 // ResolveScan 返回固定扫码结果，故障用于检测恢复时是否重复查询新报价。
@@ -337,7 +337,7 @@ func TestRechargeRecoversOriginalPaymentAndCreditsFrozenWallet(t *testing.T) {
 	}
 }
 
-// TestRefundServiceKeepsAuditAtomicAndRechecksSigner 验证退款申请和审计同事务，二签核对首签最新权限。
+// TestRefundServiceKeepsAuditAtomicAndRechecksSigner 验证退款申请和审计同事务，第二次审核核对首位审核人的当前权限。
 // 退款和审计使用真库，账号查询为可控夹具，全部数据外层回滚。
 func TestRefundServiceKeepsAuditAtomicAndRechecksSigner(t *testing.T) {
 	db, closeDB := testConn(t)

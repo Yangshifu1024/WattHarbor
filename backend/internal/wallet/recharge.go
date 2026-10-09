@@ -44,7 +44,7 @@ type RechargeInput struct {
 
 // RechargeResult 是可公开的申请回执，支付参数仅在原单仍可付款时出现。
 type RechargeResult struct {
-	RequestID       string          `json:"request_id"`               // 申请身份
+	RequestID       string          `json:"request_id"`               // 客户端充值请求 UUID
 	PaymentOrderID  uint64          `json:"payment_order_id"`         // 支付编号，保持既有公开整数契约
 	MerchantOrderNo string          `json:"merchant_order_no"`        // 商户单号
 	AmountCents     int64           `json:"amount_cents"`             // 申请金额，分

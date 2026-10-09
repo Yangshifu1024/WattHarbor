@@ -1,4 +1,4 @@
-// 本文件定义结束回执与中央端口占用模型；结束事务只读启动回执来核对命令和端口。
+// Package finish 保存设备结束回执和计量，释放中央端口占用，并创建计费任务。
 package finish
 
 import (
@@ -7,11 +7,11 @@ import (
 )
 
 // endReceiptRecord 保存每笔订单唯一的结束回执，重复回执沿用停止命令。
-// 内容不同须报冲突；计量 JSON 保留原始证据，不重新计价。
+// 同订单重复结束须比对停止命令和计量；不重新计价。
 type endReceiptRecord struct {
 	ChargeOrderID uint64 `gorm:"column:charge_order_id;primaryKey"` // 充电订单主键
 	StopCommandID string `gorm:"column:stop_command_id"`            // 停止命令编号
-	MeterJSON     []byte `gorm:"column:meter_json"`                 // 结束计量证据 JSON，不重算价格
+	MeterJSON     []byte `gorm:"column:meter_json"`                 // 设备结束计量 JSON，不重算价格
 }
 
 // TableName 返回结束回执所属固定表名。

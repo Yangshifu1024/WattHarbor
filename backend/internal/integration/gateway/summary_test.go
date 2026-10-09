@@ -15,9 +15,9 @@ import (
 // TestSummaryClientRequiresSuccessfulEnvelope 验证摘要响应的设备编号、成功状态和必需字段；不连接实际网关。
 func TestSummaryClientRequiresSuccessfulEnvelope(t *testing.T) {
 	for _, fixture := range []struct {
-		name   string /* 错误场景 */
-		status int    /* HTTP 状态 */
-		body   string /* 响应 JSON */
+		name   string
+		status int
+		body   string
 	}{
 		{"wrong-success-status", 201, `{"code":0,"data":{"items":[]}}`},
 		{"missing-code", 200, `{"data":{"items":[]}}`},

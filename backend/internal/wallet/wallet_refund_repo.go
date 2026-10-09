@@ -1,6 +1,5 @@
-// Package wallet 实现钱包退款的预占、结算与释放。
-// 钱包表（wallet_account / wallet_txn / wallet_refund_part）的写入
-// 集中在退款事务内完成；结算用例只传入资金标识与结果，不直接写钱包表。
+// Package wallet 管理钱包余额、流水、充值、退款预占和风控审核。
+// 其他用例通过本包在业务事务中更新钱包，不直接写钱包表。
 package wallet
 
 import (
@@ -11,7 +10,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrWalletRefundConflict 表示钱包退款的身份或金额冲突（预占重复、余额不足等）。
+// ErrWalletRefundConflict 表示退款用户或金额不符、重复预占或余额不足。
 var ErrWalletRefundConflict = errors.New("wallet refund identity or amount conflict")
 
 // Settlement 是退款结算事务传给钱包侧的必要信息。

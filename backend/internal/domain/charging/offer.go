@@ -20,8 +20,10 @@ type Offer struct {
 	DurationMinutes uint16 `json:"duration_minutes"`
 }
 
+// ErrOfferUnavailable 表示所选套餐不存在或当前不可购买。
 var ErrOfferUnavailable = errors.New("charging offer unavailable")
 
+// Valid 校验套餐标识、金额和额度；未填 PurchaseCount 按一次购买校验。
 func (o Offer) Valid() bool {
 	count := int64(o.PurchaseCount)
 	if count == 0 {

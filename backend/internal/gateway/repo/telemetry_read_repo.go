@@ -26,8 +26,8 @@ var deviceLevelMetrics = []string{"voltage_v", "temperature_c"}
 // readingOverfetch 以曲线点上限的八倍限制行数，在按秒合并前容纳同一时刻的多个指标。
 const readingOverfetch = 8
 
-// ListRawReadings 查询时间闭区间内非 NULL 的原始数值。
-// 保留设备级指标、ts 倒序及八倍行数预算；返回非 nil 记录列表与 SQL 错误，不写入或新建事务。
+// ListRawReadings 按时间倒序查询原始读数，时间范围包含首尾。
+// 指定端口时仍包含设备电压、温度；最多读取 limit 的八倍行数，供指标合并。
 func ListRawReadings(
 	ctx context.Context,
 	db *gorm.DB,
@@ -47,8 +47,8 @@ func ListRawReadings(
 	return rows, err
 }
 
-// ListBucketedReadings 查询时间闭区间内的汇总数值。
-// 保留设备级指标、bucket_start 倒序及八倍行数预算，不新增数值筛选；返回非 nil 列表与 SQL 错误，不写库或新建事务。
+// ListBucketedReadings 按时间倒序查询汇总均值，时间范围包含首尾。
+// 指定端口时仍包含设备电压、温度；最多读取 limit 的八倍行数。
 func ListBucketedReadings(
 	ctx context.Context,
 	db *gorm.DB,
@@ -69,8 +69,8 @@ func ListBucketedReadings(
 	return rows, err
 }
 
-// ListChargeProcessPoints 以 Scan 读取过程点。
-// 保留可选编号筛选、缩放与 NULL，按 id 升序多取一条供调用方分页；返回非 nil 列表与 SQL 错误，不写库或新建事务。
+// ListChargeProcessPoints 按 ID 升序查询订单采样，多取一条判断是否有下一页。
+// 功率换算为 W、电量换算为 kWh；可选设备和端口参数进一步限制查询范围。
 func ListChargeProcessPoints(
 	ctx context.Context,
 	db *gorm.DB,
@@ -101,14 +101,14 @@ func ListChargeProcessPoints(
 	return rows, err
 }
 
-// MarkSyncEventProcessed 接收调用方 tx 与事件 id，仅更新仍未处理事件的处理时刻；返回影响行数及 SQL 错误，不自行提交。
+// MarkSyncEventProcessed 在调用方事务内标记尚未处理的事件，返回影响行数。
 func MarkSyncEventProcessed(tx *gorm.DB, id uint64) (int64, error) {
 	res := tx.Table("device_event").Where("id = ? AND processed_at IS NULL", id).
 		Update("processed_at", gorm.Expr("CURRENT_TIMESTAMP(3)"))
 	return res.RowsAffected, res.Error
 }
 
-// ChargeProcessPoint 是充电过程查询结果，保留整数编号、功率和电量换算以及可空协议扩展证据。
+// ChargeProcessPoint 返回订单采样，功率单位 W、电量单位 kWh，未上报扩展字段为 nil。
 type ChargeProcessPoint struct {
 	// ID charge_process 表的自增主键，用作过程曲线游标。
 	ID uint64 `json:"id"`
@@ -126,11 +126,11 @@ type ChargeProcessPoint struct {
 	RemainingSeconds uint32 `json:"remaining_seconds"`
 	// SignalStrength 设备信号强度整数，零为有效报告，不具有 NULL 标志。
 	SignalStrength uint8 `json:"signal_strength"`
-	// PortStatus 端口协议状态，nil 表示未提供该证据。
+	// PortStatus 是端口状态，nil 表示未上报。
 	PortStatus *uint8 `json:"port_status"`
-	// VoltageV 整机电压，单位伏；nil 表示未提供对应扩展证据。
+	// VoltageV 是整机电压，单位 V；nil 表示未上报。
 	VoltageV *uint16 `json:"voltage_v"`
-	// TemperatureC 整机温度，单位摄氏度；nil 表示未提供对应扩展证据。
+	// TemperatureC 是整机温度，单位摄氏度；nil 表示未上报。
 	TemperatureC *int16 `json:"temperature_c"`
 	// DeviceStatus 设备协议状态，保留可空扩展块。
 	DeviceStatus *uint8 `json:"device_status"`

@@ -13,10 +13,10 @@ import (
 
 // QueryService 组合模板、实际生效方案和协议能力，不修改历史订单快照。
 type QueryService struct {
-	DB *gorm.DB // central 方案及目标事实连接，由进程管理
+	DB *gorm.DB // 中央计费模板、规则和设备资料连接，由进程管理
 }
 
-// SchemeView 是模板公开字段，不合法的历史方案跳过。
+// SchemeView 是计费模板的公开字段；JSON 无法解析或缺少 Scheme 的记录跳过。
 type SchemeView struct {
 	ID      uint64           `json:"id"`      // 模板主键
 	Scheme  *charging.Scheme `json:"scheme"`  // 已存模板的完整方案
@@ -27,21 +27,21 @@ type SchemeView struct {
 // EffectiveScheme 分别保存设备覆盖版本和实际生效规则，不能用继承版本代替设备覆盖版本。
 type EffectiveScheme struct {
 	Scheme      *charging.Scheme `json:"scheme"`                // 当前方案，无规则为 null
-	Version     uint32           `json:"version"`               // 目标自有规则版本，空覆盖可为零
+	Version     uint32           `json:"version"`               // 目标已保存的最新规则版本，包含停用规则；没有记录为零
 	RuleID      uint64           `json:"rule_id,omitempty"`     // 实际生效规则主键，无规则省略
 	Inherited   bool             `json:"inherited"`             // 设备实际使用站点规则时为真，无规则为假
-	Permissions []string         `json:"permissions,omitempty"` // 当前后台权限；无规则沿用首次省略行为
+	Permissions []string         `json:"permissions,omitempty"` // 传入账号的权限；无规则时省略
 }
 
 // ExecutionCapabilities 保存设备适配器和支持的功能。
 type ExecutionCapabilities struct {
 	ProtocolAdapter       string                `json:"protocol_adapter"`        // 中央设备选定的适配器
-	Capabilities          charging.Capabilities `json:"capabilities"`            // 领域支持的模式、限制与控制能力
-	ReportsEnergy         bool                  `json:"reports_energy"`          // 协议电量能力，来自 Capabilities
-	ReportsSegmentedPower bool                  `json:"reports_segmented_power"` // 协议分段功率能力，来自 Capabilities
+	Capabilities          charging.Capabilities `json:"capabilities"`            // 设备协议支持的计费模式、数值上限和控制方法
+	ReportsEnergy         bool                  `json:"reports_energy"`          // 协议是否支持电量上报，来自 Capabilities
+	ReportsSegmentedPower bool                  `json:"reports_segmented_power"` // 协议是否支持分段功率上报，来自 Capabilities
 }
 
-// List 核对读取权限后查询模板，跳过不合法的历史 JSON。
+// List 核对读取权限后查询模板，跳过无法解析或缺少 Scheme 的 JSON；不校验方案数值。
 func (s QueryService) List(ctx context.Context, actor operations.Profile) ([]SchemeView, error) {
 	if !actor.HasPermission("pricing.read") {
 		return nil, operations.ErrForbidden

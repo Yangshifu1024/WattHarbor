@@ -5,7 +5,7 @@ import { PageHeader, Notice } from '../../runtime/ui'
 import { PowerCurve } from '../../runtime/PowerCurve'
 import controller from './charging.controller'
 
-/** 充电页以服务端状态为事实，遥测展示遵循 display，不推断电池剩余电量。 */
+/** 按服务端返回的订单状态和 display 配置展示充电数据。 */
 export default function PageView() {
   const { data, event } = useController(controller)
   const s = data.snapshot

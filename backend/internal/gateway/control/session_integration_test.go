@@ -106,7 +106,7 @@ func TestIdleSessionEndpointsKeepCompositeIdentity(t *testing.T) {
 		}
 	}
 	for _, check := range []struct {
-		where string // 需要保持的全部主键字段／关闭事实。
+		where string // 要核对的完整主键和会话关闭字段。
 		args  []any  // 夹具身份及日期。
 		want  int64  // 预期匹配行数。
 	}{

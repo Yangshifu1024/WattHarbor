@@ -69,7 +69,7 @@ func (c *Client) AdvanceCardEvent(ctx context.Context, in contract.CardAdvanceRe
 	return err
 }
 
-// ReplyCard 将已保存的回复发送给设备，不重新计算余额。
+// ReplyCard 将已保存的卡操作回复交给网关发送，不重新计算余额。
 func (c *Client) ReplyCard(ctx context.Context, in contract.CardReplyRequest) error {
 	ctx, cancel, client := c.cardBound(ctx)
 	defer cancel()
@@ -87,7 +87,7 @@ func (c *Client) ResolveCardPort(ctx context.Context, deviceID string, portNo ui
 	path := contract.CardPortPath + "?device_id=" + url.QueryEscape(deviceID) + "&port_no=" + strconv.Itoa(int(portNo))
 	// cardPortWireReply 用指针区分缺少 found 字段和 found=false 的未开通结果。
 	type cardPortWireReply struct {
-		Found    *bool  `json:"found"`     // nil 表示缺少开通事实，false 为确实未开通
+		Found    *bool  `json:"found"`     // nil 表示字段缺失，false 表示端口未开通
 		PortCode string `json:"port_code"` // 已开通时要求存在业务码
 	}
 	out, err := get[cardPortWireReply](ctx, client, path)

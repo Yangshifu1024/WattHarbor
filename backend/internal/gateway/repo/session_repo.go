@@ -10,7 +10,7 @@ import (
 // 设备连接会话先读取候选，再按 id 与 created_month 完整复合主键关闭。
 // created_month 同时用于分区定位，不能只按 id 更新；本操作不处理充电命令会话。
 
-// IdleSessionRow 是静默阈值筛选所得的设备连接数据库记录，只读取六列，不代表 TCP 已断开。
+// IdleSessionRow 返回超过静默阈值且尚未关闭的数据库连接记录。
 type IdleSessionRow struct {
 	// SessionID 设备连接会话标识，不是 START 或 STOP 命令会话。
 	SessionID string `gorm:"column:session_id"`
@@ -26,8 +26,7 @@ type IdleSessionRow struct {
 	LastActiveAt time.Time `gorm:"column:last_active_at"`
 }
 
-// ListIdleSessions 以调用时当前 UTC 减阈值筛选仍开放的设备连接记录。
-// 按六列 Scan、last_active_at 升序和 limit 返回记录及 SQL 错误，不检查内存连接或关闭实际 TCP。
+// ListIdleSessions 查询超过静默阈值的未关闭记录，按最后活动时间升序返回。
 func ListIdleSessions(
 	ctx context.Context,
 	db *gorm.DB,
@@ -48,9 +47,8 @@ func ListIdleSessions(
 	return rows, err
 }
 
-// CloseIdleSessions 在完整事务中读取候选并按全部主键字段关闭仍开放的记录。
-// 候选截止在事务内另取当前 UTC 减阈值，at 仅作关闭时刻；候选无新增排序，返回累计影响行数及错误。
-// 计数仅在 err=nil 时代表提交结果，任一失败回滚；不检查内存连接、不发送充电命令或断开 TCP。
+// CloseIdleSessions 在同一事务内按 ID 和月份关闭静默记录；at 是记录的关闭时间。
+// 任一更新失败整批回滚，计数仅在 err=nil 时表示已提交；不会断开 TCP 连接。
 func CloseIdleSessions(
 	ctx context.Context,
 	db *gorm.DB,
@@ -87,7 +85,7 @@ type sessionKey struct {
 	CreatedMonth time.Time `gorm:"column:created_month"`
 }
 
-// idleSessionsQuery 构造仍开放且早于当前 UTC 减阈值的设备连接会话查询；不执行查询或检查内存连接注册表。
+// idleSessionsQuery 筛选未关闭且最后活动时间早于当前时间减静默阈值的记录。
 func idleSessionsQuery(ctx context.Context, db *gorm.DB, idleThreshold time.Duration) *gorm.DB {
 	return db.WithContext(ctx).Table("device_session").
 		Where("ended_at IS NULL AND last_active_at < ?", time.Now().UTC().Add(-idleThreshold))
@@ -118,7 +116,7 @@ type DeviceSummaryRow struct {
 	Ports []DevicePortStatusRow `json:"ports" gorm:"-"`
 }
 
-// ListDeviceSummaries 读取未删除设备及未删除厂商名称，保留可空遥测数据；返回记录及 SQL 错误，不写库。
+// ListDeviceSummaries 批量查询未删除设备的厂商、心跳和信号；缺少数据保持 NULL。
 func ListDeviceSummaries(ctx context.Context, db *gorm.DB, deviceIDs []string) ([]DeviceSummaryRow, error) {
 	rows := []DeviceSummaryRow{}
 	err := db.WithContext(ctx).Table("device d").
@@ -134,14 +132,13 @@ type DevicePortStatusRow struct {
 	DeviceID string `json:"-" gorm:"column:device_id"`
 	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no" gorm:"column:port_no"`
-	// StatusCode 是端口上报的协议状态码，nil 表示设备还没上报过——
-	// 那是"未知"，不能当成"空闲"。
+	// StatusCode 是设备上报的端口状态；nil 表示未知。
 	StatusCode *uint8 `json:"status_code" gorm:"column:reported_status"`
 	// StatusAt 端口状态上报时刻，可空。
 	StatusAt *time.Time `json:"status_at" gorm:"column:reported_status_at"`
 }
 
-// ListDevicePortStatuses 按设备和端口读取未删除端口的可空协议状态及时间；返回记录与 SQL 错误，不把未知状态变为空闲。
+// ListDevicePortStatuses 查询设备未删除端口的上报状态；未上报保持 NULL。
 func ListDevicePortStatuses(ctx context.Context, db *gorm.DB, deviceIDs []string) ([]DevicePortStatusRow, error) {
 	rows := []DevicePortStatusRow{}
 	err := db.WithContext(ctx).Table("device_port").

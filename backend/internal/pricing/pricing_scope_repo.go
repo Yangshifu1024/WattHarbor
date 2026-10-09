@@ -9,9 +9,9 @@ type PricingTemplateRow struct {
 	ID          uint64 `gorm:"column:id"`           // 模板主键
 	Name        string `gorm:"column:name"`         // 模板名称
 	Remark      string `gorm:"column:remark"`       // 模板备注
-	SpecJSON    []byte `gorm:"column:spec_json"`    // 计费规则 JSON，对应 pricing.Spec；可能存的是旧格式规则，发布前要重新校验
-	DisplayJSON []byte `gorm:"column:display_json"` // 用户端展示开关原文，对应 pricing.Display
-	Status      string `gorm:"column:status"`       // 模板状态：active 可被应用；disabled 只允许查看，不允许再下发
+	SpecJSON    []byte `gorm:"column:spec_json"`    // 计费规则 JSON，对应 charging.Spec；发布前须解析并校验完整方案
+	DisplayJSON []byte `gorm:"column:display_json"` // 用户端展示开关 JSON，对应 charging.Display
+	Status      string `gorm:"column:status"`       // active 可用于发布；disabled 可编辑和查看，不能用于新发布
 	Version     uint32 `gorm:"column:version"`      // 模板版本号，每次修改或停用都 +1，用作 expected_version 乐观锁
 }
 

@@ -13,15 +13,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Compensation 编排启动补偿的已保存状态与设备 STOP 下发，复用命令及会话，不重新生成 START。
+// Compensation 保存启动补偿状态并发送 STOP，重试复用原命令和会话。
 type Compensation struct {
-	// Repo MySQLSink 持久能力，保留命令标识与事务规则。
+	// Repo 保存启动补偿的命令状态。
 	Repo repo.MySQLSink
 	// Devices 设备连接注册表，查询在线状态并发送补偿 STOP。
 	Devices *session.Registry
 }
 
-// Request 先保存启动补偿状态，连接在线时标记发送并下发 STOP；返回持久化或下发错误，不创建第二条 START。
+// Request 先保存补偿停机状态，再向在线设备下发 STOP。
 func (c Compensation) Request(ctx context.Context, orderNo, commandID string) error {
 	job, needsStop, err := c.Repo.CompensateStart(ctx, orderNo, commandID)
 	if err != nil || !needsStop {
@@ -77,7 +77,7 @@ func (a CompensationAPI) Register(router *gin.Engine) {
 	router.POST(gatewaycontract.CompensateStartRoute, a.handle)
 }
 
-// handle 鉴权并校验补偿请求后调用 Service；成功返回 accepted，失配写 409，输入、鉴权或执行失败写 400、401、503。
+// handle 鉴权并校验补偿请求；订单或命令不匹配时返回 409，成功返回 accepted。
 func (a CompensationAPI) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

@@ -1,3 +1,4 @@
+// Package repo 查询和更新网关的设备、端口、命令、事件及遥测表。
 package repo
 
 import (
@@ -17,11 +18,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ErrDeviceNotProvisioned 设备尚未开通，或所用协议与厂商配置不一致。
 var ErrDeviceNotProvisioned = errors.New("device is not provisioned for this protocol")
 
-// MySQLSink 实现设备注册、事件与连接终态持久能力，并提供网关命令和查询结果操作；连接池由装配方管理，事务边界以各方法约定为准。
+// MySQLSink 保存设备事件、连接记录和命令结果，并提供网关查询。
+// 数据库连接由进程管理，各方法按需要使用事务。
 type MySQLSink struct {
-	// DB 装配方提供的 gateway GORM 连接句柄；连接池由资源装配方管理，事务边界以具体方法为准。
+	// DB 是网关数据库连接。
 	DB *gorm.DB
 }
 
@@ -147,7 +150,7 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
-// stopAckAccepted 接收协议结果 code，仅 0x10 和 0x01 返回停止终态 true；其余返回 false。
+// stopAckAccepted 识别已停止输出（0x10）或已空闲（0x01）的设备回执。
 func stopAckAccepted(code uint8) bool { return code == 0x10 || code == 0x01 }
 
 // applyUserStopAck 按设备、端口和会话锁定用户停机命令，保存确认或拒绝结果；无匹配命令则跳过。
@@ -268,7 +271,7 @@ func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) 
 		if inserted.Error != nil {
 			return inserted.Error
 		}
-		// 唯一键冲突保持首次读数，只有新增事实才能累加聚合。
+		// 重复样本保留首次读数，只有新插入的样本才计入汇总。
 		if inserted.RowsAffected == 1 {
 			rollup = append(rollup, AggregateSample{DeviceID: event.DeviceID, Port: port, Metric: metric, Value: value, TS: at})
 		}
@@ -305,7 +308,7 @@ func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) 
 	return refreshAggregates(ctx, tx, rollup)
 }
 
-// requireOne 接收 GORM result，保留 SQL 错误，影响行数不为一时返回记录缺失，否则返回 nil。
+// requireOne 要求恰好更新一行；SQL 失败或行数不符时返回错误。
 func requireOne(result *gorm.DB) error {
 	if result.Error != nil {
 		return result.Error
@@ -316,7 +319,8 @@ func requireOne(result *gorm.DB) error {
 	return nil
 }
 
-// eventKey 接收 event，刷卡复用有效 UUID、独立遥测生成新 UUID，其余按协议载荷及适用接收时刻生成摘要；返回事件键，不访问存储。
+// eventKey 生成事件去重键：刷卡复用 UUID，心跳和故障包含接收时间。
+// 独立遥测每次生成新 UUID，其余事件按设备、会话和原始载荷计算摘要。
 func eventKey(event protocol.Event) string {
 	if (event.Type == protocol.CardSwipe || event.Type == protocol.CardBalanceQuery) && uuid.Validate(event.EventID) == nil {
 		return event.EventID
@@ -348,7 +352,7 @@ func eventKey(event protocol.Event) string {
 	}
 	if event.Type == protocol.Fault {
 		// C0 没有故障序号；相同报文可以在恢复后再次出现。
-		// 每次接收独立持久化，持续故障的去重由告警状态处理。
+		// 每次接收都保存；持续故障是否重复告警由告警服务判断。
 		_, _ = hash.Write([]byte(event.ReceivedAt.UTC().Format(time.RFC3339Nano)))
 	}
 	return hex.EncodeToString(hash.Sum(nil))

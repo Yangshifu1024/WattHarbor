@@ -66,6 +66,7 @@ type terminalLog struct {
 	lines []string
 }
 
+// Write 追加日志到界面缓冲区，仅保留最近 200 条。
 func (l *terminalLog) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -122,6 +123,7 @@ type terminalModel struct {
 	notice                                string
 }
 
+// Init 请求设备初始状态，启动界面刷新。
 func (m terminalModel) Init() tea.Cmd { return m.send(Input{Type: "state"}) }
 func (m terminalModel) send(in Input) tea.Cmd {
 	return func() tea.Msg {
@@ -142,6 +144,8 @@ func (m terminalModel) send(in Input) tea.Cmd {
 	}
 }
 func refresh() tea.Cmd { return tea.Tick(time.Second, func(time.Time) tea.Msg { return refreshMsg{} }) }
+
+// Update 处理按键、设备退出和刷新消息，更新终端显示状态。
 func (m terminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case boardDone:
@@ -378,6 +382,8 @@ func (m terminalModel) configFields() []field {
 	}
 	return f
 }
+
+// View 生成设备状态、操作菜单和日志的终端文本。
 func (m terminalModel) View() string {
 	blue := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))

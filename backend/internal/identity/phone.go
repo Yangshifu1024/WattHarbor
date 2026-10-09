@@ -26,7 +26,7 @@ type PhoneSource interface {
 	Resolve(ctx context.Context, in PhoneInput) (string, error)
 }
 
-// WeChatPhoneSource 只接受微信代码并返回服务端交换事实，不能使用客户端明文。
+// WeChatPhoneSource 只接受微信授权 code，通过微信接口取得手机号，不使用客户端明文。
 type WeChatPhoneSource struct {
 	Exchange func(context.Context, string) (string, error) /* cmd 注入的正式微信交换能力 */
 }

@@ -1,3 +1,4 @@
+// Package charging 验证当前用户身份并向网关提交停机请求。
 package charging
 
 import (

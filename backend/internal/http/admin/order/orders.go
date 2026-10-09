@@ -13,7 +13,7 @@ import (
 
 // 本文件只保留后台订单输入、身份适配与公开响应，基础查询由 order.QueryService 执行。
 
-// orders 解析请求中的分页、筛选和后台身份，输出订单页或公开输入／权限／读取错误；不写业务数据。
+// orders 按分页、筛选和管理员身份查询充电订单。
 func (a API) orders(c *gin.Context) {
 	page, ok := adminhttp.ReadAdminPage(c, "pending_payment paid charging completed cancelled failed refunding refunded")
 	if !ok {
@@ -78,9 +78,7 @@ func (a API) order(c *gin.Context) {
 	httpapi.OK(c, rows[0])
 }
 
-// timeline 是 GET /api/v1/admin/orders/：id/timeline 的处理函数：
-// 按发生时间顺序返回该订单的事件日志，用于还原一次充电从下单到结束的完整过程。
-// 先确认订单存在再查日志，避免对不存在的订单返回空列表。
+// timeline 确认订单存在后，按发生时间返回订单事件。
 func (a API) timeline(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

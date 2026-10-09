@@ -16,9 +16,9 @@ var mfaCompareDelete = redis.NewScript(`if redis.call('GET',KEYS[1]) == ARGV[1] 
 type mfaEnrollment struct {
 	ID          string    `json:"id"`           // 绑定标识
 	Secret      string    `json:"secret"`       // 服务端生成的待确认密钥
-	AdminID     uint64    `json:"admin_id"`     // 账号身份，Go 按整数精确解码
+	AdminID     uint64    `json:"admin_id"`     // 后台账号 ID，按整数解码
 	AuthVersion uint64    `json:"auth_version"` // 认证版本，确认时必须一致
-	SessionID   string    `json:"session_id"`   // 只能在会话确认
+	SessionID   string    `json:"session_id"`   // 发起绑定的会话 SID，确认时必须一致
 	ExpiresAt   time.Time `json:"expires_at"`   // 绝对到期时刻
 }
 

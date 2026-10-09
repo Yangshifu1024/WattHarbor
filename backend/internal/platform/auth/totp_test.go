@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// RFC 6238 的测试向量是实现 TOTP 的标准参照；
-// 在这里用它们，意味着验证器 App 与本服务不会各自漂移。
+// 用 RFC 6238 的测试数据检查六位动态口令。
 func TestVerifyTOTPAcceptsRFC6238Vectors(t *testing.T) {
 	// 使用 RFC 6238 的 ASCII 种子 12345678901234567890，验证本服务的 6 位 TOTP 截断结果。
 	const seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
@@ -49,8 +48,7 @@ func TestVerifyTOTPRejectsInvalidSecret(t *testing.T) {
 func TestVerifyTOTPAllowsClockSkew(t *testing.T) {
 	const seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 	base := time.Unix(1111111111, 0)
-	// 落后一步和领先一步的口令都还必须能通过，
-	// 因为设备时钟会在 30 秒窗口里漂移一小会儿。
+	// 此处只验证当前时间步的口令。
 	if err := VerifyTOTP(seed, "050471", base); err != nil {
 		t.Fatalf("baseline code rejected: %v", err)
 	}

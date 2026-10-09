@@ -150,7 +150,7 @@ func TestUserSnapshotSharesAdminEstimateWithoutConfirmingFees(t *testing.T) {
 	}
 }
 
-// TestUserSnapshotEstimateFailurePreservesTelemetry 验证估价取证失败仍展示遥测、不完整证据不输出费用，陈旧量明确标记。
+// TestUserSnapshotEstimateFailurePreservesTelemetry 检查估费失败仍显示遥测，计量不足时不输出费用，过期读数标记为陈旧。
 func TestUserSnapshotEstimateFailurePreservesTelemetry(t *testing.T) {
 	for _, fault := range []string{"first_batch", "snapshot", "incomplete", "stale"} {
 		t.Run(fault, func(t *testing.T) {

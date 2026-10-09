@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestChargeUserRechargesRejectInvalidPathAndPagination 验证用户充值查询先拒绝非法用户号、重复或超限分页及未声明筛选。
 func TestChargeUserRechargesRejectInvalidPathAndPagination(t *testing.T) {
 	router := gin.New()
 	router.GET("/users/:id/recharges", (API{}).chargeUserRecharges)
@@ -33,7 +32,6 @@ func TestChargeUserRechargesRejectInvalidPathAndPagination(t *testing.T) {
 	}
 }
 
-// TestChargeUserRechargesRequireAuthentication 验证实际注册的用户充值列表拒绝未登录访问。
 func TestChargeUserRechargesRequireAuthentication(t *testing.T) {
 	router := gin.New()
 	(API{}).registerChargeUsers(router)

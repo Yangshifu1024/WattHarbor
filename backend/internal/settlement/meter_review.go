@@ -19,7 +19,7 @@ var ErrMeterSignerUnavailable = errors.New("meter first signer unavailable")
 // MeterReviewService 负责计量核实和人工金额的权限校验、审计和事务。
 type MeterReviewService struct {
 	Orders         BillingOrders                                         // 计费任务、计量快照及决策的事务能力
-	LookupReviewer func(context.Context, uint64) (ReviewerStatus, error) // cmd 注入的实时首签人身份查询
+	LookupReviewer func(context.Context, uint64) (ReviewerStatus, error) // cmd 注入的首位审核人角色和权限查询
 }
 
 // MeterProposalInput 保存计量修正提案和请求号。
@@ -63,7 +63,7 @@ func (s MeterReviewService) List(ctx context.Context, actor operations.Profile, 
 	return out, nil
 }
 
-// permitted 用 audit 的实时账号核对财务角色及计量复核权限，不依赖 HTTP。
+// permitted 检查 audit.Actor 的财务角色和计量复核权限。
 func (s MeterReviewService) permitted(audit ops.AuditContext) bool {
 	return audit.Actor.Role == "customer_finance" && audit.Actor.HasPermission("billing.meter.review")
 }
@@ -98,8 +98,8 @@ func (s MeterReviewService) Propose(ctx context.Context, audit ops.AuditContext,
 	return out, err
 }
 
-// Decide 锁定任务后执行二签，批准时复查首签人的当前权限，审核和审计同事务。
-// 驳回不要求首签仍有效，允许重新提交。
+// Decide 锁定任务后完成第二次审核，批准时查询首次提交人的当前权限，审核记录和审计一起保存。
+// 驳回时不检查首次提交人的当前权限，驳回后可重新提交提案。
 func (s MeterReviewService) Decide(ctx context.Context, audit ops.AuditContext, id uint64, in MeterDecisionInput) error {
 	if !s.permitted(audit) {
 		return operations.ErrForbidden

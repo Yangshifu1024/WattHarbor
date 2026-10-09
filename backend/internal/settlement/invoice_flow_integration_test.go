@@ -149,7 +149,7 @@ func TestInvoiceApplicationReplaysOnlyIdenticalOwnerAndContent(t *testing.T) {
 	}
 }
 
-// TestInvoiceReviewAuditFailureRollsBackAndRevocationBlocksSecondSignature 验证双签和审计同事务回滚，首签撤权后不能二签。
+// TestInvoiceReviewAuditFailureRollsBackAndRevocationBlocksSecondSignature 验证审核与审计一起回滚，首位审核人撤权后不能完成第二次审核。
 // 权限查询使用可控夹具，审核和审计使用真库，数据外层回滚。
 func TestInvoiceReviewAuditFailureRollsBackAndRevocationBlocksSecondSignature(t *testing.T) {
 	db, closeDB := testConn(t)

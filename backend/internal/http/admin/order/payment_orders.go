@@ -11,8 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// paymentOrders 从 c 校验分页、用途、渠道、状态及时间窗口，输出支付记录或参数／存储错误。
-// 读取沿用 order.read 路由权限，不修改支付状态或金额。
+// paymentOrders 按用途、渠道、状态和时间范围分页查询支付记录。
 func (a API) paymentOrders(c *gin.Context) {
 	page, ok := adminhttp.ReadAdminPage(c, "")
 	if !ok {
@@ -39,8 +38,8 @@ func (a API) paymentOrders(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// paymentTimeRange 解析 fromRaw／toRawISO 时间上下界，返回可空时刻或格式／逆序错误。
-// 空串不限制对应边界，包含时区和高精度，UTC 年份须在 MySQL 有效范围 1000–9999 内。
+// paymentTimeRange 解析支付时间上下界；空值表示不限制该侧，拒绝格式错误或起止倒置。
+// 转换为 UTC 后，年份须在 MySQL 允许的 1000–9999 范围内。
 func paymentTimeRange(fromRaw, toRaw string) (*time.Time, *time.Time, error) {
 	var from, to *time.Time
 	for _, bound := range []struct {

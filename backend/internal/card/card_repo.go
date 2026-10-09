@@ -21,7 +21,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ErrCardOperation 表示卡状态、端口、累计时长或启动确认状态不允许刷卡。
 var ErrCardOperation = errors.New("刷卡不可用：卡状态、余额、端口、累计上限或设备确认状态不满足要求")
+
+// ErrCardBalance 表示钱包可用余额不足，属于 ErrCardOperation。
 var ErrCardBalance = fmt.Errorf("%w：钱包可用余额不足", ErrCardOperation)
 
 // Repo 在调用方连接或事务中访问刷卡、钱包与订单表；刷卡写入由用例统一提交，仓储不自行确认设备执行。
@@ -196,8 +199,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 			praw, _ := json.Marshal(p)
 			portCode := port.PortID
 			if err := tx.Create(&CardCharge{ChargeOrderID: order.ID, CardID: card.ID, PortCode: portCode, ActivePort: &portCode, PaidCents: p.PriceCents, PurchasedMinutes: p.Minutes, MaxMinutes: spec.Scheme.Normalized().Card.MaxMinutes, PackageJSON: praw, CardNo: card.CardNo, WalletAfterCents: w.BalanceCents - w.FrozenCents - p.PriceCents}).Error; err != nil {
-				// 并发刷卡抢同一端口时 active_port 唯一键拒绝后写事务。
-				// 按业务冲突处理，设备重试即可。
+				// active_port 唯一键拒绝同端口重复占用，整笔扣款事务回滚。
 				if dbutil.IsMySQLDuplicate(err) {
 					return ErrCardOperation
 				}

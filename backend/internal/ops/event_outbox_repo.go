@@ -1,4 +1,4 @@
-// Package ops 持有运营能力与同业务事务提交的中央事件 Outbox。
+// Package ops 管理后台认证、账号、角色、范围、公告、看板和审计，并保存与业务事务一起提交的事件。
 package ops
 
 import (
@@ -12,7 +12,7 @@ import (
 // 值类型会写入非法零值，无 default 的指针会写入 NULL；投递器更新状态时才显式赋值。
 type EventOutboxRecord struct {
 	ID           uint64         `gorm:"column:id;primaryKey"`                             // 队列主键
-	EventID      string         `gorm:"column:event_id"`                                  // 稳定事件身份，唯一键仲裁重复追加
+	EventID      string         `gorm:"column:event_id"`                                  // 稳定事件号，唯一键拒绝重复追加
 	Stream       string         `gorm:"column:stream"`                                    // 目标事件流名称
 	EnvelopeJSON []byte         `gorm:"column:envelope_json"`                             // 业务载荷 JSON，投递不重新生成内容
 	Status       *string        `gorm:"column:status;default:pending"`                    // pending 待发 / published 已发 / failed 待重试
@@ -22,7 +22,7 @@ type EventOutboxRecord struct {
 	PublishedAt  *string        `gorm:"column:published_at"`                              // 成功投递时间；nil 表示尚未投递
 }
 
-// TableName 返回中央 Outbox 所属表，不执行查询或修改。
+// TableName 指定中央事件队列表。
 func (EventOutboxRecord) TableName() string { return "event_outbox" }
 
 // AdminEventOutboxTable 指定后台事件流队列表，记录格式与中央 Outbox 相同。
@@ -30,7 +30,7 @@ const AdminEventOutboxTable = "admin_event_outbox"
 
 // OutboxEvent 是需随业务事务提交的事件内容，不携带投递状态或 ORM 列映射。
 type OutboxEvent struct {
-	EventID      string // 事件幂等身份，重试不得换号
+	EventID      string // 事件号，重试不得换号
 	Stream       string // 流名称，不随内部文件重命名
 	EnvelopeJSON []byte // 事件 JSON，包含既有字段及单位
 }

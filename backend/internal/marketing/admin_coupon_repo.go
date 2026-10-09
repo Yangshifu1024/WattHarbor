@@ -17,7 +17,7 @@ type AdminCouponRow struct {
 	Name               string           `json:"name" gorm:"column:name"`                                 // 券名称，非空且不超过 128 字符
 	DiscountType       string           `json:"discount_type" gorm:"column:discount_type"`               // 优惠类型
 	DiscountValueCents *int64           `json:"discount_value_cents" gorm:"column:discount_value_cents"` // 减免分值，可空
-	DiscountPercent    *decimal.Decimal `json:"discount_percent" gorm:"column:discount_percent"`         // 优惠百分比，可空
+	DiscountPercent    *decimal.Decimal `json:"discount_percent" gorm:"column:discount_percent"`         // 应付比例百分数，80 表示八折；可空
 	FreeMinutes        *uint32          `json:"free_minutes" gorm:"column:free_minutes"`                 // 免费分钟，可空
 	MinChargeCents     int64            `json:"min_charge_cents" gorm:"column:min_charge_cents"`         // 使用门槛，分
 	ValidHours         uint32           `json:"valid_hours" gorm:"column:valid_hours"`                   // 领取后有效小时
@@ -31,7 +31,7 @@ type AdminCouponRow struct {
 // TableName 指定优惠券模板表。
 func (AdminCouponRow) TableName() string { return "coupon" }
 
-// AdminCouponStats 统计互斥的四种发放状态；未用与过期由当前时间区分，各项之和等于总发放量。
+// AdminCouponStats 汇总已发、未用、已用和过期份数；未用券按当前时间区分是否到期。
 type AdminCouponStats struct {
 	TotalQuota   uint32  `json:"total_quota"`   // 总量上限，0 表示不限量
 	GrantedCount int64   `json:"granted_count"` // 已发份数
@@ -53,7 +53,7 @@ func (s AdminCouponRepo) ListCoupons(ctx context.Context) ([]AdminCouponRow, err
 	return rows, err
 }
 
-// CreateCoupon 创建启用模板并通过指针回填自增主键，供响应和审计使用。
+// CreateCoupon 保存调用方设置好状态的模板，并回填自增主键供响应和审计使用。
 func (s AdminCouponRepo) CreateCoupon(ctx context.Context, in *AdminCouponRow) error {
 	return s.DB.WithContext(ctx).Create(in).Error
 }
@@ -119,7 +119,7 @@ func findGrantReceipt(tx *gorm.DB, requestID string, current bool) (CouponGrantR
 	return CouponGrantReceipt{RequestID: requestID, CouponID: row.CouponID, UserID: row.UserID, CouponGrantID: row.CouponGrantID}, err
 }
 
-// manualGrantState 在用户锁后锁定券模板，读取当前预算；模板锁之后不能反向等待用户或钱包。
+// manualGrantState 在用户锁后锁定券模板，统计已发份数；模板锁之后不能反向等待用户或钱包。
 func manualGrantState(tx *gorm.DB, couponID, userID uint64) (AdminCouponRow, CouponUsage, error) {
 	var coupon AdminCouponRow
 	usage := CouponUsage{}
@@ -133,7 +133,7 @@ func manualGrantState(tx *gorm.DB, couponID, userID uint64) (AdminCouponRow, Cou
 	return coupon, usage, err
 }
 
-// saveManualGrant 在调用方事务内保存发放和请求凭据，失败须整体回滚。
+// saveManualGrant 在调用方事务内保存新券及请求号与发放 ID 的关联，失败须整体回滚。
 func saveManualGrant(tx *gorm.DB, in activityGrant) (uint64, error) {
 	if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": "manual", "status": "unused", "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error; err != nil {
 		return 0, err

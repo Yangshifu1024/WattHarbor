@@ -1,4 +1,4 @@
-// Package alerts 只保留设备告警同步的触发编排；状态与恢复在 device，证据由 gateway 提供。
+// Package alerts 调用中央服务同步设备告警，故障和心跳由网关提供。
 package alerts
 
 import (

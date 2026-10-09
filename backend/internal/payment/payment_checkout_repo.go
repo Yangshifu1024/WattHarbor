@@ -1,4 +1,4 @@
-// 支付意图端口占用和支付编号归 payment；订单生命周期仅作只读联表事实。
+// 支付申请检查端口占用并分配支付单号；订单状态只用于查询。
 package payment
 
 import (
@@ -11,8 +11,8 @@ import (
 // CheckoutPortAvailable 确认端口上没有未过期支付意图或进行中的订单。
 // 同端口并发支付意图由 charge_payment_intent.uk_active_port 唯一键仲裁。
 // 本查询不读取 card_charge，刷卡占用及设备最终启动另由对应用例核对。
-// tx 为调用方申请事务，port 为业务端口编码；返回 ErrPaymentIntentConflict 。
-// 普通计数用于校验，最终插入唯一键仲裁并发，不在此创建或提交预占。
+// tx 为申请事务，port 为端口编码；已有占用返回 ErrPaymentIntentConflict，查询失败返回数据库错误。
+// 本查询不加锁；并发创建仍由端口唯一键拒绝重复预占。
 func CheckoutPortAvailable(tx *gorm.DB, port string) error {
 	var count int64
 	err := tx.Table("charge_payment_intent i").Joins("LEFT JOIN charge_order c ON c.id=i.charge_order_id").

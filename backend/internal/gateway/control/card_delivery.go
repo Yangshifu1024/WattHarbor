@@ -14,8 +14,7 @@ import (
 	"time"
 )
 
-// cardEvents 鉴权后按 ID 升序读取最多 100 条待投递事件及已保存的回复。
-// 返回共享集合或 503，不领取事件或修改投递状态。
+// cardEvents 按 ID 升序返回最多 100 条待投递卡事件及其已保存回复。
 func (a TelemetryAPI) cardEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -32,9 +31,7 @@ func (a TelemetryAPI) cardEvents(c *gin.Context) {
 	httpapi.OK(c, contract.CardEventsReply{Items: items})
 }
 
-// cardDecideBegin 鉴权后锁定投递记录，读取事件或已保存的回复。
-// 事件校验在持锁期间执行；已有回复时跳过校验，通过回滚释放锁。
-// 成功返回事件或已保存回复；鉴权失败 401，输入无效 400，身份不符 409，持久/取消失败为 503。
+// cardDecideBegin 锁定投递记录后查询事件；已有回复时直接返回并跳过事件校验。
 func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -73,9 +70,8 @@ func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
 // errCardIdentity 表示协议事件无法解码或其 UUID 身份与请求键不一致，供 HTTP 映射冲突响应。
 var errCardIdentity = errors.New("card event identity mismatch")
 
-// cardDecideFinish 鉴权后尝试保存首次回复；已有回复时直接返回。
-// 返回 stored 标志及最终回复；鉴权失败 401，输入无效 400，更新/读取失败分别映射两种 503。
-// 本层不重算金额、创建新事件、重试或覆盖已有决定。
+// cardDecideFinish 保存首次回复；已有回复时原样返回。
+// stored 表示本次是否写入成功，更新失败与读取失败使用不同错误提示。
 func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -102,8 +98,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 	httpapi.OK(c, contract.CardFreezeReply{Stored: stored, ResponseJSON: frozen})
 }
 
-// cardEventAdvance 更新事件状态：retry 增加次数并延后 5 秒，done 标记完成。
-// 返回状态更新结果，参数错误 400、存储失败 503，已保存的决定保持值。
+// cardEventAdvance 标记完成，或将失败事件延后 5 秒并增加重试次数。
 func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -122,8 +117,7 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 	httpapi.OK(c, contract.CardAdvanceReply{Advanced: affected == 1})
 }
 
-// resolvePort 鉴权后按设备和端口号查询端口编码；未开通返回 found:false。
-// 参数错误 400、读取失败 503，不创建端口或修改设备状态。
+// resolvePort 按设备和端口序号查询端口编码；未开通时返回 found=false。
 func (a TelemetryAPI) resolvePort(c *gin.Context) {
 	if !a.authorized(c) {
 		return

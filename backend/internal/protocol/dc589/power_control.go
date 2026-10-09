@@ -15,6 +15,7 @@ const (
 	powerControlDataBytes = 6 // 控制字 + 操作 + 参数 + 保留
 )
 
+// PowerControlKind 区分功率阈值查询和设置。
 type PowerControlKind byte
 
 const (
@@ -24,6 +25,7 @@ const (
 	PowerSet PowerControlKind = 1
 )
 
+// PowerOperation 标识功率控制的参数项；当前只定义移除检测阈值。
 type PowerOperation byte
 
 const (
@@ -40,6 +42,7 @@ var ErrPowerControlRejected = errors.New("主板拒绝功率控制")
 // ErrPowerOperationUnknown 表示未定义的操作码，与设备明确拒绝已知操作的错误区分。
 type ErrPowerOperationUnknown struct{ Operation PowerOperation }
 
+// Error 返回未知功率操作码的错误提示。
 func (e ErrPowerOperationUnknown) Error() string {
 	return fmt.Sprintf("未知的 0xE0 操作类型 %d，厂商文档只定义了 0=移除功率", byte(e.Operation))
 }
@@ -52,6 +55,7 @@ type PowerControl struct {
 	DeciWatts uint16
 }
 
+// Valid 检查操作类型和参数；查询参数必须为零，设置值不得使用失败标记。
 func (c PowerControl) Valid() bool {
 	if c.Control != PowerQuery && c.Control != PowerSet {
 		return false

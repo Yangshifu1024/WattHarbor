@@ -23,7 +23,7 @@ func (a API) registerCasework(r *gin.Engine) {
 	r.POST("/api/v1/admin/device-fault-reports/:id/resolve", a.Auth.Require("fault.resolve"), a.resolveFault)
 }
 
-// listFeedback 从请求读取分页并调用订单全局反馈用例，输出归一化字段或错误。
+// listFeedback 分页查询用户反馈。
 func (a API) listFeedback(c *gin.Context) {
 	q, ok := admin.ReadAdminPage(c, "pending processed closed")
 	if !ok {
@@ -37,7 +37,7 @@ func (a API) listFeedback(c *gin.Context) {
 	writeCasePage(c, out.Items, out.Total, q)
 }
 
-// listFaultReports 解析 c 分页后调用设备工单用例，输出行页或业务错误，无事务。
+// listFaultReports 分页查询设备报修工单。
 func (a API) listFaultReports(c *gin.Context) {
 	q, ok := admin.ReadAdminPage(c, "open dispatched fixed closed")
 	if !ok {
@@ -65,7 +65,7 @@ func writeCasePage(c *gin.Context, items []map[string]any, total int64, q persis
 	httpapi.OK(c, persist.Page[map[string]any]{Items: items, Page: q.Page, PageSize: q.PageSize, Total: total})
 }
 
-// replyFeedback 从 c 绑定动作并委托完整订单反馈事务，状态和审计由用例提交。
+// replyFeedback 提交反馈回复或关闭操作，由订单服务保存状态和审计记录。
 func (a API) replyFeedback(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -88,7 +88,7 @@ func (a API) replyFeedback(c *gin.Context) {
 	httpapi.OK(c, gin.H{"saved": true})
 }
 
-// faultFailure 把 err 工单输入／权限／存储错误映射到 c，不改变报告或权限。
+// faultFailure 将工单参数、权限和存储错误转换为接口响应。
 func faultFailure(c *gin.Context, err error) {
 	var input *devstore.FaultInputError
 	if errors.As(err, &input) {
@@ -102,7 +102,7 @@ func faultFailure(c *gin.Context, err error) {
 	admin.AdminResourceFailure(c, err)
 }
 
-// faultHistory 将 c ID／分页传给当前范围查询，输出事件页，不访问表。
+// faultHistory 分页查询当前管理员范围内的报修处理历史。
 func (a API) faultHistory(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -122,7 +122,7 @@ func (a API) faultHistory(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// dispatchFault 绑定 c 人员及备注并调用完整指派事务，输出原状态，不拥有流转和审计。
+// dispatchFault 将报修工单指派给指定人员，返回工单状态。
 func (a API) dispatchFault(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -139,7 +139,7 @@ func (a API) dispatchFault(c *gin.Context) {
 	httpapi.OK(c, gin.H{"assigned_to": in.AssignedTo, "status": "dispatched"})
 }
 
-// resolveFault 绑定 c 目标状态及说明并调用完整处理事务，输出原状态，不拥有状态机或审计。
+// resolveFault 更新报修工单状态和处理说明，返回工单状态。
 func (a API) resolveFault(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {

@@ -13,9 +13,8 @@ import (
 	"chargepilot/internal/gateway/repo"
 )
 
-// registerDeviceFaults 把 device_event 故障证据暴露给 central 的告警同步：
-// 未处理故障列表、处理标记与最新心跳查询。全部要求服务令牌，
-// 原始事件载荷原样返回，由调用方按协议语义解析。
+// registerDeviceFaults 注册故障列表、处理标记和最新心跳接口，供中央服务同步告警。
+// 接口均要求服务令牌，事件 JSON 原样返回。
 func (a TelemetryAPI) registerDeviceFaults(r *gin.Engine) {
 	r.GET(contract.DeviceFaultsPath, a.deviceFaults)
 	r.POST(contract.MarkDeviceFaultsPath, a.markFaultsProcessed)

@@ -15,9 +15,7 @@ const (
 	CodeBadRequest = 1005
 	// CodeMethodNotAllowed 请求方法不被该接口支持，对应 HTTP 405。
 	CodeMethodNotAllowed = 1006
-	// CodeResourceExpired 资源已过期且不再可用（导出文件过期的临时链接、
-	// 已失效的凭据），对应 HTTP 410。与 CodeNotFound 的区别是：资源曾经
-	// 存在，客户端需要重新发起而不是改地址。
+	// CodeResourceExpired 表示资源曾经存在但已过期，例如导出下载链接；对应 HTTP 410。
 	CodeResourceExpired = 1007
 	// CodeImportConflict 批量导入内容与既有配置冲突（如通信协议或站点计费方式不兼容），对应 HTTP 409。
 	CodeImportConflict = 1009

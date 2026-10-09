@@ -18,7 +18,7 @@ type PaidStartAuthorization struct {
 	ChargeQuantity uint16 // 模式对应执行量；时长单位分钟，电量按协议缩放值
 }
 
-// FindPaidStartAuthorization 取一笔已付清且满足计量区间约束的订单。
+// FindPaidStartAuthorization 读取已付清订单，核对支付归属、设备模式和执行额度范围。
 // 取不到返回 gorm.ErrRecordNotFound，调用方据此拒绝下发。
 // ctx 取消读取；db 为 central 连接，orderNo 为业务单号；数据库错误不构成启动授权。
 func FindPaidStartAuthorization(ctx context.Context, db *gorm.DB, orderNo string) (PaidStartAuthorization, error) {

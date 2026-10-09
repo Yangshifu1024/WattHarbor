@@ -10,8 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// stations 校验 c 分页和筛选，按当前账号站点范围输出列表与权限。
-// 无范围记录沿用不受限语义，非法输入或范围／列表读取失败返回错误。
+// stations 按分页、筛选和当前管理员站点范围查询站点，返回列表和权限。
 func (a API) stations(c *gin.Context) {
 	q, ok := admin.ReadAdminPage(c, "active disabled construction")
 	if !ok {
@@ -48,10 +47,10 @@ func (a API) station(c *gin.Context) {
 	httpapi.OK(c, row)
 }
 
-// createStation 从 c 严格解析站点资料，以实时权限调用新建用例，返回完整资料或错误响应。
+// createStation 创建站点并返回资料。
 func (a API) createStation(c *gin.Context) { a.saveStation(c, 0) }
 
-// updateStation 从请求解析主键和完整资料，调用范围受限的更新用例，返回资料或错误响应。
+// updateStation 更新指定站点并返回资料。
 func (a API) updateStation(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -60,7 +59,7 @@ func (a API) updateStation(c *gin.Context) {
 	a.saveStation(c, id)
 }
 
-// saveStation 从 c 校验资料并读取实时范围，以 id 选择新建或更新；用例拥有事务，适配器只写 HTTP 响应。
+// saveStation 校验站点资料和管理员当前范围；id 为零时新建，否则更新。
 func (a API) saveStation(c *gin.Context, id uint64) {
 	var in device.StationInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -82,7 +81,7 @@ func (a API) saveStation(c *gin.Context, id uint64) {
 	httpapi.OK(c, row)
 }
 
-// stationFailure 将 err 的范围拒绝写入 c 的 403，其余沿用资源错误；不执行 IO 或事务。
+// stationFailure 将站点范围拒绝转换为 403，其余错误使用通用资源响应。
 func stationFailure(c *gin.Context, err error) {
 	if errors.Is(err, operations.ErrForbidden) {
 		httpapi.Write(c, 403, 1003, "该站点不在您的数据范围内", nil)

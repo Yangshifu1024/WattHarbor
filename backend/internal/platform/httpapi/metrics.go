@@ -12,8 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics 每个服务各持有一个 registry，并使用匹配到的 Gin 路由模板，
-// 这样即使 URL 里含有设备 ID，时间序列的基数也是有界的。
+// Metrics 收集单个服务的请求数量和耗时，用路由模板代替具体 URL 作为标签。
 type Metrics struct {
 	requests *prometheus.CounterVec
 	duration *prometheus.HistogramVec
@@ -27,6 +26,7 @@ type DatabasePool struct {
 	DB     *sql.DB
 }
 
+// NewMetrics 创建独立的指标注册表，收集进程状态及可选的数据库连接池统计。
 func NewMetrics(service string, pools ...DatabasePool) *Metrics {
 	registry := prometheus.NewRegistry()
 	started := time.Now()
@@ -67,6 +67,7 @@ func NewMetrics(service string, pools ...DatabasePool) *Metrics {
 	return &Metrics{requests: requests, duration: duration, handler: promhttp.HandlerFor(registry, promhttp.HandlerOpts{})}
 }
 
+// Middleware 在请求结束后记录状态码和耗时；未匹配路径共用 unmatched 标签。
 func (m *Metrics) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		begin := time.Now()
@@ -80,6 +81,7 @@ func (m *Metrics) Middleware() gin.HandlerFunc {
 	}
 }
 
+// Register 注册 /metrics，输出当前服务的 Prometheus 指标。
 func (m *Metrics) Register(router *gin.Engine) {
 	router.GET("/metrics", func(c *gin.Context) { m.handler.ServeHTTP(c.Writer, c.Request) })
 }

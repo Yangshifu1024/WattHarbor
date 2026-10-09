@@ -1,3 +1,4 @@
+// 命令 worker 扫描待处理订单、同步设备回执、执行计费退款，并发布 Outbox 事件。
 package main
 
 import (

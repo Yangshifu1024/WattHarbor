@@ -12,7 +12,7 @@ var ErrCardFundingConflict = errors.New("card funding source conflict")
 // 金额和卡校验由 card 冻结，与订单、钱包及首次操作一起提交，不调用支付渠道。
 func CreateCardPaymentInTx(tx *gorm.DB, in *PaymentOrderRecord) error { return tx.Create(in).Error }
 
-// CreateCardIntentInTx 在调用方事务中保存 in 卡支付意图及完整方案，返回唯一键。
+// CreateCardIntentInTx 在调用方事务中保存 in 刷卡支付申请及完整方案，返回写入错误。
 // 由 card 首次事务提供标识，不重算历史价格、不提交事务。
 func CreateCardIntentInTx(tx *gorm.DB, in *PaymentIntentRecord) error { return tx.Create(in).Error }
 
@@ -23,7 +23,7 @@ func SetCardOrderInTx(tx *gorm.DB, paymentID, chargeOrderID uint64) error {
 }
 
 // ExtendCardPaymentInTx 在调用方事务中为 id 已付余额单累计 cents 实付和应付金额，单位分。
-// 返回记录不匹配的 ErrCardFundingConflict ；钱包实际扣款与本写入由 card 原子提交。
+// 未匹配支付记录时返回 ErrCardFundingConflict；钱包实际扣款与本写入由 card 原子提交。
 func ExtendCardPaymentInTx(tx *gorm.DB, id uint64, cents int64) error {
 	res := tx.Model(&PaymentOrderRecord{}).Where("id=? AND pay_method='balance' AND status IN ('paid','partial_refunded')", id).Updates(map[string]any{"paid_cents": gorm.Expr("paid_cents+?", cents), "total_cents": gorm.Expr("total_cents+?", cents)})
 	if res.Error != nil {

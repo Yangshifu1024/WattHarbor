@@ -34,9 +34,9 @@ type PublishInput struct {
 
 // PublicationResult 返回新发布或同请求恢复的首次结果。
 type PublicationResult struct {
-	ID       uint64 `json:"id"`       // 既定规则主键
-	Version  uint32 `json:"version"`  // 既定规则版本
-	Replayed bool   `json:"replayed"` // true 表示复用首次请求凭据，没有重复审计或发布
+	ID       uint64 `json:"id"`       // 本次发布的规则 ID
+	Version  uint32 `json:"version"`  // 本次发布的规则版本
+	Replayed bool   `json:"replayed"` // true 表示返回首次发布记录，没有重复保存规则或审计
 }
 
 // InheritInput 是设备撤销自有覆盖、重新继承站点默认的请求内容。
@@ -79,7 +79,7 @@ func CheckTargetScope(ctx context.Context, db *gorm.DB, scope operations.DataSco
 }
 
 // Publish 先核对当前权限和范围，再锁站点、检查请求重放、模板版本及设备兼容。
-// 规则、请求凭据和审计同事务，失败整体回滚；重放保留首次快照，不重新读取模板，不下发设备指令。
+// 规则、请求记录和审计同事务，失败整体回滚；重试返回首次规则，不重新读取模板，也不下发设备指令。
 func (s PublicationService) Publish(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, in PublishInput) (PublicationResult, error) {
 	if !audit.Actor.HasPermission("pricing.rule.create") {
 		return PublicationResult{}, operations.ErrForbidden

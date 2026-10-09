@@ -9,7 +9,6 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// TestSelfMFASettingsRejectsClientSecretsAndInvalidProofs 验证自助 MFA 设置拒绝客户端指定密钥、账号及无效登记或验证码材料。
 func TestSelfMFASettingsRejectsClientSecretsAndInvalidProofs(t *testing.T) {
 	router := httpapi.NewRouter()
 	router.POST("/settings", (AdminAuth{}).mfaSettings)
@@ -27,7 +26,6 @@ func TestSelfMFASettingsRejectsClientSecretsAndInvalidProofs(t *testing.T) {
 	}
 }
 
-// TestSelfMFASettingsRequiresSession 验证实际注册的自助 MFA 设置路由拒绝没有会话的请求。
 func TestSelfMFASettingsRequiresSession(t *testing.T) {
 	router := httpapi.NewRouter()
 	(AdminAuth{}).Register(router)

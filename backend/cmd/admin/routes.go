@@ -41,7 +41,7 @@ import (
 func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
-	// 指标端点无需运营会话，只暴露路由模板、状态码与耗时。
+	// /metrics 无需登录，包含请求、进程和数据库连接池统计。
 	metrics := httpapi.NewMetrics("admin", httpapi.DatabasePool{Schema: "central_db", DB: r.DB})
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
@@ -58,8 +58,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 
 	authAPI.Register(router)
 
-	// 计量复核、发票审核和人工退款签署均在事务内读取账号当前角色并检查权限。
-	// 不使用缓存，撤销权限后立即生效。
+	// 审核时直接查询首位审核人的当前角色和权限，不从缓存读取。
 	lookupMeterReviewer := func(ctx context.Context, id uint64) (settlement.ReviewerStatus, error) {
 		p, err := authAPI.Sessions.Accounts.Profile(ctx, id)
 		return settlement.ReviewerStatus{Role: p.Role, Permitted: p.HasPermission("billing.meter.review")}, err

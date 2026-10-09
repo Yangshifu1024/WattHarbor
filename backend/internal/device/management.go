@@ -23,7 +23,7 @@ type SummaryReader interface {
 // ManagementService 负责设备运营资料、启停和审计，运行摘要只补充范围内设备。
 type ManagementService struct {
 	DB        *gorm.DB      // central 设备元数据连接，由进程管理
-	Summaries SummaryReader // 网关具名客户端，由 cmd 注入；缺失或故障不补造已知状态
+	Summaries SummaryReader // 由 cmd 注入；未配置或查询失败时保留未知的运行状态
 }
 
 // List 分页读取范围内设备，仅向网关查询当页可见设备摘要。

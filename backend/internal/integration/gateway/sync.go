@@ -85,11 +85,11 @@ func (c *Client) ChargeCommand(ctx context.Context, orderID uint64) (*gatewaycon
 }
 
 // mark 提交标记请求，实际更新数须在 0 到请求条数之间；0 可以表示重复请求。
-// 只采信明确响应，调用失败时不猜测更新结果或自动重发。
+// 调用失败时返回错误，不自动重发。
 func mark(ctx context.Context, c *Client, path string, payload any, requested int) (int, error) {
 	// markWireReply 只校验进度字段是否存在，不把缺失当正常零值。
 	type markWireReply struct {
-		Marked *int `json:"marked"` // 实际更新数；nil为缺失，0为合法重放
+		Marked *int `json:"marked"` // 实际更新条数；nil 表示字段缺失，0 可表示已被标记
 	}
 	data, err := post[markWireReply](ctx, c, path, payload, http.StatusOK)
 	if err != nil {

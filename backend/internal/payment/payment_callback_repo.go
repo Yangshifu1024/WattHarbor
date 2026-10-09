@@ -27,8 +27,7 @@ import (
 // ErrPaymentCallbackConflict 表示通知标识、金额或支付关联不一致，不能更新任何到账状态。
 var ErrPaymentCallbackConflict = errors.New("verified payment does not match intent")
 
-// VerifiedPayment 只能在配置好的支付 SDK 已经验签/解密成功通知、
-// 或者查过同一笔交易之后构造。
+// VerifiedPayment 保存渠道确认的成功支付；调用方须先验签、解密或查询渠道。
 type VerifiedPayment struct {
 	Provider        string    // 已验签渠道，与装配渠道一致
 	MerchantID      string    // 已验签收款商户，与本进程商户一致
@@ -45,10 +44,10 @@ type PaymentCallbackResult struct {
 	ChargeOrderID  uint64 `json:"charge_order_id,omitempty"` // 正常充电付款的订单主键，充值及迟到支付省略
 	ChargeOrderNo  string `json:"charge_order_no,omitempty"` // 已冻结的充电订单编号
 	RefundRequired bool   `json:"refund_required"`           // 迟到付款已登记原路退款，尚未代表渠道退回
-	Replayed       bool   `json:"replayed"`                  // 已存在相同身份及金额的到账凭据
+	Replayed       bool   `json:"replayed"`                  // 相同付款人、交易号和金额已处理
 }
 
-// CallbackService 是已验签通知到账的唯一入口，负责支付及摘要事务。
+// CallbackService 核对渠道交易，事务内更新支付、创建订单或充值钱包。
 type CallbackService struct {
 	DB                 *gorm.DB           // central 支付连接，由进程管理
 	ExpectedProvider   string             // 本进程接受的渠道
@@ -102,8 +101,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 		if err != nil {
 			return err
 		}
-		// 意图必须属于这同一笔支付订单。
-		// 否则一个验签通过的回调可能结算到别的客户的订单上。
+		// 支付申请必须关联本支付单，随后核对用户、付款人和金额。
 		if intent.PaymentOrderID != order.ID {
 			return ErrPaymentCallbackConflict
 		}
@@ -262,7 +260,7 @@ func decimalAmount(amount int64) string { return strconv.FormatInt(amount, 10) }
 
 // settleWalletRecharge 对验签通过且金额匹配的渠道充值入账。
 // 钱包冻结或其他不可用状态不阻止资金记账；可用性限制仅影响后续消费。
-// tx 已锁 order 支付，payment 为验签事实，digest 为稳定摘要，paidAt 为 UTC 到账时刻。
+// tx 已锁 order 支付单；payment 是渠道交易，digest 是通知摘要，paidAt 是 UTC 到账时刻。
 // 成功回填 result；标识、金额、摘要、权益或写入错误回滚支付、钱包、奖励及 Outbox，不自行提交。
 func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time, result *PaymentCallbackResult) error {
 	request, err := wallet.LockRechargeForPayment(tx, order.ID)
@@ -272,8 +270,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	if err != nil {
 		return err
 	}
-	// 请求必须属于付款人且金额一致。
-	// 这样一个验签通过的回调不会入账与申请金额不同的数目。
+	// 申请人、付款人和金额必须与支付单及通知一致。
 	if request.UserID != order.UserID || request.OpenID == "" || request.OpenID != payment.OpenID || request.AmountCents != payment.PaidCents || order.TotalCents != payment.PaidCents {
 		return ErrPaymentCallbackConflict
 	}
@@ -286,7 +283,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	if digestErr == nil && previousDigest.RequestDigest != digest {
 		return ErrPaymentCallbackConflict
 	}
-	// 已结算支付单作为充值幂等凭据。
+	// 已处理的支付单只核对交易号、金额和通知摘要，不再次充值。
 	// 重放必须匹配渠道交易、金额和验签载荷摘要，不再次增加钱包余额。
 	if order.Status == "paid" || order.Status == "partial_refunded" || order.Status == "refunded" {
 		if digestErr != nil || !order.WechatTransactionID.Valid ||

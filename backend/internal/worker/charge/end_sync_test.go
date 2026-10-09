@@ -14,16 +14,14 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// endSyncScenario 是结束同步的内存测试替身，按阶段注入故障并记录冻结、提交、释放和标记，不执行真实两库算法。
+// endSyncScenario 记录结束同步各阶段调用，按 fail 指定的阶段返回错误。
 type endSyncScenario struct {
 	// event 待同步协议结束事件 fixture，保留 Wh 与秒字段值。
 	event protocol.Event
 	// command 已确认 START 命令 fixture，调用方自行核对身份。
 	command gatewaycontract.SyncCommand
-	// fail 指定要返回故障的 fixture 阶段名。
-	fail string
-	// calls 能力调用顺序记录，不包含真实网络或 SQL。
-	calls []string
+	fail    string
+	calls   []string
 	// frozen 内存首份 JSON 载荷，后续候选不覆盖；不模拟真实数据库竞争。
 	frozen string
 	// results 收到的中央结束请求集合，仅供重放内容断言。
@@ -34,18 +32,18 @@ type endSyncScenario struct {
 	marked []uint64
 }
 
-// EndEvents 接收但不使用 ctx，将配置 event 序列化为 ID77 事件并返回 nil 错误，忽略 fixture 序列化错误；无网关 IO。
+// EndEvents 返回预设结束事件，事件 ID 为 77。
 func (s *endSyncScenario) EndEvents(context.Context) ([]gatewaycontract.SyncEvent, error) {
 	data, _ := json.Marshal(s.event)
 	return []gatewaycontract.SyncEvent{{ID: 77, Payload: string(data)}}, nil
 }
 
-// ChargeCommand 接收但不使用 ctx 与订单 ID，返回配置 command 指针和 nil；不查询或补造真实启动凭据。
+// ChargeCommand 返回预设启动命令。
 func (s *endSyncScenario) ChargeCommand(context.Context, uint64) (*gatewaycontract.SyncCommand, error) {
 	return &s.command, nil
 }
 
-// MeterSamples 记录并校验设备、时间窗口和事件 ID；返回预设错误或非 nil 空列表，不访问真库。
+// MeterSamples 核对设备、时间窗口和事件 ID，再返回预设错误或空列表。
 func (s *endSyncScenario) MeterSamples(_ context.Context, q gatewaycontract.MeterSamplesRequest) ([]gatewaycontract.SyncEvent, error) {
 	s.calls = append(s.calls, "samples")
 	if q.EndID != 77 || q.DeviceID != s.event.DeviceID || !q.AckAt.Equal(*s.command.AckAt) || !q.EndAt.Equal(s.event.ReceivedAt) {
@@ -82,7 +80,7 @@ func (s *endSyncScenario) SubmitEndResult(_ context.Context, r centralcontract.E
 	return centralcontract.ResultReply{Accepted: true, Replayed: len(s.results) > 1}, nil
 }
 
-// ReleasePort 接收但不使用 ctx，记录 r 与顺序，按配置返回错误或已释放 fixture；不检查数据库占用或实际释放。
+// ReleasePort 记录释放请求，返回预设错误或已释放回复。
 func (s *endSyncScenario) ReleasePort(_ context.Context, r gatewaycontract.ReleasePortRequest) (gatewaycontract.ReleasePortReply, error) {
 	s.calls = append(s.calls, "release")
 	s.releases = append(s.releases, r)
@@ -92,7 +90,7 @@ func (s *endSyncScenario) ReleasePort(_ context.Context, r gatewaycontract.Relea
 	return gatewaycontract.ReleasePortReply{Released: true, Already: len(s.releases) > 1}, nil
 }
 
-// MarkDeviceEventsProcessed 接收但不使用 ctx，记录 ids 与顺序，按配置返回错误或输入条数；不提交真实处理标记。
+// MarkDeviceEventsProcessed 记录待标记 ID，返回预设错误或 ID 数量。
 func (s *endSyncScenario) MarkDeviceEventsProcessed(_ context.Context, ids []uint64) (int, error) {
 	s.calls = append(s.calls, "mark")
 	s.marked = append(s.marked, ids...)
@@ -102,7 +100,7 @@ func (s *endSyncScenario) MarkDeviceEventsProcessed(_ context.Context, ids []uin
 	return len(ids), nil
 }
 
-// newEndScenario 返回固定启动时刻、START／STOP 身份及 Wh／秒结束事件的独立内存 fixture；不访问服务或数据库。
+// newEndScenario 创建固定启动时刻、命令编号和计量读数的结束同步场景。
 func newEndScenario() *endSyncScenario {
 	start := time.Date(2026, 10, 5, 4, 0, 0, 0, time.UTC)
 	command := startSyncRow()
@@ -111,14 +109,10 @@ func newEndScenario() *endSyncScenario {
 	return &endSyncScenario{command: command, event: protocol.Event{Type: protocol.ChargeEnd, DeviceID: "D-1", Port: 1, OrderNumber: "9", ConsumerType: 2, StartedAt: start, EndedAt: start.Add(time.Hour), ReceivedAt: start.Add(time.Hour), EnergyMilliKWh: 1000, ChargedSeconds: 3600}}
 }
 
-// TestEndSyncFailureStopsAtRequiredBoundary 使用测试替身核对取证、冻结、中央、释放、标记各阶段失败的顺序及计数，标记失败仍返回已释放数；不证明事务持久结果。
 func TestEndSyncFailureStopsAtRequiredBoundary(t *testing.T) {
 	for _, tc := range []struct {
-		// fail 指定要返回故障的 fixture 阶段名。
-		fail string
-		// want 该故障场景预期的能力调用序列。
-		want []string
-		// count 该场景预期已成功释放数，标记失败场景保留计数 1。
+		fail  string
+		want  []string
 		count int
 	}{
 		{"samples", []string{"samples"}, 0}, {"freeze", []string{"samples", "freeze"}, 0},
@@ -136,7 +130,6 @@ func TestEndSyncFailureStopsAtRequiredBoundary(t *testing.T) {
 	}
 }
 
-// TestEndSyncReplaysFrozenEvidenceBeforeReleaseAndMark 使用内存冻结 fixture 核对完整载荷和大整数两次重放及中央→释放→标记顺序；不代替真实首次写入或跨库确认测试。
 func TestEndSyncReplaysFrozenEvidenceBeforeReleaseAndMark(t *testing.T) {
 	s := newEndScenario()
 	frozen := centralcontract.EndResultRequest{OrderNo: "C-9", ChargeOrderID: 9, StartCommandID: "start-1", StopCommandID: "stop-1", DeviceID: "D-1", PortNo: 1, PortID: 9007199254740993,
@@ -157,7 +150,6 @@ func TestEndSyncReplaysFrozenEvidenceBeforeReleaseAndMark(t *testing.T) {
 	}
 }
 
-// TestEndSyncRejectsWrongCommandIdentity 使用测试替身核对订单 START 身份失配在取证／冻结／中央／释放前拒绝，无真实持久操作。
 func TestEndSyncRejectsWrongCommandIdentity(t *testing.T) {
 	s := newEndScenario()
 	s.command.ChargeOrderID = 10

@@ -1,3 +1,4 @@
+// Package pricing 提供充电方案编辑、发布、继承和预览接口。
 package pricing
 
 import (
@@ -7,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// API 注入本业务族所需的服务、窄查询能力和实时鉴权，不持有数据库连接。
+// API 提供充电方案接口，依赖方案管理、查询和后台鉴权。
 type API struct {
 	Queries      pricing.QueryService       // 模板、有效方案及协议能力的只读组合，由 cmd 装配
 	Scopes       adminhttp.ScopeReader      // 当前已鉴权账号范围的窄读取能力，由 cmd 注入。
@@ -16,7 +17,7 @@ type API struct {
 	Publications pricing.PublicationService // 目标发布及继承入口，由 cmd 注入
 }
 
-// Register 将方案模板、发布、继承、预览及能力路由挂到 r，注册实时权限中间件，不启动后台任务。
+// Register 注册方案模板、发布、继承、预览和设备能力接口。
 func (a API) Register(r *gin.Engine) {
 	a.registerChargingSchemes(r)
 }

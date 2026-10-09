@@ -8,7 +8,7 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// 校验批量取证端点的令牌与请求体边界；同时覆盖 TelemetryAPI 全量路由
+// 校验批量计量查询的令牌与请求体；同时覆盖 TelemetryAPI 全量路由
 // 注册（gin 静态段与 :device_id 通配冲突会在此 panic）。
 func TestChargingEvidenceRequiresServiceTokenAndValidBounds(t *testing.T) {
 	r := httpapi.NewRouter()

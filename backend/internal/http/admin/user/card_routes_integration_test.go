@@ -120,10 +120,8 @@ func TestRegisteredCardManagementPreservesPermissionInputAndAudit(t *testing.T) 
 		t.Fatalf("permission=%d %v", readPermission, err)
 	}
 	for _, seed := range []struct {
-		// table 是隔离造数的表。
 		table string
-		// row 包含本场景的唯一身份与权限材料，外层事务结束后回滚。
-		row map[string]any
+		row   map[string]any
 	}{{"role", map[string]any{"id": id + 2, "code": "card-read-" + sid, "name": "test card reader", "is_builtin": false}}, {"role_permission", map[string]any{"role_id": id + 2, "permission_id": readPermission}}, {"admin_user", map[string]any{"id": id + 10, "username": "card-admin-" + sid, "password_hash": "fixture", "role_id": role, "status": "active", "auth_version": 1}}, {"admin_user", map[string]any{"id": id + 11, "username": "card-reader-" + sid, "password_hash": "fixture", "role_id": id + 2, "status": "active", "auth_version": 1}}, {"user", map[string]any{"id": id, "openid": sid, "status": "active"}}, {"user", map[string]any{"id": id + 1, "openid": readerSid, "status": "active"}}} {
 		if err := tx.Table(seed.table).Create(seed.row).Error; err != nil {
 			t.Fatalf("seed %s: %v", seed.table, err)

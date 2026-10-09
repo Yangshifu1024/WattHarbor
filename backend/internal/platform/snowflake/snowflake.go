@@ -1,4 +1,4 @@
-// Package snowflake 在多个 central 实例间分配不重复的整数 ID。
+// Package snowflake 为使用 central_db 的多个进程分配不重复的整数 ID。
 package snowflake
 
 import (
@@ -28,9 +28,11 @@ type state struct {
 	Sequence        uint16 `gorm:"column:sequence"`
 }
 
+// TableName 将编号状态映射到初始化 SQL 创建的 snowflake_state 表。
 func (state) TableName() string { return "snowflake_state" }
 
-// Next 必须在调用方的 central_db 事务内执行；编号状态行由数据库初始化创建。
+// Next 锁住并更新编号状态，必须与使用该编号的记录在同一 central_db 事务中提交。
+// 状态行由数据库初始化创建；时钟或状态无效、编号时间位用尽时返回错误。
 func Next(tx *gorm.DB) (uint64, error) {
 	var current state
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = 1").Take(&current).Error; err != nil {
@@ -65,6 +67,7 @@ func NextSQL(ctx context.Context, tx *sql.Tx) (uint64, error) {
 	return id, nil
 }
 
+// advance 在时钟回拨时沿用已保存的时间，并增加序号；序号用尽后将时间推进一毫秒。
 func advance(current state, unixMillis int64) (uint64, state, error) {
 	if unixMillis <= epochMillis || current.LastMillisecond > maxMillis || current.Sequence > maxSequence {
 		return 0, state{}, errors.New("invalid Snowflake clock or state")

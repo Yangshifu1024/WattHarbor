@@ -9,11 +9,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// CutoffRepo 为消费者提供停止用例所属的事务内截止事实，不持有连接或卡实现。
+// CutoffRepo 在调用方事务中检查订单是否已有计费截止记录。
 type CutoffRepo struct{}
 
-// FrozenInTx 在调用方事务中当前读取 orderID 的截止，返回冻结标志。
-// 调用方已锁订单，SHARE 强制真实当前读，避免先前 RR 快照隐藏随后提交的冻结；无行返回 false。
+// FrozenInTx 在调用方事务中检查 orderID 是否已有截止记录。
+// 调用方须已锁订单；SHARE 读取最新已提交记录，避免 RR 快照漏掉其他事务刚保存的截止；无行返回 false。
 // 不写入、延长截止或提交事务，不返回截止费用以供消费者重新计价。
 func (CutoffRepo) FrozenInTx(tx *gorm.DB, orderID uint64) (bool, error) {
 	var row struct {
@@ -26,7 +26,7 @@ func (CutoffRepo) FrozenInTx(tx *gorm.DB, orderID uint64) (bool, error) {
 	return err == nil, err
 }
 
-// RecordBillingCutoff 记下计费截止时刻：停机之后发生的电量不再计入本单。
+// RecordBillingCutoff 保存首次计费截止时刻，结算时按该时刻截取可用计量。
 // ctx 控制取消，db 可为事务，chargeOrderID 为订单主键，reason 为业务原因，at 为 UTC 截止时刻。
 // 返回数据库错误；不修改订单状态，不提交调用方事务。
 // 首次写入冻结截止点；重复请求使用 no-op upsert，不延长 cutoff_at。
@@ -63,7 +63,7 @@ func BillingCutoffFrozen(ctx context.Context, db *gorm.DB, orderID uint64) (int6
 
 // FreezeBillingCutoff 在事务中按 orderID 首写截止记录。
 // row 包含截止 UTC 时刻、原因和可选费用快照（分）；调用方须已锁订单且负责提交。
-// 并发唯一键由原子 no-op upsert 仲裁，已有时刻、原因和费用保持不变；错误表示写入失败。
+// 唯一键保证每单一条记录；已有记录不更新时刻、原因或费用，写入失败返回错误。
 func FreezeBillingCutoff(tx *gorm.DB, orderID uint64, row map[string]any) error {
 	row["charge_order_id"] = orderID
 	return tx.Table("charge_billing_cutoff").Clauses(clause.OnConflict{DoUpdates: clause.Assignments(map[string]any{"charge_order_id": gorm.Expr("charge_order_id")})}).Create(row).Error

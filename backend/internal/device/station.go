@@ -17,7 +17,7 @@ type ManagementInputError struct {
 	Message string // 字段校验的公开提示，不包含数据库细节
 }
 
-// Error 返回字段校验提示，不执行 IO。
+// Error 返回字段校验提示。
 func (e ManagementInputError) Error() string { return e.Message }
 
 // StationService 负责站点资料与审计事务，查询和更新均检查当前站点范围。
@@ -90,7 +90,7 @@ func (s StationService) Save(ctx context.Context, audit ops.AuditContext, scope 
 type StationInput struct {
 	// 保留已废弃的 Code 请求字段用于兼容性校验，禁止写入站点记录。
 	Code         *string  `json:"code"`          // 兼容旧客户端的废弃字段；非 nil 时返回编码已移除的参数错误。
-	Name         string   `json:"name"`          // 站点名称，必填，去空白后最长 128 字符。
+	Name         string   `json:"name"`          // 站点名称，非空且提交文本最多 128 字符；保存时去除首尾空白。
 	Address      *string  `json:"address"`       // 站点地址，可空，最长 255 字符。
 	Longitude    *float64 `json:"longitude"`     // 经度，必填指针；缺失、非数字或超出 [-180,180] 判为无效。
 	Latitude     *float64 `json:"latitude"`      // 纬度，必填指针；缺失、非数字或超出 [-90,90] 判为无效。
@@ -99,7 +99,7 @@ type StationInput struct {
 }
 
 // ValidStationInput 检查名称必填且最多 128 字、经纬度必填且范围有效，禁止 NaN。
-// 状态仅允许 active／disabled／construction；地址和电话有长度上限，不设置营业时间。
+// 状态仅允许 active／disabled／construction，地址和电话分别最多 255 和 32 字符。
 func ValidStationInput(input StationInput) bool {
 	if strings.TrimSpace(input.Name) == "" || utf8.RuneCountInString(input.Name) > 128 || input.Longitude == nil || input.Latitude == nil || math.IsNaN(*input.Longitude) || math.IsNaN(*input.Latitude) || math.Abs(*input.Longitude) > 180 || math.Abs(*input.Latitude) > 90 || input.Status == "" || !oneOfStatus(input.Status, "active disabled construction") {
 		return false

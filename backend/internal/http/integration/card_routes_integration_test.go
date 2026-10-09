@@ -57,7 +57,7 @@ func cardRouteDB(t *testing.T, env string) *gorm.DB {
 	return orm
 }
 
-// cardRouteSessions 只模拟会话存活；JWT 及当前账号状态使用真实实现，不证明 Redis 生命周期。
+// cardRouteSessions 提供固定会话状态，JWT 和账号状态仍使用真实认证器。
 type cardRouteSessions struct{}
 
 // Exists 返回 ctx 下 sid 非空的会话 fixture。
@@ -84,7 +84,7 @@ func sameCardJSON(t *testing.T, a, b string) bool {
 }
 
 // TestRegisteredCardRoutesUseOwnedServicesAndNamedClients 验证实际注册 user/central/gateway 端点及两真库。
-// 所有造数外层回滚；网关在线是持久事实 fixture，不代表 TCP 或实机启动确认。
+// 所有造数外层回滚；网关在线状态由测试记录提供，不代表 TCP 或实机启动确认。
 func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	central := cardRouteDB(t, "TEST_MYSQL_URL").Begin()
 	defer central.Rollback()
@@ -104,12 +104,9 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	raw, _ := json.Marshal(charging.Spec{Scheme: &scheme})
 	eventRaw, _ := json.Marshal(protocol.Event{EventID: key, Type: protocol.CardBalanceQuery, DeviceID: deviceID, CardNumber: uint32(id%4000000000 + 1), ReceivedAt: time.Now()})
 	for _, seed := range []struct {
-		// db 该记录的真实 MySQL 测试连接。
-		db *gorm.DB
-		// table 本断言写入、读取或清理的真实表名。
+		db    *gorm.DB
 		table string
-		// row 写入该表的隔离测试记录。
-		row map[string]any
+		row   map[string]any
 	}{
 		{central, "user", map[string]any{"id": id, "openid": key, "status": "active"}}, {central, "user", map[string]any{"id": id + 1, "openid": otherOpenID, "status": "active"}}, {central, "wallet_account", map[string]any{"user_id": id, "balance_cents": 1000, "status": "active"}}, {central, "online_card", map[string]any{"id": id, "card_no": number, "user_id": id, "status": "active"}}, {central, "station", map[string]any{"id": id, "name": deviceID, "longitude": 0, "latitude": 0, "status": "active"}}, {central, "device_meta", map[string]any{"device_id": deviceID, "station_id": id, "vendor_id": id, "protocol_adapter": "dc589", "status": "enabled"}}, {central, "pricing_rule", map[string]any{"name": deviceID, "station_id": id, "spec_json": string(raw), "channel": "default", "version": 1, "status": "active"}},
 		{gateway, "vendor", map[string]any{"id": id, "vendor_code": deviceID, "vendor_name": "registered card gateway", "adapter_class": "dc589", "protocol": "tcp", "status": "enabled"}}, {gateway, "device", map[string]any{"device_id": deviceID, "vendor_id": id, "station_id": id, "port_count": 2, "status": "enabled", "last_seen_at": time.Now()}}, {gateway, "device_port", map[string]any{"device_id": deviceID, "port_no": 1, "port_code": port, "status": "idle"}}, {gateway, "device_port", map[string]any{"device_id": deviceID, "port_no": 2, "port_code": port2, "status": "idle"}}, {gateway, "device_event", map[string]any{"event_key": key, "protocol_name": "dc589", "device_id": deviceID, "event_type": "card_balance_query", "event_json": string(eventRaw), "received_at": time.Now()}}, {gateway, "card_event_delivery", map[string]any{"event_key": key, "status": "pending", "next_attempt_at": time.Now().Add(-time.Minute)}},
@@ -266,7 +263,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 		Attempts uint32
 		// Status 本断言核对的业务状态。
 		Status string
-		// ResponseJSON 已持久化的幂等响应，用于形状与重放核对。
+		// ResponseJSON 已持久化的幂等响应，用于核对回复字段和值在重放时一致。
 		ResponseJSON string
 	}
 	if err := gateway.Table("card_event_delivery").Where("event_key=?", key).Take(&delivery).Error; err != nil || delivery.Attempts != 1 || delivery.Status != "pending" || !sameCardJSON(t, delivery.ResponseJSON, frozen.ResponseJSON) {

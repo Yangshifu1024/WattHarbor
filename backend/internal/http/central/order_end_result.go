@@ -11,23 +11,22 @@ import (
 	"net/http"
 )
 
-// EndResultAPI 适配 worker 的结束结果回执，结束状态与幂等写入由收尾用例拥有。
+// EndResultAPI 接收 worker 提交的设备结束结果，交给结束服务处理。
 type EndResultAPI struct {
-	// Service 是 cmd 注入的结束回执接口，不暴露数据库或通用 HTTP。
+	// Service 保存结束回执并更新订单。
 	Service interface {
-		// Apply 在请求 context 下保存结束结果，返回是否重放或冲突／持久错误，完整事务由实现拥有。
+		// Apply 保存结束结果；重复请求返回已处理标记，内容冲突时报错。
 		Apply(context.Context, chargefinish.EndResult) (bool, error)
 	}
 	ServiceToken string // 内部服务令牌，仅 HTTP 鉴权使用，不进入业务用例。
 }
 
-// Register 在 router 注册结束回执 POST 路径，只注册路由。
+// Register 注册内部结束回执提交路由。
 func (a EndResultAPI) Register(router *gin.Engine) {
 	router.POST(centralcontract.EndResultRoute, a.handle)
 }
 
-// handle 校验 请求中的服务令牌、JSON 及路径订单号一致性，在请求 context 下交给收尾事务。
-// 成功返回 accepted／replayed，输入 400、标识冲突 409、持久失败 503；不在 HTTP 执行资金写入。
+// handle 核对路径与请求中的订单号一致后，提交结束结果。
 func (a EndResultAPI) handle(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

@@ -1,3 +1,4 @@
+// Package ops 提供公开公告查询接口。
 package ops
 
 import (

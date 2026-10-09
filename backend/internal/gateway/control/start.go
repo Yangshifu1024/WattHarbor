@@ -11,18 +11,18 @@ import (
 	"chargepilot/internal/protocol/dc589"
 )
 
-// StartService 编排中央订单授权、网关启动受理与设备下发，发送不确定时持久化补偿恢复入口。
+// StartService 读取订单授权、保存启动命令并下发；发送结果不确定时安排补偿停机。
 type StartService struct {
-	// Orders 中央订单授权接口，不在网关写中央订单或资金。
+	// Orders 读取中央服务中的订单启动授权。
 	Orders PaidOrderAuthorizer
-	// Repo MySQLSink 持久能力，保留命令标识与事务规则。
+	// Repo 保存启动命令、会话和端口占用。
 	Repo repo.MySQLSink
-	// Devices 设备连接注册表，查询在线状态并发送受管理协议命令。
+	// Devices 查找当前设备连接并发送命令。
 	Devices *session.Registry
 }
 
-// Start 先中央授权并已保存的受理，再为在线设备标记和下发 START。
-// 返回受理结果或授权、端口、协议及 SQL 错误；TCP 失败持久 stopping 并尝试 STOP，确认由匹配会话的设备回执更新。
+// Start 先核对中央订单授权并保存命令，再向在线设备发送 START。
+// 已有非 pending 命令直接返回；TCP 发送失败先保存 stopping，再尝试补偿 STOP。
 func (s StartService) Start(ctx context.Context, orderNo string) (repo.StartReservation, error) {
 	paid, err := s.Orders.PaidOrder(ctx, orderNo)
 	if err != nil {

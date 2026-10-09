@@ -11,12 +11,12 @@ import (
 
 // activityRule 保存加锁后用于发券的完整配置，不使用锁前查询结果。
 type activityRule struct {
-	ID              uint64        `gorm:"column:id"`                // 既定规则主键
+	ID              uint64        `gorm:"column:id"`                // 活动规则主键
 	TriggerType     string        `gorm:"column:trigger_type"`      // 触发类型
 	CouponID        uint64        `gorm:"column:coupon_id"`         // 被邀请人或普通奖励模板
 	InviterCouponID sql.NullInt64 `gorm:"column:inviter_coupon_id"` // 邀请人奖励模板
 	ThresholdCents  int64         `gorm:"column:threshold_cents"`   // 门槛，分
-	MaxGrants       int           `gorm:"column:max_grants"`        // 券与来源共同预算，0 表示不限量
+	MaxGrants       int           `gorm:"column:max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
 	PerUserLimit    int           `gorm:"column:per_user_limit"`    // 单人份数，0 默认 1 份
 	Status          string        `gorm:"column:status"`            // 启停状态
 	StartAt         time.Time     `gorm:"column:start_at"`          // 活动开始时刻
@@ -59,7 +59,7 @@ func activeRules(tx *gorm.DB, event ActivityEvent) ([]activityRule, error) {
 	return rows, err
 }
 
-// lockActivityCoupons 在规则锁后按模板主键升序加写锁，共用模板的规则须串行检查预算。
+// lockActivityCoupons 在规则锁后按模板主键升序加写锁，共用模板的规则须依次检查已发份数。
 // 缺失模板由发放逻辑判断为不适用。
 func lockActivityCoupons(tx *gorm.DB, ids []uint64) (map[uint64]activityCoupon, error) {
 	out := map[uint64]activityCoupon{}
@@ -97,7 +97,7 @@ func activityGrantExists(tx *gorm.DB, eventID string, userID uint64) (bool, erro
 	return n > 0, err
 }
 
-// saveActivityGrant 在事务中保存发放，按需追加请求凭据；重放返回首次结果。
+// saveActivityGrant 保存新券，按需记录请求号与发放 ID 的关联；唯一键重复时返回已发放。
 func saveActivityGrant(tx *gorm.DB, in activityGrant, receipt bool) (bool, error) {
 	err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": in.Source, "status": "unused", "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error
 	if isDuplicateKey(err) {

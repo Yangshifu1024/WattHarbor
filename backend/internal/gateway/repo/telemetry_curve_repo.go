@@ -56,7 +56,7 @@ func MetricPeaksInRange(ctx context.Context, db *gorm.DB, table, deviceID string
 
 // HeartbeatSample 是一条心跳事件的原始载荷。
 type HeartbeatSample struct {
-	// ID device_event 表的自增主键，用作心跳取证游标。
+	// ID device_event 表的自增主键，用作心跳分页游标。
 	ID uint64 `gorm:"column:id"`
 	// EventJSON 持久协议事件 JSON 字节。
 	EventJSON []byte `gorm:"column:event_json"`

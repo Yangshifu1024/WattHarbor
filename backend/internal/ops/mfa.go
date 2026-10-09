@@ -16,15 +16,15 @@ import (
 const mfaEnrollmentTTL = 5 * time.Minute
 
 var (
-	ErrMFAProof        = errors.New("密码或验证码校验失败")            // 当前密码或 TOTP 证明失败
-	ErrMFAPending      = errors.New("绑定已过期或已被替换，请重新开始")      // 绑定凭据已失效
+	ErrMFAProof        = errors.New("密码或验证码校验失败")            // 当前密码或 TOTP 验证码校验失败
+	ErrMFAPending      = errors.New("绑定已过期或已被替换，请重新开始")      // 待绑定记录已过期或被替换
 	ErrMFAState        = errors.New("双因素认证状态已改变，请刷新后重试")     // 当前状态不支持动作
 	ErrMFABusy         = errors.New("账号安全设置正在处理中，请稍后重试")     // 同账号设置租锁已占用
-	ErrMFAInput        = errors.New("请按操作提供当前密码、绑定标识和六位验证码") // 输入证明组合不合要求
+	ErrMFAInput        = errors.New("请按操作提供当前密码、绑定标识和六位验证码") // 动作所需的密码、验证码或绑定号缺失或不合法
 	ErrMFASettingsRate = errors.New("安全验证过于频繁，请稍后重试")        // 一分钟安全设置超过五次
 )
 
-// MFASettingsInput 仅接收动作与当前证明，不允许客户端指定目标账号或密钥。
+// MFASettingsInput 接收设置动作、当前密码、验证码和绑定号，不允许指定目标账号或密钥。
 type MFASettingsInput struct {
 	Action       string `json:"action"`        // enrol／confirm／disable 动作
 	Password     string `json:"password"`      // 登记或关闭时的当前口令
@@ -38,11 +38,11 @@ type MFASettingsReply struct {
 	Secret          string `json:"secret,omitempty"`        // 服务端新密钥，不写入审计
 	OTPAuthURI      string `json:"otpauth_uri,omitempty"`   // 当前账号的验证器绑定 URI
 	ExpiresIn       int    `json:"expires_in,omitempty"`    // 绑定寿命，秒
-	MFAEnabled      bool   `json:"mfa_enabled"`             // 当前操作后的启用事实
+	MFAEnabled      bool   `json:"mfa_enabled"`             // 当前操作后是否启用 MFA
 	SessionsRevoked bool   `json:"sessions_revoked"`        // 是否已提升认证版本使旧会话失效
 }
 
-// Valid 检查 MFA 动作与证明字段的组合；六位验证码只能包含数字。
+// Valid 检查各 MFA 动作必填及禁止提交的字段；六位验证码只能包含数字。
 func (in MFASettingsInput) Valid() bool {
 	password := in.Password != "" && len(in.Password) <= 72
 	code := len(in.Code) == 6

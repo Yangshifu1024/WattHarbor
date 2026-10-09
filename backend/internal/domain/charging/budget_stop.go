@@ -39,8 +39,7 @@ func BudgetStopAtMeter(rule Rule, offer *Offer, meter ActualMeter) (StopPlan, *F
 	return plan, &Fee{ElectricCents: electric, ServiceCents: service, TotalCents: electric + service}, nil
 }
 
-// 上下界计算沿用计价引擎的整分钟取整、时段和计费策略。
-// 仅修改临时费率与证据副本，保留原始遥测和最终结算读数。
+// budgetBound 复制费率和分段，用最低或最高可用价格计算费用下界或上界；不修改原始数据。
 func budgetBound(rule Rule, meter ActualMeter, upper bool) (Fee, error) {
 	if ValidateSpec(rule.Spec) != nil || rule.Spec.Electric == nil {
 		return Fee{}, ErrInvalidPricing

@@ -32,7 +32,7 @@ type PrepayRequest struct {
 	ExpiresAt       time.Time // 支付有效期，真实预支付要求仍未过期
 }
 
-// PrepayParams 保持客户端调用微信支付所需的参数形状；模拟渠道只填写模拟字段。
+// PrepayParams 保存客户端发起微信支付所需的参数；模拟渠道只填写模拟字段。
 type PrepayParams struct {
 	Provider  string `json:"provider"`  // wechat_direct 或 simulation，后续确认及退款据此识别渠道
 	PrepayID  string `json:"prepay_id"` // 渠道预支付编号，同支付首次保存后复用

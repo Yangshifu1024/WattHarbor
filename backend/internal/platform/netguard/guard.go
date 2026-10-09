@@ -1,5 +1,4 @@
-// Package netguard 校验出站目标，阻止访问回环、云元数据等内部基础设施。
-// central 与 worker 共用相同的目标限制。
+// Package netguard 检查 HTTPS 目标地址，拒绝本机、内网和部分保留网段。
 package netguard
 
 import (
@@ -10,12 +9,11 @@ import (
 	"strings"
 )
 
-// ErrTargetBlocked 表示目标地址指向被禁止访问的内部设施。
-// 创建订阅和每次发送前都要检查，因为域名解析结果可能改变。
+// ErrTargetBlocked 表示目标 URL 格式无效、域名解析失败，或地址属于禁止访问的网段。
 var ErrTargetBlocked = errors.New("订阅地址指向非公网目标，已拒绝")
 
-// ValidatePublicHTTPS 校验目标使用 HTTPS 且不指向本机、内网或云元数据地址。
-// 创建和投递时均需调用，投递前重新解析 DNS 以降低重绑定风险。
+// ValidatePublicHTTPS 要求目标使用 HTTPS，且不属于本机、内网、云元数据或禁止访问的保留网段。
+// 每次发送前应重新检查，因为域名解析结果可能改变。
 func ValidatePublicHTTPS(raw string) error {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -50,7 +48,7 @@ func ValidatePublicHTTPS(raw string) error {
 	// 解析主机名后检查全部地址，拒绝域名指向内网的请求。
 	addresses, err := net.LookupIP(host)
 	if err != nil {
-		// 解析不出来的主机，同样也不可能是能用的端点。
+		// DNS 查询失败时拒绝该地址。
 		return ErrTargetBlocked
 	}
 	if slices.ContainsFunc(addresses, isPrivateAddress) {
@@ -85,6 +83,6 @@ func isPrivateAddress(ip net.IP) bool {
 		}
 		return false
 	}
-	// IPv6 唯一本地地址（fc00：：/7）。
+	// IPv6 唯一本地地址（fc00::/7）。
 	return ip[0]&0xfe == 0xfc
 }

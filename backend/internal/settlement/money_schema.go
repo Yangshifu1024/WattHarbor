@@ -10,7 +10,7 @@ import (
 type ChargeFeeRecord struct {
 	ChargeOrderID  uint64 `gorm:"column:charge_order_id;primaryKey"` // 充电订单 ID，一单一份费用回执
 	CalculationNo  string `gorm:"column:calculation_no"`             // 首次计费编号，重投递不重新生成
-	ResultJSON     []byte `gorm:"column:result_json"`                // 完整已计算费用与设备计量价格证据 JSON
+	ResultJSON     []byte `gorm:"column:result_json"`                // 完整计算结果 JSON，包含费用、价格和计量
 	ShortfallCents int64  `gorm:"column:shortfall_cents"`            // 结算资金缺口，分，非负
 }
 

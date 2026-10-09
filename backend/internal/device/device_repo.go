@@ -15,7 +15,7 @@ import (
 // Device 是设备列表和详情资料，从 device_meta 读取并关联站点名；关联、返回和搜索都使用站点 ID。
 type Device struct {
 	ID               uint64             `json:"id"`                         // 设备在 central_db 的内部主键，仅用于列表排序。
-	DeviceID         string             `json:"device_id"`                  // 设备编号（device_id），最长 64 字符，是设备对外的业务标识，也是详情接口的寻址键。
+	DeviceID         string             `json:"device_id"`                  // 设备业务编号，也是详情查询键；存储上限 64 字符，新导入限定 8–32 位。
 	StationID        *uint64            `json:"station_id"`                 // 所属站点 ID，可空表示尚未归属站点。
 	StationName      *string            `json:"station_name"`               // 所属站点名称，联表带出；站点被软删除时为空。
 	VendorID         *uint64            `json:"vendor_id"`                  // 设备厂商 ID，可空。
@@ -24,7 +24,7 @@ type Device struct {
 	SignalStrength   *uint8             `json:"signal_strength" gorm:"-"`   // 最新设备信号；未上报时为空，0 仍是有效读数。
 	SignalAt         *time.Time         `json:"signal_at" gorm:"-"`         // 信号采样时刻，未知为 null
 	Ports            []DevicePortStatus `json:"ports" gorm:"-"`             // 当前端口状态；未读取到端口时返回空数组。
-	RuntimeAvailable bool               `json:"runtime_available" gorm:"-"` // 摘要可用标记，故障不等同从未上线
+	RuntimeAvailable bool               `json:"runtime_available" gorm:"-"` // 是否读取到网关摘要；不表示设备在线或无故障
 	Model            *string            `json:"model"`                      // 设备型号，可空；关键词搜索会匹配它。
 	SerialNo         *string            `json:"serial_no"`                  // 设备出厂序列号，可空。
 	Status           string             `json:"status"`                     // 设备状态：enabled 启用、disabled 停用、retired 退役、fault 故障。
@@ -32,9 +32,9 @@ type Device struct {
 	Tags             []string           `json:"tags" gorm:"-"`              // 对外标签数组；数据库 NULL 统一读为空数组。
 	TagsJSON         *string            `json:"-" gorm:"column:tags_json"`  // 内部持久标签数组，响应隐藏
 	UpdatedAt        time.Time          `json:"updated_at"`                 // 资料编辑的并发校验值，使用 UTC 毫秒精度。
-	// 设备协议支持的计量能力与当前计费模式，用于展示计费兼容性。
-	ProtocolAdapter       string `json:"protocol_adapter"`                 // 厂商冻结的协议适配器
-	ChargeMode            string `json:"charge_mode"`                      // 该设备当前实际生效的计费方式，取自 pricing 引擎的 charging.ChargeMode（server_realtime_power / server_max_power / server_energy / device_duration / device_energy / device_power）。
+	// 设备协议支持的计量功能和资料中保存的计费模式。
+	ProtocolAdapter       string `json:"protocol_adapter"`                 // 导入时按厂商资料确定的协议适配器
+	ChargeMode            string `json:"charge_mode"`                      // 设备资料中保存的计费模式；当前生效的套餐和价格须另查 pricing_rule。
 	ReportsEnergy         bool   `json:"reports_energy" gorm:"-"`          // 协议是否支持电量上报；按电量计费要求此能力。
 	ReportsSegmentedPower bool   `json:"reports_segmented_power" gorm:"-"` // 协议是否支持分段功率上报；按功率计费要求此能力。
 }

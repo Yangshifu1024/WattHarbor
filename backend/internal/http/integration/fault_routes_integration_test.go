@@ -40,8 +40,8 @@ func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	id := testfixture.NewID()
 	tag := uuid.NewString()
 	for _, seed := range []struct {
-		table string         /* 事实表 */
-		row   map[string]any /* 本测试事实 */
+		table string
+		row   map[string]any
 	}{
 		{"user", map[string]any{"id": id, "openid": tag, "status": "active"}},
 		{"user", map[string]any{"id": id + 1, "openid": tag + "-other", "status": "active"}},
@@ -117,7 +117,6 @@ func TestRegisteredFaultRoutesPreserveScopeVisibilityAndFailures(t *testing.T) {
 	}
 	w := call("POST", submitPath, `{"device_id":"RF`+tag+`","port_no":9,"fault_type":"other","description":null,"images":null}`, owner)
 	var submitted struct {
-		// Data 公开 HTTP 信封的业务载荷，仅用于响应形状断言。
 		Data struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`

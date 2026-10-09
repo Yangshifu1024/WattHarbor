@@ -52,6 +52,7 @@ type TCPAdapter struct {
 	DebugHeartbeat bool
 }
 
+// Name 返回适配器标识 dc589，用于核对厂商配置。
 func (TCPAdapter) Name() string { return "dc589" }
 
 // ServeConn 处理设备注册和后续帧；ctx、conn 和 sink 均不能为 nil。
@@ -399,8 +400,10 @@ func (c *connection) logFrame(direction string, frame Frame, err error) {
 	logger.Printf("device frame protocol=dc589 device=%s direction=%s command=0x%02X name=%s session=%x bytes=%d data=%s error=%v", c.deviceID, direction, frame.Command, codeName(frame.Command, commandNames), frame.Session, len(frame.Data), parsed, err)
 }
 
+// Close 关闭设备 TCP 连接，中断正在进行的读取。
 func (c *connection) Close() error { return c.conn.Close() }
 
+// Send 将通用命令编码为 DC589 帧，并串行写入设备连接。
 func (c *connection) Send(ctx context.Context, command protocol.Command) (sendErr error) {
 	defer func() {
 		log.Printf("device command sent protocol=dc589 device=%s kind=%v port=%d session=%x error=%v", c.deviceID, command.Kind, command.Port, command.SessionID, sendErr)

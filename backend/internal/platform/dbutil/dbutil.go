@@ -11,7 +11,7 @@ import (
 )
 
 // MonthStart 返回当前 UTC 月份的首日零点，用作 created_month。
-// 该列参与主键和唯一键；写成当天日期会使同一业务号避开唯一约束，因此所有写入点必须共用本函数。
+// 该列参与主键和唯一键，必须按月取值，避免同月的相同业务号因日期不同而重复写入。
 func MonthStart() time.Time {
 	return MonthStartAt(time.Now())
 }
@@ -32,7 +32,7 @@ func IsMySQLDuplicate(err error) bool {
 	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
 }
 
-// LikePattern 转义关键词中的 !、% 和 _，避免将用户输入当作 LIKE 通配符。
+// LikePattern 转义关键词中的 !、% 和 _，并在两端加 %；SQL 须使用 ESCAPE '!'。
 func LikePattern(value string) string {
 	return "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(value) + "%"
 }

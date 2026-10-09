@@ -7,7 +7,7 @@ import (
 
 // 券能否发放、何时到期和如何重放由统一业务规则决定，避免各处理器重复判断。
 
-// ErrCouponGrant 表示券不可用、额度已尽、用户状态不符或重放内容不同；直接重试不能解决。
+// ErrCouponGrant 表示模板不可发放、数量达上限、用户状态不符或同请求内容不同。
 var ErrCouponGrant = errors.New("优惠券不可发放")
 
 // CouponTemplate 是发放时需要用到的券模板字段。
@@ -27,7 +27,7 @@ type CouponUsage struct {
 	UserGranted  int64 // 该用户已获得的份数
 }
 
-// CheckGrantable 检查模板启用、当前有效、总额未尽和单人未达上限，时间由调用方提供。
+// CheckGrantable 检查模板启用、时间有效，且总发放份数和单人份数均未达上限。
 func CheckGrantable(now time.Time, coupon CouponTemplate, usage CouponUsage) error {
 	if coupon.Status != "active" {
 		return ErrCouponGrant
@@ -56,7 +56,7 @@ func GrantExpiry(now time.Time, coupon CouponTemplate) time.Time {
 	return expires
 }
 
-// CouponGrantReceipt 是某次发放的受理凭据，request_id 是它的幂等键。
+// CouponGrantReceipt 保存请求号对应的用户、券模板和首次发放 ID，供重试比对。
 type CouponGrantReceipt struct {
 	RequestID     string // 客户端请求号
 	CouponID      uint64 // 券模板 ID

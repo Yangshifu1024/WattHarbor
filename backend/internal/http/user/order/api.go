@@ -1,3 +1,4 @@
+// Package order 提供当前用户的订单查询、充电曲线和反馈接口。
 package order
 
 import (

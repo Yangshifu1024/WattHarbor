@@ -38,8 +38,7 @@ type ExecutionLog struct {
 // TableName 返回执行日志表名，不执行 IO 或修改行。
 func (ExecutionLog) TableName() string { return "task_execution_log" }
 
-// CreateExecutionLog 向 db 写入 log 并由 GORM 回填 ID，返回写入错误。
-// 保留 typed pointer、表名和复合主键映射，不更改用例构造值或自行提交外层事务。
+// CreateExecutionLog 保存执行日志，并回填自增 ID；沿用调用方事务。
 func CreateExecutionLog(ctx context.Context, db *gorm.DB, log *ExecutionLog) error {
 	return db.WithContext(ctx).Create(log).Error
 }
@@ -47,8 +46,8 @@ func CreateExecutionLog(ctx context.Context, db *gorm.DB, log *ExecutionLog) err
 // dueBatch 一次领取多少条到期任务。
 const dueBatch = 10
 
-// ListDueTasks 读取 db 中 codes 对应的到期启用任务，按计划时间和主键最多返回 10 条。
-// now 同时核对计划与租约时间；空 codes 返回空列表，查询错误原样返回，不领取租约。
+// ListDueTasks 返回已登记、启用、到期且租约已过期的任务，最多 10 条。
+// 按下次运行时间和 ID 排序；仅查询，不领取租约。
 func ListDueTasks(ctx context.Context, db *gorm.DB, codes []string, now time.Time) ([]Task, error) {
 	tasks := []Task{}
 	if len(codes) == 0 {
@@ -60,15 +59,15 @@ func ListDueTasks(ctx context.Context, db *gorm.DB, codes []string, now time.Tim
 	return tasks, err
 }
 
-// FindTaskByCode 按 code 从 db 读取任务，返回记录或缺行／读取错误；不领取租约。
+// FindTaskByCode 按任务编码查询；不存在时返回 gorm.ErrRecordNotFound。
 func FindTaskByCode(ctx context.Context, db *gorm.DB, code string) (Task, error) {
 	var task Task
 	err := db.WithContext(ctx).Table("scheduled_task").Where("task_code = ?", code).Take(&task).Error
 	return task, err
 }
 
-// ClaimTaskLease 为 db 中 task.ID 竞争租约，lease 为新令牌，now 确定两分钟期限。
-// force 跳过 enabled 检查，fromCron 仍要求到期；返回影响行数和写入错误，零行表示未领取，不提交外层事务。
+// ClaimTaskLease 领取两分钟租约，返回是否更新成功。
+// force 可跳过暂停检查，但不能绕过有效租约；自动触发还要求任务已到期。
 func ClaimTaskLease(ctx context.Context, db *gorm.DB, task Task, force, fromCron bool, lease string, now time.Time) (int64, error) {
 	claim := db.WithContext(ctx).Table("scheduled_task").
 		Where("id = ? AND (lease_until IS NULL OR lease_until < ?)", task.ID, now)
@@ -82,23 +81,21 @@ func ClaimTaskLease(ctx context.Context, db *gorm.DB, task Task, force, fromCron
 	return res.RowsAffected, res.Error
 }
 
-// ReleaseLease 在 db 的 context 下按 taskID 和 lease 清空租约，返回写入错误，不释放其他令牌。
-// 零行沿用成功语义，不自行提交或等待正在执行的处理器。
+// ReleaseLease 清空该任务的匹配租约；令牌不同或记录不存在时不更新。
 func ReleaseLease(db *gorm.DB, taskID uint64, lease string) error {
 	return db.Table("scheduled_task").Where("id = ? AND lease_token = ?", taskID, lease).
 		Updates(map[string]any{"lease_token": nil, "lease_until": nil}).Error
 }
 
-// FailStaleRunningLogs 把 db 中 taskCode 的 running 且 started_at 早于 before 的日志置 failed。
-// at 是结束时间，失败原因保持原文本；返回写入错误，不清理已结束记录或领取新租约。
+// FailStaleRunningLogs 将开始时间早于 before 的 running 日志标记为失败。
 func FailStaleRunningLogs(ctx context.Context, db *gorm.DB, taskCode string, before, at time.Time) error {
 	return db.WithContext(ctx).Table("task_execution_log").
 		Where("task_code = ? AND status = 'running' AND started_at < ?", taskCode, before).
 		Updates(map[string]any{"status": "failed", "finished_at": at, "error_msg": "worker stopped before completion"}).Error
 }
 
-// FinishExecutionLog 按 db 中 id 和 month 全部主键字段保存 status、affectedRows、finishedAt 及 message。
-// message 保持 any，nil 写 SQL NULL；返回写入错误，不替调用方判断状态、提交或改变租约。
+// FinishExecutionLog 按 ID 和月份保存执行状态、行数、结束时间和错误。
+// message=nil 时清除错误字段。
 func FinishExecutionLog(ctx context.Context, db *gorm.DB, id uint64, month time.Time, status string, affectedRows uint64, finishedAt time.Time, message any) error {
 	return db.WithContext(ctx).Table("task_execution_log").
 		Where("id = ? AND created_month = ?", id, month).
@@ -108,9 +105,8 @@ func FinishExecutionLog(ctx context.Context, db *gorm.DB, id uint64, month time.
 		}).Error
 }
 
-// FinishTask 按 db 中 taskID 和 lease 保存 finishedAt、nextRunAt、consecutiveFailures 并释放租约。
-// 连续失败达到 5 次才写 enabled=false，其余情况不改变启用标志；返回影响行数和存储错误。
-// 零行表示令牌未命中，不自行提交、重试或更新被其他执行者接管的任务。
+// FinishTask 按匹配租约保存进度和下次运行时间，并清空租约。
+// 连续失败至少 5 次时暂停任务；令牌不匹配时不更新，也不会恢复已暂停任务。
 func FinishTask(ctx context.Context, db *gorm.DB, taskID uint64, lease string, finishedAt, nextRunAt time.Time, consecutiveFailures uint32) (int64, error) {
 	values := map[string]any{"last_run_at": finishedAt, "next_run_at": nextRunAt, "consecutive_fail_count": consecutiveFailures,
 		"lease_token": nil, "lease_until": nil}
@@ -121,8 +117,7 @@ func FinishTask(ctx context.Context, db *gorm.DB, taskID uint64, lease string, f
 	return res.RowsAffected, res.Error
 }
 
-// LastExecution 从 db 按 taskCode 读取开始时间最新的日志记录，返回记录或读取错误。
-// 缺行返回 gorm.ErrRecordNotFound，调用方按无记录形状展示；不修改日志或租约。
+// LastExecution 读取任务最新开始的执行记录；不存在时返回 gorm.ErrRecordNotFound。
 func LastExecution(ctx context.Context, db *gorm.DB, taskCode string) (LastExecutionRow, error) {
 	var row LastExecutionRow
 	err := db.WithContext(ctx).Table("task_execution_log").

@@ -20,7 +20,7 @@ type Download struct {
 	ModifiedAt time.Time // 文件修改时间，供 HTTP 条件和范围请求
 }
 
-// GetDownload 核对当前权限、申请人、范围、脱敏规则和锁后的有效期，再打开文件。
+// GetDownload 核对资源权限、数据范围、脱敏和有效期；申请人或有 admin_user.read 权限的账号可下载。
 // 下载和清理共用任务锁；打开后释放数据库锁，再由 HTTP 传输。
 func (s ExportService) GetDownload(ctx context.Context, original operations.Profile, id uint64) (out Download, err error) {
 	if s.DB == nil {

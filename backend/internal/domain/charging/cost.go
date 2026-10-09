@@ -10,6 +10,8 @@ const (
 	maxLossRateBP = 100000
 )
 
+// Cost 按 spec 和 usage 计算电费、服务费，合计后各自四舍五入到分。
+// 功率计费只收完整分钟；规则无效、非服务端计费或计量不足时返回错误。
 func Cost(spec Spec, usage Usage) (Fee, error) { return costUsage(spec, usage) }
 func tierFor(period Period, watts uint32) Tier {
 	lower := uint32(0)

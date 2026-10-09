@@ -20,11 +20,11 @@ type StopAuthorizer interface {
 	ActiveStop(context.Context, string, uint64) (repo.ActiveOrder, error)
 }
 
-// UserStopService 编排用户停机授权、 STOP 已保存的受理与同一标识下发恢复，设备断电以回执为准。
+// UserStopService 核对用户停机授权、保存命令并下发，重试使用同一 STOP 会话。
 type UserStopService struct {
-	// Orders 中央订单授权接口，不在网关写中央订单或资金。
+	// Orders 核对中央订单的用户归属和停机条件。
 	Orders StopAuthorizer
-	// Repo MySQLSink 持久能力，保留命令标识与事务规则。
+	// Repo 保存用户停机命令和端口关联。
 	Repo repo.MySQLSink
 	// Devices 设备连接注册表，查询在线状态并发送用户 STOP。
 	Devices *session.Registry
@@ -59,7 +59,7 @@ func (s UserStopService) Stop(ctx context.Context, orderNo string, userID uint64
 	return reservation, nil
 }
 
-// RetryPending 读取到期停机并为在线设备依次标记和发送同一 STOP；返回首次错误，继续其余独立任务，不创建新会话标识。
+// RetryPending 向在线设备重发到期 STOP，保留原会话编号；单项失败后继续其余命令。
 func (s UserStopService) RetryPending(ctx context.Context) error {
 	jobs, err := s.Repo.PendingUserStops(ctx)
 	if err != nil {

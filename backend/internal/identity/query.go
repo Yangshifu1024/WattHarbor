@@ -20,7 +20,7 @@ type UserQueryService struct {
 	Recharges UserRechargeHistory // cmd 注入所属钱包读取能力
 }
 
-// List 以 actor 当前 user.read 权限按 q 分页，批量补齐公开事实，返回分页结果或错误。
+// List 校验 actor 当前 user.read 权限，按 q 分页并批量填入钱包和订单统计。
 // 不逐用户外部调用，不冻结账号或改写金额；分页及派生字段沿用既有含义。
 func (s UserQueryService) List(ctx context.Context, actor operations.Profile, q persist.PageQuery) (persist.Page[ChargeUserRow], error) {
 	if !actor.HasPermission("user.read") {

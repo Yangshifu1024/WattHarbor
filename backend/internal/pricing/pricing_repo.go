@@ -69,7 +69,7 @@ func (s Repo) ActiveDeviceRule(ctx context.Context, stationID uint64, deviceID s
 
 // pricingRuleRow 保存当前规则查询字段，数据库映射不进入领域模型。
 type pricingRuleRow struct {
-	ID        uint64           `gorm:"column:id"`         // 既定规则主键
+	ID        uint64           `gorm:"column:id"`         // 生效规则主键
 	StationID uint64           `gorm:"column:station_id"` // 所属站点
 	DeviceID  sql.NullString   `gorm:"column:device_id"`  // 空为整站默认，非空为设备覆盖
 	SpecJSON  []byte           `gorm:"column:spec_json"`  // 完整计费方案与套餐 JSON
@@ -101,7 +101,7 @@ func (s Repo) ActiveOffer(ctx context.Context, station uint64, device string, id
 	return charging.Offer{}, charging.ErrOfferUnavailable
 }
 
-// CheckDeviceScheme 检查设备协议是否支持新交易方案，并返回支持的功能；已付订单快照不变。
+// CheckDeviceScheme 检查设备协议是否支持方案，不兼容时返回错误；已付订单快照不变。
 func (s Repo) CheckDeviceScheme(ctx context.Context, station uint64, device string, scheme charging.Scheme) error {
 	_, cap, err := (devicepkg.OperationRepo{DB: s.DB}).Capabilities(ctx, station, device)
 	if err != nil {

@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrStartResultConflict 表示启动回执与订单、支付或已有回执不符。
 var ErrStartResultConflict = errors.New("charge start result conflicts with order state")
 
 // StartResult 携带启动命令及订单的设备回执内容，供中央用例核对成功或拒绝结果；不创建新的命令编号。

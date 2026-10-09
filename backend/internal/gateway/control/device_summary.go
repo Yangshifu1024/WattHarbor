@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// DeviceSummaryAPI 将网关 repo 的事实映射为共享摘要 DTO，只有服务令牌可读取。
+// DeviceSummaryAPI 返回网关设备和端口摘要，要求服务令牌。
 type DeviceSummaryAPI struct {
 	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，具体事务由方法管理。
 	DB           *gorm.DB // 网关数据库连接

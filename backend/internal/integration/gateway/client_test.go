@@ -34,15 +34,13 @@ func TestChargingEvidencePreservesWireFieldsAndCursor(t *testing.T) {
 			t.Errorf("unexpected request: method=%s path=%s", r.Method, r.URL.Path)
 		}
 		var body struct {
-			// Requests 是用于核对的批量查询参数。
 			Requests []struct {
-				// Device 是请求的设备编号。
 				Device string `json:"device_id"`
-				// Port 端口序号，从 1 开始，不改协议数值。
+
 				Port uint8 `json:"port_no"`
-				// Start 是查询开始时间，用于比较响应。
+
 				Start time.Time `json:"started_at"`
-				// After 是 uint64 事件 ID 游标，不经 float64 转换。
+
 				After uint64 `json:"after_id"`
 			} `json:"requests"`
 		}
@@ -93,15 +91,14 @@ func TestRequestStopRequiresAcceptedResponse(t *testing.T) {
 // TestClientRejectsInvalidResponses 验证错误状态、缺字段、编号不匹配、矛盾的成功标志和无效正文均被拒绝。
 func TestClientRejectsInvalidResponses(t *testing.T) {
 	cases := []struct {
-		// name 子测试名称。
 		name string
-		// status 测试服务返回的 HTTP 状态。
+
 		status int
-		// body 该场景响应 JSON正文，不修改测试值或业务断言。
+
 		body string
-		// stop 为 true 时调用停止接口，否则查询充电记录。
+
 		stop bool
-		// want 是预期错误分类，nil 时只检查调用失败。
+
 		want error
 	}{
 		{"unauthorized", 401, `{}`, false, serviceclient.ErrUnauthorized},
@@ -158,7 +155,6 @@ func TestClientPreservesBusinessErrorAndCancellation(t *testing.T) {
 // TestClientRejectsInvalidConfigurationAndBatchWithoutCallingServer 验证无效地址、令牌和查询批次在发送请求前被拒绝。
 func TestClientRejectsInvalidConfigurationAndBatchWithoutCallingServer(t *testing.T) {
 	for _, tc := range []struct {
-		// base,token 是待校验的服务地址和令牌。
 		base, token string
 	}{
 		{"", "token"}, {"ftp://gateway", "token"}, {"http://", "token"},
@@ -201,11 +197,10 @@ func TestRequestStartChecksOrderAndReceiptFact(t *testing.T) {
 // TestRequestStartRejectsIncompleteAcceptance 验证 HTTP 200、缺字段、编号错误以及无效命令、状态或确认标志均被拒绝。
 func TestRequestStartRejectsIncompleteAcceptance(t *testing.T) {
 	for _, tc := range []struct {
-		// name 子测试名称。
 		name string
-		// status 测试服务返回的 HTTP 状态。
+
 		status int
-		// body 该场景响应 JSON正文，不修改测试值或业务断言。
+
 		body string
 	}{
 		{"200 is not acceptance", 200, `{"code":0,"data":{"order_no":"C-1","command_id":"cmd","status":"pending"}}`},

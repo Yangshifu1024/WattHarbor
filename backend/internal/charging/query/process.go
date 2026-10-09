@@ -51,7 +51,7 @@ type ProcessPage struct {
 // ProcessService 将授权订单信息与网关读数组合，不持有数据库、URL 或服务令牌。
 type ProcessService struct {
 	Orders  ProcessOrders // cmd注入的订单授权身份读取
-	Gateway ProcessReader // cmd注入的具名过程读取
+	Gateway ProcessReader // cmd 注入的网关充电采样查询
 }
 
 // Read 先校验后台权限与订单编号，再按游标查询并返回充电过程采样。

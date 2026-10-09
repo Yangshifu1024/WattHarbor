@@ -147,7 +147,7 @@ func (s BillRepo) Issue(ctx context.Context, chargeOrderID uint64) (Bill, bool, 
 }
 
 // Missing 查找已入账、有正费用但缺少账单的订单，每次限 1–50 笔。
-// 包括积压记录；投递状态不能代替资金入账凭据。
+// 以 charge_fee_receipt 确认费用已保存，不依赖 fee_delivery 的处理状态。
 func (s BillRepo) Missing(ctx context.Context, limit int) ([]uint64, error) {
 	if s.DB == nil || limit < 1 || limit > 50 {
 		return nil, errors.New("invalid bill recovery query")

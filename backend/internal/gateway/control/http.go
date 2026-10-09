@@ -1,3 +1,4 @@
+// Package control 提供网关内部设备控制、事件同步和读数查询接口。
 package control
 
 import (

@@ -10,34 +10,32 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// testAdapter 通知真实 TCP 连接进入适配器并等待调用方取消，不解析设备帧。
+// testAdapter 通知测试连接已进入适配器，然后等待取消。
 type testAdapter struct {
-	// name 适配器名称，用于区分连接进入哪个协议端点。
 	name string
 	// connected 由测试持有的连接通知通道；适配器只发送名称，不关闭通道。
 	connected chan<- string
 }
 
-// Name 返回 a.name 协议标识。
+// Name 返回适配器名称。
 func (a testAdapter) Name() string { return a.name }
 
-// ServeConn 接收 ctx、conn 与忽略的 sink，向 a.connected 通知名称后等待 ctx 取消并返回 ctx.Err()；不读写或关闭 conn，连接由 Serve 释放。
+// ServeConn 发送连接进入通知，等待 context 取消并返回其错误；连接由 Serve 关闭。
 func (a testAdapter) ServeConn(ctx context.Context, conn net.Conn, _ protocol.Sink) error {
 	a.connected <- a.name
 	<-ctx.Done()
 	return ctx.Err()
 }
 
-// testSink 提供无持久化的协议 sink，供多端口生命周期检查。
+// testSink 忽略注册和事件，用于检查监听生命周期。
 type testSink struct{}
 
-// Register 忽略传入的 context 与设备注册资料，立即返回 nil；仅满足测试装配，不执行持久化。
+// Register 忽略设备注册并返回 nil。
 func (testSink) Register(context.Context, protocol.Registration) error { return nil }
 
-// Record 忽略传入的 context 与协议事件，立即返回 nil；仅满足测试装配，不执行持久化。
+// Record 忽略事件并返回 nil。
 func (testSink) Record(context.Context, protocol.Event) error { return nil }
 
-// TestServeMultipleProtocolPorts 启动两个真实本地 TCP 端口，核对分别进入对应适配器且取消后 Serve 返回 context.Canceled；测试关闭客户端与监听，不写设备数据。
 func TestServeMultipleProtocolPorts(t *testing.T) {
 	ports := make([]string, 2)
 	for i := range ports {

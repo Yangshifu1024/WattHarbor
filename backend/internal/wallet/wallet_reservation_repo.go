@@ -20,7 +20,7 @@ type WalletRefundReservation struct {
 	Reason      string // 退款或风险批准依据
 }
 
-// refundWalletReservation 是预占时持有行锁的钱包事实。
+// refundWalletReservation 保存预占时加锁读取的钱包余额、冻结额和状态。
 type refundWalletReservation struct {
 	ID           uint64 // 所属钱包主键
 	UserID       uint64 // 账户所属用户

@@ -1,4 +1,4 @@
-// 验证任务编排、错误停止与跨平台路径；不启动开发服务，不连接数据库。
+// 检查任务顺序、失败退出和跨平台路径；不启动服务或连接数据库。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../tasks.mjs';
 
-// fixture 建立独立仓库目录并登记清理，记录子进程调用；返回 root、calls 与运行选项。
-// 子命令默认返回成功，调用方可覆盖 run／env／platform 以复现故障；无真实进程副作用。
+// fixture 创建临时仓库目录，用替代执行器记录命令；测试结束后删除目录。
+// 可覆盖执行器、环境和平台来模拟失败。
 function fixture(t, overrides = {}) {
   const root = mkdtempSync(join(tmpdir(), 'chargepilot-tasks-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

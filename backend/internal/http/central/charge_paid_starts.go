@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PaidStartsAPI 适配 worker 按游标读取已付款待启动订单，筛选及数量边界由用例执行。
+// PaidStartsAPI 为 worker 分页返回已支付的待启动订单。
 type PaidStartsAPI struct {
 	// Service 是 cmd 注入的待启动查询接口，不暴露数据库或通用 HTTP。
 	Service interface {

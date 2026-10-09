@@ -1,3 +1,4 @@
+// Package provision 提供网关设备开通和厂商管理接口。
 package provision
 
 import (

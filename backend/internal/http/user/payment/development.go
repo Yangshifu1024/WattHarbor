@@ -11,20 +11,19 @@ import (
 )
 
 // DevelopmentAPI 仅在 PAYMENT_MODE=simulation 时注册。
-// 通过正常支付回调事务确认当前用户的模拟结算，不接受任意金额或用户身份。
+// 模拟确认仍通过支付回调事务，用户和金额取自原支付单。
 type DevelopmentAPI struct {
 	// Auth 校验当前用户会话及状态，失败已写唯一响应。
 	Auth    authhttp.SessionAuthenticator
 	Service payment.SimulationService // 仅 simulation 模式装配的确认用例
 }
 
-// Register 向 r 注册模拟支付确认端点，只注册路由；调用方只在 simulation 模式装配。
+// Register 注册当前用户的模拟支付确认路由。
 func (a DevelopmentAPI) Register(r *gin.Engine) {
 	r.POST("/api/v1/user/development/payments/confirm", a.confirm)
 }
 
-// confirm 校验当前用户身份、绑定商户订单号并调用模拟确认用例，成功写回执。
-// 参数错误为 400、缺失支付为 404、非模拟单或通知冲突为 409、读取及确认故障为 503；到账事务由用例执行。
+// confirm 核对当前用户身份及商户订单号，确认该用户的模拟支付。
 func (a DevelopmentAPI) confirm(c *gin.Context) {
 	user, ok := a.Auth.Authenticate(c)
 	if !ok {

@@ -8,9 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DecodeResource 将c的请求体限制为64KB并严格解码到dst，拒绝未知字段和多个JSON值。
-// dst须是json.Decoder支持的非nil目标指针；成功返回true，调用方继续业务参数校验。
-// 格式、大小或目标错误写入HTTP 400 响应并返回false，调用方必须立即返回。
+// DecodeResource 将请求体限制为 64 KiB，解码到非 nil 指针 dst，拒绝未知字段和多个 JSON 值。
+// 失败时写入 HTTP 400 并返回 false，调用方必须立即返回；成功后仍需校验业务参数。
 func DecodeResource(c *gin.Context, dst any) bool {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
 	d := json.NewDecoder(c.Request.Body)

@@ -52,7 +52,7 @@ func (o *financeDeliveryOrders) Defer(context.Context, uint64, string, string) e
 }
 
 // TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery 验证真实注册路由和 MySQL 投递恢复。
-// 固定资金边界故障只证明回复及队列身份，不作为实际扣款验收；造数及更新均外层回滚。
+// 资金方法由测试替身返回错误；HTTP 和队列 SQL 仍真实执行，造数和更新在外层事务回滚。
 func TestRegisteredBillingClientKeepsPartialProgressAndOriginalDelivery(t *testing.T) {
 	db, closeDB := testConn(t)
 	defer closeDB()

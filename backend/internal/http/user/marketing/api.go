@@ -1,3 +1,4 @@
+// Package marketing 提供当前用户的可领优惠券和已持有优惠券查询。
 package marketing
 
 import (

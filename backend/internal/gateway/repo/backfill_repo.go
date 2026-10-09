@@ -13,7 +13,7 @@ import (
 
 // 仓储检查设备和端口是否允许补传，完成去重、插入和汇总；控制层负责解析及输入限额。
 
-// deviceStatus 接收 ctx、调用方事务与 deviceID，以当前读锁定未删除设备，串行化实时写入与补传。
+// deviceStatus 锁定未删除的设备行并返回状态，让实时采样和补传按设备串行写入。
 func deviceStatus(ctx context.Context, db *gorm.DB, deviceID string) (string, error) {
 	var row struct {
 		// Status 状态。
@@ -24,7 +24,7 @@ func deviceStatus(ctx context.Context, db *gorm.DB, deviceID string) (string, er
 	return row.Status, err
 }
 
-// devicePortNumbers 读取未删除端口号；返回列表或 SQL 错误，不写库。
+// devicePortNumbers 返回指定设备未删除的端口号。
 func devicePortNumbers(ctx context.Context, db *gorm.DB, deviceID string) ([]int16, error) {
 	var rows []struct {
 		// PortNo 协议端口序号。
@@ -62,7 +62,7 @@ func listExistingTelemetry(ctx context.Context, db *gorm.DB, deviceID string, me
 	return rows, err
 }
 
-// telemetryInsertBatch 保留原始遥测每批五百行的 CreateInBatches 预算。
+// telemetryInsertBatch 限定每批最多插入 500 条遥测。
 const telemetryInsertBatch = 500
 
 // insertTelemetryBatch 每批插入最多 500 条读数；聚合刷新由调用方负责。
@@ -79,7 +79,7 @@ var backfillMetrics = map[string]struct{}{
 	"battery_soc": {}, "power_w": {}, "meter_kwh": {},
 }
 
-// BackfillSample 是解析层已校验的单条补采读数，供完整持久操作核对设备、端口并写入原始遥测与聚合。
+// BackfillSample 保存已解析的补采读数，供仓储校验设备和端口后写入遥测。
 type BackfillSample struct {
 	// DeviceID 设备业务编号；设备检查使用方法的 deviceID 参数。
 	DeviceID string
@@ -99,7 +99,7 @@ var ErrBackfillUnknownDevice = errors.New("backfill device is unknown or retired
 // ErrBackfillUnknownPort 表示补采非空端口不属于该设备的未删除端口；保留端口失败分类。
 var ErrBackfillUnknownPort = errors.New("backfill port does not belong to the device")
 
-// IsBackfillMetric 按六项指标集合返回是否支持补采；不解析载荷、不执行 IO 或修改集合。
+// IsBackfillMetric 判断指标是否属于六项补采指标。
 func IsBackfillMetric(name string) bool {
 	_, ok := backfillMetrics[name]
 	return ok

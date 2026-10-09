@@ -14,13 +14,12 @@ import (
 // 通过本地 HTTP 服务核对令牌和余额不足标志，不执行实际扣款。
 func TestCardServiceFailuresDoNotBecomeBusinessDeclines(t *testing.T) {
 	for _, tc := range []struct {
-		// name 是错误分类场景名称。
 		name string
-		// status 本地服务返回的HTTP 状态，用于区分业务拒绝及服务失败。
+
 		status int
-		// body 本地服务返回的响应正文，保留余额不足、空数据、服务失败及非 JSON 形状。
+
 		body string
-		// declined 表示预期是否明确拒绝，balance 表示预期是否余额不足。
+
 		declined, balance bool
 	}{
 		{"insufficient", 409, `{"code":2009,"data":{"insufficient_balance":true}}`, true, true},
@@ -70,7 +69,7 @@ func TestCardBalanceRejectsIncompleteResponse(t *testing.T) {
 	}
 }
 
-// TestCardRequestKeepsRedirectAndOversizedResponsesUnknown 核对响应有界、禁止重定向和调用方取消不转成业务拒绝。
+// TestCardRequestKeepsRedirectAndOversizedResponsesUnknown 检查正文上限、重定向和取消；这些失败不能当作刷卡拒绝。
 func TestCardRequestKeepsRedirectAndOversizedResponsesUnknown(t *testing.T) {
 	redirected := 0
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected++ }))

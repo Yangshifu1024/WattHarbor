@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// registerVendors 在 r 注册厂商公开路由及实时权限中间件；只注册路由。
+// registerVendors 注册厂商查询和管理接口，并校验各自权限。
 func (a API) registerVendors(r *gin.Engine) {
 	r.GET("/api/v1/admin/vendors", a.Auth.Require("vendor.read"), a.listVendors)
 	r.GET("/api/v1/admin/vendors/:id", a.Auth.Require("vendor.read"), a.getVendor)
@@ -21,13 +21,13 @@ func (a API) registerVendors(r *gin.Engine) {
 	r.GET("/api/v1/admin/vendor-options", a.Auth.Require("device.import"), a.vendorOptions)
 }
 
-// listVendors 从请求解析分页、读取实时范围并返回用例结果，公开列表允许启用或禁用筛选。
+// listVendors 分页查询厂商，支持启用或禁用状态筛选。
 func (a API) listVendors(c *gin.Context) { a.listVendorPage(c, false) }
 
-// vendorOptions 从 c 返回当前范围内的启用厂商选项，不额外要求厂商管理权限。
+// vendorOptions 返回当前管理员范围内的启用厂商，供设备导入选择。
 func (a API) vendorOptions(c *gin.Context) { a.listVendorPage(c, true) }
 
-// listVendorPage 从请求解析分页并调用用例，options 选择导入选项；返回分页及本地权限或安全错误。
+// listVendorPage 按当前管理员范围分页查询厂商；options 为 true 时仅返回导入可选项。
 func (a API) listVendorPage(c *gin.Context, options bool) {
 	page, ok := admin.ReadAdminPage(c, "enabled disabled")
 	if !ok {
@@ -45,7 +45,7 @@ func (a API) listVendorPage(c *gin.Context, options bool) {
 	httpapi.OK(c, out)
 }
 
-// getVendor 从请求解析主键及实时范围，调用用例读取公开字典；返回资料或范围／服务错误。
+// getVendor 读取当前管理员范围内的指定厂商。
 func (a API) getVendor(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -63,10 +63,10 @@ func (a API) getVendor(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// createVendor 从 c 严格解析厂商完整字段，以实时范围和权限调用新建用例；返回网关确认结果或错误。
+// createVendor 创建厂商并返回网关回复。
 func (a API) createVendor(c *gin.Context) { a.saveVendor(c, 0) }
 
-// updateVendor 从请求解析主键，以实时范围及完整字段调用更新用例；返回网关确认结果或错误。
+// updateVendor 更新指定厂商并返回网关回复。
 func (a API) updateVendor(c *gin.Context) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -75,7 +75,7 @@ func (a API) updateVendor(c *gin.Context) {
 	a.saveVendor(c, id)
 }
 
-// saveVendor 读取 c 的实时范围及输入，以 id 选择新建或更新；用例负责外部调用与提交后审计。
+// saveVendor 校验厂商资料和管理员当前范围；id 为零时新建，否则更新。
 func (a API) saveVendor(c *gin.Context, id uint64) {
 	scope, ok := admin.StationScope(c, a.Scopes)
 	if !ok {

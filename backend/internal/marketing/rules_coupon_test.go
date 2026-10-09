@@ -80,12 +80,12 @@ func TestGrantExpiryIsCappedByCouponEnd(t *testing.T) {
 func TestReplayGrantOnlyReusesSameRequestForSameCouponAndUser(t *testing.T) {
 	receipt := CouponGrantReceipt{RequestID: "r-1", CouponID: 7, UserID: 9001, CouponGrantID: 555}
 
-	// 完全一致 → 沿用首次凭据
+	// 请求号、模板和用户一致，返回首次发放 ID
 	got, err := ReplayGrant(receipt, "r-1", 7, 9001)
 	if err != nil || got != 555 {
 		t.Fatalf("一致重放应回首次凭据：%d %v", got, err)
 	}
-	// 券或用户变了 → 拒绝，绝不能把 A 券的凭据发给 B 用户
+	// 模板或用户变化时拒绝，不能复用别人的发放记录
 	for name, args := range map[string][2]uint64{
 		"换券":  {8, 9001},
 		"换用户": {7, 9002},

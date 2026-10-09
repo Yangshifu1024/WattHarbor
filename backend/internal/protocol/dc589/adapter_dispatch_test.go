@@ -17,10 +17,10 @@ type recordingSink struct {
 	recorded chan struct{}    // 每次成功记录的确认，供发送方等待帧已处理
 }
 
-// Register 接受 context 下注册信息并返回 nil；测试只断言后续帧事件，不执行持久化。
+// Register 忽略注册信息并返回 nil。
 func (s *recordingSink) Register(context.Context, protocol.Registration) error { return nil }
 
-// Record 在接收者锁内保存 event 并确认已处理，返回 nil；context 不控制此内存操作。
+// Record 在锁内追加事件并通知等待者。
 func (s *recordingSink) Record(_ context.Context, event protocol.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -31,14 +31,14 @@ func (s *recordingSink) Record(_ context.Context, event protocol.Event) error {
 	return nil
 }
 
-// all 返回接收者事件的独立副本，避免测试读取与适配器追加竞态，无错误或 IO。
+// all 在锁内复制事件列表，供测试读取。
 func (s *recordingSink) all() []protocol.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]protocol.Event(nil), s.events...)
 }
 
-// findConfigResults 返回接收者事件中配置结果的副本；无结果为空集合，不修改事件。
+// findConfigResults 复制已记录的配置回复事件。
 func (s *recordingSink) findConfigResults() []protocol.Event {
 	var out []protocol.Event
 	for _, event := range s.all() {

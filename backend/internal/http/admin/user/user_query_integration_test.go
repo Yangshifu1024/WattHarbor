@@ -45,7 +45,7 @@ func TestRegisteredUserQueryKeepsBatchProjectionAndRechargeOwnership(t *testing.
 		t.Fatalf("permission=%d %v", permission, err)
 	}
 	for _, seed := range []struct {
-		table string         /* 事实表 */
+		table string
 		row   map[string]any /* 本测试记录 */
 	}{
 		{"role", map[string]any{"id": id + 30, "code": "identity-reader-" + tag, "name": "identity reader", "is_builtin": false}},

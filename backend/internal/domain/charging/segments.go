@@ -1,5 +1,6 @@
 package charging
 
+// SameSegments 逐段比较时间、电量、峰值和可选功率；nil 与空列表视为相同。
 func SameSegments(a, b []MeterSegment) bool {
 	if len(a) != len(b) {
 		return false

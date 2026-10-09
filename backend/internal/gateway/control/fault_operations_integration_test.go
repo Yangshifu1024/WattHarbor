@@ -119,7 +119,7 @@ func TestFaultMarkKeepsTransactionAndReplay(t *testing.T) {
 }
 
 // TestHeartbeatReadKeepsWatermarkAndOrdering 验证键优先、严格时间／协议／设备过滤、同刻 ID 倒序和缺失／错误响应。
-// 所有证据位于外层回滚事务，JSON 是证据记录，不替代故障恢复的协议解释。
+// 设备事件由外层事务回滚；本测试只核对心跳查询，不判断故障是否恢复。
 func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 	db := gatewayContractDB(t)
 	tx := db.Begin()
@@ -132,7 +132,7 @@ func TestHeartbeatReadKeepsWatermarkAndOrdering(t *testing.T) {
 	latest := at.Add(time.Minute)
 	for i, seed := range []struct {
 		board    string    // 持久设备编号。
-		protocol string    // 证据协议，异协议不能当作 dc589 心跳。
+		protocol string    // 事件协议；只读取 dc589 心跳。
 		kind     string    // 事件类型。
 		at       time.Time // 接收时刻，支持同刻 ID 仲裁。
 	}{

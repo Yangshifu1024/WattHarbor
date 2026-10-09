@@ -26,7 +26,7 @@ func TestMonthStartIsFirstDayOfCurrentUTCMonth(t *testing.T) {
 	}
 }
 
-// 同一分钟内多次取值必须完全一致，否则同一事务内写入两条记录会落进不同分区。
+// 同月取值应一致，避免唯一键中的 created_month 随写入日期变化。
 func TestMonthStartIsStableWithinAMonth(t *testing.T) {
 	first := MonthStart()
 	second := MonthStart()
@@ -62,8 +62,7 @@ func TestMonthStartAtUsesUTCMonthAcrossTimeZones(t *testing.T) {
 	}
 }
 
-// 锚点必须落在 RANGE 分区覆盖的区间内：月首 to_days() 等于该月分区的下界。
-// 2026-10-01 的 to_days 为 740255，正是 p_2026m10 的 VALUES LESS THAN 起点。
+// 月分区包含月初，不包含次月月初。
 func TestMonthStartLandsOnPartitionBoundary(t *testing.T) {
 	monthStart := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	nextMonth := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)

@@ -11,17 +11,17 @@ import (
 	"net/http"
 )
 
-// CardReplyAPI 处理已冻结的设备回复，不执行资金决策。
+// CardReplyAPI 向设备发送已保存的刷卡拒绝或余额回复。
 type CardReplyAPI struct {
 	Devices      *session.Registry // 进程拥有的在线连接，发送响应受请求取消管理
 	ServiceToken string            // 内部调用身份凭据
 }
 
-// Register 在 r 注册共享内部回复端点；不发送设备命令或打开资源。
+// Register 注册内部卡回复路由。
 func (a CardReplyAPI) Register(r *gin.Engine) { r.POST(contract.CardReplyPath, a.reply) }
 
-// reply 从请求读取设备、会话和已保存的决定，鉴权后发送；失败返回对应 HTTP 错误。
-// accepted 只说明连接发送完成，不能据此确认设备处理或扣款结果。
+// reply 校验服务令牌、卡号和会话后发送设备回复。
+// accepted 只表示连接写入完成，还须等待设备处理。
 func (a CardReplyAPI) reply(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

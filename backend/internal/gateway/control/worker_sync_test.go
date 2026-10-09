@@ -14,10 +14,8 @@ func TestWorkerSyncAPIRequiresServiceToken(t *testing.T) {
 	router := httpapi.NewRouter()
 	(TelemetryAPI{ServiceToken: "service"}).Register(router)
 	cases := []struct {
-		// method 注册路由的 HTTP 方法。
 		method string
-		// path 同步端点及请求查询参数。
-		path string
+		path   string
 	}{
 		{"GET", "/api/v1/internal/start-results"},
 		{"POST", "/api/v1/internal/start-results/mark-reported"},

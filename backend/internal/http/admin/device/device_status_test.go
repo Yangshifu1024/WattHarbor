@@ -14,7 +14,6 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestDeviceStatusRejectsInvalidRequestsBeforeWriting 验证设备运营状态端点先拒绝缺值、非法状态、额外字段和多个 JSON 值。
 func TestDeviceStatusRejectsInvalidRequestsBeforeWriting(t *testing.T) {
 	for _, body := range []string{`{}`, `{"status":"fault"}`, `{"status":"enabled","station_id":9}`, `{"status":"disabled"} {}`} {
 		r := httpapi.NewRouter()
@@ -27,7 +26,6 @@ func TestDeviceStatusRejectsInvalidRequestsBeforeWriting(t *testing.T) {
 	}
 }
 
-// TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown 通过专用 loopback 客户端验证只查询可见设备，保留真实零值、未知值及网关故障状态。
 func TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown(t *testing.T) {
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ids := r.URL.Query()["device_id"]
@@ -54,7 +52,6 @@ func TestDeviceEnrichmentUsesOnlyVisibleDevicesAndPreservesUnknown(t *testing.T)
 	}
 }
 
-// TestDeviceEnrichmentNormalizesMissingPortArrays 验证缺失、null 及未配置网关的端口均输出空数组，不补造设备运行状态。
 func TestDeviceEnrichmentNormalizesMissingPortArrays(t *testing.T) {
 	for _, body := range []string{`{"code":0,"data":{"items":[{"device_id":"board","ports":null}]}}`, `{"code":0,"data":{"items":[{"device_id":"board"}]}}`} {
 		gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))

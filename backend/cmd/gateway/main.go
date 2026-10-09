@@ -1,3 +1,4 @@
+// 命令 gateway 接收设备 TCP 连接，保存设备事件，并提供内部设备控制与查询接口。
 package main
 
 import (

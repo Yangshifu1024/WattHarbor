@@ -16,7 +16,7 @@ type ChargeOrderRecord struct {
 	PortNo         uint8          `gorm:"column:port_no"`                        // 设备端口号，从 1 开始
 	PortCode       sql.NullString `gorm:"column:port_code"`                      // 端口二维码编码，可空
 	PaymentOrderID sql.NullInt64  `gorm:"column:payment_order_id"`               // 关联支付主键，未关联为空
-	Status         string         `gorm:"column:status"`                         // 持久化生命周期，不以退款申请代替成功事实
+	Status         string         `gorm:"column:status"`                         // 订单状态；refunding 表示申请中，refunded 表示已退款
 	BusinessStatus string         `gorm:"column:business_status;->"`             // STORED generated；写入只由内部生命周期产生。
 	PaymentStatus  string         `gorm:"column:payment_status;default:pending"` // 实际支付和退款结果的持久状态。
 	StartedAt      sql.NullTime   `gorm:"column:started_at"`                     // 实际启动 UTC 时刻，未开始为空
@@ -48,7 +48,7 @@ func (ChargeEventLogRecord) TableName() string { return "charge_event_log" }
 // ChargePricingSnapshotRecord 映射支付意图与完整冻结价格快照，不读取当前发布模板。
 type ChargePricingSnapshotRecord struct {
 	ChargeOrderID   uint64 `gorm:"column:charge_order_id;primaryKey"` // 充电订单主键
-	PaymentIntentID string `gorm:"column:payment_intent_id"`          // 启动支付意图身份
+	PaymentIntentID string `gorm:"column:payment_intent_id"`          // 关联支付申请 UUID
 	UserID          uint64 `gorm:"column:user_id"`                    // 订单所有人
 	PortCode        string `gorm:"column:port_code"`                  // 端口二维码编码，可空
 	PricingSnapshot []byte `gorm:"column:pricing_snapshot"`           // 完整计价快照 JSON，不能替换为当前模板

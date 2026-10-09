@@ -1,3 +1,4 @@
+// Package schedule 按数据库计划执行已登记处理器，管理租约、结果日志和失败暂停。
 package schedule
 
 import (
@@ -14,17 +15,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// Handler 接收受管理 context，返回处理行数及执行错误；数据库配置仅控制调度参数。
-// 处理器必须在返回前结束自身工作，运行期限及 panic 收尾由调度用例管理。
+// Handler 同步执行任务，须响应取消并在返回前结束自身工作。
 type Handler func(context.Context) (uint64, error)
 
-// Scheduler 拥有处理器登记、租约与执行收尾编排，完整表操作交由 worker repo。
+// Scheduler 领取租约并执行已登记任务，保存结果并安排下次运行。
 type Scheduler struct {
 	DB       *gorm.DB           // worker 定时任务及执行日志的受管理连接。
 	Handlers map[string]Handler // 代码中登记的处理器，配置不能新增业务实现。
 }
 
-// Task 是调度用例需要的仓储读取的记录，字段映射由 worker repo 定义。
+// Task 是 worker 仓储读取的定时任务配置。
 type Task = workerrepo.Task
 
 // CleanupHistory 调用历史清理，返回仓储错误；成功零行保留一天，其余结束记录保留 30 天。
@@ -86,12 +86,11 @@ func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool)
 	return s.execute(ctx, task, force, "admin_api", reason)
 }
 
-// ErrPaused 表示任务暂停且未使用强制手动触发，HTTP 适配层保留其失败语义。
+// ErrPaused 表示任务已暂停，须强制手动触发才能执行。
 var ErrPaused = errors.New("scheduled task paused")
 
-// execute 按 task 快照领取两分钟租约，force、triggeredBy 和 reason 保留触发规则。
-// 领取后恢复过期 running 日志，创建本次日志并以 30 秒 context 执行处理器，独立 5 秒保存终态和更新任务。
-// 返回是否领取及处理器、日志、任务错误的合并；租约竞争未领取为 false/nil，不重试或延长租约。
+// execute 领取两分钟租约，保存运行日志并使用 30 秒 context 执行处理器。
+// 执行结束后用独立的 5 秒 context 保存结果、更新计划并清空租约；竞争失败返回 false。
 func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggeredBy, reason string) (bool, error) {
 	handler := s.Handlers[task.Code]
 	if handler == nil {
@@ -135,7 +134,7 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 		message = text
 		failures = task.ConsecutiveFailCount + 1
 	}
-	// 使用独立的 5 秒 context 保存执行结果，避免任务取消中断日志写入；租约仍按到期时间释放。
+	// 即使任务被取消，也用独立的 5 秒 context 保存结果并释放匹配租约。
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
 	logErr := workerrepo.FinishExecutionLog(finishCtx, s.DB, log.ID, month, status, rows, finished, message)
@@ -146,8 +145,7 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	return true, errors.Join(runErr, logErr, taskErr)
 }
 
-// parseSpec 将 raw 按 UTC cron 语法解析，返回计划或格式／panic 错误。
-// 保留 64 字节上限及 TZ= 拒绝，不在解析失败时执行任务。
+// parseSpec 解析最长 64 字节的 cron 表达式，拒绝 TZ= 时区覆盖；解析 panic 转为错误。
 func parseSpec(raw string) (spec cron.Schedule, err error) {
 	// 所有 worker 计划保留 UTC，拒绝逐行时区覆盖，不改变解析时基。
 	if strings.Contains(raw, "TZ=") || len(raw) > 64 {
@@ -161,8 +159,7 @@ func parseSpec(raw string) (spec cron.Schedule, err error) {
 	return parser.Parse(raw)
 }
 
-// runSafely 执行 handler，返回其行数及错误；panic 转为调度错误并用于日志收尾。
-// 不创建后台协程或改变处理器副作用，取消由 handler 响应。
+// runSafely 同步执行处理器，将 panic 转为错误供保存日志。
 func runSafely(ctx context.Context, handler Handler) (rows uint64, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {

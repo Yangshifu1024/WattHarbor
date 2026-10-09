@@ -48,10 +48,8 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 	alertID := binary.LittleEndian.Uint64(randomID[:8])%(1<<54) + (1 << 54)
 	month := time.Now().UTC().Format("2006-01") + "-01"
 	for _, seed := range []struct {
-		// table 本断言写入、读取或清理的真实表名。
 		table string
-		// row 写入该表的隔离测试记录。
-		row map[string]any
+		row   map[string]any
 	}{
 		{"role", map[string]any{"id": id, "code": tag, "name": "alert proof", "is_builtin": false}},
 		{"admin_user", map[string]any{"id": id, "username": tag, "password_hash": "fixture", "role_id": id, "status": "active", "auth_version": 1}},
@@ -106,9 +104,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 	}
 	w := call("GET", "/api/v1/admin/alerts")
 	var page struct {
-		// Data 公开 HTTP 信封的业务载荷，仅用于响应形状断言。
 		Data struct {
-			// Items 本断言核对的列表记录。
 			Items []json.RawMessage `json:"items"`
 		} `json:"data"`
 	}

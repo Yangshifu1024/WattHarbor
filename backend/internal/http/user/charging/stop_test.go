@@ -17,19 +17,18 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// liveSession 是停止路由测试的固定有效会话能力，用于隔离 Redis 会话读取，保留真实 JWT 身份解析。
+// liveSession 让测试会话始终有效，JWT 身份仍由真实认证器解析。
 type liveSession struct{}
 
-// Exists 忽略输入 context 和 SID，返回 true、nil，供停止路由隔离会话依赖；不访问 Redis。
+// Exists 返回 true，跳过 Redis 会话读取。
 func (liveSession) Exists(context.Context, string) (bool, error) { return true, nil }
 
-// liveUser 是停止路由测试的固定有效用户能力，用于隔离用户状态读取，不查询真实账号。
+// liveUser 让测试用户始终有效。
 type liveUser struct{}
 
-// Active 忽略输入 context 和用户编号，返回 true、nil，供停止路由隔离用户依赖；不访问数据库。
+// Active 返回 true，跳过用户状态查询。
 func (liveUser) Active(context.Context, uint64) (bool, error) { return true, nil }
 
-// TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff 验证真实 JWT 和注册路由，将用户身份传给测试 HTTP gateway 并核对受理形状；会话与用户状态为固定 fixture，不证明设备已停电。
 func TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff(t *testing.T) {
 	jwt, err := auth.NewJWT("0123456789abcdef0123456789abcdef")
 	if err != nil {
@@ -42,12 +41,9 @@ func TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff(t *testing.T) {
 	}
 	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			// OrderNo 捕获的停止请求业务订单号。
 			OrderNo string `json:"order_no"`
-			// UserID 捕获的已认证用户编号。
-			UserID uint64 `json:"user_id"`
-			// Source 捕获的停止请求来源。
-			Source string `json:"source"`
+			UserID  uint64 `json:"user_id"`
+			Source  string `json:"source"`
 		}
 		if r.Header.Get("X-Service-Token") != "secret" || json.NewDecoder(r.Body).Decode(&body) != nil || body.OrderNo != "ORD-123" || body.UserID != 9007199254740993 || body.Source != "user_app" {
 			t.Errorf("bad gateway request: %+v", body)
@@ -81,18 +77,16 @@ func TestUserStopUsesJWTIdentityAndDoesNotClaimPowerOff(t *testing.T) {
 	}
 }
 
-// failingStopGateway 是停止路由错误映射的测试替身，按 fixture 返回指定错误，不发送设备命令或产生停止事实。
+// failingStopGateway 返回预设停止请求错误。
 type failingStopGateway struct {
-	// err 指定的 gateway 错误 fixture，不访问真实设备。
 	err error
 }
 
-// RequestStop 忽略 context 和停止请求，返回空回执及 s.err，用于错误映射断言；不连接 gateway 或设备。
+// RequestStop 返回空回复和预设错误。
 func (s failingStopGateway) RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
 	return gatewaycontract.StopReply{}, s.err
 }
 
-// TestUserStopPreservesGatewayFailureMapping 验证注册路由对窄 gateway fixture 的各类失败映射；无真库、设备或网络投递。
 func TestUserStopPreservesGatewayFailureMapping(t *testing.T) {
 	jwt, err := auth.NewJWT("0123456789abcdef0123456789abcdef")
 	if err != nil {
@@ -104,10 +98,8 @@ func TestUserStopPreservesGatewayFailureMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		// name 该子测试的场景名称。
 		name string
-		// err 指定的 gateway 错误 fixture，不访问真实设备。
-		err error
+		err  error
 		// status,code 预期的 HTTP 状态与业务错误码。
 		status, code int
 	}{
@@ -128,7 +120,6 @@ func TestUserStopPreservesGatewayFailureMapping(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 			var reply struct {
-				// Code 本断言核对的响应业务码或 MFA 验证码。
 				Code int `json:"code"`
 			}
 			if err := json.Unmarshal(w.Body.Bytes(), &reply); err != nil || w.Code != tc.status || reply.Code != tc.code || strings.Contains(w.Body.String(), "private network") {

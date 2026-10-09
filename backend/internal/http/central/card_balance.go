@@ -8,8 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// balance 校验 内部服务令牌后按 card_no 读取卡状态及钱包余额，返回 valid／balance_cents。
-// 无效卡号 400、读取失败 503，金额单位分；不变更卡状态、余额或发起渠道调用。
+// balance 校验服务令牌，返回卡有效性和可用余额，金额单位为分。
 func (a CardAPI) balance(c *gin.Context) {
 	if !a.internal(c) {
 		return

@@ -49,7 +49,7 @@ func energyMeter() ActualMeter {
 	}
 }
 
-// secondSegments 构造 n 个一秒一段、零电量的分段链，恰好收口到 n 秒处。
+// secondSegments 构造 n 个首尾相接、各长一秒的零电量分段，最后一段在第 n 秒结束。
 // 用于分段数上限的边界对照：链本身完全合法，只有条数超限才被拒绝。
 func secondSegments(start time.Time, n int) []MeterSegment {
 	segments := make([]MeterSegment, n)

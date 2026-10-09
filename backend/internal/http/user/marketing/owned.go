@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// myCoupons 将 c 当前用户、分页及筛选适配给券用例，输出页或鉴权或存储错误，不写库。
+// myCoupons 按分页和状态返回当前用户持有的优惠券。
 func (a API) myCoupons(c *gin.Context) {
 	id, ok := a.Auth.Authenticate(c)
 	if !ok {

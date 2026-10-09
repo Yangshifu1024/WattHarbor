@@ -4,17 +4,19 @@ import (
 	"time"
 )
 
+// MeterSegment 保存连续时间段的电量和功率；相邻段必须首尾相接。
 type MeterSegment struct {
-	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at"`
-	EnergyWh  uint32    `json:"energy_wh"`
-	// PeakW 是该段内可验证的峰值；缺失时不以电量反推功率。
+	StartedAt time.Time `json:"started_at"` // 分段开始时刻
+	EndedAt   time.Time `json:"ended_at"`   // 分段结束时刻
+	EnergyWh  uint32    `json:"energy_wh"`  // 本段电量，Wh
+	// PeakW 是该段峰值功率，W；最大功率计费使用此值，不由电量推算。
 	PeakW uint32 `json:"peak_w,omitempty"`
-	// PowerW 是已验证的恒定功率片段。只有峰值不能计算实时功率费用；
-	// 缺少实测片段时须复核，不能从电量反推功率。
+	// PowerW 是该段实测功率，W；nil 表示缺失，指向 0 表示已知零功率。
+	// 实时功率计费要求此值，不能用峰值或电量替代。
 	PowerW *uint32 `json:"power_w,omitempty"`
 }
 
+// ActualMeter 保存一次充电的实测总量与分段；ReviewRequired 为真时拒绝自动计费。
 type ActualMeter struct {
 	ReviewRequired bool           `json:"review_required,omitempty"`
 	StartedAt      time.Time      `json:"started_at"`
@@ -24,10 +26,11 @@ type ActualMeter struct {
 	Segments       []MeterSegment `json:"segments,omitempty"`
 }
 
+// ActualFee 是实际用量的计费结果，金额单位为分。
 type ActualFee = Fee
 
-// PriceActual 校验计量证据后调用 Cost 计价，不将均匀分摊的估算值视为实际计量。
-// 电量片段仅可跨越相同费率边界；变价区间的读数缺失或矛盾时要求核实。
+// PriceActual 按 rule 计算实测费用；规则无效返回 ErrInvalidPricing，计量缺失或矛盾返回 ErrMeterReview。
+// 电量计费跨越不同费率时必须有分段读数，不按时长分配电量。
 func PriceActual(rule Rule, meter ActualMeter) (Fee, error) {
 	usage, err := usageFromMeter(rule, meter)
 	if err != nil {
@@ -87,8 +90,8 @@ func usageFromMeter(rule Rule, meter ActualMeter) (Usage, error) {
 	return usage, nil
 }
 
-// StopAtMeter 使用结算相同的计量校验判断服务端计费是否达到费用上限。
-// 计量或规则无效、模式不适用时返回说明原因的计划，不依据无效数据停机。
+// StopAtMeter 校验 meter 后判断是否达到 rule 的时长或费用上限。
+// 规则或计量无效时返回错误；设备计费返回无需平台停机的计划。
 func StopAtMeter(rule Rule, meter ActualMeter) (StopPlan, error) {
 	usage, err := usageFromMeter(rule, meter)
 	if err != nil {

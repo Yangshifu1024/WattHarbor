@@ -9,11 +9,11 @@ import (
 const maxSamples = 10080
 
 // clockSkewTolerance 允许设备时钟与充电开始时刻的最大偏差。
-// 超出即判定证据自相矛盾，整段拒绝而不是取其一。
+// 超出偏差即拒绝生成分段。
 const clockSkewTolerance = 5 * time.Second
 
 // powerJoinWindow 相邻心跳间隔不超过该值时，才用前次功率描述该区间。
-// 更长的间隔保留为证据缺失，不从电量反推功率。
+// 更长间隔的分段保留 PowerW=nil，不从电量反推功率。
 const powerJoinWindow = 60 * time.Second
 
 // MeasuredSegments 按设备累计读数生成计费分段，不用接收时间分摊电量。

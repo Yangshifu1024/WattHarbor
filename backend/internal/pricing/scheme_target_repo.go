@@ -16,7 +16,7 @@ const EffectiveRuleSQL = "status='active' AND deleted_at IS NULL AND (effective_
 func CheckSchemeTargets(tx *gorm.DB, station uint64, device string, scheme charging.Scheme) error {
 	var rows []struct {
 		DeviceID        string // 目标设备编号
-		ProtocolAdapter string // 创建时明确选定的适配器，领域能力的来源
+		ProtocolAdapter string // 创建设备时选定的协议适配器，用于查询支持的功能
 	}
 	q := tx.Table("device_meta").Where("station_id=? AND deleted_at IS NULL", station)
 	if device != "" {

@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterRoles 在 r 挂载角色及权限字典路径，HTTP 只按权限注册处理器。
+// RegisterRoles 注册角色列表、权限字典和角色管理接口。
 func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
 	r.GET("/api/v1/admin/roles", a.Auth.Require("admin_user.read"), a.listRoles)
 	r.GET("/api/v1/admin/permissions", a.Auth.Require("admin_user.read"), a.listPermissions)
@@ -16,7 +16,7 @@ func (a AdminAccounts) RegisterRoles(r *gin.Engine) {
 	r.DELETE("/api/v1/admin/roles/:id", a.Auth.Require("role.delete"), a.deleteRole)
 }
 
-// listRoles 将 c 当前档案交给列表，返回 items 形状或错误。
+// listRoles 返回当前管理员可读取的角色列表。
 func (a AdminAccounts) listRoles(c *gin.Context) {
 	rows, err := a.Roles.List(c.Request.Context(), adminhttp.AdminAuditContext(c).Actor)
 	if err != nil {
@@ -26,7 +26,7 @@ func (a AdminAccounts) listRoles(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// listPermissions 将 c 当前档案交给字典，返回排序／分组 items，不在 HTTP 过滤业务权限。
+// listPermissions 返回当前管理员可读取的权限字典。
 func (a AdminAccounts) listPermissions(c *gin.Context) {
 	rows, err := a.Roles.Permissions(c.Request.Context(), adminhttp.AdminAuditContext(c).Actor)
 	if err != nil {
@@ -36,7 +36,7 @@ func (a AdminAccounts) listPermissions(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": rows})
 }
 
-// createRole 从请求严格读取角色输入及审计信息，返回完整创建事务的 ID 或错误。
+// createRole 创建角色并返回 ID。
 func (a AdminAccounts) createRole(c *gin.Context) {
 	var input ops.RoleInput
 	if !httpapi.DecodeResource(c, &input) {
@@ -50,7 +50,7 @@ func (a AdminAccounts) createRole(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// updateRole 从请求提取 id、输入和审计信息，返回更新的内置权限锁定标识或错误。
+// updateRole 更新角色，返回 permissions_locked 表示权限集合是否受保护。
 func (a AdminAccounts) updateRole(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {
@@ -68,7 +68,7 @@ func (a AdminAccounts) updateRole(c *gin.Context) {
 	httpapi.OK(c, gin.H{"id": id, "permissions_locked": locked})
 }
 
-// deleteRole 将 cid 和审计信息交给角色删除事务，返回 ID 或状态拒绝。
+// deleteRole 删除指定角色并返回 ID。
 func (a AdminAccounts) deleteRole(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

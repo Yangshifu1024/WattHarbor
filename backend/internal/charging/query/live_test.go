@@ -15,13 +15,13 @@ import (
 
 // liveFixture 同时提供可计数读取和故障注入，仅证明组合规则，不替代真实网关、数据库。
 type liveFixture struct {
-	evidenceCalls int                                       // 已发起证据批数
+	evidenceCalls int                                       // 已发起的心跳查询批数
 	snapshotCalls int                                       // 已发起快照批数
 	purchaseCalls int                                       // 已发起卡购买批数
 	sizes         []int                                     // 请求每批项数
 	raw           []byte                                    // 冻结套餐 JSON
 	cards         map[uint64]charging.OrderCardPurchase     // 卡累计购买
-	fault         string                                    // 指定存储、证据故障阶段
+	fault         string                                    // 指定存储或心跳查询的失败阶段
 	cancel        context.CancelFunc                        // 首批返回后取消的受管理测试上下文
 	mutate        func([]gatewaycontract.EvidencePageReply) // 指定端口、完整性与缺失响应变异
 }
@@ -126,7 +126,7 @@ func TestLiveMissingFactsNeverBecomeConfirmedZero(t *testing.T) {
 	start := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name        string             // 用例身份
-		configure   func(*liveFixture) // 对指定响应事实或故障的修改
+		configure   func(*liveFixture) // 修改响应或设置故障
 		wantView    bool               // 是否应保留已观测计量
 		wantFee     string             // 费用不可估算文案
 		unavailable bool               // 是否应标记整体读取失败

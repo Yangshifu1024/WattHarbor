@@ -12,7 +12,7 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// EndGateway 提供结束事件、计量证据、首次结束请求保存、端口释放和事件标记接口。
+// EndGateway 提供结束事件、心跳读数、请求保存、端口释放及处理标记。
 type EndGateway interface {
 	// EndEvents 返回未处理结束事件页或读取错误；不修改事件。
 	EndEvents(context.Context) ([]gatewaycontract.SyncEvent, error)
@@ -28,20 +28,20 @@ type EndGateway interface {
 	MarkDeviceEventsProcessed(context.Context, []uint64) (int, error)
 }
 
-// EndSynchronizer 编排设备结束证据向中央确认并更新网关投递状态；依赖由 cmd 注入，不持数据库、服务 URL 或进程资源。
+// EndSynchronizer 将设备结束结果提交中央服务，确认后释放端口并标记事件。
 type EndSynchronizer struct {
-	// Gateway 结束同步所需网关接口，执行者由 cmd 注入；不在 worker 持网关数据库或 URL。
+	// Gateway 读取和更新网关中的结束事件与端口。
 	Gateway EndGateway
-	// Central 中央结束回执确认能力，事务及结束计量／计费排队由中央用例拥有。
+	// Central 保存订单结束结果并安排后续计费。
 	Central interface {
 		// SubmitEndResult 由中央确认结束请求；确认不代表计费、扣款或退款已完成。
 		SubmitEndResult(context.Context, centralcontract.EndResultRequest) (centralcontract.ResultReply, error)
 	}
 }
 
-// SyncBatch 核对结束事件对应已确认的 START，再依次保存结束请求、提交中央、释放端口、批量标记事件。
-// 取证、保存或中央提交失败时继续下一事件；释放失败立即返回，不提交此前收集的标记。
-// 返回数只表示端口已释放或已是释放状态；标记失败时仍保留计数，不表示标记已提交。
+// SyncBatch 核对结束事件与已确认的启动命令，再保存请求、提交中央、释放端口并标记事件。
+// 读取或提交失败时继续下一条；释放失败立即返回，此前事件也留待重新标记。
+// 返回端口已释放的数量；标记失败时保留计数并返回错误。
 func (s EndSynchronizer) SyncBatch(ctx context.Context) (int, error) {
 	if s.Gateway == nil || s.Central == nil {
 		return 0, errors.New("charge end synchronizer is not configured")

@@ -21,7 +21,7 @@ type DeviceFaultEvent struct {
 	Payload    string    `json:"payload"`     // 协议事件 JSON
 }
 
-// ListUnprocessedFaults 按 id 升序读取未处理 dc589 故障证据；返回列表与 SQL 错误，不更新处理标记。
+// ListUnprocessedFaults 按 ID 升序读取尚未处理的 DC589 故障事件。
 func ListUnprocessedFaults(ctx context.Context, db *gorm.DB, limit int) ([]DeviceFaultEvent, error) {
 	rows := []DeviceFaultEvent{}
 	err := db.WithContext(ctx).Table("device_event").
@@ -31,9 +31,8 @@ func ListUnprocessedFaults(ctx context.Context, db *gorm.DB, limit int) ([]Devic
 	return rows, err
 }
 
-// MarkEventsProcessed 将候选读取和批量条件更新放在同一请求事务。
-// 返回实际影响行数及 SQL/提交错误，空输入和重放可为零；计数仅在 err=nil 时代表提交结果，失败回滚。
-// 保留普通候选读取及 ids 更新，不新增锁读、排序、协议筛选或重试。
+// MarkEventsProcessed 在同一事务中标记尚未处理的事件，重复请求不重复计数。
+// 写入或提交失败时整批回滚；返回计数只有在 err=nil 时表示已提交。
 func MarkEventsProcessed(ctx context.Context, db *gorm.DB, ids []uint64) (int64, error) {
 	marked := int64(0)
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -48,17 +47,16 @@ func MarkEventsProcessed(ctx context.Context, db *gorm.DB, ids []uint64) (int64,
 // ErrHeartbeatWatermarkUnreadable 表示键或显式时间给出的查询起点为零，不能继续查询后续心跳。
 var ErrHeartbeatWatermarkUnreadable = errors.New("heartbeat watermark unreadable")
 
-// HeartbeatEvidence 是查询起点与后续最新心跳的持久查询结果，不解释协议恢复状态。
+// HeartbeatEvidence 返回查询起点和该时刻之后最新的心跳。
 type HeartbeatEvidence struct {
-	// Watermark 键接收时刻或显式时间，nil 表示键不存在；保留输入时区用于响应映射。
+	// Watermark 是指定事件的接收时间或传入时间；事件不存在时为 nil。
 	Watermark *time.Time
-	// Heartbeat 严格晚于查询起点的最新 dc589 心跳证据，nil 表示没有后续心跳。
+	// Heartbeat 是查询起点之后最新的 DC589 心跳；没有记录时为 nil。
 	Heartbeat *HeartbeatAfter
 }
 
-// ReadLatestHeartbeat 非空键优先定位查询起点，缺键即返回空结果。
-// 零查询起点返回 ErrHeartbeatWatermarkUnreadable；已有查询起点时用 UTC 查询后续心跳，缺心跳保留查询起点。
-// 返回持久载荷和时刻或 SQL 错误，不写入、加锁、重试或解释协议恢复状态。
+// ReadLatestHeartbeat 优先使用 afterKey 对应事件的接收时间，否则使用 after。
+// 指定事件不存在时返回空结果；起点为零时报错，后续无心跳时仍返回起点。
 func ReadLatestHeartbeat(
 	ctx context.Context,
 	db *gorm.DB,
@@ -113,7 +111,7 @@ func markEventsProcessed(tx *gorm.DB, ids []uint64) (int64, error) {
 	return res.RowsAffected, res.Error
 }
 
-// findEventReceivedAt 读取持久接收时刻；返回时刻或缺失、SQL 错误，不写库。
+// findEventReceivedAt 查询指定设备事件的接收时间。
 func findEventReceivedAt(ctx context.Context, db *gorm.DB, deviceID, eventKey string) (time.Time, error) {
 	var row struct {
 		// ReceivedAt 事件接收时刻。
@@ -130,7 +128,7 @@ type HeartbeatAfter struct {
 	Payload    []byte    `gorm:"column:event_json"`  // 协议载荷字节
 }
 
-// latestHeartbeatAfter 读取严格晚于该时刻的最新 dc589 心跳，按时刻及 id 倒序；返回证据或缺失、SQL 错误，不写库。
+// latestHeartbeatAfter 按接收时间、ID 倒序读取起点之后的最新 DC589 心跳。
 func latestHeartbeatAfter(ctx context.Context, db *gorm.DB, deviceID string, after time.Time) (HeartbeatAfter, error) {
 	var row HeartbeatAfter
 	err := db.WithContext(ctx).Table("device_event").

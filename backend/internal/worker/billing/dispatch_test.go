@@ -14,7 +14,6 @@ import (
 	"chargepilot/internal/platform/serviceclient"
 )
 
-// TestBillingDispatchCallsProtectedRoute 使用专用客户端核对计费 POST、路径和令牌，回环服务不执行资金。
 func TestBillingDispatchCallsProtectedRoute(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -33,7 +32,6 @@ func TestBillingDispatchCallsProtectedRoute(t *testing.T) {
 	}
 }
 
-// TestBillingDispatchPreservesIncompleteError 核对合法部分计费回执仍作为失败传播且只请求一次；不执行真实计费。
 func TestBillingDispatchPreservesIncompleteError(t *testing.T) {
 	var calls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +60,6 @@ func (f billingDispatchFixture) DispatchBilling(ctx context.Context, request cen
 	return f(ctx, request)
 }
 
-// TestBillingDispatchKeepsContextAndDependencyErrors 核对取消链、错误及未配置失败；测试替身 不代表客户端或资金执行。
 func TestBillingDispatchKeepsContextAndDependencyErrors(t *testing.T) {
 	if err := (Dispatcher{}).Run(context.Background()); err == nil || err.Error() != "billing dispatcher is not configured" {
 		t.Fatalf("unconfigured dispatcher=%v", err)

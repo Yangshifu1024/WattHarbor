@@ -40,7 +40,6 @@ func TestDispatcherRequiresSuccessfulEnvelope(t *testing.T) {
 	}
 }
 
-// TestRefundDispatchPreservesIncompleteError 核对合法部分退款回执仍传播错误且只请求一次；不调用真实退款渠道。
 func TestRefundDispatchPreservesIncompleteError(t *testing.T) {
 	var calls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +68,6 @@ func (f refundDispatchFixture) DispatchRefunds(ctx context.Context, request cent
 	return f(ctx, request)
 }
 
-// TestRefundDispatchKeepsContextAndDependencyErrors 核对取消链、错误及未配置失败；测试替身 不代表渠道执行。
 func TestRefundDispatchKeepsContextAndDependencyErrors(t *testing.T) {
 	if err := (Dispatcher{}).Run(context.Background()); err == nil || err.Error() != "refund dispatcher is not configured" {
 		t.Fatalf("unconfigured dispatcher=%v", err)

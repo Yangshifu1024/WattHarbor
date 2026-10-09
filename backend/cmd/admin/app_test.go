@@ -9,13 +9,13 @@ import (
 	"time"
 )
 
-// blockedCleaner 提供可阻塞的清理夹具，通过取消与释放两个阶段验证应用等待责任。
+// blockedCleaner 收到取消后仍等待 release，检查应用是否会等清理任务退出。
 type blockedCleaner struct {
 	// started 通知任务已开始，canceled 通知已收到取消，release 由测试关闭以允许任务退出。
 	started, canceled, release chan struct{}
 }
 
-// CleanupExpired 通知任务开始，等待取消后通知测试，再等待 release 放行；不删除文件。
+// CleanupExpired 收到取消后通知测试，等 release 关闭才返回。
 func (c blockedCleaner) CleanupExpired(ctx context.Context) (int, error) {
 	close(c.started)
 	<-ctx.Done()
@@ -63,7 +63,7 @@ func TestCancellationWaitsForCleanup(t *testing.T) {
 	}
 }
 
-// idleCleaner 提供立即成功的空清理夹具，避免绑定失败测试产生文件副作用。
+// idleCleaner 不执行文件清理，用于检查 HTTP 启动失败后的退出。
 type idleCleaner struct{}
 
 // CleanupExpired 立即返回零清理数量，不删除文件。

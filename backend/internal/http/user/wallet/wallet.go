@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// walletBalance 在 c 的请求取消范围验证身份并读取余额，写余额回执或 503；不更改资金。
+// walletBalance 返回当前用户的钱包余额。
 func (a API) walletBalance(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -26,7 +26,7 @@ func (a API) walletBalance(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// walletTxns 校验当前用户身份并解析分页和收支方向，返回流水页；参数错误为 400、查询失败为 503，无资金写入。
+// walletTxns 分页返回当前用户的流水；direction 可选 in 或 out。
 func (a API) walletTxns(c *gin.Context) {
 	userID, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -49,7 +49,7 @@ func (a API) walletTxns(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": out.Items, "total": out.Total, "page": page, "page_size": pageSize})
 }
 
-// walletRecharges 校验当前用户身份、解析分页，并以当前时间读取充值及续付状态；写分页回执或 404／503，不创建充值。
+// walletRecharges 返回当前用户的充值记录及是否可继续支付。
 func (a API) walletRecharges(c *gin.Context) {
 	user, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -67,8 +67,8 @@ func (a API) walletRecharges(c *gin.Context) {
 	httpapi.OK(c, gin.H{"user_id": strconv.FormatUint(user, 10), "items": out.Items, "total": out.Total, "page": page, "page_size": size})
 }
 
-// walletRecharge 校验当前用户身份并绑定 UUID 请求号和分值，校验后调用充值用例。
-// 成功写充值回执；参数错误为 400、冲突或冻结为 409、渠道及存储故障为 503；资金事务和预支付由用例执行。
+// walletRecharge 校验请求编号和金额，创建充值单并返回支付参数。
+// 渠道暂不可用时，用户须重试同一充值单。
 func (a API) walletRecharge(c *gin.Context) {
 	user, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -104,8 +104,7 @@ func (a API) walletRecharge(c *gin.Context) {
 	}
 }
 
-// walletRefund 校验当前用户身份并绑定 UUID 请求号、分值和原因，校验后调用钱包退款用例。
-// 成功写申请回执；参数错误为 400、余额不足或额度冲突及冻结为 409，其他错误保持 404／503；退款与冻结写入归用例。
+// walletRefund 校验请求编号、金额和原因，提交当前用户的钱包退款申请。
 func (a API) walletRefund(c *gin.Context) {
 	user, ok := a.Auth.Authenticate(c)
 	if !ok {
@@ -143,7 +142,7 @@ func (a API) walletRefund(c *gin.Context) {
 	}
 }
 
-// walletRefunds 校验当前用户身份并解析分页，读取退款及审批状态；写用户编号和分页回执或 404／503，不写资金。
+// walletRefunds 分页返回当前用户的退款和审批状态。
 func (a API) walletRefunds(c *gin.Context) {
 	user, ok := a.Auth.Authenticate(c)
 	if !ok {

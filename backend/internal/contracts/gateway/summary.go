@@ -2,7 +2,7 @@ package gateway
 
 import "time"
 
-// DeviceSummariesPath 是批量设备运行摘要的实际注册端点；以服务令牌鉴权。
+// DeviceSummariesPath 是批量查询设备运行信息的接口，使用服务令牌鉴权。
 const DeviceSummariesPath = "/api/v1/internal/device-summaries"
 
 // DevicePortSummary 保留原始协议读数及未知状态，不把 null 解释为空闲。
@@ -12,7 +12,7 @@ type DevicePortSummary struct {
 	StatusAt   *time.Time `json:"status_at"`   // 状态上报时间；无读数为 null
 }
 
-// DeviceSummary 是单设备运行事实，不包含 central 的运营启停状态。
+// DeviceSummary 返回设备心跳、信号和端口状态；不包含 central 设置的启停状态。
 type DeviceSummary struct {
 	DeviceID        string              `json:"device_id"`         // 设备业务标识
 	VendorName      *string             `json:"vendor_name"`       // 未删除厂商名；无可用厂商为 null
@@ -22,7 +22,7 @@ type DeviceSummary struct {
 	Ports           []DevicePortSummary `json:"ports"`             // 端口状态；服务端无端口时返回空数组
 }
 
-// DeviceSummariesReply 是一次授权设备集合的摘要响应；未命中的设备不补造运行事实。
+// DeviceSummariesReply 返回找到的设备运行信息，不为未找到的设备补默认值。
 type DeviceSummariesReply struct {
 	Items []DeviceSummary `json:"items"` // 已找到的网关设备，可能少于请求数
 }

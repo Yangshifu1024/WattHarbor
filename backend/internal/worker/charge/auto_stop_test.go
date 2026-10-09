@@ -67,7 +67,7 @@ func (f autoStopFixture) AutoStop(ctx context.Context, request centralcontract.A
 }
 
 // TestAutoStopConsumerKeepsContextAndDependencyErrors 核对 context、部分计数及错误原样传播，未配置明确失败。
-// 测试替身 只证明调用方适配，不把取消时的 fixture 数量解释为真实设备处理结果。
+// 返回数量由测试替身提供，未发送设备停止命令。
 func TestAutoStopConsumerKeepsContextAndDependencyErrors(t *testing.T) {
 	if count, err := (AutoStopper{}).Run(context.Background()); count != 0 || err == nil || err.Error() != "auto stop is not configured" {
 		t.Fatalf("unconfigured count=%d err=%v", count, err)

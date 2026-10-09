@@ -11,9 +11,9 @@ import (
 )
 
 // 刷卡事件由 gateway 持久化，worker 读取事件及已保存回复后投递。
-// 回复按条件首次写入，已有回复不覆盖，重放继续使用冻结值。
+// 回复只保存首次内容，重试继续使用原回复。
 
-// CardDeliveryEvent 是一条待投递的刷卡事件，含原始事件与已冻结的回复。
+// CardDeliveryEvent 保存待处理卡事件及首次保存的设备回复。
 type CardDeliveryEvent struct {
 	// EventKey 持久事件幂等键。
 	EventKey string `gorm:"column:event_key"`
@@ -26,7 +26,7 @@ type CardDeliveryEvent struct {
 // cardDeliveryBatch 是 worker 单次读取待投递刷卡事件的条数上限。
 const cardDeliveryBatch = 100
 
-// ListPendingCardDeliveries 按事件 id 升序读取最多一百条到期待投递卡事件及已保存回复；返回列表和 SQL 错误，不更新状态。
+// ListPendingCardDeliveries 按事件 ID 升序返回最多 100 条到期卡事件及其回复。
 func ListPendingCardDeliveries(ctx context.Context, db *gorm.DB) ([]CardDeliveryEvent, error) {
 	rows := []CardDeliveryEvent{}
 	err := db.WithContext(ctx).Table("card_event_delivery x").
@@ -37,17 +37,16 @@ func ListPendingCardDeliveries(ctx context.Context, db *gorm.DB) ([]CardDelivery
 	return rows, err
 }
 
-// CardDecisionEvidence 是刷卡决策输入的数据库记录，只携带事件或已有已保存回复，不解释协议与 UUID。
+// CardDecisionEvidence 返回待验证事件，或已保存的设备回复。
 type CardDecisionEvidence struct {
-	// RawEvent 未冻结且校验成功的事件 JSON 字节，已有已保存回复时不读取事件。
+	// RawEvent 是尚未生成回复且已通过校验的事件 JSON。
 	RawEvent []byte
-	// FrozenResponse 已已保存回复文本，非空时事务沿用回滚标记释放锁。
+	// FrozenResponse 是已保存的回复；有值时不再读取或校验事件。
 	FrozenResponse string
 }
 
-// ReadCardDecision 接收 ctx、db、eventKey 与非 nil validate，在事务内先锁投递行，再按需读取事件和调用验证。
-// 有已保存回复时仍通过私有错误回滚，在事务外转为查询结果；未冻结时验证成功才提交并返回事件字节。
-// 返回 SQL/提交/验证错误，验证回调仍在持锁期间执行；不创建新标识、重试或解释设备协议。
+// ReadCardDecision 锁定投递记录，再读取事件并调用 validate；validate 必须非 nil。
+// 已有回复时直接返回，通过回滚结束事务；事件校验也在持锁期间执行。
 func ReadCardDecision(
 	ctx context.Context,
 	db *gorm.DB,
@@ -84,16 +83,16 @@ func ReadCardDecision(
 	return CardDecisionEvidence{RawEvent: []byte(eventJSON)}, nil
 }
 
-// frozenResponse 是发现已有已保存回复时的内部回滚标记，事务外转为数据库记录。
+// frozenResponse 携带已有回复，通过返回错误结束查询事务。
 type frozenResponse struct {
 	// response 已冻结 JSON，沿用存量原文返回。
 	response string
 }
 
-// Error 返回该已保存回复的错误标记的固定提示。
+// Error 返回已有回复的内部回滚提示。
 func (e *frozenResponse) Error() string { return "card response already frozen" }
 
-// errResponseFrozen 接收 response JSON，返回携带存量原文的私有错误以触发事务回滚。
+// errResponseFrozen 携带已保存回复，用于触发查询事务回滚。
 func errResponseFrozen(response string) error { return &frozenResponse{response: response} }
 
 // ErrCardResponseFreezeFailed 表示条件更新失败，返回错误保留底层原因，不再读取或重试。
@@ -102,9 +101,8 @@ var ErrCardResponseFreezeFailed = errors.New("freeze card response failed")
 // ErrCardResponseReadFailed 表示首次写入未影响一行后的存量读取失败，返回错误保留底层原因。
 var ErrCardResponseReadFailed = errors.New("read frozen card response failed")
 
-// FreezeCardResponse 仅按 NULL/空串条件首次写入回复。
-// 恰更新一行返回 candidate 和 true；否则只读存量并返回原文和 false，更新/读取错误按阶段错误区分。
-// 不增加外层事务、锁、身份校验、非空检查或重试，未知更新结果不继续读取或再写。
+// FreezeCardResponse 仅在回复为 NULL 或空串时保存 candidate。
+// 成功返回 candidate 和 true；否则读取原回复并返回 false，读取与更新失败分别报错。
 func FreezeCardResponse(
 	ctx context.Context,
 	db *gorm.DB,
@@ -125,7 +123,7 @@ func FreezeCardResponse(
 	return frozen, false, nil
 }
 
-// lockCardDelivery 接收调用方 tx 与 eventKey，以 UPDATE 锁读取投递回复；返回文本或缺失、SQL 错误，锁由调用事务释放。
+// lockCardDelivery 使用行锁读取事件的回复，锁持续到调用方事务结束。
 func lockCardDelivery(tx *gorm.DB, eventKey string) (string, error) {
 	var stored struct {
 		// ResponseJSON 首次冻结的设备回复 JSON 字节。
@@ -136,7 +134,7 @@ func lockCardDelivery(tx *gorm.DB, eventKey string) (string, error) {
 	return string(stored.ResponseJSON), err
 }
 
-// findDeviceEvent 读取协议事件 JSON；返回字节或缺失、SQL 错误，不写库。
+// findDeviceEvent 按事件编号读取协议事件 JSON。
 func findDeviceEvent(ctx context.Context, db *gorm.DB, eventKey string) ([]byte, error) {
 	var row struct {
 		// EventJSON 持久协议事件 JSON 字节。
@@ -146,7 +144,7 @@ func findDeviceEvent(ctx context.Context, db *gorm.DB, eventKey string) ([]byte,
 	return row.EventJSON, err
 }
 
-// freezeCardResponse 仅对未已保存回复首次写入；返回影响行数和 SQL 错误，重放零行不覆盖原文。
+// freezeCardResponse 仅更新尚未保存的回复，返回影响行数。
 func freezeCardResponse(ctx context.Context, db *gorm.DB, eventKey string, responseJSON string) (int64, error) {
 	res := db.WithContext(ctx).Table("card_event_delivery").
 		Where("event_key=? AND (response_json IS NULL OR response_json='')", eventKey).
@@ -154,7 +152,7 @@ func freezeCardResponse(ctx context.Context, db *gorm.DB, eventKey string, respo
 	return res.RowsAffected, res.Error
 }
 
-// findFrozenCardResponse 读取冻结设备回复；返回文本或缺失、SQL 错误，不写库。
+// findFrozenCardResponse 读取已保存的设备回复。
 func findFrozenCardResponse(ctx context.Context, db *gorm.DB, eventKey string) (string, error) {
 	var stored string
 	err := db.WithContext(ctx).Table("card_event_delivery").Select("response_json").

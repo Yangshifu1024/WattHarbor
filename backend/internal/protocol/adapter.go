@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Registration 保存设备注册时的协议、编号和固件版本。
 type Registration struct {
 	Protocol        string
 	DeviceID        string
@@ -15,23 +16,35 @@ type Registration struct {
 	ReceivedAt      time.Time
 }
 
+// EventType 标识已解码设备事件的类别。
 type EventType string
 
 const (
-	Heartbeat    EventType = "heartbeat"
-	StartResult  EventType = "start_result"
-	StopResult   EventType = "stop_result"
-	ChargeEnd    EventType = "charge_end"
-	Fault        EventType = "fault"
+	// Heartbeat 表示设备状态和充电读数上报。
+	Heartbeat EventType = "heartbeat"
+	// StartResult 表示设备对启动命令的回复。
+	StartResult EventType = "start_result"
+	// StopResult 表示设备对停止命令的回复。
+	StopResult EventType = "stop_result"
+	// ChargeEnd 表示设备主动上报充电结束。
+	ChargeEnd EventType = "charge_end"
+	// Fault 表示设备故障上报。
+	Fault EventType = "fault"
+	// RemoteResult 表示设备对远程控制的回复。
 	RemoteResult EventType = "remote_result"
 	// ConfigResult 表示心跳、参数表及电源控制的设备响应，包含拒绝原因，供运维确认配置是否生效。
-	ConfigResult     EventType = "config_result"
-	Telemetry        EventType = "telemetry"
-	TimeSync         EventType = "time_sync"
-	CardSwipe        EventType = "card_swipe"
+	ConfigResult EventType = "config_result"
+	// Telemetry 表示单独上报的遥测数据。
+	Telemetry EventType = "telemetry"
+	// TimeSync 表示设备校时请求或回复。
+	TimeSync EventType = "time_sync"
+	// CardSwipe 表示一次设备刷卡上报。
+	CardSwipe EventType = "card_swipe"
+	// CardBalanceQuery 表示设备查询卡余额。
 	CardBalanceQuery EventType = "card_balance_query"
 )
 
+// Event 保存设备事件的解码结果及原始载荷，供存储和业务处理使用。
 type Event struct {
 	EventID    string
 	CardNumber uint32
@@ -65,6 +78,7 @@ type Event struct {
 	ChargingPorts  []PortTelemetry
 }
 
+// PortTelemetry 保存单端口充电读数：时长单位秒，电量单位 mWh，功率单位 0.1 W。
 type PortTelemetry struct {
 	Port           uint8
 	RemainingSecs  uint32
@@ -90,12 +104,19 @@ type SessionRecorder interface {
 type CloseReason string
 
 const (
+	// CloseDeviceClosed 表示设备关闭连接。
 	CloseDeviceClosed CloseReason = "device_closed"
-	CloseReadTimeout  CloseReason = "read_timeout"
-	CloseReadError    CloseReason = "read_error"
-	CloseProtocol     CloseReason = "protocol_error"
-	CloseRejected     CloseReason = "rejected"
-	CloseReplaced     CloseReason = "replaced"
+	// CloseReadTimeout 表示读取设备帧超时。
+	CloseReadTimeout CloseReason = "read_timeout"
+	// CloseReadError 表示读取设备帧失败。
+	CloseReadError CloseReason = "read_error"
+	// CloseProtocol 表示设备帧或注册顺序无效。
+	CloseProtocol CloseReason = "protocol_error"
+	// CloseRejected 表示设备注册被拒绝。
+	CloseRejected CloseReason = "rejected"
+	// CloseReplaced 表示连接被同设备的新连接替换。
+	CloseReplaced CloseReason = "replaced"
+	// CloseContextEnded 表示服务取消了连接处理。
 	CloseContextEnded CloseReason = "context_ended"
 )
 

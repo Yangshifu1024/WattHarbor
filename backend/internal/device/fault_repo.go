@@ -60,7 +60,7 @@ func (s FaultRepo) LockFault(tx *gorm.DB, id uint64) (FaultRow, error) {
 	return row, err
 }
 
-// FaultEventInput 是用户可见的报修变更事件，须如实填写操作内容。
+// FaultEventInput 保存报修变更事件及是否对用户可见，须如实填写操作内容。
 type FaultEventInput struct {
 	ReportID    uint64  // 所属报修单
 	ActorID     uint64  // 操作的后台账号

@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// QueryService 组合用户所属的钱包事实，提供余额、续付资格及退款进度。
+// QueryService 查询当前用户的余额、充值付款条件和退款进度。
 type QueryService struct {
 	Repo UserWalletRepo // 仅查询调用方用户的数据，由 cmd 提供连接
 }

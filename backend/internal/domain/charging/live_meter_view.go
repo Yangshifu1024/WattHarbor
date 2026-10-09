@@ -2,8 +2,7 @@ package charging
 
 import "time"
 
-// 实时电表读数的查询结果。费用按"最后一次观测到的表"计价。
-// 断线之后不再按挂钟时间累积，也不套用站点当前模板。
+// 实时费用使用最后一次上报的用量和订单冻结价格；断线期间不继续累计。
 
 // LiveMeterView 是某个订单此刻的实时计量与费用。
 type LiveMeterView struct {

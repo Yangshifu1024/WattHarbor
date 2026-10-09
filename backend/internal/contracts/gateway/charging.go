@@ -1,4 +1,4 @@
-// Package gateway 定义 gateway 内部 HTTP 接口的请求与响应契约。
+// Package gateway 定义 gateway 内部 HTTP 接口的路径、请求和响应结构。
 package gateway
 
 import (
@@ -9,7 +9,7 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// ErrInvalidResponse 表示响应不满足端点的状态码、字段或受理约束。
+// ErrInvalidResponse 表示响应状态、字段或处理结果不符合接口要求。
 var ErrInvalidResponse = errors.New("invalid gateway response")
 
 // BusinessError 保留 gateway 返回的非零业务 code。
@@ -17,15 +17,15 @@ type BusinessError struct {
 	Code int /* 网关非零业务错误码 */
 }
 
-// Error 将 e 的业务码格式化为错误文本；不改变网关的业务状态。
+// Error 返回包含网关业务错误码的文本。
 func (e BusinessError) Error() string {
 	return fmt.Sprintf("gateway rejected request: code %d", e.Code)
 }
 
 const (
-	// MaxChargingEvidenceGap 是连续取证允许的最大相邻间隔及末条年龄。
-	// 当前充电心跳每 15 秒采样，允许一个周期的传输抖动；超过 30 秒须重建窗口。
-	// 协议适配器改变采样周期时须核对该证据契约，用例不依赖协议帧常量。
+	// MaxChargingEvidenceGap 限定相邻心跳的时间间隔，以及最后一次心跳距当前时间的间隔。
+	// DC589 充电时使用 15 秒心跳；间隔超过 30 秒或最后一条读数过旧时，不能据此自动停止。
+	// 修改心跳周期时须同步核对该上限。
 	MaxChargingEvidenceGap = 30 * time.Second
 	ChargingEvidencePath   = "/api/v1/internal/charging-evidence"
 	StopPath               = "/api/v1/internal/charge-orders/stop"
@@ -35,29 +35,29 @@ const (
 	StopSourceUser         = "user_app"
 )
 
-// EvidenceQueryRequest 固定一个订单的设备端口、开始时刻和事件游标，作为批量充电取证中的单项查询。
+// EvidenceQueryRequest 查询指定端口开始充电后的心跳，用事件 ID 分页。
 type EvidenceQueryRequest struct {
 	DeviceID  string    `json:"device_id"`  // 网关设备业务标识
 	PortNo    uint8     `json:"port_no"`    // 目标物理端口号，从 1 开始
-	StartedAt time.Time `json:"started_at"` // 订单开始充电的 UTC 时刻，取证窗口下界
+	StartedAt time.Time `json:"started_at"` // 开始充电的 UTC 时间，查询起点
 	AfterID   uint64    `json:"after_id"`   // 上页最后事件主键，首次为 0
 }
 
-// EvidenceRequest 按输入顺序批量请求网关的端口心跳证据；每项保留自己的取证窗口与游标。
+// EvidenceRequest 批量查询端口心跳，每项分别指定开始时间和分页游标。
 type EvidenceRequest struct {
 	Requests []EvidenceQueryRequest `json:"requests"` // 按输入顺序批量查询设备端口，最多 20 项
 }
 
-// EvidenceSample 保留既有遥测 JSON 大小写，只暴露端口级心跳证据。
+// EvidenceSample 返回心跳中的目标端口读数，JSON 字段保留原有大小写。
 // ChargedMWh 的单位为 mWh，PowerDeciWatts 的单位为 0.1 W。
 type EvidenceSample struct {
-	Type          protocol.EventType       `json:"Type"`          // 证据事件类型，当前为心跳
+	Type          protocol.EventType       `json:"Type"`          // 事件类型，当前为心跳
 	DeviceID      string                   `json:"DeviceID"`      // 网关设备业务标识
-	ReceivedAt    time.Time                `json:"ReceivedAt"`    // 心跳接收的 UTC 时刻，必须保持入库顺序
+	ReceivedAt    time.Time                `json:"ReceivedAt"`    // 网关接收心跳的 UTC 时间
 	ChargingPorts []protocol.PortTelemetry `json:"ChargingPorts"` // 仅含目标端口；空集合表示该心跳未上报目标端口，必须中断连续窗口
 }
 
-// EvidencePageReply 按请求顺序返回证据；Complete=false 时 NextAfterID 必须大于请求游标。
+// EvidencePageReply 返回一个端口的一页心跳；未查完时 NextAfterID 必须大于请求游标。
 type EvidencePageReply struct {
 	DeviceID    string           `json:"device_id"`     // 网关设备业务标识
 	PortNo      uint8            `json:"port_no"`       // 目标物理端口号，从 1 开始
@@ -66,9 +66,9 @@ type EvidencePageReply struct {
 	NextAfterID uint64           `json:"next_after_id"` // 未完成时必须大于请求游标的事件主键
 }
 
-// EvidenceReply 按请求顺序返回各端口的证据页；是否已读完整窗口由各页 Complete 和后续游标表示。
+// EvidenceReply 按请求顺序返回各端口的心跳分页结果。
 type EvidenceReply struct {
-	Evidence []EvidencePageReply `json:"evidence"` // 按请求顺序对应的证据页
+	Evidence []EvidencePageReply `json:"evidence"` // 与请求顺序一致的分页结果
 }
 
 // StopRequest 提交订单号、所属用户和来源，请求网关检查权限并保存停止命令；不表示设备已经停电。
@@ -92,7 +92,7 @@ type StartRequest struct {
 }
 
 // StartReply 是持久化 START 命令的请求处理结果。
-// DeviceAcknowledged 只表达 gateway 已持有设备回执，不代替 central 的订单状态更新。
+// DeviceAcknowledged 表示网关已收到启动回执；central 仍需处理该回执才能更新订单。
 type StartReply struct {
 	OrderNo            string `json:"order_no"`            // 充电订单号，重试沿用
 	CommandID          string `json:"command_id"`          // 持久命令标识，用于网关重试与设备回执

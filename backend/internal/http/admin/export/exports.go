@@ -1,3 +1,4 @@
+// Package export 提供后台导出任务申请、查询和授权下载接口。
 package export
 
 import (
@@ -47,7 +48,7 @@ func failure(c *gin.Context, err error) {
 	}
 }
 
-// detailTask 从请求提取 id 及身份，返回任务状态或错误，不返回服务端路径。
+// detailTask 查询指定导出任务的状态。
 func (t ExportTask) detailTask(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {
@@ -61,7 +62,7 @@ func (t ExportTask) detailTask(c *gin.Context) {
 	httpapi.OK(c, row)
 }
 
-// listTasks 从请求提取分页和身份，返回全局任务分页或错误，不构造 SQL。
+// listTasks 分页查询导出任务。
 func (t ExportTask) listTasks(c *gin.Context) {
 	page, ok := adminhttp.ReadAdminPage(c, "pending running completed failed expired")
 	if !ok {
@@ -75,7 +76,7 @@ func (t ExportTask) listTasks(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// listResources 将当前账号身份传给资源权限检查，输出清单、格式和上限，不决定业务范围。
+// listResources 返回当前管理员可导出的资源、格式和数量上限。
 func (t ExportTask) listResources(c *gin.Context) {
 	out, err := t.Service.Resources(c.Request.Context(), adminhttp.AdminAuditContext(c).Actor)
 	if err != nil {
@@ -85,7 +86,7 @@ func (t ExportTask) listResources(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// createTask 从请求严格读取申请及审计信息，返回同步回执或错误，不组合事务／文件。
+// createTask 申请导出并返回任务结果。
 func (t ExportTask) createTask(c *gin.Context) {
 	var in export.CreateInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -106,7 +107,7 @@ func (t ExportTask) createTask(c *gin.Context) {
 	httpapi.OK(c, gin.H{"task_no": out.TaskNo, "status": out.Status, "row_count": out.RowCount, "expires_at": out.ExpiresAt})
 }
 
-// downloadTask 从请求提取 id／身份，流式输出用例授权的句柄；请求结束关闭文件，不再使用数据库路径。
+// downloadTask 打开获授权的导出文件并发送内容，请求结束时关闭文件。
 func (t ExportTask) downloadTask(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

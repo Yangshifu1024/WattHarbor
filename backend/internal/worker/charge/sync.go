@@ -1,3 +1,4 @@
+// Package charge 启动已支付订单、同步设备结果并恢复刷卡事件处理。
 package charge
 
 import (
@@ -19,21 +20,21 @@ type Synchronizer struct {
 		// CompensateStart 为指定 START 请求停机补偿，不重新启动或决定退款。
 		CompensateStart(context.Context, string, string) error
 	}
-	// Central 中央启动回执确认接口，不在 worker 执行订单或资金算法。
+	// Central 保存启动回执并更新订单状态。
 	Central interface {
 		// SubmitStartResult 由中央保存启动结果并更新订单，重复请求复用同一回执。
 		SubmitStartResult(context.Context, centralcontract.StartResultRequest) (centralcontract.ResultReply, error)
 	}
-	// CommandFilter 可选启动命令筛选值，原样交网关读取，不改变回执身份或生成游标。
+	// CommandFilter 指定要读取的启动命令；空值读取所有待上报回执。
 	CommandFilter string
 }
 
+// ErrCentralConflict 表示中央服务拒绝与订单不匹配的启动回执。
 var ErrCentralConflict = centralcontract.ErrResultConflict
 
-// SyncBatch 校验启动回执，提交中央成功后才批量标记已上报，返回中央已确认数量和处理错误。
-// 标记失败时仍保留确认数量，不表示标记已提交。
-// 中央冲突仅对成功 START 请求停机补偿，不标记该回执；补偿成功可返回 nil。
-// 大于 3 的结果码保留待核实；STOP 结果不代表资金已满足退款条件。
+// SyncBatch 核对启动回执，提交中央成功后批量标记已上报，返回确认数量和错误。
+// 中央拒绝已成功启动的命令时请求补偿停机，并保留待上报状态。
+// 结果码大于 3 留待核实；标记失败时确认数量仍保留。
 func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 	if s.Gateway == nil || s.Central == nil {
 		return 0, errors.New("start result synchronizer is not configured")
@@ -59,7 +60,7 @@ func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 			continue
 		}
 		if result.ResultCode > 3 {
-			// 结果码大于 3 保留待核实，不提交中央确认或上报标记；补偿请求不作为从未输出的凭据。
+			// 结果码大于 3 无法确认启动结果，保留回执等待核实。
 			firstError = errors.New("startup outcome needs review; compensation is not a no-charge proof")
 			continue
 		}

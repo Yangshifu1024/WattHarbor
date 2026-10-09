@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// registerChargingSchemes 在 r 上绑定方案路由及逐动作权限，只负责 HTTP 装配。
+// registerChargingSchemes 注册方案模板、发布、继承、预览和执行能力接口，并校验各自权限。
 func (a API) registerChargingSchemes(r *gin.Engine) {
 	p := "/api/v1/admin/settings/charging-schemes"
 	r.GET(p, a.Auth.Require("pricing.read"), a.chargingSchemes)
@@ -37,8 +37,7 @@ func asPricingConflict(err error) error {
 	return err
 }
 
-// chargingSchemes 在请求 context 下读取模板并输出列表及实时权限；非法历史 JSON 沿用行为跳过。
-// 存储错误写统一失败响应，不执行业务写入。
+// chargingSchemes 查询方案模板并返回当前管理员的权限；跳过无法解析的历史模板。
 func (a API) chargingSchemes(c *gin.Context) {
 	items, err := a.Queries.List(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile))
 	if err != nil {
@@ -48,7 +47,7 @@ func (a API) chargingSchemes(c *gin.Context) {
 	httpapi.OK(c, gin.H{"items": items, "permissions": c.MustGet("admin_profile").(operations.Profile).Permissions})
 }
 
-// saveChargingScheme 解码公开输入及路径，将保存交给注入用例，返回主键和版本。
+// saveChargingScheme 创建或更新方案模板，返回主键和版本。
 func (a API) saveChargingScheme(c *gin.Context) {
 	var in pricing.SchemeInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -70,13 +69,13 @@ func (a API) saveChargingScheme(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// chargingSchemeStatus 将 c 中启停请求交给统一变更适配器，无独立事务。
+// chargingSchemeStatus 启用或停用指定方案模板。
 func (a API) chargingSchemeStatus(c *gin.Context) { a.changeChargingScheme(c, false) }
 
-// deleteChargingScheme 将 c 中软删除请求交给统一变更适配器，不删除历史规则。
+// deleteChargingScheme 软删除指定方案模板。
 func (a API) deleteChargingScheme(c *gin.Context) { a.changeChargingScheme(c, true) }
 
-// changeChargingScheme 解码启停／删除输入；remove 指定软删除，事务与审计由用例管理。
+// changeChargingScheme 校验版本和变更输入，再启停或软删除方案模板。
 func (a API) changeChargingScheme(c *gin.Context, remove bool) {
 	id, ok := admin.AdminPathID(c)
 	if !ok {
@@ -93,7 +92,7 @@ func (a API) changeChargingScheme(c *gin.Context, remove bool) {
 	httpapi.OK(c, gin.H{"id": id})
 }
 
-// applyChargingScheme 解码发布请求和实时范围，调用唯一发布入口并返回结果。
+// applyChargingScheme 按管理员当前站点范围发布方案。
 func (a API) applyChargingScheme(c *gin.Context) {
 	var in pricing.PublishInput
 	if !httpapi.DecodeResource(c, &in) {
@@ -116,8 +115,7 @@ func (a API) applyChargingScheme(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// effectiveChargingScheme 在请求内解析目标及实时范围，读取当前规则和设备覆盖版本。
-// 无规则返回空方案；缺归属或存储错误写错误响应，不以历史冻结规则替代当前方案。
+// effectiveChargingScheme 读取指定站点或设备当前生效的方案；没有规则时返回空方案。
 func (a API) effectiveChargingScheme(c *gin.Context) {
 	station, ok := admin.AdminPathID(c)
 	if !ok {
@@ -135,7 +133,7 @@ func (a API) effectiveChargingScheme(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// inheritChargingScheme 解码设备继承输入及实时范围，返回继承标志或统一错误。
+// inheritChargingScheme 让指定设备继承站点方案。
 func (a API) inheritChargingScheme(c *gin.Context) {
 	station, ok := admin.AdminPathID(c)
 	if !ok {
@@ -160,7 +158,7 @@ func (a API) inheritChargingScheme(c *gin.Context) {
 	httpapi.OK(c, gin.H{"inherited": true})
 }
 
-// previewChargingScheme 解码 c 提供的完整场景，调用领域纯计算，返回预览或格式错误，不访问数据库。
+// previewChargingScheme 根据请求中的完整方案计算预览，不读取数据库。
 func (a API) previewChargingScheme(c *gin.Context) {
 	var in struct {
 		Scheme      charging.Scheme      `json:"scheme"`       // 完整待预览方案，不持久保存
@@ -180,8 +178,7 @@ func (a API) previewChargingScheme(c *gin.Context) {
 	httpapi.OK(c, result)
 }
 
-// executionCapabilities 在请求内校验查询目标与实时范围，输出所选适配器的领域能力或失败响应。
-// 不按设备型号推测协议，不读取或修改资金。
+// executionCapabilities 返回指定设备的协议适配器支持的充电能力。
 func (a API) executionCapabilities(c *gin.Context) {
 	station, ok := admin.QueryStationID(c, true)
 	if !ok {
@@ -204,7 +201,7 @@ func (a API) executionCapabilities(c *gin.Context) {
 	httpapi.OK(c, out)
 }
 
-// pricingAudit 提取可信认证和请求事实，不持有 gin 的业务事务依赖。
+// pricingAudit 从请求取得已鉴权的管理员、客户端 IP 和请求编号。
 func pricingAudit(c *gin.Context) ops.AuditContext {
 	return ops.AuditContext{Actor: c.MustGet("admin_profile").(operations.Profile), ClientIP: c.ClientIP(), RequestID: httpapi.RequestID(c)}
 }

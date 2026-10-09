@@ -12,25 +12,25 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrBillingConflict 表示计费证据、人工金额或已保存结果不一致，不能覆盖后重新收费。
+// ErrBillingConflict 表示计量、价格、最终金额或已有计算结果不一致，不能覆盖后重新收费。
 var ErrBillingConflict = errors.New("billing source conflicts with persisted calculation")
 
-// Source 保存下单价格、计量和人工裁决，重放须比对完整内容。
+// Source 保存下单价格、计量和已确定的最终费用，重试须比对完整内容。
 type Source struct {
-	FinalFee      *charging.Fee        `json:"final_fee,omitempty"` // 已持久审计的最终金额；自动计费为空
-	ReviewID      string               `json:"review_id,omitempty"` // 人工最终金额请求身份；未裁决为空
+	FinalFee      *charging.Fee        `json:"final_fee,omitempty"` // 已保存的预算封顶费用或人工最终金额；通常为空
+	ReviewID      string               `json:"review_id,omitempty"` // 最终金额来源：人工请求 UUID 或 budget:截止时刻；无最终金额时为空
 	ChargeOrderID uint64               `json:"charge_order_id"`     // 充电订单主键
 	OrderNo       string               `json:"order_no"`            // 充电单号，派生稳定计费编号
-	UserID        uint64               `json:"user_id"`             // 同一订单所属用户，内部证据保留历史数值编码
+	UserID        uint64               `json:"user_id"`             // 订单所属用户 ID，内部保存为整数
 	Rule          charging.Rule        `json:"rule"`                // 下单时完整计价规则快照
 	Offer         *charging.Offer      `json:"offer,omitempty"`     // 下单套餐，历史非套餐可空
-	Meter         charging.ActualMeter `json:"meter"`               // 截止时已验证计量，Wh／秒及分段，不使用当前遥测
+	Meter         charging.ActualMeter `json:"meter"`               // 本次计费的累计 Wh、秒数和分段，可标记为需要核实
 }
 
 // Result 是按 Source 计算并保存的费用，金额单位分，重放保持计算号和金额不变。
 type Result struct {
 	CalculationNo      string `json:"calculation_no"` // 首次计费编号
-	Source             Source `json:"source"`         // 首次计费证据，不以当前规则替换
+	Source             Source `json:"source"`         // 首次计算的价格、计量和最终费用
 	charging.ActualFee        // 领域确定的电费、服务费、总费及明细，金额为分
 }
 
@@ -39,8 +39,8 @@ type FeeCalculator struct {
 	DB *gorm.DB // central 计费连接，由进程管理
 }
 
-// Calculate 按计费证据生成并保存结果，首次回执锁行后比对完整证据。
-// 相同请求复用计算号和投递载荷；计算、回执、投递同事务，不在此扣款。
+// Calculate 先计算费用，再锁定订单回执并比对 source；同内容返回已保存结果，不扣款。
+// 计算记录、回执和待处理结果同事务保存，内容冲突或写入失败时回滚。
 func (s FeeCalculator) Calculate(ctx context.Context, source Source) (Result, error) {
 	if source.ChargeOrderID == 0 || source.OrderNo == "" || source.UserID == 0 || source.Rule.StationID == 0 {
 		return Result{}, ErrBillingConflict
@@ -59,7 +59,7 @@ func (s FeeCalculator) Calculate(ctx context.Context, source Source) (Result, er
 			return err
 		}
 		var receipt struct {
-			SourceJSON    []byte  // 首次计费证据 JSON
+			SourceJSON    []byte  // 首次价格和计量 JSON
 			CalculationID *uint64 // 计算主键，尚未计算为空
 			CalculationNo *string // 计算编号，尚未计算为空
 		}
@@ -101,7 +101,8 @@ func (s FeeCalculator) Calculate(ctx context.Context, source Source) (Result, er
 	return out, err
 }
 
-// PriceSource 根据下单价格和计量计算费用；人工 FinalFee 须带 ReviewID，且不得超过套餐金额。
+// PriceSource 优先使用已保存的 FinalFee：须有来源编号、分项合计正确且不超过套餐价格。
+// 未指定最终金额时按下单价格和实测用量计算。
 func PriceSource(source Source) (charging.Fee, error) {
 	if source.FinalFee != nil {
 		f := *source.FinalFee

@@ -133,7 +133,7 @@ func TestActivityEventIDIsStableAndScopeSeparated(t *testing.T) {
 	}
 }
 
-// TestGrantSourceForMapsOnlyInviteReward 验证邀请奖励来源映射，预算按相应发放来源统计。
+// TestGrantSourceForMapsOnlyInviteReward 验证邀请奖励使用 invite_reward 来源，其余使用 activity，份数按来源统计。
 func TestGrantSourceForMapsOnlyInviteReward(t *testing.T) {
 	if got := grantSourceFor(TriggerInviteReward); got != "invite_reward" {
 		t.Errorf("邀请有奖应记为 invite_reward，实际 %q", got)

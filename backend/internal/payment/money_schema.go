@@ -38,7 +38,7 @@ type PaymentIntentRecord struct {
 	DeviceID           string        `gorm:"column:device_id"`            // 冻结目标设备编号
 	PortNo             uint8         `gorm:"column:port_no"`              // 冻结设备端口号，从 1 开始
 	PortCode           string        `gorm:"column:port_code"`            // 冻结端口业务编码
-	StationID          uint64        `gorm:"column:station_id"`           // 冻结站点身份
+	StationID          uint64        `gorm:"column:station_id"`           // 申请时保存的站点 ID
 	PricingRuleID      uint64        `gorm:"column:pricing_rule_id"`      // 首次申请采用的规则主键
 	PricingRuleVersion uint32        `gorm:"column:pricing_rule_version"` // 冻结规则版本，不随发布变化
 	PricingSnapshot    []byte        `gorm:"column:pricing_snapshot"`     // 首次申请的完整规则、套餐与费用估计 JSON
@@ -60,7 +60,7 @@ type PaymentIntentRecord struct {
 // TableName 返回 PaymentIntentRecord 所属表名。
 func (PaymentIntentRecord) TableName() string { return "charge_payment_intent" }
 
-// PaymentCallbackDigestRecord 以渠道交易唯一键仲裁重复通知及不同身份载荷。
+// PaymentCallbackDigestRecord 按渠道交易号保存通知摘要，拒绝同交易号的不同付款人或金额。
 type PaymentCallbackDigestRecord struct {
 	WechatTransactionID string `gorm:"column:wechat_transaction_id;primaryKey"` // 已验签渠道交易号，非空且唯一
 	RequestDigest       string `gorm:"column:request_digest"`                   // 验签交易编号及金额的 SHA256 摘要，不含通知时间
@@ -69,7 +69,7 @@ type PaymentCallbackDigestRecord struct {
 // TableName 返回 PaymentCallbackDigestRecord 所属表名。
 func (PaymentCallbackDigestRecord) TableName() string { return "payment_callback_idempotent" }
 
-// ChargePrepayRecord 保存支付首次渠道参数，唯一键保持并发重试身份一致。
+// ChargePrepayRecord 保存一笔支付的首次渠道参数，重复保存不覆盖。
 type ChargePrepayRecord struct {
 	PaymentOrderID uint64         `gorm:"column:payment_order_id;primaryKey"` // 关联支付主键，不允许回调换单
 	ParamsJSON     []byte         `gorm:"column:params_json"`                 // 首次预支付参数 JSON，重复准备复用

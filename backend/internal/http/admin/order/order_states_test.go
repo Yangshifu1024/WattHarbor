@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TestOrderQueriesRejectInvalidIndependentFilters 验证业务订单和支付订单分别拒绝对方状态、无效筛选及超限分页。
 func TestOrderQueriesRejectInvalidIndependentFilters(t *testing.T) {
 	router := gin.New()
 	api := API{}
@@ -31,7 +30,6 @@ func TestOrderQueriesRejectInvalidIndependentFilters(t *testing.T) {
 	}
 }
 
-// TestBothOrderListsRequireAuthentication 验证实际注册的两类订单列表均拒绝未登录访问。
 func TestBothOrderListsRequireAuthentication(t *testing.T) {
 	router := gin.New()
 	(API{}).Register(router)

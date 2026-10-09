@@ -12,12 +12,14 @@ import (
 type Transport = protocol.Transport
 
 const (
-	TransportTCP  = protocol.TransportTCP
+	// TransportTCP 表示设备通过 TCP 连接。
+	TransportTCP = protocol.TransportTCP
+	// TransportMQTT 表示设备通过 MQTT 连接。
 	TransportMQTT = protocol.TransportMQTT
 )
 
-// SessionAudit 在内存累加连接流量，并在关闭时一次写入数据库，避免每帧访问存储。
-// 进程异常退出时未落盘计数可能丢失，遗留会话由后续清理处理。
+// SessionAudit 在内存中累计连接流量，连接结束时由适配器保存。
+// 进程异常退出会丢失尚未保存的记录。
 type SessionAudit struct {
 	transport  Transport
 	remoteAddr string
@@ -56,7 +58,7 @@ func (a *SessionAudit) Inbound(dataLen int, at time.Time) {
 	a.lastSeen.Store(at.UnixNano())
 }
 
-// Outbound 记录一个发出的帧。
+// Outbound 记录发送帧数、载荷字节数和最近活动时间。
 func (a *SessionAudit) Outbound(dataLen int, at time.Time) {
 	if a == nil {
 		return
@@ -92,7 +94,7 @@ func (a *SessionAudit) UnknownCommands() []int {
 	return out
 }
 
-// Snapshot 生成流量快照，endedAt 与结束原因由调用方依据实际连接终态提供。
+// Snapshot 汇总流量及连接起止时间，结束原因由调用方提供。
 func (a *SessionAudit) Snapshot(deviceID, closeReason string, endedAt time.Time) protocol.SessionRecord {
 	if a == nil {
 		return protocol.SessionRecord{}

@@ -17,7 +17,7 @@ import (
 )
 
 // TestAdminSessionConcurrentRotationHasOneWinner 验证两个真实 Redis 调用同令牌轮换只有一次成功，旧令牌仍可注销。
-// 仅清理本测试 SID，挑战或版本失配不能作为有效会话。
+// 仅清理本测试创建的会话和 MFA 挑战；验证挑战不能用于登录，版本不匹配时会话无效。
 func TestAdminSessionConcurrentRotationHasOneWinner(t *testing.T) {
 	raw := os.Getenv("TEST_REDIS_URL")
 	if raw == "" {

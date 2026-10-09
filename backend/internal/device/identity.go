@@ -1,4 +1,4 @@
-// Package devices 定义与协议无关的充电桩编号规则。
+// Package device 管理站点、设备、导入和报修，并通过网关查询运行状态、同步告警。
 package device
 
 import "regexp"

@@ -6,13 +6,17 @@ import (
 	"strings"
 )
 
-// 后台登录失败的三类原因。对外只区分"凭据错误"和"被锁定"。
-// 避免通过报错文案区分"用户不存在"与"密码错误"，给暴力破解留线索。
+// 后台登录、刷新令牌和二次验证的错误。
 var (
-	ErrCredentials    = errors.New("用户名或密码错误")
-	ErrLocked         = errors.New("账号已锁定，请在 30 分钟后重试")
-	ErrMFA            = errors.New("此账号已启用双因素认证，当前登录入口暂不支持")
-	ErrInvalidTOTP    = errors.New("验证码无效或已过期")
+	// ErrCredentials 表示用户名不存在或密码错误，统一返回同一文案。
+	ErrCredentials = errors.New("用户名或密码错误")
+	// ErrLocked 表示账号因连续登录失败被暂时锁定。
+	ErrLocked = errors.New("账号已锁定，请在 30 分钟后重试")
+	// ErrMFA 表示当前入口不支持该账号已启用的二次验证。
+	ErrMFA = errors.New("此账号已启用双因素认证，当前登录入口暂不支持")
+	// ErrInvalidTOTP 表示动态验证码错误或过期。
+	ErrInvalidTOTP = errors.New("验证码无效或已过期")
+	// ErrInvalidRefresh 表示刷新令牌无效或已过期。
 	ErrInvalidRefresh = errors.New("invalid or expired refresh token")
 	// ErrInvalidMFAChallenge 表示登录挑战不存在、已经过期，或已被一次成功的二次验证用掉。
 	ErrInvalidMFAChallenge = errors.New("invalid or expired mfa challenge")
@@ -47,7 +51,7 @@ const (
 	StatusLocked   = "locked"
 )
 
-// 连续登录失败达到该次数即锁定账号。
+// MaxFailedLogins 是触发临时账号锁定的连续登录失败次数。
 const MaxFailedLogins = 5
 
 // LockDuration 是账号被锁定后的持续时间。

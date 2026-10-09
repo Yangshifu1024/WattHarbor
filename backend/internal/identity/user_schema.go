@@ -5,12 +5,12 @@ import (
 	"time"
 )
 
-// LoginIdentity 是 openid 唯一锁行，先提交后串行化用户及钱包开户，不承载会话。
+// LoginIdentity 按 openid 保存唯一加锁记录，使同一微信用户的开户事务依次执行。
 type LoginIdentity struct {
 	OpenID []byte `gorm:"column:openid;primaryKey"` // 微信登录身份
 }
 
-// TableName 返回登录唯一编号所属表。
+// TableName 返回微信登录加锁记录的表名。
 func (LoginIdentity) TableName() string { return "user_login_identity" }
 
 // UserAccount 仅映射用户状态校验所需列；钱包创建委托对应模块的接口，号码绑定使用对应仓储。

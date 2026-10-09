@@ -1,3 +1,4 @@
+// Package device 提供设备资料、运营状态、批量导入和计量复核接口。
 package device
 
 import (
@@ -8,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// API 注入本业务族所需的服务、窄查询能力和实时鉴权，不持有数据库连接。
+// API 提供设备管理接口，依赖设备、导入、计量复核服务和后台鉴权。
 type API struct {
 	Management device.ManagementService      // 设备范围读取、运营变更及运行摘要，由 cmd 装配
 	Imports    device.ImportService          // 批量导入受理、同步执行及身份恢复，由 cmd 装配

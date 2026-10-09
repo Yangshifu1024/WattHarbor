@@ -25,7 +25,7 @@ import (
 func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel, gateway *gatewayclient.Client) *gin.Engine {
 	db, orm, cache := r.DB, r.ORM, r.Cache
 	gin.SetMode(gin.ReleaseMode)
-	// 指标端点无需会话，只暴露路由模板、状态码与耗时。
+	// /metrics 无需登录，包含请求、进程和数据库连接池统计。
 	metrics := httpapi.NewMetrics("central", httpapi.DatabasePool{Schema: "central_db", DB: r.DB})
 	router := httpapi.NewRouter(metrics)
 	metrics.Register(router)
@@ -42,7 +42,7 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 
 	// 内部端点统一使用同一服务令牌：内部调用只认 X-Service-Token，不暴露到前端。
 	token := cfg.ServiceToken
-	// 设备操作仓储为无状态值服务，刷卡的端口探测与设备事实共用同一实例。
+	// 刷卡前查询端口及设备的运营状态，共用此仓储。
 	operationRepo := device.OperationRepo{DB: orm}
 
 	// 充电生命周期：gateway 查询授权，worker 查询待启动订单并同步回执。
@@ -64,7 +64,7 @@ func newRouter(cfg config.Central, r *resources, channel payment.PaymentChannel,
 	}.RegisterInternal(router)
 	centralhttp.AutoStopAPI{Stopper: chargestop.AutoStopper{DB: orm, Gateway: gateway}, ServiceToken: token}.Register(router)
 
-	// 资金与账单：开票、结算、退款派发。
+	// 计费结算与退款执行。
 	centralhttp.BillingAPI{
 		Service: settlement.BillingService{
 			Calculator: settlement.FeeCalculator{DB: orm},

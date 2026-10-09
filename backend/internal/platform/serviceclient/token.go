@@ -5,7 +5,7 @@ import (
 	"crypto/subtle"
 )
 
-// VerifyServiceToken 比较服务令牌；先取 SHA-256 摘要，再做固定时间比较，避免泄露长度和内容。
+// VerifyServiceToken 将双方令牌转为等长的 SHA-256 摘要，再用固定时间比较。
 // 期望令牌为空时始终拒绝请求。
 func VerifyServiceToken(expected, provided string) bool {
 	if expected == "" {

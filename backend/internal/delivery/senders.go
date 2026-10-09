@@ -17,13 +17,19 @@ import (
 
 // Sender 是监管报送的投递适配器；Mode 记入 regulatory_report.delivered_mode。
 type Sender interface {
+	// Mode 返回发送方式，供保存投递记录使用。
 	Mode() string
+	// Send 向接收方提交事件，失败时返回错误。
 	Send(context.Context, Event) error
 }
 
+// SimulationSender 模拟发送成功，便于测试队列处理；不请求外部服务。
 type SimulationSender struct{}
 
-func (SimulationSender) Mode() string                      { return "simulation" }
+// Mode 返回 simulation，供保存投递方式使用。
+func (SimulationSender) Mode() string { return "simulation" }
+
+// Send 模拟发送成功，不执行网络请求。
 func (SimulationSender) Send(context.Context, Event) error { return nil }
 
 // HTTPSender 提供通用 HTTP 发送能力；实际监管接口所需的字段、签名和国密算法须按其规范另行实现。
@@ -33,8 +39,11 @@ type HTTPSender struct {
 	Client   *http.Client
 }
 
+// Mode 返回 http，供保存投递方式使用。
 func (HTTPSender) Mode() string { return "http" }
 
+// Send 校验公网 HTTPS 地址，签名并 POST 事件 JSON；非 2xx 回复视为失败。
+// 未配置客户端时使用 10 秒超时并禁止重定向。
 func (s HTTPSender) Send(ctx context.Context, event Event) error {
 	if s.Secret == "" {
 		return errors.New("regulatory signing secret missing")

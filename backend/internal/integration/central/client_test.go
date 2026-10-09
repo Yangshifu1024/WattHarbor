@@ -52,11 +52,10 @@ func TestPaidStartsPreservesCursorIdentityAndEmptyScan(t *testing.T) {
 // TestPaidStartsRejectsIncompleteAndInconsistentResponse 验证错误状态、缺字段、游标或订单不匹配、无效 JSON 均被拒绝，不返回部分页面。
 func TestPaidStartsRejectsIncompleteAndInconsistentResponse(t *testing.T) {
 	for _, tc := range []struct {
-		// name 子测试名称。
 		name string
-		// status 测试服务返回的 HTTP 状态。
+
 		status int
-		// body 该场景响应 JSON正文，不修改测试值或业务断言。
+
 		body string
 	}{
 		{"wrong HTTP status", 202, `{"code":0,"data":{"items":[]}}`},
@@ -109,7 +108,6 @@ func TestPaidStartsPreservesHTTPBusinessAndCancellationErrors(t *testing.T) {
 // TestCentralClientRejectsInvalidConfiguration 验证无效服务地址或令牌在发送请求前被拒绝。
 func TestCentralClientRejectsInvalidConfiguration(t *testing.T) {
 	for _, tc := range []struct {
-		// base,token 是待校验的服务地址和令牌。
 		base, token string
 	}{
 		{"", "token"}, {"ftp://central", "token"}, {"http://", "token"},

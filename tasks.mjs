@@ -1,4 +1,4 @@
-// 仓库任务入口：Node.js 24，直接调用 Go／Docker，不依赖 shell 或 Make。
+// 仓库任务入口：Node.js 24，直接调用 Go、Docker 或开发启动脚本。
 // 用法：node tasks.mjs <任务>；路径以本文件定位，调用方可位于任意目录。
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
@@ -77,7 +77,7 @@ export function main(argv, {
   }
 }
 
-// 仅直接运行时执行任务；导入模块供验证时不产生文件或进程副作用。
+// 直接运行时执行任务；测试导入模块时不自动执行。
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }

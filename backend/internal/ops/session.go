@@ -114,8 +114,8 @@ type LoginOutcome struct {
 type SessionService struct {
 	Accounts AuthenticationAccounts // 所属账号及权限事务
 	Sessions SessionRepository      // 后台会话和挑战管理接口
-	Tokens   AccessTokens           // 后台专属签发校验能力
-	Limits   LoginLimiter           // 来源计数能力
+	Tokens   AccessTokens           // 后台访问令牌签发和校验接口
+	Limits   LoginLimiter           // 按 IP 统计认证调用次数的接口
 }
 
 // CheckRate 统计 IP 认证次数，超过每分钟五次返回 ErrLoginRate；存储失败拒绝登录。
@@ -134,7 +134,7 @@ func (s SessionService) CheckRate(ctx context.Context, ip string) error {
 	return nil
 }
 
-// Login 校验用户名、密码和 IP，成功返回 MFA 挑战或会话，失败不返回认证材料。
+// Login 校验用户名和密码，IP 用于审计；成功返回 MFA 挑战或令牌，失败不返回密码或密钥。
 func (s SessionService) Login(ctx context.Context, username, password, ip string) (LoginOutcome, error) {
 	account, err := s.Accounts.Login(ctx, username, password, ip)
 	if err != nil {
@@ -149,7 +149,7 @@ func (s SessionService) Login(ctx context.Context, username, password, ip string
 }
 
 // VerifyMFA 锁定挑战账号后核对版本、锁定状态和验证码。
-// 好码在同一账号事务内比较并删除挑战，只有成功删除者可记录登录成功并创建会话；坏码可重试。
+// 验证码正确时，在账号事务内比较并删除挑战；只有成功删除者能登录并创建会话，错误验证码可重试。
 // Redis 删除不与 SQL 原子提交，SQL 失败须重新密码登录。
 func (s SessionService) VerifyMFA(ctx context.Context, token, code, ip string) (AccessReply, error) {
 	challenge, err := s.Sessions.ResolveMFA(ctx, token)
@@ -198,7 +198,7 @@ func (s SessionService) Refresh(ctx context.Context, token string) (AccessReply,
 	return s.issue(ctx, profile, sid, refresh)
 }
 
-// issue 签发访问和刷新令牌，有效期八小时；失败时尝试撤销同一会话。
+// issue 签发八小时访问令牌，并返回已生成的刷新令牌；签发失败时尝试撤销会话。
 // 清理使用首次请求 context，失败时不能声称已注销。
 func (s SessionService) issue(ctx context.Context, profile operations.Profile, sid, refresh string) (AccessReply, error) {
 	token, err := s.Tokens.Sign(profile, sid, time.Now())

@@ -113,7 +113,7 @@ func TestExportPublishDownloadAndCurrentScope(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339Nano, *row.ExpiresAt); err != nil {
 		t.Fatalf("driver expiry shape %q %v", *row.ExpiresAt, err)
 	}
-	// 新服务只根据数据库记录和文件凭据校验，不依赖生成时的内存。
+	// 新服务按数据库记录和磁盘校验文件检查下载，不依赖生成时的内存。
 	restarted := ExportService{DB: s.DB, ExportDir: s.ExportDir, MaxRows: 2}
 	download, err := restarted.GetDownload(ctx, audit.Actor, row.ID)
 	if err != nil {

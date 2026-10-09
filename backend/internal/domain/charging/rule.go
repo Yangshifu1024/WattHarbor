@@ -12,6 +12,7 @@ type Rule struct {
 	Channel Channel `json:"channel,omitempty"`
 }
 
+// Estimate 保存报价结果；预计电量用 kWh 文本表示，金额单位为分。
 type Estimate struct {
 	EstimatedKWh     string     `json:"estimated_kwh"`
 	EstimatedMinutes uint16     `json:"estimated_minutes"`

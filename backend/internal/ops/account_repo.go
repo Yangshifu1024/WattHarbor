@@ -18,7 +18,7 @@ type AdminAccount struct {
 	AuthVersion      uint64         `json:"-"`             // 凭证版本号：改密或强制下线时自增，用于让已签发的令牌立即失效
 	ID               uint64         `json:"admin_user_id"` // 账号主键
 	Username         string         `json:"username"`      // 登录名
-	DisplayName      sql.NullString `json:"-"`             // 显示名；可空，缺失时前端回退到登录名
+	DisplayName      sql.NullString `json:"-"`             // 可空显示名，Profile 读取时将 NULL 转为空字符串
 	PasswordHash     string         `json:"-"`             // bcrypt 口令散列，绝不出接口
 	RoleID           uint64         `json:"role_id"`       // 所属角色 ID，权限由此推导
 	Status           string         `json:"-"`             // 账号状态：active / disabled / locked
@@ -31,12 +31,12 @@ type AdminAccount struct {
 // TableName 将 AdminAccount 映射到 admin_user。
 func (AdminAccount) TableName() string { return "admin_user" }
 
-// AccountRepo 访问后台认证与账号自有表，凭据材料只用于认证判定。
+// AccountRepo 访问后台账号和认证记录，密码散列和 MFA 密钥仅用于身份验证。
 type AccountRepo struct {
 	DB *gorm.DB /* 所属账号与审计数据库 */
 }
 
-// Bootstrap 仅在没有账号的新安装中创建首个管理员，不覆盖现有密码。
+// Bootstrap 仅在没有未删除账号时创建管理员，不覆盖现有账号密码。
 // 用户名和密码都为空时跳过；只填一项或密码不在 12–72 字节时拒绝。
 func (s AccountRepo) Bootstrap(ctx context.Context, username, password string) error {
 	if username == "" && password == "" {
@@ -192,10 +192,10 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 	return account, nil
 }
 
-// Profile 读取有效账号、当前角色和权限；不存在或停用统一返回凭据错误。
+// Profile 只读取 status=active 且未删除的账号和角色，并查询当前权限；无匹配记录返回 ErrCredentials。
 func (s AccountRepo) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
 	var row struct {
-		// AdminAccount 保存本次有效账号查询的主键、角色和认证版本，不另查缓存。
+		// AdminAccount 接收账号列，包括角色和认证版本；密码和 MFA 密钥不进入返回资料。
 		AdminAccount
 		Role     string // 当前有效角色编码
 		RoleName string // 当前角色展示名称

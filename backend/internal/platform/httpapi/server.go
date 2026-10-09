@@ -32,7 +32,7 @@ func Serve(ctx context.Context, server *http.Server, grace time.Duration) error 
 // 停止接收新处理器后，仍等待已有处理器退出；返回合并后的运行和停机错误。
 // 本函数管理 server 的请求 context 和 Handler，调用方负责关闭监听及其他资源。
 func serve(ctx context.Context, server *http.Server, listener net.Listener, grace time.Duration) error {
-	// 进程取消先停止监听并尝试排空，不能立即取消已接收的请求。
+	// 收到进程取消后，先让已有请求完成；超过宽限期才取消请求。
 	requests, cancelRequests := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelRequests()
 	server.BaseContext = func(net.Listener) context.Context { return requests }
@@ -76,7 +76,7 @@ func serve(ctx context.Context, server *http.Server, listener net.Listener, grac
 	if served != nil {
 		serveErr = <-served
 	}
-	// 停机后停止接收处理器与 Add 共用同一把锁，等待期间不会再加入处理器。
+	// 用同一把锁禁止新请求计数，避免 active.Wait 开始后又调用 Add。
 	admission.Lock()
 	accepting = false
 	admission.Unlock()

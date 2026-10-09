@@ -11,7 +11,7 @@ import (
 	contract "chargepilot/internal/contracts/gateway"
 )
 
-// TestAlertClientsKeepOriginalIDsWatermarkAndReplay 用本地 HTTP 服务验证大整数、用于比较的事件时间和零标记重放，不代表真库证据。
+// TestAlertClientsKeepOriginalIDsWatermarkAndReplay 用本地 HTTP 服务检查大整数 ID、事件接收时间和重复标记结果。
 func TestAlertClientsKeepOriginalIDsWatermarkAndReplay(t *testing.T) {
 	at := time.Date(2026, 10, 1, 0, 0, 0, 123000000, time.UTC)
 	later := at.Add(time.Second)

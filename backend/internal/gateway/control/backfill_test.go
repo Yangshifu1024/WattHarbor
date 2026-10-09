@@ -22,7 +22,6 @@ func frames(t *testing.T, raw string) []backfillFrame {
 // validFrame 保留合法补采帧正文模板，不创建持久记录。
 const validFrame = `{"device_id":"xx_001_abc","port_no":1,"msg_type":"telemetry","ts":"%s","payload":{"voltage_v":"220.5","power_w":704.0}}`
 
-// TestParseBackfillAcceptsStringAndNumberPayloads 核对固定时钟下字符串与数字载荷的六位小数归一；只证明纯解析，不证明数据库插入。
 func TestParseBackfillAcceptsStringAndNumberPayloads(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	ts := now.Add(-time.Hour).Format(time.RFC3339)
@@ -46,14 +45,11 @@ func TestParseBackfillAcceptsStringAndNumberPayloads(t *testing.T) {
 	}
 }
 
-// TestParseBackfillRejectsInvalidFrames 核对设备、协议、指标、端口与时间拒绝边界；任一无效帧返回错误。
 func TestParseBackfillRejectsInvalidFrames(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	valid := now.Add(-time.Hour).Format(time.RFC3339)
 	cases := []struct {
-		// name 拒绝场景名，供 t 子测试使用。
 		name string
-		// body 该场景的输入 JSON，不更改业务造数或断言。
 		body string
 	}{
 		{"device id mismatch", `{"frames":[{"device_id":"other_device","msg_type":"telemetry","ts":"` + valid + `","payload":{"power_w":"1"}}]}`},
@@ -75,7 +71,6 @@ func TestParseBackfillRejectsInvalidFrames(t *testing.T) {
 	}
 }
 
-// TestParseBackfillCollapsesDuplicateSamples 核对纯解析对同毫秒设备／端口／指标键去重，并保留不同端口样本；不证明持久重放。
 func TestParseBackfillCollapsesDuplicateSamples(t *testing.T) {
 	now := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
 	ts := now.Add(-time.Hour).Format(time.RFC3339)

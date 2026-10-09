@@ -12,10 +12,10 @@ import (
 // FaultReportInput 是一次用户报障的提交内容。
 type FaultReportInput struct {
 	DeviceID    string  `json:"device_id"`   // 用户报告设备编号
-	UserID      uint64  `json:"-"`           // 持久化事实，不对用户返回
+	UserID      uint64  `json:"-"`           // 提交报障的用户 ID，不在该输入对象的 JSON 中输出
 	FaultType   string  `json:"fault_type"`  // 故障类型
 	Description *string `json:"description"` // 可空描述
-	ImagesJSON  string  `json:"-"`           // 图片数组 JSON，nil 为 null
+	ImagesJSON  string  `json:"-"`           // 图片数组 JSON；未提交图片时为文本 null
 }
 
 // InsertFaultReport 保存报障和首条事件，返回新主键。

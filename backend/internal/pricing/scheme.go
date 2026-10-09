@@ -24,7 +24,7 @@ type SchemeService struct {
 	DB *gorm.DB /* central 方案连接，由进程管理 */
 }
 
-// SchemeInput 是完整方案和期望版本，首次创建版本为零。
+// SchemeInput 是完整方案和期望版本；创建时忽略期望版本，更新时须与已存版本一致。
 type SchemeInput struct {
 	Scheme          charging.Scheme `json:"scheme"`           // 全部套餐及展示约束，保存前规范化和领域校验
 	ExpectedVersion uint32          `json:"expected_version"` // 修改时必须匹配保存版本

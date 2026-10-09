@@ -42,10 +42,8 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, seed := range []struct {
-		// table 本断言写入、读取或清理的真实表名。
 		table string
-		// row 写入该表的隔离测试记录。
-		row map[string]any
+		row   map[string]any
 	}{
 		{"role", map[string]any{"id": id + 1, "code": "registered-security-" + tag, "name": "security fixture", "is_builtin": false}},
 		{"admin_user", map[string]any{"id": id, "username": "security-" + tag, "password_hash": string(hash), "role_id": id + 1, "status": "active", "auth_version": 9007199254741111}},
@@ -90,7 +88,6 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		var envelope struct {
-			// Data 公开 HTTP 信封的业务载荷，仅用于响应形状断言。
 			Data ops.AccessReply `json:"data"`
 		}
 		if w.Code == 200 && json.Unmarshal(w.Body.Bytes(), &envelope) == nil && envelope.Data.AccessToken != "" {
@@ -112,7 +109,6 @@ func TestRegisteredAdminSecurityLifecycle(t *testing.T) {
 			t.Fatalf("route status=%d body=%s", w.Code, w.Body)
 		}
 		var envelope struct {
-			// Data 公开 HTTP 信封的业务载荷，仅用于响应形状断言。
 			Data json.RawMessage `json:"data"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil {

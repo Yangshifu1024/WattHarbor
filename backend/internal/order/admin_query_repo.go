@@ -52,7 +52,7 @@ func ListOrderEvents(ctx context.Context, db *gorm.DB, orderID uint64) ([]OrderT
 }
 
 // FindOrderView 按主键取一条订单视图（含联表带出的站点与用户信息）。
-// ctx 取消 db 查询，id 为已授权订单；返回查询结果或缺行、数据库错误，不组合实时网关事实。
+// ctx 控制 db 查询，id 为已授权订单；返回记录或缺行、数据库错误，不查询实时遥测。
 func FindOrderView(ctx context.Context, db *gorm.DB, id uint64) (OrderView, error) {
 	var row OrderView
 	err := orderBaseQuery(ctx, db).Select(orderColumns).Where("c.id = ?", id).Take(&row).Error

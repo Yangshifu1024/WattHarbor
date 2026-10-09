@@ -48,7 +48,7 @@ func TestCardDecisionInputKeepsFrozenBypass(t *testing.T) {
 	}
 	path := "/api/v1/internal/card-events/decide-begin"
 	// 在实际锁读的事务连接写入私有 attempts 作为生命周期观测：普通成功提交，身份错误和已有回复的返回分支回滚。
-	// 原生产 begin 没有该写入，观测不作为业务投递尝试证据。
+	// 正式 begin 不更新 attempts；此写入仅用于观察事务是否提交。
 	hook := "test:card-decision-rollback-" + uuid.NewString()
 	if err := db.Callback().Query().After("gorm:query").Register(hook, func(query *gorm.DB) {
 		if query.Statement.Table == "card_event_delivery" && query.Error == nil && query.RowsAffected == 1 && query.Statement.Clauses["FOR"].Name != "" {

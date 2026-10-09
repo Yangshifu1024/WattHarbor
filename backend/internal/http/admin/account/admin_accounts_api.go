@@ -1,3 +1,4 @@
+// Package account 提供后台账号、角色和权限管理接口。
 package account
 
 import (

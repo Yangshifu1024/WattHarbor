@@ -24,7 +24,7 @@ type ManagementConflict struct {
 // Error 返回状态提示。
 func (e *ManagementConflict) Error() string { return e.Message }
 
-// Unwrap 返回领域冲突以供 HTTP 错误匹配，无副作用。
+// Unwrap 返回 operations.ErrConflict，供 HTTP 识别状态冲突。
 func (e *ManagementConflict) Unwrap() error { return operations.ErrConflict }
 
 var (

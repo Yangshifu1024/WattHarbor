@@ -10,20 +10,19 @@ import (
 	"net/http"
 )
 
-// SimulationCallbackAPI 适配内部模拟支付成功通知，意图身份及到账事务由 payment 用例拥有。
-// 仅 simulation 部署模式由 cmd 注册，不接受客户端金额或用户身份。
+// SimulationCallbackAPI 接收模拟支付成功通知，仅在 simulation 模式注册。
+// 金额和用户取自支付订单。
 type SimulationCallbackAPI struct {
 	Service      payment.SimulationService // 意图读取与模拟回调用例
 	ServiceToken string                    // 内部模拟通知的服务令牌，仅由适配器验证
 }
 
-// Register 在 router 挂载模拟成功 POST 路径，只注册路由；部署模式由 cmd 选择。
+// Register 注册内部模拟支付确认路由。
 func (a SimulationCallbackAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/internal/payments/simulate-success", a.callback)
 }
 
-// callback 核对 请求中的服务令牌和商户订单号，以请求 context 确认模拟支付并返回回执。
-// 坏输入 400、意图缺失 404、支付冲突 409、读取或持久失败 503，不在 HTTP 执行资金事务。
+// callback 校验服务令牌和商户订单号，通过支付服务确认模拟到账。
 func (a SimulationCallbackAPI) callback(c *gin.Context) {
 	if !serviceclient.VerifyServiceToken(a.ServiceToken, c.GetHeader("X-Service-Token")) {
 		httpapi.Write(c, http.StatusUnauthorized, httpapi.CodeUnauthorized, "service token invalid", nil)

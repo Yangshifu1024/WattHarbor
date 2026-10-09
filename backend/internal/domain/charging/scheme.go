@@ -19,14 +19,19 @@ type Scheme struct {
 	Display  Display      `json:"display"`
 }
 
+// AmountMode 保存金额套餐的计费算法与全天费率时段。
 type AmountMode struct {
 	Algorithm ChargeMode `json:"algorithm"`
 	Periods   []Period   `json:"periods"`
 }
+
+// EnergyMode 保存电量套餐固定单价，单位分/kWh。
 type EnergyMode struct {
 	ElectricCents int64 `json:"electric_cents"`
 	ServiceCents  int64 `json:"service_cents"`
 }
+
+// Package 是方案中的购买档位，价格单位分，额度为分钟或整数 kWh。
 type Package struct {
 	ID         uint64 `json:"id"`
 	Name       string `json:"name"`
@@ -35,6 +40,8 @@ type Package struct {
 	Minutes    uint16 `json:"minutes,omitempty"`
 	KWh        uint16 `json:"kwh,omitempty"`
 }
+
+// AmountPolicy 保存金额套餐的免单时长、最低电费和最长时长；当前不允许损耗或额外渠道倍率。
 type AmountPolicy struct {
 	FreeMinutes      int    `json:"free_minutes"`
 	MinElectricCents int64  `json:"min_electric_cents"`
@@ -42,11 +49,14 @@ type AmountPolicy struct {
 	LossRateBP       int32  `json:"loss_rate_bp"`
 	ChannelBP        int32  `json:"channel_bp"`
 }
+
+// CardPolicy 指定刷卡购买的时长套餐和累计分钟上限。
 type CardPolicy struct {
 	PackageID  uint64 `json:"package_id"`
 	MaxMinutes uint16 `json:"max_minutes"`
 }
 
+// Normalized 返回补齐默认值的副本：最长时长 600 分钟，渠道倍率 10000。
 func (s Scheme) Normalized() Scheme {
 	if s.Policy.MaxMinutes == 0 {
 		s.Policy.MaxMinutes = 600
@@ -60,7 +70,7 @@ func (s Scheme) Normalized() Scheme {
 	return s
 }
 
-// 校验只报告缺失或冲突的配置，不自动补费率。
+// Validate 校验方案名称、套餐、全天费率和刷卡限制；先补默认值，不修改调用方方案。
 func (s Scheme) Validate() error {
 	s = s.Normalized()
 	if len([]rune(s.Name)) == 0 || len([]rune(s.Name)) > 64 || len([]rune(s.Remark)) > 255 {
@@ -75,7 +85,7 @@ func (s Scheme) Validate() error {
 	if s.Policy.FreeMinutes < 0 || s.Policy.FreeMinutes > int(s.Policy.MaxMinutes) || s.Policy.MinElectricCents < 0 || s.Policy.MinElectricCents > maxRateCents {
 		return fmt.Errorf("免费时长或最低电费无效")
 	}
-	// 这些系数的执行顺序尚未确认，暂时拒绝配置，不能沿用旧引擎猜测。
+	// 当前方案只接受零损耗和 1 倍渠道系数。
 	if s.Policy.LossRateBP != 0 || s.Policy.ChannelBP != 10000 {
 		return fmt.Errorf("损耗与渠道系数组合规则尚未确认，当前请关闭损耗并使用1倍系数")
 	}
@@ -135,6 +145,7 @@ func (s Scheme) Validate() error {
 	return nil
 }
 
+// Package 按 id 查找方案内套餐；第二返回值为是否找到。
 func (s Scheme) Package(id uint64) (Package, bool) {
 	for _, p := range s.Packages {
 		if p.ID == id {
@@ -165,6 +176,7 @@ func (s Scheme) SpecFor(p Package) Spec {
 	return spec
 }
 
+// Offers 为各套餐生成报价，ID 由规则 ID 和套餐 ID 组成；电量由 kWh 换算为 Wh。
 func (s Scheme) Offers(rule Rule) []Offer {
 	rows := make([]Offer, 0, len(s.Packages))
 	for _, p := range s.Packages {
@@ -173,7 +185,7 @@ func (s Scheme) Offers(rule Rule) []Offer {
 	return rows
 }
 
-// Preview 复用实际执行与结算算法，只计算预览，不写入业务数据。
+// Preview 保存费用预览、退款差额和模拟操作结果；金额单位分，不表示已扣款或退款。
 type Preview struct {
 	CutoffAt    *time.Time `json:"cutoff_at,omitempty"`
 	WalletAfter *int64     `json:"wallet_after,omitempty"`
@@ -188,6 +200,7 @@ type Preview struct {
 	Reason      string     `json:"reason"`
 }
 
+// Preview 计算一次购买的费用与退款；计量不足返回 meter_review 状态，不写入数据。
 func (s Scheme) Preview(id uint64, meter ActualMeter) (Preview, error) {
 	return s.previewPurchases(id, meter, 1)
 }
@@ -278,6 +291,7 @@ func (s Scheme) previewPurchases(id uint64, meter ActualMeter, count uint16) (Pr
 	return result, nil
 }
 
+// PreviewScenario 模拟启动失败、确认中或刷卡续购；wallet 为初始余额（分），仅计算预览。
 func (s Scheme) PreviewScenario(id uint64, m ActualMeter, scenario string, wallet int64) (Preview, error) {
 	if err := s.Validate(); err != nil {
 		return Preview{}, err
@@ -340,6 +354,7 @@ func (s Scheme) PreviewScenario(id uint64, m ActualMeter, scenario string, walle
 	}
 }
 
+// Capabilities 描述协议支持的额度、上报数据、刷卡与停止功能。
 type Capabilities struct {
 	ReportsEnergy         bool   `json:"reports_energy"`
 	ReportsSegmentedPower bool   `json:"reports_segmented_power"`
@@ -350,6 +365,7 @@ type Capabilities struct {
 	OnlineCard            bool   `json:"online_card"`
 }
 
+// ValidateCapabilities 校验方案所需功能与 c 是否匹配，不支持或超过设备时长上限时返回错误。
 func (s Scheme) ValidateCapabilities(c Capabilities) error {
 	if err := s.Validate(); err != nil {
 		return err

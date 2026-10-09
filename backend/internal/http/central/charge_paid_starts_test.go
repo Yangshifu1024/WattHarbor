@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// paidStartsStub 记录 HTTP 传入的游标及调用次数，返回固定待启动事实或指定读取错误。
+// paidStartsStub 记录游标和调用次数，返回固定待启动订单或指定错误。
 type paidStartsStub struct {
 	after uint64 // 最近一次请求的 after_id 游标。
 	calls int    // PaidStarts 调用次数，用于核对拒绝请求未访问用例。
@@ -42,8 +42,7 @@ func TestPaidStartsClientMatchesRegisteredCentralRoute(t *testing.T) {
 	}
 }
 
-// PaidStarts 忽略输入 context，以 after 更新 s 记录和次数；游标 9 返回固定订单，其余返回 nil 集合。
-// 所有分支都返回 s.err；空集合的 JSON 数组格式由实际 HTTP 适配器和客户端检查。
+// PaidStarts 记录游标；游标为 9 时返回固定订单，其余返回空集合，所有分支均返回预设错误。
 func (s *paidStartsStub) PaidStarts(_ context.Context, after uint64) ([]chargestart.PaidChargeOrder, error) {
 	s.after, s.calls = after, s.calls+1
 	if after == 9 {
@@ -60,7 +59,7 @@ func TestPaidStartsHTTPContract(t *testing.T) {
 		query, token  string // 游标查询串和提供的服务令牌。
 		err           error  // fixture 返回的读取错误，nil 表示读取成功。
 		status, calls int    // 预期 HTTP 状态及查询调用次数。
-		body          string // 响应必须包含的公开形状或提示片段。
+		body          string // 响应必须包含的字段或提示。
 	}{
 		{"", "", nil, 401, 0, "service token invalid"},
 		{"?after_id=-1", "secret", nil, 400, 0, "invalid paid start cursor"},

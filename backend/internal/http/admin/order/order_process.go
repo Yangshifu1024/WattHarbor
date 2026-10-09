@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// orderProcessQuery 保存后台订单过程接口已校验的事件游标与页长，只控制只读分页，不参与计量或资金写入。
+// orderProcessQuery 保存订单事件分页的游标和页长。
 type orderProcessQuery struct {
 	AfterID uint64 // 过程行游标，首读为 0
 	Limit   uint16 // 单页条数，1–2000
@@ -42,7 +42,7 @@ func parseOrderProcessQuery(c *gin.Context) (orderProcessQuery, bool) {
 	return q, true
 }
 
-// orderProcess 从请求解析订单 ID、分页及后台身份，调用完整查询并映射页或公开错误。
+// orderProcess 校验订单 ID 和分页参数，查询订单事件与计量记录。
 func (a API) orderProcess(c *gin.Context) {
 	id, ok := adminhttp.AdminPathID(c)
 	if !ok {

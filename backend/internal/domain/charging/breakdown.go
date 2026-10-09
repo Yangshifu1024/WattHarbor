@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// 保留未取整的费用明细，解释 Cost 的合计结果。
+// FeeFragment 保存区间用量、单价和取整前费用，用于解释 Cost 的合计结果。
 type FeeFragment struct {
 	StartedAt     time.Time `json:"started_at"`
 	EndedAt       time.Time `json:"ended_at"`

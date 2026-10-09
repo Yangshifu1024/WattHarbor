@@ -27,13 +27,11 @@ const (
 	// ScenarioStopOnCommand 一直充到服务器下发 B9，
 	// 用来在不等到充满的前提下走通停止路径。
 	ScenarioStopOnCommand Scenario = "stop-on-command"
-	// ScenarioRejectStart 对 B8 回一个失败，
-	// 用来驱动服务器「被拒即退款」的路径。
+	// ScenarioRejectStart 拒绝所有启动请求，回复结果码 1。
 	ScenarioRejectStart Scenario = "reject-start"
 	// ScenarioFault 在充电开始后不久上报一个故障。
 	ScenarioFault Scenario = "fault"
-	// ScenarioSilent 注册之后就不再说话，
-	// 便于观察读超时和会话被遗弃之后的清理。
+	// ScenarioSilent 注册后停止发送帧，供网关读超时测试。
 	ScenarioSilent Scenario = "silent"
 	// ScenarioReconnect 断开并重新注册，
 	// 用来验证会话替换与连接审计。
@@ -84,6 +82,7 @@ func (c Config) withDefaults() Config {
 
 type discard struct{}
 
+// Write 丢弃日志并报告全部字节已接收。
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
 // Run 建立连接并服务到 context 被取消

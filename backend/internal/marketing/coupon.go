@@ -1,3 +1,4 @@
+// Package marketing 管理优惠券模板、发放、报价、核销和活动规则。
 package marketing
 
 import (
@@ -25,7 +26,7 @@ type Coupon struct {
 	Name               string           `json:"name"`                 // 非空名称，最多128字
 	DiscountType       string           `json:"discount_type"`        // amount、percentage 或 time_free
 	DiscountValueCents *int64           `json:"discount_value_cents"` // 满减分值，其他优惠类型为空
-	DiscountPercent    *decimal.Decimal `json:"discount_percent"`     // 两位小数百分比，严格在0与100之间
+	DiscountPercent    *decimal.Decimal `json:"discount_percent"`     // 应付比例百分数，80 表示八折；最多两位小数，严格在 0 与 100 之间
 	FreeMinutes        *uint32          `json:"free_minutes"`         // 免费分钟，1–1440，其他优惠类型为空
 	MinChargeCents     int64            `json:"min_charge_cents"`     // 使用门槛，非负分
 	ValidHours         uint32           `json:"valid_hours"`          // 领取后有效小时，1–87600
@@ -33,10 +34,10 @@ type Coupon struct {
 	PerUserQuota       uint32           `json:"per_user_quota"`       // 人工发放单人上限，必须大于0
 	Status             string           `json:"status"`               // active 或 disabled；创建强制 active
 	StartAt            *time.Time       `json:"start_at"`             // 可选开始时刻
-	EndAt              *time.Time       `json:"end_at"`               // 可选结束时刻，须晚于开始
+	EndAt              *time.Time       `json:"end_at"`               // 可选结束时刻；同时设置开始时间时，须晚于开始
 }
 
-// CouponUpdate 只允许修改名称和状态，不改变优惠或预算。
+// CouponUpdate 只允许修改名称和状态，不改变优惠和发放上限。
 type CouponUpdate struct {
 	Name   string `json:"name"`   // 模板名称，非空最多128字
 	Status string `json:"status"` // active 或 disabled
@@ -44,7 +45,7 @@ type CouponUpdate struct {
 
 // GrantInput 保存人工发放的用户和请求号。
 type GrantInput struct {
-	RequestID string `json:"request_id"`     // UUID 形状幂等号
+	RequestID string `json:"request_id"`     // UUID 请求号，重试沿用同一号
 	UserID    uint64 `json:"user_id,string"` // 目标用户主键，审计保持十进制文本
 }
 
@@ -59,16 +60,16 @@ type CouponService struct {
 	DB *gorm.DB // 所属中央连接或调用方事务，由进程管理
 }
 
-// RedeemRef 保存支付时确定的原价和优惠，到账核销时不能重新计算。
+// RedeemRef 保存支付时确定的原价和优惠；核销时按原价校验优惠是否一致。
 type RedeemRef struct {
 	UserID        uint64 // 付款用户
-	CouponGrantID uint64 // 权益主键
+	CouponGrantID uint64 // 发放记录主键
 	TotalCents    int64  // 优惠前费用，分
 	DiscountCents int64  // 冻结优惠，分
 	PaymentOrder  uint64 // 支付主键
 }
 
-// Quote 计算本人券对原价的优惠，金额单位分；只报价不核销，套餐不支持组合券。
+// Quote 计算本人未用、未到期券对原价的优惠，单位分，不核销券。
 func (s CouponService) Quote(ctx context.Context, userID, grantID uint64, totalCents int64) (int64, error) {
 	grant, err := loadGrant(ctx, s.DB, userID, grantID, false)
 	if err != nil {
@@ -146,7 +147,7 @@ func (s CouponService) List(ctx context.Context, actor operations.Profile) ([]Co
 }
 
 // Create 核对 coupon.create 权限和内容后创建启用模板，并同事务保存审计。
-// 不接受客户端主键或初始停用状态。
+// 客户端主键须为 0；创建时将状态设为 active，忽略提交的状态。
 func (s CouponService) Create(ctx context.Context, audit ops.AuditContext, in Coupon) (Coupon, error) {
 	if !audit.Actor.HasPermission("coupon.create") {
 		return Coupon{}, operations.ErrForbidden
@@ -195,7 +196,7 @@ func (s CouponService) Stats(ctx context.Context, actor operations.Profile, id u
 }
 
 // Grant 核对 coupon.grant 权限后向指定用户发券。
-// 用户状态、预算和首次请求在同一事务检查，发放与审计一起提交；重试使用首次请求号。
+// 用户状态、发放上限和请求记录在同一事务检查，发放与审计一起提交；重试沿用请求号。
 func (s CouponService) Grant(ctx context.Context, audit ops.AuditContext, id uint64, in GrantInput) (GrantResult, error) {
 	out := GrantResult{RequestID: in.RequestID}
 	if !audit.Actor.HasPermission("coupon.grant") {
@@ -219,7 +220,7 @@ func (s CouponService) Grant(ctx context.Context, audit ops.AuditContext, id uin
 }
 
 // GrantInTx 先检查首次请求重放，再按用户→模板→发放行加锁，复查请求和额度后发券。
-// 发放、请求凭据和审计共用调用方事务，唯一键命中不新增券。
+// 同请求且用户、模板一致时返回首次发放 ID；新券和请求记录保存到调用方事务，审计由调用方追加。
 func (s CouponService) GrantInTx(tx *gorm.DB, couponID, userID uint64, requestID string) (uint64, error) {
 	if tx == nil || couponID == 0 || userID == 0 || !operations.ValidRequestID(requestID) {
 		return 0, ErrCouponGrant

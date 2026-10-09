@@ -77,7 +77,7 @@ type ChargeUserStat struct {
 	LastOrderAt  *time.Time // 最近下单时间
 }
 
-// DecorateChargeUsers 用 db 按 rows 当页身份批量回填手机号、钱包与订单信息。
+// DecorateChargeUsers 按 rows 中的用户 ID 批量填入手机号、钱包和订单统计。
 // 成功原位更新 rows；空页无查询，读取失败返回错误，无数据库写入。
 func DecorateChargeUsers(ctx context.Context, db *gorm.DB, rows []ChargeUserRow) error {
 	if len(rows) == 0 {
@@ -136,7 +136,7 @@ func ChargeUsers(ctx context.Context, db *gorm.DB, q persist.PageQuery) ([]Charg
 	return out, total, err
 }
 
-// ChargeUserStats 用 db 按 ids 用户主键完成三次批量查询结果，返回主键到事实的映射。
+// ChargeUserStats 按 ids 批量查询钱包、订单和报障统计，返回用户 ID 到统计值的映射。
 // 仅未删除钱包和订单参与金额聚合；缺失查询结果保持零值，不逐用户查询。
 func ChargeUserStats(ctx context.Context, db *gorm.DB, ids []uint64) (map[uint64]ChargeUserStat, error) {
 	stats := make(map[uint64]ChargeUserStat, len(ids))
@@ -202,7 +202,7 @@ func ChargeUserStats(ctx context.Context, db *gorm.DB, ids []uint64) (map[uint64
 }
 
 // LoadChargeUserDetail 用 db 按 id 读取未删除用户档案，orderLimit 限定最近订单数。
-// 返回主记录、钱包状态、最近订单、券与报障计数，缺失时返回错误；仅做只读跨域查询结果。
+// 返回用户档案、钱包状态、最近订单、优惠券和报障计数；用户缺失时返回错误，只读。
 func LoadChargeUserDetail(ctx context.Context, db *gorm.DB, id uint64, orderLimit int) (ChargeUserDetail, error) {
 	detail := ChargeUserDetail{}
 	if err := db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", id).Take(&detail.ChargeUserRow).Error; err != nil {

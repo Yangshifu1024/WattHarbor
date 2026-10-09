@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// ManualSettlement 保存无法补齐计量证据时的人工金额，仍不得超过购买套餐金额。
+// ManualSettlement 保存计量不足时人工确定的电费和服务费，合计不能超过套餐价格。
 type ManualSettlement struct {
 	ChargeOrderID uint64 `json:"charge_order_id"` // 同一订单 ID，一单仅允许一份最终金额
-	RequestID     string `json:"request_id"`      // 裁决 UUID，同号不能换内容
+	RequestID     string `json:"request_id"`      // 人工金额请求 UUID，同号不能换内容
 	ActorID       uint64 `json:"actor_id"`        // 实时财务操作人，由服务覆盖客户端值
 	ElectricCents int64  `json:"electric_cents"`  // 电费，分，非负且不超过 1000000
 	ServiceCents  int64  `json:"service_cents"`   // 服务费，分，非负且不超过 1000000
@@ -32,7 +32,7 @@ func (s BillingOrders) ResolveAmount(ctx context.Context, in ManualSettlement) e
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct {
-			Status string // 计费任务状态，仅 manual_review 可新建裁决
+			Status string // 计费任务状态，仅 manual_review 可登记人工金额
 		}
 		if err := tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", in.ChargeOrderID).Take(&job).Error; err != nil {
 			return err

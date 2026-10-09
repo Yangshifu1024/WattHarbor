@@ -7,13 +7,13 @@ import (
 	"chargepilot/internal/contracts/central"
 )
 
-// TestJobReplyShapes 核对共享回复的原 JSON 形状，尤其退款失败不能增加 enabled；不调用实际资金服务。
+// TestJobReplyShapes 检查各任务的响应 JSON；退款失败且未提供 enabled 时应省略该字段。
 func TestJobReplyShapes(t *testing.T) {
 	enabled, disabled := true, false
 	for _, tc := range []struct {
-		name  string // 被核对的成功、禁用或未完成回执场景。
-		reply any    // 共享端点 DTO；只验证序列化形状，不模拟用例处理。
-		want  string // 响应 JSON，字段名和退款 enabled 的缺失性必须保持。
+		name  string
+		reply any
+		want  string
 	}{
 		{"billing", central.BillingDispatchReply{Completed: 2}, `{"completed":2}`},
 		{"auto-stop", central.AutoStopReply{Stopped: 3}, `{"stopped":3}`},

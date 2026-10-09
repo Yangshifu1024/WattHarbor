@@ -46,13 +46,12 @@ func TestAuthorizationWireIdentityAndNullableAbsence(t *testing.T) {
 // TestAuthorizationRejectsConflictAndWrongIdentity 验证 404、409、401、编号不匹配和缺字段均返回对应错误。
 func TestAuthorizationRejectsConflictAndWrongIdentity(t *testing.T) {
 	for _, tc := range []struct {
-		// name 子测试名称。
 		name string
-		// status 测试服务返回的 HTTP 状态。
+
 		status int
-		// body 该场景响应 JSON正文，不修改测试值或业务断言。
+
 		body string
-		// want 是预期错误分类，nil 时只检查调用失败。
+
 		want error
 	}{
 		{"not found", 404, `{}`, centralcontract.ErrAuthorizationDenied},
@@ -128,13 +127,12 @@ func TestResultDeliveryPreservesIdentifiersMeterAndReplay(t *testing.T) {
 // TestResultDeliveryRequiresPersistenceAcceptance 验证缺字段、未接受、HTTP 202、冲突和无效 JSON 响应均被拒绝。
 func TestResultDeliveryRequiresPersistenceAcceptance(t *testing.T) {
 	for _, tc := range []struct {
-		// name 子测试名称。
 		name string
-		// status 测试服务返回的 HTTP 状态。
+
 		status int
-		// body 该场景响应 JSON正文，不修改测试值或业务断言。
+
 		body string
-		// want 是预期错误分类，nil 时只检查调用失败。
+
 		want error
 	}{
 		{"missing code", 200, `{"data":{"accepted":true}}`, ErrInvalidResponse},

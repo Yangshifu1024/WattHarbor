@@ -7,14 +7,14 @@ import (
 	"github.com/go-pay/wechat-sdk/mini"
 )
 
-// WeChatIdentity 保留服务端代码交换得到的登录身份。
+// WeChatIdentity 保存微信登录 code 换取的 OpenID 和可选 UnionID。
 type WeChatIdentity struct {
 	OpenID, UnionID string /* 小程序身份及可选开放平台身份 */
 }
 
-// CodeExchanger 定义登录用例所需的代码换身份能力，调用方管理请求取消；实现只返回渠道身份，不创建用户或会话。
+// CodeExchanger 用微信登录 code 换取 OpenID 和 UnionID；ctx 控制调用，不创建用户或会话。
 type CodeExchanger interface {
-	// Exchange 在请求 context 下交换一次代码，返回微信身份或渠道、响应错误，不写用户。
+	// Exchange 向微信交换登录 code；返回 OpenID、UnionID 或渠道错误，不写用户。
 	Exchange(context.Context, string) (WeChatIdentity, error)
 }
 

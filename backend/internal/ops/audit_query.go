@@ -9,7 +9,7 @@ import (
 
 // AuditQueryService 核对当前权限后分页读取后台审计。
 type AuditQueryService struct {
-	DB *gorm.DB /* 所属审计及后台身份数据库 */
+	DB *gorm.DB /* 审计日志和后台账号数据库 */
 }
 
 // List 按 audit.read 权限读取全局审计；起始时间晚于截止时返回空列表。

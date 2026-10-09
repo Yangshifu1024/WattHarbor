@@ -9,24 +9,23 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// Gateway 是停止用例所需的设备侧能力；实现负责传输与响应契约校验。
+// Gateway 查询设备心跳并提交停止请求，实现方负责网络调用和响应校验。
 type Gateway interface {
 	// ChargingEvidence 在 context 期限内按请求顺序返回完整页及更新游标；传输或契约失败返回错误。
 	ChargingEvidence(context.Context, []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
-	// RequestStop 在 context 期限内用订单编号请求持久 STOP；返回受理凭据或错误，不证明设备结束。
+	// RequestStop 用订单编号请求网关保存 STOP 命令，返回受理结果；设备停止由回执确认。
 	RequestStop(context.Context, gatewaycontract.StopRequest) (gatewaycontract.StopReply, error)
 }
 
-// ErrEvidenceIncomplete 表示取证响应标识、分页游标或页数不可信，不能据此停机。
+// ErrEvidenceIncomplete 表示心跳响应的设备、端口、游标或页数不合要求，不能用于停机判断。
 var ErrEvidenceIncomplete = errors.New("charging evidence incomplete")
 
-// 单批订单取证的最多翻页次数；7 天窗口按每分钟一条心跳计通常一页足够。
-// 翻页上限防止异常高密度心跳把一次停机扫描拖死。
+// autoStopEvidenceMaxPages 限制每组订单的心跳查询页数，避免异常密集上报拖延整轮扫描。
 const autoStopEvidenceMaxPages = 8
 
-// evidence 按订单分批向 gateway 取证，返回订单 ID 到心跳样本的映射。
+// evidence 按订单分批查询 gateway 心跳，返回订单 ID 到心跳列表的映射。
 // ctx 限制网络调用，orders 提供目标身份和起始时刻；无订单返回空映射。
-// 错误表示整批证据不完整，此时不返回可用于决策的部分样本。
+// 任一批响应异常时返回错误，丢弃本次已查询样本，不据部分数据判断停机。
 // 单批超过一页时按 next_after_id 续取，翻页上限 autoStopEvidenceMaxPages。
 func (s AutoStopper) evidence(ctx context.Context, orders []AutoStopOrder) (map[uint64][]protocol.Event, error) {
 	out := make(map[uint64][]protocol.Event, len(orders))

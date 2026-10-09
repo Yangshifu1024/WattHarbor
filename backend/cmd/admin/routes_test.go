@@ -26,7 +26,6 @@ func TestAdminAssemblyRegistersDocumentedRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc struct {
-		// Paths 将 OpenAPI 路径映射到 HTTP 方法，用于比对路由。
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {

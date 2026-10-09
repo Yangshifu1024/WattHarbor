@@ -35,5 +35,5 @@ func ListChargingOrdersAfter(ctx context.Context, db *gorm.DB, afterID uint64) (
 	return rows, err
 }
 
-// autoStopBatchSize 限制每页充电中订单数；网关取证再按共享契约的批量上限分批。
+// autoStopBatchSize 限制每页订单数；心跳查询再按网关批量上限分组。
 const autoStopBatchSize = 100

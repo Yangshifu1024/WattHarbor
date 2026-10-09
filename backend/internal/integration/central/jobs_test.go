@@ -20,9 +20,9 @@ import (
 
 // jobKind 是测试中的端点选择，不参与生产客户端或资金算法。
 type jobKind struct {
-	name  string // 具名客户端方法对应的测试场景名。
-	path  string // 已注册共享路径，核对真实请求目标。
-	field string // 响应中的处理进度字段名。
+	name  string
+	path  string
+	field string
 }
 
 // jobKinds 返回三种端点的静态测试清单，无网络或资金副作用。
@@ -65,10 +65,10 @@ func TestJobClientsPreserveWireAndPartialProgress(t *testing.T) {
 	for _, kind := range jobKinds() {
 		t.Run(kind.name, func(t *testing.T) {
 			for _, tc := range []struct {
-				name     string // 成功、部分失败或鉴权拒绝场景。
-				status   int    // 服务实际返回的 HTTP 状态。
-				code     int    // 服务实际返回的业务码。
-				progress int    // 响应中的进度，只采信成功或 HTTP 503、code=5003 的响应。
+				name     string
+				status   int
+				code     int
+				progress int
 			}{
 				{"success", 200, 0, 3}, {"zero", 200, 0, 0},
 				{"incomplete", 503, 5003, 2}, {"business-rejected", 200, 2009, 1},
@@ -135,7 +135,7 @@ func TestJobClientsPreserveWireAndPartialProgress(t *testing.T) {
 }
 
 // TestJobClientsRejectInvalidReplies 核对缺失、null、负数、整数溢出、非完成状态和正文上限。
-// 回环服务只返回指定报文，客户端失配时不得猜测部分进度或自动补发请求。
+// 本地服务返回无效响应，客户端应报错并返回零进度。
 func TestJobClientsRejectInvalidReplies(t *testing.T) {
 	for _, kind := range jobKinds() {
 		t.Run(kind.name, func(t *testing.T) {
@@ -145,9 +145,9 @@ func TestJobClientsRejectInvalidReplies(t *testing.T) {
 			}
 			valid := `{"code":0,"data":` + validData + `}`
 			for _, tc := range []struct {
-				name   string // 失配报文或非完成状态场景。
-				body   string // 原始回环响应，不经过 DTO 序列化以保留非法形状。
-				status int    // 指定 HTTP 状态，0 表示普通 200。
+				name   string
+				body   string
+				status int
 			}{
 				{"empty", "", 0}, {"null-envelope", "null", 0}, {"array-envelope", "[]", 0},
 				{"missing-code", `{"data":` + validData + `}`, 0},
@@ -204,8 +204,8 @@ func TestJobClientsRejectInvalidReplies(t *testing.T) {
 	}
 }
 
-// TestJobClientsRejectTruncatedPartialBodies 用t模拟503已到达、正文在声明长度前结束的回环响应。
-// 即使已读取前缀包含完整进度JSON，也必须返回零值、HTTP错误及读取错误，不推断资金状态或补发请求。
+// TestJobClientsRejectTruncatedPartialBodies 模拟收到 HTTP 503 后正文提前结束。
+// 即使已收到完整的进度 JSON，也应因正文长度不足而返回错误和零进度。
 func TestJobClientsRejectTruncatedPartialBodies(t *testing.T) {
 	for _, kind := range jobKinds() {
 		t.Run(kind.name, func(t *testing.T) {
@@ -230,10 +230,10 @@ func TestJobClientsRejectTruncatedPartialBodies(t *testing.T) {
 // TestRefundClientRequiresExplicitSuccessState 验证退款成功响应必须含布尔 enabled；禁用时进度为零，失败响应可缺少 enabled。
 func TestRefundClientRequiresExplicitSuccessState(t *testing.T) {
 	for _, tc := range []struct {
-		name   string // 退款启用状态与进度的组合场景。
-		data   string // 手写载荷，用于核对缺失、null 及错误类型。
-		status int    // 200 为成功，503 为部分失败响应。
-		valid  bool   // 是否允许客户端接受该回执形状。
+		name   string
+		data   string
+		status int
+		valid  bool
 	}{
 		{"disabled-zero", `{"processed":0,"enabled":false}`, 200, true},
 		{"missing-success-state", `{"processed":0}`, 200, false},
@@ -272,10 +272,9 @@ func TestRefundClientRequiresExplicitSuccessState(t *testing.T) {
 	}
 }
 
-// jobRoundTripper 是测试中观测实际请求 context 的窄传输包装，不实现重试或资金用例。
+// jobRoundTripper 将请求交给测试函数，用于检查超时和重定向设置。
 type jobRoundTripper func(*http.Request) (*http.Response, error)
 
-// RoundTrip 把 request 交给指定函数，返回其HTTP 响应或错误；只执行测试设置的本地传输和记录。
 func (f jobRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
 
 // TestJobClientTimeoutAndRedirectPolicy 验证请求和客户端均使用三十秒超时且共享连接池，重定向不能转发服务令牌。

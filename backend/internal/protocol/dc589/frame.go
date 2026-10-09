@@ -10,21 +10,29 @@ import (
 	"io"
 )
 
+// StartByte 是 DC589 帧的起始字节 0xEE。
 const StartByte byte = 0xEE
+
+// HeaderSize 是 LEN 计入的固定 8 字节：命令字、六字节会话和校验和。
 const HeaderSize = 8 // CMD + 六字节 session + 校验和，都计入 LEN
 
 var (
-	ErrFrame  = errors.New("invalid 5.8.9 frame")
+	// ErrFrame 表示起始字节错误或帧过短。
+	ErrFrame = errors.New("invalid 5.8.9 frame")
+	// ErrLength 表示 LEN 与实际长度不符，或载荷超过长度限制。
 	ErrLength = errors.New("invalid 5.8.9 length")
-	ErrSum    = errors.New("invalid 5.8.9 XOR checksum")
+	// ErrSum 表示 XOR 校验失败。
+	ErrSum = errors.New("invalid 5.8.9 XOR checksum")
 )
 
+// Frame 保存命令字、六字节会话和载荷，供编解码使用。
 type Frame struct {
 	Command byte
 	Session [6]byte
 	Data    []byte
 }
 
+// Encode 添加起始字节、长度和 XOR 校验；载荷最多 247 字节。
 func Encode(frame Frame) ([]byte, error) {
 	length := HeaderSize + len(frame.Data)
 	if length > 255 {
@@ -38,6 +46,7 @@ func Encode(frame Frame) ([]byte, error) {
 	return out, nil
 }
 
+// Decode 检查起始字节、长度和 XOR 校验，返回独立的载荷副本。
 func Decode(raw []byte) (Frame, error) {
 	if len(raw) < 2+HeaderSize || raw[0] != StartByte {
 		return Frame{}, ErrFrame

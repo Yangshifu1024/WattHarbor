@@ -243,7 +243,7 @@ func TestConcurrentOutboxClaimReturnsDisjointRows(t *testing.T) {
 }
 
 // TestMarkOutboxPublishedRemovesFromNextClaim 用真实 MySQL 验证已标记 published 的事件不再领取。
-// 只验证队列 SQL，不连接 Redis 或证明事件消费完成；测试前缀造数由调用方清理。
+// 只验证队列 SQL，不连接 Redis；调用方按测试前缀清理记录。
 func TestMarkOutboxPublishedRemovesFromNextClaim(t *testing.T) {
 	setup, closeSetup := testConn(t)
 	defer closeSetup()

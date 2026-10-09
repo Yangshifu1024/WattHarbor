@@ -16,7 +16,7 @@ import (
 
 // TelemetryAPI 提供设备读数查询；telemetry 按 ts 分区，所有查询必须包含限定起止时间的窗口。
 type TelemetryAPI struct {
-	// DB 装配方提供的 gateway GORM 连接句柄；此适配器不关闭连接池，具体事务由方法管理。
+	// DB 是网关数据库连接。
 	DB *gorm.DB
 	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
@@ -30,7 +30,7 @@ type TelemetryAPI struct {
 func (a TelemetryAPI) Register(router *gin.Engine) {
 	router.GET(gatewaycontract.TelemetryPath+":device_id/telemetry", a.curve)
 	router.GET("/api/v1/internal/devices/:device_id/charging-samples", a.chargingSamples)
-	// 批量取证挂在 /internal 根下：/devices 下已存在 :device_id 通配，
+	// 批量计量查询挂在 /internal 根下：/devices 下已存在 :device_id 通配，
 	// 静态段 charging-evidence 会与其在 gin 基数树上冲突。
 	router.POST(gatewaycontract.ChargingEvidencePath, a.chargingEvidence)
 	router.GET(gatewaycontract.OrderProcessPath+":order_no/process", a.chargeProcess)
@@ -49,7 +49,7 @@ func (a TelemetryAPI) authorized(c *gin.Context) bool {
 	return true
 }
 
-// curve 鉴权并校验设备、端口和时间窗，选择遥测粒度及点数上限后写曲线；失败写 400、401 或 503，不改变采样证据。
+// curve 校验设备、端口和时间范围，选择原始或汇总读数并返回曲线。
 func (a TelemetryAPI) curve(c *gin.Context) {
 	if !a.authorized(c) {
 		return
@@ -203,7 +203,7 @@ func (a TelemetryAPI) readPort(ctx context.Context, deviceID string, portNo int,
 	return out, nil
 }
 
-// value 接收 values 与 key，存在时返回浮点数指针，缺失返回 nil；不修改映射。
+// value 返回指标数值的指针；缺少指标时返回 nil。
 func value(values map[string]float64, key string) *float64 {
 	if v, present := values[key]; present {
 		return &v

@@ -1,4 +1,4 @@
-// Package query 负责充电只读组合与实时估算，最终结算仍由 settlement 执行。
+// Package query 查询充电详情、过程和曲线，按最后一次上报用量估算费用；最终结算由 settlement 执行。
 package query
 
 import (
@@ -13,7 +13,7 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// EvidenceReader 是实时估算需要的有界网关取证能力，不携带 URL、令牌或通用传输。
+// EvidenceReader 按设备、端口和开始时刻批量查询网关心跳，供实时估费使用。
 type EvidenceReader interface {
 	// ChargingEvidence 按设备、端口与开始时间批量查询心跳，按请求顺序返回各订单的分页数据。
 	ChargingEvidence(ctx context.Context, queries []gatewaycontract.EvidenceQueryRequest) ([]gatewaycontract.EvidencePageReply, error)
@@ -33,7 +33,7 @@ type PurchaseReader interface {
 
 // LiveService 按最后观测量及订单冻结方案估算费用，只向公开查询结果回填。
 type LiveService struct {
-	Gateway EvidenceReader   // cmd 注入的网关批量取证能力
+	Gateway EvidenceReader   // cmd 注入的网关批量心跳查询
 	Orders  SnapshotReader   // cmd 注入的订单快照读取
 	Cards   PurchaseReader   // cmd 注入的累计刷卡购买读取
 	Now     func() time.Time // 测试可固定观测上界；未注入时使用当前 UTC
@@ -47,9 +47,9 @@ func (s LiveService) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Fill 为充电中订单填充最新观测与估算费用，全部操作最多四秒。
-// 每 20 单批量取证，成功取证后分别批量读取价格快照与刷卡购买记录。
-// 一批失败不影响其他批，请求取消后停止后续查询；证据不全时显示不可估算。
+// Fill 为充电中订单填入最近读数和预估费用，查询 context 最长四秒。
+// 每 20 单查询心跳，得到可用读数后批量读取价格快照和刷卡累计购买。
+// 一批失败仍查询后续批；ctx 取消后停止后续查询，计量不足时不输出预估费用。
 // 只更新展示结果，不写入最终结算，返回时没有后台任务。
 func (s LiveService) Fill(ctx context.Context, rows []order.OrderView) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)

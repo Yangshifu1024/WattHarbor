@@ -1,3 +1,4 @@
+// Package billing 调用中央服务触发计费批次。
 package billing
 
 import (
@@ -7,20 +8,18 @@ import (
 	centralcontract "chargepilot/internal/contracts/central"
 )
 
-// DispatchClient 是计费任务触发所需的接口，回执验证及网络配置由注入实现拥有。
+// DispatchClient 调用中央服务触发计费任务。
 type DispatchClient interface {
-	// DispatchBilling 以无业务参数的 request 触发计费批次，返回验证后的 reply 与错误。
-	// 未完成可返回部分计数，未知结果不推断资金状态或自动重试。
+	// DispatchBilling 触发一批计费任务；未完成时返回部分进度和错误。
 	DispatchBilling(ctx context.Context, request centralcontract.BillingDispatchRequest) (reply centralcontract.BillingDispatchReply, err error)
 }
 
-// Dispatcher 仅适配 runtime 的计费触发入口，不执行计算、入账或恢复算法。
+// Dispatcher 将 worker 的定时调用转为中央服务的计费请求。
 type Dispatcher struct {
 	Central DispatchClient // 注入的计费触发能力；不持有 URL、令牌或通用 HTTP 客户端。
 }
 
-// Run 触发一次批次并返回调用错误；未配置返回明确错误。
-// 保留 runtime 的 error 入口，部分计数不变成成功，不重试或更换投递标识。
+// Run 触发一批计费任务，返回调用错误；未配置客户端时报错。
 func (d Dispatcher) Run(ctx context.Context) error {
 	if d.Central == nil {
 		return errors.New("billing dispatcher is not configured")

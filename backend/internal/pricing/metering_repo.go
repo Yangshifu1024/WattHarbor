@@ -43,7 +43,7 @@ func stationSpecOf(tx *gorm.DB, stationID uint64) (charging.Spec, bool, error) {
 }
 
 // CheckImportAgainstStation 按站点缓存规则和是否存在，再检查待导入设备协议。
-// 完整方案须检查全部套餐和算法，旧格式检查计费模式；没有有效规则时跳过。
+// 完整方案检查全部套餐，旧格式检查计费模式；无启用整站规则或 JSON 无法解析时跳过。
 // 不兼容返回 ErrMeteringBlocked，无规则不能因缓存命中被当成空模式。
 func (s Repo) CheckImportAgainstStation(tx *gorm.DB, devices []device.ImportDevice) error {
 	// cachedSpec 仅在本次导入缓存站点规则及是否存在，未配置或解析失败不能当作空模式。

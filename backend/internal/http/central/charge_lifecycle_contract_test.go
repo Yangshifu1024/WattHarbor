@@ -23,54 +23,50 @@ import (
 const receiptStartID = "10000000-0000-4000-8000-000000000001"
 const receiptStopID = "10000000-0000-4000-8000-000000000002"
 
-// lifecycleAuthorizations 返回固定起充／停机结果，记录客户端停止授权传入的用户身份。
+// lifecycleAuthorizations 返回固定启动和停止授权，记录停止请求的用户 ID。
 type lifecycleAuthorizations struct {
 	userID uint64 // 最近一次停止授权的用户主键，核对大整数未被截断。
 }
 
-// Start 忽略输入 context 和订单号，返回固定起充结果及 nil 错误；不修改 s、执行 IO 或模拟取消。
+// Start 返回固定启动授权。
 func (s *lifecycleAuthorizations) Start(context.Context, string) (chargestart.StartAuthorization, error) {
 	return chargestart.StartAuthorization{PaidStartAuthorization: chargestart.PaidStartAuthorization{ChargeOrderID: 9, OrderNo: "C-9", UserID: 9007199254740993, DeviceID: "D-1", PortNo: 1, PaymentOrderID: 7, ChargeMode: 1, ChargeQuantity: 1200}, ConsumerType: 2}, nil
 }
 
-// Stop 忽略输入 context 和订单号，以 id 记录 s.userID 并返回携身份／启动命令的固定停机结果和 nil 错误。
-// 仅修改 fixture 记录，不冻结实际截止点、访问数据库或模拟取消。
+// Stop 记录用户 ID，返回固定停止授权。
 func (s *lifecycleAuthorizations) Stop(_ context.Context, _ string, id uint64) (chargestop.ActiveStopAuthorization, error) {
 	s.userID = id
 	return chargestop.ActiveStopAuthorization{ChargeOrderID: 9, OrderNo: "C-9", UserID: id, DeviceID: "D-1", PortNo: 1, PortID: sql.NullInt64{Int64: 9007199254740994, Valid: true}, StartCommandID: receiptStartID}, nil
 }
 
-// lifecycleStartResults 捕获真实起充回执 HTTP 适配传入的领域参数，不执行持久事务。
+// lifecycleStartResults 记录 HTTP 处理器提交的启动结果。
 type lifecycleStartResults struct {
 	result chargestart.StartResult // 最近一次传入的起充回执，核对命令及端口编号。
 	calls  int                     // Apply 调用次数，核对坏路径订单号未进入用例。
 }
 
-// Apply 忽略输入 context，以 r 覆盖 s.result 并递增次数，固定返回重放 true 和 nil 错误。
-// 仅记录 fixture 参数，不保存实际状态或模拟事务、取消及幂等竞争。
+// Apply 记录提交结果和调用次数，返回 replayed=true。
 func (s *lifecycleStartResults) Apply(_ context.Context, r chargestart.StartResult) (bool, error) {
 	s.calls++
 	s.result = r
 	return true, nil
 }
 
-// lifecycleEndResults 捕获真实结束回执 HTTP 适配传入的领域参数，不执行持久事务。
+// lifecycleEndResults 记录 HTTP 处理器提交的结束结果。
 type lifecycleEndResults struct {
 	result chargefinish.EndResult // 最近一次传入的结束回执，核对计量单位及停止命令。
 	calls  int                    // Apply 调用次数，核对坏路径订单号未进入用例。
 }
 
-// Apply 忽略输入 context，以 r 覆盖 s.result 并递增次数，固定返回重放 true 和 nil 错误。
-// 仅记录 fixture 参数，不保存结束状态、核算资金或模拟取消、事务和幂等竞争。
+// Apply 记录提交结果和调用次数，返回 replayed=true。
 func (s *lifecycleEndResults) Apply(_ context.Context, r chargefinish.EndResult) (bool, error) {
 	s.calls++
 	s.result = r
 	return true, nil
 }
 
-// TestLifecycleClientMatchesRegisteredCentralRoutes 核对专用客户端与四个真实注册路由的双向契约。
-// 覆盖大整数编号、回执字段与计量单位、重放形状，以及路径订单号失配时拒绝调用；
-// 用例均为参数 fixture，不验证数据库事务、真实幂等或设备执行，相关证据属于 integration 用例测试。
+// TestLifecycleClientMatchesRegisteredCentralRoutes 核对客户端和四个注册接口的请求及回复。
+// 业务服务由测试替身记录参数；检查大整数编号、计量单位、重放字段，以及路径订单号与正文不一致时拒绝调用。
 func TestLifecycleClientMatchesRegisteredCentralRoutes(t *testing.T) {
 	authorizations := &lifecycleAuthorizations{}
 	starts := &lifecycleStartResults{}
@@ -106,8 +102,8 @@ func TestLifecycleClientMatchesRegisteredCentralRoutes(t *testing.T) {
 		t.Fatalf("end ack=%+v result=%+v err=%v", ack, ends.result, err)
 	}
 	for _, tc := range []struct {
-		path    string // 与 JSON 订单号故意失配的真实回执路由。
-		payload any    // 起充或结束请求，保持命令、身份、时刻及计量事实。
+		path    string // 路径订单号故意与 JSON 不同。
+		payload any    // 启动或结束请求，包含原命令编号、订单编号、时刻和计量读数。
 	}{
 		{"/api/v1/internal/charge-orders/other/start-result", start},
 		{"/api/v1/internal/charge-orders/other/end-result", end},

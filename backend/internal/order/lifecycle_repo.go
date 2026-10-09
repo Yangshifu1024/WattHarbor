@@ -38,7 +38,7 @@ func LockForLifecycleInTx(tx *gorm.DB, id uint64, orderNo string) (LifecycleView
 
 // ActivateInTx 把 paid 订单更新为 charging，并记录启动回执时刻。
 // 谓词要求仍是 paid：行数为零表示订单已被其他路径更新，按 ErrLifecycleConflict 返回而不是补写。
-// startedAt 为设备回执的 UTC 毫秒时刻，不使用墙钟。函数不提交事务，错误要求调用方回滚回执与事件。
+// startedAt 取设备回执的 UTC 毫秒时刻；失败时调用方回滚回执和事件，不在此提交。
 func ActivateInTx(tx *gorm.DB, id uint64, orderNo string, startedAt time.Time) error {
 	updated := tx.Model(&ChargeOrderRecord{}).
 		Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", id, orderNo).
@@ -70,7 +70,7 @@ func MarkStartRejectedInTx(tx *gorm.DB, id uint64, orderNo, failureReason string
 
 // CompleteInTx 把 charging 订单更新为 completed，并保存结束计量。
 // chargedKWh 是已按既有规则格式化的 kWh 十进制字符串，chargedSeconds 为设备累计秒数。
-// 两者都取自结束回执的持久证据，不在此重算，也不使用确认费用。谓词要求仍是 charging。
+// 两项均取结束回执，函数不重新计量；只更新仍为 charging 的订单。
 // 因此迟到的重复结束不能覆盖已完成的订单计量。函数不提交事务。
 func CompleteInTx(tx *gorm.DB, id uint64, orderNo string, endedAt time.Time, chargedKWh string, chargedSeconds int64) error {
 	updated := tx.Model(&ChargeOrderRecord{}).

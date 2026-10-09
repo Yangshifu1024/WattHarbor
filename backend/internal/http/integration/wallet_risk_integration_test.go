@@ -92,24 +92,23 @@ func cleanupWalletForRisk(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// walletSession 是钱包路由测试的固定有效会话能力，用于隔离 Redis；真实 JWT 验证仍由注册的认证器执行。
+// walletSession 让测试会话始终有效，JWT 验证仍使用真实认证器。
 type walletSession struct{}
 
-// Exists 忽略输入 context 和 SID，固定返回 true、nil 以隔离钱包业务测试；不访问 Redis，不能证明真实会话认证。
+// Exists 返回 true，跳过 Redis 会话读取。
 func (walletSession) Exists(context.Context, string) (bool, error) {
 	return true, nil
 }
 
-// walletUser 是钱包路由测试的固定有效用户能力，用于隔离账号状态读取；不证明真实用户状态已通过数据库校验。
+// walletUser 让测试用户始终有效。
 type walletUser struct{}
 
-// Active 忽略输入 context 和用户编号，固定返回 true、nil 以隔离钱包业务测试；不访问数据库，不能证明真实用户状态认证。
+// Active 返回 true，跳过用户状态查询。
 func (walletUser) Active(context.Context, uint64) (bool, error) {
 	return true, nil
 }
 
-// postRefund 用 router、token 和 requestID 提交固定分值的退款 JSON，t 标记辅助调用，返回 HTTP 状态与解析后的响应。
-// 请求执行业务路由及真库用例；仅供测试，信封解析错误沿用助手处理。
+// postRefund 提交固定金额的退款请求，返回 HTTP 状态和响应 JSON。
 func postRefund(t *testing.T, router *gin.Engine, token, requestID string) (int, map[string]any) {
 	t.Helper()
 	body := fmt.Sprintf(`{"request_id":%q,"amount_cents":%d,"reason":"并发频次测试"}`, requestID, riskEachCents)
@@ -201,7 +200,7 @@ type walletRouteReply struct {
 	body map[string]any // 业务响应信封
 }
 
-// walletRiskToken 用 jwt 为固定测试用户签发会话令牌；t 报告错误，不调用真实身份服务。
+// walletRiskToken 为固定测试用户签发登录令牌。
 func walletRiskToken(t *testing.T, jwt *auth.JWT) string {
 	t.Helper()
 	now := time.Now()

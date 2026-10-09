@@ -1,3 +1,4 @@
+// Package dbconn 校验 MySQL 连接配置并创建 SQL 连接池和 GORM 实例。
 package dbconn
 
 import (
@@ -17,7 +18,7 @@ import (
 )
 
 // DSN 把部署用的 URL 转换成 database/sql 的 MySQL DSN。
-// 在尝试任何网络连接之前，URL 就已经先被校验过了。
+// 仅接受带用户名、主机和单个数据库名称的 mysql URL；不建立连接。
 func DSN(raw string, multiStatements bool) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "mysql" || u.Host == "" || u.User == nil || u.User.Username() == "" {
@@ -52,7 +53,7 @@ func DSN(raw string, multiStatements bool) (string, error) {
 	return config.FormatDSN(), nil
 }
 
-// PoolConfig 定义单个数据库连接池的连接预算与回收期限。
+// PoolConfig 设置连接数上限、连接最长使用时间和最长空闲时间。
 type PoolConfig struct {
 	MaxOpen  int
 	MaxIdle  int
@@ -60,7 +61,7 @@ type PoolConfig struct {
 	IdleTime time.Duration
 }
 
-// Validate 在打开连接前拒绝负数及超过连接总预算的空闲数量。
+// Validate 拒绝负数，以及空闲连接上限大于总连接上限的配置。
 func (c PoolConfig) Validate() error {
 	if c.MaxOpen < 0 || c.MaxIdle < 0 || c.Lifetime < 0 || c.IdleTime < 0 {
 		return errors.New("database pool limits must not be negative")
@@ -71,8 +72,8 @@ func (c PoolConfig) Validate() error {
 	return nil
 }
 
-// Open 校验连接 URL 与可选池预算，配置每个连接的 UTC/严格会话并验证连通性。
-// 未传预算时使用 20 个连接、5 个空闲连接、30 分钟寿命与 5 分钟空闲期限。
+// Open 校验 URL 和连接池配置，使用 UTC 时区及严格 SQL 模式，并检查数据库连接。
+// 默认最多 20 个连接、5 个空闲连接；连接最多使用 30 分钟、空闲 5 分钟。
 func Open(ctx context.Context, raw string, pools ...PoolConfig) (*sql.DB, error) {
 	pool := PoolConfig{MaxOpen: 20, MaxIdle: 5, Lifetime: 30 * time.Minute, IdleTime: 5 * time.Minute}
 	if len(pools) > 1 {
@@ -103,7 +104,7 @@ func Open(ctx context.Context, raw string, pools ...PoolConfig) (*sql.DB, error)
 	return db, nil
 }
 
-// WrapGORM 在已校验的 MySQL 连接池上配置 ORM，Goose 共用 Open 返回的 database/sql 句柄。
+// WrapGORM 使用已有 SQL 连接池创建 GORM 实例，不再连接数据库或自动创建外键。
 func WrapGORM(db *sql.DB) (*gorm.DB, error) {
 	if db == nil {
 		return nil, errors.New("nil MySQL pool")

@@ -10,8 +10,7 @@ import (
 
 var chinaLocation = time.FixedZone("CST", 8*3600)
 
-// Civil 将时刻转换为协议使用的民用时区，供不含时区偏移的 BCD 日期字段编码。
-// 设备和服务器统一使用该时区，不依赖宿主机本地设置。
+// Civil 将时刻转换为 UTC+8，用于协议中不含时区的日期字段。
 func Civil(at time.Time) time.Time { return at.In(chinaLocation) }
 
 // HeartbeatData 是心跳里的公共字段，外加在 A6 打开时可能不完整的充电端口集合。
@@ -28,6 +27,7 @@ type HeartbeatData struct {
 	ChargingPorts []protocol.PortTelemetry
 }
 
+// ParseHeartbeat 解码 A4 短心跳或带端口状态的扩展心跳，将 Wh 换算为 mWh。
 func ParseHeartbeat(frame Frame) (HeartbeatData, error) {
 	if frame.Command != Heartbeat || len(frame.Data) < 17 {
 		return HeartbeatData{}, ErrPayload
@@ -77,8 +77,8 @@ func ParseHeartbeat(frame Frame) (HeartbeatData, error) {
 	return result, nil
 }
 
-// ChargeEndData 表示充电结束上报，保留类型、金额和计量字段用于会话审计。
-// 设备计费金额取实际支付记录，不由上报的类型或金额决定。
+// ChargeEndData 保存设备上报的结束时间、用电量和扣费金额。
+// 平台结算按订单计费规则计算，不直接采用设备上报金额。
 type ChargeEndData struct {
 	Port           uint8
 	OrderNumber    string
@@ -120,6 +120,7 @@ const (
 	endOffsetPower    = 42
 )
 
+// ParseChargeEnd 解码 44 字节 BB 结束上报，校验端口、起止时间和秒数余量。
 func ParseChargeEnd(frame Frame) (ChargeEndData, error) {
 	if frame.Command != ChargeEnd || len(frame.Data) != 44 || frame.Data[endOffsetPort] == 0 {
 		return ChargeEndData{}, ErrPayload
@@ -161,6 +162,7 @@ func ParseChargeEnd(frame Frame) (ChargeEndData, error) {
 	}, nil
 }
 
+// ParseChargingBand 解码 C2 档位变化上报，返回端口、剩余秒数和功率。
 func ParseChargingBand(frame Frame) (protocol.PortTelemetry, error) {
 	if frame.Command != ChargingBand || len(frame.Data) != 9 || frame.Data[0] == 0 {
 		return protocol.PortTelemetry{}, ErrPayload

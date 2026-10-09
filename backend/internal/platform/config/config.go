@@ -1,3 +1,4 @@
+// Package config 从环境变量读取各进程的配置，并检查必填项及有效值。
 package config
 
 import (
@@ -7,7 +8,7 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
-// DatabasePool 定义进程内每个 SQL 池的预算；worker 的三个池分别应用此预算。
+// DatabasePool 设置单个 SQL 连接池的数量和超时；worker 的三个池各使用一份配置。
 type DatabasePool struct {
 	MaxOpen  int           `env:"DB_MAX_OPEN_CONNS" envDefault:"20"`
 	MaxIdle  int           `env:"DB_MAX_IDLE_CONNS" envDefault:"5"`
@@ -15,7 +16,7 @@ type DatabasePool struct {
 	IdleTime time.Duration `env:"DB_CONN_MAX_IDLE_TIME" envDefault:"5m"`
 }
 
-// validate 校验单池预算；零值允许禁用对应期限或采用无上限且不保留空闲连接的池。
+// validate 拒绝负数和空闲上限超过总上限的配置；零值表示不限制总连接数或连接时长、不保留空闲连接。
 func (c DatabasePool) validate() error {
 	if c.MaxOpen < 0 || c.MaxIdle < 0 || c.Lifetime < 0 || c.IdleTime < 0 {
 		return fmt.Errorf("database pool limits must not be negative")

@@ -8,7 +8,9 @@ import "context"
 type CommandKind string
 
 const (
-	CommandCardDenied  CommandKind = "card_denied"
+	// CommandCardDenied 向设备发送刷卡拒绝回复。
+	CommandCardDenied CommandKind = "card_denied"
+	// CommandCardBalance 向设备发送卡余额回复。
 	CommandCardBalance CommandKind = "card_balance"
 )
 

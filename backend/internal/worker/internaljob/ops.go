@@ -1,3 +1,4 @@
+// Package internaljob 提供 worker 的受保护运维接口。
 package internaljob
 
 import (

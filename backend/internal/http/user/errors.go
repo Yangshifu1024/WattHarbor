@@ -1,3 +1,4 @@
+// Package user 提供用户接口共用的状态校验和错误响应。
 package user
 
 import (

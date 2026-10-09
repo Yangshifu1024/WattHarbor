@@ -18,25 +18,25 @@ import (
 
 var userScanCodePattern = regexp.MustCompile(`^[A-Za-z0-9_:-]{1,64}$`)
 
-// ScanAPI 提供匿名二维码和端口查询结果，不创建用户会话、支付或设备命令。
+// ScanAPI 提供匿名设备或端口扫码查询。
 type ScanAPI struct {
 	Discovery device.DiscoveryService // 设备发现用例；匿名查询不创建支付或会话
 }
 
-// Register 向 router 注册两个匿名扫码查询端点，只注册路由。
+// Register 注册两个匿名扫码查询接口。
 func (a ScanAPI) Register(router *gin.Engine) {
 	router.POST("/api/v1/user/scan/resolve", a.resolve)
 	router.POST("/api/v1/user/scan/port", a.port)
 }
 
-// resolve 接收 c 的扫码请求，委托 handle 解析裸码或 HTTPS 二维码链接并写设备或端口查询结果；不创建会话或支付。
+// resolve 解析裸码或 HTTPS 二维码链接，返回设备或端口。
 func (a ScanAPI) resolve(c *gin.Context) { a.handle(c, false) }
 
-// port 接收 c 的端口编码请求，委托 handle 仅输出端口查询结果；输入、缺失及读取错误保持 400／404／503。
+// port 按端口编码查询，只返回单个端口。
 func (a ScanAPI) port(c *gin.Context) { a.handle(c, true) }
 
-// handle 从 c 绑定扫码输入，requirePort 决定读取 port_id 或解析 code，并在请求 context 下查询设备发现用例。
-// 成功写扫码结果或端口；参数错误为 400、缺失或非端口结果为 404、依赖失败为 503，无会话或支付写入。
+// handle 根据 requirePort 选择端口编码或扫码内容，调用发现服务。
+// 此接口允许匿名访问，创建支付时才要求登录。
 func (a ScanAPI) handle(c *gin.Context, requirePort bool) {
 	// 设备和端口的发现接口是公开的。
 	// 只有客户在 /scan/start 创建支付意图时才需要鉴权。
@@ -86,7 +86,7 @@ func (a ScanAPI) handle(c *gin.Context, requirePort bool) {
 	httpapi.OK(c, result)
 }
 
-// canonicalScanCode 接收 raw 二维码载荷，返回裸码或 HTTPS 链接中唯一合法 code 及 true；超长、非法文本或链接返回空串及 false。
+// canonicalScanCode 接受合法裸码或含唯一 code 参数的 HTTPS 链接；非法输入返回 false。
 func canonicalScanCode(raw string) (string, bool) {
 	if userScanCodePattern.MatchString(raw) {
 		return raw, true
@@ -105,7 +105,7 @@ func canonicalScanCode(raw string) (string, bool) {
 	return values[0], true
 }
 
-// Lookup 用 code 调用设备发现用例，返回查询结果和 HTTP 状态；缺失映射 404、其余错误映射 503，成功为 200。
+// Lookup 查询扫描码；查不到返回 404，读取失败返回 503。
 func (a ScanAPI) Lookup(ctx context.Context, code string) (money.ScanResult, int) {
 	out, err := a.Discovery.ResolveScan(ctx, code)
 	if errors.Is(err, gatewaycontract.ErrScanNotFound) {

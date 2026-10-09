@@ -1,3 +1,4 @@
+// Package device 提供站点查询以及当前用户的设备报修接口。
 package device
 
 import (

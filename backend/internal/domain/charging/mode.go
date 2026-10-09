@@ -8,7 +8,7 @@ type ChargeExecutor string
 const (
 	// ExecutorServer 由平台按计量结果计价，设备负责上报。
 	ExecutorServer ChargeExecutor = "server"
-	// ExecutorDevice 由设备消耗已付款额度，服务端不重新计算账单。
+	// ExecutorDevice 由设备执行购买额度，服务端按 SettleSession 计算应收和余款。
 	ExecutorDevice ChargeExecutor = "device"
 )
 
@@ -20,7 +20,7 @@ const (
 	ModeServerRealtimePower ChargeMode = "server_realtime_power" // 按实时功率
 	ModeServerMaxPower      ChargeMode = "server_max_power"      // 按最大功率
 	ModeServerEnergy        ChargeMode = "server_energy"         // 按电量
-	// 设备模式费用等于用户实际付款金额。
+	// 设备模式按购买额度执行；提前结束的费用由 SettleSession 计算。
 	ModeDeviceDuration ChargeMode = "device_duration" // 时长
 	ModeDeviceEnergy   ChargeMode = "device_energy"   // 电量
 	ModeDevicePower    ChargeMode = "device_power"    // 功率档位
@@ -46,21 +46,21 @@ func (m ChargeMode) Executor() ChargeExecutor {
 // ServerBilled 判断该模式是否由 Cost 计算最终费用。
 func (m ChargeMode) ServerBilled() bool { return m.Executor() == ExecutorServer }
 
-// IsDevice 判断该模式是否由设备控制充电结束。
+// IsDevice 判断执行方是否为设备。
 func (e ChargeExecutor) IsDevice() bool { return e == ExecutorDevice }
 
 // Valid 判断当前版本是否支持该计费模式。
 func (m ChargeMode) Valid() bool { return m.Executor() != "" }
 
-// ServerBasis 是电费按什么方式计价，它只对服务端计费模式有意义。
+// ServerBasis 指定服务端电费算法。
 type ServerBasis string
 
 const (
-	// BasisRealtimePower 按每一片实际抽取的功率给这一片定价。
+	// BasisRealtimePower 按各分段功率选档，以小时单价计算费用。
 	BasisRealtimePower ServerBasis = "realtime_power"
-	// BasisMaxPower 按整场充电的峰值功率选择费率。
+	// BasisMaxPower 按每个费率时段的峰值功率选择该时段档位。
 	BasisMaxPower ServerBasis = "max_power"
-	// BasisEnergy 直接给电量定价，不存在需要去找的费率阶梯。
+	// BasisEnergy 按各时段的电量与每 kWh 单价计费。
 	BasisEnergy ServerBasis = "energy"
 )
 
@@ -78,23 +78,23 @@ func (m ChargeMode) BasisFor() ServerBasis {
 	}
 }
 
-// ServiceBasis 定义服务费计价规则，可与电费计价方式独立组合。
+// ServiceBasis 保存旧版独立服务费算法；当前 Cost 从电费时段或功率档位读取服务费。
 type ServiceBasis string
 
 const (
-	// ServiceNone 表示完全不收服务费。
+	// ServiceNone 标记旧版不收服务费配置。
 	ServiceNone ServiceBasis = "none"
-	// ServiceEnergy 按每 kWh 收。
+	// ServiceEnergy 标记旧版每 kWh 服务费。
 	ServiceEnergy ServiceBasis = "energy"
-	// ServiceMinutePower 按每 kWh 收，但单价走功率阶梯来定。
+	// ServiceMinutePower 是旧版按功率阶梯选择服务费单价的标记，当前 Cost 不使用。
 	ServiceMinutePower ServiceBasis = "minute_power"
-	// ServiceMinute 按每分钟充电时长收一个固定费率。
+	// ServiceMinute 标记旧版每分钟服务费。
 	ServiceMinute ServiceBasis = "minute"
-	// ServiceSession 整次充电收一个固定金额。
+	// ServiceSession 标记旧版每次充电服务费。
 	ServiceSession ServiceBasis = "session"
 )
 
-// Valid 判断计价引擎是否支持该服务费计价方式。
+// Valid 判断是否为已定义的旧版服务费算法。
 func (b ServiceBasis) Valid() bool {
 	switch b {
 	case ServiceNone, ServiceEnergy, ServiceMinutePower, ServiceMinute, ServiceSession:
@@ -104,14 +104,12 @@ func (b ServiceBasis) Valid() bool {
 	}
 }
 
-// TierPriceBasis 区分实时功率的电量单价与历史换算快照。
-// 新模板只允许 TierPerKWh；其它旧值仅用于兼容已发布规则和历史订单。
+// TierPriceBasis 保留旧版阶梯价格单位；当前 Cost 使用档位的分/小时价格，新模板禁止该字段。
 type TierPriceBasis string
 
 const (
-	// TierPerHourAtCeiling 是旧版错误标为“元/小时”的填写值。历史执行时
-	// 先乘上限瓦数、除以 1000 并截到整数分，再乘电量；不可作为新时长计费。
+	// TierPerHourAtCeiling 标记旧版按功率上限换算的价格，当前计算不使用。
 	TierPerHourAtCeiling TierPriceBasis = "per_hour_at_ceiling"
-	// TierPerKWh 把存下来的数字直接当作每 kWh 的分数来读。
+	// TierPerKWh 标记旧版每 kWh 单价，当前计算不使用。
 	TierPerKWh TierPriceBasis = "per_kwh"
 )

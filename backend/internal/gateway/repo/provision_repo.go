@@ -228,7 +228,7 @@ func ProvisionBatch(ctx context.Context, db *gorm.DB, devices []ProvisionDevice)
 	})
 }
 
-// provisionOne 在调用方事务内核对厂商和首次请求，再创建设备及端口；相同请求直接返回，失配则报冲突。
+// provisionOne 在调用方事务内核对厂商和首次请求，再创建设备及端口；相同请求直接返回，同号不同内容报冲突。
 func provisionOne(tx *gorm.DB, d ProvisionDevice) error {
 	status, adapterClass, err := lockVendorForProvision(tx, d.VendorID)
 	if err != nil {

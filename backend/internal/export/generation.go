@@ -15,14 +15,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// Generate 同步为申请人生成文件；按角色集合→账号→任务加锁，保持到文件、凭据发布和 completed 提交。
+// Generate 同步为申请人生成文件；先锁客户管理员角色，再锁申请人、当前角色及任务，直到文件发布和 completed 提交。
 // 不启动后台任务，文件与 SQL 不保证原子提交。
 func (s ExportService) Generate(ctx context.Context, taskNo string, original operations.Profile) error {
 	if s.DB == nil {
 		return errors.New("export unavailable")
 	}
 	var owned bool
-	var mayHaveFiles bool // 本次已取得目录并进入发布，恢复不得吞目录清理失败
+	var mayHaveFiles bool // 已打开导出目录；失败恢复时必须报告目录清理错误
 	err := s.generationTransaction(ctx, func(tx *gorm.DB) error {
 		p, err := s.lockedActor(tx, original, "export.create")
 		if err != nil {

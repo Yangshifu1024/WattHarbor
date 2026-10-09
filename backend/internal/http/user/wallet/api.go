@@ -1,3 +1,4 @@
+// Package wallet 提供当前用户的钱包余额、流水、充值和退款接口。
 package wallet
 
 import (

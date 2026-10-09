@@ -19,7 +19,7 @@ import (
 // taskFileIdentity 检查服务生成的十六进制任务号，兼容早期短编号，新请求保留完整 UUID。
 var taskFileIdentity = regexp.MustCompile(`^EXP[0-9A-F]{1,32}$`)
 
-// artifactProof 是服务端私有文件凭据，不放入公开过滤参数。
+// artifactProof 保存导出文件的任务、范围、脱敏列和内容摘要，写入私有校验文件。
 // 文件和 SQL 不能原子提交；只有 completed 且任务号、摘要、范围和脱敏规则均匹配时才可下载。
 type artifactProof struct {
 	Version       int                  `json:"version"`        // 私有格式版本，当前1
@@ -30,11 +30,11 @@ type artifactProof struct {
 	RowCount      uint32               `json:"row_count"`      // 本次实际行数
 	Scope         operations.DataScope `json:"scope"`          // 对应资源实际执行的范围维度
 	MaskedColumns []string             `json:"masked_columns"` // 本次文件已经遮蔽的公开列
-	SHA256        string               `json:"sha256"`         // 生成字节摘要，防止文件与凭据失配
+	SHA256        string               `json:"sha256"`         // 内容文件的 SHA-256 摘要，下载时核对是否被修改
 }
 
 // effectiveScope 记录实际查询范围：订单和站点按站点，设备按站点与厂商交集，账单仅支持全局。
-// 单独厂商限制不改变订单或站点查询，凭据不能声称使用了未执行的过滤。
+// 单独厂商限制不改变订单或站点查询，保存的范围只包含实际执行的筛选。
 func effectiveScope(resource string, scope operations.DataScope) operations.DataScope {
 	if resource != "devices" {
 		scope.VendorIDs = nil
@@ -70,7 +70,7 @@ func containsScope(current, saved operations.DataScope) bool {
 	return covered(current.StationIDs, saved.StationIDs) && covered(current.VendorIDs, saved.VendorIDs)
 }
 
-// fileNames 根据格式和可信任务号生成内容及凭据相对路径，忽略数据库任意路径。
+// fileNames 按格式和合法任务号生成内容文件及校验文件名，不采用数据库中的任意路径。
 // 历史 PDF 仅允许清理，下载只支持 CSV／XLSX。
 func fileNames(row ExportTaskRow, cleanup bool) (string, string, error) {
 	format := row.FileFormat
@@ -110,14 +110,14 @@ func (r contextReader) Read(p []byte) (int, error) {
 	return r.input.Read(p)
 }
 
-// publish 在可信目录中编码文件和私有凭据，先关闭 .partial 再发布。
+// publish 在导出目录生成内容和校验文件，先关闭 .partial 临时文件再改名发布。
 // 调用方在任务锁事务中写完成状态；失败由同任务锁内的恢复步骤清理。
 func publish(ctx context.Context, root *os.Root, row ExportTaskRow, spec ExportSpec, records []map[string]any, scope operations.DataScope, mask operations.FieldMask) (string, error) {
 	name, proofName, err := fileNames(row, false)
 	if err != nil {
 		return "", err
 	}
-	// 新文件存于 v1 私有目录，可识别凭据缺失的新文件，防止按无凭据历史文件放行。
+	// 新文件存于 v1 目录；缺少校验文件时必须拒绝下载，不能套用旧根目录文件的兼容规则。
 	if err := root.MkdirAll("v1", 0o700); err != nil {
 		return "", err
 	}
@@ -193,7 +193,7 @@ func stringifyCell(value any) string {
 	}
 }
 
-// removeArtifacts 在任务锁内按可信任务号删除内容、凭据和临时文件，不采用数据库任意路径。
+// removeArtifacts 在任务锁内按合法任务号删除内容、校验和临时文件，不采用数据库任意路径。
 // 文件不存在视为已清理，不影响其他任务。
 func removeArtifacts(root *os.Root, row ExportTaskRow) error {
 	name, proof, err := fileNames(row, true)
@@ -211,7 +211,7 @@ func removeArtifacts(root *os.Root, row ExportTaskRow) error {
 }
 
 // verifyArtifact 打开文件并核对当前范围、脱敏规则和摘要，成功后将句柄移回开头。
-// 新凭据失配即拒绝；旧无凭据文件仅供当前全局且无需脱敏的账号下载，否则须重新生成。
+// 校验文件不匹配即拒绝；旧根目录文件缺少校验文件时，仅全局且无需脱敏的账号可下载。
 func verifyArtifact(ctx context.Context, root *os.Root, row ExportTaskRow, spec ExportSpec, scope operations.DataScope, mask operations.FieldMask, versioned bool) (file *os.File, err error) {
 	name, proofName, err := fileNames(row, false)
 	if err != nil {

@@ -12,10 +12,10 @@ import (
 type endReceiptView struct {
 	ChargeOrderID uint64 `gorm:"column:charge_order_id;primaryKey"` // 充电订单主键
 	StopCommandID string `gorm:"column:stop_command_id"`            // 停止命令号
-	MeterJSON     []byte `gorm:"column:meter_json"`                 // 结束计量证据 JSON，计费的原始输入
+	MeterJSON     []byte `gorm:"column:meter_json"`                 // 设备结束计量 JSON，用于计算费用
 }
 
-// TableName 返回结束回执所属固定表名，无参数、错误或 IO。
+// TableName 返回结束回执表名。
 func (endReceiptView) TableName() string { return "charge_end_receipt" }
 
 // ListOrderRefunds 按订单 ID 倒序读取退款记录；调用方负责订单授权。
