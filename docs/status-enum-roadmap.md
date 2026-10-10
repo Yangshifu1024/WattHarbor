@@ -237,7 +237,7 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 ### 8.2 P1 · 主体持久化枚举
 
-> **本批已实施并通过第 9 节基础入口**（`node tasks.mjs check`、`build-all`；真库集成未执行，边界见 9 节）。行号已随改动漂移，核对时以「文件 + 字段名」定位，不要以行号为准；「目标类型与归属」列的四行经复核后已修正，与当前代码一致。
+> **本批已实施并通过第 9 节全部入口**（`node tasks.mjs check`、`build-all`、`go vet -tags integration` 与真实 MySQL 集成测试；真库运行结果见 9.2 节）。行号已随改动漂移，核对时以「文件 + 字段名」定位，不要以行号为准；「目标类型与归属」列的四行经复核后已修正，与当前代码一致。
 
 | 枚举 | 数据库列与存储 | 产生方式 | Go 字段（已复核） | 目标类型与归属 | 批次 | 完成 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -344,8 +344,7 @@ func (s DeviceMetaStatus) ManageWritable() bool
 - **`ops.AccountUpdateInput.Status` 与 `ops.EventOutboxRecord.Status` 保持指针语义**。前者以 `nil` 表示「不修改」，后者靠 `gorm:"default:pending"` 让数据库填充初值；改成值类型会把非法零值写进 ENUM 列。
 - **`task_execution_log` 在生产中不会执行**。`cmd/worker/app.go` 的处理器登记表为空（`Handlers: map[string]schedule.Handler{}`），`CreateExecutionLog`／`FinishExecutionLog` 仅测试调用。类型化不代表该枚举已在线上运行；真库集成能验证存储与读取路径，但不能替代真实调度运行。
 - **`pricing` 删除路径的空串行为未变**：`remove == true` 时跳过状态校验，空串由仓储写入 `disabled` 覆盖，不得在校验里拒绝空串。
-- **真库集成未执行**。本批涉及多处 GORM 投影列类型变更（指针 + 自定义类型、`gorm:"default"` 标签、ENUM 参数绑定），`node scripts/db/test-integration.mjs` 尚未运行，**这些行为无真实 MySQL 证据**，见第 9 节。
-
+- **真库集成已执行并通过**（95 个包零失败，见 9.2 节）。本批涉及的 GORM 投影列类型变更（指针 + 自定义类型、default 标签、ENUM 参数绑定）均有真实 MySQL 证据；真库运行同时找出了本批引入的六个回归，均已修复并逐条登记在 9.2 节。
 ### 8.4 P2 · 派生值、外部输入与受限标签
 
 此类不设固定先后顺序，允许同一枚举的存储类型、读模型与映射在同一批完成。持久化与展示状态需分立时定义显式映射，保持原值、未知值、空值与时间判定行为。
@@ -440,12 +439,10 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 **未取得的证据（不得当作通过）**：
 
-- **真库集成未执行**。本批变更大量涉及 GORM 投影列类型（指针 + 自定义类型、`gorm:"default:"` 标签、ENUM 参数绑定与 VARCHAR 未知值落库），`node scripts/db/test-integration.mjs` 尚未运行，上述行为**无真实 MySQL 证据**。
-- **确定性前后基线未执行**。尚未从同一起始快照分别跑改造前后的请求并逐字节比较。
-- **`task_execution_log` 无运行证据**，处理器登记表为空（见 8.3.3）。
+- **确定性前后基线未执行**。尚未从同一起始快照分别跑改造前后的请求并逐字节比较。**这是本方案当前唯一的验收缺口。**
+- **`task_execution_log` 无真实调度运行证据**，处理器登记表为空（见 8.3.3）；真库集成覆盖了其存储与读取路径，但不等同于线上调度已运行。
 
-**确定性前后基线尚未执行**（真库证据见 9.2 节）。该项补齐前，状态是「基础入口与真库集成均通过、前后逐字节对比未验证」，不得表述为已完全验收。
-
+真库集成本身已执行并通过，详见 9.2 节。确定性前后基线补齐前，状态是「基础入口与真库集成均通过、前后逐字节对比未验证」，不得表述为已完全验收。
 ### 9.3 P2 的执行记录
 
 **已取得证据**：`go build ./...`、`go vet ./...`、**`go vet -tags integration ./...`**、`node tasks.mjs check`、`node tasks.mjs build-all` 全部通过；`go mod tidy -diff` 无差异；`go list ./...` 全仓无 import 环；`internal/protocol` 经 `go list -deps` 核实仍为零内部依赖的叶子包；`migrations/`、`go.mod`、`go.sum` 零改动；JSON 标签与 `binding` 标签逐字节不变；无新增 `MarshalJSON`／`UnmarshalJSON`。
