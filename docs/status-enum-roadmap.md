@@ -184,24 +184,54 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 每项范围内枚举必须分配批次；排除项登记理由，不以未列入批次隐式排除。完成状态按本清单逐项关闭，不以批次完成或候选字段数量作为覆盖证据。**验证入口统一见第 9 节**。
 
-**各列来源与可信度**：「数据库列」与「存储」取自 `migrations/*/0001_init.sql`，已逐项核对；「Go 字段」为 2026-10-10 盘点定位，**实施前须逐条复核**；「目标类型与归属」已按第 5.2 节依赖路径校正。
+**各列来源与可信度**：「数据库列」与「存储」取自 `migrations/*/0001_init.sql`，已逐项核对；P0 行的「Go 字段」已于首批实施时逐条复核并更正，P1／P2 行仍为 2026-10-10 盘点定位，**实施前须逐条复核**；「目标类型与归属」已按第 5.2 节依赖路径校正。
 
 ### 8.1 P0 · 高重复声明，先验证模式
 
-| 枚举 | 数据库列与存储 | 产生方式 | Go 字段（待复核） | 目标类型与归属 | 批次 | 完成 |
+> **本批已实施并通过第 9 节基础入口**。行号为本批改动后的位置，后续改动会让其漂移；核对时请以「文件 + 字段名」定位，不要以行号为准。
+
+| 枚举 | 数据库列与存储 | 产生方式 | Go 字段（已复核） | 目标类型与归属 | 批次 | 完成 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 订单状态 | `charge_order.status` ENUM 8 值 | 业务写入 | `order/order_schema.go:19` 等 6 处，`settlement/` 4 处 | `domain/order.OrderStatus`（无冲突） | P0 | ☐ |
-| 订单业务状态 | `charge_order.business_status` ENUM | **数据库生成，只读** | `order/order_schema.go:20` | `domain/order.OrderBusinessStatus` | P0 | ☐ |
-| 订单支付状态 | `charge_order.payment_status` ENUM 4 值 | 业务写入 | `order/order_schema.go:21` | `domain/order.OrderPaymentStatus` | P0 | ☐ |
-| 支付关联业务类型 | 三表 `biz_type` ENUM 2 值 | 业务写入 | `payment/money_schema.go:12` 等约 8 处 | `domain/money.PaymentBizType` | P0 | ☐ |
-| 支付单状态 | `payment_order.status` ENUM 6 值 | 业务写入 | `payment/money_schema.go:20`；跨域 `wallet/wallet_account_repo.go`、`order/order_view_repo.go` | `domain/money.PaymentStatus`（wallet／order／marketing 冲突） | P0 | ☐ |
-| 退款单状态 | `refund_record.status` ENUM 5 值 | 业务写入 | `settlement/money_schema.go:48`；跨域 `wallet/query_repo.go:19` | `domain/money.RefundStatus`（wallet／payment 冲突） | P0 | ☐ |
-| 券发放状态 | `coupon_grant.status` ENUM 3 值 | 业务写入；`expired` 另由 `marketing/query.go:84` 派生展示 | `marketing/coupon_repo.go:28`；跨域 `identity/charge_user_repo.go:241` | `domain/marketing.GrantStatus`（identity 冲突） | P0 | ☐ |
-| 券发放来源 | `coupon_grant.grant_source` ENUM 5 值 | 业务写入 | `marketing/activity_grant.go:38`（`Source string`） | `domain/marketing.GrantSource`（与状态分立，语义不同） | P0 | ☐ |
-| 故障工单状态 | `device_fault_report.status` ENUM 4 值 | 业务写入 | `device/fault_repo.go:19`、`fault_casework.go:22` | `device.FaultStatus`（已有无类型常量 `fault.go:10-13`，判定 `:20-34`） | P0 | ☐ |
-| 刷卡操作类型与状态 | `card_operation.kind`／`status` ENUM 2 值／3 值 | 业务写入 | `card/card_repo.go`、`charging/query/user.go:79,82`、`contracts/central/card.go:28,31` | **`domain/card.CardOperationKind`**／`CardOperationStatus`（contracts 不得引用 card） | P0 | ☐ |
-| 扫码结果种类 | **无数据库列** | **仓储逻辑派生** `device`／`port` | `domain/money/scan.go:16`、`gateway/repo/scan_repo.go:31`、`contracts/gateway/scan.go:28` | `domain/money.ScanKind`（与端口状态分离，二者不建立相互映射） | P0 | ☐ |
-| 设备端口状态 | `gateway_db.device_port.status` ENUM 5 值 | 业务写入＋设备上报 | `gateway/repo/gorm_models.go:28`、`scan_repo.go:21`、`contracts/gateway/scan.go:21` | `domain/money.PortStatus`（**单一归属**） | P0 | ☐ |
+| 订单状态 | `charge_order.status` ENUM 8 值 | 业务写入 | `order.ChargeOrderRecord.Status`、`order.LifecycleView.Status`、`order.ChargingState.Status`、`order.FeedbackOrder.Status`、`order.OrderView.Status`、`settlement.InvoiceApplyOrder.Status` | `domain/order.OrderStatus`（无冲突） | P0 | ☑ |
+| 订单业务状态 | `charge_order.business_status` ENUM | **数据库生成，只读** | `order.ChargeOrderRecord.BusinessStatus`、`order.OrderView.BusinessStatus` | `domain/order.OrderBusinessStatus` | P0 | ☑ |
+| 订单支付状态 | `charge_order.payment_status` ENUM 4 值 | 业务写入 | `order.ChargeOrderRecord.PaymentStatus`、`order.OrderView.PaymentStatus`、`payment.PaymentOrderView.PaymentStatus`、`wallet.AdminRechargeRow.PaymentStatus` | `domain/order.OrderPaymentStatus` | P0 | ☑ |
+| 支付关联业务类型 | `payment_order`／`refund_record`／`coupon_redemption` `biz_type` | 业务写入 | `payment.PaymentOrderRecord.BizType`、`settlement.RefundRecord.BizType`、`settlement.RefundRecordInput.BizType`、`wallet.Settlement.BizType`、`money.RefundDraft.BizType`、`payment.PaymentOrderView.BizType` | `domain/money.PaymentBizType` | P0 | ☑ |
+| 支付单状态 | `payment_order.status` ENUM 6 值 | 业务写入 | `payment.PaymentOrderRecord.Status`、`payment.RefundPayment.Status`、`payment.OrderPaymentBrief.Status`、`wallet.RechargePayment.Status`、`wallet.WalletRechargeRow.Status`、`wallet.AdminRechargeRow.Status`、`charging/query.PaymentBrief.Status` | `domain/money.PaymentStatus` | P0 | ☑ |
+| 退款单状态 | `refund_record.status` ENUM 5 值 | 业务写入 | `settlement.RefundRecord.Status`、`settlement.RefundRecordInput.Status`、`wallet.WalletRefundPartRow.Status` | `domain/money.RefundStatus` | P0 | ☑ |
+| 券发放状态 | `coupon_grant.status` ENUM 3 值 | 业务写入；`expired` 另由 `marketing/query.go` 内存派生展示 | `marketing.CouponGrant.Status`、`marketing.UserCoupon.Status` | `domain/marketing.GrantStatus` | P0 | ☑ |
+| 券发放来源 | `coupon_grant.grant_source` ENUM 5 值 | 业务写入 | `marketing.activityGrant.Source`（内部结构体）；`grantSourceFor` 返回该类型 | `domain/marketing.GrantSource`（与状态分立，语义不同） | P0 | ☑ |
+| 故障工单状态 | `device_fault_report.status` ENUM 4 值 | 业务写入 | `device.FaultRow.Status`、`device.FaultResolution.Status`、`device.FaultSubmissionResult.Status`、`device.FaultEventInput.FromStatus`／`ToStatus` | `device.FaultStatus`（原地升级既有无类型常量，判定在 `fault.go`） | P0 | ☑ |
+| 刷卡操作类型与状态 | `card_operation.kind`／`status` ENUM 2 值／3 值 | 业务写入 | `card.CardOperation.Kind`／`Status`、`contracts/central.CardOperationReply.Kind`／`Status`、`charging/query.CardOperation.Kind`／`Status` | **`domain/card.CardOperationKind`**／`CardOperationStatus`（contracts 不得引用 card） | P0 | ☑ |
+| 扫码结果种类 | **无数据库列** | **仓储逻辑派生** `device`／`port` | `money.ScanResult.Kind`、`money.PortRef.Kind`、`contracts/gateway.ScanReply.Kind`、`gateway/repo.ScanResult.Kind` | `domain/money.ScanKind`（与端口状态分离，二者不建立相互映射） | P0 | ☑ |
+| 设备端口状态 | `gateway_db.device_port.status` ENUM 5 值 | 业务写入＋设备上报 | `money.ScanPort.Status`、`contracts/gateway.ScanPort.Status`、`gateway/repo.ScanPort.Status`／`scanPortRow.Status`／`devicePortRow.Status`／`SyncPortRow.Status` | `domain/money.PortStatus`（**单一归属**） | P0 | ☑ |
+
+### 8.1.1 P0 实施后新增与核对的维护规则
+
+以下规则是本批实施中确认的，后续批次沿用：
+
+1. **同名不同义的列必须逐处确认后再改**。本批至少四处字面量相同但列不同，若按字面量统一赋值会静默写错列：`coupon.status` 与 `coupon_grant.status`（均为 `Status`，取值完全不同）、`payment_order.status` 与 `charge_payment_intent.status`（`initiated`／`paid` 共有）、`refund_record.status` 的 `rejected` 与复核流程返回的 `rejected`、`device_port.status` 与 `charge_process.port_status`（后者是协议原始码 tinyint）。
+2. **同一取值串不等于同一语义，拆成不同的常量**。`PaymentStatus` 的 `paid refunded partial_refunded`（到账类）与 `paid partial_refunded`（可退类）必须分开：退款准入**不得**接受已全额退回的支付单。已分别定义为 `PaidLikeStatuses` 与 `RefundablePaymentStatuses`，各带注释说明差异。
+3. **子集合要按业务口径提取具名集合函数**，不要在各处重复罗列字面量：`unsettledRefundStatuses()`、`paymentBizTypes()`、`refundablePaymentStatuses()`、`paidOrChargingOrders()`、`idleOrChargingPorts()`、`activityGrantSources()`。集合口径变化时只改一处。
+4. **入库白名单串按字面量逐字节保留**，不随类型化改写：`domain/order.AllStatuses`／`AllBusinessStatuses`／`AllPaymentStatuses`／`AllChannelRefundableStatuses`、`domain/money.AllPaymentBizTypes`／`AllRefundStatuses`。新增枚举取值**不会**自动进入白名单，需按业务准入规则显式补充，注释已写明。
+5. **`Contracts` 允许依赖 `internal/domain/*`，不允许依赖业务实现包**。本批新增了 `contracts/central` → `domain/card`、`contracts/gateway` → `domain/money` 两条依赖，与既有 `contracts/central/results.go` → `domain/charging` 一致；`internal/domain/*` 不反向依赖任何业务实现包。
+
+### 8.1.2 P0 保留裸字面量的例外登记
+
+以下位置经核对**不属于**本批 12 项枚举，或位于 SQL 语法内无法参数化，保留字面量并已在代码处标注理由：
+
+| 位置 | 保留理由 |
+| --- | --- |
+| `order/order_view_repo.go` 的 `PaymentStatusSQL`、订单退款派生 `CASE` 表达式 | `CASE` 分支值与聚合表达式是 SQL 语法的一部分，不是可绑定参数 |
+| `marketing/admin_coupon_repo.go` 的 `SUM(status='unused' …)` 等聚合 | 同上，聚合条件内嵌在表达式里 |
+| `identity/user_repo.go`、`identity/charge_user_repo.go` 的 `coupon_grant` 计数子查询 | `Raw` SQL 跨包直读库，无法用 Go 常量绑定；已在原处加注释指向 `GrantStatus` 词表 |
+| `payment` 各处的 `charge_payment_intent.status`（`initiated`／`expired`／`closed`） | 该列词表为 `initiated/paid/expired/closed/refund_required`，与 `payment_order.status` **不同**；已在 `payment/money_schema.go` 字段注释与使用处标注 |
+| `gateway` 各处的 `charge_command.status`（`pending/sent/acked/stopping/rejected`）、`device.status`、`vendor.status` | 分别是命令、网关设备与厂商表的词表，不在本批范围；`gateway/repo/sync_models.go` 已加注释区分 |
+| `settlement` 的 `charge_billing_job.status`、`charge_meter_review.status`、`charge_bill.status`、`execution_policy`、`invoice_request.review_status` | 均为独立列的枚举，不在本批范围 |
+| `marketing` 的 `coupon_activity_rule.trigger_type`、`coupon.status`、`coupon_activity_rule.status` | 独立列的枚举；`trigger_type` 的 `invite_reward` 与 `GrantSourceInviteReward` 同值但不同义，不合并 |
+| `http/user/order/query.go` 的 `case "expired"`、`http/central/card_api.go` 的 `case "expired"`、`charging/query.UserInputError.Kind`、`card` 的失败阶段 | 是错误分类与阶段标识，不是数据库状态列 |
+| `protocol.CommandKind` 的 `CommandStart` | 设备协议命令码，与 `CardOperationKind` 同值不同义，两个包各自定义并在注释中互相点名 |
+| `cmd/devseed/**` 的订单、支付与意图状态 | 开发演示造数工具，不参与业务判定；其 `status` 同时喂给 `charge_order.status` 与 `charge_payment_intent.status` 两个不同词表，单一类型化会掩盖该差异。留待后续批次统一处理 |
+| `persist.PageQuery.Status` | 跨业务共用的查询筛选项，被 fault／vendor／account／marketing 等多家复用且各自白名单不同，不能直接改为单一枚举类型；各用例在自己的校验处转换 |
 
 ### 8.2 P1 · 主体持久化枚举
 
