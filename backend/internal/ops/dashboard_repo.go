@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"chargepilot/internal/domain/devices"
 	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"time"
@@ -87,7 +88,10 @@ func (s DashboardRepo) Read(ctx context.Context, start, end, trendStart time.Tim
 	}
 	m.DailyTrend = rows
 
-	err = admin.Table("alert_event").Where("status IN ('active','acknowledged')").Count(&m.ActiveAlerts).Error
+	// 未处理告警只含 active 与 acknowledged 两个状态，对应 devices.AlertStatus。
+	err = admin.Table("alert_event").
+		Where("status IN ?", []devices.AlertStatus{devices.AlertActive, devices.AlertAcknowledged}).
+		Count(&m.ActiveAlerts).Error
 	return m, err
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/operations"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -27,7 +28,8 @@ func LockDeviceByID(ctx context.Context, tx *gorm.DB, scope operations.DataScope
 }
 
 // SaveDeviceStatus 保存设备运营状态和更新时间，不结束设备订单。
-func SaveDeviceStatus(tx *gorm.DB, id uint64, status string, updatedAt time.Time) error {
+// 本函数原样写入调用方给定的状态，不在此收口取值集合；启停准入由用例的 ManageWritable 判定负责。
+func SaveDeviceStatus(tx *gorm.DB, id uint64, status devices.DeviceMetaStatus, updatedAt time.Time) error {
 	return tx.Table("device_meta").Where("id=?", id).
 		Updates(map[string]any{"status": status, "updated_at": updatedAt}).Error
 }

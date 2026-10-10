@@ -18,11 +18,11 @@ func (e *FaultInputError) Error() string { return e.Message }
 
 // FaultSubmission 保存用户提交的设备、类型、说明和图片；port_no 未入库，不推断端口。
 type FaultSubmission struct {
-	DeviceID    string   `json:"device_id"`   // 设备编号，非空最多64字节；兼容未知设备报告
-	PortNo      uint8    `json:"port_no"`     // 兼容输入；既有表无端口字段，不保存或推断
-	FaultType   string   `json:"fault_type"`  // mechanical／electrical／communication／display／other
-	Description *string  `json:"description"` // 可空描述，最多2000字
-	Images      []string `json:"images"`      // 图片地址数组，最多9项，nil 保留 JSON null
+	DeviceID    string    `json:"device_id"`   // 设备编号，非空最多64字节；兼容未知设备报告
+	PortNo      uint8     `json:"port_no"`     // 兼容输入；既有表无端口字段，不保存或推断
+	FaultType   FaultType `json:"fault_type"`  // device_fault_report.fault_type 五值，见 FaultType
+	Description *string   `json:"description"` // 可空描述，最多2000字
+	Images      []string  `json:"images"`      // 图片地址数组，最多9项，nil 保留 JSON null
 }
 
 // FaultSubmissionResult 返回首次报告主键和 open 状态，失败不留下报告或事件。
@@ -41,7 +41,9 @@ func (s FaultService) Report(ctx context.Context, userID uint64, in FaultSubmiss
 	if userID == 0 {
 		return FaultSubmissionResult{}, &FaultInputError{"报修请求无效"}
 	}
-	if in.DeviceID == "" || len(in.DeviceID) > 64 || !validFaultType(in.FaultType) {
+	// empty 先于 Known 短路：两者合并会失去必填语义（Known 对空串返回 false，与本组合等价，
+	// 但保留短路是为了让“设备无效”与“故障类型无效”的判定顺序与原实现一致）。
+	if in.DeviceID == "" || len(in.DeviceID) > 64 || in.FaultType == "" || !in.FaultType.Known() {
 		return FaultSubmissionResult{}, &FaultInputError{"设备或故障类型无效"}
 	}
 	if in.Description != nil && len([]rune(*in.Description)) > MaxFaultNoteLength {
@@ -61,15 +63,6 @@ func (s FaultService) Report(ctx context.Context, userID uint64, in FaultSubmiss
 		return err
 	})
 	return out, err
-}
-
-// validFaultType 检查五种允许的故障类型。
-func validFaultType(value string) bool {
-	switch value {
-	case "mechanical", "electrical", "communication", "display", "other":
-		return true
-	}
-	return false
 }
 
 // validFaultPage 检查分页上下限，状态由对应接口用例校验。

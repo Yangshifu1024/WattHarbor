@@ -42,7 +42,7 @@ func (a TCPAdapter) finish(ctx context.Context, sink protocol.Sink, audit *Sessi
 	if clock == nil {
 		clock = time.Now
 	}
-	_ = recorder.RecordSession(ctx, audit.Snapshot(deviceID, string(reason), clock()))
+	_ = recorder.RecordSession(ctx, audit.Snapshot(deviceID, reason, clock()))
 }
 
 // TCPAdapter 处理 DC589 设备连接，实现 protocol.Adapter。

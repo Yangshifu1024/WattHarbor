@@ -31,6 +31,6 @@ func CheckModeSupport(mode ChargeMode, adapter string) string {
 }
 
 // ValidDeviceChargeMode 校验设备上报的计费方式取值，空串表示尚未归类。
-func ValidDeviceChargeMode(mode string) bool {
-	return ChargeMode(strings.TrimSpace(mode)).Valid()
+func ValidDeviceChargeMode(mode ChargeMode) bool {
+	return ChargeMode(strings.TrimSpace(string(mode))).Valid()
 }

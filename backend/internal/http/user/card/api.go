@@ -44,8 +44,8 @@ func (a API) cardStatus(c *gin.Context) {
 		return
 	}
 	var in struct {
-		// Status 卡状态变更输入，由用例限制为挂失或解绑。
-		Status string
+		// Status 卡状态变更输入，card.CardStatus 的 C 端可写子集仅含挂失和解绑。
+		Status card.CardStatus
 	}
 	if c.ShouldBindJSON(&in) != nil {
 		httpapi.BadRequest(c, "仅可挂失或解绑自己的卡")
@@ -64,5 +64,5 @@ func (a API) cardStatus(c *gin.Context) {
 		httpapi.Write(c, 503, 5001, "卡状态暂不可保存", nil)
 		return
 	}
-	httpapi.OK(c, gin.H{"status": in.Status})
+	httpapi.OK(c, gin.H{"status": string(in.Status)})
 }

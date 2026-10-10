@@ -16,21 +16,21 @@ import (
 
 // OrderPaymentSummary 是一笔支付单在起充失败时要核对的关键金额。
 type OrderPaymentSummary struct {
-	ID                  uint64         // 支付主键
-	UserID              uint64         // 付款用户，须匹配订单
-	TotalCents          int64          // 申请金额，分
-	PaidCents           int64          // 已确认实付，分
-	RefundedCents       int64          // 已成功退回累计，分
-	WechatTransactionID sql.NullString // 渠道交易号，未确认为空
-	Status              string         // 支付状态，锁定读取只接受 paid
+	ID                  uint64              // 支付主键
+	UserID              uint64              // 付款用户，须匹配订单
+	TotalCents          int64               // 申请金额，分
+	PaidCents           int64               // 已确认实付，分
+	RefundedCents       int64               // 已成功退回累计，分
+	WechatTransactionID sql.NullString      // 渠道交易号，未确认为空
+	Status              money.PaymentStatus // 支付状态，锁定读取只接受 paid
 }
 
 // FindOrderPaymentForCharge 在事务中按 chargeOrderID 读取关联支付的方式与用户 ID，返回两项及读取错误。
-// 缺关联返回 gorm.ErrRecordNotFound，不写入；调用方按 balance、wechat 选择退款路径并负责事务。
-func FindOrderPaymentForCharge(tx *gorm.DB, chargeOrderID uint64) (string, uint64, error) {
+// 缺关联返回 gorm.ErrRecordNotFound，不写入；调用方按返回的 money.PayMethod 选择退款路径并负责事务。
+func FindOrderPaymentForCharge(tx *gorm.DB, chargeOrderID uint64) (money.PayMethod, uint64, error) {
 	var row struct {
-		PayMethod string // 支付方式，balance 或 wechat
-		UserID    uint64 // 付款用户
+		PayMethod money.PayMethod // 支付方式，取自 payment_order.pay_method 词表
+		UserID    uint64          // 付款用户
 	}
 	err := tx.Table("payment_order p").Select("p.pay_method,p.user_id").
 		Joins("JOIN charge_order c ON c.payment_order_id=p.id").
@@ -46,7 +46,7 @@ func ReadBalancePaymentAmounts(tx *gorm.DB, paymentOrderID uint64) (paid, refund
 		RefundedCents int64 // 已成功退回累计，分
 	}
 	err = tx.Table("payment_order").Select("paid_cents,refunded_cents").
-		Where("id=? AND pay_method='balance'", paymentOrderID).Take(&row).Error
+		Where("id=? AND pay_method=?", paymentOrderID, money.PayMethodBalance).Take(&row).Error
 	return row.PaidCents, row.RefundedCents, err
 }
 
@@ -59,7 +59,7 @@ func LockWechatPaymentForRefund(tx *gorm.DB, chargeOrderID uint64) (OrderPayment
 	err := tx.Table("charge_order AS c").
 		Select("p.id, p.user_id, p.total_cents, p.paid_cents, p.refunded_cents, p.wechat_transaction_id, p.status").
 		Joins("JOIN payment_order AS p ON p.id = c.payment_order_id AND p.biz_type = 'charge' "+
-			"AND p.pay_method = 'wechat' AND p.biz_id = c.id AND p.user_id = c.user_id").
+			"AND p.pay_method = ? AND p.biz_id = c.id AND p.user_id = c.user_id", money.PayMethodWechat).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("c.id = ? AND p.status = ? AND p.deleted_at IS NULL", chargeOrderID, orderdomain.StatusPaid).Take(&row).Error
 	return row, err

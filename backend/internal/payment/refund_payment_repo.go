@@ -14,7 +14,7 @@ type RefundPayment struct {
 	UserID              uint64               // 付款用户
 	BizID               uint64               // 业务主键，充值可为 0
 	BizType             money.PaymentBizType // charge 或 wallet_recharge
-	PayMethod           string               // wechat 或 balance
+	PayMethod           money.PayMethod      // payment_order.pay_method；wechat、balance、mixed 或 coupon
 	WechatTransactionID sql.NullString       // 渠道交易号；Valid=false 时不能发起渠道退款
 	TotalCents          int64                // 应付总额，分
 	PaidCents           int64                // 已确认到账金额，分

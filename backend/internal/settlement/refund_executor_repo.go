@@ -45,6 +45,9 @@ func (e RefundExecutor) Batch(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	var rows []RefundRecord
+	// 字面量 'automatic' 对应 refund_record.execution_policy 的自动执行取值，
+	// 属该列词表 money.ExecutionPolicy；与其余条件同处一个 Where 字面量串，
+	// 拆开会改变 SQL 形状，故保留并在此指向类型。
 	if err := e.DB.WithContext(ctx).Where("execution_policy='automatic' AND biz_type IN ? AND status IN ? AND next_attempt_at <= UTC_TIMESTAMP(3) AND deleted_at IS NULL", paymentBizTypes(), unsettledRefundStatuses()).Order("next_attempt_at,id").Limit(20).Find(&rows).Error; err != nil {
 		return 0, err
 	}
@@ -141,7 +144,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 		if r.Status == money.RefundSuccess {
 			return nil
 		}
-		if r.ExecutionPolicy != "automatic" || (!r.BizType.Valid()) || (!oneOf(r.Status, money.UnsettledRefundStatuses)) {
+		if r.ExecutionPolicy != money.ExecutionAutomatic || (!r.BizType.Valid()) || (!oneOf(r.Status, money.UnsettledRefundStatuses)) {
 			return ErrRefundConflict
 		}
 		if r.NextAttemptAt.After(time.Now().UTC()) {

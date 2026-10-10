@@ -51,6 +51,6 @@ func RefundBalanceInTx(tx *gorm.DB, src BalanceRefundSource, w *wallet.Row, cent
 	return InsertRefundRecord(tx, RefundRecordInput{
 		RefundNo: refundNo, PaymentOrderID: payment.ID, UserID: src.UserID,
 		BizType: money.PaymentBizCharge, BizID: src.OrderID, RefundCents: cents, Status: money.RefundSuccess,
-		ExecutionPolicy: "automatic", Reason: reason,
+		ExecutionPolicy: money.ExecutionAutomatic, Reason: reason,
 	}, dbutil.MonthStart())
 }

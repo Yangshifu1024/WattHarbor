@@ -9,6 +9,7 @@ import (
 	"time"
 
 	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/protocol"
 	"chargepilot/internal/protocol/dc589"
 	"gorm.io/gorm"
@@ -108,13 +109,13 @@ func (s AlertSyncService) recordFault(ctx context.Context, report contract.Devic
 			if !report.ReceivedAt.After(*watermark.AfterReceivedAt) {
 				return nil
 			}
-			if existing.Status == "active" || existing.Status == "acknowledged" {
+			if existing.Status == devices.AlertActive || existing.Status == devices.AlertAcknowledged {
 				return repo.MarkAlertOccurrence(tx, existing, report.EventKey, int(event.FaultCode))
 			}
 		}
 		at := report.ReceivedAt.UTC()
 		month := time.Date(at.Year(), at.Month(), 1, 0, 0, 0, 0, time.UTC)
-		if err := repo.InsertAlert(tx, map[string]any{"device_id": event.DeviceID, "metric": metric, "severity": severity, "value": event.FaultCode, "status": "active", "note": note, "event_id": report.EventKey, "created_at": at, "created_month": month}); err != nil {
+		if err := repo.InsertAlert(tx, map[string]any{"device_id": event.DeviceID, "metric": metric, "severity": severity, "value": event.FaultCode, "status": devices.AlertActive, "note": note, "event_id": report.EventKey, "created_at": at, "created_month": month}); err != nil {
 			return err
 		}
 		raised = true

@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/devices"
 	"context"
 	"database/sql"
 	"errors"
@@ -14,10 +15,11 @@ import (
 // 仓储检查设备和端口是否允许补传，完成去重、插入和汇总；控制层负责解析及输入限额。
 
 // deviceStatus 锁定未删除的设备行并返回状态，让实时采样和补传按设备串行写入。
-func deviceStatus(ctx context.Context, db *gorm.DB, deviceID string) (string, error) {
+// 该列是网关库 device.status（三值），与中央 device_meta.status 不共用词表。
+func deviceStatus(ctx context.Context, db *gorm.DB, deviceID string) (devices.GatewayDeviceStatus, error) {
 	var row struct {
-		// Status 状态。
-		Status string
+		// Status 网关侧设备状态。
+		Status devices.GatewayDeviceStatus
 	}
 	err := db.WithContext(ctx).Table("device").Clauses(clause.Locking{Strength: "UPDATE"}).Select("status").
 		Where("device_id = ? AND deleted_at IS NULL", deviceID).Take(&row).Error
@@ -134,7 +136,7 @@ func persistBackfill(ctx context.Context, db *gorm.DB, deviceID string, samples 
 		return 0, 0, err
 	}
 	// 停用设备可补传停用前缓存的读数；退役设备不接受补传。
-	if status == "retired" {
+	if status == devices.GatewayDeviceRetired {
 		return 0, 0, ErrBackfillUnknownDevice
 	}
 	ports, err := devicePortNumbers(ctx, db, deviceID)

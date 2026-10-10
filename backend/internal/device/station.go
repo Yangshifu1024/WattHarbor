@@ -89,19 +89,20 @@ func (s StationService) Save(ctx context.Context, audit ops.AuditContext, scope 
 // StationInput 是站点完整资料，经纬度用指针区分缺失和零值；Code 仅用于拒绝旧请求。
 type StationInput struct {
 	// 保留已废弃的 Code 请求字段用于兼容性校验，禁止写入站点记录。
-	Code         *string  `json:"code"`          // 兼容旧客户端的废弃字段；非 nil 时返回编码已移除的参数错误。
-	Name         string   `json:"name"`          // 站点名称，非空且提交文本最多 128 字符；保存时去除首尾空白。
-	Address      *string  `json:"address"`       // 站点地址，可空，最长 255 字符。
-	Longitude    *float64 `json:"longitude"`     // 经度，必填指针；缺失、非数字或超出 [-180,180] 判为无效。
-	Latitude     *float64 `json:"latitude"`      // 纬度，必填指针；缺失、非数字或超出 [-90,90] 判为无效。
-	Status       string   `json:"status"`        // 站点状态，必填：active / disabled / construction 三选一。
-	ContactPhone *string  `json:"contact_phone"` // 联系电话，可空，最长 32 字符。
+	Code         *string       `json:"code"`          // 兼容旧客户端的废弃字段；非 nil 时返回编码已移除的参数错误。
+	Name         string        `json:"name"`          // 站点名称，非空且提交文本最多 128 字符；保存时去除首尾空白。
+	Address      *string       `json:"address"`       // 站点地址，可空，最长 255 字符。
+	Longitude    *float64      `json:"longitude"`     // 经度，必填指针；缺失、非数字或超出 [-180,180] 判为无效。
+	Latitude     *float64      `json:"latitude"`      // 纬度，必填指针；缺失、非数字或超出 [-90,90] 判为无效。
+	Status       StationStatus `json:"status"`        // 站点状态，必填：active / disabled / construction 三选一。
+	ContactPhone *string       `json:"contact_phone"` // 联系电话，可空，最长 32 字符。
 }
 
 // ValidStationInput 检查名称必填且最多 128 字、经纬度必填且范围有效，禁止 NaN。
-// 状态仅允许 active／disabled／construction，地址和电话分别最多 255 和 32 字符。
+// 状态仅允许 station.status 三值（见 StationStatus），地址和电话分别最多 255 和 32 字符。
 func ValidStationInput(input StationInput) bool {
-	if strings.TrimSpace(input.Name) == "" || utf8.RuneCountInString(input.Name) > 128 || input.Longitude == nil || input.Latitude == nil || math.IsNaN(*input.Longitude) || math.IsNaN(*input.Latitude) || math.Abs(*input.Longitude) > 180 || math.Abs(*input.Latitude) > 90 || input.Status == "" || !oneOfStatus(input.Status, "active disabled construction") {
+	// 空串与 oneOfStatus 的空值放行语义相反：站点状态必填，先单独拒绝空串再判断词表，两者不可合并。
+	if strings.TrimSpace(input.Name) == "" || utf8.RuneCountInString(input.Name) > 128 || input.Longitude == nil || input.Latitude == nil || math.IsNaN(*input.Longitude) || math.IsNaN(*input.Latitude) || math.Abs(*input.Longitude) > 180 || math.Abs(*input.Latitude) > 90 || input.Status == "" || !oneOfStatus(input.Status, AllStationStatuses) {
 		return false
 	}
 	for value, max := range map[*string]int{input.Address: 255, input.ContactPhone: 32} {
@@ -112,13 +113,14 @@ func ValidStationInput(input StationInput) bool {
 	return true
 }
 
-// oneOfStatus 检查值为空或属于空格分隔的允许状态集合。
-func oneOfStatus(value, allowed string) bool {
+// oneOfStatus 检查值为空或属于空格分隔的允许状态集合，只用于 station.status 的写入准入。
+// 空串返回 true 表示“不属于任何词表之外的误填”，与调用方「状态必填」的显式拒绝并存，两者语义不同，不可合并。
+func oneOfStatus(value StationStatus, allowed string) bool {
 	if value == "" {
 		return true
 	}
 	for _, v := range strings.Fields(allowed) {
-		if value == v {
+		if string(value) == v {
 			return true
 		}
 	}

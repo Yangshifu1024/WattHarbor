@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/money"
 	"context"
 	"database/sql"
@@ -42,9 +43,11 @@ func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID strin
 		if row.CommandID != commandID || !row.PortID.Valid || row.PortID.Int64 <= 0 {
 			return ErrOrderConflict
 		}
-		if row.Status == "pending" {
+		// SQL 内 status = 'pending'／status IN ('sent','acked')／status = 'stopping' 分别对应
+		// devices.CommandPending／CommandSent、CommandAcked／CommandStopping（charge_command.status）。
+		if row.Status == devices.CommandPending {
 			changed := tx.Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'pending'", commandID).
-				Updates(map[string]any{"status": "rejected", "result_code": 254, "ack_at": gorm.Expr("CURRENT_TIMESTAMP(3)"), "error": "start authorization revoked before send"})
+				Updates(map[string]any{"status": devices.CommandRejected, "result_code": 254, "ack_at": gorm.Expr("CURRENT_TIMESTAMP(3)"), "error": "start authorization revoked before send"})
 			if err := changed.Error; err != nil {
 				return err
 			}
@@ -54,12 +57,12 @@ func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID strin
 			return tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status = ?", row.PortID.Int64, orderNo, money.PortIdle).
 				Update("current_order_id", nil).Error
 		}
-		if row.Status == "rejected" {
+		if row.Status == devices.CommandRejected {
 			return nil
 		}
-		if row.Status != "stopping" {
+		if row.Status != devices.CommandStopping {
 			if err := tx.Model(&chargeCommandRow{}).Where("command_id = ? AND status IN ('sent','acked')", commandID).
-				Updates(map[string]any{"status": "stopping", "error": "central rejected device start"}).Error; err != nil {
+				Updates(map[string]any{"status": devices.CommandStopping, "error": "central rejected device start"}).Error; err != nil {
 				return err
 			}
 		}
@@ -79,6 +82,7 @@ func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID strin
 // StoppingJobs 按更新时间读取最多五十个到期待补偿命令并还原 STOP 会话；返回任务或 SQL、会话错误，不更新状态。
 func (s MySQLSink) StoppingJobs(ctx context.Context) ([]StopJob, error) {
 	var rows []chargeCommandRow
+	// SQL 内 status = 'stopping' 对应 devices.CommandStopping（charge_command.status）。
 	err := s.DB.WithContext(ctx).Select("command_id, order_no, device_id, port_no, stop_session_id").
 		Where("status = 'stopping' AND (stop_sent_at IS NULL OR stop_sent_at < DATE_SUB(NOW(3), INTERVAL 10 SECOND))").
 		Order("updated_at").Limit(50).Find(&rows).Error
@@ -98,6 +102,7 @@ func (s MySQLSink) StoppingJobs(ctx context.Context) ([]StopJob, error) {
 
 // MarkStopSent 仅更新 stopping 命令的停止发送时间；返回 SQL 错误，不确认停止或释放端口。
 func (s MySQLSink) MarkStopSent(ctx context.Context, commandID string) error {
+	// SQL 内 status = 'stopping' 对应 devices.CommandStopping（charge_command.status）。
 	return s.DB.WithContext(ctx).Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'stopping'", commandID).
 		Update("stop_sent_at", gorm.Expr("CURRENT_TIMESTAMP(3)")).Error
 }

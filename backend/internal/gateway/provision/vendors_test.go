@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	gatewayrepo "chargepilot/internal/gateway/repo"
 	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
@@ -95,7 +96,8 @@ func TestVendorInputBoundsAndSupportedTransport(t *testing.T) {
 	}
 	for _, pair := range [][2]string{{"dc589", "mqtt"}, {"dc589", "hybrid"}, {"unknown", "tcp"}} {
 		in := validVendorInput()
-		in.AdapterClass, in.Protocol = pair[0], pair[1]
+		// 厂商传输词表是 vendor.protocol 三值，与会话 Transport 分立。
+		in.AdapterClass, in.Protocol = pair[0], devices.VendorProtocol(pair[1])
 		if gatewayrepo.SupportedVendorAdapter(in.AdapterClass, in.Protocol) {
 			t.Errorf("unsupported adapter accepted: %+v", in)
 		}
@@ -114,11 +116,11 @@ func TestVendorListQueryBoundsAndFailClosedScope(t *testing.T) {
 		return parseVendorList(c)
 	}
 	q, err := parse("ids=1,2,2&page=2&page_size=100&status=disabled&keyword=" + url.QueryEscape(" 厂商 "))
-	if err != nil || q.Page != 2 || q.PageSize != 100 || q.Keyword != "厂商" || len(q.IDs) != 2 || q.IDs[1] != 2 {
+	if err != nil || q.Page != 2 || q.PageSize != 100 || q.Keyword != "厂商" || len(q.IDs) != 2 || q.IDs[1] != 2 || q.Status != devices.VendorDisabled {
 		t.Fatalf("valid query: %+v %v", q, err)
 	}
 	q, err = parse("")
-	if err != nil || q.Page != 1 || q.PageSize != 20 || q.IDs != nil {
+	if err != nil || q.Page != 1 || q.PageSize != 20 || q.IDs != nil || q.Status.Filtered() {
 		t.Fatalf("defaults: %+v %v", q, err)
 	}
 	for _, invalid := range []string{"page=", "page=0", "page=1.5", "page=1000001", "page_size=0", "page_size=101", "status=retired", "ids=", "ids=1,", "ids=0", "ids=-1", "ids=1.5", "ids=18446744073709551616", "ids=" + strings.Repeat("1,", 500) + "2", "keyword=" + url.QueryEscape(strings.Repeat("厂", 129))} {

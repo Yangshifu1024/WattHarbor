@@ -20,21 +20,21 @@ import (
 
 // PaymentIntent 保存支付申请冻结的套餐、价格与关联信息，供付款准备使用。
 type PaymentIntent struct {
-	IntentID        string            `json:"intent_id"`                 // 支付意图 UUID
-	MerchantOrderNo string            `json:"merchant_order_no"`         // 商户支付单号，重试沿用
-	PaymentOrderID  uint64            `json:"payment_order_id"`          // 关联支付主键
-	UserID          uint64            `json:"user_id,string"`            // 申请所属用户，对外返回十进制字符串
-	OpenID          string            `json:"-"`                         // 付款人微信身份，不公开
-	DeviceID        string            `json:"device_id"`                 // 冻结目标设备编号
-	PortNo          uint8             `json:"port_no"`                   // 冻结端口号，从 1 开始
-	PortCode        string            `json:"port_id"`                   // 冻结端口业务编码
-	StationID       uint64            `json:"station_id"`                // 申请时保存的站点 ID
-	Estimate        charging.Estimate `json:"estimate"`                  // 首次冻结的费用及设备执行量
-	ExpiresAt       time.Time         `json:"expires_at"`                // 支付意图有效期 UTC 时刻
-	Status          string            `json:"status"`                    // 意图 initiated、expired、paid 或 refund_required
-	CouponGrantID   uint64            `json:"coupon_grant_id,omitempty"` // 优惠券权益 ID，0 表示无券；当前套餐不允许使用优惠券
-	DiscountCents   int64             `json:"discount_cents"`            // 冻结减免金额，分
-	PayableCents    int64             `json:"payable_cents"`             // 实际应付金额，分，等于优惠前总费减减免
+	IntentID        string                    `json:"intent_id"`                 // 支付意图 UUID
+	MerchantOrderNo string                    `json:"merchant_order_no"`         // 商户支付单号，重试沿用
+	PaymentOrderID  uint64                    `json:"payment_order_id"`          // 关联支付主键
+	UserID          uint64                    `json:"user_id,string"`            // 申请所属用户，对外返回十进制字符串
+	OpenID          string                    `json:"-"`                         // 付款人微信身份，不公开
+	DeviceID        string                    `json:"device_id"`                 // 冻结目标设备编号
+	PortNo          uint8                     `json:"port_no"`                   // 冻结端口号，从 1 开始
+	PortCode        string                    `json:"port_id"`                   // 冻结端口业务编码
+	StationID       uint64                    `json:"station_id"`                // 申请时保存的站点 ID
+	Estimate        charging.Estimate         `json:"estimate"`                  // 首次冻结的费用及设备执行量
+	ExpiresAt       time.Time                 `json:"expires_at"`                // 支付意图有效期 UTC 时刻
+	Status          money.PaymentIntentStatus `json:"status"`                    // charge_payment_intent.status：initiated、expired、paid 或 refund_required
+	CouponGrantID   uint64                    `json:"coupon_grant_id,omitempty"` // 优惠券权益 ID，0 表示无券；当前套餐不允许使用优惠券
+	DiscountCents   int64                     `json:"discount_cents"`            // 冻结减免金额，分
+	PayableCents    int64                     `json:"payable_cents"`             // 实际应付金额，分，等于优惠前总费减减免
 }
 
 // IntentInput 包含首次支付申请的用户、端口、套餐与优惠券编号。
@@ -71,7 +71,7 @@ func (s PaymentIntentRepo) Replay(ctx context.Context, userID uint64, requestID,
 	if err != nil {
 		return nil, err
 	}
-	if row.PortCode != portID || row.CouponGrantID != couponID || row.Status != "initiated" || !time.Now().Before(row.ExpiresAt) ||
+	if row.PortCode != portID || row.CouponGrantID != couponID || row.Status != money.IntentInitiated || !time.Now().Before(row.ExpiresAt) ||
 		(row.OfferID.Valid && row.OfferID.Int64 != int64(offerID)) || (!row.OfferID.Valid && offerID != 0) {
 		return nil, ErrPaymentIntentConflict
 	}
@@ -162,7 +162,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 		// 仅释放本次申请端口已过期的预占，与新意图创建同事务，不扫描其他端口。
 		if err := tx.Model(&PaymentIntentRecord{}).
 			Where("port_code = ? AND status = 'initiated' AND expires_at <= UTC_TIMESTAMP(3)", input.Port.Port.PortID).
-			Update("status", "expired").Error; err != nil {
+			Update("status", money.IntentExpired).Error; err != nil {
 			return err
 		}
 		if err := CheckoutPortAvailable(tx, input.Port.Port.PortID); err != nil {
@@ -181,7 +181,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 		}
 		payable := estimate.TotalCents - discount
 		paymentOrder := PaymentOrderRecord{OrderNo: merchantOrderNo, BizType: "charge", BizID: 0,
-			UserID: input.UserID, PayMethod: "wechat", TotalCents: payable,
+			UserID: input.UserID, PayMethod: money.PayMethodWechat, TotalCents: payable,
 			Status: "initiated", ExpiredAt: sql.NullTime{Time: expiresAt, Valid: true}, CreatedMonth: dbutil.MonthStart()}
 		if err := tx.Create(&paymentOrder).Error; err != nil {
 			return err
@@ -194,7 +194,7 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 			PricingSnapshot: snapshot, EstimatedKWh: estimate.EstimatedKWh, EstimatedMinutes: estimate.EstimatedMinutes,
 			ElectricCents: estimate.ElectricCents, ServiceCents: estimate.ServiceCents, TotalCents: estimate.TotalCents,
 			CouponGrantID: input.CouponGrantID, DiscountCents: discount,
-			ChargeMode: estimate.ChargeMode, ChargeQuantity: estimate.ChargeQuantity, Status: "initiated", ExpiresAt: expiresAt}
+			ChargeMode: estimate.ChargeMode, ChargeQuantity: estimate.ChargeQuantity, Status: money.IntentInitiated, ExpiresAt: expiresAt}
 		if input.Offer != nil {
 			intent.OfferID = sql.NullInt64{Int64: int64(input.Offer.ID), Valid: true}
 		}
@@ -214,14 +214,14 @@ func (s PaymentIntentRepo) Reserve(ctx context.Context, input IntentInput) (Paym
 	}
 	return PaymentIntent{IntentID: intentID, MerchantOrderNo: merchantOrderNo, PaymentOrderID: paymentID, UserID: input.UserID,
 		OpenID: openid, DeviceID: input.Port.DeviceID, PortNo: input.Port.Port.PortNo, PortCode: input.Port.Port.PortID,
-		StationID: input.Port.StationID, Estimate: estimate, ExpiresAt: expiresAt, Status: "initiated",
+		StationID: input.Port.StationID, Estimate: estimate, ExpiresAt: expiresAt, Status: money.IntentInitiated,
 		CouponGrantID: input.CouponGrantID, DiscountCents: discount, PayableCents: estimate.TotalCents - discount}, nil
 }
 
 // existingIntent 按 input 逐项核对已存在的 row，返回已保存的支付申请或 ErrPaymentIntentConflict。
 // 端口、套餐、券、期限及历史非套餐数量必须一致；不使用当前规则替换快照。
 func existingIntent(row PaymentIntentRecord, input IntentInput) (PaymentIntent, error) {
-	if row.PortCode != input.Port.Port.PortID || row.DeviceID != input.Port.DeviceID || row.Status != "initiated" || time.Now().After(row.ExpiresAt) {
+	if row.PortCode != input.Port.Port.PortID || row.DeviceID != input.Port.DeviceID || row.Status != money.IntentInitiated || time.Now().After(row.ExpiresAt) {
 		return PaymentIntent{}, ErrPaymentIntentConflict
 	}
 	if input.Offer != nil {

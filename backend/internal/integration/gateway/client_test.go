@@ -10,6 +10,7 @@ import (
 	"time"
 
 	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/platform/serviceclient"
 )
 
@@ -83,7 +84,8 @@ func TestRequestStopRequiresAcceptedResponse(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"accepted":true,"stopped":false,"command_id":"stop-command","status":"pending"}}`))
 	})
 	result, err := client.RequestStop(context.Background(), gatewaycontract.StopRequest{OrderNo: "C-1", UserID: 9007199254740993, Source: gatewaycontract.StopSourceAuto})
-	if err != nil || !result.Accepted || result.Stopped || result.CommandID != "stop-command" || result.Status != "pending" {
+	// Go 侧比较使用 devices.StopCommandPending；报文中的 status 保持线上的字面量不变。
+	if err != nil || !result.Accepted || result.Stopped || result.CommandID != "stop-command" || result.Status != devices.StopCommandPending {
 		t.Fatalf("acceptance=%+v err=%v", result, err)
 	}
 }
@@ -176,18 +178,19 @@ func TestClientRejectsInvalidConfigurationAndBatchWithoutCallingServer(t *testin
 // TestRequestStartChecksOrderAndReceiptFact 验证启动请求只提交订单号，响应中的 acked 与命令状态一致。
 // 本地响应不代表实际设备确认。
 func TestRequestStartChecksOrderAndReceiptFact(t *testing.T) {
-	for _, status := range []string{"pending", "sent", "stopping", "acked"} {
-		t.Run(status, func(t *testing.T) {
+	// 启动命令词表取自 devices.ChargeCommandStatus（含 stopping）。
+	for _, status := range []devices.ChargeCommandStatus{devices.CommandPending, devices.CommandSent, devices.CommandStopping, devices.CommandAcked} {
+		t.Run(string(status), func(t *testing.T) {
 			client := clientForServer(t, func(w http.ResponseWriter, r *http.Request) {
 				var body map[string]json.RawMessage
 				if r.Method != http.MethodPost || r.URL.Path != "/api/v1/internal/charge-orders/start" || r.Header.Get("X-Service-Token") != "test-service-token" || json.NewDecoder(r.Body).Decode(&body) != nil || len(body) != 1 || string(body["order_no"]) != `"C-1"` {
 					t.Error("start request differs from contract")
 				}
 				w.WriteHeader(http.StatusAccepted)
-				_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"order_no": "C-1", "command_id": "cmd-1", "status": status, "device_acknowledged": status == "acked"}})
+				_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"order_no": "C-1", "command_id": "cmd-1", "status": status, "device_acknowledged": status == devices.CommandAcked}})
 			})
 			data, err := client.RequestStart(context.Background(), gatewaycontract.StartRequest{OrderNo: "C-1"})
-			if err != nil || data.OrderNo != "C-1" || data.CommandID != "cmd-1" || data.Status != status || data.DeviceAcknowledged != (status == "acked") {
+			if err != nil || data.OrderNo != "C-1" || data.CommandID != "cmd-1" || data.Status != status || data.DeviceAcknowledged != (status == devices.CommandAcked) {
 				t.Fatalf("acceptance=%+v err=%v", data, err)
 			}
 		})

@@ -1,6 +1,9 @@
 package gateway
 
-import "time"
+import (
+	"chargepilot/internal/domain/devices"
+	"time"
+)
 
 const (
 	ProvisionPath = "/api/v1/internal/devices/provision" // 保存设备和端口配置的内部接口
@@ -28,15 +31,15 @@ type ProvisionReply struct {
 
 // VendorReply 返回厂商的公开配置，省略适配器私有配置和密钥。
 type VendorReply struct {
-	ID           uint64     `json:"id"`            // 厂商 ID
-	VendorCode   string     `json:"vendor_code"`   // 创建后不可变的厂商编码
-	VendorName   string     `json:"vendor_name"`   // 当前可见名称
-	AdapterClass string     `json:"adapter_class"` // 适配器名称，用于检查设备支持的功能
-	Protocol     string     `json:"protocol"`      // tcp／mqtt／hybrid，运行设备开通目前要求 tcp
-	Status       string     `json:"status"`        // enabled／disabled
-	EnabledAt    *time.Time `json:"enabled_at"`    // 最近启用时刻，未启用可空
-	CreatedAt    time.Time  `json:"created_at"`    // 创建时间，UTC
-	UpdatedAt    time.Time  `json:"updated_at"`    // 最近修改时间，UTC
+	ID           uint64                 `json:"id"`            // 厂商 ID
+	VendorCode   string                 `json:"vendor_code"`   // 创建后不可变的厂商编码
+	VendorName   string                 `json:"vendor_name"`   // 当前可见名称
+	AdapterClass string                 `json:"adapter_class"` // 适配器名称，用于检查设备支持的功能
+	Protocol     devices.VendorProtocol `json:"protocol"`      // tcp／mqtt／hybrid，运行设备开通目前要求 tcp
+	Status       devices.VendorStatus   `json:"status"`        // enabled／disabled
+	EnabledAt    *time.Time             `json:"enabled_at"`    // 最近启用时刻，未启用可空
+	CreatedAt    time.Time              `json:"created_at"`    // 创建时间，UTC
+	UpdatedAt    time.Time              `json:"updated_at"`    // 最近修改时间，UTC
 }
 
 // VendorFailure 保存可向调用方返回的 HTTP 状态、业务错误码和提示。
@@ -51,20 +54,20 @@ func (e *VendorFailure) Error() string { return e.Message }
 
 // VendorRequest 提交厂商配置；服务端校验格式，禁止修改厂商编码，并检查协议能否更换。
 type VendorRequest struct {
-	VendorCode   string `json:"vendor_code"`   // 厂商编码，创建后不可改
-	VendorName   string `json:"vendor_name"`   // 可见名称，服务端去空白并校验
-	AdapterClass string `json:"adapter_class"` // 适配器标签
-	Protocol     string `json:"protocol"`      // tcp／mqtt／hybrid，网关检查是否支持该协议
-	Status       string `json:"status"`        // enabled／disabled
+	VendorCode   string                 `json:"vendor_code"`   // 厂商编码，创建后不可改
+	VendorName   string                 `json:"vendor_name"`   // 可见名称，服务端去空白并校验
+	AdapterClass string                 `json:"adapter_class"` // 适配器标签
+	Protocol     devices.VendorProtocol `json:"protocol"`      // tcp／mqtt／hybrid，网关检查是否支持该协议
+	Status       devices.VendorStatus   `json:"status"`        // enabled／disabled
 }
 
 // VendorListRequest 指定厂商列表的分页和筛选条件。
 type VendorListRequest struct {
-	Page     int      // 起始页码，从 1 开始
-	PageSize int      // 每页条数，1 至 100
-	Keyword  string   // 搜索关键词；客户端仅 URL 编码，SQL LIKE 转义由 gateway 仓储处理
-	Status   string   // 空、enabled 或 disabled
-	IDs      []uint64 // 当前账号的厂商范围，空表示不限定厂商
+	Page     int                  // 起始页码，从 1 开始
+	PageSize int                  // 每页条数，1 至 100
+	Keyword  string               // 搜索关键词；客户端仅 URL 编码，SQL LIKE 转义由 gateway 仓储处理
+	Status   devices.VendorStatus // 零值（空）、enabled 或 disabled
+	IDs      []uint64             // 当前账号的厂商范围，空表示不限定厂商
 }
 
 // VendorListReply 返回厂商列表和分页信息；账号权限由 central 校验。

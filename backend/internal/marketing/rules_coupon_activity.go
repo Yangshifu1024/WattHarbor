@@ -6,17 +6,10 @@ import (
 )
 
 // 活动触发类型决定金额门槛和邀请人券的必填要求。
+// 触发类型的类型、常量与词表边界见 status.go 的 TriggerType。
 
 // ErrActivityRule 表示活动参数不合法。
 var ErrActivityRule = errors.New("invalid activity rule")
-
-// 活动支持的触发类型。
-const (
-	TriggerFirstRecharge   = "first_recharge"   // 首充
-	TriggerInviteReward    = "invite_reward"    // 邀请有奖
-	TriggerThresholdRedeem = "threshold_redeem" // 满减
-	TriggerHoliday         = "holiday"          // 节日
-)
 
 // MaxActivityHorizon 是活动结束时间距今的上限。
 const MaxActivityHorizon = 365 * 24 * time.Hour
@@ -25,23 +18,27 @@ const MaxActivityHorizon = 365 * 24 * time.Hour
 const MaxActivityNameLength = 128
 
 // ActivityRule 是活动规则的待校验参数。
+// TriggerType 对应 coupon_activity_rule.trigger_type，Status 对应同表 status 列；
+// 与券模板的 DiscountType、CouponStatus 不同表不同义，不得互换。
 type ActivityRule struct {
-	Name            string  // 活动名称
-	TriggerType     string  // 触发类型
-	CouponID        uint64  // 活动发放的券
-	InviterCouponID *uint64 // 邀请人奖励券；邀请有奖必填
-	ThresholdCents  int64   // 触发门槛（分）
-	MaxGrants       int     // 同券模板和发放来源共享的份数上限，0 表示不限
-	PerUserLimit    int     // 单用户可领份数，0 沿用默认一份
-	Status          string  // active / disabled；留空时按 active 处理
-	StartAt         string  // RFC3339
-	EndAt           string  // RFC3339
+	Name            string         // 活动名称
+	TriggerType     TriggerType    // 触发类型：coupon_activity_rule.trigger_type
+	CouponID        uint64         // 活动发放的券
+	InviterCouponID *uint64        // 邀请人奖励券；邀请有奖必填
+	ThresholdCents  int64          // 触发门槛（分）
+	MaxGrants       int            // 同券模板和发放来源共享的份数上限，0 表示不限
+	PerUserLimit    int            // 单用户可领份数，0 沿用默认一份
+	Status          ActivityStatus // coupon_activity_rule.status；留空时按 active 处理
+	StartAt         string         // RFC3339
+	EndAt           string         // RFC3339
 }
 
 // NormalizeActivity 校验活动并将时间统一为 UTC，空状态默认 active。
 // 满减门槛须为正，首充和节日门槛须为零；邀请奖励须配置邀请人券，金额门槛只要求非负。
 // 结束时间不得超过调用方提供的当前时间 365 天后。
-func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, string, error) {
+// 返回的 ActivityStatus 即 coupon_activity_rule.status 的写入值：空状态归一为
+// ActivityActive，其余只接受 ActivityStatus.Known() 覆盖的两值。
+func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, ActivityStatus, error) {
 	var zero time.Time
 	if rule.Name == "" || len([]rune(rule.Name)) > MaxActivityNameLength {
 		return zero, zero, "", ErrActivityRule
@@ -84,9 +81,9 @@ func NormalizeActivity(rule ActivityRule, now time.Time) (time.Time, time.Time, 
 	}
 	status := rule.Status
 	if status == "" {
-		status = "active"
+		status = ActivityActive
 	}
-	if status != "active" && status != "disabled" {
+	if !status.Known() {
 		return zero, zero, "", ErrActivityRule
 	}
 	return start.UTC(), end.UTC(), status, nil
@@ -116,7 +113,9 @@ func PerUserAllowance(perUserLimit int) int {
 }
 
 // InviteEligible 仅对邀请奖励检查非空邀请人和禁止自邀，其他触发不受邀请关系限制。
-func InviteEligible(triggerType string, inviterID, userID uint64) bool {
+// triggerType 取自 coupon_activity_rule.trigger_type；TriggerInviteReward 与
+// marketingdomain.GrantSourceInviteReward 同值但不同义，此处只比较触发类型。
+func InviteEligible(triggerType TriggerType, inviterID, userID uint64) bool {
 	if triggerType != TriggerInviteReward {
 		return true
 	}

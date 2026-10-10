@@ -25,7 +25,7 @@ func (s UserCardRepo) LockUserCard(tx *gorm.DB, cardNo string, userID uint64) (O
 
 // SetUserCardStatus 在事务中为已锁定 card 写 status，并以 userID 记录 user_ 前缀审计。
 // 返回状态或审计数据库错误；调用方核对归属及允许状态，任一步失败回滚，不提交或改写余额。
-func (s UserCardRepo) SetUserCardStatus(tx *gorm.DB, card OnlineCard, userID uint64, status string) error {
+func (s UserCardRepo) SetUserCardStatus(tx *gorm.DB, card OnlineCard, userID uint64, status CardStatus) error {
 	if err := tx.Model(&card).Update("status", status).Error; err != nil {
 		return err
 	}

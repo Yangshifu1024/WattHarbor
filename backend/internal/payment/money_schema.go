@@ -13,7 +13,7 @@ type PaymentOrderRecord struct {
 	BizType             money.PaymentBizType `gorm:"column:biz_type"`                 // charge 或 wallet_recharge，决定到账用例
 	BizID               uint64               `gorm:"column:biz_id"`                   // 业务 ID；未建充电订单或充值时为 0
 	UserID              uint64               `gorm:"column:user_id"`                  // 支付所属用户，必须与通知及意图一致
-	PayMethod           string               `gorm:"column:pay_method"`               // 支付渠道，保留发起时值
+	PayMethod           money.PayMethod      `gorm:"column:pay_method"`               // payment_order.pay_method；wechat、balance、mixed 或 coupon
 	TotalCents          int64                `gorm:"column:total_cents"`              // 申请总额，分，到账金额须严格匹配
 	PaidCents           int64                `gorm:"column:paid_cents"`               // 已确认到账金额，分
 	RefundedCents       int64                `gorm:"column:refunded_cents"`           // 渠道已确认退回的累计金额，分
@@ -29,33 +29,33 @@ func (PaymentOrderRecord) TableName() string { return "payment_order" }
 
 // PaymentIntentRecord 冻结支付申请的端口、价格与关联；回调只能按标识到账或转退款。
 type PaymentIntentRecord struct {
-	OfferID            sql.NullInt64 `gorm:"column:offer_id"`             // 冻结套餐 ID；历史非套餐意图可空
-	IntentID           string        `gorm:"column:intent_id;primaryKey"` // 支付意图 UUID，业务主键
-	ClientRequestID    string        `gorm:"column:client_request_id"`    // 用户范围内的客户端 UUID，相同内容重放
-	MerchantOrderNo    string        `gorm:"column:merchant_order_no"`    // 与支付单相同的商户单号
-	PaymentOrderID     uint64        `gorm:"column:payment_order_id"`     // 关联支付主键，不允许回调换单
-	UserID             uint64        `gorm:"column:user_id"`              // 支付所属用户，必须与通知及意图一致
-	OpenID             string        `gorm:"column:openid"`               // 付款人微信身份，敏感值不得公开
-	DeviceID           string        `gorm:"column:device_id"`            // 冻结目标设备编号
-	PortNo             uint8         `gorm:"column:port_no"`              // 冻结设备端口号，从 1 开始
-	PortCode           string        `gorm:"column:port_code"`            // 冻结端口业务编码
-	StationID          uint64        `gorm:"column:station_id"`           // 申请时保存的站点 ID
-	PricingRuleID      uint64        `gorm:"column:pricing_rule_id"`      // 首次申请采用的规则主键
-	PricingRuleVersion uint32        `gorm:"column:pricing_rule_version"` // 冻结规则版本，不随发布变化
-	PricingSnapshot    []byte        `gorm:"column:pricing_snapshot"`     // 首次申请的完整规则、套餐与费用估计 JSON
-	EstimatedKWh       string        `gorm:"column:estimated_kwh"`        // 预估电量十进制文本，单位 kWh
-	EstimatedMinutes   uint16        `gorm:"column:estimated_minutes"`    // 预估时长，分钟
-	ElectricCents      int64         `gorm:"column:electric_cents"`       // 冻结预估电费，分
-	ServiceCents       int64         `gorm:"column:service_cents"`        // 冻结预估服务费，分
-	TotalCents         int64         `gorm:"column:total_cents"`          // 优惠前估计总费，分；实付为该值减 DiscountCents
-	CouponGrantID      uint64        `gorm:"column:coupon_grant_id"`      // 冻结优惠券权益 ID，0 表示无券
-	DiscountCents      int64         `gorm:"column:discount_cents"`       // 冻结优惠减免，分
-	ChargeMode         uint8         `gorm:"column:charge_mode"`          // 设备执行模式，沿用冻结套餐定义
-	ChargeQuantity     uint16        `gorm:"column:charge_quantity"`      // 设备执行数量，单位由 ChargeMode 决定
-	Status             string        `gorm:"column:status"`               // initiated 待付、expired 过期、paid 正常到账或 refund_required 迟到需退款。注意本列是 charge_payment_intent.status，词表为 initiated/paid/expired/closed/refund_required，与 payment_order.status 不同，尚未类型化
-	ExpiresAt          time.Time     `gorm:"column:expires_at"`           // 意图有效期 UTC 时刻，过期付款转退款
-	PaidAt             sql.NullTime  `gorm:"column:paid_at"`              // 渠道确认 UTC 时刻；未到账为空
-	ChargeOrderID      sql.NullInt64 `gorm:"column:charge_order_id"`      // 到账后创建的充电订单；迟到支付或未到账为空
+	OfferID            sql.NullInt64             `gorm:"column:offer_id"`             // 冻结套餐 ID；历史非套餐意图可空
+	IntentID           string                    `gorm:"column:intent_id;primaryKey"` // 支付意图 UUID，业务主键
+	ClientRequestID    string                    `gorm:"column:client_request_id"`    // 用户范围内的客户端 UUID，相同内容重放
+	MerchantOrderNo    string                    `gorm:"column:merchant_order_no"`    // 与支付单相同的商户单号
+	PaymentOrderID     uint64                    `gorm:"column:payment_order_id"`     // 关联支付主键，不允许回调换单
+	UserID             uint64                    `gorm:"column:user_id"`              // 支付所属用户，必须与通知及意图一致
+	OpenID             string                    `gorm:"column:openid"`               // 付款人微信身份，敏感值不得公开
+	DeviceID           string                    `gorm:"column:device_id"`            // 冻结目标设备编号
+	PortNo             uint8                     `gorm:"column:port_no"`              // 冻结设备端口号，从 1 开始
+	PortCode           string                    `gorm:"column:port_code"`            // 冻结端口业务编码
+	StationID          uint64                    `gorm:"column:station_id"`           // 申请时保存的站点 ID
+	PricingRuleID      uint64                    `gorm:"column:pricing_rule_id"`      // 首次申请采用的规则主键
+	PricingRuleVersion uint32                    `gorm:"column:pricing_rule_version"` // 冻结规则版本，不随发布变化
+	PricingSnapshot    []byte                    `gorm:"column:pricing_snapshot"`     // 首次申请的完整规则、套餐与费用估计 JSON
+	EstimatedKWh       string                    `gorm:"column:estimated_kwh"`        // 预估电量十进制文本，单位 kWh
+	EstimatedMinutes   uint16                    `gorm:"column:estimated_minutes"`    // 预估时长，分钟
+	ElectricCents      int64                     `gorm:"column:electric_cents"`       // 冻结预估电费，分
+	ServiceCents       int64                     `gorm:"column:service_cents"`        // 冻结预估服务费，分
+	TotalCents         int64                     `gorm:"column:total_cents"`          // 优惠前估计总费，分；实付为该值减 DiscountCents
+	CouponGrantID      uint64                    `gorm:"column:coupon_grant_id"`      // 冻结优惠券权益 ID，0 表示无券
+	DiscountCents      int64                     `gorm:"column:discount_cents"`       // 冻结优惠减免，分
+	ChargeMode         uint8                     `gorm:"column:charge_mode"`          // 设备执行模式，沿用冻结套餐定义
+	ChargeQuantity     uint16                    `gorm:"column:charge_quantity"`      // 设备执行数量，单位由 ChargeMode 决定
+	Status             money.PaymentIntentStatus `gorm:"column:status"`               // charge_payment_intent.status；initiated 待付、expired 过期、paid 正常到账或 refund_required 迟到需退款。与 payment_order.status 是两套词表，不得互相赋值
+	ExpiresAt          time.Time                 `gorm:"column:expires_at"`           // 意图有效期 UTC 时刻，过期付款转退款
+	PaidAt             sql.NullTime              `gorm:"column:paid_at"`              // 渠道确认 UTC 时刻；未到账为空
+	ChargeOrderID      sql.NullInt64             `gorm:"column:charge_order_id"`      // 到账后创建的充电订单；迟到支付或未到账为空
 }
 
 // TableName 返回 PaymentIntentRecord 所属表名。

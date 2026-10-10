@@ -1,8 +1,10 @@
 package wallet
 
 import (
+	identitydomain "chargepilot/internal/domain/identity"
 	"chargepilot/internal/domain/money"
 	"chargepilot/internal/domain/operations"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"chargepilot/internal/ops"
 	"context"
 	"database/sql"
@@ -45,7 +47,7 @@ func (s RiskService) List(ctx context.Context, actor operations.Profile, status 
 		row["release"] = riskReceipt(row["release_json"])
 		row["can_review"] = (actor.Role == "customer_finance" || actor.Role == "customer_cs") && actor.HasPermission("finance.wallet_risk.review")
 		row["freeze_linked"] = row["freeze_id"] != nil
-		row["can_release"] = actor.Role == "customer_finance" && actor.HasPermission("finance.wallet_risk.release") && row["review"] != nil && row["release"] == nil && riskText(row["freeze_status"]) == "frozen" && riskText(row["trigger_rule"]) == "wallet_refund_frequency"
+		row["can_release"] = actor.Role == "customer_finance" && actor.HasPermission("finance.wallet_risk.release") && row["review"] != nil && row["release"] == nil && riskText(row["freeze_status"]) == string(walletdomain.FreezeFrozen) && riskText(row["trigger_rule"]) == "wallet_refund_frequency"
 		delete(row, "review_json")
 		delete(row, "release_json")
 		delete(row, "trigger_rule")
@@ -179,7 +181,7 @@ func (s RiskService) Release(ctx context.Context, audit ops.AuditContext, reques
 		if err != nil {
 			return err
 		}
-		if freeze.UserID != req.UserID || freeze.TriggerRule != "wallet_refund_frequency" || freeze.Status != "frozen" {
+		if freeze.UserID != req.UserID || freeze.TriggerRule != "wallet_refund_frequency" || freeze.Status != walletdomain.FreezeFrozen {
 			return operations.ErrConflict
 		}
 		if err := store.Unfreeze(tx, freeze.ID, time.Now().UTC()); err != nil {
@@ -193,7 +195,9 @@ func (s RiskService) Release(ctx context.Context, audit ops.AuditContext, reques
 		if err != nil {
 			return err
 		}
-		restore := active == 0 && userStatus == "active"
+		// 两个 active 分属两列：active 是 wallet_account.status 的无冻结结论，
+		// userStatus 是 user.status 的账号状态。取值串相同但必须分别判定，不得合并。
+		restore := active == 0 && userStatus == identitydomain.UserActive
 		if restore {
 			if err := store.ActivateWallet(tx, w.ID); err != nil {
 				return err

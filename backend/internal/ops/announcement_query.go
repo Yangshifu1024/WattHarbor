@@ -45,8 +45,8 @@ func (s AnnouncementQueryService) StationAnnouncements(ctx context.Context, stat
 func publicAnnouncements(rows []announcementQueryRow, stationID uint64) []PublicAnnouncement {
 	items := []PublicAnnouncement{}
 	for _, row := range rows {
-		visible := row.Scope == "global"
-		if !visible && row.Scope == "station" && stationID != 0 && row.RawIDs != nil {
+		visible := row.Scope == AnnouncementScopeGlobal
+		if !visible && row.Scope == AnnouncementScopeStation && stationID != 0 && row.RawIDs != nil {
 			var ids []string
 			if json.Unmarshal([]byte(*row.RawIDs), &ids) == nil {
 				for _, id := range ids {

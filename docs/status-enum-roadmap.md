@@ -1,6 +1,6 @@
 # 状态与枚举类型收敛路线图
 
-状态：方案阶段，尚未实施。依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件。
+状态：P0 与 P1 批次已实施；P2 仍未实施。P0 依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件；P1 于实施前以当前 HEAD 的完整 import 图逐条复核了第 5.2 节的归属结论，修正结果见 8.4 节。
 
 本文负责状态与枚举类型的记录维度、放置规则、依赖可行性、逐项清单、分批顺序与验收标准。经四轮复审修订，各项设计决定已就地写入正文对应章节；尚待核验的事实与待独立处理的缺陷分别记在第 10 节。仓库维护规则见 [AGENTS.md](../AGENTS.md)，代码边界见 [架构边界与组织约束](architecture-boundaries.md)。
 
@@ -98,6 +98,8 @@ m := map[string]Status{"a": "paid"}      // map 字面量
 **判定前必须检查完整依赖路径**：新增消费方 `C → T` 之前，确认不存在 `T → … → C` 的传递路径。**任何常量引用都产生 Go 包依赖，与是否声明结构体字段无关**——包括把 SQL 参数、函数实参、比较表达式中的字符串换成常量。SQL 聚合不构成例外：`internal/ops/dashboard_repo.go:89` 的 `status IN ('active','acknowledged')` 按第 7 节收敛为常量后即需导入目标包。
 
 已核实会成环的组合（⚠），均须上提至 domain：
+
+> **本表为 2026-10-10 的判定。P1 实施前以当前 import 图复核后发现四行已不成立**（`wallet`、`settlement`、`ExecutionPolicy`、`gateway.*`），逐条修正与证据见 [8.3.1 P1 实施前的依赖复核修正](#831-p1-实施前的依赖复核修正)。复核后本表仍成立的行继续适用。
 
 | 若类型放在 | 冲突消费方 | 既有反向依赖 |
 | --- | --- | --- |
@@ -235,62 +237,113 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 ### 8.2 P1 · 主体持久化枚举
 
-| 枚举 | 数据库列与存储 | 产生方式 | Go 字段（待复核） | 目标类型与归属 | 批次 | 完成 |
+> **本批已实施并通过第 9 节基础入口**（`node tasks.mjs check`、`build-all`；真库集成未执行，边界见 9 节）。行号已随改动漂移，核对时以「文件 + 字段名」定位，不要以行号为准；「目标类型与归属」列的四行经复核后已修正，与当前代码一致。
+
+| 枚举 | 数据库列与存储 | 产生方式 | Go 字段（已复核） | 目标类型与归属 | 批次 | 完成 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 用户状态与性别 | `user.status`／`gender` ENUM 2 值／3 值 | 业务写入 | `identity/user_schema.go:21`、`charge_user_repo.go:23`；跨域 card／ops／payment／wallet | `domain/identity.UserStatus`／`Gender`（wallet 冲突） | P1 | ☐ |
-| 设备运营状态 | `device_meta.status` ENUM 4 值 | 业务写入 | `device/device_repo.go:30`、`operation_repo.go:54`、`domain/money/scan.go:11,19` | **`domain/devices.DeviceMetaStatus`**（device→ops 冲突，且 domain 不得引用 device） | P1 | ☐ |
-| 告警状态与级别 | `alert_event.status`／`severity` ENUM 4 值／3 值 | 业务写入 | `device/alert_repo.go:72`；`ops/dashboard_repo.go:89` 引用常量 | **`domain/devices.AlertStatus`**／`AlertSeverity`（device→ops 冲突） | P1 | ☐ |
-| 充电命令状态 | `charge_command.status` ENUM 5 值含 `stopping` | 业务写入＋设备回执 | `gateway/repo/gorm_models.go:67`；经 contracts `charging.go:99` | **`domain/devices.ChargeCommandStatus`**（gateway／contracts 冲突） | P1 | ☐ |
-| 停机命令状态 | `charge_stop_command.status` ENUM 4 值无 `stopping` | 同上 | `gateway/repo/gorm_models.go:106`；经 contracts `charging.go:86` | **`domain/devices.StopCommandStatus`**（独立类型，不与启动命令取并集） | P1 | ☐ |
-| 数据范围类型 | `admin_data_scope.scope_type` ENUM 2 值 | 业务写入 | `ops/account_repo.go`、`account_management_repo.go`；`domain/operations/scope.go:5-6,16` 已有常量与字段 | **`domain/operations.ScopeType`**（就地升级已有 `ScopeStation`／`ScopeVendor`） | P1 | ☐ |
-| 刷卡事件投递 | `card_event_delivery.status` ENUM 2 值 | 业务写入 | `gateway` 投递仓储 | `gateway.CardDeliveryStatus` | P1 | ☐ |
-| 网关设备状态 | `gateway_db.device.status` ENUM 3 值 | 业务写入 | `gateway/repo` 会话与回填 | `gateway.DeviceStatus`（不与中央四值混用） | P1 | ☐ |
-| 厂商状态 | `vendor.status` ENUM 2 值 | 业务写入 | `gateway/repo/provision_repo.go:48,149,167,285`；**经 contracts** `contracts/gateway/provision.go:29-68`；`device/vendor.go:15-24`；`integration/gateway/vendor.go:23` | **`domain/devices.VendorStatus`**（contracts 与客户端均消费，筛选空串仍表示不筛选） | P1 | ☐ |
-| 厂商传输配置 | `vendor.protocol` ENUM 3 值含 `hybrid` | 业务写入 | `gateway/repo/provision_repo.go:147,283`；经 `contracts/gateway/provision.go:57` | **`domain/devices.VendorProtocol`**（不与会话传输取并集） | P1 | ☐ |
-| 会话传输方式 | `device_session.protocol` ENUM 2 值 `tcp`／`mqtt` | 业务写入＋连接建立 | `gateway/repo/session.go:22`；`protocol/session_audit.go:5-14` | **复用 `protocol.Transport`**（已有 `TransportTCP`／`TransportMQTT`） | P1 | ☐ |
-| 会话关闭原因 | `device_session.close_reason` VARCHAR | 业务写入 | `gateway/repo/session.go:32`；`protocol/session_audit.go:25` | **复用 `protocol.CloseReason`** | P1 | ☐ |
-| 设备事件类型 | `device_event.event_type` VARCHAR | 协议上报 | `gateway/repo/gorm_models.go:129` | **复用 `protocol.EventType`**（已有 11 个常量） | P1 | ☐ |
-| 网关 Outbox | `gateway_db.event_outbox.status` ENUM 3 值 | 业务写入 | `gateway/repo` outbox 仓储 | `gateway.OutboxStatus` | P1 | ☐ |
-| 设备计费方式 | `device_meta.charge_mode` **VARCHAR** | 业务写入 | 设备仓储投影 | 复用 `charging.ChargeMode` | P1 | ☐ |
-| 站点状态 | `station.status` ENUM 3 值 | 业务写入 | `device/station_repo.go:20`、`station.go:97` | `device.StationStatus` | P1 | ☐ |
-| 故障类型与来源 | `device_fault_report.fault_type`／`report_source` ENUM 5 值／3 值 | 业务写入 | `device/fault_report.go:23` | `device` 各自类型 | P1 | ☐ |
-| 设备导入任务 | `device_import.status` ENUM 3 值 | 业务写入 | `device/device_import.go:22` | `device.ImportStatus` | P1 | ☐ |
-| 设备事件 Outbox | `event_outbox.status`、`admin_event_outbox.status` ENUM 3 值 | 业务写入 | `delivery/events.go` 与各 outbox 仓储 | 各自所属包 | P1 | ☐ |
-| 支付方式 | `payment_order.pay_method` ENUM 4 值 | 业务写入 | `payment/money_schema.go:15`；跨域 wallet／order | `domain/money.PayMethod`（wallet 冲突） | P1 | ☐ |
-| 支付意图状态 | `charge_payment_intent.status` ENUM 5 值 | 业务写入 | `payment/money_schema.go:54`；跨域 charging／identity／order | `domain/money.PaymentIntentStatus`（order／identity 冲突） | P1 | ☐ |
-| 退款执行策略 | `refund_record.execution_policy` ENUM 2 值 | 业务写入 | `settlement/money_schema.go:37`；跨域 wallet | `domain/money.ExecutionPolicy`（wallet 冲突） | P1 | ☐ |
-| 计费任务状态 | `charge_billing_job.status` ENUM 3 值 | 业务写入；**跨域读模型** | `settlement/billing_job_repo.go:397`、`manual_repo.go:35`；`charging/query/user_repo.go:28-32` 的 `out.BillingStatus = job.Status`，`user.go:94,136` | `settlement.BillingJobStatus`（charging→settlement 直连，归属可留；**须同步类型化 charging 侧 `BillingStatus` 字段**） | P1 | ☐ |
-| 账单状态 | `charge_bill.status` ENUM 3 值 | 业务写入 | `settlement/bill_repo.go:37` | `settlement.BillStatus` | P1 | ☐ |
-| 计量核实状态 | `charge_meter_review.status` ENUM 3 值 | 业务写入 | `settlement/meter_review_repo.go:22` | `settlement.MeterReviewStatus` | P1 | ☐ |
-| 人工兜底单状态 | `manual_fee_review.status` ENUM 2 值 | 业务写入 | `settlement/refund_review_list_repo.go:47` | `settlement` 包内 | P1 | ☐ |
-| 发票类型与审核 | `invoice_request.invoice_type`／`review_status`、`invoice_admin_review.review_status` | 业务写入 | `settlement/invoice.go:38,48`、`invoice_repo.go:44,53` | `settlement` 各自类型（两张表集合不同） | P1 | ☐ |
-| 钱包账户状态 | `wallet_account.status` ENUM 2 值 | 业务写入 | `wallet/wallet_account_repo.go:18` 等 4 处；跨域 card／identity | `wallet.WalletStatus`（无冲突） | P1 | ☐ |
-| 钱包流水方向与业务类型 | `wallet_txn.direction`／`biz_type` ENUM 2 值／7 值 | 业务写入 | `wallet/wallet_ledger_repo.go:62`（写入 `:73`） | `wallet` 各自类型（见 5.3） | P1 | ☐ |
-| 风险冻结记录 | `risk_freeze_log.status` ENUM 2 值 | 业务写入 | `wallet/admin_wallet_risk_repo.go:32` | `wallet.FreezeStatus` | P1 | ☐ |
-| 在线卡状态 | `online_card.status` ENUM 4 值 | 业务写入 | `card/card_schema.go:16`、`admin.go:27` | `card.CardStatus`（跨域消费方按 5.2 复核） | P1 | ☐ |
-| 营销模板与活动状态 | `coupon.status`、`coupon_activity_rule.status` ENUM 2 值 | 业务写入 | `marketing/coupon.go:35,43`、`activity.go:21,37` | **分立**为 `marketing` 两个类型 | P1 | ☐ |
-| 优惠类型 | `coupon.discount_type` ENUM 3 值 | 业务写入 | `marketing/coupon.go:27` | `marketing.DiscountType` | P1 | ☐ |
-| 活动触发类型 | `coupon_activity_rule.trigger_type` ENUM 4 值 | 业务写入 | `marketing/rules_coupon_activity.go:14-19` | `marketing.TriggerType`（已有无类型常量） | P1 | ☐ |
-| 反馈状态与分类 | `feedback.status`／`category` ENUM 3 值 | 业务写入 | `order/feedback_repo.go:20,77` | `order.FeedbackStatus`／`FeedbackCategory`（属 order 包，非 ops） | P1 | ☐ |
-| 公告状态与范围 | `announcement.status`／`scope` ENUM 3 值 | 业务写入 | `ops/announcement_repo.go:18`、`announcement.go:16` | `ops.AnnouncementStatus`／`Scope`（无冲突） | P1 | ☐ |
-| 后台账号状态 | `admin_user.status` ENUM 3 值 | 业务写入 | `ops/account_repo.go:24`、`account_management_repo.go:27` | `ops` 包内（无冲突） | P1 | ☐ |
-| 定价规则与模板状态 | `pricing_rule.status`、`pricing_template.status` ENUM 2 值 | 业务写入 | `pricing/pricing_scope_repo.go:14`、`scheme.go:42` | `pricing` 各自类型 | P1 | ☐ |
-| 导出任务状态与格式 | `export_task.status`／`file_format` ENUM 5 值／2 值 | 业务写入 | `export/export_task_repo.go:26`、`service.go:56` | `export` 各自类型 | P1 | ☐ |
-| 任务执行状态与触发来源 | `task_execution_log.status`／`triggered_by` ENUM 4 值／2 值 | 业务写入 | `worker/repo/schedule_repo.go:33,132` | `worker` 各自类型 | P1 | ☐ |
+| 用户状态与性别 | `user.status`／`gender` ENUM 2 值／3 值 | 业务写入 | `identity.UserAccount`、`charge_user_repo.go`；跨域 card／ops／payment／wallet | `domain/identity.UserStatus`／`Gender` | P1 | ☑ |
+| 设备运营状态 | `device_meta.status` ENUM 4 值 | 业务写入 | `device.Device.Status`、`operation_repo.go`、`money.ScanResult.DeviceStatus` | **`domain/devices.DeviceMetaStatus`**（`Known()` 四值 + `ManageWritable()` 两值） | P1 | ☑ |
+| 告警状态与级别 | `alert_event.status`／`severity` ENUM 4 值／3 值 | 业务写入 | `device.DeviceAlert.Status`；`ops/dashboard_repo.go` 与 `device/alert_repo.go` 绑定参数 | **`domain/devices.AlertStatus`**／`AlertSeverity` | P1 | ☑ |
+| 充电命令状态 | `charge_command.status` ENUM 5 值含 `stopping` | 业务写入＋设备回执 | `gateway/repo/gorm_models.go`、`sync_models.go`；经 contracts `charging.go` 与 `sync.go` | **`domain/devices.ChargeCommandStatus`** | P1 | ☑ |
+| 停机命令状态 | `charge_stop_command.status` ENUM 4 值无 `stopping` | 同上 | `gateway/repo/gorm_models.go`、`user_stop_repo.go`；经 contracts `charging.go` | **`domain/devices.StopCommandStatus`**（独立类型，未取并集） | P1 | ☑ |
+| 数据范围类型 | `admin_data_scope.scope_type` ENUM 2 值 | 业务写入 | `domain/operations/scope.go`（就地升级）；`ops/scope_repo.go` 的投影行 | **`domain/operations.ScopeType`** | P1 | ☑ |
+| 刷卡事件投递 | `card_event_delivery.status` ENUM 2 值 | 业务写入 | `gateway/repo/card_delivery_status.go`；`card_delivery_repo.go` 绑定参数与写入 | **`gateway/repo.CardDeliveryStatus`**（修正：原 `gateway.CardDeliveryStatus` 无处落地，见 8.4） | P1 | ☑ |
+| 网关设备状态 | `gateway_db.device.status` ENUM 3 值 | 业务写入 | `gateway/repo/backfill_repo.go`、`provision_repo.go` | **`domain/devices.GatewayDeviceStatus`**（改名避开中央四值，见 8.4） | P1 | ☑ |
+| 厂商状态 | `vendor.status` ENUM 2 值 | 业务写入 | `gateway/repo/provision_repo.go`；**经 contracts** `contracts/gateway/provision.go`；`device/vendor.go`；`integration/gateway/vendor.go` | **`domain/devices.VendorStatus`**（`Filtered()` 独立表达「空串=不筛选」） | P1 | ☑ |
+| 厂商传输配置 | `vendor.protocol` ENUM 3 值含 `hybrid` | 业务写入 | `gateway/repo/provision_repo.go`、`gateway/provision/vendors.go`；经 `contracts/gateway/provision.go` | **`domain/devices.VendorProtocol`**（不与会话传输取并集） | P1 | ☑ |
+| 会话传输方式 | `device_session.protocol` ENUM 2 值 `tcp`／`mqtt` | 业务写入＋连接建立 | `gateway/repo/session.go`、`session_repo.go` | **复用 `protocol.Transport`**（本批补 `Known()`） | P1 | ☑ |
+| 会话关闭原因 | `device_session.close_reason` VARCHAR 开放集合 | 业务写入 | `gateway/repo/session.go`、`session_repo.go`；`protocol.SessionRecord.CloseReason` | **复用 `protocol.CloseReason`**（本批新增 `CloseAbandoned`） | P1 | ☑ |
+| 设备事件类型 | `device_event.event_type` VARCHAR 开放集合 | 协议上报 | `gateway/repo/gorm_models.go` 与 `sync_models.go`（同列两处声明） | **复用 `protocol.EventType`** | P1 | ☑ |
+| 事件 Outbox | 三张表 `event_outbox.status`／`admin_event_outbox.status` ENUM 3 值 | 业务写入 | `ops/event_outbox_repo.go`；`worker/repo/outbox_repo.go` | **`ops.OutboxStatus`**（修正：见 8.4） | P1 | ☑ |
+| 设备计费方式 | `device_meta.charge_mode` **VARCHAR** | 业务写入 | `device/device_repo.go`、`device_import.go`、`import_repo.go` | 复用 `charging.ChargeMode`（本批连带将 `ValidDeviceChargeMode` 形参改为该类型） | P1 | ☑ |
+| 站点状态 | `station.status` ENUM 3 值 | 业务写入 | `device/station_repo.go`、`station.go`、`user_station_repo.go` 四处 SQL、`import_repo.go` | `device.StationStatus` | P1 | ☑ |
+| 故障类型与来源 | `device_fault_report.fault_type`／`report_source` ENUM 5 值／3 值 | 业务写入 | `device/fault_report.go`、`user_fault_repo.go` | `device.FaultType`／`ReportSource` | P1 | ☑ |
+| 设备导入任务 | `device_import.status` ENUM 3 值 | 业务写入 | `device/device_import.go`、`import_repo.go` | `device.ImportStatus` | P1 | ☑ |
+| 支付方式 | `payment_order.pay_method` ENUM 4 值 | 业务写入 | `payment/money_schema.go`；跨域 wallet／order | **`domain/money.PayMethod`** | P1 | ☑ |
+| 支付意图状态 | `charge_payment_intent.status` ENUM 5 值 | 业务写入 | `payment/money_schema.go`、`payment_intent_repo.go`、`payment_callback_repo.go` | **`domain/money.PaymentIntentStatus`** | P1 | ☑ |
+| 退款执行策略 | `refund_record.execution_policy` ENUM 2 值 | 业务写入 | `settlement/money_schema.go`、`refund_record_repo.go` 等；跨域 charging 一处 | **`domain/money.ExecutionPolicy`**（修正：「wallet 冲突」不成立，见 8.4） | P1 | ☑ |
+| 计费任务状态 | `charge_billing_job.status` ENUM 3 值 | 业务写入；**跨域读模型** | `settlement/billing_job_repo.go` 等；`charging/query/user_repo.go` 与 `user.go` | `settlement.BillingJobStatus`（charging 侧 `BillingStatus` 已同步类型化，**空串语义原样保留**） | P1 | ☑ |
+| 账单状态 | `charge_bill.status` ENUM 3 值 | 业务写入 | `settlement/bill_repo.go` | `settlement.BillStatus` | P1 | ☑ |
+| 计量核实状态 | `charge_meter_review.status` ENUM 3 值 | 业务写入 | `settlement/meter_review_repo.go` | `settlement.MeterReviewStatus` | P1 | ☑ |
+| 人工兜底单状态 | `manual_fee_review.status` ENUM 2 值 | 业务写入 | `settlement/refund_review_list_repo.go` | `settlement.ManualFeeReviewStatus` | P1 | ☑ |
+| 发票类型与审核 | `invoice_request.invoice_type`／`review_status`、`invoice_admin_review.review_status` | 业务写入 | `settlement/invoice.go`、`invoice_repo.go`、`invoice_review.go` | `settlement.InvoiceType`；两套 ReviewStatus **分立**（命名含表归属） | P1 | ☑ |
+| 钱包账户状态 | `wallet_account.status` ENUM 2 值 | 业务写入 | `wallet` 五处投影与写入；跨域 card／identity | **`domain/wallet.AccountStatus`**（修正：「无冲突」不成立，见 8.4） | P1 | ☑ |
+| 钱包流水方向与业务类型 | `wallet_txn.direction`／`biz_type` ENUM 2 值／7 值 | 业务写入 | `wallet/wallet_ledger_repo.go` | **`domain/wallet.TxnDirection`／`TxnBizType`**（见 5.3；与 `PaymentBizType` 分立） | P1 | ☑ |
+| 风险冻结记录 | `risk_freeze_log.status` ENUM 2 值 | 业务写入 | `wallet/admin_wallet_risk_repo.go`、`risk.go` | **`domain/wallet.FreezeStatus`** | P1 | ☑ |
+| 在线卡状态 | `online_card.status` ENUM 4 值 | 业务写入 | `card/card_schema.go`、`status.go`、`admin.go`；跨域 http | `card.CardStatus`（`UserWritable()` 两值 + `ManageWritable()` 四值） | P1 | ☑ |
+| 营销模板与活动状态 | `coupon.status`、`coupon_activity_rule.status` ENUM 2 值 | 业务写入 | `marketing/coupon.go`、`activity.go` 等 | **分立**为 `marketing.CouponStatus`／`ActivityStatus` | P1 | ☑ |
+| 优惠类型 | `coupon.discount_type` ENUM 3 值 | 业务写入 | `marketing/coupon.go`、`query.go` | `marketing.DiscountType` | P1 | ☑ |
+| 活动触发类型 | `coupon_activity_rule.trigger_type` ENUM 4 值 | 业务写入 | `marketing/rules_coupon_activity.go`；跨域 payment／settlement 各一处 | `marketing.TriggerType`（与 `GrantSourceInviteReward` 同值不同义，未合并） | P1 | ☑ |
+| 反馈状态与分类 | `feedback.status`／`category` ENUM 3 值 | 业务写入 | `order/feedback_repo.go`、`feedback.go` | `order.FeedbackStatus`／`FeedbackCategory`（列表读取仍不设白名单） | P1 | ☑ |
+| 公告状态与范围 | `announcement.status`／`scope` ENUM 3 值 | 业务写入 | `ops/announcement_repo.go`、`announcement.go`、`announcement_query_repo.go` | `ops.AnnouncementStatus`／`AnnouncementScope` | P1 | ☑ |
+| 后台账号状态 | `admin_user.status` ENUM 3 值 | 业务写入 | `ops/account_repo.go`、`account_management_repo.go`（三处投影） | `ops.AdminUserStatus`（入参 `*string` 指针语义保留） | P1 | ☑ |
+| 定价规则与模板状态 | `pricing_rule.status`、`pricing_template.status` ENUM 2 值 | 业务写入 | `pricing/pricing_scope_repo.go`、`scheme.go`、`query.go` | `pricing.PricingRuleStatus`／`PricingTemplateStatus`（删除路径空串行为未变） | P1 | ☑ |
+| 导出任务状态与格式 | `export_task.status`／`file_format` ENUM 5 值／2 值 | 业务写入 | `export/export_task_repo.go`、`service.go`、`artifact.go` | `export.ExportStatus`／`ExportFileFormat`（枚举外 `"pdf"` 历史兼容值保留） | P1 | ☑ |
+| 任务执行状态与触发来源 | `task_execution_log.status`／`triggered_by` ENUM 4 值／2 值 | 业务写入 | `worker/repo/schedule_repo.go` | `worker/repo.TaskExecutionStatus`／`TaskTriggeredBy`（写入路径仅测试调用，见 8.4.3） | P1 | ☑ |
 
 ### 8.3 P1 · 故障事件：按操作分别登记可写集合
 
-`device_fault_report_event.event_type` 为六值 ENUM（`migrations/central_db/0001_init.sql:438`）。**四值不是全局可写集合**：用户报修入口 `internal/device/user_fault_repo.go:36` 实际写入 `reported`，且 `from_status` 写空串。
+`device_fault_report_event.event_type` 为六值 ENUM（`migrations/central_db/0001_init.sql:439`，原记 438 为 `actor_id` 行）。**四值不是全局可写集合**：用户报修入口 `internal/device/user_fault_repo.go` 实际写入 `reported`，且 `from_status` 写空串。
 
 | 集合 | 取值 | 依据 |
 | --- | --- | --- |
-| 数据库合法集合 | `reported`、`dispatched`、`reassigned`、`fixed`、`closed`、`migration_baseline` | `migrations/central_db/0001_init.sql:438` |
-| 用户报修操作写入 | `reported`（`from_status` 空串、`to_status` `open`） | `internal/device/user_fault_repo.go:36` |
-| 后台处理操作写入 | `dispatched`、`reassigned`、`fixed`、`closed` | `internal/device/fault_repo.go:67` 注释与写入 |
+| 数据库合法集合 | `reported`、`dispatched`、`reassigned`、`fixed`、`closed`、`migration_baseline` | `migrations/central_db/0001_init.sql:439` |
+| 用户报修操作写入 | `reported`（`from_status` 空串、`to_status` `open`） | `internal/device/user_fault_repo.go` |
+| 后台处理操作写入 | `dispatched`、`reassigned`、`fixed`、`closed` | `internal/device/fault_repo.go` 注释与写入 |
 | `migration_baseline` | **来源待核**：当前无写入路径，保留为兼容读取 | — |
 
 - 目标类型 `device.FaultEventType`。**不提供以四值为准的统一写入校验**；若增加判定方法，按具体操作命名（如 `FaultEventType.BackgroundWritable()`）。
-- 事件的 `FromStatus`／`ToStatus`（`internal/device/fault_repo.go:68-69`，VARCHAR `:439-440`）**复用 `FaultStatus`**，保留现有空串与可空表示，**不得新增拒绝或转换为 `null`**。
+- 事件的 `FromStatus`／`ToStatus`（`internal/device/fault_repo.go`，VARCHAR `:439-440`）**复用 `FaultStatus`**，保留现有空串与可空表示，**不得新增拒绝或转换为 `null`**。
+
+### 8.3.1 P1 实施前的依赖复核修正
+
+第 5.2 节以 2026-10-10 的 import 图写成，P1 实施前以当前 HEAD（`5a5ac2c`）重新核对传递路径，**四处归属结论已不成立**。以复核结论为准，原表仅作历史记录。
+
+| 项 | 原结论 | 实测证据 | 本批处置 |
+| --- | --- | --- | --- |
+| 钱包账户状态 | 留 `wallet` 包「无冲突」 | `card/card_repo.go` 已有 `card → wallet`；`card/interface_query_repo.go` 的 SQL 需消费该列的 `'active'` | **上提 `domain/wallet.AccountStatus`** |
+| 结算五项 | 「均须上提至 domain」 | `wallet`、`payment`、`ops` 均未 import `settlement`；唯一跨包消费方是 `charging/query`（单向） | **留在 `settlement` 包**，仅同步 `charging/query` 的读模型字段 |
+| 退款执行策略 | 「wallet 冲突」 | `wallet` 的 `manual_review` 属 `wallet_refund.status` 另一词表（`wallet/query.go`、`wallet/refund.go`），与 `refund_record.execution_policy` 零类型交互；跨域只有 `charging/start` 一处写入 | **按实测归 `domain/money`**，并登记该词表不得与 `wallet_refund.status` 合并 |
+| `gateway.CardDeliveryStatus`／`gateway.DeviceStatus`／`gateway.OutboxStatus` | 留 `internal/gateway` 包 | **`internal/gateway` 是纯目录，没有根包**，三处归属无可落地的包 | 分别改判为 `gateway/repo.CardDeliveryStatus`、`domain/devices.GatewayDeviceStatus`、`ops.OutboxStatus` |
+
+**另外两项实测修正**：
+
+1. **中央四值与网关三值必须改名分立**。`domain/money` 已存在承载中央 `device_meta.status` 的 `DeviceStatus` 字段，网关 `device.status` 另建 `GatewayDeviceStatus`，两者在注释中互相点名，不得互相赋值。
+2. **`device/user_station_repo.go` 的三处 `status='active'` 查的是 `station` 表**，不是 `device_meta`（另有第四处在 `import_repo.go`）。原第 7 节把它们与其他设备字面量并列列举，未标表名，易被误读。已归入 `StationStatus`；同文件 `status<>'retired'` 才是 `device_meta`。
+
+**两处枚举在原盘点中被漏登，本批已补**：
+
+- `refund_review` 表**没有审核状态列**，只有两个签署人与 `approved_at`。`settlement/refund_review_repo.go` 的 `rejected`／`awaiting_second`／`approved` 是**由签署人字段推导的返回值**，不是数据库列；已定义 `settlement.RefundReviewOutcome` 描述「一次复核动作返回什么」，注释明确它不是列、且与 `money.RefundStatus` 分立。
+- `admin_data_scope.scope_type` 在生产代码中**只有读取**（唯一访问点 `ops/scope_repo.go`），写入全在测试夹具。原表标为「业务写入」不准确。
+
+### 8.3.2 P1 保留裸字面量的例外登记
+
+下列位置不属于本批枚举，或位于 SQL 语法内无法参数化，保留字面量并已在代码处标注理由：
+
+| 位置 | 保留理由 |
+| --- | --- |
+| `marketing/coupon_repo.go` 的 `c.status = 'active'`、`coupon_activity_repo.go` 的两处 `AND status='active'` | JOIN 与锁查询条件；拆分会改变查询计划与锁语义 |
+| `marketing/admin_coupon_repo.go` 的 `SUM(status='unused' …)` 等聚合 | `CASE`／聚合表达式内嵌在表达式里，不是可绑定参数；跨 `coupon_grant.status`（P0 的 `GrantStatus`） |
+| `settlement/refund_executor_repo.go` 的 `execution_policy='automatic'`、`meter_review_repo.go` 的 `status IN (...)`、`invoice_repo.go` 的 ON DUPLICATE 子句 | 同上，且与占位符同处一条 Raw SQL |
+| `identity/user_repo.go`、`identity/charge_user_repo.go` 的 `coupon_grant` 计数子查询 | `Raw` SQL 跨包直读库；P0 已登记 |
+| `device/user_station_repo.go` 四处 `status='active'`、`import_repo.go` 的一处 | `station` 表字面量，保留并注释指向 `StationStatus` |
+| `device/user_station_repo.go` 的 `status<>'retired'`、`import_repo.go` 的 `"status": "enabled"` | `device_meta` 表，属 `devices.DeviceMetaStatus`，不在该文件归属范围 |
+| `gateway/repo` 内的 `event_type = 'heartbeat'` 等 | SQL 谓词内字面量，保留并注释指向 `protocol.EventType` |
+| `gateway/repo` 内的 `status='pending'`／`IN ('sent','acked')` 等 | 同上，指向 `devices` 的命令状态词表 |
+| `export/artifact.go` 的 `format == "pdf"` | **枚举外的历史兼容值**，`export_task.file_format` 只有 csv／xlsx；该分支为存量数据兜底，不得纳入 `Known()` |
+| `settlement/billing_job_repo.go` 的 `Defer(..., status string, ...)` 形参 | 接口有四个集成测试替身实现它；本批在方法体内以 `BillingJobStatus(status)` 收敛，边界签名未动。**后续批次连同替身一并收敛** |
+| `settlement/invoice.go` 的 `InvoiceType string` | 公开 HTTP 入参边界；用例内以 `invoiceTypeOf()` 收敛，JSON 解码路径零变化 |
+| `worker/repo/schedule_repo.go` 的 `ExecutionLog.Status`／`TriggeredBy`、`FinishExecutionLog` 形参 | 调用方 `worker/schedule/scheduler.go` 把它们当 `string` 局部变量传递；本批定义类型词表并收敛 SQL 常量，字段类型待调用方收敛后一并处理 |
+| `persist.PageQuery.Status` | 跨业务共用的查询筛选项，被 coupon／activity_rule／export_task／feedback／user／vendor 等多家复用且各自白名单不同，**必须保持 `string`**，各用例在自己的校验处转换 |
+| `platform/auth/jwt.go` 的 `Kind` | 令牌载荷的签发方标识，取值 user／admin 属平台层自有约定，非数据库状态列 |
+
+### 8.3.3 P1 的空值与未装配边界
+
+- **`charging/query` 的 `billing_status` 空串必须原样出现在响应体**。该字段无 `omitempty`，且计费任务不存在时 `Status` 为空串——空串不是 `charge_billing_job.status` 的合法取值，`Known()` 对它返回 false 是正确的，**但不得据此拒绝、替换为 `null` 或改为指针**。本批已实测序列化结果为 `"billing_status":""`。
+- **`ops.AccountUpdateInput.Status` 与 `ops.EventOutboxRecord.Status` 保持指针语义**。前者以 `nil` 表示「不修改」，后者靠 `gorm:"default:pending"` 让数据库填充初值；改成值类型会把非法零值写进 ENUM 列。
+- **`task_execution_log` 的写入路径在生产中不会执行**。`cmd/worker/app.go` 的处理器登记表为空（`Handlers: map[string]schedule.Handler{}`），`CreateExecutionLog`／`FinishExecutionLog` 仅测试调用。类型化不代表该枚举已在线上运行。
+- **`pricing` 删除路径的空串行为未变**：`remove == true` 时跳过状态校验，空串由仓储写入 `disabled` 覆盖，不得在校验里拒绝空串。
+- **真库集成未执行**。本批涉及多处 GORM 投影列类型变更（指针 + 自定义类型、`gorm:"default"` 标签、ENUM 参数绑定），`node scripts/db/test-integration.mjs` 尚未运行，**这些行为无真实 MySQL 证据**，见第 9 节。
 
 ### 8.4 P2 · 派生值、外部输入与受限标签
 
@@ -344,6 +397,20 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 **文档同步时机**：首批实施并验收后，再把稳定的维护规则登记进 [AGENTS.md](../AGENTS.md)、把实际类型归属与依赖边界写入 [architecture-boundaries.md](architecture-boundaries.md)；本文保留逐项进度与验收证据。在此之前继续明确「尚未实施」，不得把目标写成当前保证。
 
+### 9.1 P0 与 P1 的执行记录
+
+**已取得证据**：`go build ./...`、`go vet ./...`（含全部 `_test.go`）、`node tasks.mjs check`（fmt + lint + test）、`node tasks.mjs build-all` 全部通过；`go mod tidy -diff` 无差异；`migrations/`、`go.mod`、`go.sum` 零改动；全仓无新增 `MarshalJSON`／`UnmarshalJSON`，无 JSON 标签改动。
+
+**审查**：两轮独立审查（首轮 2 个🔴 + 3 个🟡、复审 0 个🔴）已全部关闭。首轮的两个🔴 是 `card_event_delivery.status` 整项漏做，以及 `OutboxStatus` 在 `domain/devices` 与 `ops` 对同一列重复声明——后者正是第 7 节第 4 类残留（「同一枚举多处独立声明」），已删除前者，`ops` 为唯一声明点。
+
+**未取得的证据（不得当作通过）**：
+
+- **真库集成未执行**。本批变更大量涉及 GORM 投影列类型（指针 + 自定义类型、`gorm:"default:"` 标签、ENUM 参数绑定与 VARCHAR 未知值落库），`node scripts/db/test-integration.mjs` 尚未运行，上述行为**无真实 MySQL 证据**。
+- **确定性前后基线未执行**。尚未从同一起始快照分别跑改造前后的请求并逐字节比较。
+- **`task_execution_log` 无运行证据**，处理器登记表为空（见 8.3.3）。
+
+上述三项补齐前，本批的状态是「基础入口通过、真库与前后对比未验证」，不得表述为已完全验收。
+
 ## 10. 独立缺陷
 
 以下问题与类型化无关，混入会降低回归定位效率，**不纳入本方案**，建议单独处理。
@@ -352,5 +419,5 @@ func (s DeviceMetaStatus) ManageWritable() bool
    **已核验**：`rejected` 在钱包链路**不可达**。钱包退款单由 `internal/settlement/refund_creation_repo.go:31` 固定写为 `ExecutionPolicy: "automatic"`，而退款审核准入要求 `manual_review`（`internal/settlement/refund_review_repo.go:168`），因此该单进不了驳回路径；钱包风险审核拒绝时亦不创建分笔（`internal/wallet/risk.go:118-120`）。依据见第 12.2 节。
    **结论定性**：缺少 `rejected` 分支是已确认事实，但**不构成当前可达的展示缺陷**，不得写成「已确认线上错误」。历史数据或人工修改造成的异常需另行核验真实数据。核验与定性均待独立处理：若将来要支持异常分笔，先确定多分笔与风险审核的展示优先级，再补分支与测试。
    同一 `case` 中的 `needs_review` 作为**输出值**仍被 `internal/wallet/query_test.go:21` 覆盖，属有效逻辑，清理死输入时应与该修复一并处理。
-2. **声明错位**：`internal/identity/charge_user_repo.go:59` 的状态字段实为订单域枚举，却声明在 identity 包。收敛时应移交 order 域。
+2. **声明错位**：~~`internal/identity/charge_user_repo.go` 的状态字段实为订单域枚举，却声明在 identity 包。~~ **已在 P1 批次修复**：实际有三个字段（`Status`、`BusinessStatus`、`PaymentStatus`）而非一处，均改复用 `domain/order` 的既有类型（路线图原只登记了第一个，其余两处为复核时补登）。
 

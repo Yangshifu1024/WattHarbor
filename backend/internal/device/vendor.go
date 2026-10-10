@@ -6,6 +6,7 @@ import (
 	"log"
 
 	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/ops"
 	"chargepilot/internal/persist"
@@ -41,7 +42,7 @@ var ErrScopeConflict = errors.New("数据范围与现有记录冲突")
 
 // VendorQuery 将分页和账号厂商范围转为网关查询；不受限时不传范围 ID。
 func VendorQuery(page persist.PageQuery, scope operations.DataScope) contract.VendorListRequest {
-	q := contract.VendorListRequest{Page: page.Page, PageSize: page.PageSize, Keyword: page.Keyword, Status: page.Status}
+	q := contract.VendorListRequest{Page: page.Page, PageSize: page.PageSize, Keyword: page.Keyword, Status: devices.VendorStatus(page.Status)}
 	if !scope.Unrestricted && len(scope.VendorIDs) > 0 {
 		q.IDs = append([]uint64(nil), scope.VendorIDs...)
 	}
@@ -133,7 +134,7 @@ func (s VendorService) Save(ctx context.Context, audit ops.AuditContext, scope o
 
 // ValidateScope 检查范围类型及 1–500 个 ID 是否存在。
 // 厂商由网关核对总数，站点由中央仓储统计；按输入数量比对，不自动去重。
-func (s VendorService) ValidateScope(ctx context.Context, scopeType string, ids []uint64) error {
+func (s VendorService) ValidateScope(ctx context.Context, scopeType operations.ScopeType, ids []uint64) error {
 	if !operations.ValidScopeType(scopeType) || !operations.ValidScopeIDs(ids) {
 		return ErrScopeConflict
 	}

@@ -61,11 +61,14 @@ func (s FaultRepo) LockFault(tx *gorm.DB, id uint64) (FaultRow, error) {
 }
 
 // FaultEventInput 保存报修变更事件及是否对用户可见，须如实填写操作内容。
+// EventType 是 event_type 列的六值词表，不做统一写入校验：用户报修写 reported，
+// 后台处理写 dispatched／reassigned／fixed／closed，仓储层不对取值额外拒绝。
 type FaultEventInput struct {
-	ReportID    uint64      // 所属报修单
-	ActorID     uint64      // 操作的后台账号
-	EventType   string      // dispatched / reassigned / fixed / closed
-	FromStatus  FaultStatus // 流转前状态
+	ReportID uint64 // 所属报修单
+	ActorID  uint64 // 操作的后台账号
+	// event_type 与 FaultStatus 分立：reassigned、migration_baseline 不在报修单状态词表内。
+	EventType   FaultEventType
+	FromStatus  FaultStatus // 流转前状态；用户报修首条事件写空串，不是 null
 	ToStatus    FaultStatus // 流转后状态
 	AssignedTo  uint64      // 流转后的处理人
 	Note        *string     // 备注，可空

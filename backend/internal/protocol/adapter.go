@@ -118,6 +118,8 @@ const (
 	CloseReplaced CloseReason = "replaced"
 	// CloseContextEnded 表示服务取消了连接处理。
 	CloseContextEnded CloseReason = "context_ended"
+	// CloseAbandoned 表示写入会话记录时连接已不可达，由网关侧补记。
+	CloseAbandoned CloseReason = "abandoned"
 )
 
 // Adapter 处理一种厂商协议的设备连接。

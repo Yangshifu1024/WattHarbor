@@ -1,16 +1,18 @@
 package repo
 
 import (
-	"chargepilot/internal/domain/money"
 	"context"
 	"strconv"
 	"time"
+
+	"chargepilot/internal/domain/money"
 
 	"gorm.io/gorm"
 )
 
 // ListStartResults 查询已回执且到期的未上报启动命令，可按 commandID 筛选；最多 50 条。
 // 首投按命令更新时间、重试按持久到期时间共同排序，异常首批和持续新投递均不能挤掉另一类记录。
+// SQL 内 charge_command.status IN ('acked','rejected') 对应 devices.CommandAcked／CommandRejected。
 func ListStartResults(ctx context.Context, db *gorm.DB, commandID string) ([]SyncCommandRow, error) {
 	query := db.WithContext(ctx).Model(&SyncCommandRow{}).
 		Select("charge_command.*").
@@ -31,6 +33,7 @@ func MarkStartResultsReported(ctx context.Context, db *gorm.DB, commandIDs []str
 	marked := 0
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, id := range commandIDs {
+			// SQL 内 status IN ('acked','rejected') 对应 devices.CommandAcked／CommandRejected（charge_command.status）。
 			res := tx.Model(&SyncCommandRow{}).
 				Where("command_id = ? AND status IN ('acked','rejected') AND result_reported = FALSE", id).
 				Update("result_reported", true)
@@ -71,6 +74,7 @@ func MarkDeviceEventsProcessed(ctx context.Context, db *gorm.DB, ids []uint64) (
 // 首投接收时间与重试到期时间共同排序；不修改冻结载荷或事件处理状态。
 func ListUnprocessedEndEvents(ctx context.Context, db *gorm.DB) ([]SyncEventRow, error) {
 	var rows []SyncEventRow
+	// SQL 内 event_type = ? 传入 protocol.ChargeEnd；该列是 VARCHAR 开放集合。
 	err := db.WithContext(ctx).
 		Select("device_event.id, event_json").
 		Joins("LEFT JOIN sync_delivery_retry x ON x.kind='end' AND x.delivery_key=CAST(device_event.id AS CHAR CHARACTER SET ascii) COLLATE ascii_bin").
@@ -117,6 +121,7 @@ func ListMeterSamples(
 	endID uint64,
 ) ([]SyncEventRow, error) {
 	var rows []SyncEventRow
+	// SQL 内 event_type = ? 传入 protocol.Heartbeat；该列是 VARCHAR 开放集合。
 	err := db.WithContext(ctx).Select("id, event_json").
 		Where("device_id=? AND event_type='heartbeat' AND id<=? AND received_at>=? AND received_at<=?", device, endID, ackAt.UTC(), endAt.UTC()).
 		Order("id").Limit(10081).Find(&rows).Error

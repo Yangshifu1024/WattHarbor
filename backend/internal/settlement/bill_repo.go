@@ -34,7 +34,7 @@ type Bill struct {
 	ShortfallCents int64      `json:"shortfall_cents" gorm:"column:shortfall_cents"`   // 确定资金缺口，分
 	ChargedKWh     *string    `json:"charged_kwh" gorm:"column:charged_kwh"`           // 已确认累计电量，kWh 十进制文本，缺计量为空
 	ChargedSeconds *int64     `json:"charged_seconds" gorm:"column:charged_seconds"`   // 已确认充电时长，秒，缺计量为空
-	Status         string     `json:"status" gorm:"column:status"`                     // issued 已出账或 settled 已结清
+	Status         BillStatus `json:"status" gorm:"column:status"`                     // issued 已出账或 settled 已结清
 	IssuedAt       time.Time  `json:"issued_at" gorm:"column:issued_at"`               // 账单归属时刻，优先充电开始时刻
 	SettledAt      *time.Time `json:"settled_at" gorm:"column:settled_at"`             // 结清 UTC 时刻，未结清为空
 	Read           bool       `json:"read" gorm:"-"`                                   // 本用户是否已有已读凭据
@@ -109,7 +109,7 @@ func (s BillRepo) Issue(ctx context.Context, chargeOrderID uint64) (Bill, bool, 
 		"electric_cents": electric, "service_cents": service, "total_cents": total,
 		"prepaid_cents": prepaid, "refund_cents": refunded, "shortfall_cents": shortfall,
 		"charged_kwh": order.ChargedKWh, "charged_seconds": order.ChargedSeconds,
-		"status": "issued", "issued_at": issuedAt, "created_month": month,
+		"status": BillIssued, "issued_at": issuedAt, "created_month": month,
 	}
 	var billID uint64
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -184,8 +184,8 @@ func (s BillRepo) LoadByID(ctx context.Context, userID, billID uint64) (Bill, er
 // Settle 将 issued 账单改为 settled 并记录结清时间；调用方须先确认无未结金额。
 func (s BillRepo) Settle(ctx context.Context, chargeOrderID uint64) error {
 	return s.DB.WithContext(ctx).Table("charge_bill").
-		Where("charge_order_id = ? AND status = 'issued'", chargeOrderID).
-		Updates(map[string]any{"status": "settled", "settled_at": gorm.Expr("UTC_TIMESTAMP(3)")}).Error
+		Where("charge_order_id = ? AND status = ?", chargeOrderID, BillIssued).
+		Updates(map[string]any{"status": BillSettled, "settled_at": gorm.Expr("UTC_TIMESTAMP(3)")}).Error
 }
 
 // ListBills 按用户分页倒序读取账单并补充已读状态；已读查询失败时按未读展示。

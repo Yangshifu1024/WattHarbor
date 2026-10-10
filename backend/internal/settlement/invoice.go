@@ -34,8 +34,11 @@ func (s InvoiceService) List(ctx context.Context, userID uint64, page, pageSize 
 
 // InvoiceInput 是发票申请内容，金额由已保存的结算回执提供。
 type InvoiceInput struct {
-	RequestID   string `json:"request_id"`   // 客户端 UUID，派生发票号
-	OrderNo     string `json:"order_no"`     // 本用户同一订单号
+	RequestID string `json:"request_id"` // 客户端 UUID，派生发票号
+	OrderNo   string `json:"order_no"`   // 本用户同一订单号
+	// 公开入参保持裸 string：HTTP 层用通用白名单助手直接校验本字段，
+	// 取值集合同为 invoice_request.invoice_type 的 normal / vat_special。
+	// 进入用例后在 invoiceType() 处收敛为列类型 InvoiceType。
 	InvoiceType string `json:"invoice_type"` // normal 或 vat_special
 	Title       string `json:"title"`        // 发票抬头，规范化后 1–128 字
 	TaxNo       string `json:"tax_no"`       // 税号，最多 32 字
@@ -44,17 +47,17 @@ type InvoiceInput struct {
 
 // InvoiceApplication 返回申请结果，金额单位分，ID 使用整数。
 type InvoiceApplication struct {
-	InvoiceNo    string `json:"invoice_no"`    // 首次请求号派生的发票编号
-	ID           uint64 `json:"id"`            // 发票申请主键
-	ReviewStatus string `json:"review_status"` // 申请结果固定 pending
-	TotalCents   int64  `json:"total_cents"`   // 已确认费用回执的确定总额，分
+	InvoiceNo    string                     `json:"invoice_no"`    // 首次请求号派生的发票编号
+	ID           uint64                     `json:"id"`            // 发票申请主键
+	ReviewStatus InvoiceRequestReviewStatus `json:"review_status"` // 申请结果固定 pending
+	TotalCents   int64                      `json:"total_cents"`   // 已确认费用回执的确定总额，分
 }
 
 // Create 核对本人订单和结算回执后申请发票，金额不由客户端决定。
 // 一单只允许一份申请，同号同内容重放；成功只表示已申请，不代表已审核或开票。
 func (s InvoiceService) Create(ctx context.Context, userID uint64, in InvoiceInput) (InvoiceApplication, error) {
 	title := strings.TrimSpace(in.Title)
-	if userID == 0 || uuid.Validate(in.RequestID) != nil || strings.TrimSpace(in.OrderNo) == "" || (in.InvoiceType != "normal" && in.InvoiceType != "vat_special") || title == "" || len([]rune(title)) > 128 || len([]rune(in.TaxNo)) > 32 || len(in.Email) > 128 || (in.Email != "" && !strings.Contains(in.Email, "@")) {
+	if userID == 0 || uuid.Validate(in.RequestID) != nil || strings.TrimSpace(in.OrderNo) == "" || !invoiceTypeOf(in.InvoiceType).Known() || title == "" || len([]rune(title)) > 128 || len([]rune(in.TaxNo)) > 32 || len(in.Email) > 128 || (in.Email != "" && !strings.Contains(in.Email, "@")) {
 		return InvoiceApplication{}, ErrInvoiceInput
 	}
 	order, err := FindInvoiceableOrder(ctx, s.DB, in.OrderNo, userID)
@@ -82,10 +85,16 @@ func (s InvoiceService) Create(ctx context.Context, userID uint64, in InvoiceInp
 		if !invoiceableStatus(status) {
 			return ErrInvoiceUnfinished
 		}
-		id, err = ApplyInvoice(tx, InvoiceApplyInput{InvoiceNo: no, UserID: userID, OrderID: order.ID, TotalCents: total, InvoiceType: in.InvoiceType, Title: title, TaxNo: strings.TrimSpace(in.TaxNo), Email: strings.TrimSpace(in.Email)})
+		id, err = ApplyInvoice(tx, InvoiceApplyInput{InvoiceNo: no, UserID: userID, OrderID: order.ID, TotalCents: total, InvoiceType: invoiceTypeOf(in.InvoiceType), Title: title, TaxNo: strings.TrimSpace(in.TaxNo), Email: strings.TrimSpace(in.Email)})
 		return err
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-	return InvoiceApplication{InvoiceNo: no, ID: id, ReviewStatus: "pending", TotalCents: total}, err
+	return InvoiceApplication{InvoiceNo: no, ID: id, ReviewStatus: InvoiceRequestPending, TotalCents: total}, err
+}
+
+// invoiceTypeOf 将公开入参转为 invoice_request.invoice_type 的列类型；
+// 未知取值原样透传，由 Known() 决定是否拒绝，不做替换或降级。
+func invoiceTypeOf(value string) InvoiceType {
+	return InvoiceType(value)
 }
 
 // invoiceableStatus 判断订单是否已可开票：已完成、已受理退款或已退款都允许，

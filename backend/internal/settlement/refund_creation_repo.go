@@ -28,7 +28,7 @@ func (RefundRecorder) RecordLateInTx(tx *gorm.DB, in money.RefundDraft, eventID 
 // CreateInTx 登记 automatic/pending 退款并返回主键。
 // 调用方先锁钱包（适用时）和支付，核对额度；钱包预占在同一事务完成，错误整体回滚。
 func (RefundRecorder) CreateInTx(tx *gorm.DB, in money.RefundDraft) (uint64, error) {
-	r := RefundRecord{RefundNo: in.RefundNo, PaymentOrderID: in.PaymentOrderID, UserID: in.UserID, BizType: in.BizType, BizID: in.BizID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: money.RefundPending, ExecutionPolicy: "automatic", CreatedMonth: in.CreatedMonth, NextAttemptAt: in.NextAttemptAt}
+	r := RefundRecord{RefundNo: in.RefundNo, PaymentOrderID: in.PaymentOrderID, UserID: in.UserID, BizType: in.BizType, BizID: in.BizID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: money.RefundPending, ExecutionPolicy: money.ExecutionAutomatic, CreatedMonth: in.CreatedMonth, NextAttemptAt: in.NextAttemptAt}
 	if err := tx.Create(&r).Error; err != nil {
 		return 0, err
 	}

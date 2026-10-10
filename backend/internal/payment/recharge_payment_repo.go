@@ -43,7 +43,7 @@ func (RechargePaymentRepo) CreateInTx(tx *gorm.DB, userID uint64, amountCents in
 		return wallet.RechargePayment{}, err
 	}
 	now := time.Now().UTC()
-	r := PaymentOrderRecord{OrderNo: no, BizType: money.PaymentBizWalletRecharge, UserID: userID, PayMethod: "wechat", TotalCents: amountCents, Status: money.PayStatusInitiated, ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
+	r := PaymentOrderRecord{OrderNo: no, BizType: money.PaymentBizWalletRecharge, UserID: userID, PayMethod: money.PayMethodWechat, TotalCents: amountCents, Status: money.PayStatusInitiated, ExpiredAt: sql.NullTime{Time: now.Add(30 * time.Minute), Valid: true}, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)}
 	if err := tx.Create(&r).Error; err != nil {
 		return wallet.RechargePayment{}, err
 	}

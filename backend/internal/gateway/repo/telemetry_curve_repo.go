@@ -63,6 +63,8 @@ type HeartbeatSample struct {
 }
 
 // ListHeartbeatsInWindow 按 ID 升序查询时间闭区间内的心跳，并多取一条判断是否还有下一页。
+// SQL 内 event_type='heartbeat' 对应 protocol.Heartbeat；该列是 VARCHAR 开放集合，
+// 此处只按已知取值筛选，不据此拒绝其他值。
 func ListHeartbeatsInWindow(ctx context.Context, db *gorm.DB, device string, from, to time.Time, afterID uint64, limit int) ([]HeartbeatSample, error) {
 	query := db.WithContext(ctx).Table("device_event").Select("id, event_json").
 		Where("device_id=? AND event_type='heartbeat' AND received_at>=? AND received_at<=?", device, from.UTC(), to.UTC())

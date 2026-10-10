@@ -2,6 +2,7 @@ package device
 
 import (
 	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/devices"
 	money "chargepilot/internal/domain/money"
 	"context"
 	"errors"
@@ -11,7 +12,7 @@ import (
 // DeviceOperationReader 读取中央运营状态，不能代替网关连接状态。
 type DeviceOperationReader interface {
 	// DeviceStatus 按设备号查询运营状态。
-	DeviceStatus(context.Context, string) (string, error)
+	DeviceStatus(context.Context, string) (devices.DeviceMetaStatus, error)
 }
 
 // DeviceCapabilityReader 查询站点所属设备的协议能力，供刷卡等用例调用。
@@ -46,12 +47,12 @@ type OperationRepo struct {
 }
 
 // DeviceStatus 读取未删除设备的 enabled／disabled／fault／retired 状态；缺失返回 gorm.ErrRecordNotFound。
-func (s OperationRepo) DeviceStatus(ctx context.Context, device string) (string, error) {
+func (s OperationRepo) DeviceStatus(ctx context.Context, device string) (devices.DeviceMetaStatus, error) {
 	if s.DB == nil {
 		return "", errors.New("device operation storage unavailable")
 	}
 	var row struct {
-		Status string /* 中央运营状态 */
+		Status devices.DeviceMetaStatus /* 中央运营状态，对应 device_meta.status */
 	}
 	err := s.DB.WithContext(ctx).Table("device_meta").Select("status").Where("device_id=? AND deleted_at IS NULL", device).Take(&row).Error
 	return row.Status, err
@@ -68,11 +69,11 @@ func (s OperationRepo) VendorID(ctx context.Context, station uint64, deviceID st
 
 // ApplyDeviceStatus 补充设备和端口的运营状态；仅物理 available 且运营 enabled 时允许使用。
 // 连接和物理状态保持不变，调用方须传非 nil 结果。
-func ApplyDeviceStatus(result *money.ScanResult, status string) {
+func ApplyDeviceStatus(result *money.ScanResult, status devices.DeviceMetaStatus) {
 	result.DeviceStatus = status
 	apply := func(p *money.ScanPort) {
 		p.DeviceStatus = status
-		p.Available = p.Available && status == "enabled"
+		p.Available = p.Available && status == devices.DeviceEnabled
 	}
 	if result.Port != nil {
 		apply(result.Port)

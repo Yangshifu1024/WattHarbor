@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"chargepilot/internal/device"
+	"chargepilot/internal/domain/devices"
 	gatewayclient "chargepilot/internal/integration/gateway"
 	"chargepilot/internal/payment"
 	"chargepilot/internal/platform/auth"
@@ -30,15 +31,15 @@ type scanUser struct{}
 // Active 忽略输入 context 和用户编号，返回 true、nil，以隔离支付报价测试用户依赖；不访问数据库。
 func (scanUser) Active(context.Context, uint64) (bool, error) { return true, nil }
 
-// scanOperation 以字符串指定设备运行状态或读取错误，用于扫码时设备是否可用的判断；不替代网关返回的物理端口状态。
+// scanOperation 以字符串指定设备运营状态或读取错误，用于扫码时设备是否可用的判断；不替代网关返回的物理端口状态。
 type scanOperation string
 
-// DeviceStatus 忽略 context 和设备编码，返回 s 指定的运行状态或 error 对应读取错误；不访问数据库，仅验证设备发现的校验结果。
-func (s scanOperation) DeviceStatus(context.Context, string) (string, error) {
+// DeviceStatus 忽略 context 和设备编码，返回 s 指定的运营状态或 error 对应读取错误；不访问数据库，仅验证设备发现的校验结果。
+func (s scanOperation) DeviceStatus(context.Context, string) (devices.DeviceMetaStatus, error) {
 	if s == "error" {
 		return "", errors.New("storage unavailable")
 	}
-	return string(s), nil
+	return devices.DeviceMetaStatus(s), nil
 }
 
 func TestScanIsPublicAndReturnsOnlyGatewayReadResult(t *testing.T) {

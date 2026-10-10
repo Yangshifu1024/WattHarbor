@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"chargepilot/internal/domain/money"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"errors"
 	"time"
@@ -17,10 +18,10 @@ type QueryService struct {
 
 // BalanceView 是账户展示值，金额均以分为单位。
 type BalanceView struct {
-	BalanceCents   int64  `json:"balance_cents"`   // 账面余额
-	FrozenCents    int64  `json:"frozen_cents"`    // 退款预占等已冻结金额
-	AvailableCents int64  `json:"available_cents"` // 余额减冻结额，下限为零
-	Status         string `json:"status"`          // active 或 frozen；未开户显示 active
+	BalanceCents   int64                      `json:"balance_cents"`   // 账面余额
+	FrozenCents    int64                      `json:"frozen_cents"`    // 退款预占等已冻结金额
+	AvailableCents int64                      `json:"available_cents"` // 余额减冻结额，下限为零
+	Status         walletdomain.AccountStatus `json:"status"`          // wallet_account.status；未开户显示 active
 }
 
 // Balance 读取 userID 的余额；未开户返回可用的零余额视图。
@@ -28,7 +29,7 @@ type BalanceView struct {
 func (s QueryService) Balance(ctx context.Context, userID uint64) (BalanceView, error) {
 	w, err := s.Repo.FindWalletBalance(ctx, userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return BalanceView{Status: "active"}, nil
+		return BalanceView{Status: walletdomain.AccountActive}, nil
 	}
 	if err != nil {
 		return BalanceView{}, err
@@ -37,7 +38,7 @@ func (s QueryService) Balance(ctx context.Context, userID uint64) (BalanceView, 
 }
 
 // Transactions 按用户、分页与 direction 查询流水；空方向查全部，in、out 分别查收入、支出。
-func (s QueryService) Transactions(ctx context.Context, userID uint64, direction string, page, size int) (persist.Page[map[string]any], error) {
+func (s QueryService) Transactions(ctx context.Context, userID uint64, direction walletdomain.TxnDirection, page, size int) (persist.Page[map[string]any], error) {
 	return s.Repo.ListWalletTxns(ctx, userID, direction, page, size)
 }
 

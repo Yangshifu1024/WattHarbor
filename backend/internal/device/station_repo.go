@@ -12,13 +12,13 @@ import (
 
 // Station 是站点对外资料，设备和计费配置均通过主键 ID 关联，不使用独立站点编码。
 type Station struct {
-	ID           uint64  `json:"id" gorm:"primaryKey"` // 站点主键，也是分账模板、计费规则、充电套餐引用站点的外键。
-	Name         string  `json:"name"`                 // 站点名称，列表展示与关键词搜索都匹配它。
-	Address      *string `json:"address"`              // 站点地址，可空；关键词搜索会同时匹配名称和地址。
-	Longitude    float64 `json:"longitude"`            // 经度，有效范围 [-180,180]，站点地图定位用。
-	Latitude     float64 `json:"latitude"`             // 纬度，有效范围 [-90,90]。
-	Status       string  `json:"status"`               // 站点状态：active 营业中、disabled 停用、construction 建设中。
-	ContactPhone *string `json:"contact_phone"`        // 对外联系电话，可空，最长 32 字符。
+	ID           uint64        `json:"id" gorm:"primaryKey"` // 站点主键，也是分账模板、计费规则、充电套餐引用站点的外键。
+	Name         string        `json:"name"`                 // 站点名称，列表展示与关键词搜索都匹配它。
+	Address      *string       `json:"address"`              // 站点地址，可空；关键词搜索会同时匹配名称和地址。
+	Longitude    float64       `json:"longitude"`            // 经度，有效范围 [-180,180]，站点地图定位用。
+	Latitude     float64       `json:"latitude"`             // 纬度，有效范围 [-90,90]。
+	Status       StationStatus `json:"status"`               // 站点状态：active 营业中、disabled 停用、construction 建设中。
+	ContactPhone *string       `json:"contact_phone"`        // 对外联系电话，可空，最长 32 字符。
 }
 
 // TableName 指定 station 表。

@@ -1,6 +1,7 @@
 package device
 
 import (
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/operations"
 	"context"
 	"errors"
@@ -47,8 +48,9 @@ func (s AlertRepo) InsertAlert(tx *gorm.DB, values map[string]any) error {
 func (s AlertRepo) ListRecoverableAlerts(ctx context.Context) ([]DeviceAlert, error) {
 	rows := []DeviceAlert{}
 	err := s.DB.WithContext(ctx).Table("alert_event").
-		Where("rule_id IS NULL AND status IN ('active','acknowledged') AND " +
-			"(metric IN ('smoke','high_temperature','device_fault') OR metric LIKE 'port_fault_%')").
+		Where("rule_id IS NULL AND status IN ? AND "+
+			"(metric IN ('smoke','high_temperature','device_fault') OR metric LIKE 'port_fault_%')",
+			[]devices.AlertStatus{devices.AlertActive, devices.AlertAcknowledged}).
 		Find(&rows).Error
 	return rows, err
 }
@@ -57,22 +59,22 @@ func (s AlertRepo) ListRecoverableAlerts(ctx context.Context) ([]DeviceAlert, er
 // 事件键已改变时不更新，避免用旧心跳清除新故障。
 func (s AlertRepo) AutoResolveAlert(tx *gorm.DB, row DeviceAlert, at time.Time) error {
 	return tx.Table("alert_event").
-		Where("id = ? AND created_month = ? AND event_id = ? AND status IN ('active','acknowledged')",
-			row.ID, row.CreatedMonth, row.EventID).
-		Updates(map[string]any{"status": "auto_resolved", "resolved_at": at}).Error
+		Where("id = ? AND created_month = ? AND event_id = ? AND status IN ?",
+			row.ID, row.CreatedMonth, row.EventID, []devices.AlertStatus{devices.AlertActive, devices.AlertAcknowledged}).
+		Updates(map[string]any{"status": devices.AlertAutoResolved, "resolved_at": at}).Error
 }
 
 // DeviceAlert 保存告警状态、最新故障键和分区月份。
 // EventID 标记最新故障；更新须带 CreatedMonth，避免扫描全部分区。
 type DeviceAlert struct {
-	ID           uint64     // 告警主键
-	DeviceID     string     // 设备编号
-	Metric       string     // 协议故障维度
-	EventID      string     // 最近故障事件键
-	Status       string     // active／acknowledged／auto_resolved 状态
-	CreatedAt    time.Time  // 首次故障持久时刻，不代表最近故障
-	CreatedMonth time.Time  // 首次分区月份
-	ResolvedAt   *time.Time // 恢复时刻，未恢复为 nil
+	ID           uint64              // 告警主键
+	DeviceID     string              // 设备编号
+	Metric       string              // 协议故障维度
+	EventID      string              // 最近故障事件键
+	Status       devices.AlertStatus // active／acknowledged／resolved／auto_resolved 状态，对应 alert_event.status
+	CreatedAt    time.Time           // 首次故障持久时刻，不代表最近故障
+	CreatedMonth time.Time           // 首次分区月份
+	ResolvedAt   *time.Time          // 恢复时刻，未恢复为 nil
 }
 
 // ListAlerts 倒序读取当前范围内的告警展示字段。
@@ -96,5 +98,6 @@ func (s AlertRepo) LockAlert(tx *gorm.DB, id uint64) (DeviceAlert, error) {
 
 // Acknowledge 按主键和分区月份保存已认领状态、处理人和时间，权限由用例核对。
 func (s AlertRepo) Acknowledge(tx *gorm.DB, row DeviceAlert, actorID uint64, at time.Time) error {
-	return tx.Table("alert_event").Where("id=? AND created_month=?", row.ID, row.CreatedMonth).Updates(map[string]any{"status": "acknowledged", "acked_by": actorID, "acked_at": at}).Error
+	return tx.Table("alert_event").Where("id=? AND created_month=?", row.ID, row.CreatedMonth).
+		Updates(map[string]any{"status": devices.AlertAcknowledged, "acked_by": actorID, "acked_at": at}).Error
 }

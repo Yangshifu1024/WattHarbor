@@ -21,6 +21,8 @@ var (
 )
 
 // CouponGrant 组合发券记录和模板规则，保留发放、到期及核销信息。
+// Status 是 coupon_grant.status 的 GrantStatus；Type 来自 coupon.discount_type 的 DiscountType，
+// 两者来自不同表、不同词表，不得互换。
 type CouponGrant struct {
 	ID                 uint64                      `json:"id" gorm:"column:id"`                                     // 已保存记录主键
 	CouponID           uint64                      `json:"coupon_id" gorm:"column:coupon_id"`                       // 模板主键
@@ -29,7 +31,7 @@ type CouponGrant struct {
 	Status             marketingdomain.GrantStatus `json:"status" gorm:"column:status"`                             // 业务状态
 	ExpiresAt          time.Time                   `json:"expires_at" gorm:"column:expired_at"`                     // 券的 UTC 到期时刻
 	MinCharge          int64                       `json:"min_charge_cents" gorm:"column:min_charge_cents"`         // 使用门槛，分
-	Type               string                      `json:"discount_type" gorm:"column:discount_type"`               // 优惠类型
+	Type               DiscountType                `json:"discount_type" gorm:"column:discount_type"`               // 优惠类型
 	Amount             *int64                      `json:"discount_value_cents" gorm:"column:discount_value_cents"` // 减免分值，可空
 	Percent            *float64                    `json:"discount_percent" gorm:"column:discount_percent"`         // 应付比例百分数，80 表示八折；可空
 	FreeMinutes        uint32                      `json:"free_minutes" gorm:"column:free_minutes"`                 // 模板免费分钟，不读取金额列
@@ -45,6 +47,8 @@ type CouponRepo struct {
 }
 
 // AvailableCoupons 按到期时间读取本人未用、未过期券。
+// JOIN 内的 c.status = 'active' 是 coupon.status 的 CouponStatus 词表字面量，
+// 嵌在 JOIN 条件里保留原写法，不拆分查询。
 func (s CouponRepo) AvailableCoupons(ctx context.Context, userID uint64) ([]CouponGrant, error) {
 	rows := []CouponGrant{}
 	err := s.DB.WithContext(ctx).Table("coupon_grant AS g").

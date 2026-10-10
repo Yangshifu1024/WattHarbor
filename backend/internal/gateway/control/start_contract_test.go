@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/gateway/repo"
 	gatewayclient "chargepilot/internal/integration/gateway"
 	"chargepilot/internal/platform/httpapi"
@@ -18,9 +19,10 @@ import (
 // startContractService 记录启动调用，返回预设状态和错误。
 type startContractService struct {
 	// orderNo、status 测试替身观察的订单号。 测试预期或替身返回的 HTTP 状态。
-	orderNo, status string
-	calls           int
-	err             error
+	orderNo string
+	status  devices.ChargeCommandStatus
+	calls   int
+	err     error
 }
 
 // Start 记录订单号和调用次数，返回预设启动结果。
@@ -31,8 +33,8 @@ func (s *startContractService) Start(_ context.Context, orderNo string) (repo.St
 
 // 注册真实路由并替换用例依赖，验证 HTTP 契约；此测试不验证持久化或设备通信。
 func TestStartClientMatchesRegisteredGatewayRoute(t *testing.T) {
-	for _, status := range []string{"pending", "sent", "stopping", "acked"} {
-		t.Run(status, func(t *testing.T) {
+	for _, status := range []devices.ChargeCommandStatus{devices.CommandPending, devices.CommandSent, devices.CommandStopping, devices.CommandAcked} {
+		t.Run(string(status), func(t *testing.T) {
 			service := &startContractService{status: status}
 			router := httpapi.NewRouter()
 			StartAPI{Service: service, ServiceToken: "secret"}.Register(router)

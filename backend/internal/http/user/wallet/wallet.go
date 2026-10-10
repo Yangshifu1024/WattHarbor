@@ -6,11 +6,23 @@ import (
 	"strings"
 	"time"
 
+	walletdomain "chargepilot/internal/domain/wallet"
 	userhttp "chargepilot/internal/http/user"
 	"chargepilot/internal/platform/httpapi"
 	walletpkg "chargepilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 )
+
+// txnDirectionAllowed 返回 value 是否属于 walletdomain.TxnDirection 的合法取值串。
+// 只识别已知取值，不解析、不改写；空值由调用方先行处理并视为不筛选。
+func txnDirectionAllowed(value string) bool {
+	for _, v := range strings.Fields(walletdomain.AllTxnDirections) {
+		if value == v {
+			return true
+		}
+	}
+	return false
+}
 
 // walletBalance 返回当前用户的钱包余额。
 func (a API) walletBalance(c *gin.Context) {
@@ -37,11 +49,12 @@ func (a API) walletTxns(c *gin.Context) {
 		return
 	}
 	direction := strings.TrimSpace(c.Query("direction"))
-	if direction != "" && direction != "in" && direction != "out" {
+	// 空方向表示不筛选；其余值必须在 walletdomain.AllTxnDirections 词表内。
+	if direction != "" && !txnDirectionAllowed(direction) {
 		httpapi.BadRequest(c, "收支方向无效")
 		return
 	}
-	out, err := a.WalletQuery.Transactions(c.Request.Context(), userID, direction, page, pageSize)
+	out, err := a.WalletQuery.Transactions(c.Request.Context(), userID, walletdomain.TxnDirection(direction), page, pageSize)
 	if err != nil {
 		httpapi.Write(c, 503, 5003, "资金流水暂时无法读取", nil)
 		return

@@ -10,14 +10,14 @@ import (
 
 // AnnouncementRow 是后台公告记录，JSON 目标保留 null、空数组和字符串值。
 type AnnouncementRow struct {
-	ID        uint64          `json:"id"`                                  // 公告主键
-	Title     string          `json:"title"`                               // 标题
-	Content   string          `json:"content"`                             // 正文
-	Scope     string          `json:"scope"`                               // 发布范围
-	TargetIDs json.RawMessage `json:"target_ids" gorm:"column:target_ids"` // JSON 目标，可为 null
-	Status    string          `json:"status"`                              // 发布状态
-	StartAt   time.Time       `json:"start_at"`                            // 生效时刻
-	EndAt     *time.Time      `json:"end_at"`                              // 可空失效时刻
+	ID        uint64             `json:"id"`                                  // 公告主键
+	Title     string             `json:"title"`                               // 标题
+	Content   string             `json:"content"`                             // 正文
+	Scope     AnnouncementScope  `json:"scope"`                               // 发布范围
+	TargetIDs json.RawMessage    `json:"target_ids" gorm:"column:target_ids"` // JSON 目标，可为 null
+	Status    AnnouncementStatus `json:"status"`                              // 发布状态
+	StartAt   time.Time          `json:"start_at"`                            // 生效时刻
+	EndAt     *time.Time         `json:"end_at"`                              // 可空失效时刻
 }
 
 // AnnouncementRepo 只读写所属公告表，不接收 HTTP 表名或动态列。
@@ -39,7 +39,7 @@ func (s AnnouncementRepo) Insert(tx *gorm.DB, in AnnouncementInput, actorID uint
 	if err != nil {
 		return 0, err
 	}
-	if err := tx.Table("announcement").Create(map[string]any{"title": in.Title, "content": in.Content, "scope": in.Scope, "target_ids": string(targets), "start_at": in.StartAt, "end_at": in.EndAt, "status": "published", "created_by": actorID}).Error; err != nil {
+	if err := tx.Table("announcement").Create(map[string]any{"title": in.Title, "content": in.Content, "scope": in.Scope, "target_ids": string(targets), "start_at": in.StartAt, "end_at": in.EndAt, "status": AnnouncementPublished, "created_by": actorID}).Error; err != nil {
 		return 0, err
 	}
 	return persist.LastInsertID(tx)

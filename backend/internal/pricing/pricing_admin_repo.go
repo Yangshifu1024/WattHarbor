@@ -52,7 +52,7 @@ func (s Repo) SavePricingTemplate(tx *gorm.DB, id uint64, expectedVersion uint32
 		"display_json": in.DisplayJSON, "version": version,
 	}
 	if id == 0 {
-		row["status"] = "active"
+		row["status"] = PricingTemplateActive
 		if err := tx.Table("pricing_template").Create(row).Error; err != nil {
 			return 0, 0, before, err
 		}
@@ -68,9 +68,11 @@ func (s Repo) SavePricingTemplate(tx *gorm.DB, id uint64, expectedVersion uint32
 	return id, version, before, nil
 }
 
-// ChangePricingTemplateStatus 锁定并核对期望版本后启停模板；删除时软删并置 disabled。
+// ChangePricingTemplateStatus 锁定并核对期望版本后启停模板；删除时软删并固定置 disabled。
 // 返回旧记录供审计，不修改历史发布规则。
-func (s Repo) ChangePricingTemplateStatus(tx *gorm.DB, id uint64, expectedVersion uint32, status string, remove bool) (PricingTemplateRow, error) {
+// status 按操作边界建模：非删除路径已在用例校验为合法取值；remove=true 时忽略传入值，
+// 固定写 PricingTemplateDisabled，因此删除请求的空串不会落库。
+func (s Repo) ChangePricingTemplateStatus(tx *gorm.DB, id uint64, expectedVersion uint32, status PricingTemplateStatus, remove bool) (PricingTemplateRow, error) {
 	var before PricingTemplateRow
 	if err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id=? AND deleted_at IS NULL", id).Take(&before).Error; err != nil {
@@ -81,7 +83,7 @@ func (s Repo) ChangePricingTemplateStatus(tx *gorm.DB, id uint64, expectedVersio
 	}
 	row := map[string]any{"version": before.Version + 1, "status": status}
 	if remove {
-		row["status"] = "disabled"
+		row["status"] = PricingTemplateDisabled
 		row["deleted_at"] = gorm.Expr("UTC_TIMESTAMP(3)")
 	}
 	if err := tx.Table("pricing_template").Where("id=?", id).Updates(row).Error; err != nil {
@@ -121,10 +123,11 @@ func (s Repo) RecordPublication(tx *gorm.DB, p PricingPublication) error {
 }
 
 // ActivePricingTemplate 在发布事务中共享锁读启用、未删模板，防止读取期间改版；调用方再比对 template_version。
+// status 字面量对应 pricing_template.status 词表中的 active，查询不因类型化拆分。
 func (s Repo) ActivePricingTemplate(tx *gorm.DB, id uint64) (PricingTemplateRow, error) {
 	var row PricingTemplateRow
 	err := tx.Table("pricing_template").Clauses(clause.Locking{Strength: "SHARE"}).
-		Where("id=? AND status='active' AND deleted_at IS NULL", id).Take(&row).Error
+		Where("id=? AND status='"+string(PricingTemplateActive)+"' AND deleted_at IS NULL", id).Take(&row).Error
 	return row, err
 }
 
@@ -155,7 +158,7 @@ func (s Repo) PublishPricingRule(tx *gorm.DB, stationID uint64, deviceID string,
 	}
 	row := map[string]any{
 		"name": in.Name, "station_id": stationID, "device_id": NullableDevice(deviceID),
-		"spec_json": in.SpecJSON, "channel": "default", "version": version, "status": "active",
+		"spec_json": in.SpecJSON, "channel": "default", "version": version, "status": PricingRuleActive,
 	}
 	if in.TemplateID > 0 {
 		row["template_id"] = in.TemplateID
@@ -180,15 +183,16 @@ func (s Repo) InheritStationRule(tx *gorm.DB, stationID uint64, deviceID string)
 
 // disableActivePricingRules 在站点锁内先普通读目标主键，再按主键顺序更新仍匹配的 active 规则。
 // 空目标不做范围 UPDATE；沿用调用方 RR 快照，不刷新事务视图。
+// 两处 status='active' 字面量对应 pricing_rule.status 词表，按主键更新保持原语句不拆分。
 func (s Repo) disableActivePricingRules(tx *gorm.DB, stationID uint64, deviceID string) error {
 	var ids []uint64
 	if err := RuleScope(stationID, deviceID)(tx.Table("pricing_rule")).
-		Where("status='active'").Order("id").Pluck("id", &ids).Error; err != nil {
+		Where("status='"+string(PricingRuleActive)+"'").Order("id").Pluck("id", &ids).Error; err != nil {
 		return err
 	}
 	for _, id := range ids {
 		if err := RuleScope(stationID, deviceID)(tx.Table("pricing_rule")).
-			Where("id=? AND status='active'", id).Update("status", "disabled").Error; err != nil {
+			Where("id=? AND status='"+string(PricingRuleActive)+"'", id).Update("status", PricingRuleDisabled).Error; err != nil {
 			return err
 		}
 	}

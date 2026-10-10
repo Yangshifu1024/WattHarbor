@@ -7,6 +7,7 @@ import (
 	"time"
 
 	contract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/ops"
 	"gorm.io/gorm"
 )
@@ -56,13 +57,13 @@ func (e *StationQueryError) Unwrap() error { return e.Cause }
 
 // stationView 是公开站点字段，坐标保留字符串、ID 保留数字，并保留可空字段。
 type stationView struct {
-	ID        uint64  `json:"id"`            // 主键
-	Name      string  `json:"name"`          // 站名
-	Address   *string `json:"address"`       // 可空地址
-	Longitude string  `json:"longitude"`     // DECIMAL 经度
-	Latitude  string  `json:"latitude"`      // DECIMAL 纬度
-	Status    string  `json:"status"`        // 运营状态
-	Phone     *string `json:"contact_phone"` // 可空电话
+	ID        uint64        `json:"id"`            // 主键
+	Name      string        `json:"name"`          // 站名
+	Address   *string       `json:"address"`       // 可空地址
+	Longitude string        `json:"longitude"`     // DECIMAL 经度
+	Latitude  string        `json:"latitude"`      // DECIMAL 纬度
+	Status    StationStatus `json:"status"`        // station.status 三值：active／disabled／construction
+	Phone     *string       `json:"contact_phone"` // 可空电话
 }
 
 // stationListView 在站点资料上添加距离，未定位时距离为 null。
@@ -81,11 +82,11 @@ type StationPage struct {
 
 // stationRuntimeView 组合中央运营状态和网关运行信息，未知时不补造心跳。
 type stationRuntimeView struct {
-	DeviceID         string     `json:"device_id"`         // 设备业务号
-	Status           string     `json:"status"`            // 中央运营状态
-	LastHeartbeatAt  *time.Time `json:"last_heartbeat_at"` // 心跳；未知为 null
-	Online           bool       `json:"online"`            // 已知且心跳在1小时内
-	RuntimeAvailable bool       `json:"runtime_available"` // 是否读取到该设备的网关摘要
+	DeviceID         string                   `json:"device_id"`         // 设备业务号
+	Status           devices.DeviceMetaStatus `json:"status"`            // 中央运营状态，词表见 domain/devices
+	LastHeartbeatAt  *time.Time               `json:"last_heartbeat_at"` // 心跳；未知为 null
+	Online           bool                     `json:"online"`            // 已知且心跳在1小时内
+	RuntimeAvailable bool                     `json:"runtime_available"` // 是否读取到该设备的网关摘要
 }
 
 // StationDetail 返回站点、公告和设备，后两项为非 nil 数组，不附加距离字段。

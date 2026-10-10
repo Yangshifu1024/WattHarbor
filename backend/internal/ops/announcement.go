@@ -9,22 +9,79 @@ import (
 	"time"
 )
 
+// AnnouncementStatus 是 announcement.status 列的公告发布状态，用于后台列表与写入。
+// 取值与 migrations/central_db/0001_init.sql 中该 ENUM 列一致。
+type AnnouncementStatus string
+
+const (
+	// AnnouncementDraft 表示草稿，尚未对外发布。
+	AnnouncementDraft AnnouncementStatus = "draft"
+	// AnnouncementPublished 表示已发布，是列表查询与审计写入使用的状态。
+	AnnouncementPublished AnnouncementStatus = "published"
+	// AnnouncementExpired 表示已过期。当前 Go 代码没有写入 expired 的路径，
+	// 保留该取值以完整覆盖列约束，不得据此虚构到期流转。
+	AnnouncementExpired AnnouncementStatus = "expired"
+)
+
+// Known 判断是否属于该列的数据库合法集合（三值）。
+func (s AnnouncementStatus) Known() bool {
+	switch s {
+	case AnnouncementDraft, AnnouncementPublished, AnnouncementExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+// AllAnnouncementStatuses 是 AnnouncementStatus 的全量取值串，供读取筛选白名单直接引用。
+// 顺序与上方常量声明一致；新增取值不会自动进入该白名单。
+const AllAnnouncementStatuses = "draft published expired"
+
+// AnnouncementScope 是 announcement.scope 列的公告可见范围。
+// 取值与 migrations/central_db/0001_init.sql 中该 ENUM 列一致（global／station／city）。
+// 与 operations.ScopeType 分立：后者是 admin_data_scope.scope_type 的账号数据范围维度，
+// 词表与语义都不同，不得合并。
+type AnnouncementScope string
+
+const (
+	// AnnouncementScopeGlobal 表示对全部用户可见，不需要目标列表。
+	AnnouncementScopeGlobal AnnouncementScope = "global"
+	// AnnouncementScopeStation 表示按充电站点投放，target_ids 为站点 ID。
+	AnnouncementScopeStation AnnouncementScope = "station"
+	// AnnouncementScopeCity 表示按城市投放，target_ids 为城市标识。
+	AnnouncementScopeCity AnnouncementScope = "city"
+)
+
+// Known 判断是否属于该列的数据库合法集合（三值）。
+func (s AnnouncementScope) Known() bool {
+	switch s {
+	case AnnouncementScopeGlobal, AnnouncementScopeStation, AnnouncementScopeCity:
+		return true
+	default:
+		return false
+	}
+}
+
+// AllAnnouncementScopes 是 AnnouncementScope 的全量取值串，供写入准入白名单直接引用。
+const AllAnnouncementScopes = "global station city"
+
 // AnnouncementInput 是公告发布参数，站点和城市目标保留字符串。
 type AnnouncementInput struct {
-	Title     string     `json:"title"`      // 必填标题，最多128字符
-	Content   string     `json:"content"`    // 必填正文，最多20000字符
-	Scope     string     `json:"scope"`      // global／station／city
-	TargetIDs []string   `json:"target_ids"` // 非全局必填，最多100项，每项64字符
-	StartAt   time.Time  `json:"start_at"`   // 生效时刻，必填
-	EndAt     *time.Time `json:"end_at"`     // 可空失效时刻，非空必须晚于生效时刻
+	Title     string            `json:"title"`      // 必填标题，最多128字符
+	Content   string            `json:"content"`    // 必填正文，最多20000字符
+	Scope     AnnouncementScope `json:"scope"`      // global／station／city
+	TargetIDs []string          `json:"target_ids"` // 非全局必填，最多100项，每项64字符
+	StartAt   time.Time         `json:"start_at"`   // 生效时刻，必填
+	EndAt     *time.Time        `json:"end_at"`     // 可空失效时刻，非空必须晚于生效时刻
 }
 
 // validate 检查公告内容、目标范围和有效时间，不查询城市字典。
+// scopeValid 同时承担写入准入：空串与未知取值都不是该列的合法值。
 func (in AnnouncementInput) validate() error {
 	contentValid := operations.ValidText(in.Title, 128) && operations.ValidText(in.Content, 20000)
-	scopeValid := in.Scope == "global" || in.Scope == "station" || in.Scope == "city"
+	scopeValid := in.Scope.Known()
 	timeValid := !in.StartAt.IsZero() && (in.EndAt == nil || in.EndAt.After(in.StartAt))
-	targetValid := in.Scope == "global" || len(in.TargetIDs) > 0
+	targetValid := in.Scope == AnnouncementScopeGlobal || len(in.TargetIDs) > 0
 	if !contentValid || !scopeValid || !timeValid || !targetValid {
 		return &ManagementInputError{Message: "请填写标题、内容、有效时间和公告目标"}
 	}
@@ -78,7 +135,7 @@ func (s AnnouncementService) Create(ctx context.Context, audit AuditContext, in 
 		}
 		after := map[string]any{"title": in.Title, "content": in.Content, "scope": in.Scope,
 			"target_ids": string(targets), "start_at": in.StartAt, "end_at": in.EndAt,
-			"status": "published", "created_by": actor.ID}
+			"status": AnnouncementPublished, "created_by": actor.ID}
 		return AppendAuditInTx(tx, audit, AuditChange{Action: "create", Target: "announcement", ID: id, After: after})
 	})
 	return id, err

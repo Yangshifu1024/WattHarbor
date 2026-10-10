@@ -213,7 +213,8 @@ func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope 
 		if err := checkImportScope(scope, devices); err != nil {
 			return err
 		}
-		if result.Status == "completed" {
+		// completed 重放不再开通或审计；仅精确匹配该值，未知状态仍继续执行（与原判定一致）。
+		if result.Status == ImportStatusCompleted {
 			return nil
 		}
 		batch := make([]contract.ProvisionDevice, 0, len(devices))
@@ -226,7 +227,7 @@ func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope 
 		cancel()
 		if err != nil {
 			message := "网关未确认导入，请核对厂商与设备参数后重试；dc589 最多 20 路"
-			result.Status = "failed"
+			result.Status = ImportStatusFailed
 			result.LastError = &message
 			return repo.MarkImportFailed(tx, id, message)
 		}
@@ -245,7 +246,7 @@ func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope 
 				return err
 			}
 		}
-		result.Status = "completed"
+		result.Status = ImportStatusCompleted
 		result.LastError = nil
 		if err := repo.MarkImportCompleted(tx, id); err != nil {
 			return err

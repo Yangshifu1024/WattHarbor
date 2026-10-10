@@ -25,7 +25,7 @@ type artifactProof struct {
 	Version       int                  `json:"version"`        // 私有格式版本，当前1
 	TaskNo        string               `json:"task_no"`        // 完整任务号
 	Resource      string               `json:"resource"`       // 资源声明
-	Format        string               `json:"format"`         // 扩展名
+	Format        string               `json:"format"`         // 扩展名；私有校验文件保持 string，便于与历史文件逐字节比对
 	RequestedBy   uint64               `json:"requested_by"`   // 申请人，不经浮点转换
 	RowCount      uint32               `json:"row_count"`      // 本次实际行数
 	Scope         operations.DataScope `json:"scope"`          // 对应资源实际执行的范围维度
@@ -35,6 +35,8 @@ type artifactProof struct {
 
 // effectiveScope 记录实际查询范围：订单和站点按站点，设备按站点与厂商交集，账单仅支持全局。
 // 单独厂商限制不改变订单或站点查询，保存的范围只包含实际执行的筛选。
+// ScopeType 与 ScopeID 主动写零值，保存的范围不携带单条范围类型；读取路径依赖该判定，
+// 不得改成写入具体类型。
 func effectiveScope(resource string, scope operations.DataScope) operations.DataScope {
 	if resource != "devices" {
 		scope.VendorIDs = nil
@@ -72,18 +74,20 @@ func containsScope(current, saved operations.DataScope) bool {
 
 // fileNames 按格式和合法任务号生成内容文件及校验文件名，不采用数据库中的任意路径。
 // 历史 PDF 仅允许清理，下载只支持 CSV／XLSX。
+// LegacyExportFormatPDF 不在 export_task.file_format 的 ENUM 约束内，
+// 这里保留它只为识别早期遗留文件，并按其真实扩展名清理与拼接文件名。
 func fileNames(row ExportTaskRow, cleanup bool) (string, string, error) {
 	format := row.FileFormat
 	if format == "" {
-		format = "csv"
+		format = ExportFormatCSV
 	}
 	if !taskFileIdentity.MatchString(row.TaskNo) {
 		return "", "", &DownloadError{Message: "导出文件不可用，请重新导出"}
 	}
-	if format != "csv" && format != "xlsx" && !(cleanup && format == "pdf") {
+	if !format.Known() && !(cleanup && format == LegacyExportFormatPDF) {
 		return "", "", &DownloadError{Message: "导出格式不可用"}
 	}
-	return row.TaskNo + "." + format, row.TaskNo + ".scope.json", nil
+	return row.TaskNo + "." + string(format), row.TaskNo + ".scope.json", nil
 }
 
 // openRoot 打开配置目录，需要时先创建；调用方负责关闭受限文件句柄。
@@ -151,15 +155,15 @@ func publish(ctx context.Context, root *os.Root, row ExportTaskRow, spec ExportS
 	}
 	format := row.FileFormat
 	if format == "" {
-		format = "csv"
+		format = ExportFormatCSV
 	}
 	hash := sha256.New()
-	err = (FormatWriter{}).Write(ctx, io.MultiWriter(file, hash), format, headers, lines)
+	err = (FormatWriter{}).Write(ctx, io.MultiWriter(file, hash), string(format), headers, lines)
 	err = errors.Join(err, file.Close())
 	if err != nil {
 		return "", err
 	}
-	proof := artifactProof{Version: 1, TaskNo: row.TaskNo, Resource: row.Resource, Format: row.FileFormat, RequestedBy: row.RequestedBy, RowCount: uint32(len(records)), Scope: effectiveScope(row.Resource, scope), MaskedColumns: masked, SHA256: hex.EncodeToString(hash.Sum(nil))}
+	proof := artifactProof{Version: 1, TaskNo: row.TaskNo, Resource: row.Resource, Format: string(row.FileFormat), RequestedBy: row.RequestedBy, RowCount: uint32(len(records)), Scope: effectiveScope(row.Resource, scope), MaskedColumns: masked, SHA256: hex.EncodeToString(hash.Sum(nil))}
 	encoded, err := json.Marshal(proof)
 	if err != nil {
 		return "", err
@@ -269,7 +273,7 @@ func verifyArtifact(ctx context.Context, root *os.Root, row ExportTaskRow, spec 
 	if len(encoded) > 64<<10 || json.Unmarshal(encoded, &proof) != nil {
 		return nil, &DownloadError{Message: "导出文件不可用，请重新导出"}
 	}
-	if proof.Version != 1 || proof.TaskNo != row.TaskNo || proof.Resource != row.Resource || proof.Format != row.FileFormat || proof.RequestedBy != row.RequestedBy || proof.RowCount != row.RowCount {
+	if proof.Version != 1 || proof.TaskNo != row.TaskNo || proof.Resource != row.Resource || proof.Format != string(row.FileFormat) || proof.RequestedBy != row.RequestedBy || proof.RowCount != row.RowCount {
 		return nil, &DownloadError{Message: "导出文件不可用，请重新导出"}
 	}
 	if !containsScope(current, proof.Scope) {

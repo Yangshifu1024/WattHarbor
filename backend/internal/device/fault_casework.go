@@ -124,9 +124,10 @@ func (s FaultService) Dispatch(ctx context.Context, audit ops.AuditContext, id u
 		if row.AssignedTo != nil && *row.AssignedTo == in.AssignedTo {
 			return nil
 		}
-		event := string(FaultDispatched)
+		// dispatched／reassigned 是后台处理写入的两值，均在 BackgroundWritable 集合内。
+		event := FaultEventDispatched
 		if row.AssignedTo != nil {
-			event = "reassigned"
+			event = FaultEventReassigned
 		}
 		if err := repo.UpdateReport(tx, id, map[string]any{"status": FaultDispatched, "assigned_to": in.AssignedTo}); err != nil {
 			return err
@@ -134,7 +135,7 @@ func (s FaultService) Dispatch(ctx context.Context, audit ops.AuditContext, id u
 		if err := repo.AppendFaultEvent(tx, FaultEventInput{ReportID: id, ActorID: audit.Actor.ID, EventType: event, FromStatus: row.Status, ToStatus: FaultDispatched, AssignedTo: in.AssignedTo, Note: in.Note, UserVisible: true}); err != nil {
 			return err
 		}
-		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: event, Target: "device_fault_report", ID: id, Before: row, After: in})
+		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: string(event), Target: "device_fault_report", ID: id, Before: row, After: in})
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
@@ -172,7 +173,9 @@ func (s FaultService) Resolve(ctx context.Context, audit ops.AuditContext, id ui
 		if err := repo.UpdateReport(tx, id, map[string]any{"status": in.Status, "resolved_at": time.Now().UTC()}); err != nil {
 			return err
 		}
-		if err := repo.AppendFaultEvent(tx, FaultEventInput{ReportID: id, ActorID: audit.Actor.ID, EventType: string(in.Status), FromStatus: row.Status, ToStatus: in.Status, AssignedTo: audit.Actor.ID, Note: in.Note, UserVisible: true}); err != nil {
+		// 既有语义：此处写入的 event_type 取自报修单状态（fixed／closed），
+		// 而非单独的流转事件词表；两字面量恰好同值，不在本批次改写其来源。
+		if err := repo.AppendFaultEvent(tx, FaultEventInput{ReportID: id, ActorID: audit.Actor.ID, EventType: FaultEventType(in.Status), FromStatus: row.Status, ToStatus: in.Status, AssignedTo: audit.Actor.ID, Note: in.Note, UserVisible: true}); err != nil {
 			return err
 		}
 		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: string(in.Status), Target: "device_fault_report", ID: id, Before: row, After: in})

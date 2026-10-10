@@ -1,6 +1,9 @@
 package identity
 
 import (
+	identitydomain "chargepilot/internal/domain/identity"
+	orderdomain "chargepilot/internal/domain/order"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"chargepilot/internal/persist"
 	"context"
 
@@ -15,17 +18,17 @@ import (
 
 // ChargeUserRow 是后台充电用户列表的一行。
 type ChargeUserRow struct {
-	ID        uint64     `json:"id,string" gorm:"column:id"`                 // 充电用户主键，订单/钱包/券/报障都以它为外键
-	OpenID    string     `json:"openid" gorm:"column:openid"`                // 微信 openid，唯一登录身份
-	UnionID   *string    `json:"union_id" gorm:"column:unionid"`             // 微信 unionid；指针，仅同一开放平台账号下有值
-	Nickname  *string    `json:"nickname" gorm:"column:nickname"`            // 微信昵称；指针，未授权昵称时为 null，前端需回退到"用户 #id"
-	AvatarURL *string    `json:"avatar_url" gorm:"column:avatar_url"`        // 头像地址；指针，同上
-	Gender    string     `json:"gender" gorm:"column:gender"`                // 性别：unknown/male/female，未授权恒为 unknown
-	Status    string     `json:"status" gorm:"column:status"`                // 账号状态：active 正常 / frozen 冻结
-	FirstSeen time.Time  `json:"first_seen_at" gorm:"column:first_seen_at"`  // 首次出现时间，即注册时间
-	LastLogin *time.Time `json:"last_login_at" gorm:"column:last_login_at"`  // 最后登录时间；指针，从未登录过为 null
-	InviterID *uint64    `json:"inviter_id,string" gorm:"column:inviter_id"` // 邀请人用户 ID；指针，自然注册无邀请人
-	CreatedAt time.Time  `json:"created_at" gorm:"column:created_at"`        // 记录创建时间
+	ID        uint64                    `json:"id,string" gorm:"column:id"`                 // 充电用户主键，订单/钱包/券/报障都以它为外键
+	OpenID    string                    `json:"openid" gorm:"column:openid"`                // 微信 openid，唯一登录身份
+	UnionID   *string                   `json:"union_id" gorm:"column:unionid"`             // 微信 unionid；指针，仅同一开放平台账号下有值
+	Nickname  *string                   `json:"nickname" gorm:"column:nickname"`            // 微信昵称；指针，未授权昵称时为 null，前端需回退到"用户 #id"
+	AvatarURL *string                   `json:"avatar_url" gorm:"column:avatar_url"`        // 头像地址；指针，同上
+	Gender    identitydomain.Gender     `json:"gender" gorm:"column:gender"`                // user.gender：unknown/male/female，未授权恒为 unknown
+	Status    identitydomain.UserStatus `json:"status" gorm:"column:status"`                // user.status：active 正常 / frozen 冻结
+	FirstSeen time.Time                 `json:"first_seen_at" gorm:"column:first_seen_at"`  // 首次出现时间，即注册时间
+	LastLogin *time.Time                `json:"last_login_at" gorm:"column:last_login_at"`  // 最后登录时间；指针，从未登录过为 null
+	InviterID *uint64                   `json:"inviter_id,string" gorm:"column:inviter_id"` // 邀请人用户 ID；指针，自然注册无邀请人
+	CreatedAt time.Time                 `json:"created_at" gorm:"column:created_at"`        // 记录创建时间
 
 	// 以下几列不在主查询里联表，由 decorateChargeUsers 按当页 ID 批量回填。
 	Phone        string  `json:"phone" gorm:"-"`         // 完整明文手机号；未绑号为空串
@@ -42,26 +45,26 @@ func (ChargeUserRow) TableName() string { return "user" }
 
 // ChargeUserDetail 是单个充电用户的档案，列表行的超集。
 type ChargeUserDetail struct {
-	ChargeUserRow                        // 用户 ID及批量派生统计
-	WalletStatus  string                 `json:"wallet_status"`  // 钱包状态：active/frozen
-	RecentOrders  []ChargeUserOrderBrief `json:"recent_orders"`  // 最近订单，按下单时间倒序
-	CouponGranted int64                  `json:"coupon_granted"` // 累计发放的优惠券张数
-	CouponUnused  int64                  `json:"coupon_unused"`  // 当前未使用的优惠券张数
-	FaultReports  int64                  `json:"fault_reports"`  // 该用户提交的报障单数
+	ChargeUserRow                            // 用户 ID及批量派生统计
+	WalletStatus  walletdomain.AccountStatus `json:"wallet_status"`  // wallet_account.status：active/frozen
+	RecentOrders  []ChargeUserOrderBrief     `json:"recent_orders"`  // 最近订单，按下单时间倒序
+	CouponGranted int64                      `json:"coupon_granted"` // 累计发放的优惠券张数
+	CouponUnused  int64                      `json:"coupon_unused"`  // 当前未使用的优惠券张数
+	FaultReports  int64                      `json:"fault_reports"`  // 该用户提交的报障单数
 }
 
 // ChargeUserOrderBrief 是用户档案中的最近订单摘要，包含业务、支付状态和关键时间。
 type ChargeUserOrderBrief struct {
-	OrderID        uint64  `json:"order_id" gorm:"column:id"`                     // 订单主键
-	OrderNo        string  `json:"order_no" gorm:"column:order_no"`               // 订单号，用户报障时会向客服念这个
-	DeviceID       string  `json:"device_id" gorm:"column:device_id"`             // 设备编号
-	StationID      *uint64 `json:"station_id" gorm:"column:station_id"`           // 站点 ID；指针，未关联为 null
-	Status         string  `json:"status" gorm:"column:status"`                   // 内部生命周期，供异常提示与兼容使用。
-	BusinessStatus string  `json:"business_status" gorm:"column:business_status"` // 独立业务状态：待启动、充电中、已完成。
-	PaymentStatus  string  `json:"payment_status" gorm:"column:payment_status"`   // 独立支付状态，读取实际到账/退款后持久化的值。
-	TotalCents     *int64  `json:"total_cents" gorm:"column:total_cents"`         // 应收合计（分）；指针，未计费为 null
-	CreatedAt      string  `json:"created_at" gorm:"column:created_at"`           // 下单时间
-	StartedAt      *string `json:"started_at" gorm:"column:started_at"`           // 开始充电时间；指针，未开始为 null
+	OrderID        uint64                          `json:"order_id" gorm:"column:id"`                     // 订单主键
+	OrderNo        string                          `json:"order_no" gorm:"column:order_no"`               // 订单号，用户报障时会向客服念这个
+	DeviceID       string                          `json:"device_id" gorm:"column:device_id"`             // 设备编号
+	StationID      *uint64                         `json:"station_id" gorm:"column:station_id"`           // 站点 ID；指针，未关联为 null
+	Status         orderdomain.OrderStatus         `json:"status" gorm:"column:status"`                   // charge_order.status，内部生命周期，供异常提示与兼容使用。
+	BusinessStatus orderdomain.OrderBusinessStatus `json:"business_status" gorm:"column:business_status"` // charge_order.business_status 生成列：待启动、充电中、已完成。
+	PaymentStatus  orderdomain.OrderPaymentStatus  `json:"payment_status" gorm:"column:payment_status"`   // charge_order.payment_status，实际到账/退款后持久化的值。
+	TotalCents     *int64                          `json:"total_cents" gorm:"column:total_cents"`         // 应收合计（分）；指针，未计费为 null
+	CreatedAt      string                          `json:"created_at" gorm:"column:created_at"`           // 下单时间
+	StartedAt      *string                         `json:"started_at" gorm:"column:started_at"`           // 开始充电时间；指针，未开始为 null
 }
 
 // ChargeUserDetailOrderLimit 限制档案中的最近订单数；完整历史通过订单列表按 user_id 查询。
@@ -115,6 +118,8 @@ func DecorateChargeUsers(ctx context.Context, db *gorm.DB, rows []ChargeUserRow)
 func ChargeUsers(ctx context.Context, db *gorm.DB, q persist.PageQuery) ([]ChargeUserRow, int64, error) {
 	out := []ChargeUserRow{}
 	query := db.WithContext(ctx).Model(&ChargeUserRow{}).Where("deleted_at IS NULL")
+	// q.Status 是跨业务共用的查询筛选项（persist.PageQuery.Status），白名单在各自接口校验；
+	// 此处仅原样透传，值最终落回 user.status，不在仓储层转换类型。
 	if q.Status != "" {
 		query = query.Where("status = ?", q.Status)
 	}
@@ -208,6 +213,8 @@ func LoadChargeUserDetail(ctx context.Context, db *gorm.DB, id uint64, orderLimi
 	if err := db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", id).Take(&detail.ChargeUserRow).Error; err != nil {
 		return detail, err
 	}
+	// status 取 wallet_account.status，绑定到 detail.WalletStatus；
+	// 该列与 user.status 取值串相同但分立，两个类型不可互赋。
 	if err := db.WithContext(ctx).Raw(
 		"SELECT status FROM wallet_account WHERE user_id = ? AND deleted_at IS NULL LIMIT 1", id).
 		Scan(&detail.WalletStatus).Error; err != nil {

@@ -18,10 +18,10 @@ type QueryService struct {
 
 // SchemeView 是计费模板的公开字段；JSON 无法解析或缺少 Scheme 的记录跳过。
 type SchemeView struct {
-	ID      uint64           `json:"id"`      // 模板主键
-	Scheme  *charging.Scheme `json:"scheme"`  // 已存模板的完整方案
-	Version uint32           `json:"version"` // 当前模板版本
-	Status  string           `json:"status"`  // active／disabled
+	ID      uint64                `json:"id"`      // 模板主键
+	Scheme  *charging.Scheme      `json:"scheme"`  // 已存模板的完整方案
+	Version uint32                `json:"version"` // 当前模板版本
+	Status  PricingTemplateStatus `json:"status"`  // active／disabled
 }
 
 // EffectiveScheme 分别保存设备覆盖版本和实际生效规则，不能用继承版本代替设备覆盖版本。

@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"chargepilot/internal/domain/money"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -80,7 +81,7 @@ func (s RechargeService) Create(ctx context.Context, userID uint64, in RechargeI
 			}
 		} else if err != nil {
 			return err
-		} else if account.Status != "active" {
+		} else if account.Status != walletdomain.AccountActive {
 			return ErrFrozen
 		}
 		prior, err := repo.FindRechargeRequest(tx, in.RequestID)

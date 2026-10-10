@@ -1,6 +1,9 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/devices"
+	"chargepilot/internal/domain/money"
+	"chargepilot/internal/protocol"
 	"database/sql"
 	"time"
 )
@@ -24,8 +27,8 @@ type devicePortRow struct {
 	PortNo uint8 `gorm:"column:port_no"`
 	// PortCode 端口业务编码。
 	PortCode string `gorm:"column:port_code"`
-	// Status 状态。
-	Status string `gorm:"column:status"`
+	// Status 状态；词表见 domain/money.PortStatus。
+	Status money.PortStatus `gorm:"column:status"`
 	// CurrentOrderID 占用端口的订单号，NULL 表示无占用。
 	CurrentOrderID sql.NullString `gorm:"column:current_order_id"`
 }
@@ -63,8 +66,8 @@ type chargeCommandRow struct {
 	PortID sql.NullInt64 `gorm:"column:port_id"`
 	// OwnsPort 命令是否持有业务端口。
 	OwnsPort bool `gorm:"column:owns_port"`
-	// Status 状态。
-	Status string `gorm:"column:status"`
+	// Status 命令持久化状态，对应 charge_command.status。
+	Status devices.ChargeCommandStatus `gorm:"column:status"`
 	// SessionID START 六字节命令会话的十六进制文本，可空；不等同于设备 TCP 连接会话。
 	SessionID sql.NullString `gorm:"column:session_id"`
 	// StopSessionID 补偿 STOP 的六字节会话十六进制文本。
@@ -102,8 +105,8 @@ type chargeStopCommandRow struct {
 	PortNo uint8 `gorm:"column:port_no"`
 	// PortID 关联 device_port 自增主键，可空。
 	PortID sql.NullInt64 `gorm:"column:port_id"`
-	// Status 状态。
-	Status string `gorm:"column:status"`
+	// Status 命令持久化状态，对应 charge_stop_command.status；该列没有 stopping。
+	Status devices.StopCommandStatus `gorm:"column:status"`
 	// SessionID 用户 STOP 六字节命令会话的十六进制文本，可空；重试复用该身份。
 	SessionID sql.NullString `gorm:"column:session_id"`
 	// ResultCode 协议结果码，保留可空映射。
@@ -125,8 +128,8 @@ type deviceEventRow struct {
 	Protocol string `gorm:"column:protocol_name"`
 	// DeviceID 设备业务编号。
 	DeviceID string `gorm:"column:device_id"`
-	// EventType 协议事件类型。
-	EventType string `gorm:"column:event_type"`
+	// EventType 协议事件类型，对应 device_event.event_type。
+	EventType protocol.EventType `gorm:"column:event_type"`
 	// PortNo 协议端口序号。
 	PortNo uint8 `gorm:"column:port_no"`
 	// EventJSON 持久协议事件 JSON 字节。

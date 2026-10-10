@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/platform/serviceclient"
 )
 
@@ -89,7 +90,7 @@ func (c *Client) RequestStart(ctx context.Context, request gatewaycontract.Start
 	if err != nil {
 		return data, err
 	}
-	if data.OrderNo != request.OrderNo || data.CommandID == "" || data.Status == "" || data.DeviceAcknowledged != (data.Status == "acked") {
+	if data.OrderNo != request.OrderNo || data.CommandID == "" || data.Status == "" || data.DeviceAcknowledged != (data.Status == devices.CommandAcked) {
 		return gatewaycontract.StartReply{}, fmt.Errorf("%w: start acceptance missing or inconsistent", ErrInvalidResponse)
 	}
 	return data, nil

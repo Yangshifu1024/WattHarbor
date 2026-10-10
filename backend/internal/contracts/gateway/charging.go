@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/protocol"
 )
 
@@ -80,10 +81,10 @@ type StopRequest struct {
 
 // StopReply 只确认停止命令已受理，Stopped 保持 false；设备结束由异步回执确认。
 type StopReply struct {
-	Accepted  bool   `json:"accepted"`   // 网关已保存停止命令
-	Stopped   bool   `json:"stopped"`    // 是否设备已停止；受理阶段固定为 false
-	CommandID string `json:"command_id"` // 持久命令标识，用于网关重试与设备回执
-	Status    string `json:"status"`     // 命令持久化状态
+	Accepted  bool                      `json:"accepted"`   // 网关已保存停止命令
+	Stopped   bool                      `json:"stopped"`    // 是否设备已停止；受理阶段固定为 false
+	CommandID string                    `json:"command_id"` // 持久命令标识，用于网关重试与设备回执
+	Status    devices.StopCommandStatus `json:"status"`     // 命令持久化状态，对应 charge_stop_command.status
 }
 
 // StartRequest 提交订单号，请求网关检查权限并保存启动命令；重试沿用同一订单。
@@ -94,8 +95,8 @@ type StartRequest struct {
 // StartReply 是持久化 START 命令的请求处理结果。
 // DeviceAcknowledged 表示网关已收到启动回执；central 仍需处理该回执才能更新订单。
 type StartReply struct {
-	OrderNo            string `json:"order_no"`            // 充电订单号，重试沿用
-	CommandID          string `json:"command_id"`          // 持久命令标识，用于网关重试与设备回执
-	Status             string `json:"status"`              // 命令持久化状态
-	DeviceAcknowledged bool   `json:"device_acknowledged"` // 网关是否已经持有设备启动回执
+	OrderNo            string                      `json:"order_no"`            // 充电订单号，重试沿用
+	CommandID          string                      `json:"command_id"`          // 持久命令标识，用于网关重试与设备回执
+	Status             devices.ChargeCommandStatus `json:"status"`              // 命令持久化状态，对应 charge_command.status
+	DeviceAcknowledged bool                        `json:"device_acknowledged"` // 网关是否已经持有设备启动回执
 }

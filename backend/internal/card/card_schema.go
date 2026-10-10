@@ -11,10 +11,10 @@ import (
 
 // OnlineCard 保存卡号、绑定用户和卡状态；刷卡用例另行检查协议卡号范围。
 type OnlineCard struct {
-	ID     uint64 `json:"id"`             // 在线卡主键
-	CardNo string `json:"card_no"`        // 绑定卡号的规范十进制文本；协议刷卡仍校验其32位范围
-	UserID uint64 `json:"user_id,string"` // 绑定用户主键，响应按十进制字符串传输
-	Status string `json:"status"`         // 卡状态：active/lost/disabled/unbound
+	ID     uint64     `json:"id"`             // 在线卡主键
+	CardNo string     `json:"card_no"`        // 绑定卡号的规范十进制文本；协议刷卡仍校验其32位范围
+	UserID uint64     `json:"user_id,string"` // 绑定用户主键，响应按十进制字符串传输
+	Status CardStatus `json:"status"`         // online_card.status：active/lost/disabled/unbound
 }
 
 // CardCharge 保存刷卡订单的占用、累计购买记录与首购执行快照；续购沿用冻结套餐和上限，不读取当前价格替换它们。

@@ -18,7 +18,7 @@ type RechargeSources struct{}
 // 无来源只查询一次，有候选时再查询并加锁；调用方负责提交或回滚。
 func (RechargeSources) LockRechargeSources(tx *gorm.DB, userID uint64) ([]wallet.RechargeSource, error) {
 	var ids []uint64
-	if err := tx.Table("payment_order").Where("user_id=? AND biz_type=? AND pay_method='wechat' AND status IN ? AND deleted_at IS NULL", userID, money.PaymentBizWalletRecharge, refundablePaymentStatuses()).Order("id").Pluck("id", &ids).Error; err != nil {
+	if err := tx.Table("payment_order").Where("user_id=? AND biz_type=? AND pay_method=? AND status IN ? AND deleted_at IS NULL", userID, money.PaymentBizWalletRecharge, money.PayMethodWechat, refundablePaymentStatuses()).Order("id").Pluck("id", &ids).Error; err != nil {
 		return nil, err
 	}
 	out := make([]wallet.RechargeSource, 0, len(ids))
@@ -33,7 +33,7 @@ func (RechargeSources) LockRechargeSources(tx *gorm.DB, userID uint64) ([]wallet
 		RefundedCents       int64          // 成功退款累计，分
 		WechatTransactionID sql.NullString // 渠道交易号；空值不可原路退款
 	}
-	if err := tx.Table("payment_order FORCE INDEX (PRIMARY)").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ? AND user_id=? AND biz_type=? AND pay_method='wechat' AND status IN ? AND deleted_at IS NULL", ids, userID, money.PaymentBizWalletRecharge, refundablePaymentStatuses()).Order("id").Find(&rows).Error; err != nil {
+	if err := tx.Table("payment_order FORCE INDEX (PRIMARY)").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ? AND user_id=? AND biz_type=? AND pay_method=? AND status IN ? AND deleted_at IS NULL", ids, userID, money.PaymentBizWalletRecharge, money.PayMethodWechat, refundablePaymentStatuses()).Order("id").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range rows {

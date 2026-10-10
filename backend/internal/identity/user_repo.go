@@ -1,6 +1,7 @@
 package identity
 
 import (
+	identitydomain "chargepilot/internal/domain/identity"
 	"chargepilot/internal/wallet"
 	"context"
 	"database/sql"
@@ -60,7 +61,7 @@ func (s UserRepo) loginOnce(ctx context.Context, openID, unionID string) (User, 
 		var current UserAccount
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("openid = ? AND deleted_at IS NULL", openID).Order("id ASC").Take(&current).Error
 		if err == nil {
-			if current.Status != "active" {
+			if current.Status != identitydomain.UserActive {
 				return ErrUserFrozen
 			}
 			now := time.Now().UTC()
@@ -78,7 +79,7 @@ func (s UserRepo) loginOnce(ctx context.Context, openID, unionID string) (User, 
 		if err != nil {
 			return err
 		}
-		created := UserAccount{ID: id, OpenID: openID, Status: "active", LastLoginAt: sql.NullTime{Time: now, Valid: true}}
+		created := UserAccount{ID: id, OpenID: openID, Status: identitydomain.UserActive, LastLoginAt: sql.NullTime{Time: now, Valid: true}}
 		if unionID != "" {
 			created.UnionID = sql.NullString{String: unionID, Valid: true}
 		}
@@ -104,14 +105,14 @@ func (s UserRepo) Active(ctx context.Context, id uint64) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("user status: %w", err)
 	}
-	return user.Status == "active", nil
+	return user.Status == identitydomain.UserActive, nil
 }
 
 // LockStatusInTx 锁定未删除用户并读取当前状态，供同事务操作检查。
 // 调用方须先锁用户，再锁模板或钱包。
-func LockStatusInTx(tx *gorm.DB, id uint64) (string, error) {
+func LockStatusInTx(tx *gorm.DB, id uint64) (identitydomain.UserStatus, error) {
 	var user struct {
-		Status string `gorm:"column:status"` /* 账户状态 */
+		Status identitydomain.UserStatus `gorm:"column:status"` /* user.status，词表见 domain/identity */
 	}
 	err := tx.Table("user").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&user).Error
 	return user.Status, err
@@ -126,7 +127,7 @@ func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {
 		-- 该字面量在 Raw SQL 内联，无法用 Go 常量绑定；改动前须核对营销侧同一词表。
 		(SELECT COUNT(*) FROM coupon_grant AS g WHERE g.user_id = u.id AND g.status = 'unused' AND g.expired_at > NOW(3) AND g.deleted_at IS NULL) AS coupon_unused_count
 		FROM user AS u JOIN wallet_account AS w ON w.user_id = u.id AND w.deleted_at IS NULL
-		WHERE u.id = ? AND u.status = 'active' AND u.deleted_at IS NULL LIMIT 1`, id).Scan(&row)
+		WHERE u.id = ? AND u.status = ? AND u.deleted_at IS NULL LIMIT 1`, id, identitydomain.UserActive).Scan(&row)
 	if result.Error != nil {
 		return Profile{}, result.Error
 	}

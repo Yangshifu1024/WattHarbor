@@ -2,6 +2,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/money"
 	"context"
 	"crypto/sha256"
@@ -37,6 +38,8 @@ func (s MySQLSink) HasChargingPorts(ctx context.Context, deviceID string) (bool,
 }
 
 // cardDeliveryRow 仅映射 card_event_delivery 事件键，供持久设备卡事件时幂等建立投递记录。
+// status 列不在此处映射：初值由数据库 default pending 填充，投递状态只由
+// AdvanceCardDelivery 显式更新，读取侧走 ListPendingCardDeliveries 的 SQL 条件。
 type cardDeliveryRow struct {
 	// EventKey 持久事件幂等键。
 	EventKey string `gorm:"column:event_key;primaryKey"`
@@ -90,7 +93,9 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	// Outbox 使用统一事件结构：event_id、event_type、source、occurred_at 和 data。
 	// 调用方按事件字段路由；device_event.event_json 另行保留解码事件及原始载荷，供诊断和重放。
 	envelope, err := json.Marshal(map[string]any{
-		"event_id":    key,
+		"event_id": key,
+		// event_type 取自 protocol.EventType（device_event.event_type 同一词表）；
+		// 显式转换只为 map 落普通字符串，编码后的 JSON 字节不变。
 		"event_type":  string(event.Type),
 		"source":      "gateway",
 		"occurred_at": event.ReceivedAt.UTC(),
@@ -102,7 +107,7 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		inserted := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&deviceEventRow{
 			EventKey: key, Protocol: event.Protocol, DeviceID: event.DeviceID,
-			EventType: string(event.Type), PortNo: event.Port, EventJSON: data, ReceivedAt: event.ReceivedAt.UTC(),
+			EventType: event.Type, PortNo: event.Port, EventJSON: data, ReceivedAt: event.ReceivedAt.UTC(),
 		})
 		if inserted.Error != nil {
 			return fmt.Errorf("persist device event: %w", inserted.Error)
@@ -166,17 +171,19 @@ func applyUserStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) er
 		return err
 	}
 	if stopAckAccepted(event.ResultCode) {
-		if command.Status == "sent" {
+		// SQL 内 status = 'sent'／status = 'acked' 分别对应
+		// devices.StopCommandSent／StopCommandSent／StopCommandAcked（charge_stop_command.status）。
+		if command.Status == devices.StopCommandSent {
 			return tx.Model(&chargeStopCommandRow{}).Where("command_id = ? AND status = 'sent'", command.CommandID).
-				Updates(map[string]any{"status": "acked", "result_code": int16(event.ResultCode)}).Error
+				Updates(map[string]any{"status": devices.StopCommandAcked, "result_code": int16(event.ResultCode)}).Error
 		}
 		return nil
 	}
 	// 设备拒绝停止时持久化失败结果，避免命令持续停留在 sent 状态。
-	if command.Status == "sent" {
+	if command.Status == devices.StopCommandSent {
 		return tx.Model(&chargeStopCommandRow{}).Where("command_id = ? AND status = 'sent'", command.CommandID).
 			Updates(map[string]any{
-				"status":      "rejected",
+				"status":      devices.StopCommandRejected,
 				"result_code": int16(event.ResultCode),
 				"rejected_at": event.ReceivedAt.UTC(),
 			}).Error
@@ -199,9 +206,11 @@ func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error
 	if !command.PortID.Valid || command.PortID.Int64 <= 0 {
 		return ErrOrderConflict
 	}
-	if event.ResultCode == 0 && command.Status == "sent" {
+	if event.ResultCode == 0 && command.Status == devices.CommandSent {
+		// SQL 内 status = 'sent'／status = 'acked' 对应 devices.CommandSent／CommandAcked
+		// （charge_command.status）。
 		changed := tx.Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'sent'", command.CommandID).
-			Updates(map[string]any{"status": "acked", "error": nil, "result_code": 0, "ack_at": event.ReceivedAt.UTC()})
+			Updates(map[string]any{"status": devices.CommandAcked, "error": nil, "result_code": 0, "ack_at": event.ReceivedAt.UTC()})
 		if err := requireOne(changed); err != nil {
 			return ErrOrderConflict
 		}
@@ -210,9 +219,10 @@ func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error
 			return ErrPortUnavailable
 		}
 	}
-	if event.ResultCode != 0 && (command.Status == "sent" || command.Status == "stopping") {
+	if event.ResultCode != 0 && (command.Status == devices.CommandSent || command.Status == devices.CommandStopping) {
+		// SQL 内 status IN ('sent','stopping') 对应 devices.CommandSent、CommandStopping。
 		updated := tx.Model(&chargeCommandRow{}).Where("command_id = ? AND status IN ('sent','stopping')", command.CommandID).
-			Updates(map[string]any{"status": "rejected", "error": fmt.Sprintf("device rejected START code %d", event.ResultCode), "result_code": event.ResultCode, "ack_at": event.ReceivedAt.UTC()})
+			Updates(map[string]any{"status": devices.CommandRejected, "error": fmt.Sprintf("device rejected START code %d", event.ResultCode), "result_code": event.ResultCode, "ack_at": event.ReceivedAt.UTC()})
 		if updated.Error != nil {
 			return updated.Error
 		}
@@ -225,6 +235,7 @@ func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error
 // applyStopAck 只处理 stopping 命令的停止终态回执，拒绝启动并释放该订单占用的端口。
 func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
 	var command chargeCommandRow
+	// SQL 内 status = 'stopping' 对应 devices.CommandStopping（charge_command.status）。
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("device_id = ? AND port_no = ? AND stop_session_id = ? AND status = 'stopping'", event.DeviceID, event.Port, hex.EncodeToString(event.SessionID[:])).Take(&command).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -242,7 +253,7 @@ func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error 
 		return ErrOrderConflict
 	}
 	changed := tx.Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'stopping'", command.CommandID).
-		Updates(map[string]any{"status": "rejected", "result_code": 254, "ack_at": event.ReceivedAt.UTC(), "error": "STOP compensation confirmed"})
+		Updates(map[string]any{"status": devices.CommandRejected, "result_code": 254, "ack_at": event.ReceivedAt.UTC(), "error": "STOP compensation confirmed"})
 	if err := requireOne(changed); err != nil {
 		return ErrOrderConflict
 	}

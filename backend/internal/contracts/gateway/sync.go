@@ -1,6 +1,10 @@
 package gateway
 
-import "time"
+import (
+	"time"
+
+	"chargepilot/internal/domain/devices"
+)
 
 const (
 	StartResultsPath      = "/api/v1/internal/start-results"
@@ -29,16 +33,16 @@ type DeferSyncDeliveryReply struct {
 
 // SyncCommand 保留端口、结果码和回执时间的空值，缺失记录不解码为零。
 type SyncCommand struct {
-	CommandID     string     `json:"command_id"`      // 已保存的命令 UUID，重试沿用
-	StopCommandID string     `json:"stop_command_id"` // 停止命令 UUID
-	ChargeOrderID uint64     `json:"charge_order_id"` // 充电订单 ID
-	OrderNo       string     `json:"order_no"`        // 业务订单号
-	DeviceID      string     `json:"device_id"`       // 设备编号
-	PortNo        uint8      `json:"port_no"`         // 物理端口号，从 1 开始
-	PortID        *int64     `json:"port_id"`         // 已开通端口的 ID
-	Status        string     `json:"status"`          // 已保存的命令状态
-	ResultCode    *int16     `json:"result_code"`     // 协议结果码，未收到回执时为空
-	AckAt         *time.Time `json:"ack_at"`          // 启动确认时间，UTC；未确认时为空
+	CommandID     string                      `json:"command_id"`      // 已保存的命令 UUID，重试沿用
+	StopCommandID string                      `json:"stop_command_id"` // 停止命令 UUID
+	ChargeOrderID uint64                      `json:"charge_order_id"` // 充电订单 ID
+	OrderNo       string                      `json:"order_no"`        // 业务订单号
+	DeviceID      string                      `json:"device_id"`       // 设备编号
+	PortNo        uint8                       `json:"port_no"`         // 物理端口号，从 1 开始
+	PortID        *int64                      `json:"port_id"`         // 已开通端口的 ID
+	Status        devices.ChargeCommandStatus `json:"status"`          // charge_command.status 词表，见 domain/devices
+	ResultCode    *int16                      `json:"result_code"`     // 协议结果码，未收到回执时为空
+	AckAt         *time.Time                  `json:"ack_at"`          // 启动确认时间，UTC；未确认时为空
 }
 
 // StartResultsReply 返回已确认且待上报的启动命令，不修改命令状态。

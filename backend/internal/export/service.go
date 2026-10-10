@@ -51,12 +51,13 @@ type CreateInput struct {
 }
 
 // CreateResult 是同步创建或重放结果，Message 非空时 HTTP 返回 failed 和公开提示。
+// Status 是对外契约字段（OpenAPI 依赖）：自定义字符串类型序列化为字符串，内容逐字节不变。
 type CreateResult struct {
-	TaskNo    string  // 同一任务号
-	Status    string  // 同步状态
-	RowCount  uint32  // 任务已保存的导出行数，尚未完成时为零
-	ExpiresAt *string // 可空公开截止字符串
-	Message   string  // 已持久失败的公开提示
+	TaskNo    string       // 同一任务号
+	Status    ExportStatus // 同步状态
+	RowCount  uint32       // 任务已保存的导出行数，尚未完成时为零
+	ExpiresAt *string      // 可空公开截止字符串
+	Message   string       // 已持久失败的公开提示
 }
 
 // ResourcesResult 返回可导出资源，不暴露来源表或 SQL 查询对象。
@@ -164,7 +165,7 @@ func (s ExportService) Resources(ctx context.Context, original operations.Profil
 	if err != nil {
 		return ResourcesResult{}, err
 	}
-	out := ResourcesResult{Items: []string{}, Formats: []string{"csv", "xlsx"}, MaxRows: s.maxRows()}
+	out := ResourcesResult{Items: []string{}, Formats: []string{string(ExportFormatCSV), string(ExportFormatXLSX)}, MaxRows: s.maxRows()}
 	for name, spec := range ExportResources() {
 		if p.HasPermission(spec.Permission) && (scope.Unrestricted || name != "bills") {
 			out.Items = append(out.Items, name)
@@ -178,7 +179,7 @@ func (s ExportService) List(ctx context.Context, original operations.Profile, pa
 	if page.Page < 1 || page.Page > 1000000 || page.PageSize < 1 || page.PageSize > 100 {
 		return persist.Page[ExportTaskRow]{}, &InputError{"分页参数无效"}
 	}
-	if page.Status != "" && page.Status != "pending" && page.Status != "running" && page.Status != "completed" && page.Status != "failed" && page.Status != "expired" {
+	if page.Status != "" && !ExportStatus(page.Status).Known() {
 		return persist.Page[ExportTaskRow]{}, &InputError{"关键词过长或状态无效"}
 	}
 	if _, err := s.actor(ctx, original, "finance.read"); err != nil {
@@ -206,9 +207,9 @@ func (in CreateInput) validate() (CreateInput, ExportSpec, error) {
 		return in, spec, &InputError{"不支持的导出资源"}
 	}
 	if in.Format == "" {
-		in.Format = "csv"
+		in.Format = string(ExportFormatCSV)
 	}
-	if in.Format != "csv" && in.Format != "xlsx" {
+	if !ExportFileFormat(in.Format).Known() {
 		return in, spec, &InputError{"导出格式无效"}
 	}
 	if in.Resource == "bills" && !operations.ValidExportPeriod(in.Filter) {
@@ -248,7 +249,7 @@ func (s ExportService) Create(ctx context.Context, audit ops.AuditContext, in Cr
 		if in.Resource == "bills" && !scope.Unrestricted {
 			return &ForbiddenError{"该财务资源只允许全局数据范围导出"}
 		}
-		inserted, err := s.repo().ClaimExportTask(tx, ExportTaskInsert{TaskNo: taskNo, Resource: in.Resource, FileFormat: in.Format, RequestedBy: p.ID, FilterJSON: string(filter), ExpiresAt: s.now().Add(24 * time.Hour)})
+		inserted, err := s.repo().ClaimExportTask(tx, ExportTaskInsert{TaskNo: taskNo, Resource: in.Resource, FileFormat: ExportFileFormat(in.Format), RequestedBy: p.ID, FilterJSON: string(filter), ExpiresAt: s.now().Add(24 * time.Hour)})
 		if err != nil {
 			return err
 		}
@@ -262,7 +263,7 @@ func (s ExportService) Create(ctx context.Context, audit ops.AuditContext, in Cr
 				return err
 			}
 		}
-		if row.RequestedBy != p.ID || row.Resource != in.Resource || row.FileFormat != in.Format || !reflect.DeepEqual(saved, in.Filter) {
+		if row.RequestedBy != p.ID || row.Resource != in.Resource || string(row.FileFormat) != in.Format || !reflect.DeepEqual(saved, in.Filter) {
 			return operations.ErrConflict
 		}
 		if !inserted {
@@ -275,11 +276,11 @@ func (s ExportService) Create(ctx context.Context, audit ops.AuditContext, in Cr
 	if err != nil {
 		return CreateResult{}, err
 	}
-	if row.Status == "pending" || row.Status == "running" {
+	if row.Status == ExportStatusPending || row.Status == ExportStatusRunning {
 		if err := s.Generate(ctx, taskNo, audit.Actor); err != nil {
 			var failed *generationFailure
 			if errors.As(err, &failed) {
-				return CreateResult{TaskNo: taskNo, Status: "failed", Message: "导出失败，请稍后重试"}, nil
+				return CreateResult{TaskNo: taskNo, Status: ExportStatusFailed, Message: "导出失败，请稍后重试"}, nil
 			}
 			return CreateResult{}, err
 		}

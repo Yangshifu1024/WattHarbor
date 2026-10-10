@@ -13,23 +13,26 @@ import (
 )
 
 // activityRule 保存加锁后用于发券的完整配置，不使用锁前查询结果。
+// TriggerType 与 Status 来自 coupon_activity_rule 表（trigger_type 与 status 列）。
 type activityRule struct {
-	ID              uint64        `gorm:"column:id"`                // 活动规则主键
-	TriggerType     string        `gorm:"column:trigger_type"`      // 触发类型
-	CouponID        uint64        `gorm:"column:coupon_id"`         // 被邀请人或普通奖励模板
-	InviterCouponID sql.NullInt64 `gorm:"column:inviter_coupon_id"` // 邀请人奖励模板
-	ThresholdCents  int64         `gorm:"column:threshold_cents"`   // 门槛，分
-	MaxGrants       int           `gorm:"column:max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
-	PerUserLimit    int           `gorm:"column:per_user_limit"`    // 单人份数，0 默认 1 份
-	Status          string        `gorm:"column:status"`            // 启停状态
-	StartAt         time.Time     `gorm:"column:start_at"`          // 活动开始时刻
-	EndAt           time.Time     `gorm:"column:end_at"`            // 活动截止时刻
+	ID              uint64         `gorm:"column:id"`                // 活动规则主键
+	TriggerType     TriggerType    `gorm:"column:trigger_type"`      // 触发类型
+	CouponID        uint64         `gorm:"column:coupon_id"`         // 被邀请人或普通奖励模板
+	InviterCouponID sql.NullInt64  `gorm:"column:inviter_coupon_id"` // 邀请人奖励模板
+	ThresholdCents  int64          `gorm:"column:threshold_cents"`   // 门槛，分
+	MaxGrants       int            `gorm:"column:max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
+	PerUserLimit    int            `gorm:"column:per_user_limit"`    // 单人份数，0 默认 1 份
+	Status          ActivityStatus `gorm:"column:status"`            // coupon_activity_rule.status：活动规则启停
+	StartAt         time.Time      `gorm:"column:start_at"`          // 活动开始时刻
+	EndAt           time.Time      `gorm:"column:end_at"`            // 活动截止时刻
 }
 
 // activityCoupon 保存按主键锁定的模板配置。
+// Status 来自 coupon 表，与 activityRule.Status 同名但不同表、不同类型、不同语义：
+// 本字段是 coupon.status（券模板启停），上字段是 coupon_activity_rule.status（活动规则启停）。
 type activityCoupon struct {
 	ID         uint64       `gorm:"column:id"`          // 模板主键
-	Status     string       `gorm:"column:status"`      // 启停状态
+	Status     CouponStatus `gorm:"column:status"`      // coupon.status：券模板启停
 	ValidHours int          `gorm:"column:valid_hours"` // 领取后的有效小时
 	StartAt    sql.NullTime `gorm:"column:start_at"`    // 可选开始时刻
 	EndAt      sql.NullTime `gorm:"column:end_at"`      // 可选截止时刻
@@ -37,6 +40,8 @@ type activityCoupon struct {
 
 // activeRules 先筛选触发类型和金额匹配的规则主键，再按主键锁读最新配置并复查。
 // 候选查询结果不能直接用于发券；之后按模板主键升序加锁，不再锁用户或钱包。
+// 两处 SQL 内的 status='active' 是 coupon_activity_rule.status 的字面量，
+// 与 ActivityStatus 词表一致；为保留候选查询与锁后复查的同一条件，不拆分查询。
 func activeRules(tx *gorm.DB, event ActivityEvent) ([]activityRule, error) {
 	query := tx.Table("coupon_activity_rule").
 		Where("trigger_type=? AND status='active' AND deleted_at IS NULL", event.TriggerType).

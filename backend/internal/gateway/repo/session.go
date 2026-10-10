@@ -18,8 +18,8 @@ type deviceSessionRow struct {
 	SessionID string `gorm:"column:session_id"`
 	// DeviceID 设备业务编号。
 	DeviceID string `gorm:"column:device_id"`
-	// Protocol 是连接传输方式，如 tcp。
-	Protocol string `gorm:"column:protocol"`
+	// Protocol 是连接传输方式，对应 device_session.protocol（tcp/mqtt）。
+	Protocol protocol.Transport `gorm:"column:protocol"`
 	// RemoteAddr 设备连接远端地址。
 	RemoteAddr string `gorm:"column:remote_addr"`
 	// StartedAt 设备连接开始时刻。
@@ -28,8 +28,10 @@ type deviceSessionRow struct {
 	LastActiveAt time.Time `gorm:"column:last_active_at"`
 	// EndedAt 设备连接结束时刻。
 	EndedAt time.Time `gorm:"column:ended_at"`
-	// CloseReason 设备连接关闭原因。
-	CloseReason string `gorm:"column:close_reason"`
+	// CloseReason 设备连接关闭原因，对应 device_session.close_reason。
+	// 该列是 VARCHAR 开放集合，存量行可能有 protocol.CloseReason 常量以外的值，
+	// 读取与写入均不做统一 Valid 拒绝。
+	CloseReason protocol.CloseReason `gorm:"column:close_reason"`
 	// BytesIn 连接累计接收字节数。
 	BytesIn int64 `gorm:"column:bytes_in"`
 	// BytesOut 连接累计发送字节数。
@@ -58,7 +60,7 @@ func (s MySQLSink) RecordSession(ctx context.Context, record protocol.SessionRec
 	row := deviceSessionRow{
 		SessionID:    record.SessionID,
 		DeviceID:     record.DeviceID,
-		Protocol:     string(record.Transport),
+		Protocol:     record.Transport,
 		RemoteAddr:   record.RemoteAddr,
 		StartedAt:    record.StartedAt,
 		LastActiveAt: record.LastActive,

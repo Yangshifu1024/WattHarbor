@@ -63,23 +63,31 @@
 
 ### 状态词汇的归属与依赖边界
 
-数据库状态列的取值词汇集中在 `internal/domain/<域>/` 与两个就地升级的例外，不放在用例包里：
+数据库状态列的取值词汇集中在 `internal/domain/<域>/` 与各属主包的就地定义，不放在用例包的散落字面量里：
 
 | 包 | 类型 | 权威列 |
 | --- | --- | --- |
 | `domain/order` | `OrderStatus`、`OrderBusinessStatus`、`OrderPaymentStatus` | `charge_order.status`／`business_status`／`payment_status` |
-| `domain/money` | `PaymentBizType`、`PaymentStatus`、`RefundStatus`、`ScanKind`、`PortStatus` | `payment_order`、`refund_record`、`gateway_db.device_port`，`ScanKind` 无列 |
+| `domain/money` | `PaymentBizType`、`PaymentStatus`、`RefundStatus`、`ScanKind`、`PortStatus`、`PayMethod`、`PaymentIntentStatus`、`ExecutionPolicy` | `payment_order`、`refund_record`、`gateway_db.device_port`；`ScanKind` 无列 |
 | `domain/marketing` | `GrantStatus`、`GrantSource` | `coupon_grant.status`／`grant_source` |
 | `domain/card` | `CardOperationKind`、`CardOperationStatus` | `card_operation.kind`／`status` |
-| `device`（就地升级） | `FaultStatus` | `device_fault_report.status` |
+| `domain/devices` | `DeviceMetaStatus`、`GatewayDeviceStatus`、`AlertStatus`、`AlertSeverity`、`ChargeCommandStatus`、`StopCommandStatus`、`VendorStatus`、`VendorProtocol` | `device_meta.status`、`gateway_db.device.status`、`alert_event.status`／`severity`、`charge_command.status`、`charge_stop_command.status`、`vendor.status`／`protocol` |
+| `domain/wallet` | `AccountStatus`、`TxnDirection`、`TxnBizType`、`FreezeStatus` | `wallet_account.status`、`wallet_txn.direction`／`biz_type`、`risk_freeze_log.status` |
+| `domain/identity` | `UserStatus`、`Gender` | `user.status`／`gender` |
+| `domain/operations` | `ScopeType` | `admin_data_scope.scope_type`（就地升级已有常量） |
 
-`FaultStatus` 未上提到 `domain`，因为报修流转判定只服务设备用例自身，且需要跨用例的权限与数据范围核对，提取到 domain 不会减少反向依赖。
+各属主包的就地定义（不被其他包消费，故不上提）：`device` 的 `StationStatus`／`FaultType`／`ReportSource`／`ImportStatus`／`FaultEventType`、`card` 的 `CardStatus`、`marketing` 的 `CouponStatus`／`ActivityStatus`／`DiscountType`／`TriggerType`、`order` 的 `FeedbackStatus`／`FeedbackCategory`、`ops` 的 `AnnouncementStatus`／`AnnouncementScope`／`AdminUserStatus`／`OutboxStatus`、`settlement` 的 `BillingJobStatus`／`BillStatus`／`MeterReviewStatus`／`ManualFeeReviewStatus`／`InvoiceType`／两套发票审核状态／`RefundReviewOutcome`、`pricing` 的 `PricingRuleStatus`／`PricingTemplateStatus`、`export` 的 `ExportStatus`／`ExportFileFormat`、`worker/repo` 的 `TaskExecutionStatus`／`TaskTriggeredBy`、`gateway/repo` 的 `CardDeliveryStatus`。
 
-依赖方向三条约束，破坏任何一条都属于结构错误而非风格问题：
+`FaultStatus` 未上提到 `domain`，因为报修流转判定只服务设备用例自身，且需要跨用例的权限与数据范围核对，提取到 domain 不会减少反向依赖。`OutboxStatus` 留在 `ops` 而非 domain：事件在 central 与 gateway 两库创建、由 worker 侧统一领取推进，`ops` 位于 central 侧并被 worker 直接消费，上提反而让后台队列依赖领域包。
 
-1. **`internal/contracts/*` 不得引用业务实现包**，但**可以**引用 `internal/domain/*`。`contracts/central` 与 `contracts/gateway` 都直接承载枚举类型，这是新建 `domain/card` 的原因——否则契约层只能引用 `internal/card`。
-2. **`internal/domain/*` 不得反向依赖任何业务实现包**，也不引用数据库模型、HTTP 框架或持久层标签。它只定义取值词汇与判定所需的纯逻辑。
-3. **同名不同义的列不得因值相同而合并类型**。`payment_order.status` 与 `charge_payment_intent.status`、`device_port.status` 与 `charge_process.port_status`、`coupon.status` 与 `coupon_grant.status`、`trigger_type` 与 `grant_source` 的 `invite_reward` 都是字面量有交集但语义独立的列。新增类型时先确认列，再确认取值。
+依赖方向四条约束，破坏任何一条都属于结构错误而非风格问题：
+
+1. **`internal/contracts/*` 不得引用业务实现包**，但**可以**引用 `internal/domain/*` 与 `internal/protocol`。`contracts/central` 与 `contracts/gateway` 都直接承载枚举类型，这是新建 `domain/card`、`domain/devices` 的原因——否则契约层只能引用 `internal/card`。
+2. **`internal/domain/*` 不得反向依赖任何业务实现包**，也不引用数据库模型、HTTP 框架或持久层标签。它只定义取值词汇与判定所需的纯逻辑。`domain/devices` 已引入 `domain/money` 的单向依赖（中央状态字段随扫码结果透传），反向边仍然禁止。
+3. **同名不同义的列不得因值相同而合并类型**。`payment_order.status` 与 `charge_payment_intent.status`、`device_port.status` 与 `charge_process.port_status`、`coupon.status` 与 `coupon_grant.status`、`trigger_type` 与 `grant_source` 的 `invite_reward`、`device_meta.status`（四值）与 `gateway_db.device.status`（三值）、`wallet_account.status` 与 `user.status`（取值串完全相同）、`charge_command.status`（含 `stopping`）与 `charge_stop_command.status`（不含）都是字面量有交集但语义独立的列。新增类型时先确认列，再确认取值。
+4. **可写集合按操作边界建模，不用单一 `Valid()` 收口**。`DeviceMetaStatus.Known()` 是数据库合法集合（四值）而 `ManageWritable()` 是管理端启停准入（两值）；`CardStatus` 分 `UserWritable()` 与 `ManageWritable()`。仓储函数本身仍可不做限制（`SaveDeviceStatus` 原样写入），不得由用例的约束推断所有写入路径。
+
+`persist.PageQuery.Status` 是跨业务共用的查询筛选项，被 coupon、activity_rule、export_task、feedback、user、vendor 等多家复用且各自白名单不同，**必须保持 `string`**，各用例在自己的校验处转换。这是共享筛选通道，不是待收敛的枚举。
 
 数据库查询里的状态取值按以下规则落地：`Where`／`Updates` 的条件值绑定为常量或具名集合函数；`CASE` 分支值与聚合表达式（`SUM(status='unused')`）是 SQL 语法的一部分，保留字面量并注释指向词表；跨包 `Raw` SQL 无法用 Go 常量绑定，同样保留并注释。
 

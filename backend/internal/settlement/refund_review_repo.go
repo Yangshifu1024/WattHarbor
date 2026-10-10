@@ -107,7 +107,7 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 		if pending > pay.PaidCents-pay.RefundedCents-in.AmountCents {
 			return ErrRefundConflict
 		}
-		record := RefundRecord{RefundNo: refundNo, PaymentOrderID: pay.ID, UserID: pay.UserID, BizType: money.PaymentBizCharge, BizID: in.OrderID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: money.RefundPending, ExecutionPolicy: "manual_review", NextAttemptAt: time.Now().UTC(), CreatedMonth: dbutil.MonthStart()}
+		record := RefundRecord{RefundNo: refundNo, PaymentOrderID: pay.ID, UserID: pay.UserID, BizType: money.PaymentBizCharge, BizID: in.OrderID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: money.RefundPending, ExecutionPolicy: money.ExecutionManualReview, NextAttemptAt: time.Now().UTC(), CreatedMonth: dbutil.MonthStart()}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
@@ -149,8 +149,8 @@ func refundSnapshot(r RefundRecord) string {
 // Review 在调用方事务中按支付→退款加锁，仅审核 pending/manual_review 退款。
 // 第一次通过返回 awaiting_second；另一名有权限的人再次通过后，退款改为 automatic 并安排执行。
 // 驳回只需一人，写入拒绝记录；状态、快照或首位审核人权限不符返回 ErrRefundConflict。
-func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo string, in ReviewDecision) (string, uint64, error) {
-	status := "rejected"
+func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo string, in ReviewDecision) (RefundReviewOutcome, uint64, error) {
+	status := RefundOutcomeRejected
 	recordID := uint64(0)
 	var r RefundRecord
 	if err := tx.WithContext(ctx).Where("refund_no=? AND deleted_at IS NULL", refundNo).Take(&r).Error; err != nil {
@@ -167,7 +167,7 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 		return status, recordID, err
 	}
 	recordID = r.ID
-	if r.Status != money.RefundPending || r.ExecutionPolicy != "manual_review" {
+	if r.Status != money.RefundPending || r.ExecutionPolicy != money.ExecutionManualReview {
 		return status, recordID, ErrRefundConflict
 	}
 	var v reviewRow
@@ -187,7 +187,7 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 	}
 	snapshot := refundSnapshot(r)
 	if errors.Is(e, gorm.ErrRecordNotFound) {
-		status = "awaiting_second"
+		status = RefundOutcomeAwaitingSecond
 		return status, recordID, tx.Table("refund_review").Create(map[string]any{"refund_record_id": r.ID, "snapshot_json": snapshot, "first_signer": in.ActorID, "first_comment": in.ApproveComment}).Error
 	}
 	var stored any
@@ -203,11 +203,11 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 	if err != nil || first.Role != "customer_finance" || !first.Permitted {
 		return status, recordID, ErrRefundConflict
 	}
-	status = "approved"
+	status = RefundOutcomeApproved
 	if err := tx.Table("refund_review").Where("refund_record_id=?", r.ID).Updates(map[string]any{"second_signer": in.ActorID, "second_comment": in.ApproveComment, "approved_at": time.Now().UTC()}).Error; err != nil {
 		return status, recordID, err
 	}
-	return status, recordID, tx.Table("refund_record").Where("id=?", r.ID).Updates(map[string]any{"execution_policy": "automatic", "next_attempt_at": time.Now().UTC()}).Error
+	return status, recordID, tx.Table("refund_record").Where("id=?", r.ID).Updates(map[string]any{"execution_policy": money.ExecutionAutomatic, "next_attempt_at": time.Now().UTC()}).Error
 }
 
 // Retry 将 automatic 且 pending/processing 的退款立即排队，返回记录 ID 供审计。
@@ -217,7 +217,7 @@ func (s RefundReviewRepo) Retry(ctx context.Context, tx *gorm.DB, refundNo strin
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_no=? AND deleted_at IS NULL", refundNo).Take(&r).Error; err != nil {
 		return 0, err
 	}
-	if r.ExecutionPolicy != "automatic" || !oneOf(r.Status, money.UnsettledRefundStatuses) {
+	if r.ExecutionPolicy != money.ExecutionAutomatic || !oneOf(r.Status, money.UnsettledRefundStatuses) {
 		return 0, ErrRefundConflict
 	}
 	return r.ID, tx.Table("refund_record").Where("id=?", r.ID).Update("next_attempt_at", time.Now().UTC()).Error

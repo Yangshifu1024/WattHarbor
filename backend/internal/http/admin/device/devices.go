@@ -4,16 +4,17 @@ import (
 	"errors"
 
 	"chargepilot/internal/device"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/http/admin"
 	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 )
 
-// devices 响应设备分页列表，状态入参只接受 enabled/disabled/retired/fault，
+// devices 响应设备分页列表，状态入参只接受 device_meta.status 的四值词表，
 // 并把当前管理员的权限列表一并带回，供前端决定按钮的可见性。
 func (a API) devices(c *gin.Context) {
-	q, ok := admin.ReadAdminPage(c, "enabled disabled retired fault")
+	q, ok := admin.ReadAdminPage(c, devices.AllDeviceMetaStatuses)
 	if !ok {
 		return
 	}
@@ -57,7 +58,7 @@ func (a API) device(c *gin.Context) {
 func (a API) setDeviceStatus(c *gin.Context) {
 	id := c.Param("id")
 	var in struct {
-		Status string `json:"status"` /* 仅运营启停，不允许故障／退役替代 */
+		Status devices.DeviceMetaStatus `json:"status"` /* 仅运营启停，不允许故障／退役替代 */
 	}
 	if id == "" || len(id) > 64 {
 		httpapi.BadRequest(c, "设备编号无效")
@@ -66,7 +67,8 @@ func (a API) setDeviceStatus(c *gin.Context) {
 	if !httpapi.DecodeResource(c, &in) {
 		return
 	}
-	if in.Status != "enabled" && in.Status != "disabled" {
+	// 该端点的可写集合是 enabled／disabled，与该列数据库合法集合不同。
+	if !in.Status.ManageWritable() {
 		httpapi.BadRequest(c, "运营状态只允许启用或禁用")
 		return
 	}

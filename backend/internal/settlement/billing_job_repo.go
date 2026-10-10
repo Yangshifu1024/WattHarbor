@@ -34,29 +34,33 @@ type BillingOrders struct {
 // 读取不认领任务，Apply 通过结算回执保证入账幂等。
 func (s BillingOrders) Due(ctx context.Context) ([]BillingTask, error) {
 	ids := []BillingTask{}
-	err := s.DB.WithContext(ctx).Table("charge_billing_job").Select("charge_order_id,generation").Where("status='pending' AND next_attempt_at<=UTC_TIMESTAMP(3)").Order("next_attempt_at,charge_order_id").Limit(50).Find(&ids).Error
+	err := s.DB.WithContext(ctx).Table("charge_billing_job").Select("charge_order_id,generation").Where("status=? AND next_attempt_at<=UTC_TIMESTAMP(3)", BillingJobPending).Order("next_attempt_at,charge_order_id").Limit(50).Find(&ids).Error
 	return ids, err
 }
 
 // Defer 在 ctx 管理的短事务内核对 task 的 pending 状态及预期代际，保存脱敏 reason 和 status。
 // status 只允许 pending/manual_review；人工队列入队同事务，RC 重读来源并执行纯计价规则。
 // 失配返回 ErrStaleBillingTask，调用方停止旧执行；其他错误回滚，不跨 Calculate/Apply 持有任务锁。
+// status 是 charge_billing_job.status 的待写取值；这里仍接受公开的裸串
+// （BillingOrderProcessor.Defer 的签名定义在本包外，含多个集成测试替身），
+// 进入本方法立即收敛为列类型，后续判定与写入一律使用带类型的常量。
 func (s BillingOrders) Defer(ctx context.Context, task BillingTask, status, reason string) error {
-	if status != "pending" && status != "manual_review" {
+	target := BillingJobStatus(status)
+	if target != BillingJobPending && target != BillingJobManualReview {
 		return ErrBillingConflict
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct {
-			Status     string // 当前状态，仅 pending 可由本轮更新
-			Generation uint64 // 人工决策及状态转换代际
+			Status     BillingJobStatus // 当前状态，仅 pending 可由本轮更新
+			Generation uint64           // 人工决策及状态转换代际
 		}
 		if err := tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", task.ChargeOrderID).Take(&job).Error; err != nil {
 			return err
 		}
-		if job.Status != "pending" || job.Generation != task.Generation {
+		if job.Status != BillingJobPending || job.Generation != task.Generation {
 			return ErrStaleBillingTask
 		}
-		if status == "manual_review" {
+		if target == BillingJobManualReview {
 			source, err := readBillingSource(tx, task.ChargeOrderID)
 			if err != nil {
 				return err
@@ -76,8 +80,8 @@ func (s BillingOrders) Defer(ctx context.Context, task BillingTask, status, reas
 				return err
 			}
 		}
-		res := tx.Table("charge_billing_job").Where("charge_order_id=? AND status='pending' AND generation=?", task.ChargeOrderID, task.Generation).
-			Updates(map[string]any{"status": status, "generation": gorm.Expr("generation+1"), "last_error": reason, "attempts": gorm.Expr("attempts+1"), "next_attempt_at": time.Now().UTC().Add(time.Minute)})
+		res := tx.Table("charge_billing_job").Where("charge_order_id=? AND status=? AND generation=?", task.ChargeOrderID, BillingJobPending, task.Generation).
+			Updates(map[string]any{"status": target, "generation": gorm.Expr("generation+1"), "last_error": reason, "attempts": gorm.Expr("attempts+1"), "next_attempt_at": time.Now().UTC().Add(time.Minute)})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -103,7 +107,7 @@ func readBillingSource(db *gorm.DB, id uint64) (Source, error) {
 		return source, nil
 	}
 	var review MeterReview
-	result := db.Where("charge_order_id=? AND status='approved'", id).Order("id DESC").Limit(1).Find(&review)
+	result := db.Where("charge_order_id=? AND status=?", id, MeterReviewApproved).Order("id DESC").Limit(1).Find(&review)
 	if result.Error != nil {
 		return source, result.Error
 	}
@@ -291,7 +295,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 			if string(saved) != string(encoded) {
 				return ErrBillingConflict
 			}
-			return tx.Table("charge_billing_job").Where("charge_order_id=?", order.ID).Updates(map[string]any{"status": "done", "last_error": nil}).Error
+			return tx.Table("charge_billing_job").Where("charge_order_id=?", order.ID).Updates(map[string]any{"status": BillingJobDone, "last_error": nil}).Error
 		}
 		if result.TotalCents > payment.PaidCents-payment.RefundedCents {
 			return ErrBillingConflict
@@ -327,7 +331,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 					return err
 				}
 			} else {
-				refund := RefundRecord{RefundNo: fmt.Sprintf("FEE-R%020d", order.ID), PaymentOrderID: payment.ID, UserID: order.UserID, BizType: money.PaymentBizCharge, BizID: order.ID, RefundCents: surplus, Reason: sql.NullString{String: "实际计费后的预付差额", Valid: true}, Status: money.RefundPending, ExecutionPolicy: "automatic", CreatedMonth: dbutil.MonthStart()}
+				refund := RefundRecord{RefundNo: fmt.Sprintf("FEE-R%020d", order.ID), PaymentOrderID: payment.ID, UserID: order.UserID, BizType: money.PaymentBizCharge, BizID: order.ID, RefundCents: surplus, Reason: sql.NullString{String: "实际计费后的预付差额", Valid: true}, Status: money.RefundPending, ExecutionPolicy: money.ExecutionAutomatic, CreatedMonth: dbutil.MonthStart()}
 				if err := tx.Create(&refund).Error; err != nil {
 					return err
 				}
@@ -352,7 +356,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		if err := ops.AppendEventInTx(tx, ops.OutboxEvent{EventID: eventID, Stream: "charge_settled_stream", EnvelopeJSON: payload}); err != nil {
 			return err
 		}
-		return tx.Table("charge_billing_job").Where("charge_order_id=?", order.ID).Updates(map[string]any{"status": "done", "last_error": nil}).Error
+		return tx.Table("charge_billing_job").Where("charge_order_id=?", order.ID).Updates(map[string]any{"status": BillingJobDone, "last_error": nil}).Error
 	})
 }
 
@@ -373,7 +377,7 @@ func settlementNotice(eventID string, order orderstore.ChargeOrderRecord, displa
 // 不适用规则跳过；存储失败须连同资金回滚，订单事件键防止重复发券。
 func applyOrderCampaigns(tx *gorm.DB, order orderstore.ChargeOrderRecord, totalCents int64) error {
 	now := time.Now().UTC()
-	for _, trigger := range []string{"threshold_redeem", "holiday"} {
+	for _, trigger := range []marketing.TriggerType{marketing.TriggerThresholdRedeem, marketing.TriggerHoliday} {
 		if _, err := (marketing.ActivityService{}).ApplyInTx(tx, marketing.ActivityEvent{
 			TriggerType: trigger,
 			UserID:      order.UserID,
@@ -440,8 +444,8 @@ func EnqueueChargeBilling(tx *gorm.DB, chargeOrderID uint64) error {
 
 // BillingJobState 是计费任务的排队状态。取不到表示尚未排队。
 type BillingJobState struct {
-	ChargeOrderID uint64 `gorm:"column:charge_order_id"`      // 排队订单主键，零表示尚未排队
-	Status        string `json:"status" gorm:"column:status"` // pending、manual_review 或 done，未排队为空
+	ChargeOrderID uint64           `gorm:"column:charge_order_id"`      // 排队订单主键，零表示尚未排队
+	Status        BillingJobStatus `json:"status" gorm:"column:status"` // pending、manual_review 或 done，未排队为空串
 }
 
 // FindBillingJob 读取订单计费任务；没有任务时返回零值和 nil。

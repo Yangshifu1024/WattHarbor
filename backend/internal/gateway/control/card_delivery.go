@@ -109,7 +109,7 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 		return
 	}
 	affected, err := repo.AdvanceCardDelivery(c.Request.Context(), a.DB, in.EventKey,
-		in.Outcome == "retry", in.Error, time.Now().UTC().Add(5*time.Second))
+		in.Outcome == contract.CardAdvanceOutcomeRetry, in.Error, time.Now().UTC().Add(5*time.Second))
 	if err != nil {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "刷卡投递状态暂不可用", nil)
 		return

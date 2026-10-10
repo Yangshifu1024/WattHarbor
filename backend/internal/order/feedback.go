@@ -29,11 +29,12 @@ type FeedbackInputError struct {
 func (e *FeedbackInputError) Error() string { return e.Message }
 
 // FeedbackInput 是用户反馈字段，归属由事务中的订单提供。
+// Category 对应 feedback.category（FeedbackCategory），类型与词表见 feedback_status.go。
 type FeedbackInput struct {
-	Rating   int8     `json:"rating"`   // 1–5 评分
-	Category string   `json:"category"` // rating/complaint/suggestion
-	Content  *string  `json:"content"`  // 可空，最多2000个字符
-	Images   []string `json:"images"`   // 最多5个HTTPS附件，nil 原样保存 JSON null
+	Rating   int8             `json:"rating"`   // 1–5 评分
+	Category FeedbackCategory `json:"category"` // rating/complaint/suggestion
+	Content  *string          `json:"content"`  // 可空，最多2000个字符
+	Images   []string         `json:"images"`   // 最多5个HTTPS附件，nil 原样保存 JSON null
 }
 
 // FeedbackReplyInput 是后台动作；close 忽略回复正文，reply 必须提供有效文本。
@@ -61,8 +62,9 @@ func (s FeedbackService) ResolveReference(ctx context.Context, userID uint64, ra
 }
 
 // ValidateFeedback 校验评分、类别、内容长度与附件，失败返回明确文案，成功返回 nil。
+// 类别白名单按 feedback.category 的三值词表判定（FeedbackCategory.Known）。
 func ValidateFeedback(in FeedbackInput) error {
-	if in.Rating < 1 || in.Rating > 5 || (in.Category != "rating" && in.Category != "complaint" && in.Category != "suggestion") {
+	if in.Rating < 1 || in.Rating > 5 || !in.Category.Known() {
 		return &FeedbackInputError{"评分或反馈类型无效"}
 	}
 	if in.Content != nil && len([]rune(*in.Content)) > 2000 {
@@ -125,6 +127,8 @@ func (s FeedbackService) Submit(ctx context.Context, userID, orderID uint64, in 
 }
 
 // List 按实时 feedback.read 权限读取反馈页；反馈属于全局管理功能，不按站点过滤。
+// q.Status 来自跨业务共用的 persist.PageQuery.Status，保持 string 不变：
+// 现有接口不校验状态白名单，此处不新增校验以免改变行为，原样透传给仓储的 WHERE 参数。
 func (s FeedbackService) List(ctx context.Context, actor operations.Profile, q persist.PageQuery) (persist.Page[map[string]any], error) {
 	if !actor.HasPermission("feedback.read") {
 		return persist.Page[map[string]any]{}, operations.ErrForbidden
@@ -148,15 +152,15 @@ func (s FeedbackService) Reply(ctx context.Context, audit ops.AuditContext, id u
 		if err != nil {
 			return err
 		}
-		if in.Action == "close" && status == "closed" {
+		if in.Action == "close" && status == FeedbackClosed {
 			return nil
 		}
-		if status == "closed" || (in.Action == "reply" && status != "pending") {
+		if status == FeedbackClosed || (in.Action == "reply" && status != FeedbackPending) {
 			return operations.ErrConflict
 		}
-		values := map[string]any{"status": "closed"}
+		values := map[string]any{"status": FeedbackClosed}
 		if in.Action == "reply" {
-			values = map[string]any{"status": "processed", "reply_content": in.ReplyContent, "replied_by": audit.Actor.ID, "replied_at": time.Now().UTC()}
+			values = map[string]any{"status": FeedbackProcessed, "reply_content": in.ReplyContent, "replied_by": audit.Actor.ID, "replied_at": time.Now().UTC()}
 		}
 		if err := repo.Update(tx, id, values); err != nil {
 			return err

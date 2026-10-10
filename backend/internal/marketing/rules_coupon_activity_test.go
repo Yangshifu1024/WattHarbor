@@ -64,7 +64,7 @@ func TestNormalizeActivityEnforcesPerTriggerConstraints(t *testing.T) {
 	}
 
 	// 其余触发类型：一律不接受门槛
-	for _, trigger := range []string{TriggerFirstRecharge, TriggerHoliday} {
+	for _, trigger := range []TriggerType{TriggerFirstRecharge, TriggerHoliday} {
 		r = baseActivity()
 		r.TriggerType, r.ThresholdCents = trigger, 500
 		if _, _, _, err := NormalizeActivity(r, now); !errors.Is(err, ErrActivityRule) {

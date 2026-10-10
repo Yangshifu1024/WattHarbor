@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/gateway/repo"
 	"chargepilot/internal/platform/httpapi"
 	"chargepilot/internal/platform/serviceclient"
@@ -47,6 +48,6 @@ func (a StartAPI) start(c *gin.Context) {
 	}
 	httpapi.Write(c, http.StatusAccepted, 0, "accepted", gatewaycontract.StartReply{
 		OrderNo: command.OrderNo, CommandID: command.CommandID, Status: command.Status,
-		DeviceAcknowledged: command.Status == "acked",
+		DeviceAcknowledged: command.Status == devices.CommandAcked,
 	})
 }

@@ -32,7 +32,7 @@ func ListPendingCardDeliveries(ctx context.Context, db *gorm.DB) ([]CardDelivery
 	err := db.WithContext(ctx).Table("card_event_delivery x").
 		Select("x.event_key,e.event_json,x.response_json").
 		Joins("JOIN device_event e ON e.event_key=x.event_key").
-		Where("x.status='pending' AND x.next_attempt_at<=UTC_TIMESTAMP(3)").
+		Where("x.status=? AND x.next_attempt_at<=UTC_TIMESTAMP(3)", CardDeliveryPending).
 		Order("e.id").Limit(cardDeliveryBatch).Find(&rows).Error
 	return rows, err
 }
@@ -172,7 +172,7 @@ func AdvanceCardDelivery(ctx context.Context, db *gorm.DB, eventKey string, retr
 			})
 	} else {
 		res = db.WithContext(ctx).Table("card_event_delivery").Where("event_key=?", eventKey).
-			Updates(map[string]any{"status": "done", "last_error": nil})
+			Updates(map[string]any{"status": CardDeliveryDone, "last_error": nil})
 	}
 	return res.RowsAffected, res.Error
 }

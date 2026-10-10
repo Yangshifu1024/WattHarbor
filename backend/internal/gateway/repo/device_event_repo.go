@@ -22,6 +22,8 @@ type DeviceFaultEvent struct {
 }
 
 // ListUnprocessedFaults 按 ID 升序读取尚未处理的 DC589 故障事件。
+// SQL 内 event_type = 'fault' 对应 protocol.Fault；该列是 VARCHAR 开放集合，
+// 此处只按已知取值筛选，不拒绝其他值。
 func ListUnprocessedFaults(ctx context.Context, db *gorm.DB, limit int) ([]DeviceFaultEvent, error) {
 	rows := []DeviceFaultEvent{}
 	err := db.WithContext(ctx).Table("device_event").
@@ -129,6 +131,7 @@ type HeartbeatAfter struct {
 }
 
 // latestHeartbeatAfter 按接收时间、ID 倒序读取起点之后的最新 DC589 心跳。
+// SQL 内 event_type = ? 传入 protocol.Heartbeat，不在 SQL 语法内写字面量。
 func latestHeartbeatAfter(ctx context.Context, db *gorm.DB, deviceID string, after time.Time) (HeartbeatAfter, error) {
 	var row HeartbeatAfter
 	err := db.WithContext(ctx).Table("device_event").

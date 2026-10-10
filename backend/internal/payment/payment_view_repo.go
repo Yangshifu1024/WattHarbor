@@ -20,7 +20,7 @@ type PaymentOrderView struct {
 	OrderNo        string                         `json:"order_no"`         // 商户支付单号
 	UserID         uint64                         `json:"user_id,string"`   // 付款人，公开为十进制字符串
 	BizType        money.PaymentBizType           `json:"biz_type"`         // charge 充电支付，wallet_recharge 余额充值。
-	PayMethod      string                         `json:"pay_method"`       // wechat 微信支付，balance 余额支付。
+	PayMethod      money.PayMethod                `json:"pay_method"`       // payment_order.pay_method：wechat 微信支付、balance 余额支付，另含 mixed 与 coupon。
 	Status         money.PaymentStatus            `json:"status"`           // 支付单内部流程状态，保留关闭和失败等原因。
 	PaymentStatus  orderdomain.OrderPaymentStatus `json:"payment_status"`   // 金额确认后的 pending/paid/refunded/partial_refunded。
 	TotalCents     int64                          `json:"total_cents"`      // 应付金额，分
@@ -38,7 +38,7 @@ type PaymentOrderQuery struct {
 	UserID            uint64     // 内部用户范围；0 表示不筛选，通用支付单接口不读取此字段。
 	OrderNo           string     // 支付单号，空值不限
 	BizType           string     // charge 或 wallet_recharge，空值不限
-	PayMethod         string     // wechat 或 balance，空值不限
+	PayMethod         string     // payment_order.pay_method 的任一取值（wechat、balance、mixed 或 coupon），空值不限
 	PaymentStatus     string     // 独立金额确认状态，空值不限
 	From              *time.Time // 创建时间起点，含边界，可空
 	To                *time.Time // 创建时间终点，含边界，可空

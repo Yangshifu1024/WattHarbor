@@ -7,6 +7,7 @@ import (
 
 	"chargepilot/internal/platform/httpapi"
 	"chargepilot/internal/platform/serviceclient"
+	"chargepilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -44,8 +45,9 @@ type IdleSession struct {
 	SessionID string `json:"session_id"`
 	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
-	// Protocol 表示连接传输方式，如 tcp。
-	Protocol string `json:"protocol"`
+	// Protocol 表示连接传输方式，对应 device_session.protocol（tcp/mqtt）；
+	// 读取遇词表外取值时原值透传，不替换也不拒绝。
+	Protocol protocol.Transport `json:"protocol"`
 	// RemoteAddr 设备连接远端地址。
 	RemoteAddr string `json:"remote_addr"`
 	// StartedAt 设备连接开始时刻。

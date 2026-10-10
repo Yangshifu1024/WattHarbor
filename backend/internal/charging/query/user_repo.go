@@ -29,6 +29,8 @@ func (r UserStateRepo) Frozen(ctx context.Context, row order.ChargeOrderRecord) 
 	if err != nil {
 		return out, err
 	}
+	// FindBillingJob 无记录时返回零值（Status 为空串），该空串不是 charge_billing_job.status
+	// 的合法取值，但必须原样赋给对外字段，不能替换为 null 或改成指针。
 	out.BillingStatus = job.Status
 	ops, err := card.ListOrderOperations(ctx, r.DB, row.ID)
 	if err != nil {

@@ -25,14 +25,14 @@ type InvoiceReviewInput struct {
 }
 
 // Review 执行发票通过或驳回，核对审核人、发票链接和首位审核人的当前权限；审核与审计一起提交或回滚。
-func (s InvoiceReviewService) Review(ctx context.Context, audit ops.AuditContext, id uint64, approve bool, in InvoiceReviewInput) (string, error) {
+func (s InvoiceReviewService) Review(ctx context.Context, audit ops.AuditContext, id uint64, approve bool, in InvoiceReviewInput) (InvoiceAdminReviewStatus, error) {
 	if audit.Actor.Role != "customer_finance" || !audit.Actor.HasPermission("invoice.review") {
 		return "", operations.ErrForbidden
 	}
 	if (approve && !operations.ValidPublicURL(in.InvoiceURL)) || (!approve && !operations.ValidText(in.Reason, 255)) {
 		return "", operations.ErrConflict
 	}
-	status := ""
+	status := InvoiceAdminReviewStatus("")
 	var before map[string]any
 	var changes []ops.AuditChange
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -43,7 +43,7 @@ func (s InvoiceReviewService) Review(ctx context.Context, audit ops.AuditContext
 		if err != nil {
 			return err
 		}
-		changes = []ops.AuditChange{{Action: status, Target: "invoice", ID: id, Before: before, After: in, RequestID: ""}}
+		changes = []ops.AuditChange{{Action: string(status), Target: "invoice", ID: id, Before: before, After: in, RequestID: ""}}
 		for _, change := range changes {
 			if err := ops.AppendAuditInTx(tx, audit, change); err != nil {
 				return err

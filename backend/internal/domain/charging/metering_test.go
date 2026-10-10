@@ -57,19 +57,19 @@ func TestCheckModeSupportRejectsModeWithoutRequiredCapability(t *testing.T) {
 }
 
 func TestValidDeviceChargeModeAcceptsEngineModesOnly(t *testing.T) {
-	for _, mode := range []string{
-		string(ModeServerRealtimePower), string(ModeServerMaxPower), string(ModeServerEnergy),
-		string(ModeDeviceDuration), string(ModeDeviceEnergy), string(ModeDevicePower),
+	for _, mode := range []ChargeMode{
+		ModeServerRealtimePower, ModeServerMaxPower, ModeServerEnergy,
+		ModeDeviceDuration, ModeDeviceEnergy, ModeDevicePower,
 	} {
 		if !ValidDeviceChargeMode(mode) {
 			t.Fatalf("计费引擎认可的 %q 应判合法", mode)
 		}
 		// 前后空白表示设备上报时带了填充，不应因此被判非法。
-		if !ValidDeviceChargeMode("  " + mode + "  ") {
+		if !ValidDeviceChargeMode(ChargeMode("  " + string(mode) + "  ")) {
 			t.Fatalf("带空白的 %q 应判合法", mode)
 		}
 	}
-	for _, mode := range []string{"", "   ", "unknown", "none", "server_unknown"} {
+	for _, mode := range []ChargeMode{"", "   ", "unknown", "none", "server_unknown"} {
 		if ValidDeviceChargeMode(mode) {
 			t.Fatalf("计费引擎不认的 %q 应判非法", mode)
 		}
