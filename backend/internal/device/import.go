@@ -13,6 +13,7 @@ import (
 	charging "chargepilot/internal/domain/charging"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/ops"
+	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -113,7 +114,7 @@ func (s ImportService) Create(ctx context.Context, audit ops.AuditContext, scope
 	}
 	// 复制请求清单后再补充服务端协议，避免修改调用方用于重试的输入。
 	in.Devices = append([]ImportDevice(nil), in.Devices...)
-	adapters := map[uint64]string{}
+	adapters := map[uint64]protocol.AdapterID{}
 	for i := range in.Devices {
 		d := &in.Devices[i]
 		adapter, found := adapters[d.VendorID]

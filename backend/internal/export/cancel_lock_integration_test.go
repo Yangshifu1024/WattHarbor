@@ -5,6 +5,7 @@ package export
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,7 +33,9 @@ func TestExportCancellationKeepsLockUntilCallbackExit(t *testing.T) {
 	key := "export-cancellation-gate"
 	if err := s.DB.Callback().Update().Before("gorm:update").Register(key, func(q *gorm.DB) {
 		values, ok := q.Statement.Dest.(map[string]any)
-		if q.Statement.Table == "export_task" && ok && values["status"] == "completed" {
+		// Dest 取值是 any，值是具名类型 ExportStatus 时与 string 字面量比较恒为 false，
+		// 因此按值文本比较而不是按动态类型比较。词表见 ExportStatus。
+		if q.Statement.Table == "export_task" && ok && fmt.Sprint(values["status"]) == "completed" {
 			callbackOnce.Do(func() {
 				close(entered)
 				select {

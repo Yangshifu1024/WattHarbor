@@ -9,7 +9,7 @@ import (
 
 // Registration 保存设备注册时的协议、编号和固件版本。
 type Registration struct {
-	Protocol        string
+	Protocol        AdapterID
 	DeviceID        string
 	HardwareVersion string
 	SoftwareVersion string
@@ -48,7 +48,7 @@ const (
 type Event struct {
 	EventID    string
 	CardNumber uint32
-	Protocol   string
+	Protocol   AdapterID
 	DeviceID   string
 	Type       EventType
 	Port       uint8
@@ -124,6 +124,6 @@ const (
 
 // Adapter 处理一种厂商协议的设备连接。
 type Adapter interface {
-	Name() string
+	Name() AdapterID
 	ServeConn(context.Context, net.Conn, Sink) error
 }

@@ -5,6 +5,7 @@ package export
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,7 +29,9 @@ func TestExportSQLFailureAndHistoricalFiles(t *testing.T) {
 			return
 		}
 		values, ok := q.Statement.Dest.(map[string]any)
-		if ok && values["status"] == status {
+		// Dest 取值是 any，值是具名类型 ExportStatus 时与 string 字面量比较恒为 false，
+		// 因此按值文本比较而不是按动态类型比较。词表见 ExportStatus。
+		if ok && fmt.Sprint(values["status"]) == status {
 			q.AddError(fault)
 		}
 	}); err != nil {

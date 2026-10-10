@@ -15,6 +15,7 @@ import (
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/order"
 	"chargepilot/internal/platform/dbconn"
+	"chargepilot/internal/protocol"
 	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -81,9 +82,9 @@ func (f *swipeFacts) ResolveScan(ctx context.Context, code string) (money.ScanRe
 }
 
 // Capabilities 返回 ctx/station/device 的 DC589 能力 测试替身。
-func (f *swipeFacts) Capabilities(ctx context.Context, station uint64, device string) (string, charging.Capabilities, error) {
-	cap, err := charging.ProtocolCapabilities("dc589")
-	return "dc589", cap, err
+func (f *swipeFacts) Capabilities(ctx context.Context, station uint64, device string) (protocol.AdapterID, charging.Capabilities, error) {
+	cap, err := charging.ProtocolCapabilities(protocol.AdapterIDDC589)
+	return protocol.AdapterIDDC589, cap, err
 }
 
 // ActiveDeviceRule 返回 ctx/station/device 当前报价 测试替身，记录读取次数。

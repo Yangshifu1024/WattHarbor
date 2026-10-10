@@ -10,7 +10,7 @@ func TestRefundViewUsesStoredApproval(t *testing.T) {
 		parts    []WalletRefundPartRow // 渠道结果
 		review   *RefundReviewView     // 审核，可空
 		links    int64                 // 风控冻结链接数
-		want     string                // 应展示的状态
+		want     RefundViewStatus      // 应展示的状态
 		refunded int64                 // 应展示已确认成功金额，分
 	}{
 		{"approved_pending", nil, &RefundReviewView{Approved: true, ActorID: 19, Comment: "通过"}, 1, "pending", 0},

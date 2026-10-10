@@ -4,6 +4,7 @@ import (
 	charging "chargepilot/internal/domain/charging"
 	"chargepilot/internal/domain/devices"
 	money "chargepilot/internal/domain/money"
+	"chargepilot/internal/protocol"
 	"context"
 	"errors"
 	"gorm.io/gorm"
@@ -18,14 +19,14 @@ type DeviceOperationReader interface {
 // DeviceCapabilityReader 查询站点所属设备的协议能力，供刷卡等用例调用。
 type DeviceCapabilityReader interface {
 	// Capabilities 返回设备适配器和支持的功能；协议未知时报错。
-	Capabilities(context.Context, uint64, string) (string, charging.Capabilities, error)
+	Capabilities(context.Context, uint64, string) (protocol.AdapterID, charging.Capabilities, error)
 }
 
 // Capabilities 按站点和设备号读取唯一未删除设备，通过已登记协议计算支持的功能。
 // 不能用型号、遥测或客户端声明代替协议。
-func (s OperationRepo) Capabilities(ctx context.Context, station uint64, deviceID string) (string, charging.Capabilities, error) {
+func (s OperationRepo) Capabilities(ctx context.Context, station uint64, deviceID string) (protocol.AdapterID, charging.Capabilities, error) {
 	var row struct {
-		ProtocolAdapter string /* 中央创建设备时选择并冻结的协议标签 */
+		ProtocolAdapter protocol.AdapterID /* 中央创建设备时选择并冻结的协议标签 */
 	}
 	if err := s.DB.WithContext(ctx).Table("device_meta").Select("protocol_adapter").Where("station_id=? AND device_id=? AND deleted_at IS NULL", station, deviceID).Take(&row).Error; err != nil {
 		return "", charging.Capabilities{}, err

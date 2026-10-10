@@ -35,8 +35,12 @@ func (s OutboxStatus) Known() bool {
 }
 
 // PublishableOutboxStatuses 是投递器领取待发布事件的取值串（pending 与 failed）。
-// SQL 字面量直接引用该串，不拆分领取查询。
+// 该串是空格分隔的展示口径，不能直接拼进 SQL 的 IN 括号——那会得到单元素 IN ('pending failed') 而匹配不到任何行。
+// SQL 绑定用 PublishableOutboxStatusValues。
 const PublishableOutboxStatuses = "pending failed"
+
+// PublishableOutboxStatusValues 是 PublishableOutboxStatuses 对应的取值切片，供 SQL 绑定使用。
+var PublishableOutboxStatusValues = []OutboxStatus{OutboxPending, OutboxFailed}
 
 // EventOutboxRecord 是中央和后台 Outbox 共用记录，事件与业务变更同事务保存。
 // 后台额外的 stream_message_id 不由该模型读取。

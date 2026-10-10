@@ -341,7 +341,8 @@ func eventKey(event protocol.Event) string {
 		return uuid.NewString()
 	}
 	hash := sha256.New()
-	_, _ = hash.Write([]byte(event.Protocol))
+	// 显式转换只为 hash.Write 接受字节切片，去重键与协议标识按原值一致。
+	_, _ = hash.Write([]byte(string(event.Protocol)))
 	_, _ = hash.Write([]byte{0})
 	_, _ = hash.Write([]byte(event.DeviceID))
 	_, _ = hash.Write([]byte{0})

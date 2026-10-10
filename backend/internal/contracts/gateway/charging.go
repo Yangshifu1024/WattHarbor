@@ -32,9 +32,36 @@ const (
 	StopPath               = "/api/v1/internal/charge-orders/stop"
 	StartPath              = "/api/v1/internal/charge-orders/start"
 	MaxEvidenceBatch       = 20
-	StopSourceAuto         = "auto"
-	StopSourceUser         = "user_app"
+	// StopSourceAuto 表示自动停机扫描发起停止，当前唯一非用户端生产方。
+	StopSourceAuto StopSource = "auto"
+	// StopSourceUser 表示用户在客户端主动发起停止。
+	StopSourceUser StopSource = "user_app"
 )
+
+// StopSource 是停止请求中来源字段的服务间契约取值（user_app／admin／auto）。
+//
+// 该字段是外部输入：绑定校验后只写诊断日志，不参与任何准入或授权判定；
+// 能否停止仍由中央核对订单归属与可停止状态决定，网关不因本字段放行或拒绝。
+//
+// "admin" 是 oneof 标签接受的合法取值，但当前没有生产方，因此不为其提供常量，
+// Known 仍需把它视为已知取值；新增生产方前须先确认其授权路径。
+//
+// 不得与 internal/worker/outbox.Publisher.Source 混同：后者是开放标签，非空即可，
+// 取值集由 cmd/worker/app.go 的 "gateway"、"user"、"admin" 决定，用于选择发布流；
+// 两处的 "admin" 只是字面量巧合，语义无关。
+type StopSource string
+
+// Known 判断是否属于本端点的合法取值集合（三值）。
+// 只用于识别输入取值，不改变 binding 校验行为；未知值仍由 oneof 标签拒绝。
+func (s StopSource) Known() bool {
+	switch s {
+	case StopSourceAuto, StopSourceUser:
+		return true
+	case "admin": // oneof 接受的取值，当前无生产方，故不提供常量
+		return true
+	}
+	return false
+}
 
 // EvidenceQueryRequest 查询指定端口开始充电后的心跳，用事件 ID 分页。
 type EvidenceQueryRequest struct {
@@ -74,9 +101,9 @@ type EvidenceReply struct {
 
 // StopRequest 提交订单号、所属用户和来源，请求网关检查权限并保存停止命令；不表示设备已经停电。
 type StopRequest struct {
-	OrderNo string `json:"order_no" binding:"required,max=64"`                  // 充电订单号，重试沿用
-	UserID  uint64 `json:"user_id" binding:"required"`                          // 订单所属用户 ID
-	Source  string `json:"source" binding:"required,oneof=user_app admin auto"` // 发起方诊断标签；授权仍由中央核对归属与状态
+	OrderNo string     `json:"order_no" binding:"required,max=64"`                  // 充电订单号，重试沿用
+	UserID  uint64     `json:"user_id" binding:"required"`                          // 订单所属用户 ID
+	Source  StopSource `json:"source" binding:"required,oneof=user_app admin auto"` // 发起方诊断标签；不参与授权判定
 }
 
 // StopReply 只确认停止命令已受理，Stopped 保持 false；设备结束由异步回执确认。

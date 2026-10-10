@@ -124,8 +124,8 @@ type deviceEventRow struct {
 	ID uint64 `gorm:"column:id;primaryKey"`
 	// EventKey 持久事件幂等键。
 	EventKey string `gorm:"column:event_key"`
-	// Protocol 设备或连接的协议名称。
-	Protocol string `gorm:"column:protocol_name"`
+	// Protocol 上报事件的设备协议适配器，对应 device_event.protocol_name。
+	Protocol protocol.AdapterID `gorm:"column:protocol_name"`
 	// DeviceID 设备业务编号。
 	DeviceID string `gorm:"column:device_id"`
 	// EventType 协议事件类型，对应 device_event.event_type。

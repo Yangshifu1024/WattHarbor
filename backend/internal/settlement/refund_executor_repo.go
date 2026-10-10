@@ -213,14 +213,16 @@ func providerMatchesChannel(providerName, transactionID string) bool {
 // apply 核对渠道回执；PROCESSING 保留原状态，CLOSED/ABNORMAL 在钱包→退款锁内释放预占。
 // SUCCESS 按钱包（适用时）→支付→退款加锁，保存已退款金额、回执、订单和 Outbox。
 // 重放不重复出账，错误整体回滚，事务内不请求渠道。
+// default 不是词表校验，而是资金闸门：未登记的渠道取值无法判定该不该动资金，
+// 故一律不改状态、不出账并返回冲突等待重试，取值原值不丢失。
 func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.RefundRequest, result pay.RefundResult) error {
 	if !receiptMatches(request, result) {
 		return ErrRefundConflict
 	}
 	switch result.Status {
-	case "PROCESSING":
+	case pay.ChannelRefundStatusProcessing:
 		return nil
-	case "CLOSED", "ABNORMAL":
+	case pay.ChannelRefundStatusClosed, pay.ChannelRefundStatusAbnormal:
 		return e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := wallet.LockRefundWallet(tx, walletSettlement(r)); err != nil {
 				return err
@@ -238,9 +240,9 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 			if err := wallet.ReleaseFailedRefund(tx, walletSettlement(r)); err != nil {
 				return err
 			}
-			return tx.Model(&RefundRecord{}).Where("id=?", r.ID).Updates(map[string]any{"status": money.RefundFailed, "wechat_refund_id": result.RefundID, "failure_reason": "provider refund " + result.Status}).Error
+			return tx.Model(&RefundRecord{}).Where("id=?", r.ID).Updates(map[string]any{"status": money.RefundFailed, "wechat_refund_id": result.RefundID, "failure_reason": "provider refund " + string(result.Status)}).Error
 		})
-	case "SUCCESS":
+	case pay.ChannelRefundStatusSuccess:
 		if result.SuccessAt.IsZero() {
 			return ErrRefundConflict
 		}
@@ -265,6 +267,10 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 			RefundRecordID uint64 // 退款主键，一笔一份成功回执
 			WechatRefundID string // 渠道退款单号
 		}
+		// 本函数下方 "success"／"processing" 是 refund_record.status 列的数据库取值
+		// （词表 money.RefundStatus，全小写），判的是 current.Status；
+		// 它们与渠道响应状态 result.Status（pay.ChannelRefundStatus，全大写）不是同一个
+		// 概念也无映射关系，故保留裸字面量并在比字面量处注明，不改写为渠道状态常量。
 		// 钱包锁前的查询可能建立旧快照，成功回执用当前读以识别已入账重放。
 		err := tx.Table("refund_success_receipt").Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_record_id = ?", r.ID).Take(&receipt).Error
 		if err == nil {

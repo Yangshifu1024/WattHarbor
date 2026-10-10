@@ -1,6 +1,6 @@
 # 状态与枚举类型收敛路线图
 
-状态：P0 与 P1 批次已实施；P2 仍未实施。P0 依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件；P1 于实施前以当前 HEAD 的完整 import 图逐条复核了第 5.2 节的归属结论，修正结果见 8.4 节。
+状态：P0、P1 与 P2 批次均已实施，并已通过**真实数据库**集成验证。P0 依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件；P1 于实施前以当前 HEAD 的完整 import 图逐条复核了第 5.2 节的归属结论，修正结果见 8.3.1 节；P2 的三项决策与实施结论见 8.4 节。真库运行找出并修复的六个回归见 9.2 节。**仍未取得的证据是确定性前后逐字节基线**，见 9.1 节末。
 
 本文负责状态与枚举类型的记录维度、放置规则、依赖可行性、逐项清单、分批顺序与验收标准。经四轮复审修订，各项设计决定已就地写入正文对应章节；尚待核验的事实与待独立处理的缺陷分别记在第 10 节。仓库维护规则见 [AGENTS.md](../AGENTS.md)，代码边界见 [架构边界与组织约束](architecture-boundaries.md)。
 
@@ -331,9 +331,10 @@ func (s DeviceMetaStatus) ManageWritable() bool
 | `gateway/repo` 内的 `event_type = 'heartbeat'` 等 | SQL 谓词内字面量，保留并注释指向 `protocol.EventType` |
 | `gateway/repo` 内的 `status='pending'`／`IN ('sent','acked')` 等 | 同上，指向 `devices` 的命令状态词表 |
 | `export/artifact.go` 的 `format == "pdf"` | **枚举外的历史兼容值**，`export_task.file_format` 只有 csv／xlsx；该分支为存量数据兜底，不得纳入 `Known()` |
-| `settlement/billing_job_repo.go` 的 `Defer(..., status string, ...)` 形参 | 接口有四个集成测试替身实现它；本批在方法体内以 `BillingJobStatus(status)` 收敛，边界签名未动。**后续批次连同替身一并收敛** |
-| `settlement/invoice.go` 的 `InvoiceType string` | 公开 HTTP 入参边界；用例内以 `invoiceTypeOf()` 收敛，JSON 解码路径零变化 |
 | `worker/repo/schedule_repo.go` 的 `ExecutionLog.Status`／`TriggeredBy`、`FinishExecutionLog` 形参 | 调用方 `worker/schedule/scheduler.go` 把它们当 `string` 局部变量传递；本批定义类型词表并收敛 SQL 常量，字段类型待调用方收敛后一并处理 |
+
+> **上条已收敛（P1 尾项）**：`BillingOrderProcessor.Defer` 的 status 形参与 `settlement.BillingOrders.Defer` 实现均改为 `BillingJobStatus`，连同 3 个集成测试替身（`recoveryOrders`、`financeDeliveryOrders`、`financeOrderBoundary`；`billReadOrders` 嵌入 `recoveryOrders` 自动跟随）同步；`worker/repo` 的 `ExecutionLog.Status`／`TriggeredBy`、`FinishExecutionLog` 形参与 `LastExecutionRow.Status` 均改为具名类型，`scheduler.go` 的 `execute` 形参与 `status` 局部变量同步。两处不再属于例外登记。收敛时顺带修正了 `FailStaleRunningLogs` 把 `string(TaskExecutionRunning)` 拼进 SQL 的写法（该写法与 9.2 节登记的单元素 IN 列表同源），改为绑定参数。
+| `settlement/invoice.go` 的 `InvoiceType string` | 公开 HTTP 入参边界；用例内以 `invoiceTypeOf()` 收敛，JSON 解码路径零变化 |
 | `persist.PageQuery.Status` | 跨业务共用的查询筛选项，被 coupon／activity_rule／export_task／feedback／user／vendor 等多家复用且各自白名单不同，**必须保持 `string`**，各用例在自己的校验处转换 |
 | `platform/auth/jwt.go` 的 `Kind` | 令牌载荷的签发方标识，取值 user／admin 属平台层自有约定，非数据库状态列 |
 
@@ -341,7 +342,7 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 - **`charging/query` 的 `billing_status` 空串必须原样出现在响应体**。该字段无 `omitempty`，且计费任务不存在时 `Status` 为空串——空串不是 `charge_billing_job.status` 的合法取值，`Known()` 对它返回 false 是正确的，**但不得据此拒绝、替换为 `null` 或改为指针**。本批已实测序列化结果为 `"billing_status":""`。
 - **`ops.AccountUpdateInput.Status` 与 `ops.EventOutboxRecord.Status` 保持指针语义**。前者以 `nil` 表示「不修改」，后者靠 `gorm:"default:pending"` 让数据库填充初值；改成值类型会把非法零值写进 ENUM 列。
-- **`task_execution_log` 的写入路径在生产中不会执行**。`cmd/worker/app.go` 的处理器登记表为空（`Handlers: map[string]schedule.Handler{}`），`CreateExecutionLog`／`FinishExecutionLog` 仅测试调用。类型化不代表该枚举已在线上运行。
+- **`task_execution_log` 在生产中不会执行**。`cmd/worker/app.go` 的处理器登记表为空（`Handlers: map[string]schedule.Handler{}`），`CreateExecutionLog`／`FinishExecutionLog` 仅测试调用。类型化不代表该枚举已在线上运行；真库集成能验证存储与读取路径，但不能替代真实调度运行。
 - **`pricing` 删除路径的空串行为未变**：`remove == true` 时跳过状态校验，空串由仓储写入 `disabled` 覆盖，不得在校验里拒绝空串。
 - **真库集成未执行**。本批涉及多处 GORM 投影列类型变更（指针 + 自定义类型、`gorm:"default"` 标签、ENUM 参数绑定），`node scripts/db/test-integration.mjs` 尚未运行，**这些行为无真实 MySQL 证据**，见第 9 节。
 
@@ -349,29 +350,38 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 此类不设固定先后顺序，允许同一枚举的存储类型、读模型与映射在同一批完成。持久化与展示状态需分立时定义显式映射，保持原值、未知值、空值与时间判定行为。
 
-| 枚举 | 来源与存储 | 产生方式 | Go 字段（待复核） | 目标类型与归属 | 批次 | 完成 |
+> **本批已实施并通过第 9 节基础入口**，另补 `go vet -tags integration` 编译期检查（该层不参与 `node tasks.mjs check`，但能在真库执行前发现类型断裂）。行号已漂移，核对时以「文件 + 字段名」定位。
+
+| 枚举 | 来源与存储 | 产生方式 | Go 字段（已复核） | 目标类型与归属 | 批次 | 完成 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 订单启动来源 | SQL `CASE` 派生，**无数据库列** | 逻辑派生 `payment`／`balance`／`card` | `order/order_view_repo.go:28`（`orderStartSourceSQL`，`:66`） | `order.OrderStartSource` | P2 | ☐ |
-| 订单退款展示状态 | SQL `CASE` 派生，**无数据库列** | 逻辑派生 | `order/order_view_repo.go:39`（`:72`） | `order.RefundViewStatus` | P2 | ☐ |
-| 钱包退款展示状态 | 无数据库列 | 内存派生 6 值 | `wallet/query.go:69`（`refundView`，`:104-125`） | `wallet.RefundViewStatus` | P2 | ☐ |
-| 渠道退款状态 | 无数据库列 | **外部契约输入** | `payment/channel_refund.go:30` | `payment.ChannelRefundStatus` | P2 | ☐ |
-| 事件投递对象与来源 | 无数据库列 | **外部契约输入** | `delivery/events.go:19,35,40,52` | `delivery` 各自类型 | P2 | ☐ |
-| 网关停止请求来源 | contracts 输入 | **外部契约输入** `user_app`／`admin`／`auto` | `contracts/gateway/charging.go:78` | contracts 内类型，保留 `required` 与 `oneof`；不与 worker 开放 Source 标签混同 | P2 | ☐ |
-| 刷卡推进结果 | contracts 输入 | **外部契约输入** `retry`／`done` | `contracts/gateway/card.go:50-52` | contracts 内类型，保留绑定校验；不复用投递状态集合 | P2 | ☐ |
-| 核销业务类型 | `coupon_redemption.biz_type` **VARCHAR** | 业务写入，可写子集仅 `charge` | `marketing/coupon_redeem_repo.go:64,78` | 复用 `domain/money.PaymentBizType`，**不因复用开放钱包充值核销**（见 5.3） | P2 | ☐ |
-| 适配器标识 | `device_meta.protocol_adapter`、`vendor.adapter_class`、`device_event.protocol_name` 均 VARCHAR | 业务写入，当前受支持集合仅 `dc589` | `device/import.go:125-136`、`domain/charging/capabilities.go:8-14`、`protocol/adapter.go:12,51` | **新建 `protocol.AdapterID`**（明确为新增类型，不得列为已有样板），同批覆盖上述三处及 `Registration.Protocol`、`Event.Protocol`、`Adapter.Name()` 与能力判定参数；不与 `tcp`／`mqtt`／`hybrid` 混用 | P2 | ☐ |
+| 订单启动来源 | SQL `CASE` 派生，**无数据库列** | 逻辑派生 `payment`／`balance`／`card` | `order/order_view_repo.go` 的 `orderStartSourceSQL` 与 `OrderView.StartSource` | **`order.OrderStartSource`**（新建 `order/derived_status.go`） | P2 | ☑ |
+| 订单退款展示状态 | SQL `CASE` 派生，**无数据库列** | 逻辑派生 4 值 | `order/order_view_repo.go` 的 `orderColumns` 与 `OrderView.RefundStatus` | **`order.RefundViewStatus`**（与 `money.RefundStatus` 分立） | P2 | ☑ |
+| 钱包退款展示状态 | 无数据库列 | 内存派生 6 值 | `wallet/query.go` 的 `refundView` 与 `RefundView.Status` | **`wallet.RefundViewStatus`**（新建 `wallet/refund_view_status.go`） | P2 | ☑ |
+| 渠道退款状态 | 无数据库列 | **外部契约输入**，**开放集合** | `payment/channel_refund.go` 的 `RefundResult.Status`；`settlement/refund_executor_repo.go` 的 switch | **`payment.ChannelRefundStatus`**（四个大写取值；未知值不被拒绝，见下） | P2 | ☑ |
+| 事件投递对象与来源 | 无数据库列 | 外部契约输入 | `internal/delivery/events.go` | **移出本批，登记入 8.5**（死代码路径，见下） | P2 | ⊘ |
+| 网关停止请求来源 | contracts 输入 | **外部契约输入** `user_app`／`admin`／`auto` | `contracts/gateway/charging.go` 的 `StopRequest.Source` | **`contracts/gateway.StopSource`**（`binding` 标签逐字节保留） | P2 | ☑ |
+| 刷卡推进结果 | contracts 输入 | **外部契约输入** `retry`／`done` | `contracts/gateway/card.go` | contracts 内类型，保留绑定校验；不复用投递状态集合 | P2 | ☑（**P1 已完成**） |
+| 核销业务类型 | `coupon_redemption.biz_type` **VARCHAR** | 业务写入，可写子集仅 `charge` | `marketing/coupon_redeem_repo.go` | 复用 `domain/money.PaymentBizType`，**未因复用开放钱包充值核销**（见 5.3） | P2 | ☑（**P1 已完成**） |
+| 适配器标识 | `device_meta.protocol_adapter`、`vendor.adapter_class`、`device_event.protocol_name` 均 VARCHAR | 业务写入，当前受支持集合仅 `dc589` | `protocol/adapter_id.go`（新建）；`Registration.Protocol`、`Event.Protocol`、`Adapter.Name()` 与能力判定参数同批覆盖 | **`protocol.AdapterID`**（明确为新增类型，不与 `tcp`／`mqtt`／`hybrid` 或 `EventType` 混用） | P2 | ☑ |
 
-**订单启动来源的空值规则**：展示字段为 `*string`，无来源时为 `null`；筛选参数为空串仍表示不筛选，两种语义不得合并。
+**订单启动来源的双语义已按原样保留**：展示字段是 `*OrderStartSource`（无来源为 `null`），筛选参数 `OrderQuery.StartSource` **保持 `string`**（空串表示不筛选）。筛选字段不改类型是有意为之——改后需把 `!= ""` 重写为 `!= nil`，会改变 `adminhttp.AdminOneOf` 的空串短路路径，风险高于收益。后台白名单已从字面量改为引用 `order.AllStartSources`。
 
-**扫码种类与端口状态不建立相互映射**：`port` 表示解析到单端口，不能推出 `idle`；`device` 返回多个各有状态的端口。已核实 `internal/gateway/repo/scan_repo.go:54,74` 将 `port.Status` 原样传入，未按 `idle` 过滤。保留现有结果组装与可用性计算，未知端口状态按原行为处理。
+**渠道退款状态是开放集合，不是封闭枚举**。判定依据三条：写入侧 `refundResult` 对 status 无 switch 白名单（只校验 SUCCESS 必须带成功时刻），其余取值原值放进结果；SDK 的 `refunddomestic.Status` 是 `type Status string`、JSON 反序列化不做 `oneof`；消费侧 `settlement/refund_executor_repo.go` 的 `default` 返回 `ErrRefundConflict` 是**资金闸门**（不改状态、不出账、不释放预占，退款保持在途），不是词表校验。因此 `Known()` 零调用，**不得改为拦截未知值**——放行会让未知取值沿 SUCCESS 之后的路径直接出账。
+
+**适配器标识的 `Known()` 不构成准入门槛**。写入路径（厂商资料、CSV 导入）接受未登记标识并原样落库，能力判定仍由 `ProtocolCapabilities` 的 `default` 报错分支承担。测试夹具中的 `"test"`、`"future"`、`"unknown"`、`"DC589"`、`"dc590"` 均为**故意保留的非法值**，它们是「未登记标识按原值透传」与「大小写敏感」的测试证据，不得修正为合法值。`vendor.adapter_class` 是 `varchar(256)`（另两列是 `varchar(32)`），HTTP 层的长度校验因此保留，未因有类型而删除。
+
+**新增依赖边 `domain/charging → protocol`**：`ProtocolCapabilities` 与 `CheckModeSupport` 的适配器参数改用 `protocol.AdapterID`。`protocol` 是零内部依赖的叶子包、非业务实现包，该边不违反「domain 不反向依赖业务实现包」，与既有 `domain/devices → domain/money` 同类。已复核 `internal/protocol` 仍零 `chargepilot/internal` 依赖，全仓无 import 环。
+
+**扫码种类与端口状态不建立相互映射**：`port` 表示解析到单端口，不能推出 `idle`；`device` 返回多个各有状态的端口。已核实 `internal/gateway/repo/scan_repo.go` 将 `port.Status` 原样传入，未按 `idle` 过滤。保留现有结果组装与可用性计算，未知端口状态按原行为处理。
 
 ### 8.5 登记但不类型化
 
 | 项 | 位置 | 理由 |
 | --- | --- | --- |
-| Outbox 来源标识 | `internal/worker/outbox/publisher.go:16` | 开放标签，注释为「非空即可」，非有限集合 |
-| 模拟器行为类型 | `internal/gateway/simulator/dc589/behavior.go:21` | 工具私有，无数据库列与对外路径，保留在包内 |
+| Outbox 来源标识 | `internal/worker/outbox/publisher.go` | 开放标签，注释为「非空即可」，非有限集合 |
+| 模拟器行为类型 | `internal/gateway/simulator/dc589/behavior.go` | 工具私有，无数据库列与对外路径，保留在包内 |
 | 退款原因等自由文本 | 多处 `Reason` 字段 | 自由文本，非枚举 |
+| **监管事件投递对象与来源** | `internal/delivery/events.go` | **P2 实施前从 8.4 移入本节**。该包全仓 **0 处 import**、0 测试、监管投递未装配、`REGULATORY_*` 未被配置加载；worker 调度器处理器登记表为空。类型化死代码会强化「外部投递已就绪」的错觉，与第 1 节「不得据表、模板变量或组件存在宣称外部投递可用」相悖，待真正装配时再收敛。另注：其中 `ServiceType`、`deviceData.Protocol`、`alertData.Type` 是开放文本集合，`deviceData.Protocol` 是监管载荷的外部字段，与 `protocol.AdapterID` 是不同的东西，不可复用。 |
 
 **保留组件的声明**：worker 调度器当前处理器登记表为空，Webhook、通用 DLQ 与监管投递未装配，`REGULATORY_*` 未被配置加载与消费。本方案对 Outbox 与投递相关类型只收敛现有类型，**不新增运行中的外部投递任务**。
 
@@ -401,7 +411,32 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 **已取得证据**：`go build ./...`、`go vet ./...`（含全部 `_test.go`）、`node tasks.mjs check`（fmt + lint + test）、`node tasks.mjs build-all` 全部通过；`go mod tidy -diff` 无差异；`migrations/`、`go.mod`、`go.sum` 零改动；全仓无新增 `MarshalJSON`／`UnmarshalJSON`，无 JSON 标签改动。
 
-**审查**：两轮独立审查（首轮 2 个🔴 + 3 个🟡、复审 0 个🔴）已全部关闭。首轮的两个🔴 是 `card_event_delivery.status` 整项漏做，以及 `OutboxStatus` 在 `domain/devices` 与 `ops` 对同一列重复声明——后者正是第 7 节第 4 类残留（「同一枚举多处独立声明」），已删除前者，`ops` 为唯一声明点。
+**审查**：P0、P1、P2 各经两轮独立审查（首轮 2 个🔴 + 3 个🟡、复审 0 个🔴）已全部关闭。首轮的两个🔴 是 `card_event_delivery.status` 整项漏做，以及 `OutboxStatus` 在 `domain/devices` 与 `ops` 对同一列重复声明——后者正是第 7 节第 4 类残留（「同一枚举多处独立声明」），已删除前者，`ops` 为唯一声明点。P2 的两个🟡 是两个未接线的 `All*` 常量，其中 `order.AllStartSources` 已改为被后台白名单引用，`AllRefundViewStatuses` 因订单列表确实没有 `refund_status` 筛选入口而改为「预登记」注释。
+
+**补充门禁**：P2 补跑了 `go vet -tags integration ./...`。该层不参与 `node tasks.mjs check`，但能在真库执行前发现类型断裂——P2 借此发现并修复了 10 处集成测试夹具的类型不兼容（含 P1 遗留的 5 处）。后续批次应保留这道门禁。
+
+### 9.2 真库集成的执行记录
+
+**已取得证据**：`node scripts/db/test-integration.mjs` 已实际执行，**95 个包全部通过、零失败**，覆盖 `device`、`export`、`gateway/repo`、`http/integration`、`ops`、`payment`、`settlement`、`testfixture`、`wallet`、`worker/repo` 等。GORM 投影列类型、ENUM 参数绑定、`gorm:"default"` 指针语义、跨库行锁与 `SKIP LOCKED` 均有真实 MySQL 证据。执行前已核对：开发栈原本未运行（无容器、无既有数据），本次为全新启动；测试使用事务回滚，事后 `device_meta` 与 `announcement` 表无残留。
+
+**这次真库运行找出了 6 个默认门禁无法发现的回归**，全部已修。它们印证了第 7 节「编译器无法捕获的四类残留」判断的正确性：
+
+| # | 位置 | 现象 | 根因 |
+| --- | --- | --- | --- |
+| 1 | `worker/repo/outbox_repo.go` | `ListPublishableOutbox` 领取到 0 行 | P1 把空格分隔的白名单串拼进 `IN ('pending failed')`，得到**单元素 IN 列表** |
+| 2 | `export/export_task_repo.go` 三处 | 到期清理与完成/失败写入不生效 | 同上（`completed failed`／`pending running`） |
+| 3 | `worker/repo/schedule_repo.go` | 历史清理语句永不命中 | 同上（`success failed partial`），且在 `Exec` 原始 SQL 内 |
+| 4 | `export/*_integration_test.go` 两处 | 故障注入与取消闸门夹具失效（一个立即失败、一个等满 20s 超时） | `Updates(map[string]any)` 的 Dest 值改为具名 `ExportStatus` 后，测试里 `values["status"] == "completed"` 走**接口动态类型比较**恒为 false |
+| 5 | `ops/announcement_query_repo.go` | 站点详情接口 `announcements` 返回空数组 | P1 把 `status='published'` 改为绑定参数 `status=?`，在**事务型句柄 + 先构造 Where 再条件分支追加 Where** 的写法下追加条件在真库中不生效 |
+| 6 | `ops/announcement_query_repo.go` 同批 | — | `scope IN ('global','station')` 同样被改成字符串拼接 |
+
+**结论与新规则**：
+
+- **白名单常量串不可直接拼进 SQL 的 `IN (...)`**。`"pending failed"` 是空格分隔的展示口径，拼进括号会得到单元素 IN 列表，编译器与静态检查均无法发现。已改为 `IN ?` 绑定 `[]T` 切片，并在常量旁注明两者关系。逐个拼接带引号（`'global','station'`）是正确写法，予以保留。
+- **map 落值的动态类型会变**。`Updates(map[string]any{"status": ExportStatusCompleted})` 写入的值，其动态类型不再是 `string`；下游按接口比较时必须先归一（本仓库改为 `fmt.Sprint(values["status"]) == ...`）。这类比较散落在 GORM 回调夹具里，默认门禁不覆盖。
+- **GORM 链式查询在事务句柄下的行为必须以真库为准**。生成 SQL 文本正确、绑定参数正确，仍可能因 Statement 复用而不生效。`Active` 已恢复内联字面量并注明原因；若将来改为绑定参数，须重跑真库而不是只看 DryRun 输出。
+
+**仍缺的证据**：确定性前后基线（从同一起始快照分别跑改造前后并逐字节比较）尚未执行；`task_execution_log` 仍无运行证据（处理器登记表为空）。这两项补齐前，状态是「基础入口与真库集成均通过、前后逐字节对比未验证」。
 
 **未取得的证据（不得当作通过）**：
 
@@ -409,7 +444,15 @@ func (s DeviceMetaStatus) ManageWritable() bool
 - **确定性前后基线未执行**。尚未从同一起始快照分别跑改造前后的请求并逐字节比较。
 - **`task_execution_log` 无运行证据**，处理器登记表为空（见 8.3.3）。
 
-上述三项补齐前，本批的状态是「基础入口通过、真库与前后对比未验证」，不得表述为已完全验收。
+**确定性前后基线尚未执行**（真库证据见 9.2 节）。该项补齐前，状态是「基础入口与真库集成均通过、前后逐字节对比未验证」，不得表述为已完全验收。
+
+### 9.3 P2 的执行记录
+
+**已取得证据**：`go build ./...`、`go vet ./...`、**`go vet -tags integration ./...`**、`node tasks.mjs check`、`node tasks.mjs build-all` 全部通过；`go mod tidy -diff` 无差异；`go list ./...` 全仓无 import 环；`internal/protocol` 经 `go list -deps` 核实仍为零内部依赖的叶子包；`migrations/`、`go.mod`、`go.sum` 零改动；JSON 标签与 `binding` 标签逐字节不变；无新增 `MarshalJSON`／`UnmarshalJSON`。
+
+**P2 特有证据**：`binding:"required,oneof=user_app admin auto"` 对自定义字符串类型仍生效，已用真实 gin `ShouldBindJSON` 实测（`user_app`／`auto`／`admin` 通过，`bogus`／空串／字段缺失均 400），并核对了 `reflect.Kind` 仍为 `string`；序列化输出与原 `string` 字段逐字节相同。
+
+**真库证据**：见 9.2 节。P2 涉及的三处 VARCHAR 投影列（`device_meta.protocol_adapter`、`vendor.adapter_class`、`device_event.protocol_name`）扫描为 `protocol.AdapterID` 已在真实 MySQL 下验证；`OrderView.StartSource` 的可空指针往返与 `RefundViewStatus` 断言同样已覆盖。
 
 ## 10. 独立缺陷
 

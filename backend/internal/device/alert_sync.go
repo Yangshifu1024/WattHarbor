@@ -80,7 +80,7 @@ func (s AlertSyncService) Run(ctx context.Context) (int, error) {
 // recordFault 核对事件 ID、设备、毫秒时间和协议内容，再锁定设备对应告警并保存。
 // 同事件、早于最新故障或不晚于恢复时间时不新增；最新事件时间未知时不确认处理。
 func (s AlertSyncService) recordFault(ctx context.Context, report contract.DeviceFaultReport, event protocol.Event) (bool, error) {
-	if report.ID == 0 || report.EventKey == "" || len(report.EventKey) > 64 || report.DeviceID == "" || len(report.DeviceID) > 64 || report.DeviceID != event.DeviceID || report.ReceivedAt.IsZero() || event.ReceivedAt.IsZero() || event.ReceivedAt.Sub(report.ReceivedAt).Abs() >= time.Millisecond || event.Protocol != "dc589" || event.Type != protocol.Fault {
+	if report.ID == 0 || report.EventKey == "" || len(report.EventKey) > 64 || report.DeviceID == "" || len(report.DeviceID) > 64 || report.DeviceID != event.DeviceID || report.ReceivedAt.IsZero() || event.ReceivedAt.IsZero() || event.ReceivedAt.Sub(report.ReceivedAt).Abs() >= time.Millisecond || event.Protocol != protocol.AdapterIDDC589 || event.Type != protocol.Fault {
 		return false, errors.New("invalid device fault evidence")
 	}
 	if event.FaultCode == 0 {
@@ -149,7 +149,7 @@ func (s AlertSyncService) resolveRecovered(ctx context.Context) error {
 		}
 		event, decodeErr := decodeRecoveryPayload(hb.Payload, alert.Metric)
 		err = decodeErr
-		if err == nil && (hb.AfterReceivedAt == nil || hb.ReceivedAt == nil || !hb.ReceivedAt.After(*hb.AfterReceivedAt) || event.DeviceID != alert.DeviceID || event.Type != protocol.Heartbeat || event.Protocol != "dc589" || event.ReceivedAt.IsZero() || event.ReceivedAt.Sub(*hb.ReceivedAt).Abs() >= time.Millisecond) {
+		if err == nil && (hb.AfterReceivedAt == nil || hb.ReceivedAt == nil || !hb.ReceivedAt.After(*hb.AfterReceivedAt) || event.DeviceID != alert.DeviceID || event.Type != protocol.Heartbeat || event.Protocol != protocol.AdapterIDDC589 || event.ReceivedAt.IsZero() || event.ReceivedAt.Sub(*hb.ReceivedAt).Abs() >= time.Millisecond) {
 			err = errors.New("invalid device recovery evidence")
 		}
 		if err != nil {

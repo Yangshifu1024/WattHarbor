@@ -1,6 +1,10 @@
 package charging
 
-import "testing"
+import (
+	"testing"
+
+	"chargepilot/internal/protocol"
+)
 
 func TestProtocolCapabilitiesCoverDc589(t *testing.T) {
 	caps, err := ProtocolCapabilities("dc589")
@@ -15,7 +19,8 @@ func TestProtocolCapabilitiesCoverDc589(t *testing.T) {
 }
 
 func TestProtocolCapabilitiesRejectUnknownAdapter(t *testing.T) {
-	for _, adapter := range []string{"", "unknown", "DC589", "dc590"} {
+	// 四个值全部非法：空串、未登记标识，以及大小写与序号不同的近似值。
+	for _, adapter := range []protocol.AdapterID{"", "unknown", "DC589", "dc590"} {
 		if _, err := ProtocolCapabilities(adapter); err == nil {
 			t.Fatalf("协议 %q 不应被接受", adapter)
 		}

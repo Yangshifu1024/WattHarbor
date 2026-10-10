@@ -57,7 +57,7 @@ func (s Scheduler) RunDue(ctx context.Context) error {
 	}
 	var failures []error
 	for _, task := range due {
-		if _, err := s.execute(ctx, task, false, "cron", ""); err != nil {
+		if _, err := s.execute(ctx, task, false, workerrepo.TaskTriggeredByCron, ""); err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", task.Code, err))
 		}
 	}
@@ -83,7 +83,7 @@ func (s Scheduler) Trigger(ctx context.Context, code, reason string, force bool)
 	if !task.Enabled && !force {
 		return false, ErrPaused
 	}
-	return s.execute(ctx, task, force, "admin_api", reason)
+	return s.execute(ctx, task, force, workerrepo.TaskTriggeredByAdminAPI, reason)
 }
 
 // ErrPaused 表示任务已暂停，须强制手动触发才能执行。
@@ -91,7 +91,7 @@ var ErrPaused = errors.New("scheduled task paused")
 
 // execute 领取两分钟租约，保存运行日志并使用 30 秒 context 执行处理器。
 // 执行结束后用独立的 5 秒 context 保存结果、更新计划并清空租约；竞争失败返回 false。
-func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggeredBy, reason string) (bool, error) {
+func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggeredBy workerrepo.TaskTriggeredBy, reason string) (bool, error) {
 	handler := s.Handlers[task.Code]
 	if handler == nil {
 		return false, fmt.Errorf("handler unavailable for %s", task.Code)
@@ -102,7 +102,7 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	}
 	now := time.Now().UTC()
 	lease := uuid.NewString()
-	claimed, err := workerrepo.ClaimTaskLease(ctx, s.DB, task, force, triggeredBy == "cron", lease, now)
+	claimed, err := workerrepo.ClaimTaskLease(ctx, s.DB, task, force, triggeredBy == workerrepo.TaskTriggeredByCron, lease, now)
 	if err != nil || claimed == 0 {
 		return false, err
 	}
@@ -113,7 +113,7 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	log := workerrepo.ExecutionLog{TaskCode: task.Code, StartedAt: now, CreatedMonth: month,
-		Status: "running", TriggeredBy: triggeredBy, TriggerReason: reason}
+		Status: workerrepo.TaskExecutionRunning, TriggeredBy: triggeredBy, TriggerReason: reason}
 	if err := workerrepo.CreateExecutionLog(ctx, s.DB, &log); err != nil {
 		_ = workerrepo.ReleaseLease(s.DB.WithContext(context.Background()), task.ID, lease)
 		return true, err
@@ -122,11 +122,11 @@ func (s Scheduler) execute(ctx context.Context, task Task, force bool, triggered
 	rows, runErr := runSafely(runCtx, handler)
 	cancel()
 	finished := time.Now().UTC()
-	status := "success"
+	status := workerrepo.TaskExecutionSuccess
 	message := any(nil)
 	failures := uint32(0)
 	if runErr != nil {
-		status = "failed"
+		status = workerrepo.TaskExecutionFailed
 		text := runErr.Error()
 		if len(text) > 512 {
 			text = text[:512]

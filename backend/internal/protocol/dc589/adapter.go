@@ -53,7 +53,7 @@ type TCPAdapter struct {
 }
 
 // Name 返回适配器标识 dc589，用于核对厂商配置。
-func (TCPAdapter) Name() string { return "dc589" }
+func (TCPAdapter) Name() protocol.AdapterID { return protocol.AdapterIDDC589 }
 
 // ServeConn 处理设备注册和后续帧；ctx、conn 和 sink 均不能为 nil。
 // 事件保存成功后才确认帧。取消时关闭连接，所有返回路径都等待取消监听协程退出。

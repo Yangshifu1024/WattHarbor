@@ -8,6 +8,7 @@ import (
 
 	charging "chargepilot/internal/domain/charging"
 	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
 )
 
@@ -35,7 +36,7 @@ type EffectiveScheme struct {
 
 // ExecutionCapabilities 保存设备适配器和支持的功能。
 type ExecutionCapabilities struct {
-	ProtocolAdapter       string                `json:"protocol_adapter"`        // 中央设备选定的适配器
+	ProtocolAdapter       protocol.AdapterID    `json:"protocol_adapter"`        // 中央设备选定的适配器
 	Capabilities          charging.Capabilities `json:"capabilities"`            // 设备协议支持的计费模式、数值上限和控制方法
 	ReportsEnergy         bool                  `json:"reports_energy"`          // 协议是否支持电量上报，来自 Capabilities
 	ReportsSegmentedPower bool                  `json:"reports_segmented_power"` // 协议是否支持分段功率上报，来自 Capabilities

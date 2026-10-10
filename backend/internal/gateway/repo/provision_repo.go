@@ -3,6 +3,7 @@ package repo
 import (
 	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/money"
+	"chargepilot/internal/protocol"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,12 +45,12 @@ type ProvisionDevice struct {
 }
 
 // lockVendorForProvision 在调用方事务内共享锁定厂商，读取状态和适配器。
-func lockVendorForProvision(tx *gorm.DB, vendorID uint64) (status devices.VendorStatus, adapterClass string, err error) {
+func lockVendorForProvision(tx *gorm.DB, vendorID uint64) (status devices.VendorStatus, adapterClass protocol.AdapterID, err error) {
 	var row struct {
 		// Status 厂商启用状态，对应 vendor.status。
 		Status devices.VendorStatus
-		// AdapterClass 厂商设备适配器类型。
-		AdapterClass string
+		// AdapterClass 厂商设备适配器类型，对应 vendor.adapter_class。
+		AdapterClass protocol.AdapterID
 	}
 	err = tx.Table("vendor").Clauses(clause.Locking{Strength: "SHARE"}).
 		Where("id=? AND deleted_at IS NULL", vendorID).Take(&row).Error
@@ -144,8 +145,8 @@ type Vendor struct {
 	VendorCode string `json:"vendor_code"`
 	// VendorName 厂商名称，读取时保留可空映射。
 	VendorName string `json:"vendor_name"`
-	// AdapterClass 厂商设备适配器类型。
-	AdapterClass string `json:"adapter_class"`
+	// AdapterClass 厂商设备适配器类型，对应 vendor.adapter_class。
+	AdapterClass protocol.AdapterID `json:"adapter_class"`
 	// Protocol 厂商传输协议，对应 vendor.protocol。
 	Protocol devices.VendorProtocol `json:"protocol"`
 	// Status 厂商启用状态，对应 vendor.status。
@@ -241,7 +242,7 @@ func provisionOne(tx *gorm.DB, d ProvisionDevice) error {
 	if status != devices.VendorEnabled {
 		return ErrProvisionConflict
 	}
-	if adapterClass == "dc589" && d.PortCount > maxDC589Ports {
+	if adapterClass == protocol.AdapterIDDC589 && d.PortCount > maxDC589Ports {
 		return ErrProvisionConflict
 	}
 	raw, _ := json.Marshal(d)
@@ -281,17 +282,17 @@ type VendorInput struct {
 	VendorCode string `json:"vendor_code"`
 	// VendorName 非空厂商名称，HTTP 已去除两侧空白并校验长度与控制字符。
 	VendorName string `json:"vendor_name"`
-	// AdapterClass 厂商设备适配器类型。
-	AdapterClass string `json:"adapter_class"`
+	// AdapterClass 厂商设备适配器类型，对应 vendor.adapter_class。
+	AdapterClass protocol.AdapterID `json:"adapter_class"`
 	// Protocol 厂商传输协议；支持组合由开通规则核对。
 	Protocol devices.VendorProtocol `json:"protocol"`
 	// Status 厂商启用状态，对应 vendor.status。
 	Status devices.VendorStatus `json:"status"`
 }
 
-// SupportedVendorAdapter 仅支持 dc589/tcp 组合。
-func SupportedVendorAdapter(adapterClass string, protocol devices.VendorProtocol) bool {
-	return adapterClass == "dc589" && protocol == devices.VendorProtocolTCP
+// SupportedVendorAdapter 仅支持 dc589/tcp 组合；未登记适配器返回 false，不是落库准入门槛。
+func SupportedVendorAdapter(adapterClass protocol.AdapterID, transport devices.VendorProtocol) bool {
+	return adapterClass == protocol.AdapterIDDC589 && transport == devices.VendorProtocolTCP
 }
 
 // GetVendor 读取 id 未删除厂商的公开列，返回记录或缺失、SQL／取消错误，不加锁或写入。
@@ -340,7 +341,7 @@ func UpdateVendor(ctx context.Context, db *gorm.DB, id uint64, in VendorInput) (
 			}
 		}
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		updates := map[string]any{"vendor_name": in.VendorName, "adapter_class": in.AdapterClass, "protocol": in.Protocol, "status": in.Status, "updated_at": now}
+		updates := map[string]any{"vendor_name": in.VendorName, "adapter_class": string(in.AdapterClass), "protocol": in.Protocol, "status": in.Status, "updated_at": now}
 		if in.Status == devices.VendorEnabled && row.Status != devices.VendorEnabled {
 			updates["enabled_at"] = now
 		}

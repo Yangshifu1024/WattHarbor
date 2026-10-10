@@ -61,6 +61,10 @@ func (s TaskExecutionStatus) Known() bool {
 // running 不在其中：未结束的记录不删。
 const TerminalTaskExecutionStatuses = "success failed partial"
 
+// terminalTaskExecutionStatuses 是 TerminalTaskExecutionStatuses 对应的取值切片，供 SQL 绑定使用。
+// 白名单串是空格分隔的展示口径，不能直接拼进 IN 括号——那会得到单元素 IN ('success failed partial') 而匹配不到任何行。
+var terminalTaskExecutionStatuses = []TaskExecutionStatus{TaskExecutionSuccess, TaskExecutionFailed, TaskExecutionPartial}
+
 // TaskTriggeredBy 是 task_execution_log.triggered_by 列的触发来源，区分定时与后台手动。
 // 取值与 migrations/worker_db/0001_init.sql 中该 ENUM 列一致。
 type TaskTriggeredBy string
@@ -84,13 +88,13 @@ func (t TaskTriggeredBy) Known() bool {
 
 // ExecutionLog 是一次执行的结果。created_month 是分区列，与 id 共同定位一行。
 type ExecutionLog struct {
-	ID            uint64    `gorm:"column:id;primaryKey"`            // 创建后回填的日志主键，结束更新与月份共同定位。
-	TaskCode      string    `gorm:"column:task_code"`                // 登记任务编码。
-	StartedAt     time.Time `gorm:"column:started_at"`               // UTC 开始时间。
-	CreatedMonth  time.Time `gorm:"column:created_month;primaryKey"` // 开始时间所在月首，作为分区复合主键。
-	Status        string    `gorm:"column:status"`                   // 创建时 running，结束状态由用例提供；词表见 TaskExecutionStatus。
-	TriggeredBy   string    `gorm:"column:triggered_by"`             // cron 或 admin_api 触发来源；词表见 TaskTriggeredBy。
-	TriggerReason string    `gorm:"column:trigger_reason"`           // 手动触发原因，自动执行保留空串。
+	ID            uint64              `gorm:"column:id;primaryKey"`            // 创建后回填的日志主键，结束更新与月份共同定位。
+	TaskCode      string              `gorm:"column:task_code"`                // 登记任务编码。
+	StartedAt     time.Time           `gorm:"column:started_at"`               // UTC 开始时间。
+	CreatedMonth  time.Time           `gorm:"column:created_month;primaryKey"` // 开始时间所在月首，作为分区复合主键。
+	Status        TaskExecutionStatus `gorm:"column:status"`                   // 创建时 running，结束状态由用例提供；词表见 TaskExecutionStatus。
+	TriggeredBy   TaskTriggeredBy     `gorm:"column:triggered_by"`             // cron 或 admin_api 触发来源；词表见 TaskTriggeredBy。
+	TriggerReason string              `gorm:"column:trigger_reason"`           // 手动触发原因，自动执行保留空串。
 }
 
 // TableName 返回执行日志表名，不执行 IO 或修改行。
@@ -146,20 +150,16 @@ func ReleaseLease(db *gorm.DB, taskID uint64, lease string) error {
 }
 
 // FailStaleRunningLogs 将开始时间早于 before 的 running 日志标记为失败。
-// status 的两处字面量对应 task_execution_log.status 词表，更新语句不因类型化拆分。
 func FailStaleRunningLogs(ctx context.Context, db *gorm.DB, taskCode string, before, at time.Time) error {
 	return db.WithContext(ctx).Table("task_execution_log").
-		Where("task_code = ? AND status = '"+string(TaskExecutionRunning)+"' AND started_at < ?", taskCode, before).
+		Where("task_code = ? AND status = ? AND started_at < ?", taskCode, TaskExecutionRunning, before).
 		Updates(map[string]any{"status": TaskExecutionFailed, "finished_at": at, "error_msg": "worker stopped before completion"}).Error
 }
 
 // FinishExecutionLog 按 ID 和月份保存执行状态、行数、结束时间和错误。
 // message=nil 时清除错误字段。
-// status 由调用方提供，本层不做准入校验：partial 等取值即使当前无写入路径也须能落库。
-// status 保持 string：调用方 internal/worker/schedule/scheduler.go 将其作为 string 局部变量传入，
-// 该文件不在本次收敛范围内。本层不做准入校验，词表见 TaskExecutionStatus；
-// partial 当前无写入路径也须能落库。
-func FinishExecutionLog(ctx context.Context, db *gorm.DB, id uint64, month time.Time, status string, affectedRows uint64, finishedAt time.Time, message any) error {
+// 本层不做准入校验：partial 等取值即使当前无写入路径也须能落库。
+func FinishExecutionLog(ctx context.Context, db *gorm.DB, id uint64, month time.Time, status TaskExecutionStatus, affectedRows uint64, finishedAt time.Time, message any) error {
 	return db.WithContext(ctx).Table("task_execution_log").
 		Where("id = ? AND created_month = ?", id, month).
 		Updates(map[string]any{
@@ -190,19 +190,20 @@ func LastExecution(ctx context.Context, db *gorm.DB, taskCode string) (LastExecu
 
 // LastExecutionRow 是一次执行的时间与结果，不含租约等内部字段。
 type LastExecutionRow struct {
-	StartedAt  time.Time  `gorm:"column:started_at"`  // 开始时间。
-	FinishedAt *time.Time `gorm:"column:finished_at"` // 结束时间，running 可为 NULL。
-	Status     string     `gorm:"column:status"`      // 执行状态；词表见 TaskExecutionStatus。
-	ErrorMsg   *string    `gorm:"column:error_msg"`   // 错误文本，成功可为 NULL。
+	StartedAt  time.Time           `gorm:"column:started_at"`  // 开始时间。
+	FinishedAt *time.Time          `gorm:"column:finished_at"` // 结束时间，running 可为 NULL。
+	Status     TaskExecutionStatus `gorm:"column:status"`      // 执行状态；词表见 TaskExecutionStatus。
+	ErrorMsg   *string             `gorm:"column:error_msg"`   // 错误文本，成功可为 NULL。
 }
 
 // CleanupExecutionHistory 从 db 按数据库时间删除最多 1000 条历史执行日志。
 // 成功零行记录保留一天，其余 success／failed／partial 结束记录保留 30 天；running 不删，返回存储错误。
 // SQL 中的状态字面量对应 task_execution_log.status 词表，删除语句不因类型化拆分；
 // partial 即使 Go 侧无写入也参与判定，避免漏删历史遗留记录。
+// status 的取值绑定 terminalTaskExecutionStatuses，不把展示用白名单串拼进 SQL 语法。
 func CleanupExecutionHistory(ctx context.Context, db *gorm.DB) error {
 	return db.WithContext(ctx).Exec(`DELETE FROM task_execution_log
 		WHERE (status='success' AND affected_rows=0 AND finished_at<DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 DAY))
-		OR (status IN ('` + TerminalTaskExecutionStatuses + `') AND finished_at<DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 30 DAY))
-		LIMIT 1000`).Error
+		OR (status IN ? AND finished_at<DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 30 DAY))
+		LIMIT 1000`, terminalTaskExecutionStatuses).Error
 }

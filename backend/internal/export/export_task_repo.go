@@ -54,8 +54,15 @@ const SettableExportStatuses = "pending running completed failed"
 // TerminalExportStatuses 是已结束、可进入到期清理的状态集合（completed 与 failed）。
 const TerminalExportStatuses = "completed failed"
 
+// terminalExportStatuses 是 TerminalExportStatuses 对应的取值切片，供 SQL 绑定使用。
+// 白名单串是空格分隔的展示口径，不能直接拼进 IN 括号——那会得到单元素 IN ('completed failed') 而匹配不到任何行。
+var terminalExportStatuses = []ExportStatus{ExportStatusCompleted, ExportStatusFailed}
+
 // ActiveExportStatuses 是生成流程的允许起始状态集合（pending 与 running）。
 const ActiveExportStatuses = "pending running"
+
+// activeExportStatuses 是 ActiveExportStatuses 对应的取值切片，供 SQL 绑定使用。
+var activeExportStatuses = []ExportStatus{ExportStatusPending, ExportStatusRunning}
 
 // ExportFileFormat 是 export_task.file_format 列的导出文件格式。
 // 取值与 migrations/central_db/0001_init.sql 中该 ENUM 列一致（csv／xlsx）。
@@ -223,7 +230,7 @@ func (s ExportRepo) FindExportTaskByNo(db *gorm.DB, taskNo string) (ExportTaskRo
 func (s ExportRepo) ListExpirableExportTasks(db *gorm.DB, now time.Time, limit int) ([]ExportTaskRow, error) {
 	rows := []ExportTaskRow{}
 	err := db.Table("export_task").
-		Where("status IN ('"+TerminalExportStatuses+"') AND expires_at <= ?", now).
+		Where("status IN ? AND expires_at <= ?", terminalExportStatuses, now).
 		Order("id").Limit(limit).Find(&rows).Error
 	return rows, err
 }
@@ -309,7 +316,7 @@ func (s ExportRepo) Expiration(db *gorm.DB, id uint64) (*time.Time, error) {
 // 仅在内容文件及范围、脱敏和摘要校验文件已发布后调用；事务提交后才能下载。
 // WHERE 内的状态取值对应 ActiveExportStatuses，语句不因类型化拆分。
 func (s ExportRepo) CompleteInTx(db *gorm.DB, taskNo string, rowCount int, path string, now time.Time) error {
-	res := db.Model(&ExportTaskRow{}).Where("task_no=? AND status IN ('"+ActiveExportStatuses+"')", taskNo).Updates(map[string]any{"status": ExportStatusCompleted, "row_count": rowCount, "file_path": path, "completed_at": now, "error_msg": nil})
+	res := db.Model(&ExportTaskRow{}).Where("task_no=? AND status IN ?", taskNo, activeExportStatuses).Updates(map[string]any{"status": ExportStatusCompleted, "row_count": rowCount, "file_path": path, "completed_at": now, "error_msg": nil})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -321,7 +328,7 @@ func (s ExportRepo) CompleteInTx(db *gorm.DB, taskNo string, rowCount int, path 
 
 // FailInTx 在任务锁内将 pending／running 改为 failed 并记录原因，不覆盖 completed 或 expired。
 func (s ExportRepo) FailInTx(db *gorm.DB, taskNo, reason string) error {
-	res := db.Model(&ExportTaskRow{}).Where("task_no=? AND status IN ('"+ActiveExportStatuses+"')", taskNo).Updates(map[string]any{"status": ExportStatusFailed, "error_msg": reason})
+	res := db.Model(&ExportTaskRow{}).Where("task_no=? AND status IN ?", taskNo, activeExportStatuses).Updates(map[string]any{"status": ExportStatusFailed, "error_msg": reason})
 	if res.Error != nil {
 		return res.Error
 	}

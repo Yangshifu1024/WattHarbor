@@ -81,7 +81,7 @@ func (chargeProcessRow) TableName() string { return "charge_process" }
 
 // insertChargeProcess 在事务内锁定端口，将心跳关联到此前已确认启动的订单，并去重插入采样点。
 func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event protocol.Event) error {
-	if event.Protocol != "dc589" || len(event.ChargingPorts) == 0 {
+	if event.Protocol != protocol.AdapterIDDC589 || len(event.ChargingPorts) == 0 {
 		return nil
 	}
 	ports := make([]int, 0, len(event.ChargingPorts))

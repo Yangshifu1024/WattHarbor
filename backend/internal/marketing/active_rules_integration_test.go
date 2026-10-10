@@ -124,12 +124,12 @@ func TestActiveRulesIsolatesTriggerTypes(t *testing.T) {
 	fixture := newActivityFixture(t)
 	db := fixture.db
 	tx := txRollback(t, db)
-	for i, trigger := range []string{TriggerFirstRecharge, TriggerInviteReward, TriggerThresholdRedeem, TriggerHoliday} {
+	for i, trigger := range []TriggerType{TriggerFirstRecharge, TriggerInviteReward, TriggerThresholdRedeem, TriggerHoliday} {
 		seedRule(t, tx, fixture.id(uint64(i+1)), trigger, hours(-1), hours(1), 100)
 	}
 
-	for i, trigger := range []string{TriggerFirstRecharge, TriggerInviteReward, TriggerThresholdRedeem, TriggerHoliday} {
-		t.Run(trigger, func(t *testing.T) {
+	for i, trigger := range []TriggerType{TriggerFirstRecharge, TriggerInviteReward, TriggerThresholdRedeem, TriggerHoliday} {
+		t.Run(string(trigger), func(t *testing.T) {
 			rules, err := activeRules(tx, ActivityEvent{
 				TriggerType: trigger, AmountCents: 1_000_000, Now: fixedNow,
 			})

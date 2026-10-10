@@ -41,11 +41,9 @@ func (s BillingOrders) Due(ctx context.Context) ([]BillingTask, error) {
 // Defer 在 ctx 管理的短事务内核对 task 的 pending 状态及预期代际，保存脱敏 reason 和 status。
 // status 只允许 pending/manual_review；人工队列入队同事务，RC 重读来源并执行纯计价规则。
 // 失配返回 ErrStaleBillingTask，调用方停止旧执行；其他错误回滚，不跨 Calculate/Apply 持有任务锁。
-// status 是 charge_billing_job.status 的待写取值；这里仍接受公开的裸串
-// （BillingOrderProcessor.Defer 的签名定义在本包外，含多个集成测试替身），
-// 进入本方法立即收敛为列类型，后续判定与写入一律使用带类型的常量。
-func (s BillingOrders) Defer(ctx context.Context, task BillingTask, status, reason string) error {
-	target := BillingJobStatus(status)
+// status 是 charge_billing_job.status 的待写取值；进入本方法即已是列类型，
+// 判定与写入一律使用具名常量，不接受任意裸串。
+func (s BillingOrders) Defer(ctx context.Context, task BillingTask, target BillingJobStatus, reason string) error {
 	if target != BillingJobPending && target != BillingJobManualReview {
 		return ErrBillingConflict
 	}

@@ -26,7 +26,7 @@ type OrderView struct {
 	Status              orderdomain.OrderStatus         `json:"status"`                              // 订单状态：pending_payment/paid/charging/completed/cancelled/failed/refunding/refunded
 	BusinessStatus      orderdomain.OrderBusinessStatus `json:"business_status"`                     // 持久化业务状态：pending_start/charging/completed。
 	PaymentStatus       orderdomain.OrderPaymentStatus  `json:"payment_status"`                      // 持久化支付状态：pending/paid/refunded/partial_refunded。
-	StartSource         *string                         `json:"start_source"`                        // payment 扫码支付、balance 余额支付、card 在线卡；缺失来源时为空。
+	StartSource         *OrderStartSource               `json:"start_source"`                        // payment 扫码支付、balance 余额支付、card 在线卡；缺失来源时为空。
 	SelectedSchemeName  *string                         `json:"selected_scheme_name" gorm:"-"`       // 下单时冻结的计费方案名称；缺失快照或有效名称时为 null。
 	SelectedPackageName *string                         `json:"selected_package_name" gorm:"-"`      // 下单时冻结的套餐名称；缺失有效套餐名称时为 null。
 	CreatedAt           time.Time                       `json:"created_at"`                          // 订单创建时间
@@ -37,7 +37,7 @@ type OrderView struct {
 	ElectricFeeCents    *int64                          `json:"electric_fee_cents"`                  // 电费（分）；指针，尚未计费为 null
 	ServiceFeeCents     *int64                          `json:"service_fee_cents"`                   // 服务费（分）；指针，尚未计费为 null
 	TotalFeeCents       *int64                          `json:"total_fee_cents"`                     // 应收合计（分）；指针，尚未计费为 null
-	RefundStatus        string                          `json:"refund_status"`                       // 退款进度：none/processing/partial_refunded/refunded，由 SQL 依据支付单与退款单算出
+	RefundStatus        RefundViewStatus                `json:"refund_status"`                       // 退款进度：none/processing/partial_refunded/refunded，由 SQL 依据支付单与退款单算出
 	PaymentOrderID      *uint64                         `json:"payment_order_id"`                    // 关联支付单主键；指针，未发起支付为 null
 	PaymentOrderNo      *string                         `json:"payment_order_no"`                    // 支付单号；指针，未发起支付为 null
 	PaymentOrderStatus  *string                         `json:"payment_order_status"`                // 支付单内部流程状态；未关联有效支付单时为 null。
@@ -58,15 +58,19 @@ type OrderBilling struct {
 type OrderQuery struct {
 	persist.PageQuery                                     // 复用通用分页与状态白名单校验
 	OrderNo, DeviceID                          string     // 按订单号 / 设备号精确匹配
-	BusinessStatus, PaymentStatus, StartSource string     // 业务、支付状态与启动来源独立筛选。
+	BusinessStatus, PaymentStatus, StartSource string     // 业务、支付状态与启动来源独立筛选。StartSource 空串表示不筛选，与展示字段的 null 语义不同，保持 string 以沿用后台白名单校验的短路规则。
 	StationID                                  uint64     // 按站点过滤，0 表示不限
 	From, To                                   *time.Time // 充电时间区间（闭区间）；指针，某一端为 nil 表示该端不限
 }
 
 // orderStartSourceSQL 仅用于固定订单、支付别名 c/p 的启动来源查询结果，卡记录优先。
+// 三个分支值对应 OrderStartSource 的 'card'／'balance'／'payment'。
+// CASE 是 SQL 语法的一部分，分支值不可绑定为参数，保留字面量。
 const orderStartSourceSQL = `(CASE WHEN EXISTS (SELECT 1 FROM card_charge cc WHERE cc.charge_order_id=c.id) THEN 'card' WHEN p.pay_method='balance' THEN 'balance' WHEN p.pay_method='wechat' THEN 'payment' ELSE NULL END)`
 
 // orderColumns 列出后台订单查询列；金额与退款进度来自已保存的支付和退款记录。
+// refund_status 的 CASE 分支值对应 RefundViewStatus 的四个取值，ELSE 'none' 保证非空；
+// 同为 SQL 语法内联，取值不可绑定，保留字面量。
 const orderColumns = `c.id AS order_id,c.order_no,c.user_id,c.device_id,c.port_no,i.station_id,c.status,c.business_status,c.payment_status,` + orderStartSourceSQL + ` AS start_source,c.created_at,c.started_at,c.ended_at,
  c.charged_seconds AS duration_seconds,c.charged_kwh AS meter_kwh,c.electric_cents AS electric_fee_cents,c.service_cents AS service_fee_cents,c.total_cents AS total_fee_cents,
  c.payment_order_id,p.order_no AS payment_order_no,p.status AS payment_order_status,p.paid_cents,p.refunded_cents,c.failure_reason,

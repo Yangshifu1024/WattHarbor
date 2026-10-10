@@ -13,6 +13,7 @@ import (
 	"chargepilot/internal/domain/devices"
 	gatewayrepo "chargepilot/internal/gateway/repo"
 	"chargepilot/internal/platform/httpapi"
+	"chargepilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
@@ -94,7 +95,7 @@ func TestVendorInputBoundsAndSupportedTransport(t *testing.T) {
 			t.Errorf("accepted invalid name %q", name)
 		}
 	}
-	for _, pair := range [][2]string{{"dc589", "mqtt"}, {"dc589", "hybrid"}, {"unknown", "tcp"}} {
+	for _, pair := range [][2]protocol.AdapterID{{"dc589", "mqtt"}, {"dc589", "hybrid"}, {"unknown", "tcp"}} {
 		in := validVendorInput()
 		// 厂商传输词表是 vendor.protocol 三值，与会话 Transport 分立。
 		in.AdapterClass, in.Protocol = pair[0], devices.VendorProtocol(pair[1])

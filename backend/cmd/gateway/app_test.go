@@ -29,7 +29,8 @@ func (idleStops) RetryStopping(context.Context) error { return nil }
 
 func (idleStops) RetryPending(context.Context) error { return nil }
 
-func (idleAdapter) Name() string { return "test" }
+// Name 返回未登记的测试标识；保留非法值以匹配实际夹具的契约面。
+func (idleAdapter) Name() protocol.AdapterID { return protocol.AdapterID("test") }
 
 func (idleAdapter) ServeConn(context.Context, net.Conn, protocol.Sink) error { return nil }
 

@@ -63,7 +63,10 @@ func validateVendorInput(in *contract.VendorRequest) error {
 			return errors.New("厂商名称不能包含控制字符")
 		}
 	}
-	if in.AdapterClass == "" || utf8.RuneCountInString(in.AdapterClass) > 256 {
+	// adapter_class 是 varchar(256)，比 device_meta.protocol_adapter 和 device_event.protocol_name
+	// 的 varchar(32) 宽；adapter_class 写入原样透传的厂商标签，长度校验按该列上限保留，
+	// 不因当前已登记集合只有 DC589 就省略。
+	if in.AdapterClass == "" || utf8.RuneCountInString(string(in.AdapterClass)) > 256 {
 		return errors.New("请选择厂商适配器")
 	}
 	// 本入参写集合是 vendor.protocol 三值，与 device_session.protocol 的两值 Transport 不共用词表。

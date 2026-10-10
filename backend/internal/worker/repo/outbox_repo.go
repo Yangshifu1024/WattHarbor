@@ -24,11 +24,12 @@ func outboxTable(source string) string {
 
 // ListPublishableOutbox 按 ID 领取最多 100 条到期待发布事件，跳过其他事务已锁定的行。
 // 调用方须使用事务，行锁持续到该事务结束。
-// status 的取值串引用 ops.PublishableOutboxStatuses，对应三张 outbox 表的 status 词表。
+// status 的取值绑定 ops.PublishableOutboxStatusValues（对应三张 outbox 表的 status 词表）；
+// 不把展示用白名单串拼进 IN 括号，那会得到单元素列表而匹配不到行。
 func ListPublishableOutbox(tx *gorm.DB, source string) ([]ops.EventOutboxRecord, error) {
 	rows := []ops.EventOutboxRecord{}
 	err := tx.Table(outboxTable(source)).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-		Where("status IN ('" + ops.PublishableOutboxStatuses + "') AND scheduled_at <= NOW(3)").
+		Where("status IN ? AND scheduled_at <= NOW(3)", ops.PublishableOutboxStatusValues).
 		Order("id").Limit(outboxBatch).Find(&rows).Error
 	return rows, err
 }

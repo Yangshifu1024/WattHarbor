@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"chargepilot/internal/domain/devices"
+	"chargepilot/internal/protocol"
 	"time"
 )
 
@@ -34,7 +35,7 @@ type VendorReply struct {
 	ID           uint64                 `json:"id"`            // 厂商 ID
 	VendorCode   string                 `json:"vendor_code"`   // 创建后不可变的厂商编码
 	VendorName   string                 `json:"vendor_name"`   // 当前可见名称
-	AdapterClass string                 `json:"adapter_class"` // 适配器名称，用于检查设备支持的功能
+	AdapterClass protocol.AdapterID     `json:"adapter_class"` // 适配器名称，用于检查设备支持的功能
 	Protocol     devices.VendorProtocol `json:"protocol"`      // tcp／mqtt／hybrid，运行设备开通目前要求 tcp
 	Status       devices.VendorStatus   `json:"status"`        // enabled／disabled
 	EnabledAt    *time.Time             `json:"enabled_at"`    // 最近启用时刻，未启用可空
@@ -56,7 +57,7 @@ func (e *VendorFailure) Error() string { return e.Message }
 type VendorRequest struct {
 	VendorCode   string                 `json:"vendor_code"`   // 厂商编码，创建后不可改
 	VendorName   string                 `json:"vendor_name"`   // 可见名称，服务端去空白并校验
-	AdapterClass string                 `json:"adapter_class"` // 适配器标签
+	AdapterClass protocol.AdapterID     `json:"adapter_class"` // 适配器标签，原样落库
 	Protocol     devices.VendorProtocol `json:"protocol"`      // tcp／mqtt／hybrid，网关检查是否支持该协议
 	Status       devices.VendorStatus   `json:"status"`        // enabled／disabled
 }

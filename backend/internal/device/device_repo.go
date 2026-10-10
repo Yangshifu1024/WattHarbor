@@ -1,7 +1,6 @@
 package device
 
 import (
-	"chargepilot/internal/persist"
 	"context"
 	"encoding/json"
 	"time"
@@ -9,7 +8,9 @@ import (
 	"chargepilot/internal/domain/charging"
 	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/persist"
 	"chargepilot/internal/platform/dbutil"
+	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +35,7 @@ type Device struct {
 	TagsJSON         *string                  `json:"-" gorm:"column:tags_json"`  // 内部持久标签数组，响应隐藏
 	UpdatedAt        time.Time                `json:"updated_at"`                 // 资料编辑的并发校验值，使用 UTC 毫秒精度。
 	// 设备协议支持的计量功能和资料中保存的计费模式。
-	ProtocolAdapter       string              `json:"protocol_adapter"`                 // 导入时按厂商资料确定的协议适配器
+	ProtocolAdapter       protocol.AdapterID  `json:"protocol_adapter"`                 // 导入时按厂商资料确定的协议适配器
 	ChargeMode            charging.ChargeMode `json:"charge_mode"`                      // device_meta.charge_mode，词表复用 charging.ChargeMode；当前生效的套餐和价格须另查 pricing_rule。
 	ReportsEnergy         bool                `json:"reports_energy" gorm:"-"`          // 协议是否支持电量上报；按电量计费要求此能力。
 	ReportsSegmentedPower bool                `json:"reports_segmented_power" gorm:"-"` // 协议是否支持分段功率上报；按功率计费要求此能力。

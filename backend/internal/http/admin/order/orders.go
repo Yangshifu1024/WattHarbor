@@ -22,7 +22,7 @@ func (a API) orders(c *gin.Context) {
 	}
 	q := orderstore.OrderQuery{PageQuery: page, OrderNo: c.Query("order_no"), DeviceID: c.Query("device_id"),
 		BusinessStatus: c.Query("business_status"), PaymentStatus: c.Query("payment_status"), StartSource: c.Query("start_source")}
-	if !adminhttp.AdminOneOf(q.BusinessStatus, orderdomain.AllBusinessStatuses) || !adminhttp.AdminOneOf(q.PaymentStatus, orderdomain.AllPaymentStatuses) || !adminhttp.AdminOneOf(q.StartSource, "payment balance card") {
+	if !adminhttp.AdminOneOf(q.BusinessStatus, orderdomain.AllBusinessStatuses) || !adminhttp.AdminOneOf(q.PaymentStatus, orderdomain.AllPaymentStatuses) || !adminhttp.AdminOneOf(q.StartSource, orderstore.AllStartSources) {
 		httpapi.BadRequest(c, "业务状态、支付状态或启动来源无效")
 		return
 	}

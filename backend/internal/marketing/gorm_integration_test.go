@@ -118,11 +118,11 @@ func withInviterCoupon(id uint64) ruleOpt {
 }
 
 // seedRule 用指定主键保存活动规则，使 ID 比对和发放排序测试保持稳定。
-func seedRule(t *testing.T, tx *gorm.DB, id uint64, trigger string, start, end time.Time, threshold int64, opts ...ruleOpt) {
+func seedRule(t *testing.T, tx *gorm.DB, id uint64, trigger TriggerType, start, end time.Time, threshold int64, opts ...ruleOpt) {
 	t.Helper()
 	row := map[string]any{
 		"id":              id,
-		"name":            "rule-" + trigger,
+		"name":            "rule-" + string(trigger),
 		"trigger_type":    trigger,
 		"coupon_id":       900000 + id,
 		"threshold_cents": threshold,

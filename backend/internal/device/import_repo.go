@@ -102,7 +102,8 @@ func (s ImportRepo) CreateImportedDevice(tx *gorm.DB, d ImportDevice) error {
 		"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID,
 		// "enabled" 写入的是 device_meta.status（devices.DeviceMetaStatus），不是 station.status；
 		// 由 devices 包批次统一，本批次保留裸字面量。
-		"model": d.Model, "status": "enabled", "protocol_adapter": d.ProtocolAdapter,
+		// protocol_adapter 写入 protocol.AdapterID；显式转换只为 map 落普通字符串，落库值不变。
+		"model": d.Model, "status": "enabled", "protocol_adapter": string(d.ProtocolAdapter),
 	}
 	// 新建设备未提交计费模式时，使用 device_meta.charge_mode 的数据库默认值。
 	if d.ChargeMode != "" {

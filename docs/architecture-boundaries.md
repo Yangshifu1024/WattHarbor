@@ -75,6 +75,9 @@
 | `domain/wallet` | `AccountStatus`、`TxnDirection`、`TxnBizType`、`FreezeStatus` | `wallet_account.status`、`wallet_txn.direction`／`biz_type`、`risk_freeze_log.status` |
 | `domain/identity` | `UserStatus`、`Gender` | `user.status`／`gender` |
 | `domain/operations` | `ScopeType` | `admin_data_scope.scope_type`（就地升级已有常量） |
+| `protocol`（叶子包） | `AdapterID` | `device_meta.protocol_adapter`、`vendor.adapter_class`、`device_event.protocol_name`（均 VARCHAR，当前受支持集合仅 `dc589`） |
+
+**派生值与外部输入类型的归属**：`order.OrderStartSource` 与 `order.RefundViewStatus`（SQL `CASE` 派生，无数据库列）、`wallet.RefundViewStatus`（内存聚合标签）、`payment.ChannelRefundStatus`（渠道响应原值透传，**开放集合**）、`contracts/gateway.StopSource` 与 `CardAdvanceOutcome`（服务间契约输入）。它们不被其他包消费或只在契约边界出现，故留在属主包内。**`order.RefundViewStatus` 与 `wallet.RefundViewStatus` 虽同名，但分属两个业务域的聚合标签，与 `domain/money.RefundStatus`（`refund_record.status` 持久化词表）三层均不得混用**；`wallet` 的 `needs_review` 更是完全不属于后者。
 
 各属主包的就地定义（不被其他包消费，故不上提）：`device` 的 `StationStatus`／`FaultType`／`ReportSource`／`ImportStatus`／`FaultEventType`、`card` 的 `CardStatus`、`marketing` 的 `CouponStatus`／`ActivityStatus`／`DiscountType`／`TriggerType`、`order` 的 `FeedbackStatus`／`FeedbackCategory`、`ops` 的 `AnnouncementStatus`／`AnnouncementScope`／`AdminUserStatus`／`OutboxStatus`、`settlement` 的 `BillingJobStatus`／`BillStatus`／`MeterReviewStatus`／`ManualFeeReviewStatus`／`InvoiceType`／两套发票审核状态／`RefundReviewOutcome`、`pricing` 的 `PricingRuleStatus`／`PricingTemplateStatus`、`export` 的 `ExportStatus`／`ExportFileFormat`、`worker/repo` 的 `TaskExecutionStatus`／`TaskTriggeredBy`、`gateway/repo` 的 `CardDeliveryStatus`。
 
@@ -83,7 +86,7 @@
 依赖方向四条约束，破坏任何一条都属于结构错误而非风格问题：
 
 1. **`internal/contracts/*` 不得引用业务实现包**，但**可以**引用 `internal/domain/*` 与 `internal/protocol`。`contracts/central` 与 `contracts/gateway` 都直接承载枚举类型，这是新建 `domain/card`、`domain/devices` 的原因——否则契约层只能引用 `internal/card`。
-2. **`internal/domain/*` 不得反向依赖任何业务实现包**，也不引用数据库模型、HTTP 框架或持久层标签。它只定义取值词汇与判定所需的纯逻辑。`domain/devices` 已引入 `domain/money` 的单向依赖（中央状态字段随扫码结果透传），反向边仍然禁止。
+2. **`internal/domain/*` 不得反向依赖任何业务实现包**，也不引用数据库模型、HTTP 框架或持久层标签。它只定义取值词汇与判定所需的纯逻辑。当前三条已授权的 domain 内部与对外单向边：`domain/charging → domain/devices`、`domain/devices → domain/money`、`domain/charging → protocol`。`protocol` 是零内部依赖的叶子包而非业务实现包，引用它不违反本条；新增此类边前须先确认目标包仍无反向路径。
 3. **同名不同义的列不得因值相同而合并类型**。`payment_order.status` 与 `charge_payment_intent.status`、`device_port.status` 与 `charge_process.port_status`、`coupon.status` 与 `coupon_grant.status`、`trigger_type` 与 `grant_source` 的 `invite_reward`、`device_meta.status`（四值）与 `gateway_db.device.status`（三值）、`wallet_account.status` 与 `user.status`（取值串完全相同）、`charge_command.status`（含 `stopping`）与 `charge_stop_command.status`（不含）都是字面量有交集但语义独立的列。新增类型时先确认列，再确认取值。
 4. **可写集合按操作边界建模，不用单一 `Valid()` 收口**。`DeviceMetaStatus.Known()` 是数据库合法集合（四值）而 `ManageWritable()` 是管理端启停准入（两值）；`CardStatus` 分 `UserWritable()` 与 `ManageWritable()`。仓储函数本身仍可不做限制（`SaveDeviceStatus` 原样写入），不得由用例的约束推断所有写入路径。
 
