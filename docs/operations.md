@@ -286,6 +286,25 @@ SELECT event FROM central_db.charge_event_log ORDER BY id;         -- payment_co
 
 开发栈就绪后，场景驱动在 `scripts/dev/e2e/scenarios.mjs`：`scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>` 驱动单个场景并自动完成逐表断言，`budget` 子命令创建并应用 10 分金额套餐，仅 s4 前执行一次；s7 对 worker 容器执行 SIGKILL 并重新拉起，与进程级中断等价。断言统一取库中最新订单，不得并行运行多个场景；模拟器仍须按各场景以 `-scenario` 手工启动。S6（刷卡全流程）暂未脚本化，按矩阵手工执行。
 
+模拟器须按场景逐个切换，启动命令取自下表（板号是 `prepare.mjs` 建立的 1 号设备，在 `backend` 目录下执行）：
+
+| 场景 | 模拟器启动命令 |
+| --- | --- |
+| budget | 无需启动模拟器，只经后台应用方案 |
+| s1 | `go run ./cmd/simulator-dc589 -scenario by-time -board-id 5348240514082652` |
+| s2 | `go run ./cmd/simulator-dc589 -scenario stop-on-command -board-id 5348240514082652` |
+| s3 | `go run ./cmd/simulator-dc589 -scenario reject-start -board-id 5348240514082652` |
+| s4 | `go run ./cmd/simulator-dc589 -scenario stop-on-command -board-id 5348240514082652` |
+| s5 | `go run ./cmd/simulator-dc589 -scenario stop-on-command -board-id 5348240514082652` |
+| s7 | `go run ./cmd/simulator-dc589 -scenario stop-on-command -board-id 5348240514082652` |
+| s8 | `go run ./cmd/simulator-dc589 -scenario reconnect -board-id 5348240514082652` |
+
+s1、s2、s4、s5、s7 共用 `stop-on-command`，差异全在驱动步骤：s2 调用户端停机，s4 起充后把功率推到 1500 W（`power_deciwatts: 15000`）尽快耗尽 10 分预算，s5 发 `unplug`，s7 请求停机前先 SIGKILL worker。`-power` 只决定起充前的初始功率，默认 150 W 通常无需覆盖。
+
+s5 起充后由驱动向模拟器控制口发 `unplug`（即拔枪，端口不再连接）模拟掉电，模拟器保持会话，平台才会在连续一分钟零功率后执行自动停机并落 `automatic_stop` 截止点。这里不能用 `-scenario fault`：`fault` 在起充后按 `-fault-after`（默认 5 秒）主动上报故障，设备自行结束充电并上报 `charge_ended`，而 `AutoStopper` 只处理仍处于 `charging` 的订单，于是不会出现 `automatic_stop`，表现为 s5 断言失败。矩阵场景 5 的「拔出或 `fault` 后等待满一分钟」是手工验收口径，脚本化路径固定为「`stop-on-command` 加驱动发 `unplug`」；`fault` 用于验证设备主动报故障的另一条路径。
+
+各场景串行执行，不得并行；换场景前先停掉上一个模拟器进程，同一板号重复接入会与残留会话冲突。
+
 ### 退出
 
 停掉模拟器（前台 Ctrl+C 或退出命令）。开发栈可保留供后续联调复用；如需回收，执行 `node tasks.mjs dev-down`（容器与数据卷保留），核对 9100、9190 及 8080/8081/8083/8085 的监听符合预期。保留场景日志与 SQL 导出作为验收证据。
