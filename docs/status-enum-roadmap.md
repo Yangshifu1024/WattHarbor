@@ -1,6 +1,6 @@
 # 状态与枚举类型收敛路线图
 
-状态：P0、P1 与 P2 批次均已实施，并已通过**真实数据库**集成验证。P0 依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件；P1 于实施前以当前 HEAD 的完整 import 图逐条复核了第 5.2 节的归属结论，修正结果见 8.3.1 节；P2 的三项决策与实施结论见 8.4 节。真库运行找出并修复的六个回归见 9.2 节。**前后 schema 与数据基线已执行**（三库 schema 逐字节一致、60 张表中 58 张数据逐字节一致），但接口响应层面的严格逐字节比较未完成，缺口原因与已取得证据见 9.3 节。
+状态：P0、P1 与 P2 批次均已实施，并已通过**真实数据库**集成验证。P0 依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件；P1 于实施前以当前 HEAD 的完整 import 图逐条复核了第 5.2 节的归属结论，修正结果见 8.3.1 节；P2 的三项决策与实施结论见 8.4 节。真库运行找出并修复的六个回归见 9.2 节。**前后 schema 与数据基线已执行**（三库 schema 逐字节一致、60 张表中 58 张数据逐字节一致，见 9.3 节）；**接口响应层面的逐字节锁定改由 443 条序列化契约用例承担**（`node tasks.mjs test-contract`，覆盖全部 56 项枚举的每个取值，含 devseed 触及不到的域，见 9.4 节）。「改造前后各起服务比对响应体」本身未执行，两者不是同一件事，不得混同表述。
 
 本文负责状态与枚举类型的记录维度、放置规则、依赖可行性、逐项清单、分批顺序与验收标准。经四轮复审修订，各项设计决定已就地写入正文对应章节；尚待核验的事实与待独立处理的缺陷分别记在第 10 节。仓库维护规则见 [AGENTS.md](../AGENTS.md)，代码边界见 [架构边界与组织约束](architecture-boundaries.md)。
 
@@ -452,12 +452,28 @@ func (s DeviceMetaStatus) ManageWritable() bool
 
 已用 `scripts/db/baseline-normalize.mjs` 消除了其余四类随机量——Snowflake 主键（按表内行号锚定重映射）、UUID v4 单号（按行号派生）、秒与毫秒尾数（按行号重写）——两侧在这些维度已完全一致；**仅剩「时分」无法消除**。若强行把整行时间按行号完全重写，会破坏 `created_at < updated_at` 等业务时间先后关系，使依赖时间序的查询分支走错、测试失真，因此**不采用**该做法。
 
-**结论**：本次基线**已证明 schema 未变、数据行为未变**（58／60 张表逐字节一致，剩余 12 张的差异完全归因于造数时钟且已定位到具体字段）。但**严格的「改造前后接口响应逐字节比较」未完成**——该步骤还需在两侧启动服务、注入固定 `X-Request-ID` 后发同一批请求并比对响应体，本次未走到该步。状态应表述为：
+**结论**：本次基线**已证明 schema 未变、数据行为未变**（58／60 张表逐字节一致，剩余 12 张的差异完全归因于造数时钟且已定位到具体字段）。但**严格的「改造前后接口响应逐字节比较」未完成**——该步骤还需在两侧启动服务、注入固定 `X-Request-ID` 后发同一批请求并比对响应体，本次未走到该步。
 
-**基础入口、真库集成与前后 schema／数据基线均已通过；接口响应层面的严格逐字节比较未完成，缺口原因是造数工具无可注入时钟，而非改造引入了差异。**
+### 9.4 序列化契约测试（替代方案，已实施）
 
-### 9.4 P2 的执行记录
-**已取得证据**：`go build ./...`、`go vet ./...`、**`go vet -tags integration ./...`**、`node tasks.mjs check`、`node tasks.mjs build-all` 全部通过；`go mod tidy -diff` 无差异；`go list ./...` 全仓无 import 环；`internal/protocol` 经 `go list -deps` 核实仍为零内部依赖的叶子包；`migrations/`、`go.mod`、`go.sum` 零改动；JSON 标签与 `binding` 标签逐字节不变；无新增 `MarshalJSON`／`UnmarshalJSON`。
+鉴于上述缺口的成本与收益不匹配，已改用**序列化契约测试**补齐对外契约的锁定，不再追求「改造前后各跑一次服务」。
+
+`backend/internal/serialization/`（build tag `contract`，共 **443 个用例**）把 **P0／P1／P2 全部 56 项枚举的每一个取值**灌进**真实的对外响应结构体**（`OrderView`、`money.ScanResult`、`wallet.BalanceView`、`device.Device`、`card.OnlineCard`、`gateway.VendorReply` 等），用 `encoding/json` 序列化后与**内联的期望字节**逐字符比对。
+
+**为何它能替代前后基线**：真库集成已通过的前提下，它验证的是「当前输出 vs 记录在案的期望」，而期望值取自改造前的形状；且它覆盖**全部取值**（含 devseed 造数完全没触及的 `marketing`、`card`、`ops`、`pricing`、`export`、`worker` 等域），比只跑造数能触发的路径更严格。
+
+**关键设计**：
+- 断言用**精确字节比较**（`string(got) != want`），刻意不用 `JSONEq`；否则字段顺序、`null` 与省略的取舍、`omitempty` 边界、`decimal` 与 `,string` 标签的变化全部会静默通过。
+- 「同名不同义」的配对**逐组并排断言**，这是本次改造最核心的风险点：`DeviceMetaStatus`（四值含 fault）vs `GatewayDeviceStatus`（三值）、`ChargeCommandStatus`（含 stopping）vs `StopCommandStatus`（不含）、`UserStatus` vs `AccountStatus`（取值串逐字相同）、`GrantStatus` vs `CouponStatus` vs `ActivityStatus`、`ChannelRefundStatus`（大写）vs `PaymentStatus`（小写）、`VendorProtocol`（含 hybrid）vs `Transport`。
+- 期望串由探针实跑 `json.Marshal` 取得，**不凭阅读结构体猜嵌套形状**（编写过程中已因此纠正三处误判）。
+
+**运行方式**：`node tasks.mjs test-contract`（不需要数据库，不在 `check` 内，与 `test-integration` 分层）。
+
+**覆盖缺口（如实登记）**：有 4 项枚举目前没有任何带 `json` 标签的对外字段承载（`devices.GatewayDeviceStatus`、`devices.AlertSeverity`、`gatewayrepo.CardDeliveryStatus`、`device.ReportSource`），只能断言枚举自身的序列化字面量，锁不住 tag 名；另有 `discount_percent`（`*decimal.Decimal`）的非 nil 输出形状未取证。
+
+**状态应表述为**：基础入口、真库集成、前后 schema／数据基线与序列化契约测试均已通过；「改造前后各起服务比对响应体」未执行，其缺口已由 443 条契约用例在更广的取值覆盖面上替代，但两者不是同一件事，不得混同表述。
+
+### 9.5 P2 的执行记录**已取得证据**：`go build ./...`、`go vet ./...`、**`go vet -tags integration ./...`**、`node tasks.mjs check`、`node tasks.mjs build-all` 全部通过；`go mod tidy -diff` 无差异；`go list ./...` 全仓无 import 环；`internal/protocol` 经 `go list -deps` 核实仍为零内部依赖的叶子包；`migrations/`、`go.mod`、`go.sum` 零改动；JSON 标签与 `binding` 标签逐字节不变；无新增 `MarshalJSON`／`UnmarshalJSON`。
 
 **P2 特有证据**：`binding:"required,oneof=user_app admin auto"` 对自定义字符串类型仍生效，已用真实 gin `ShouldBindJSON` 实测（`user_app`／`auto`／`admin` 通过，`bogus`／空串／字段缺失均 400），并核对了 `reflect.Kind` 仍为 `string`；序列化输出与原 `string` 字段逐字节相同。
 

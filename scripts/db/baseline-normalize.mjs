@@ -19,8 +19,9 @@ import { openMySQL } from './mysql-client.mjs';
 
 // 固定业务库。openMySQL 不选默认库，DATABASE() 为空，故显式限定。
 const SCHEMA = 'central_db';
-// 基准日：所有时间平移到此日之后，保留相对偏移。选一个远离「距今 N 天」类判定边界的历史日期。
-const BASE = '2026-01-15 00:00:00';
+// 基准日：两侧造数时间最终都归一到此日。可由 BASELINE_DATE 覆盖，
+// 使不同 commit 的 devseed（一个用注入时钟、一个靠平移）能落到同一时刻。
+const BASE = process.env.BASELINE_DATE || '2026-01-15 00:00:00';
 // 固定 ID 起点与每表步长。落在 bigint unsigned 范围内且远小于真实 Snowflake。
 // 每表独占一段，跨表不相交，否则不同表的固定 ID 会撞号。
 const ID_BASE = 9000000000000000001n;
