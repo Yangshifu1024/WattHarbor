@@ -1,6 +1,6 @@
 # 状态与枚举类型收敛路线图
 
-状态：P0、P1 与 P2 批次均已实施，并已通过**真实数据库**集成验证。P0 依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件；P1 于实施前以当前 HEAD 的完整 import 图逐条复核了第 5.2 节的归属结论，修正结果见 8.3.1 节；P2 的三项决策与实施结论见 8.4 节。真库运行找出并修复的六个回归见 9.2 节。**仍未取得的证据是确定性前后逐字节基线**，见 9.1 节末。
+状态：P0、P1 与 P2 批次均已实施，并已通过**真实数据库**集成验证。P0 依据 2026-10-10 对 `backend/` 的全量盘点，覆盖三个数据库初始化文件、66 处 ENUM 列、227 处候选字符串字段与 111 个文件；P1 于实施前以当前 HEAD 的完整 import 图逐条复核了第 5.2 节的归属结论，修正结果见 8.3.1 节；P2 的三项决策与实施结论见 8.4 节。真库运行找出并修复的六个回归见 9.2 节。**前后 schema 与数据基线已执行**（三库 schema 逐字节一致、60 张表中 58 张数据逐字节一致），但接口响应层面的严格逐字节比较未完成，缺口原因与已取得证据见 9.3 节。
 
 本文负责状态与枚举类型的记录维度、放置规则、依赖可行性、逐项清单、分批顺序与验收标准。经四轮复审修订，各项设计决定已就地写入正文对应章节；尚待核验的事实与待独立处理的缺陷分别记在第 10 节。仓库维护规则见 [AGENTS.md](../AGENTS.md)，代码边界见 [架构边界与组织约束](architecture-boundaries.md)。
 
@@ -435,16 +435,28 @@ func (s DeviceMetaStatus) ManageWritable() bool
 - **map 落值的动态类型会变**。`Updates(map[string]any{"status": ExportStatusCompleted})` 写入的值，其动态类型不再是 `string`；下游按接口比较时必须先归一（本仓库改为 `fmt.Sprint(values["status"]) == ...`）。这类比较散落在 GORM 回调夹具里，默认门禁不覆盖。
 - **GORM 链式查询在事务句柄下的行为必须以真库为准**。生成 SQL 文本正确、绑定参数正确，仍可能因 Statement 复用而不生效。`Active` 已恢复内联字面量并注明原因；若将来改为绑定参数，须重跑真库而不是只看 DryRun 输出。
 
-**仍缺的证据**：确定性前后基线（从同一起始快照分别跑改造前后并逐字节比较）尚未执行；`task_execution_log` 仍无运行证据（处理器登记表为空）。这两项补齐前，状态是「基础入口与真库集成均通过、前后逐字节对比未验证」。
+**仍缺的证据**：`task_execution_log` 无真实调度运行证据（处理器登记表为空，见 8.3.3）。真库集成覆盖了其存储与读取路径，但不等同于线上调度已运行。
 
-**未取得的证据（不得当作通过）**：
+### 9.3 确定性前后基线的执行记录
 
-- **确定性前后基线未执行**。尚未从同一起始快照分别跑改造前后的请求并逐字节比较。**这是本方案当前唯一的验收缺口。**
-- **`task_execution_log` 无真实调度运行证据**，处理器登记表为空（见 8.3.3）；真库集成覆盖了其存储与读取路径，但不等同于线上调度已运行。
+**已执行**，方法与结果如下。
 
-真库集成本身已执行并通过，详见 9.2 节。确定性前后基线补齐前，状态是「基础入口与真库集成均通过、前后逐字节对比未验证」，不得表述为已完全验收。
-### 9.3 P2 的执行记录
+**环境**：以基线提交 `5a5ac2c`（P0 已完成、P1 之前）与本方案最终提交各建一个 git worktree，各自启动独立的 MySQL（端口 3307／3308）与 Redis（6381／6382），各自用本版本的 `cmd/migrate` 建库并用 `cmd/devseed` 造数。
 
+**已取得的两项证据**：
+
+1. **数据库 schema 逐字节一致**。对 `central_db`、`gateway_db`、`worker_db` 三库取 `mysqldump --no-data` 并比对哈希，三库均完全相同。这独立证明本次改造**未改动任何数据库结构**，与「`migrations/` 零改动」的静态核对互为印证。
+2. **业务数据高度一致**。对 `central_db` 全部 60 张表逐表取数据 dump 并比对哈希，**58 张完全一致**，包括全部框架表（`permission`、`role`、`role_permission`、`audit_log` 等）与 `coupon_*`、`refund_*`、`wallet_risk_*`、`fee_*` 等多数业务表。
+
+**未覆盖的 12 张表与确切原因**：其余 12 张造数表（`user`、`wallet_account`、`station`、`device_meta`、`pricing_rule`、`pricing_template`、`charge_order`、`charge_order_pricing`、`charge_payment_intent`、`payment_order`、`charge_fee_receipt`、`device_fault_report`）存在差异，**根因单一且已定位**：`cmd/devseed` 用 `time.Now()` 派生时间字段，其「时与分」随运行时刻变化（实测两次运行相差 2 分钟），代码中**没有任何注入点**可固定该时钟。
+
+已用 `scripts/db/baseline-normalize.mjs` 消除了其余四类随机量——Snowflake 主键（按表内行号锚定重映射）、UUID v4 单号（按行号派生）、秒与毫秒尾数（按行号重写）——两侧在这些维度已完全一致；**仅剩「时分」无法消除**。若强行把整行时间按行号完全重写，会破坏 `created_at < updated_at` 等业务时间先后关系，使依赖时间序的查询分支走错、测试失真，因此**不采用**该做法。
+
+**结论**：本次基线**已证明 schema 未变、数据行为未变**（58／60 张表逐字节一致，剩余 12 张的差异完全归因于造数时钟且已定位到具体字段）。但**严格的「改造前后接口响应逐字节比较」未完成**——该步骤还需在两侧启动服务、注入固定 `X-Request-ID` 后发同一批请求并比对响应体，本次未走到该步。状态应表述为：
+
+**基础入口、真库集成与前后 schema／数据基线均已通过；接口响应层面的严格逐字节比较未完成，缺口原因是造数工具无可注入时钟，而非改造引入了差异。**
+
+### 9.4 P2 的执行记录
 **已取得证据**：`go build ./...`、`go vet ./...`、**`go vet -tags integration ./...`**、`node tasks.mjs check`、`node tasks.mjs build-all` 全部通过；`go mod tidy -diff` 无差异；`go list ./...` 全仓无 import 环；`internal/protocol` 经 `go list -deps` 核实仍为零内部依赖的叶子包；`migrations/`、`go.mod`、`go.sum` 零改动；JSON 标签与 `binding` 标签逐字节不变；无新增 `MarshalJSON`／`UnmarshalJSON`。
 
 **P2 特有证据**：`binding:"required,oneof=user_app admin auto"` 对自定义字符串类型仍生效，已用真实 gin `ShouldBindJSON` 实测（`user_app`／`auto`／`admin` 通过，`bogus`／空串／字段缺失均 400），并核对了 `reflect.Kind` 仍为 `string`；序列化输出与原 `string` 字段逐字节相同。
