@@ -93,7 +93,7 @@ export default function SecurityPage() {
           throw new Error('账号安全设置结果未确认，请重新读取状态');
         }
         setPending(undefined); form.resetFields();
-        message.success(action === 'confirm' ? '双因素认证已启用，请重新登录' : '双因素认证已关闭，请重新登录');
+        message.success(action === 'confirm' ? '双因素认证已启用，请等待验证器显示新的验证码后重新登录' : '双因素认证已关闭，请重新登录');
         if (await adminSession.clear(sessionEpoch.current)) navigate('/login', { replace: true });
       }
     } catch (cause: unknown) {
@@ -115,7 +115,7 @@ export default function SecurityPage() {
       onFinish={() => void submit(profile?.mfa_enabled ? 'disable' : pending ? 'confirm' : 'enrol')}>
     {profile && <Space direction="vertical" size="large" style={{ width: '100%', maxWidth: 560 }}>
       <Space><Typography.Text strong>双因素认证（MFA）</Typography.Text><Tag>{profile.mfa_enabled ? '已启用' : '未启用'}</Tag></Space>
-      <Typography.Text type="secondary">启用后登录需输入密码和验证器动态码。完成设置后需要重新登录。</Typography.Text>
+      <Typography.Text type="secondary">启用后登录需输入密码和验证器动态码。启用确认会消费本次验证码，请等待验证器显示新的验证码后重新登录。</Typography.Text>
       {error && <Alert type="error" showIcon message="设置未完成" description={error}
         action={<Button size="small" disabled={saving} onClick={() => void load()}>重新读取</Button>} />}
       {profile.mfa_enabled ? <div style={{ width: '100%' }}>

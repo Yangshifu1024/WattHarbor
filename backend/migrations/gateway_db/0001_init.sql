@@ -167,6 +167,7 @@ CREATE TABLE `device_event` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_event_key` (`event_key`),
   KEY `idx_unprocessed` (`processed_at`,`id`),
+  KEY `idx_pending_type` (`event_type`,`processed_at`,`id`),
   KEY `idx_device_time` (`device_id`,`received_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备事件及原始上下文';
 
@@ -352,10 +353,24 @@ CREATE TABLE `vendor` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='硬件厂适配器注册表';
 
 -- 初始化数据：内置权限、角色及系统默认配置。业务与演示数据另行创建。
+-- sync_delivery_retry：启动/结束投递的独立退避与人工核实元数据
+CREATE TABLE `sync_delivery_retry` (
+  `kind` enum('start','end') NOT NULL COMMENT '投递类型：start 启动回执、end 结束事件',
+  `delivery_key` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '启动命令 UUID 或结束事件十进制 ID，投递身份幂等键',
+  `state` enum('retry','review') NOT NULL DEFAULT 'retry' COMMENT 'retry 暂时失败、review 需人工核实；均按下次时刻重查，不代表业务已处理',
+  `attempts` int unsigned NOT NULL DEFAULT '0' COMMENT '累计失败次数，跨 worker 重启保留',
+  `next_attempt_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'UTC 下次核实或投递时刻，普通失败指数退避至30分钟，核实项1小时重查',
+  `last_reason` enum('invalid','unknown','dependency','retry') DEFAULT NULL COMMENT '固定脱敏分类：无效记录、未知结果、缺依赖、投递重试',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最近元数据变更时间',
+  PRIMARY KEY (`kind`,`delivery_key`),
+  KEY `idx_retry_due` (`next_attempt_at`,`kind`),
+  KEY `idx_updated` (`updated_at`,`kind`,`delivery_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备业务同步投递退避与核实记录，不覆盖业务状态';
 
 -- +goose Down
 -- 仅供一次性开发/测试库回退；删除当前库全部业务表。
 DROP TABLE IF EXISTS `vendor`;
+DROP TABLE IF EXISTS `sync_delivery_retry`;
 DROP TABLE IF EXISTS `telemetry_aggregate_hourly`;
 DROP TABLE IF EXISTS `telemetry_aggregate_15min`;
 DROP TABLE IF EXISTS `telemetry`;

@@ -89,7 +89,8 @@ type ChargeEndData struct {
 	// RemainingSeconds 为上报时剩余的授权秒数；功率档位折算后由固件还原到可比较的时长。
 	RemainingSeconds uint32
 	ChargedMWh       uint32
-	// AmountCents 为设备上报的扣费金额，单位分；本命令单位为 0.01 元，其他命令可能为 0.1 元。
+	// AmountCents 为设备上报的扣费诊断金额，单位分；本命令单位为 0.01 元，其他命令可能为 0.1 元。
+	// 平台结算只使用冻结方案与计量证据，不将此设备金额作为入账依据。
 	AmountCents    int64
 	StopReason     uint8
 	ConsumerType   uint8

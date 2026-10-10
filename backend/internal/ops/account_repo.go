@@ -24,6 +24,8 @@ type AdminAccount struct {
 	Status           string         `json:"-"`             // 账号状态：active / disabled / locked
 	MFASecret        *string        `json:"-"`             // TOTP 密钥；指针，未绑定时为 null
 	MFAEnabled       bool           `json:"-"`             // 是否已启用双因素认证
+	MFASecretVersion uint64         `json:"-"`             // 密钥代际，仅更换或清除密钥时增加，独立于认证版本
+	MFALastStep      *int64         `json:"-"`             // 本密钥最后消费的 30 秒时间步，未消费为空
 	FailedLoginCount uint32         `json:"-"`             // 连续登录失败次数，达到 5 次锁定
 	LockedUntil      sql.NullTime   `json:"-"`             // 锁定到期时间；可空，未锁定为 null
 }
@@ -132,7 +134,7 @@ func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (
 }
 
 // CompleteMFA 锁定账号后核对版本和验证码，成功前原子删除已验证挑战。
-// 锁定、版本过期或坏码不删除挑战；坏码次数和审计同事务保存。
+// 锁定、版本过期、已消费的正确码或坏码不删除挑战；只有坏码累计失败次数并保存失败审计。
 // 删除挑战后 SQL 失败只回滚 SQL，须重新用密码登录。
 func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.AccountIdentity, code, ip string, consume func(context.Context) error) (AdminAccount, error) {
 	var account AdminAccount
@@ -154,7 +156,11 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 		if account.Status == "disabled" || !account.MFAEnabled || account.MFASecret == nil || *account.MFASecret == "" {
 			return operations.ErrCredentials
 		}
-		if err := auth.VerifyTOTP(*account.MFASecret, code, now); err != nil {
+		step, verifyErr := auth.VerifyTOTP(*account.MFASecret, code, now)
+		if verifyErr == nil && account.MFALastStep != nil && step <= *account.MFALastStep {
+			return operations.ErrUsedTOTP
+		}
+		if verifyErr != nil {
 			attempts := account.FailedLoginCount + 1
 			if account.LockedUntil.Valid && !account.LockedUntil.Time.After(now) {
 				attempts = 1
@@ -175,6 +181,9 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 			return operations.ErrInvalidMFAChallenge
 		}
 		if err := consume(ctx); err != nil {
+			return err
+		}
+		if err := consumeAdminTOTPStep(tx, account, step); err != nil {
 			return err
 		}
 		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {

@@ -29,7 +29,9 @@ type financeDeliveryOrders struct {
 }
 
 // Due 返回无新计算任务及 nil 错误，只允许恢复投递；不访问数据库。
-func (o *financeDeliveryOrders) Due(context.Context) ([]uint64, error) { return nil, nil }
+func (o *financeDeliveryOrders) Due(context.Context) ([]settlement.BillingTask, error) {
+	return nil, nil
+}
 
 // Read 对任何 ctx 和 id 返回错误，确保恢复投递没有重新计算。
 func (o *financeDeliveryOrders) Read(context.Context, uint64) (settlement.Source, error) {
@@ -47,7 +49,7 @@ func (o *financeDeliveryOrders) Apply(_ context.Context, result settlement.Resul
 }
 
 // Defer 对任何 ctx、id、状态及原因返回错误，本场景不得进入新计算任务重排。
-func (o *financeDeliveryOrders) Defer(context.Context, uint64, string, string) error {
+func (o *financeDeliveryOrders) Defer(context.Context, settlement.BillingTask, string, string) error {
 	return errors.New("unexpected new calculation defer")
 }
 

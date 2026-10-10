@@ -21,6 +21,8 @@
 | `DEVICE_MAX_CONNECTIONS` | gateway，正整数，默认 10000 |
 | `GATEWAY_DEBUG_HEARTBEAT` | gateway 心跳日志，默认 false；开发 Compose 固定 true |
 | `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD` | 仅 admin，空后台账号表的引导凭证 |
+| `ADMIN_TRUSTED_PROXIES` | 仅 admin，逗号分隔的可信代理 IP／CIDR；默认空，非法值在路由装配时阻止启动。开发直连保留空值 |
+| `ADMIN_PROXY_SUBNET`、`CADDY_ADMIN_PROXY_IP` | 生产 Compose 的专用代理网段及 Caddy 固定 IPv4，默认 `172.30.81.0/29` 与 `172.30.81.2`；后台仅信任这个单一地址 |
 | `LOGIN_MODE` | 仅 user，默认 `wechat`；`development` 要求模拟支付 |
 | `WECHAT_APPID`、`WECHAT_SECRET` | AppID 为 user / central 必填；Secret 仅 user 登录与手机号授权使用 |
 | `PAYMENT_MODE` | user / central，`disabled/simulation/wechat_direct`，默认 disabled；生产 Compose 显式注入 |
@@ -41,6 +43,8 @@
 [compose.prod.yaml](../docker/compose.prod.yaml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/DB_USER_PASSWORD/DB_ADMIN_PASSWORD/DB_CENTRAL_PASSWORD/DB_GATEWAY_PASSWORD/DB_WORKER_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
 
 Caddy 公网暴露 `80/443`，`/api/v1/admin/*` 代理 admin，`/api/v1/user/*` 与 `/api/v1/public/*` 代理 user；内部及其余 API 路径返回 404。`/admin/*` 提供后台静态文件，根路径转向后台。gateway 另暴露 `9100/TCP`，gateway/worker HTTP 不公开。后台静态产物必须先构建，H5 和小程序发布另行配置。
+
+后台反代使用 `admin-proxy-upstream:8081`，该别名仅在 Caddy 与 admin 的 `admin-proxy` 专用内部网络中注册，避免走默认业务网络时来源地址改变。`ADMIN_TRUSTED_PROXIES` 在生产编排直接取 `CADDY_ADMIN_PROXY_IP`，不能配置成整个 Docker 网段。部署前核对代理子网不与已有网络冲突，固定地址属于该子网；调整时同时设置上述两个变量。部署检查器核对单地址信任、网络成员、别名和内部网络属性；实际客户端 IP、限流分桶与审计仍须部署后验证。
 
 ```bash
 node scripts/ops/check-deploy.mjs
@@ -102,6 +106,12 @@ node scripts/db/upgrade-design.mjs
 node scripts/db/upgrade-design.mjs --apply
 node scripts/db/audit-design.mjs
 ```
+
+仅应用 2026-10-09 审查修复结构时使用 `node scripts/db/upgrade-design.mjs --review-fixes` 预检，再执行 `node scripts/db/upgrade-design.mjs --review-fixes --apply`。该范围只补 `central_db.admin_user.mfa_secret_version/mfa_last_step`、`charge_billing_job.generation` 与 `gateway_db.sync_delivery_retry`；执行前仍备份三库，不删除数据或改变 Goose 版本。已有列默认保留原值，新消费记录为空；上线时先补结构，再部署使用新字段及退避接口的 gateway、admin／central 与 worker，避免混用接口版本。生产使用审核后的同等 DDL，而非直接调用仅面向开发编排的脚本。
+
+投递异常可按 `sync_delivery_retry.kind/delivery_key` 查询 `state/attempts/last_reason/next_attempt_at`，`review` 表示待核实，不代表独立人工审核页面已装配。分类只存固定值，核对原命令／事件、冻结请求和端口占用后再处理；禁止通过标记已上报／已处理掩盖未知结果。成功项退避与源记录标记同事务删除；迟到失败不会重建已完成项。gateway 在启动时及每小时清理30天前已完成或缺源的历史，每轮最多500条短事务，取消后等待任务退出再关闭资源。未完成的 `review/retry` 即使超过30天也保留；持续增加表示待处理业务异常积压，不能通过TTL删除来隐藏。清理错误记录为 `sync delivery history cleanup`，下轮继续。
+
+结束候选使用 `device_event.idx_pending_type(event_type,processed_at,id)`；退避关联键显式使用 `ascii_bin`，避免连接字符集导致仅利用复合主键的kind前缀。旧开发库以全量兼容预检／`--apply` 补这两项索引（另一项为退避的 `idx_updated`）；`--review-fixes` 只补退避表索引，结束候选索引沿用全量入口。两条同步查询仍有跨表到期排序，EXPLAIN通过不构成规模吞吐验收。
 
 [audit-design.mjs](../scripts/db/audit-design.mjs) 在同一只读一致性快照核对钱包余额与流水、冻结额与未结分摊、支付已退与成功退款、资金来源归属及跨月业务号。零差异返回 0、存在差异返回 2、执行故障返回 1；只输出类别和数量。导入余额缺少期初流水、已归档流水、外部渠道尚未对账，都需要进一步核实，不能据此直接改余额或判定渠道账实一致。
 

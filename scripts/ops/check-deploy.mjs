@@ -4,6 +4,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { isIP } from 'node:net';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const applicationNames = ['user', 'admin', 'central', 'gateway', 'worker'];
@@ -152,10 +153,19 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
     requireValue(user.WECHAT_APPID === central.WECHAT_APPID, 'user and central must use the same WECHAT_APPID.');
   }
 
+  // 后台仅信任专用代理网络内 Caddy 的单一地址，默认业务网络里的其他服务不能伪造来源。
+  const proxyNetwork = config.networks?.['admin-proxy'];
+  const proxyIP = services['chargepilot-caddy'].networks?.['admin-proxy']?.ipv4_address;
+  requireValue(proxyNetwork?.internal === true && isIP(proxyIP ?? '') === 4, 'Admin proxy requires an internal network and fixed Caddy IPv4 address.');
+  requireValue(services['chargepilot-admin'].environment?.ADMIN_TRUSTED_PROXIES === proxyIP, 'Admin must trust only the fixed Caddy proxy address.');
+  requireValue(services['chargepilot-admin'].networks?.['admin-proxy']?.aliases?.includes('admin-proxy-upstream'), 'Admin proxy upstream alias is missing.');
+  for (const [name, service] of Object.entries(services)) {
+    requireValue(!service.networks?.['admin-proxy'] || ['chargepilot-admin', 'chargepilot-caddy'].includes(name), 'Only admin and Caddy may join the admin proxy network.');
+  }
   requireValue(typeof caddyText === 'string', 'Caddy configuration text is missing.');
   const internal = caddyBlock(caddyText, '/api/v1/internal/*');
   requireValue(/^\s*respond 404\s*$/m.test(internal) && !/\breverse_proxy\b/.test(internal), 'Caddy must block the internal API routes.');
-  for (const [path, destination] of [['/api/v1/admin/*', 'chargepilot-admin:8081'], ['/api/v1/user/*', 'chargepilot-user:8080'], ['/api/v1/public/*', 'chargepilot-user:8080']]) {
+  for (const [path, destination] of [['/api/v1/admin/*', 'admin-proxy-upstream:8081'], ['/api/v1/user/*', 'chargepilot-user:8080'], ['/api/v1/public/*', 'chargepilot-user:8080']]) {
     requireValue(new RegExp(`^\\s*reverse_proxy ${destination}\\s*$`, 'm').test(caddyBlock(caddyText, path)), `Caddy must route ${path} to ${destination}.`);
   }
   requireValue(/^\s*respond 404\s*$/m.test(caddyBlock(caddyText, '/api/*')), 'Caddy must reject other API routes.');

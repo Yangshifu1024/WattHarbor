@@ -19,7 +19,7 @@
 
     # 运营后台走独立进程。
     handle /api/v1/admin/* {
-        reverse_proxy chargepilot-admin:8081
+        reverse_proxy admin-proxy-upstream:8081
     }
 
     # C 端与支付回调。支付回调由渠道服务器打进来，同样属于对外进程。

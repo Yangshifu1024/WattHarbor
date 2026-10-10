@@ -150,6 +150,8 @@ func (p *endWorkflowTrace) assert(t *testing.T, f *endWorkflowFixture, release, 
 	}
 	if mark {
 		want = append(want, "gateway POST "+gatewaycontract.MarkDeviceEventsPath)
+	} else {
+		want = append(want, "gateway POST "+gatewaycontract.DeferSyncDeliveryPath)
 	}
 	if fmt.Sprint(p.Calls) != fmt.Sprint(want) {
 		t.Fatalf("actual HTTP ordering = %v, want %v", p.Calls, want)
@@ -237,6 +239,14 @@ func newEndWorkflowFixture(t *testing.T) *endWorkflowFixture {
 	return f
 }
 
+// retryDue 仅推进本夹具投递的重试时间，模拟持久退避到期；不改变冻结载荷与处理状态。
+func (f *endWorkflowFixture) retryDue(t *testing.T) {
+	t.Helper()
+	if err := f.GatewayWriter.Table("sync_delivery_retry").Where("kind='end' AND delivery_key=?", strconv.FormatUint(f.EventID, 10)).Update("next_attempt_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 // cleanup 按测试记录完整主键清理，逐表检查没有残留；Outbox 使用 DeleteOutbox。
 func (f *endWorkflowFixture) cleanup(t *testing.T) {
 	t.Helper()
@@ -262,6 +272,7 @@ func (f *endWorkflowFixture) cleanup(t *testing.T) {
 		where string
 		args  []any
 	}{
+		{gateway, "sync_delivery_retry", "kind='end' AND delivery_key=?", []any{strconv.FormatUint(f.EventID, 10)}},
 		{central, "charge_billing_job", "charge_order_id=?", []any{f.ID}},
 		{central, "charge_end_receipt", "charge_order_id=?", []any{f.ID}},
 		{central, "charge_start_receipt", "charge_order_id=?", []any{f.ID}},
@@ -499,6 +510,7 @@ func TestEndWorkflowRebuildReplaysCommittedResultBeforeRelease(t *testing.T) {
 	frozen := f.assertGateway(t, f.OrderNo, false)
 	trace.assert(t, f, false, false, nil)
 	denyCentral.Store(false)
+	f.retryDue(t)
 	trace.reset()
 	trace.LoseCentral.Store(true)
 	if count, err := syncer.SyncBatch(ctx); count != 0 || !errors.Is(err, endWorkflowLostResponse) {
@@ -524,6 +536,7 @@ func TestEndWorkflowRebuildReplaysCommittedResultBeforeRelease(t *testing.T) {
 	}
 	trace.reset()
 	rebuilt := f.synchronizer(t, trace, centralURL, gatewayURL)
+	f.retryDue(t)
 	if count, err := rebuilt.SyncBatch(ctx); count != 1 || err != nil {
 		t.Fatalf("rebuilt replay count=%d err=%v", count, err)
 	}
@@ -570,6 +583,7 @@ func TestEndWorkflowLateReplayCannotReleaseNewOwner(t *testing.T) {
 		t.Fatalf("private new gateway occupancy: %d %v", result.RowsAffected, result.Error)
 	}
 	denyRelease.Store(false)
+	f.retryDue(t)
 	trace.reset()
 	count, err := f.synchronizer(t, trace, centralURL, gatewayURL).SyncBatch(ctx)
 	var rejection *serviceclient.HTTPError

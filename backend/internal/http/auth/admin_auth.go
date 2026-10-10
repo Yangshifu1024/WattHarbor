@@ -147,6 +147,8 @@ func (a AdminAuth) failure(c *gin.Context, err error) {
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "用户名或密码错误，或登录已失效", nil)
 	case errors.Is(err, operations.ErrLocked):
 		httpapi.Write(c, 423, 2006, err.Error(), nil)
+	case errors.Is(err, operations.ErrUsedTOTP):
+		httpapi.Write(c, http.StatusUnauthorized, 1001, operations.ErrUsedTOTP.Error(), nil)
 	case errors.Is(err, operations.ErrInvalidTOTP):
 		httpapi.Write(c, http.StatusUnauthorized, 1001, "验证码无效或已过期", nil)
 	case errors.Is(err, operations.ErrInvalidMFAChallenge):

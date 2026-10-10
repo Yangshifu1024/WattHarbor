@@ -72,7 +72,7 @@ type ConfigTable struct {
 	// LocalCoinTime 与 LocalCardTime 的单位随模式变化：时间模式为分钟，电量模式为 0.01 kWh。
 	LocalCoinTime uint16
 	LocalCardTime uint16
-	// CardAmountCents 是刷卡扣费金额，单位分，0..2500。
+	// CardAmountCents 是刷卡扣费金额，单位分，0..2500 且必须为 10 的整数倍。
 	CardAmountCents uint16
 	// CardRefund 取 0 不退费、1 退费。
 	CardRefund byte
@@ -118,6 +118,9 @@ func (c ConfigTable) Validate() error {
 	}
 	if c.CardAmountCents > 2500 {
 		return errors.New("刷卡扣费金额超出范围 0.0-25.0 元")
+	}
+	if c.CardAmountCents%10 != 0 {
+		return errors.New("刷卡扣费金额必须为 10 分的整数倍")
 	}
 	if c.CardRefund > 1 || c.StopWhenFull > 1 {
 		return errors.New("开关值超出范围")

@@ -15,6 +15,34 @@ type retryFixture struct {
 	Pending    func(context.Context) error // 用户 STOP 步骤，用于核对顺序和取消边界。
 }
 
+// cleanupFixture 提供可取消的同步历史任务，供标准虚拟时钟核对装配后的运行间隔。
+type cleanupFixture struct{ run func(context.Context) error }
+
+func (f cleanupFixture) CleanupSyncRetries(ctx context.Context) error { return f.run(ctx) }
+
+// TestSyncHistoryCleanupRunsImmediatelyAndHourly 验证首轮错误后每小时继续，取消后退出；不改变生产时间间隔。
+func TestSyncHistoryCleanupRunsImmediatelyAndHourly(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		calls, start := 0, time.Now()
+		f := cleanupFixture{run: func(received context.Context) error {
+			if received != ctx {
+				t.Fatal("cleanup context replaced")
+			}
+			calls++
+			if calls == 1 {
+				return errors.New("private history failure")
+			}
+			cancel()
+			return nil
+		}}
+		if err := (Runtime{SyncHistory: f}).CleanupSyncHistory(ctx); err != nil || calls != 2 || time.Since(start) != time.Hour {
+			t.Fatalf("calls=%d elapsed=%v err=%v", calls, time.Since(start), err)
+		}
+	})
+}
+
 // RetryStopping 调用预设补偿任务。
 func (s retryFixture) RetryStopping(ctx context.Context) error { return s.Compensate(ctx) }
 

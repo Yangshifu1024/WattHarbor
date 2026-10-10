@@ -30,8 +30,15 @@ func seedCoupon(t *testing.T, tx *gorm.DB, id uint64, validHours int, endAt *tim
 	}
 }
 
-// grantCount 统计当前连接可见的全部发放记录。
-func grantCount(t *testing.T, tx *gorm.DB) int64 { return grantCountFor(t, tx, 0) }
+// grantCount 只统计本测试券模板的发放记录，不把已有开发数据计入断言。
+func grantCount(t *testing.T, tx *gorm.DB, coupons ...uint64) int64 {
+	t.Helper()
+	var n int64
+	if err := tx.Table("coupon_grant").Where("coupon_id IN ?", coupons).Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
 
 // grantCountFor 统计某个用户拿到的券数；userID=0 表示不限用户全表统计。
 func grantCountFor(t *testing.T, tx *gorm.DB, userID uint64) int64 {
@@ -49,21 +56,22 @@ func grantCountFor(t *testing.T, tx *gorm.DB, userID uint64) int64 {
 
 // TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay 验证同一事件重放不新增券，且不导致调用方事务失败。
 func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
-	db := testDB(t)
+	fixture := newActivityFixture(t)
+	db := fixture.db
 	tx := txRollback(t, db)
-	seedCoupon(t, tx, 1001, 24, nil)
-	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(1001))
+	seedCoupon(t, tx, fixture.id(1001), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(fixture.id(1001)))
 
-	event := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9001, EventKey: "recharge:R-1", Now: fixedNow}
+	event := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: fixture.id(9001), EventKey: "recharge:R-1", Now: fixedNow}
 
 	first, err := (ActivityService{}).ApplyInTx(tx, event)
 	if err != nil {
 		t.Fatalf("首次发放失败：%v", err)
 	}
-	if len(first) != 1 || first[0].CouponID != 1001 {
+	if len(first) != 1 || first[0].CouponID != fixture.id(1001) {
 		t.Fatalf("首次结果 = %+v，期望发放 1001", first)
 	}
-	if n := grantCount(t, tx); n != 1 {
+	if n := grantCount(t, tx, fixture.id(1001)); n != 1 {
 		t.Fatalf("发放记录 %d 条，期望 1 条", n)
 	}
 
@@ -75,7 +83,7 @@ func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
 		// 重放若返回唯一键错误，会使同事务中的支付或计费回滚。
 		t.Errorf("重放同一事件返回错误 %v；这会让上游事务失败，幂等应返回原结果", replayErr)
 	}
-	if n := grantCount(t, tx); n != 1 {
+	if n := grantCount(t, tx, fixture.id(1001)); n != 1 {
 		t.Errorf("重放后发放记录 %d 条，期望仍为 1 条（幂等重放不得重复发券）", n)
 	}
 	for _, r := range replay {
@@ -87,16 +95,17 @@ func TestApplyActivityRulesGrantsOnceAndIsIdempotentOnReplay(t *testing.T) {
 
 // TestApplyActivityRulesRespectsPerUserLimit 验证单人限一份时第二次参与不再发券。
 func TestApplyActivityRulesRespectsPerUserLimit(t *testing.T) {
-	db := testDB(t)
+	fixture := newActivityFixture(t)
+	db := fixture.db
 	tx := txRollback(t, db)
-	seedCoupon(t, tx, 1002, 24, nil)
-	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(1002), withPerUserLimit(1))
+	seedCoupon(t, tx, fixture.id(1002), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(fixture.id(1002)), withPerUserLimit(1))
 
-	first := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9002, EventKey: "recharge:R-A", Now: fixedNow}
+	first := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: fixture.id(9002), EventKey: "recharge:R-A", Now: fixedNow}
 	if got, err := (ActivityService{}).ApplyInTx(tx, first); err != nil || len(got) != 1 {
 		t.Fatalf("首次参与应发放：%+v %v", got, err)
 	}
-	second := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9002, EventKey: "recharge:R-B", Now: fixedNow}
+	second := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: fixture.id(9002), EventKey: "recharge:R-B", Now: fixedNow}
 	got, err := (ActivityService{}).ApplyInTx(tx, second)
 	if err != nil {
 		t.Fatalf("第二次参与不应报错：%v", err)
@@ -104,23 +113,24 @@ func TestApplyActivityRulesRespectsPerUserLimit(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("单人上限 1 份，第二次参与却拿到 %+v", got)
 	}
-	if n := grantCount(t, tx); n != 1 {
+	if n := grantCount(t, tx, fixture.id(1002)); n != 1 {
 		t.Errorf("发放记录 %d 条，期望 1 条", n)
 	}
 }
 
 // TestApplyActivityRulesRespectsBudget 验证总量限一份时第二个用户参与不再发券。
 func TestApplyActivityRulesRespectsBudget(t *testing.T) {
-	db := testDB(t)
+	fixture := newActivityFixture(t)
+	db := fixture.db
 	tx := txRollback(t, db)
-	seedCoupon(t, tx, 1003, 24, nil)
-	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(1003), withMaxGrants(1))
+	seedCoupon(t, tx, fixture.id(1003), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(fixture.id(1003)), withMaxGrants(1))
 
-	one := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9003, EventKey: "recharge:R-1", Now: fixedNow}
+	one := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: fixture.id(9003), EventKey: "recharge:R-1", Now: fixedNow}
 	if got, err := (ActivityService{}).ApplyInTx(tx, one); err != nil || len(got) != 1 {
 		t.Fatalf("首个用户应发放：%+v %v", got, err)
 	}
-	two := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9004, EventKey: "recharge:R-2", Now: fixedNow}
+	two := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: fixture.id(9004), EventKey: "recharge:R-2", Now: fixedNow}
 	got, err := (ActivityService{}).ApplyInTx(tx, two)
 	if err != nil {
 		t.Fatalf("预算耗尽属于正常跳过，不该报错：%v", err)
@@ -128,25 +138,26 @@ func TestApplyActivityRulesRespectsBudget(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("预算上限 1 份，第二个用户却拿到 %+v", got)
 	}
-	if n := grantCount(t, tx); n != 1 {
+	if n := grantCount(t, tx, fixture.id(1003)); n != 1 {
 		t.Errorf("发放记录 %d 条，期望 1 条", n)
 	}
 }
 
 // TestApplyActivityRulesSkipsDeletedCoupon 验证券模板删除后，即使活动规则还在也不发券。
 func TestApplyActivityRulesSkipsDeletedCoupon(t *testing.T) {
-	db := testDB(t)
+	fixture := newActivityFixture(t)
+	db := fixture.db
 	tx := txRollback(t, db)
-	seedCoupon(t, tx, 1004, 24, nil)
-	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(1004))
+	seedCoupon(t, tx, fixture.id(1004), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerFirstRecharge, hours(-1), hours(1), 0, withCoupon(fixture.id(1004)))
 
-	if err := tx.Table("coupon").Where("id = ?", 1004).
+	if err := tx.Table("coupon").Where("id = ?", fixture.id(1004)).
 		Update("deleted_at", fixedNow).Error; err != nil {
 		t.Fatalf("软删券失败：%v", err)
 	}
 
 	got, err := (ActivityService{}).ApplyInTx(tx, ActivityEvent{
-		TriggerType: TriggerFirstRecharge, UserID: 9005, EventKey: "recharge:R-1", Now: fixedNow,
+		TriggerType: TriggerFirstRecharge, UserID: fixture.id(9005), EventKey: "recharge:R-1", Now: fixedNow,
 	})
 	if err != nil {
 		t.Fatalf("券已删除属于正常跳过，不该报错：%v", err)
@@ -154,31 +165,32 @@ func TestApplyActivityRulesSkipsDeletedCoupon(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("券已删除却仍发放 %+v，会产生无法核销的记录", got)
 	}
-	if n := grantCount(t, tx); n != 0 {
+	if n := grantCount(t, tx, fixture.id(1004)); n != 0 {
 		t.Errorf("发放记录 %d 条，期望 0 条", n)
 	}
 }
 
 // TestApplyActivityRulesInviteRewardSkipsOnlyInviter 验证邀请人额度用尽时，被邀请人仍可领取自己的奖励。
 func TestApplyActivityRulesInviteRewardSkipsOnlyInviter(t *testing.T) {
-	db := testDB(t)
+	fixture := newActivityFixture(t)
+	db := fixture.db
 	tx := txRollback(t, db)
-	seedCoupon(t, tx, 1005, 24, nil) // 被邀请人奖励券
-	seedCoupon(t, tx, 1006, 24, nil) // 邀请人奖励券
-	seedRule(t, tx, 1, TriggerInviteReward, hours(-1), hours(1), 0, withCoupon(1005), withInviterCoupon(1006))
+	seedCoupon(t, tx, fixture.id(1005), 24, nil) // 被邀请人奖励券
+	seedCoupon(t, tx, fixture.id(1006), 24, nil) // 邀请人奖励券
+	seedRule(t, tx, fixture.id(1), TriggerInviteReward, hours(-1), hours(1), 0, withCoupon(fixture.id(1005)), withInviterCoupon(fixture.id(1006)))
 
-	seedEstablishedUser(t, tx, 9500)
+	seedEstablishedUser(t, tx, fixture.id(9500))
 
 	// 邀请人已用过自己的那一张。
 	if err := tx.Table("coupon_grant").Create(map[string]any{
-		"coupon_id": 1006, "user_id": 9500, "grant_source": "invite_reward",
+		"coupon_id": fixture.id(1006), "user_id": fixture.id(9500), "grant_source": "invite_reward",
 		"status": "unused", "expired_at": hours(24), "source_event_id": "seed-inviter-prize",
 	}).Error; err != nil {
 		t.Fatalf("预置邀请人已领记录失败：%v", err)
 	}
 
 	got, err := (ActivityService{}).ApplyInTx(tx, ActivityEvent{
-		TriggerType: TriggerInviteReward, UserID: 9501, InviterID: 9500,
+		TriggerType: TriggerInviteReward, UserID: fixture.id(9501), InviterID: fixture.id(9500),
 		EventKey: "invite:I-1", Now: fixedNow,
 	})
 	if err != nil {
@@ -191,25 +203,26 @@ func TestApplyActivityRulesInviteRewardSkipsOnlyInviter(t *testing.T) {
 		t.Error("邀请人已达单人上限，不该再拿到奖励")
 	}
 	// 分别统计：被邀请人应新增一张，邀请人的总数应停在预置的那一张。
-	if n := grantCountFor(t, tx, 9501); n != 1 {
+	if n := grantCountFor(t, tx, fixture.id(9501)); n != 1 {
 		t.Errorf("被邀请人拿到 %d 张，期望 1 张", n)
 	}
-	if n := grantCountFor(t, tx, 9500); n != 1 {
+	if n := grantCountFor(t, tx, fixture.id(9500)); n != 1 {
 		t.Errorf("邀请人共 %d 张，期望仍为预置的 1 张", n)
 	}
 }
 
 // TestApplyActivityRulesRejectsSelfInvite 验证自邀在真库路径上确实被拦下。
 func TestApplyActivityRulesRejectsSelfInvite(t *testing.T) {
-	db := testDB(t)
+	fixture := newActivityFixture(t)
+	db := fixture.db
 	tx := txRollback(t, db)
-	seedCoupon(t, tx, 1007, 24, nil)
-	seedCoupon(t, tx, 1008, 24, nil)
-	seedRule(t, tx, 1, TriggerInviteReward, hours(-1), hours(1), 0, withCoupon(1007), withInviterCoupon(1008))
+	seedCoupon(t, tx, fixture.id(1007), 24, nil)
+	seedCoupon(t, tx, fixture.id(1008), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerInviteReward, hours(-1), hours(1), 0, withCoupon(fixture.id(1007)), withInviterCoupon(fixture.id(1008)))
 
-	seedEstablishedUser(t, tx, 9600)
+	seedEstablishedUser(t, tx, fixture.id(9600))
 	got, err := (ActivityService{}).ApplyInTx(tx, ActivityEvent{
-		TriggerType: TriggerInviteReward, UserID: 9600, InviterID: 9600,
+		TriggerType: TriggerInviteReward, UserID: fixture.id(9600), InviterID: fixture.id(9600),
 		EventKey: "invite:I-2", Now: fixedNow,
 	})
 	if err != nil {
@@ -218,7 +231,7 @@ func TestApplyActivityRulesRejectsSelfInvite(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("自邀却发放了 %+v", got)
 	}
-	if n := grantCount(t, tx); n != 0 {
+	if n := grantCount(t, tx, fixture.id(1007), fixture.id(1008)); n != 0 {
 		t.Errorf("自邀产生了 %d 条发放记录，期望 0 条", n)
 	}
 }
@@ -226,13 +239,14 @@ func TestApplyActivityRulesRejectsSelfInvite(t *testing.T) {
 // TestApplyActivityRulesReplayWithPerUserLimitAboveOne 验证单人限额大于一时，事件重放仍不重复发券。
 // 不能只靠单人限额挡住重放；唯一键命中须复用原结果，不能连带回滚支付或计费。
 func TestApplyActivityRulesReplayWithPerUserLimitAboveOne(t *testing.T) {
-	db := testDB(t)
+	fixture := newActivityFixture(t)
+	db := fixture.db
 	tx := txRollback(t, db)
-	seedCoupon(t, tx, 1009, 24, nil)
-	seedRule(t, tx, 1, TriggerFirstRecharge, hours(-1), hours(1), 0,
-		withCoupon(1009), withPerUserLimit(3))
+	seedCoupon(t, tx, fixture.id(1009), 24, nil)
+	seedRule(t, tx, fixture.id(1), TriggerFirstRecharge, hours(-1), hours(1), 0,
+		withCoupon(fixture.id(1009)), withPerUserLimit(3))
 
-	event := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: 9010, EventKey: "recharge:R-REPLAY", Now: fixedNow}
+	event := ActivityEvent{TriggerType: TriggerFirstRecharge, UserID: fixture.id(9010), EventKey: "recharge:R-REPLAY", Now: fixedNow}
 	if got, err := (ActivityService{}).ApplyInTx(tx, event); err != nil || len(got) != 1 {
 		t.Fatalf("首次发放应成功：%+v %v", got, err)
 	}
@@ -243,7 +257,7 @@ func TestApplyActivityRulesReplayWithPerUserLimitAboveOne(t *testing.T) {
 	if replayErr != nil {
 		t.Errorf("重放同一事件返回错误 %v；这会连带回滚调用方整个事务（支付回调、计费）", replayErr)
 	}
-	if n := grantCountFor(t, tx, 9010); n != 1 {
+	if n := grantCountFor(t, tx, fixture.id(9010)); n != 1 {
 		t.Errorf("重放后该用户共 %d 张券，期望仍为 1 张", n)
 	}
 	if len(replay) == 1 && !replay[0].Already {

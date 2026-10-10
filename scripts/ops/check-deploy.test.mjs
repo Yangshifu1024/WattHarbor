@@ -27,6 +27,10 @@ function configuration() {
       'chargepilot-redis-stream': { command: ['redis-server', '--maxmemory-policy', 'noeviction', '--appendonly', 'yes', '--requirepass', 'fixture-stream-password'] },
     },
   };
+  value.networks = { 'admin-proxy': { internal: true, ipam: { config: [{ subnet: '172.30.81.0/29' }] } } };
+  value.services['chargepilot-admin'].environment.ADMIN_TRUSTED_PROXIES = '172.30.81.2';
+  value.services['chargepilot-admin'].networks = { default: {}, 'admin-proxy': { aliases: ['admin-proxy-upstream'] } };
+  value.services['chargepilot-caddy'].networks = { default: {}, 'admin-proxy': { ipv4_address: '172.30.81.2' } };
   const provision = { environment: {}, depends_on: { 'chargepilot-migrate': { condition: 'service_completed_successfully' } } };
   value.services['chargepilot-provision-runtime'] = provision;
   for (const name of ['user','admin','central','gateway','worker']) {
@@ -55,6 +59,15 @@ function validate(value, options = {}) {
 test('canonical five services pass without central JWT, login secret or stream', () => {
   assert.doesNotThrow(() => validate(configuration()));
 });
+
+for (const [label, change] of [
+  ['entire subnet trust', value => { value.services['chargepilot-admin'].environment.ADMIN_TRUSTED_PROXIES = '172.30.81.0/29'; }],
+  ['public proxy network', value => { value.networks['admin-proxy'].internal = false; }],
+  ['extra member', value => { value.services['chargepilot-worker'].networks = { 'admin-proxy': {} }; }],
+  ['wrong upstream network', value => { value.services['chargepilot-admin'].networks['admin-proxy'].aliases = []; }],
+]) {
+  test(`admin source isolation rejects ${label}`, () => { const value = configuration(); change(value); assert.throws(() => validate(value, { configOnly: true })); });
+}
 
 for (const name of ['user', 'admin', 'central', 'gateway', 'worker']) {
   test(`missing ${name} fails with its service name`, () => {
@@ -217,7 +230,7 @@ test('Caddy internal handler must actually reject requests', () => {
 });
 
 test('Caddy must route user and admin to their own deployed services', () => {
-  for (const [destination, path] of [['chargepilot-admin:8081', '/api/v1/admin/*'], ['chargepilot-user:8080', '/api/v1/user/*']]) {
+  for (const [destination, path] of [['admin-proxy-upstream:8081', '/api/v1/admin/*'], ['chargepilot-user:8080', '/api/v1/user/*']]) {
     const wrong = caddyText.replace(destination, 'chargepilot-central:8082');
     assert.throws(() => validate(configuration(), { caddyText: wrong }), { message: `Caddy must route ${path} to ${destination}.` });
   }

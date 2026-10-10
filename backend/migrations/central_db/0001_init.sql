@@ -113,6 +113,7 @@ CREATE TABLE `charge_billing_cutoff` (
 CREATE TABLE `charge_billing_job` (
   `charge_order_id` bigint unsigned NOT NULL COMMENT '充电订单 ID',
   `status` enum('pending','manual_review','done') NOT NULL DEFAULT 'pending' COMMENT '当前业务状态；取值 pending / manual_review / done',
+  `generation` bigint unsigned NOT NULL DEFAULT '0' COMMENT '计费任务代际，失败状态转换与人工金额或计量重新排队时递增，旧派发不得覆盖',
   `attempts` int unsigned NOT NULL DEFAULT '0' COMMENT '已尝试执行次数',
   `next_attempt_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '下次执行尝试时间',
   `last_error` varchar(255) DEFAULT NULL COMMENT '最近一次执行错误信息',
@@ -904,6 +905,8 @@ CREATE TABLE `admin_user` (
   `role_id` bigint unsigned DEFAULT NULL COMMENT '管理员角色 ID',
   `mfa_secret` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'TOTP 密钥(base32，启用前为待确认状态)',
   `mfa_enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否启用多因素认证，0 否、1 是',
+  `mfa_secret_version` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'TOTP 密钥代际，仅换密钥或清除时递增，独立于 auth_version',
+  `mfa_last_step` bigint DEFAULT NULL COMMENT '当前密钥最后消费的30秒时间步，NULL 表示未消费，拒绝小于等于此值的验证码',
   `status` enum('active','disabled','locked') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active' COMMENT '当前业务状态；取值 active / disabled / locked',
   `last_login_at` datetime(3) DEFAULT NULL COMMENT '最近登录时间',
   `failed_login_count` int unsigned NOT NULL DEFAULT '0' COMMENT '连续登录失败次数',

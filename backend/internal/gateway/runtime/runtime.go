@@ -1,4 +1,4 @@
-// Package runtime 管理设备接入与停止重试，不创建进程资源。
+// Package runtime 管理设备接入、停止重试与投递历史清理，不创建进程资源。
 package runtime
 
 import (
@@ -11,8 +11,8 @@ import (
 	"chargepilot/internal/protocol"
 )
 
-// Runtime 持有已装配的设备监听配置及两类停机恢复能力，执行同步的监听或定时恢复循环。
-// 本类型不创建或关闭数据库、连接注册表与客户端资源；调用方负责提供有效依赖并管理两方法的取消与等待。
+// Runtime 持有设备监听、两类停机恢复及投递历史清理能力，执行受管理的监听与定时循环。
+// 本类型不创建或关闭数据库、连接注册表与客户端资源；调用方负责有效依赖及所有方法的取消与等待。
 type Runtime struct {
 	// Endpoints 协议适配器及 TCP 监听地址集合；Serve 交监听器校验并先完成全部端口绑定。
 	Endpoints []protocol.Endpoint
@@ -29,6 +29,34 @@ type Runtime struct {
 	UserStops interface {
 		// RetryPending 接收本轮 ctx，执行用户 STOP 的到期恢复；返回恢复错误，持久化与设备下发由实现负责。
 		RetryPending(context.Context) error
+	}
+	// SyncHistory 清理已完成或缺源投递历史；nil表示未装配。
+	SyncHistory interface {
+		// CleanupSyncRetries 接收任务ctx执行有上限清理，保留仍待投递的核实记录。
+		CleanupSyncRetries(context.Context) error
+	}
+}
+
+// CleanupSyncHistory 启动时及每小时顺序清理一次；错误记录后下轮继续，取消后等待当前调用退出。
+// 清理范围及上限由注入能力决定；本方法不创建脱离管理的任务，也不释放数据库。
+func (r Runtime) CleanupSyncHistory(ctx context.Context) error {
+	if r.SyncHistory == nil {
+		return nil
+	}
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err := r.SyncHistory.CleanupSyncRetries(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("sync delivery history cleanup: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
 	}
 }
 

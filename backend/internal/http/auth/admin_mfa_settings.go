@@ -36,6 +36,8 @@ func (a AdminAuth) mfaSettingsFailure(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ops.ErrMFAInput):
 		httpapi.BadRequest(c, err.Error())
+	case errors.Is(err, operations.ErrUsedTOTP):
+		httpapi.Write(c, http.StatusBadRequest, 1002, operations.ErrUsedTOTP.Error(), nil)
 	case errors.Is(err, ops.ErrMFAProof), errors.Is(err, operations.ErrInvalidTOTP):
 		httpapi.Write(c, http.StatusBadRequest, 1002, ops.ErrMFAProof.Error(), nil)
 	case errors.Is(err, ops.ErrMFAPending), errors.Is(err, ops.ErrMFAState), errors.Is(err, ops.ErrMFABusy):

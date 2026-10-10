@@ -66,7 +66,7 @@ func (s InvoiceReviewRepo) Review(ctx context.Context, tx *gorm.DB, id uint64, i
 		if review.ReviewStatus != "" && review.ReviewStatus != "awaiting_second" {
 			return status, before, ErrInvoiceConflict
 		}
-		if err := tx.Exec("INSERT INTO invoice_admin_review(invoice_request_id,review_status,reject_reason) VALUES (?,'rejected',?) ON DUPLICATE KEY UPDATE review_status='rejected',reject_reason=VALUES(reject_reason),invoice_url=NULL", id, in.Reason).Error; err != nil {
+		if err := tx.Exec("INSERT INTO invoice_admin_review(invoice_request_id,review_status,reject_reason) VALUES (?,'rejected',?) ON DUPLICATE KEY UPDATE review_status='rejected',reject_reason=?,invoice_url=NULL", id, in.Reason, in.Reason).Error; err != nil {
 			return status, before, err
 		}
 		return status, before, tx.Table("invoice_request").Where("id=?", id).Updates(map[string]any{"review_status": "rejected", "reviewed_by": in.ActorID, "reviewed_at": time.Now().UTC(), "reject_reason": in.Reason}).Error

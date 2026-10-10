@@ -32,15 +32,60 @@ type BillingOrders struct {
 
 // Due 读取最多 50 笔到期 pending 任务，按执行时间、订单 ID 排序。
 // 读取不认领任务，Apply 通过结算回执保证入账幂等。
-func (s BillingOrders) Due(ctx context.Context) ([]uint64, error) {
-	ids := []uint64{}
-	err := s.DB.WithContext(ctx).Table("charge_billing_job").Where("status='pending' AND next_attempt_at<=UTC_TIMESTAMP(3)").Order("next_attempt_at,charge_order_id").Limit(50).Pluck("charge_order_id", &ids).Error
+func (s BillingOrders) Due(ctx context.Context) ([]BillingTask, error) {
+	ids := []BillingTask{}
+	err := s.DB.WithContext(ctx).Table("charge_billing_job").Select("charge_order_id,generation").Where("status='pending' AND next_attempt_at<=UTC_TIMESTAMP(3)").Order("next_attempt_at,charge_order_id").Limit(50).Find(&ids).Error
 	return ids, err
 }
 
-// Defer 更新未完成任务的状态和脱敏原因，延后一分钟并增加尝试次数；done 任务不变。
-func (s BillingOrders) Defer(ctx context.Context, id uint64, status, reason string) error {
-	return s.DB.WithContext(ctx).Table("charge_billing_job").Where("charge_order_id=? AND status<>'done'", id).Updates(map[string]any{"status": status, "last_error": reason, "attempts": gorm.Expr("attempts+1"), "next_attempt_at": time.Now().UTC().Add(time.Minute)}).Error
+// Defer 在 ctx 管理的短事务内核对 task 的 pending 状态及预期代际，保存脱敏 reason 和 status。
+// status 只允许 pending/manual_review；人工队列入队同事务，RC 重读来源并执行纯计价规则。
+// 失配返回 ErrStaleBillingTask，调用方停止旧执行；其他错误回滚，不跨 Calculate/Apply 持有任务锁。
+func (s BillingOrders) Defer(ctx context.Context, task BillingTask, status, reason string) error {
+	if status != "pending" && status != "manual_review" {
+		return ErrBillingConflict
+	}
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var job struct {
+			Status     string // 当前状态，仅 pending 可由本轮更新
+			Generation uint64 // 人工决策及状态转换代际
+		}
+		if err := tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", task.ChargeOrderID).Take(&job).Error; err != nil {
+			return err
+		}
+		if job.Status != "pending" || job.Generation != task.Generation {
+			return ErrStaleBillingTask
+		}
+		if status == "manual_review" {
+			source, err := readBillingSource(tx, task.ChargeOrderID)
+			if err != nil {
+				return err
+			}
+			_, err = PriceSource(source)
+			if err == nil {
+				return ErrStaleBillingTask
+			}
+			if !errors.Is(err, charging.ErrMeterReview) && !errors.Is(err, charging.ErrInvalidPricing) {
+				return err
+			}
+			payload, err := json.Marshal(source)
+			if err != nil {
+				return err
+			}
+			if err := EnqueueManualFeeReview(tx, ManualFeeReviewInput{ChargeOrderID: task.ChargeOrderID, OrderNo: source.OrderNo, Reason: reason, EnergyWh: source.Meter.ChargedWh, CreatedMonth: time.Now().UTC().Format("2006-01"), SourceJSON: string(payload)}); err != nil {
+				return err
+			}
+		}
+		res := tx.Table("charge_billing_job").Where("charge_order_id=? AND status='pending' AND generation=?", task.ChargeOrderID, task.Generation).
+			Updates(map[string]any{"status": status, "generation": gorm.Expr("generation+1"), "last_error": reason, "attempts": gorm.Expr("attempts+1"), "next_attempt_at": time.Now().UTC().Add(time.Minute)})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return ErrStaleBillingTask
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
 // Read 读取下单价格、结束计量、截止点及人工核实结果；不补造缺失计量。

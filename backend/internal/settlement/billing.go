@@ -13,15 +13,24 @@ import (
 
 // BillingOrderProcessor 是计费调度所需的订单结算与持久任务能力。
 type BillingOrderProcessor interface {
-	// Due 返回当前待执行订单 ID。
-	Due(context.Context) ([]uint64, error)
+	// Due 返回当前待执行订单及扫描时的预期代际。
+	Due(context.Context) ([]BillingTask, error)
 	// Read 读取订单下单价格和结束计量。
 	Read(context.Context, uint64) (Source, error)
 	// Apply 幂等入账，资金、回执和事件同事务；失败不能标记已投递。
 	Apply(context.Context, Result) error
 	// Defer 更新任务状态并保存脱敏后的失败原因。
-	Defer(context.Context, uint64, string, string) error
+	Defer(context.Context, BillingTask, string, string) error
 }
+
+// BillingTask 绑定本轮读取的任务代际；人工决策重新排队后，旧执行不得更新新代际状态。
+type BillingTask struct {
+	ChargeOrderID uint64 `gorm:"column:charge_order_id"` // 订单主键，入账幂等键
+	Generation    uint64 `gorm:"column:generation"`      // 本轮预期代际，状态转换与人工重排时递增
+}
+
+// ErrStaleBillingTask 表示任务状态或代际已变化；旧派发直接停止本项，不再无条件重排。
+var ErrStaleBillingTask = errors.New("billing task generation changed")
 
 // BillingService 按订单计量、下单快照和费用回执完成入账及补账单。
 type BillingService struct {
@@ -49,7 +58,8 @@ func (s BillingService) Run(ctx context.Context) (int, error) {
 	}
 	count := delivered
 	first := deliveryErr
-	for _, id := range ids {
+	for _, task := range ids {
+		id := task.ChargeOrderID
 		if err := ctx.Err(); err != nil {
 			return count, errors.Join(first, err)
 		}
@@ -58,16 +68,9 @@ func (s BillingService) Run(ctx context.Context) (int, error) {
 			var result Result
 			result, err = s.Calculator.Calculate(ctx, source)
 			if errors.Is(err, charging.ErrMeterReview) || errors.Is(err, charging.ErrInvalidPricing) {
-				payload, _ := json.Marshal(source)
-				err = EnqueueManualFeeReview(s.Calculator.DB.WithContext(ctx), ManualFeeReviewInput{
-					ChargeOrderID: id, OrderNo: source.OrderNo, Reason: "实际计量或计费快照需核实",
-					EnergyWh: source.Meter.ChargedWh, CreatedMonth: time.Now().UTC().Format("2006-01"),
-					SourceJSON: string(payload),
-				})
-				if err == nil {
-					err = s.Orders.Defer(ctx, id, "manual_review", "实际计量或计费快照需核实")
-				}
-				if err == nil {
+				// 入队与转人工必须由任务仓储在同一短事务内核对代际并提交。
+				err = s.Orders.Defer(ctx, task, "manual_review", "实际计量或计费快照需核实")
+				if err == nil || errors.Is(err, ErrStaleBillingTask) {
 					continue
 				}
 			} else if err == nil {
@@ -89,7 +92,11 @@ func (s BillingService) Run(ctx context.Context) (int, error) {
 		}
 		if err != nil {
 			// 不要把存储错误暴露到运维可见的队列里。
-			_ = s.Orders.Defer(ctx, id, "pending", "计费依赖暂不可用，等待重试")
+			deferErr := s.Orders.Defer(ctx, task, "pending", "计费依赖暂不可用，等待重试")
+			if errors.Is(deferErr, ErrStaleBillingTask) {
+				continue
+			}
+			err = errors.Join(err, deferErr)
 			if first == nil {
 				first = fmt.Errorf("bill order %d: %w", id, err)
 			}

@@ -120,6 +120,19 @@ func TestOrderQueryKeepsOwnerNullFeesBatchingAndFrozenNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	reader := operations.Profile{Permissions: []string{"order.read"}}
+	for _, permissions := range [][]string{{"order.read"}, {"order.read", "order.refund.create"}} {
+		actor := operations.Profile{ID: 8996759476100805168, Permissions: permissions}
+		view, err := s.Detail(ctx, actor, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(permissions) == 1 && view.RefundApplicantID != nil {
+			t.Fatal("refund identity leaked without permission")
+		}
+		if len(permissions) == 2 && (view.RefundApplicantID == nil || *view.RefundApplicantID != "8996759476100805168") {
+			t.Fatal("refund applicant decimal identity missing")
+		}
+	}
 	detail, err := s.Detail(ctx, reader, id)
 	if err != nil || detail.SelectedSchemeName == nil || *detail.SelectedSchemeName != "Original frozen scheme" || detail.SelectedPackageName == nil || *detail.SelectedPackageName != "Original frozen package" {
 		t.Fatalf("frozen detail=%+v err=%v", detail, err)

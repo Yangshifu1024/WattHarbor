@@ -16,6 +16,7 @@ func clearConfigEnvironment(t *testing.T) {
 		"DATABASE_URL", "DATABASE_URL_CENTRAL", "DATABASE_URL_GATEWAY", "DATABASE_URL_WORKER",
 		"GATEWAY_HTTP_ADDR", "DC589_ADDR", "DEVICE_MAX_CONNECTIONS", "GATEWAY_DEBUG_HEARTBEAT",
 		"CENTRAL_HTTP_ADDR", "USER_HTTP_ADDR", "ADMIN_HTTP_ADDR", "WORKER_HTTP_ADDR",
+		"ADMIN_TRUSTED_PROXIES",
 		"REDIS_CACHE_URL", "REDIS_STREAM_URL", "JWT_SECRET", "SERVICE_TOKEN",
 		"CENTRAL_INTERNAL_URL", "GATEWAY_INTERNAL_URL", "WECHAT_APPID", "WECHAT_SECRET",
 		"PAYMENT_MODE", "LOGIN_MODE", "WECHAT_MCH_ID", "WECHAT_CERT_SERIAL", "WECHAT_APIV3_KEY",
@@ -198,6 +199,14 @@ func TestLoadAdminNeedsNoPaymentOrStream(t *testing.T) {
 	c, err := LoadAdmin()
 	if err != nil || c.HTTPAddr != ":8081" || c.AdminBootstrapUser != "fixture-admin" || c.AdminBootstrapPassword != "fixture-password" {
 		t.Fatalf("admin own configuration changed: %v", err)
+	}
+	if len(c.TrustedProxies) != 0 {
+		t.Fatal("direct access must not trust forwarded headers by default")
+	}
+	t.Setenv("ADMIN_TRUSTED_PROXIES", "172.30.81.2,127.0.0.1")
+	c, err = LoadAdmin()
+	if err != nil || len(c.TrustedProxies) != 2 || c.TrustedProxies[0] != "172.30.81.2" || c.TrustedProxies[1] != "127.0.0.1" {
+		t.Fatal("trusted proxy list not loaded", err)
 	}
 	t.Setenv("JWT_SECRET", strings.Repeat("j", 31))
 	if _, err := LoadAdmin(); err == nil || !strings.Contains(err.Error(), "JWT_SECRET must have at least 32 bytes") {

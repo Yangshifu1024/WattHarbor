@@ -64,6 +64,6 @@ func (s BillingOrders) ResolveAmount(ctx context.Context, in ManualSettlement) e
 		if err := orderstore.AppendEventInTx(tx, orderstore.ChargeEventLogRecord{ChargeOrderID: in.ChargeOrderID, EventID: in.RequestID, Event: "manual_settlement", Actor: "admin", Detail: in.Reason, OccurredAt: time.Now().UTC()}); err != nil {
 			return err
 		}
-		return tx.Table("charge_billing_job").Where("charge_order_id=?", in.ChargeOrderID).Updates(map[string]any{"status": "pending", "last_error": nil, "next_attempt_at": gorm.Expr("UTC_TIMESTAMP(3)")}).Error
+		return tx.Table("charge_billing_job").Where("charge_order_id=?", in.ChargeOrderID).Updates(map[string]any{"status": "pending", "generation": gorm.Expr("generation+1"), "last_error": nil, "next_attempt_at": gorm.Expr("UTC_TIMESTAMP(3)")}).Error
 	})
 }

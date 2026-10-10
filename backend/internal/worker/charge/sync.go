@@ -13,6 +13,8 @@ import (
 type Synchronizer struct {
 	// Gateway 启动回执读取、上报标记和启动补偿接口，按命令标识执行。
 	Gateway interface {
+		// DeferSyncDelivery 保存本次失败分类和网关持久退避，不变更命令业务状态。
+		DeferSyncDelivery(context.Context, gatewaycontract.DeferSyncDeliveryRequest) error
 		// StartResults 查询待上报的启动回执，可按命令编号筛选。
 		StartResults(context.Context, string) ([]gatewaycontract.SyncCommand, error)
 		// MarkStartResultsReported 在网关事务内标记命令已上报，返回影响行数。
@@ -44,11 +46,17 @@ func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	count := 0
-	var firstError error
+	var failures syncBatchErrors
 	reported := make([]string, 0, len(rows))
+	fail := func(row gatewaycontract.SyncCommand, category string, cause error) {
+		failures.add("start", row.CommandID, cause, s.Gateway.DeferSyncDelivery(ctx, gatewaycontract.DeferSyncDeliveryRequest{Kind: "start", Key: row.CommandID, Category: category}))
+	}
 	for _, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return count, errors.Join(failures.err(), err)
+		}
 		if row.PortID == nil || *row.PortID <= 0 || row.ResultCode == nil || row.AckAt == nil || *row.ResultCode < 0 || *row.ResultCode > 255 {
-			firstError = errors.New("invalid persisted start result")
+			fail(row, "invalid", errors.New("invalid persisted start result"))
 			continue
 		}
 		result := centralcontract.StartResultRequest{CommandID: row.CommandID, ChargeOrderID: row.ChargeOrderID,
@@ -56,24 +64,22 @@ func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 			PortID: uint64(*row.PortID), Success: row.Status == "acked",
 			ResultCode: uint8(*row.ResultCode), OccurredAt: row.AckAt.UTC()}
 		if result.Success != (result.ResultCode == 0) {
-			firstError = errors.New("inconsistent persisted start result")
+			fail(row, "invalid", errors.New("inconsistent persisted start result"))
 			continue
 		}
 		if result.ResultCode > 3 {
 			// 结果码大于 3 无法确认启动结果，保留回执等待核实。
-			firstError = errors.New("startup outcome needs review; compensation is not a no-charge proof")
+			fail(row, "unknown", errors.New("startup outcome needs review; compensation is not a no-charge proof"))
 			continue
 		}
 		if _, err := s.Central.SubmitStartResult(ctx, result); err != nil {
 			if errors.Is(err, ErrCentralConflict) && result.Success {
-				if compensateErr := s.Gateway.CompensateStart(ctx, result.OrderNo, result.CommandID); compensateErr != nil && firstError == nil {
-					firstError = compensateErr
-				}
+				compensateErr := s.Gateway.CompensateStart(ctx, result.OrderNo, result.CommandID)
+				// 已受理补偿仍不能证明没有充电；进入核实，继续处理其他回执。
+				fail(row, "unknown", errors.Join(err, compensateErr))
 				continue
 			}
-			if firstError == nil {
-				firstError = err
-			}
+			fail(row, "retry", err)
 			continue
 		}
 		reported = append(reported, row.CommandID)
@@ -81,8 +87,8 @@ func (s Synchronizer) SyncBatch(ctx context.Context) (int, error) {
 	}
 	if len(reported) > 0 {
 		if _, err := s.Gateway.MarkStartResultsReported(ctx, reported); err != nil {
-			return count, err
+			return count, errors.Join(failures.err(), err)
 		}
 	}
-	return count, firstError
+	return count, failures.err()
 }
