@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -15,8 +16,8 @@ const EffectiveRuleSQL = "status='active' AND deleted_at IS NULL AND (effective_
 // 整站变更跳过已有生效自有规则的设备，使用调用方发布事务。
 func CheckSchemeTargets(tx *gorm.DB, station uint64, device string, scheme charging.Scheme) error {
 	var rows []struct {
-		DeviceID        string // 目标设备编号
-		ProtocolAdapter string // 创建设备时选定的协议适配器，用于查询支持的功能
+		DeviceID        string             // 目标设备编号
+		ProtocolAdapter protocol.AdapterID // 创建设备时选定的协议适配器，用于查询支持的功能
 	}
 	q := tx.Table("device_meta").Where("station_id=? AND deleted_at IS NULL", station)
 	if device != "" {

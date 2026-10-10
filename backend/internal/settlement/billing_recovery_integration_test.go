@@ -31,7 +31,7 @@ func (o *recoveryOrders) Read(context.Context, uint64) (Source, error) {
 func (o *recoveryOrders) Apply(context.Context, Result) error { o.applied++; return nil }
 
 // Defer 始终报错，确保恢复场景不重排计费任务。
-func (o *recoveryOrders) Defer(context.Context, BillingTask, string, string) error {
+func (o *recoveryOrders) Defer(context.Context, BillingTask, BillingJobStatus, string) error {
 	return errors.New("unexpected defer")
 }
 

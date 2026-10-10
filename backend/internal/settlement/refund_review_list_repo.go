@@ -14,7 +14,7 @@ import (
 
 // RefundListQuery 是退款列表的筛选条件。
 type RefundListQuery struct {
-	Status   string // 退款状态，空值不筛选
+	Status   string // 退款状态（refund_record.status 全量取值），空值不筛选；由 HTTP 白名单校验后传入
 	RefundNo string // 完整退款单号，空值不筛选
 	Page     int    // 已规范化的页码，从 1 开始
 	PageSize int    // 已规范化的每页条数
@@ -41,19 +41,22 @@ func ListRefunds(ctx context.Context, db *gorm.DB, q RefundListQuery) (persist.P
 
 // ManualFeeReviewListRow 是人工定价工单的一行。Reviews 由用例按本页订单批量回填。
 type ManualFeeReviewListRow struct {
-	ChargeOrderID uint64          `json:"charge_order_id" gorm:"column:charge_order_id"` // 计费订单主键，核实记录靠它关联
-	OrderNo       string          `json:"order_no" gorm:"column:order_no"`               // 订单号，列表关键词搜索的就是它
-	Reason        string          `json:"reason" gorm:"column:reason"`                   // 兜底因：自动计费为什么没能算出费用
-	Status        string          `json:"status" gorm:"column:status"`                   // pending 待核实、resolved 已处置
-	SourceJSON    json.RawMessage `json:"source" gorm:"column:source_json"`              // 设备上报的原始计量数据；为空表示设备根本没上报可用数据
-	CreatedAt     string          `json:"created_at" gorm:"column:created_at"`           // 工单创建时间，保留数据库时间文本
-	Reviews       []MeterReview   `json:"reviews" gorm:"-"`                              // 该订单下的核实记录，按时间倒序
+	ChargeOrderID uint64                `json:"charge_order_id" gorm:"column:charge_order_id"` // 计费订单主键，核实记录靠它关联
+	OrderNo       string                `json:"order_no" gorm:"column:order_no"`               // 订单号，列表关键词搜索的就是它
+	Reason        string                `json:"reason" gorm:"column:reason"`                   // 兜底因：自动计费为什么没能算出费用
+	Status        ManualFeeReviewStatus `json:"status" gorm:"column:status"`                   // pending 待核实、resolved 已处置（manual_fee_review.status）
+	SourceJSON    json.RawMessage       `json:"source" gorm:"column:source_json"`              // 设备上报的原始计量数据；为空表示设备根本没上报可用数据
+	CreatedAt     string                `json:"created_at" gorm:"column:created_at"`           // 工单创建时间，保留数据库时间文本
+	Reviews       []MeterReview         `json:"reviews" gorm:"-"`                              // 该订单下的核实记录，按时间倒序
 }
 
 // ListManualFeeReviews 按状态、订单号关键词分页倒序读取人工定价工单，不补充核实记录。
 func ListManualFeeReviews(ctx context.Context, db *gorm.DB, q persist.PageQuery) (persist.Page[ManualFeeReviewListRow], error) {
 	out := persist.Page[ManualFeeReviewListRow]{Items: []ManualFeeReviewListRow{}, Page: q.Page, PageSize: q.PageSize}
 	query := db.WithContext(ctx).Table("manual_fee_review")
+	// q.Status 是列表筛选项而非状态判定：空串表示「不按状态筛选」，
+	// 因此保持裸串并原样绑定，不收敛为 ManualFeeReviewStatus；
+	// 可选值由 HTTP 层按本列词表（pending / resolved）白名单校验。
 	if q.Status != "" {
 		query = query.Where("status=?", q.Status)
 	}

@@ -13,6 +13,7 @@ import (
 	charging "chargepilot/internal/domain/charging"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/ops"
+	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -113,7 +114,7 @@ func (s ImportService) Create(ctx context.Context, audit ops.AuditContext, scope
 	}
 	// 复制请求清单后再补充服务端协议，避免修改调用方用于重试的输入。
 	in.Devices = append([]ImportDevice(nil), in.Devices...)
-	adapters := map[uint64]string{}
+	adapters := map[uint64]protocol.AdapterID{}
 	for i := range in.Devices {
 		d := &in.Devices[i]
 		adapter, found := adapters[d.VendorID]
@@ -213,7 +214,8 @@ func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope 
 		if err := checkImportScope(scope, devices); err != nil {
 			return err
 		}
-		if result.Status == "completed" {
+		// completed 重放不再开通或审计；仅精确匹配该值，未知状态仍继续执行（与原判定一致）。
+		if result.Status == ImportStatusCompleted {
 			return nil
 		}
 		batch := make([]contract.ProvisionDevice, 0, len(devices))
@@ -226,7 +228,7 @@ func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope 
 		cancel()
 		if err != nil {
 			message := "网关未确认导入，请核对厂商与设备参数后重试；dc589 最多 20 路"
-			result.Status = "failed"
+			result.Status = ImportStatusFailed
 			result.LastError = &message
 			return repo.MarkImportFailed(tx, id, message)
 		}
@@ -245,7 +247,7 @@ func (s ImportService) Retry(ctx context.Context, audit ops.AuditContext, scope 
 				return err
 			}
 		}
-		result.Status = "completed"
+		result.Status = ImportStatusCompleted
 		result.LastError = nil
 		if err := repo.MarkImportCompleted(tx, id); err != nil {
 			return err

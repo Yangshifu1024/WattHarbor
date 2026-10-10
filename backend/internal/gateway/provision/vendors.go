@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/platform/httpapi"
 	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
@@ -62,13 +63,18 @@ func validateVendorInput(in *contract.VendorRequest) error {
 			return errors.New("厂商名称不能包含控制字符")
 		}
 	}
-	if in.AdapterClass == "" || utf8.RuneCountInString(in.AdapterClass) > 256 {
+	// adapter_class 是 varchar(256)，比 device_meta.protocol_adapter 和 device_event.protocol_name
+	// 的 varchar(32) 宽；adapter_class 写入原样透传的厂商标签，长度校验按该列上限保留，
+	// 不因当前已登记集合只有 DC589 就省略。
+	if in.AdapterClass == "" || utf8.RuneCountInString(string(in.AdapterClass)) > 256 {
 		return errors.New("请选择厂商适配器")
 	}
-	if in.Protocol != "tcp" && in.Protocol != "mqtt" && in.Protocol != "hybrid" {
+	// 本入参写集合是 vendor.protocol 三值，与 device_session.protocol 的两值 Transport 不共用词表。
+	if !in.Protocol.Known() {
 		return errors.New("连接协议无效")
 	}
-	if in.Status != "enabled" && in.Status != "disabled" {
+	// 本入参写集合是 vendor.status 两值，不接受空串。
+	if !in.Status.Known() {
 		return errors.New("厂商状态须为 enabled 或 disabled")
 	}
 	return nil
@@ -117,7 +123,9 @@ type vendorListQuery struct {
 	// Page、PageSize 分别是页码（从 1 开始）与每页条数。
 	Page, PageSize int
 	// Keyword、Status 分别筛选厂商编码或名称，以及厂商状态。
-	Keyword, Status string
+	// 空 Status 表示不筛选（跨进程约定），不得当作非法值拒绝。
+	Keyword string
+	Status  devices.VendorStatus
 	// IDs 指定记录 ID 的筛选集合。
 	IDs []uint64
 }
@@ -126,7 +134,7 @@ type vendorListQuery struct {
 func parseVendorList(c *gin.Context) (vendorListQuery, error) {
 	// 分页边界与 httpapi.ReadPaging 共用常量；本接口返回 error 而非写响应，
 	// 故不直接调 ReadPaging，只取同样的上下限。
-	q := vendorListQuery{Page: 1, PageSize: 20, Keyword: strings.TrimSpace(c.Query("keyword")), Status: c.Query("status")}
+	q := vendorListQuery{Page: 1, PageSize: 20, Keyword: strings.TrimSpace(c.Query("keyword")), Status: devices.VendorStatus(c.Query("status"))}
 	for name, target := range map[string]*int{"page": &q.Page, "page_size": &q.PageSize} {
 		if c.Request.URL.Query().Has(name) {
 			n, err := strconv.Atoi(c.Query(name))
@@ -140,7 +148,8 @@ func parseVendorList(c *gin.Context) (vendorListQuery, error) {
 			*target = n
 		}
 	}
-	if utf8.RuneCountInString(q.Keyword) > 128 || (q.Status != "" && q.Status != "enabled" && q.Status != "disabled") {
+	// 未传 status 时空串表示不筛选，因此只在 Filtered 时校验取值。
+	if utf8.RuneCountInString(q.Keyword) > 128 || (q.Status.Filtered() && !q.Status.Known()) {
 		return q, errors.New("关键词过长或状态无效")
 	}
 	if c.Request.URL.Query().Has("ids") {

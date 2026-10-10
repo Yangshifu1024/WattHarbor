@@ -1,6 +1,7 @@
 package card
 
 import (
+	carddomain "chargepilot/internal/domain/card"
 	money "chargepilot/internal/domain/money"
 	"chargepilot/internal/identity"
 	orderstore "chargepilot/internal/order"
@@ -53,7 +54,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 	if n, err := strconv.ParseUint(cardNo, 10, 32); err != nil || n == 0 || strconv.FormatUint(n, 10) != cardNo {
 		return out, ErrCardOperation
 	}
-	if cardNo == "" || eventID == "" || len(eventID) > 128 || !port.Found || !port.Online || port.Kind != "port" {
+	if cardNo == "" || eventID == "" || len(eventID) > 128 || !port.Found || !port.Online || port.Kind != money.ScanKindPort {
 		return out, ErrCardOperation
 	}
 	err := func() error {
@@ -94,7 +95,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 			return active.Error
 		}
 		var p charging.Package
-		out = CardOperation{OperationID: uuid.NewString(), DeviceID: port.DeviceID, EventID: eventID, CardID: card.ID, Status: "confirming"}
+		out = CardOperation{OperationID: uuid.NewString(), DeviceID: port.DeviceID, EventID: eventID, CardID: card.ID, Status: carddomain.CardStatusConfirming}
 		if active.RowsAffected > 0 {
 			if json.Unmarshal(session.PackageJSON, &p) != nil {
 				return ErrCardOperation
@@ -117,7 +118,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 				return ErrCardOperation
 			}
 			var pending []CardOperation
-			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("charge_order_id=? AND status='confirming'", session.ChargeOrderID).Find(&pending).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("charge_order_id=? AND status=?", session.ChargeOrderID, carddomain.CardStatusConfirming).Find(&pending).Error; err != nil {
 				return err
 			}
 			if !CanExtend(card.ID, session.CardID, p, session.PurchasedMinutes, session.MaxMinutes, w.BalanceCents-w.FrozenCents, len(pending) > 0) {
@@ -126,8 +127,8 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 				}
 				return ErrCardOperation
 			}
-			out.Kind = "extend"
-			out.Status = "confirmed"
+			out.Kind = carddomain.CardKindExtend
+			out.Status = carddomain.CardStatusConfirmed
 			out.ChargeOrderID = session.ChargeOrderID
 			if err := pay.ExtendCardPaymentInTx(tx, uint64(order.PaymentOrderID.Int64), p.PriceCents); err != nil {
 				if errors.Is(err, pay.ErrCardFundingConflict) {
@@ -156,7 +157,7 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 				}
 				return ErrCardOperation
 			}
-			out.Kind = "start"
+			out.Kind = carddomain.CardKindStart
 			spec := rule.Spec.Scheme.SpecFor(p)
 			rule.Spec = spec
 			var offer charging.Offer
@@ -207,18 +208,18 @@ func (s Repo) applyInTx(tx *gorm.DB, cardNo, eventID string, port money.PortRef,
 			}
 		}
 		out.PriceCents, out.Minutes = p.PriceCents, p.Minutes
-		if err := mapWalletMoveError(wallet.Move(tx, card.UserID, &w, -p.PriceCents, "CP"+out.OperationID, "在线刷卡"+out.Kind)); err != nil {
+		if err := mapWalletMoveError(wallet.Move(tx, card.UserID, &w, -p.PriceCents, "CP"+out.OperationID, "在线刷卡"+string(out.Kind))); err != nil {
 			return err
 		}
 		if err := tx.Create(&out).Error; err != nil {
 			return err
 		}
-		if out.Kind == "extend" {
+		if out.Kind == carddomain.CardKindExtend {
 			if err := tx.Model(&CardOperation{}).Where("operation_id=?", out.OperationID).Update("confirmed_at", gorm.Expr("UTC_TIMESTAMP(3)")).Error; err != nil {
 				return err
 			}
 		}
-		return orderstore.AppendEventInTx(tx, orderstore.ChargeEventLogRecord{ChargeOrderID: out.ChargeOrderID, EventID: out.OperationID, Event: "card_" + out.Kind + "_" + out.Status, Actor: "card", Detail: fmt.Sprintf("card=%d cents=%d minutes=%d", card.ID, p.PriceCents, p.Minutes), OccurredAt: time.Now().UTC()})
+		return orderstore.AppendEventInTx(tx, orderstore.ChargeEventLogRecord{ChargeOrderID: out.ChargeOrderID, EventID: out.OperationID, Event: "card_" + string(out.Kind) + "_" + string(out.Status), Actor: "card", Detail: fmt.Sprintf("card=%d cents=%d minutes=%d", card.ID, p.PriceCents, p.Minutes), OccurredAt: time.Now().UTC()})
 	}()
 	return out, err
 }

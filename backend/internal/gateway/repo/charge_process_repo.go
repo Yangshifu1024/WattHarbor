@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"strings"
 	"time"
@@ -80,7 +81,7 @@ func (chargeProcessRow) TableName() string { return "charge_process" }
 
 // insertChargeProcess 在事务内锁定端口，将心跳关联到此前已确认启动的订单，并去重插入采样点。
 func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event protocol.Event) error {
-	if event.Protocol != "dc589" || len(event.ChargingPorts) == 0 {
+	if event.Protocol != protocol.AdapterIDDC589 || len(event.ChargingPorts) == 0 {
 		return nil
 	}
 	ports := make([]int, 0, len(event.ChargingPorts))
@@ -107,7 +108,7 @@ func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event pro
 	if err := tx.WithContext(ctx).Table("device_port AS p").
 		Select("c.charge_order_id,c.order_no,p.port_no").
 		Joins("JOIN charge_command AS c ON c.order_no=p.current_order_id AND c.device_id=p.device_id AND c.port_no=p.port_no AND c.port_id=p.id").
-		Where("p.device_id=? AND p.port_no IN ? AND p.deleted_at IS NULL AND p.status='charging' AND c.status='acked' AND c.ack_at<=?", event.DeviceID, ports, at).
+		Where("p.device_id=? AND p.port_no IN ? AND p.deleted_at IS NULL AND p.status=? AND c.status='acked' AND c.ack_at<=?", event.DeviceID, ports, money.PortCharging, at).
 		Scan(&sessions).Error; err != nil {
 		return err
 	}

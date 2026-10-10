@@ -17,20 +17,20 @@ import (
 // AdminUserRow 是后台账号列表记录，每个账号有一个主角色，与终端用户分表保存。
 // 可空字段保留 NULL，不能用角色 ID=0 代替已删除角色。
 type AdminUserRow struct {
-	ID            uint64  `json:"id" gorm:"column:id"`                                 // 账号主键
-	Username      string  `json:"username" gorm:"column:username"`                     // 登录用户名，全局唯一
-	DisplayName   *string `json:"display_name" gorm:"column:display_name"`             // 显示名称；nil 表示未设置
-	RoleID        *uint64 `json:"role_id" gorm:"column:role_id"`                       // 主角色 ID；nil 表示尚未分配角色
-	RoleCode      *string `json:"role_code" gorm:"column:role_code"`                   // 主角色编码，由 role 表联查；角色已删时为 nil
-	RoleName      *string `json:"role_name" gorm:"column:role_name"`                   // 角色名称；角色已删时为空
-	Phone         *string `json:"phone" gorm:"column:phone"`                           // 备用手机号；nil 表示未登记
-	Email         *string `json:"email" gorm:"column:email"`                           // 邮箱；nil 表示未登记
-	Status        string  `json:"status" gorm:"column:status"`                         // active 正常 / disabled 停用 / locked 连续登录失败临时锁定
-	MFAEnabled    bool    `json:"mfa_enabled" gorm:"column:mfa_enabled"`               // 是否已启用双因素认证
-	LastLoginAt   *string `json:"last_login_at" gorm:"column:last_login_at"`           // 最近成功登录时刻，未登录为空
-	LockedUntil   *string `json:"locked_until" gorm:"column:locked_until"`             // 临时锁定截止，未锁定为空
-	FailedLogins  uint32  `json:"failed_login_count" gorm:"column:failed_login_count"` // 连续登录失败次数
-	DeletePending bool    `json:"-" gorm:"-"`                                          // 是否有待处理的下线流程，本列表不使用、不输出
+	ID            uint64          `json:"id" gorm:"column:id"`                                 // 账号主键
+	Username      string          `json:"username" gorm:"column:username"`                     // 登录用户名，全局唯一
+	DisplayName   *string         `json:"display_name" gorm:"column:display_name"`             // 显示名称；nil 表示未设置
+	RoleID        *uint64         `json:"role_id" gorm:"column:role_id"`                       // 主角色 ID；nil 表示尚未分配角色
+	RoleCode      *string         `json:"role_code" gorm:"column:role_code"`                   // 主角色编码，由 role 表联查；角色已删时为 nil
+	RoleName      *string         `json:"role_name" gorm:"column:role_name"`                   // 角色名称；角色已删时为空
+	Phone         *string         `json:"phone" gorm:"column:phone"`                           // 备用手机号；nil 表示未登记
+	Email         *string         `json:"email" gorm:"column:email"`                           // 邮箱；nil 表示未登记
+	Status        AdminUserStatus `json:"status" gorm:"column:status"`                         // active 正常 / disabled 停用 / locked 连续登录失败临时锁定
+	MFAEnabled    bool            `json:"mfa_enabled" gorm:"column:mfa_enabled"`               // 是否已启用双因素认证
+	LastLoginAt   *string         `json:"last_login_at" gorm:"column:last_login_at"`           // 最近成功登录时刻，未登录为空
+	LockedUntil   *string         `json:"locked_until" gorm:"column:locked_until"`             // 临时锁定截止，未锁定为空
+	FailedLogins  uint32          `json:"failed_login_count" gorm:"column:failed_login_count"` // 连续登录失败次数
+	DeletePending bool            `json:"-" gorm:"-"`                                          // 是否有待处理的下线流程，本列表不使用、不输出
 }
 
 const adminUserSelect = "u.id,u.username,u.display_name,u.role_id," +
@@ -38,11 +38,12 @@ const adminUserSelect = "u.id,u.username,u.display_name,u.role_id," +
 	"u.mfa_enabled,u.last_login_at,u.locked_until,u.failed_login_count"
 
 // ListAdminUsers 按状态、用户名或姓名关键词分页读取账号；LikePattern 转义通配符。
+// q.Status 是跨业务共用的 PageQuery 筛选项，保持 string，在本仓储入口转为 AdminUserStatus。
 func (s AccountRepo) ListAdminUsers(ctx context.Context, q persist.PageQuery) (persist.Page[AdminUserRow], error) {
 	out := persist.Page[AdminUserRow]{Items: []AdminUserRow{}, Page: q.Page, PageSize: q.PageSize}
 	query := s.DB.WithContext(ctx).Table("admin_user AS u").Where("u.deleted_at IS NULL")
 	if q.Status != "" {
-		query = query.Where("u.status = ?", q.Status)
+		query = query.Where("u.status = ?", AdminUserStatus(q.Status))
 	}
 	if q.Keyword != "" {
 		query = query.Where("u.username LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!'", dbutil.LikePattern(q.Keyword), dbutil.LikePattern(q.Keyword))
@@ -71,27 +72,27 @@ func (s AccountRepo) CountOtherActiveAdminsInTx(ctx context.Context, tx *gorm.DB
 	var remaining int64
 	err := tx.WithContext(ctx).Table("admin_user AS u").
 		Joins("JOIN role AS r ON r.id = u.role_id").
-		Where("u.deleted_at IS NULL AND u.status = 'active' AND r.code = 'customer_admin' AND r.deleted_at IS NULL").
+		Where("u.deleted_at IS NULL AND u.status = '"+string(AdminUserActive)+"' AND r.code = 'customer_admin' AND r.deleted_at IS NULL").
 		Where("u.id <> ?", id).Clauses(clause.Locking{Strength: "UPDATE"}).Count(&remaining).Error
 	return remaining, err
 }
 
 // AdminUserSnapshot 保存账号管理审计所需资料，排除密码散列和 MFA 密钥。
 type AdminUserSnapshot struct {
-	ID               uint64     `json:"id"`                 // 账号主键
-	Username         string     `json:"username"`           // 登录名
-	DisplayName      *string    `json:"display_name"`       // 可空显示名
-	RoleID           *uint64    `json:"role_id"`            // 可空角色 ID，按整数保存
-	Phone            *string    `json:"phone"`              // 联系号码
-	Email            *string    `json:"email"`              // 可空邮箱
-	Status           string     `json:"status"`             // 有效／停用／锁定状态
-	MFAEnabled       bool       `json:"mfa_enabled"`        // 是否启用 MFA，不含密钥
-	LastLoginAt      *time.Time `json:"last_login_at"`      // 可空登录时刻
-	LockedUntil      *time.Time `json:"locked_until"`       // 可空锁定截止
-	FailedLoginCount uint32     `json:"failed_login_count"` // 失败计数
-	AuthVersion      uint64     `json:"auth_version"`       // 认证版本，敏感变更后递增，使旧会话失效
-	DeletedAt        *time.Time `json:"deleted_at"`         // 可空删除时刻
-	DeletedBy        *uint64    `json:"deleted_by"`         // 可空删除操作人
+	ID               uint64          `json:"id"`                 // 账号主键
+	Username         string          `json:"username"`           // 登录名
+	DisplayName      *string         `json:"display_name"`       // 可空显示名
+	RoleID           *uint64         `json:"role_id"`            // 可空角色 ID，按整数保存
+	Phone            *string         `json:"phone"`              // 联系号码
+	Email            *string         `json:"email"`              // 可空邮箱
+	Status           AdminUserStatus `json:"status"`             // 有效／停用／锁定状态
+	MFAEnabled       bool            `json:"mfa_enabled"`        // 是否启用 MFA，不含密钥
+	LastLoginAt      *time.Time      `json:"last_login_at"`      // 可空登录时刻
+	LockedUntil      *time.Time      `json:"locked_until"`       // 可空锁定截止
+	FailedLoginCount uint32          `json:"failed_login_count"` // 失败计数
+	AuthVersion      uint64          `json:"auth_version"`       // 认证版本，敏感变更后递增，使旧会话失效
+	DeletedAt        *time.Time      `json:"deleted_at"`         // 可空删除时刻
+	DeletedBy        *uint64         `json:"deleted_by"`         // 可空删除操作人
 }
 
 // LockAdminUser 锁读未删除账号的管理资料，排除密码散列和 MFA 密钥。
@@ -112,16 +113,21 @@ func (s AccountRepo) InsertAdminUser(tx *gorm.DB, values map[string]any) (uint64
 
 // CreateManagementUser 保存账号资料和已生成的密码散列，返回新主键。
 func (s AccountRepo) CreateManagementUser(tx *gorm.DB, input AccountCreateInput, hash string) (uint64, error) {
-	return s.InsertAdminUser(tx, map[string]any{"username": input.Username, "display_name": input.DisplayName, "password_hash": hash, "phone": input.Phone, "role_id": input.RoleID, "status": "active"})
+	return s.InsertAdminUser(tx, map[string]any{"username": input.Username, "display_name": input.DisplayName, "password_hash": hash, "phone": input.Phone, "role_id": input.RoleID, "status": AdminUserActive})
 }
 
 // UpdateManagementUser 更新固定账号字段；仅角色变化时写角色，仅需撤销会话时提升认证版本。
+// input.Status 保持 *string 指针语义：非 nil 才写入，未提交时不碰 admin_user.status。
+// 值转换成 AdminUserStatus 只发生在写入该列的那一刻。
 func (s AccountRepo) UpdateManagementUser(tx *gorm.DB, id uint64, input AccountUpdateInput, roleChanged, revoke bool) error {
 	values := map[string]any{}
-	for key, value := range map[string]*string{"display_name": input.DisplayName, "phone": input.Phone, "email": input.Email, "status": input.Status} {
+	for key, value := range map[string]*string{"display_name": input.DisplayName, "phone": input.Phone, "email": input.Email} {
 		if value != nil {
 			values[key] = *value
 		}
+	}
+	if input.Status != nil {
+		values["status"] = AdminUserStatus(*input.Status)
 	}
 	if roleChanged {
 		values["role_id"] = *input.RoleID
@@ -131,14 +137,14 @@ func (s AccountRepo) UpdateManagementUser(tx *gorm.DB, id uint64, input AccountU
 
 // UnlockManagementUser 恢复账号并清空失败次数和锁定，按需提升认证版本。
 func (s AccountRepo) UnlockManagementUser(tx *gorm.DB, id uint64, revoke bool) error {
-	return UpdateAdminUser(tx, id, map[string]any{"status": "active", "locked_until": nil, "failed_login_count": 0}, revoke)
+	return UpdateAdminUser(tx, id, map[string]any{"status": AdminUserActive, "locked_until": nil, "failed_login_count": 0}, revoke)
 }
 
 // ResetManagementPassword 保存密码散列、提升认证版本并清空失败次数；只解除临时锁定，不启用停用账号。
 func (s AccountRepo) ResetManagementPassword(tx *gorm.DB, id uint64, hash string, unlock bool) error {
 	values := map[string]any{"password_hash": hash, "failed_login_count": 0, "locked_until": nil}
 	if unlock {
-		values["status"] = "active"
+		values["status"] = AdminUserActive
 	}
 	return UpdateAdminUser(tx, id, values, true)
 }
@@ -164,7 +170,7 @@ func UpdateAdminUser(tx *gorm.DB, id uint64, values map[string]any, bumpAuthVers
 func SoftDeleteAdminUser(tx *gorm.DB, id, operatorID uint64, at time.Time) error {
 	return tx.Table("admin_user").Where("id = ?", id).Updates(map[string]any{
 		"deleted_at": at, "deleted_by": operatorID,
-		"status": "disabled", "auth_version": gorm.Expr("auth_version + 1"),
+		"status": AdminUserDisabled, "auth_version": gorm.Expr("auth_version + 1"),
 	}).Error
 }
 
@@ -207,9 +213,10 @@ func consumeAdminTOTPStep(tx *gorm.DB, account AdminAccount, step int64) error {
 }
 
 // LockActiveAdmin 锁读启用账号及认证字段；调用方须比对会话的 AuthVersion，不得将密码散列或密钥返回 HTTP 或写入审计。
+// status 字面量对应 admin_user.status 词表中的 active，查询不因类型化拆分。
 func (s AccountRepo) LockActiveAdmin(tx *gorm.DB, id uint64) (AdminAccount, error) {
 	var row AdminAccount
 	err := tx.Table("admin_user").Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id=? AND status='active' AND deleted_at IS NULL", id).Take(&row).Error
+		Where("id=? AND status='"+string(AdminUserActive)+"' AND deleted_at IS NULL", id).Take(&row).Error
 	return row, err
 }

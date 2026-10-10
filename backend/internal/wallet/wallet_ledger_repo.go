@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 
+	walletdomain "chargepilot/internal/domain/wallet"
 	"chargepilot/internal/platform/dbutil"
 
 	"gorm.io/gorm"
@@ -24,10 +25,10 @@ var ErrInvalidBalance = errors.New("invalid wallet balance or movement")
 
 // Row 是 wallet_account 的行锁查询结果。
 type Row struct {
-	ID           uint64 // 已锁钱包主键
-	BalanceCents int64  // 当前账面余额，分
-	FrozenCents  int64  // 当前冻结金额，分，不能出账使用
-	Status       string // active 可消费，其他状态拒绝出账
+	ID           uint64                     // 已锁钱包主键
+	BalanceCents int64                      // 当前账面余额，分
+	FrozenCents  int64                      // 当前冻结金额，分，不能出账使用
+	Status       walletdomain.AccountStatus // wallet_account.status：active 可消费，其他状态拒绝出账
 }
 
 // Lock 在调用方事务中以 UPDATE 锁读取 user 的未删除账户，返回行查询结果。
@@ -49,7 +50,7 @@ func Move(tx *gorm.DB, user uint64, w *Row, cents int64, ref, note string) error
 	if cents > 0 && w.BalanceCents > math.MaxInt64-cents {
 		return ErrInvalidBalance
 	}
-	if cents < 0 && w.Status != "active" {
+	if cents < 0 && w.Status != walletdomain.AccountActive {
 		return ErrInactive
 	}
 	if cents < 0 && w.BalanceCents-w.FrozenCents < -cents {
@@ -59,10 +60,12 @@ func Move(tx *gorm.DB, user uint64, w *Row, cents int64, ref, note string) error
 		return nil
 	}
 	w.BalanceCents += cents
-	direction, biz := "in", "refund"
+	// direction、biz 的词表见 walletdomain.TxnDirection 与 walletdomain.TxnBizType；
+	// 写入 map 时以具名类型传值，避免退化为无约束字符串。
+	direction, biz := walletdomain.TxnIn, walletdomain.TxnBizRefund
 	amount := cents
 	if cents < 0 {
-		direction, biz, amount = "out", "pay", -cents
+		direction, biz, amount = walletdomain.TxnOut, walletdomain.TxnBizPay, -cents
 	}
 	if err := tx.Table("wallet_account").Where("id=?", w.ID).Updates(map[string]any{"balance_cents": w.BalanceCents, "version": gorm.Expr("version+1")}).Error; err != nil {
 		return err

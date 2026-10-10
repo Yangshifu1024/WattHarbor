@@ -1,6 +1,8 @@
 package start
 
 import (
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"context"
 
 	"gorm.io/gorm"
@@ -27,12 +29,12 @@ func FindPaidStartAuthorization(ctx context.Context, db *gorm.DB, orderNo string
 		Select(`c.id AS charge_order_id, c.order_no, c.user_id, c.device_id, c.port_no,
 			p.id AS payment_order_id, c.charge_mode, c.charge_quantity`).
 		Joins(`JOIN payment_order AS p ON p.id = c.payment_order_id
-			AND p.biz_type = 'charge' AND p.biz_id = c.id AND p.user_id = c.user_id`).
-		Where(`c.order_no = ? AND c.status = 'paid' AND c.deleted_at IS NULL
-			AND p.status = 'paid' AND p.paid_cents >= p.total_cents
+			AND p.biz_type = ? AND p.biz_id = c.id AND p.user_id = c.user_id AND p.status = ?`, money.PaymentBizCharge, money.PayStatusPaid).
+		Where(`c.order_no = ? AND c.status = ? AND c.deleted_at IS NULL
+			AND p.paid_cents >= p.total_cents
 			AND p.total_cents > 0 AND p.deleted_at IS NULL
 			AND ((c.charge_mode IN (0,4) AND c.charge_quantity BETWEEN 1 AND 4320)
-			OR (c.charge_mode = 1 AND c.charge_quantity BETWEEN 1000 AND 65000))`, orderNo).
+			OR (c.charge_mode = 1 AND c.charge_quantity BETWEEN 1000 AND 65000))`, orderNo, orderdomain.StatusPaid).
 		Take(&row).Error
 	return row, err
 }

@@ -8,6 +8,7 @@ import (
 
 	contract "chargepilot/internal/contracts/gateway"
 	charging "chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/devices"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/ops"
 	"chargepilot/internal/persist"
@@ -100,11 +101,12 @@ func setCapabilities(row *Device) {
 
 // ChangeStatus 核对当前权限和范围后锁定设备，只允许 enabled／disabled。
 // 状态、更新时间和审计同事务，不关闭 TCP 或结束订单。
-func (s ManagementService) ChangeStatus(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id, status string) (Device, error) {
+func (s ManagementService) ChangeStatus(ctx context.Context, audit ops.AuditContext, scope operations.DataScope, id string, status devices.DeviceMetaStatus) (Device, error) {
 	if id == "" || len(id) > 64 {
 		return Device{}, ManagementInputError{"设备编号无效"}
 	}
-	if status != "enabled" && status != "disabled" {
+	// 管理端启停的可写集合是 enabled／disabled，不是该列的数据库合法集合。
+	if !status.ManageWritable() {
 		return Device{}, ManagementInputError{"运营状态只允许启用或禁用"}
 	}
 	if !audit.Actor.HasPermission("device.operate") {
@@ -117,7 +119,7 @@ func (s ManagementService) ChangeStatus(ctx context.Context, audit ops.AuditCont
 			return err
 		}
 		row = locked
-		if row.Status != "enabled" && row.Status != "disabled" {
+		if !row.Status.ManageWritable() {
 			return operations.ErrConflict
 		}
 		if err := row.NormalizeMetadata(); err != nil {

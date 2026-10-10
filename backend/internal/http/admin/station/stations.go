@@ -12,7 +12,8 @@ import (
 
 // stations 按分页、筛选和当前管理员站点范围查询站点，返回列表和权限。
 func (a API) stations(c *gin.Context) {
-	q, ok := admin.ReadAdminPage(c, "active disabled construction")
+	// 白名单是 station.status 的三值词表（AllStationStatuses）。
+	q, ok := admin.ReadAdminPage(c, device.AllStationStatuses)
 	if !ok {
 		return
 	}

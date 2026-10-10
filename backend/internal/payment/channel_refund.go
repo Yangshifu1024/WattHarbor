@@ -23,14 +23,14 @@ type RefundRequest struct {
 
 // RefundResult 是渠道已验证响应，资金用例仍须逐项与请求比对后才能应用。
 type RefundResult struct {
-	RefundNo        string    // 渠道退款号
-	MerchantOrderNo string    // 渠道关联的商户支付号
-	TransactionID   string    // 渠道支付交易号
-	RefundID        string    // 渠道退款唯一编号，执行器要求非空且最多 64 字节
-	Status          string    // SUCCESS、PROCESSING 或确认终态 CLOSED、ABNORMAL
-	TotalCents      int64     // 渠道支付总额，CNY 分
-	RefundCents     int64     // 渠道本次退款额，分
-	SuccessAt       time.Time // SUCCESS 必须有确认时刻，其他状态允许零值
+	RefundNo        string              // 渠道退款号
+	MerchantOrderNo string              // 渠道关联的商户支付号
+	TransactionID   string              // 渠道支付交易号
+	RefundID        string              // 渠道退款唯一编号，执行器要求非空且最多 64 字节
+	Status          ChannelRefundStatus // 渠道响应原值：SUCCESS、PROCESSING 或终态 CLOSED、ABNORMAL；未知取值原样透传，见 ChannelRefundStatus
+	TotalCents      int64               // 渠道支付总额，CNY 分
+	RefundCents     int64               // 渠道本次退款额，分
+	SuccessAt       time.Time           // SUCCESS 必须有确认时刻，其他状态允许零值
 }
 
 // RefundProvider 只操作渠道退款，不决定钱包、支付和业务订单状态。
@@ -52,7 +52,7 @@ func (Simulator) CreateRefund(_ context.Context, r RefundRequest) (RefundResult,
 	if r.RefundNo == "" || r.TransactionID == "" || r.TotalCents <= 0 || r.RefundCents <= 0 || r.RefundCents > r.TotalCents {
 		return RefundResult{}, ErrInvalidPayment
 	}
-	return RefundResult{RefundNo: r.RefundNo, MerchantOrderNo: r.MerchantOrderNo, TransactionID: r.TransactionID, RefundID: "SIMRF" + r.RefundNo, Status: "SUCCESS", TotalCents: r.TotalCents, RefundCents: r.RefundCents, SuccessAt: time.Now().UTC()}, nil
+	return RefundResult{RefundNo: r.RefundNo, MerchantOrderNo: r.MerchantOrderNo, TransactionID: r.TransactionID, RefundID: "SIMRF" + r.RefundNo, Status: ChannelRefundStatusSuccess, TotalCents: r.TotalCents, RefundCents: r.RefundCents, SuccessAt: time.Now().UTC()}, nil
 }
 
 // QueryRefund 按 r.RefundNo 查询官方渠道，返回经字段校验的回执或 SDK 错误。
@@ -83,16 +83,17 @@ func (w *WechatDirect) CreateRefund(ctx context.Context, r RefundRequest) (Refun
 }
 
 // refundResult 将渠道响应转为退款回执，缺编号、CNY 金额或成功时刻时返回 ErrInvalidPayment。
-// 执行器仍须核对金额与交易编号，不能补齐渠道缺失的字段。
+// 执行器仍须核对金额与交易编号，不能补齐渠道缺失的字段。状态是开放集合：
+// 未知取值不在此拒绝，原值交给执行器按未登记状态处理。
 func refundResult(r *refunddomestic.Refund) (RefundResult, error) {
 	if r == nil || r.OutRefundNo == nil || r.OutTradeNo == nil || r.TransactionId == nil || r.RefundId == nil || r.Status == nil || r.Amount == nil || r.Amount.Total == nil || r.Amount.Refund == nil || r.Amount.Currency == nil || *r.Amount.Currency != "CNY" {
 		return RefundResult{}, ErrInvalidPayment
 	}
-	out := RefundResult{RefundNo: *r.OutRefundNo, MerchantOrderNo: *r.OutTradeNo, TransactionID: *r.TransactionId, RefundID: *r.RefundId, Status: string(*r.Status), TotalCents: *r.Amount.Total, RefundCents: *r.Amount.Refund}
+	out := RefundResult{RefundNo: *r.OutRefundNo, MerchantOrderNo: *r.OutTradeNo, TransactionID: *r.TransactionId, RefundID: *r.RefundId, Status: ChannelRefundStatus(*r.Status), TotalCents: *r.Amount.Total, RefundCents: *r.Amount.Refund}
 	if r.SuccessTime != nil {
 		out.SuccessAt = r.SuccessTime.UTC()
 	}
-	if out.Status == "SUCCESS" && out.SuccessAt.IsZero() {
+	if out.Status == ChannelRefundStatusSuccess && out.SuccessAt.IsZero() {
 		return RefundResult{}, ErrInvalidPayment
 	}
 	return out, nil

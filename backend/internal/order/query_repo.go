@@ -1,6 +1,7 @@
 package order
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"gorm.io/gorm"
 )
@@ -20,6 +21,12 @@ func (s QueryRepo) Owned(ctx context.Context, userID uint64, no string) (ChargeO
 // Ongoing 返回 userID 最新 paid/charging 未删除订单，缺失时返回错误，不发起充电或修改端口。
 func (s QueryRepo) Ongoing(ctx context.Context, userID uint64) (ChargeOrderRecord, error) {
 	var row ChargeOrderRecord
-	err := s.DB.WithContext(ctx).Where("user_id=? AND deleted_at IS NULL AND status IN ('paid','charging')", userID).Order("id DESC").Take(&row).Error
+	err := s.DB.WithContext(ctx).Where("user_id=? AND deleted_at IS NULL AND status IN ?", userID, paidOrChargingOrders()).Order("id DESC").Take(&row).Error
 	return row, err
+}
+
+// paidOrChargingOrders 返回用户存在进行中订单的状态集合：已支付未起充与充电中。
+// 集合与 billing 侧判定进行中订单的口径必须一致，否则两个入口会看到不同订单。
+func paidOrChargingOrders() []orderdomain.OrderStatus {
+	return []orderdomain.OrderStatus{orderdomain.StatusPaid, orderdomain.StatusCharging}
 }

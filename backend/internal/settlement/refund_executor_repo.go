@@ -1,6 +1,7 @@
 package settlement
 
 import (
+	"chargepilot/internal/domain/money"
 	"chargepilot/internal/ops"
 	orderstore "chargepilot/internal/order"
 	pay "chargepilot/internal/payment"
@@ -44,7 +45,10 @@ func (e RefundExecutor) Batch(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	var rows []RefundRecord
-	if err := e.DB.WithContext(ctx).Where("execution_policy='automatic' AND biz_type IN ('charge','wallet_recharge') AND status IN ('pending','processing') AND next_attempt_at <= UTC_TIMESTAMP(3) AND deleted_at IS NULL").Order("next_attempt_at,id").Limit(20).Find(&rows).Error; err != nil {
+	// 字面量 'automatic' 对应 refund_record.execution_policy 的自动执行取值，
+	// 属该列词表 money.ExecutionPolicy；与其余条件同处一个 Where 字面量串，
+	// 拆开会改变 SQL 形状，故保留并在此指向类型。
+	if err := e.DB.WithContext(ctx).Where("execution_policy='automatic' AND biz_type IN ? AND status IN ? AND next_attempt_at <= UTC_TIMESTAMP(3) AND deleted_at IS NULL", paymentBizTypes(), unsettledRefundStatuses()).Order("next_attempt_at,id").Limit(20).Find(&rows).Error; err != nil {
 		return 0, err
 	}
 	count := 0
@@ -94,7 +98,7 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	if err != nil {
 		// 只落库脱敏后的诊断信息，绝不落 SDK 响应体或凭据。
 		diagnosticErr := e.DB.WithContext(ctx).Model(&RefundRecord{}).
-			Where("id = ? AND status='processing'", id).
+			Where("id = ? AND status=?", id, money.RefundProcessing).
 			Update("failure_reason", "provider result unknown; query scheduled").Error
 		unknown := fmt.Errorf("refund %s: provider result unknown", r.RefundNo)
 		if diagnosticErr != nil {
@@ -108,8 +112,8 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 // failPermanent 将退款标为终态失败，保存脱敏原因，不再安排重试。
 func (e RefundExecutor) failPermanent(ctx context.Context, id uint64, reason string) error {
 	return e.DB.WithContext(ctx).Model(&RefundRecord{}).
-		Where("id = ? AND status IN ('pending','processing')", id).
-		Updates(map[string]any{"status": "failed", "failure_reason": reason}).Error
+		Where("id = ? AND status IN ?", id, unsettledRefundStatuses()).
+		Updates(map[string]any{"status": money.RefundFailed, "failure_reason": reason}).Error
 }
 
 // claim 按钱包（适用时）→支付→退款加锁，核对用户、业务关联、金额和渠道。
@@ -137,19 +141,19 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&r).Error; err != nil {
 			return err
 		}
-		if r.Status == "success" {
+		if r.Status == money.RefundSuccess {
 			return nil
 		}
-		if r.ExecutionPolicy != "automatic" || (r.BizType != "charge" && r.BizType != "wallet_recharge") || (r.Status != "pending" && r.Status != "processing") {
+		if r.ExecutionPolicy != money.ExecutionAutomatic || (!r.BizType.Valid()) || (!oneOf(r.Status, money.UnsettledRefundStatuses)) {
 			return ErrRefundConflict
 		}
 		if r.NextAttemptAt.After(time.Now().UTC()) {
 			return nil
 		}
-		if p.UserID != r.UserID || p.BizID != r.BizID || p.BizType != r.BizType || p.PayMethod != "wechat" || !p.WechatTransactionID.Valid || p.WechatTransactionID.String == "" || p.PaidCents != p.TotalCents || p.RefundedCents < 0 || r.RefundCents <= 0 || r.RefundCents > p.PaidCents-p.RefundedCents || (p.Status != "paid" && p.Status != "partial_refunded") {
+		if p.UserID != r.UserID || p.BizID != r.BizID || p.BizType != r.BizType || p.PayMethod != "wechat" || !p.WechatTransactionID.Valid || p.WechatTransactionID.String == "" || p.PaidCents != p.TotalCents || p.RefundedCents < 0 || r.RefundCents <= 0 || r.RefundCents > p.PaidCents-p.RefundedCents || (!oneOf(p.Status, money.RefundablePaymentStatuses)) {
 			return ErrRefundConflict
 		}
-		if r.BizType == "charge" {
+		if r.BizType == money.PaymentBizCharge {
 			var prepay struct {
 				ParamsJSON []byte // 预支付渠道参数，核对渠道身份
 			}
@@ -170,7 +174,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 		// 支付锁不会刷新已有快照；在途退款须用锁读查看并发提交的最新预占。
 		if err := tx.Model(&RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("COALESCE(SUM(refund_cents),0)").
-			Where("payment_order_id = ? AND id <> ? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID, r.ID).
+			Where("payment_order_id = ? AND id <> ? AND status IN ? AND deleted_at IS NULL", p.ID, r.ID, unsettledRefundStatuses()).
 			Scan(&reserved).Error; err != nil {
 			return err
 		}
@@ -180,7 +184,7 @@ func (e RefundExecutor) claim(ctx context.Context, id uint64) (RefundRecord, pay
 		request = pay.RefundRequest{RefundNo: r.RefundNo, MerchantOrderNo: p.OrderNo, TransactionID: p.WechatTransactionID.String, TotalCents: p.TotalCents, RefundCents: r.RefundCents}
 		// 下次执行延后 30×2^n 秒，n 最大为 7；领取后崩溃仍沿用保存的重试时间。
 		delay := time.Duration(30*(1<<min(r.RetryCount, uint32(7)))) * time.Second
-		update := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "processing", "retry_count": gorm.Expr("retry_count+1"), "next_attempt_at": time.Now().UTC().Add(delay)})
+		update := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": money.RefundProcessing, "retry_count": gorm.Expr("retry_count+1"), "next_attempt_at": time.Now().UTC().Add(delay)})
 		if update.Error != nil {
 			return update.Error
 		}
@@ -209,14 +213,16 @@ func providerMatchesChannel(providerName, transactionID string) bool {
 // apply 核对渠道回执；PROCESSING 保留原状态，CLOSED/ABNORMAL 在钱包→退款锁内释放预占。
 // SUCCESS 按钱包（适用时）→支付→退款加锁，保存已退款金额、回执、订单和 Outbox。
 // 重放不重复出账，错误整体回滚，事务内不请求渠道。
+// default 不是词表校验，而是资金闸门：未登记的渠道取值无法判定该不该动资金，
+// 故一律不改状态、不出账并返回冲突等待重试，取值原值不丢失。
 func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.RefundRequest, result pay.RefundResult) error {
 	if !receiptMatches(request, result) {
 		return ErrRefundConflict
 	}
 	switch result.Status {
-	case "PROCESSING":
+	case pay.ChannelRefundStatusProcessing:
 		return nil
-	case "CLOSED", "ABNORMAL":
+	case pay.ChannelRefundStatusClosed, pay.ChannelRefundStatusAbnormal:
 		return e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := wallet.LockRefundWallet(tx, walletSettlement(r)); err != nil {
 				return err
@@ -225,18 +231,18 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", r.ID).Take(&current).Error; err != nil {
 				return err
 			}
-			if current.Status == "failed" {
+			if current.Status == money.RefundFailed {
 				return nil
 			}
-			if current.Status != "processing" {
+			if current.Status != money.RefundProcessing {
 				return ErrRefundConflict
 			}
 			if err := wallet.ReleaseFailedRefund(tx, walletSettlement(r)); err != nil {
 				return err
 			}
-			return tx.Model(&RefundRecord{}).Where("id=?", r.ID).Updates(map[string]any{"status": "failed", "wechat_refund_id": result.RefundID, "failure_reason": "provider refund " + result.Status}).Error
+			return tx.Model(&RefundRecord{}).Where("id=?", r.ID).Updates(map[string]any{"status": money.RefundFailed, "wechat_refund_id": result.RefundID, "failure_reason": "provider refund " + string(result.Status)}).Error
 		})
-	case "SUCCESS":
+	case pay.ChannelRefundStatusSuccess:
 		if result.SuccessAt.IsZero() {
 			return ErrRefundConflict
 		}
@@ -261,6 +267,10 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 			RefundRecordID uint64 // 退款主键，一笔一份成功回执
 			WechatRefundID string // 渠道退款单号
 		}
+		// 本函数下方 "success"／"processing" 是 refund_record.status 列的数据库取值
+		// （词表 money.RefundStatus，全小写），判的是 current.Status；
+		// 它们与渠道响应状态 result.Status（pay.ChannelRefundStatus，全大写）不是同一个
+		// 概念也无映射关系，故保留裸字面量并在比字面量处注明，不改写为渠道状态常量。
 		// 钱包锁前的查询可能建立旧快照，成功回执用当前读以识别已入账重放。
 		err := tx.Table("refund_success_receipt").Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_record_id = ?", r.ID).Take(&receipt).Error
 		if err == nil {
@@ -279,9 +289,9 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 			return err
 		}
 		total := p.RefundedCents + result.RefundCents
-		status := "partial_refunded"
+		status := money.PayStatusPartialRefunded
 		if total == p.PaidCents {
-			status = "refunded"
+			status = money.PayStatusRefunded
 		}
 		if err := pay.SetConfirmedRefundInTx(tx, p.ID, total, status); err != nil {
 			return err
@@ -289,20 +299,20 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 		if err := orderstore.SyncOrderPaymentStatus(tx, p.ID); err != nil {
 			return err
 		}
-		if err := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": "success", "wechat_refund_id": result.RefundID, "completed_at": result.SuccessAt.UTC(), "failure_reason": nil}).Error; err != nil {
+		if err := tx.Model(&RefundRecord{}).Where("id = ?", r.ID).Updates(map[string]any{"status": money.RefundSuccess, "wechat_refund_id": result.RefundID, "completed_at": result.SuccessAt.UTC(), "failure_reason": nil}).Error; err != nil {
 			return err
 		}
 		if err := wallet.SettleRefundWallet(tx, walletSettlement(r)); err != nil {
 			return err
 		}
-		if r.BizType == "charge" && r.BizID != 0 {
-			if status == "refunded" {
+		if r.BizType == money.PaymentBizCharge && r.BizID != 0 {
+			if status == money.PayStatusRefunded {
 				if err := orderstore.CompleteChannelRefundInTx(tx, r.BizID, p.ID, true); err != nil {
 					return err
 				}
 			} else {
 				var pending int64
-				if err := tx.Model(&RefundRecord{}).Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", p.ID).Count(&pending).Error; err != nil {
+				if err := tx.Model(&RefundRecord{}).Where("payment_order_id=? AND status IN ? AND deleted_at IS NULL", p.ID, unsettledRefundStatuses()).Count(&pending).Error; err != nil {
 					return err
 				}
 				if pending == 0 {

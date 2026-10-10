@@ -58,7 +58,7 @@ func (o *financeOrderBoundary) Apply(_ context.Context, result settlement.Result
 }
 
 // Defer 拒绝新计算任务重排，本 fixture 只能恢复 fee_delivery。
-func (*financeOrderBoundary) Defer(context.Context, settlement.BillingTask, string, string) error {
+func (*financeOrderBoundary) Defer(context.Context, settlement.BillingTask, settlement.BillingJobStatus, string) error {
 	return errors.New("unexpected new calculation defer")
 }
 

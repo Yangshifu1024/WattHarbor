@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"chargepilot/internal/platform/dbconn"
@@ -164,7 +165,17 @@ func seed(ctx context.Context, userDB, adminDB *sql.DB) {
 		fail(fmt.Errorf("写入示例设备: %w", err))
 	}
 
+	// 造数基准时刻。BASELINE_NOW 可将其固定为指定 RFC3339 时刻，
+	// 使同一份代码重复造数得到完全相同的时间值；用于改造前后的逐字节基线对比。
+	// 格式错误时回退到当前时间，不阻断本地开发造数。
 	now := time.Now().UTC()
+	if raw := strings.TrimSpace(os.Getenv("BASELINE_NOW")); raw != "" {
+		if fixed, err := time.Parse(time.RFC3339, raw); err == nil {
+			now = fixed.UTC()
+		} else {
+			fmt.Fprintf(os.Stderr, "BASELINE_NOW 格式无效，已回退到当前时间：%v\n", err)
+		}
+	}
 	totalUsers, totalOrders := 0, 0
 	ruleID, err := seedStationScheme(ctx, adminDB, stationID)
 	if err != nil {

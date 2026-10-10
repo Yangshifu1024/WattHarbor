@@ -1,6 +1,7 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"chargepilot/internal/persist"
 	"context"
 	"gorm.io/gorm"
@@ -8,28 +9,31 @@ import (
 )
 
 // AvailableCoupon 是支付前可用券的展示资料。
+// DiscountType 来自 coupon.discount_type（DiscountType），读取时不对未知值做替换或降级。
 type AvailableCoupon struct {
-	CouponID       uint64    `json:"coupon_id"`        // 模板主键
-	Name           string    `json:"name"`             // 模板名称
-	GrantID        uint64    `json:"grant_id"`         // 发放主键
-	DiscountType   string    `json:"discount_type"`    // 优惠类型
-	MinChargeCents int64     `json:"min_charge_cents"` // 使用门槛，分
-	ExpiresAt      time.Time `json:"expires_at"`       // 有效截止时刻
+	CouponID       uint64       `json:"coupon_id"`        // 模板主键
+	Name           string       `json:"name"`             // 模板名称
+	GrantID        uint64       `json:"grant_id"`         // 发放主键
+	DiscountType   DiscountType `json:"discount_type"`    // 优惠类型
+	MinChargeCents int64        `json:"min_charge_cents"` // 使用门槛，分
+	ExpiresAt      time.Time    `json:"expires_at"`       // 有效截止时刻
 }
 
 // UserCoupon 是本人券列表记录，到期状态只用于展示，不写回数据库。
+// DiscountType 来自 coupon.discount_type；Status 是 coupon_grant.status 的 GrantStatus，
+// 其中 expired 由内存按到期时间派生展示，两者来自不同表。
 type UserCoupon struct {
-	CouponID           uint64    `json:"coupon_id"`            // 模板主键
-	Name               string    `json:"name"`                 // 模板名称
-	GrantID            uint64    `json:"grant_id"`             // 发放主键
-	DiscountType       string    `json:"discount_type"`        // 优惠类型
-	DiscountValueCents *int64    `json:"discount_value_cents"` // 减免分值，其他优惠类型为空
-	DiscountPercent    *float64  `json:"discount_percent"`     // 应付比例百分数，80 表示八折；其他优惠类型为空
-	MinChargeCents     int64     `json:"min_charge_cents"`     // 使用门槛，分
-	Status             string    `json:"status"`               // used／unused，未用已到期展示 expired
-	ExpiredAt          time.Time `json:"expired_at"`           // 截止兼容字段
-	ExpiresAt          time.Time `json:"expires_at"`           // 截止兼容字段，与 expired_at 相同
-	Usable             bool      `json:"usable"`               // 是否尚未使用且未到期；支付时还须检查使用门槛
+	CouponID           uint64                      `json:"coupon_id"`            // 模板主键
+	Name               string                      `json:"name"`                 // 模板名称
+	GrantID            uint64                      `json:"grant_id"`             // 发放主键
+	DiscountType       DiscountType                `json:"discount_type"`        // 优惠类型
+	DiscountValueCents *int64                      `json:"discount_value_cents"` // 减免分值，其他优惠类型为空
+	DiscountPercent    *float64                    `json:"discount_percent"`     // 应付比例百分数，80 表示八折；其他优惠类型为空
+	MinChargeCents     int64                       `json:"min_charge_cents"`     // 使用门槛，分
+	Status             marketingdomain.GrantStatus `json:"status"`               // used／unused，未用已到期展示 expired
+	ExpiredAt          time.Time                   `json:"expired_at"`           // 截止兼容字段
+	ExpiresAt          time.Time                   `json:"expires_at"`           // 截止兼容字段，与 expired_at 相同
+	Usable             bool                        `json:"usable"`               // 是否尚未使用且未到期；支付时还须检查使用门槛
 }
 
 // CouponPage 保留 count、total 字段，筛选后分页，空页返回数组。
@@ -66,7 +70,7 @@ func (s CouponQueryService) Mine(ctx context.Context, userID uint64, q persist.P
 	if userID == 0 || q.Page < 1 || q.Page > 100000 || q.PageSize < 1 || q.PageSize > 100 {
 		return out, &InputError{"分页或用户编号无效"}
 	}
-	if q.Status != "" && q.Status != "unused" && q.Status != "used" && q.Status != "expired" {
+	if q.Status != "" && q.Status != string(marketingdomain.GrantUnused) && q.Status != string(marketingdomain.GrantUsed) && q.Status != string(marketingdomain.GrantExpired) {
 		return out, &InputError{"优惠券状态无效"}
 	}
 	rows, err := ListUserCoupons(ctx, s.DB, userID)
@@ -80,13 +84,13 @@ func (s CouponQueryService) Mine(ctx context.Context, userID uint64, q persist.P
 	items := []UserCoupon{}
 	for _, row := range rows {
 		status := row.Status
-		if status == "unused" && !row.ExpiresAt.After(now) {
-			status = "expired"
+		if status == marketingdomain.GrantUnused && !row.ExpiresAt.After(now) {
+			status = marketingdomain.GrantExpired
 		}
-		if q.Status != "" && status != q.Status {
+		if q.Status != "" && string(status) != q.Status {
 			continue
 		}
-		usable := status == "unused" && row.ExpiresAt.After(now)
+		usable := status == marketingdomain.GrantUnused && row.ExpiresAt.After(now)
 		if onlyUsable && !usable {
 			continue
 		}

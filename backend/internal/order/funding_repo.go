@@ -1,15 +1,16 @@
 package order
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 // LockInvoiceSourceInTx 在事务中锁定 userID 所属、未删除的 id 订单，返回当前生命周期状态。
 // settlement 以此串行同订单开票并重新核对结算校验；不写状态、不提交事务，不能锁他人订单。
-func LockInvoiceSourceInTx(tx *gorm.DB, id, userID uint64) (string, error) {
+func LockInvoiceSourceInTx(tx *gorm.DB, id, userID uint64) (orderdomain.OrderStatus, error) {
 	var row struct {
-		Status string // 订单当前生命周期状态
+		Status orderdomain.OrderStatus // 订单当前生命周期状态
 	}
 	err := tx.Model(&ChargeOrderRecord{}).Select("status").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND user_id=? AND deleted_at IS NULL", id, userID).Take(&row).Error
 	return row.Status, err
@@ -38,16 +39,16 @@ func SetSettledFeeInTx(tx *gorm.DB, id uint64, electric, service, total int64) e
 // RequestChannelRefundInTx 在事务中仅将 id 的 completed 订单置为 refunding。
 // 本动作表示待渠道退款，不表示已到账；返回数据库错误，不提交调用方事务。
 func RequestChannelRefundInTx(tx *gorm.DB, id uint64) error {
-	return tx.Model(&ChargeOrderRecord{}).Where("id=? AND status='completed'", id).Update("status", "refunding").Error
+	return tx.Model(&ChargeOrderRecord{}).Where("id=? AND status=?", id, orderdomain.StatusCompleted).Update("status", orderdomain.StatusRefunding).Error
 }
 
 // CompleteChannelRefundInTx 在资金回执 tx 中更新 id、paymentID 匹配的 refunding 订单。
 // fully 表示全额已确认退回；部分退回且无在途退款时仅恢复已结束订单为 completed。
 // 错误要求资金、回执及订单一起回滚，不改变不匹配或其他状态的订单。
 func CompleteChannelRefundInTx(tx *gorm.DB, id, paymentID uint64, fully bool) error {
-	query := tx.Model(&ChargeOrderRecord{}).Where("id=? AND payment_order_id=? AND status='refunding'", id, paymentID)
+	query := tx.Model(&ChargeOrderRecord{}).Where("id=? AND payment_order_id=? AND status=?", id, paymentID, orderdomain.StatusRefunding)
 	if fully {
-		return query.Update("status", "refunded").Error
+		return query.Update("status", orderdomain.StatusRefunded).Error
 	}
-	return query.Where("ended_at IS NOT NULL").Update("status", "completed").Error
+	return query.Where("ended_at IS NOT NULL").Update("status", orderdomain.StatusCompleted).Error
 }

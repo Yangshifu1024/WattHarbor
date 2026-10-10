@@ -24,8 +24,8 @@ type CardBindInput struct {
 
 // CardChangeInput 描述人工卡状态及核验依据。
 type CardChangeInput struct {
-	Status string `json:"status"` // active/lost/disabled/unbound；解绑状态不得直接改回其他状态
-	Reason string `json:"reason"` // 人工依据，非空且最多500字
+	Status CardStatus `json:"status"` // online_card.status：active/lost/disabled/unbound；解绑状态不得直接改回其他状态
+	Reason string     `json:"reason"` // 人工依据，非空且最多500字
 }
 
 // CardAdminService 负责绑定、启停及卡审计事务；卡绑定用户而不绑定站点。
@@ -69,8 +69,8 @@ func (s CardAdminService) Bind(ctx context.Context, actor operations.Profile, in
 		}
 		id = card.ID
 		if !created {
-			if card.Status != "unbound" {
-				if card.UserID == in.UserID && card.Status == "active" {
+			if card.Status != CardUnbound {
+				if card.UserID == in.UserID && card.Status == CardActive {
 					return nil
 				}
 				return fmt.Errorf("%w: %s", operations.ErrConflict, ErrCardAlreadyBound)
@@ -90,7 +90,8 @@ func (s CardAdminService) ChangeStatus(ctx context.Context, actor operations.Pro
 	if !actor.HasPermission("online_card.manage") {
 		return operations.ErrForbidden
 	}
-	if (in.Status != "active" && in.Status != "lost" && in.Status != "disabled" && in.Status != "unbound") || !operations.ValidText(in.Reason, 500) {
+	// 运营端可写子集为 online_card.status 四值全开，与 C 端可写子集（lost/unbound）不同。
+	if !in.Status.ManageWritable() || !operations.ValidText(in.Reason, 500) {
 		return ErrCardAdminInput
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -99,12 +100,12 @@ func (s CardAdminService) ChangeStatus(ctx context.Context, actor operations.Pro
 		if err != nil {
 			return err
 		}
-		if row.Status == "unbound" && in.Status != "unbound" {
+		if row.Status == CardUnbound && in.Status != CardUnbound {
 			return operations.ErrConflict
 		}
 		if err := repo.SetOnlineCardStatus(tx, row, in.Status); err != nil {
 			return err
 		}
-		return repo.AppendOnlineCardAudit(tx, OnlineCardAuditInput{CardID: id, ActorID: actor.ID, Action: in.Status, Detail: in.Reason})
+		return repo.AppendOnlineCardAudit(tx, OnlineCardAuditInput{CardID: id, ActorID: actor.ID, Action: string(in.Status), Detail: in.Reason})
 	})
 }

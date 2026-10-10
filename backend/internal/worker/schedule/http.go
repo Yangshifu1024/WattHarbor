@@ -104,7 +104,7 @@ func (a API) trigger(c *gin.Context) {
 		httpapi.Write(c, http.StatusConflict, httpapi.CodeTaskConflict, "任务已暂停", nil)
 		return
 	}
-	completed, err := a.Scheduler.execute(c.Request.Context(), task, input.Force, "admin_api", strings.TrimSpace(input.TriggerReason))
+	completed, err := a.Scheduler.execute(c.Request.Context(), task, input.Force, workerrepo.TaskTriggeredByAdminAPI, strings.TrimSpace(input.TriggerReason))
 	if !completed && err == nil {
 		httpapi.Write(c, http.StatusConflict, httpapi.CodeTaskConflict, "任务正在执行", nil)
 		return

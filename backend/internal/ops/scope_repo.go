@@ -10,9 +10,9 @@ import (
 
 // dataScopeRow 是 admin_data_scope 数据库记录，读取后合并为 operations.DataScope。
 type dataScopeRow struct {
-	AdminUserID uint64 `gorm:"column:admin_user_id"` // 账号 ID
-	ScopeType   string `gorm:"column:scope_type"`    // 范围类型：station 限站点 / vendor 限厂商
-	ScopeID     uint64 `gorm:"column:scope_id"`      // 该类型下的对象 ID
+	AdminUserID uint64               `gorm:"column:admin_user_id"` // 账号 ID
+	ScopeType   operations.ScopeType `gorm:"column:scope_type"`    // 范围类型：station 限站点 / vendor 限厂商
+	ScopeID     uint64               `gorm:"column:scope_id"`      // 该类型下的对象 ID
 }
 
 // TableName 指明 dataScopeRow 映射到 admin_data_scope。

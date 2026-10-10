@@ -28,7 +28,41 @@ type AccountCreateInput struct {
 	Phone       string `json:"phone"`        // 最多32字节的联系号码
 }
 
+// AdminUserStatus 是 admin_user.status 列的后台账号状态，
+// 用于登录准入、最后管理员保护、账号列表筛选与启停写入。
+// 取值与 migrations/central_db/0001_init.sql 中该 ENUM 列一致。
+type AdminUserStatus string
+
+const (
+	// AdminUserActive 表示账号正常，可登录且计入有效管理员集合。
+	AdminUserActive AdminUserStatus = "active"
+	// AdminUserDisabled 表示账号被运营停用，保持停用且不计入有效管理员集合。
+	AdminUserDisabled AdminUserStatus = "disabled"
+	// AdminUserLocked 表示连续登录失败触发的临时锁定，到期后可恢复为 active。
+	AdminUserLocked AdminUserStatus = "locked"
+)
+
+// Known 判断是否属于该列的数据库合法集合（三值）。
+func (s AdminUserStatus) Known() bool {
+	switch s {
+	case AdminUserActive, AdminUserDisabled, AdminUserLocked:
+		return true
+	default:
+		return false
+	}
+}
+
+// AllAdminUserStatuses 是 AdminUserStatus 的全量取值串，供账号列表筛选白名单直接引用。
+// 顺序与上方常量声明一致。
+const AllAdminUserStatuses = "active disabled locked"
+
+// SettableAdminUserStatuses 是运营接口允许显式提交的目标状态集合，与列的合法集合分立：
+// locked 由登录失败流程写入，运营不能直接置为 locked。
+const SettableAdminUserStatuses = "active disabled"
+
 // AccountUpdateInput 用指针区分未提交和显式空值；角色或状态变更须撤销旧会话。
+// Status 保持 *string 的指针语义：nil 表示本次不修改该字段，
+// 改成值类型会把零值空串写进 admin_user.status 这个 ENUM 列。
 type AccountUpdateInput struct {
 	DisplayName *string `json:"display_name"` // 最多128字符，空字符串清空
 	Phone       *string `json:"phone"`        // 最多32字节，空字符串清空
@@ -38,6 +72,7 @@ type AccountUpdateInput struct {
 }
 
 // Validate 检查账号更新字段组合。
+// Status 校验按 SettableAdminUserStatuses 建模：只接受运营可提交的两个目标状态。
 func (in AccountUpdateInput) Validate() error {
 	if in.DisplayName != nil && utf8.RuneCountInString(*in.DisplayName) > 128 {
 		return &ManagementInputError{"显示名称过长"}
@@ -48,7 +83,7 @@ func (in AccountUpdateInput) Validate() error {
 	if in.Email != nil && (len(*in.Email) > 128 || (*in.Email != "" && !strings.Contains(*in.Email, "@"))) {
 		return &ManagementInputError{"邮箱格式无效"}
 	}
-	if in.Status != nil && *in.Status != "active" && *in.Status != "disabled" {
+	if in.Status != nil && *in.Status != string(AdminUserActive) && *in.Status != string(AdminUserDisabled) {
 		return &ManagementInputError{"账号状态无效"}
 	}
 	if in.DisplayName == nil && in.Phone == nil && in.Email == nil && in.RoleID == nil && in.Status == nil {
@@ -80,7 +115,7 @@ type AccountService struct {
 
 // List 核对账号读取权限后分页查询。
 func (s AccountService) List(ctx context.Context, actor operations.Profile, query persist.PageQuery) (persist.Page[AdminUserRow], error) {
-	if query.Page < 1 || query.Page > 1000000 || query.PageSize < 1 || query.PageSize > 100 || utf8.RuneCountInString(query.Keyword) > 128 || (query.Status != "" && query.Status != "active" && query.Status != "disabled" && query.Status != "locked") {
+	if query.Page < 1 || query.Page > 1000000 || query.PageSize < 1 || query.PageSize > 100 || utf8.RuneCountInString(query.Keyword) > 128 || (query.Status != "" && !AdminUserStatus(query.Status).Known()) {
 		return persist.Page[AdminUserRow]{}, &ManagementInputError{"关键词过长或状态无效"}
 	}
 	if _, err := readManagementActor(ctx, s.DB, actor, "admin_user.read"); err != nil {
@@ -147,8 +182,8 @@ func (s AccountService) Update(ctx context.Context, audit AuditContext, id uint6
 			return err
 		}
 		roleChanged := input.RoleID != nil && (before.RoleID == nil || *input.RoleID != *before.RoleID)
-		statusChanged := input.Status != nil && *input.Status != before.Status
-		if id == actor.ID && ((input.Status != nil && *input.Status == "disabled") || roleChanged) {
+		statusChanged := input.Status != nil && AdminUserStatus(*input.Status) != before.Status
+		if id == actor.ID && ((input.Status != nil && AdminUserStatus(*input.Status) == AdminUserDisabled) || roleChanged) {
 			return operations.ErrConflict
 		}
 		if roleChanged {
@@ -156,7 +191,7 @@ func (s AccountService) Update(ctx context.Context, audit AuditContext, id uint6
 				return err
 			}
 		}
-		if before.Status == "active" && before.RoleID != nil && (roleChanged || (input.Status != nil && *input.Status == "disabled")) {
+		if before.Status == AdminUserActive && before.RoleID != nil && (roleChanged || (input.Status != nil && AdminUserStatus(*input.Status) == AdminUserDisabled)) {
 			previousRole, err := (RoleRepo{DB: tx}).LockRole(tx, *before.RoleID)
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
@@ -200,7 +235,7 @@ func (s AccountService) Delete(ctx context.Context, audit AuditContext, id uint6
 			return err
 		}
 		// 只有移除有效客户管理员才减少保护集合；普通账号删除不依赖无关角色的数量。
-		if before.Status == "active" && before.RoleID != nil {
+		if before.Status == AdminUserActive && before.RoleID != nil {
 			role, err := (RoleRepo{DB: tx}).LockRole(tx, *before.RoleID)
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
@@ -238,7 +273,7 @@ func (s AccountService) Unlock(ctx context.Context, audit AuditContext, id uint6
 		if err != nil {
 			return err
 		}
-		if err := store.UnlockManagementUser(tx, id, before.Status != "active"); err != nil {
+		if err := store.UnlockManagementUser(tx, id, before.Status != AdminUserActive); err != nil {
 			return err
 		}
 		return AppendAuditInTx(tx, audit, AuditChange{Action: "unlock", Target: "admin_user", ID: id, Before: before})
@@ -269,7 +304,7 @@ func (s AccountService) ResetPassword(ctx context.Context, audit AuditContext, i
 		if err != nil {
 			return err
 		}
-		if err := store.ResetManagementPassword(tx, id, string(hash), before.Status == "locked"); err != nil {
+		if err := store.ResetManagementPassword(tx, id, string(hash), before.Status == AdminUserLocked); err != nil {
 			return err
 		}
 		return AppendAuditInTx(tx, audit, AuditChange{Action: "reset_password", Target: "admin_user", ID: id, Before: before})

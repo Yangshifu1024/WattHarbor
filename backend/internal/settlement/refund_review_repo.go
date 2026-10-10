@@ -1,6 +1,8 @@
 package settlement
 
 import (
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	orderstore "chargepilot/internal/order"
 	payment "chargepilot/internal/payment"
 	"context"
@@ -90,7 +92,7 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", in.OrderID).Take(&order).Error; err != nil {
 			return err
 		}
-		if !oneOf(order.Status, "completed cancelled failed refunded") || order.Status == "refunded" || pay.UserID != order.UserID || pay.PayMethod != "wechat" || !oneOf(pay.Status, "paid partial_refunded") || in.AmountCents > pay.PaidCents-pay.RefundedCents {
+		if !oneOf(order.Status, orderdomain.AllChannelRefundableStatuses) || order.Status == orderdomain.StatusRefunded || pay.UserID != order.UserID || pay.PayMethod != "wechat" || !oneOf(pay.Status, money.RefundablePaymentStatuses) || in.AmountCents > pay.PaidCents-pay.RefundedCents {
 			return ErrRefundConflict
 		}
 		// 初次读取订单可能已建立 RR 快照。支付行锁串行化同支付的退款写入，
@@ -98,14 +100,14 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 		var pending int64
 		if err := tx.Table("refund_record").Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("COALESCE(SUM(refund_cents),0)").
-			Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", pay.ID).
+			Where("payment_order_id=? AND status IN ? AND deleted_at IS NULL", pay.ID, unsettledRefundStatuses()).
 			Scan(&pending).Error; err != nil {
 			return err
 		}
 		if pending > pay.PaidCents-pay.RefundedCents-in.AmountCents {
 			return ErrRefundConflict
 		}
-		record := RefundRecord{RefundNo: refundNo, PaymentOrderID: pay.ID, UserID: pay.UserID, BizType: "charge", BizID: in.OrderID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: "pending", ExecutionPolicy: "manual_review", NextAttemptAt: time.Now().UTC(), CreatedMonth: dbutil.MonthStart()}
+		record := RefundRecord{RefundNo: refundNo, PaymentOrderID: pay.ID, UserID: pay.UserID, BizType: money.PaymentBizCharge, BizID: in.OrderID, RefundCents: in.AmountCents, Reason: sql.NullString{String: in.Reason, Valid: true}, Status: money.RefundPending, ExecutionPolicy: money.ExecutionManualReview, NextAttemptAt: time.Now().UTC(), CreatedMonth: dbutil.MonthStart()}
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
@@ -147,8 +149,8 @@ func refundSnapshot(r RefundRecord) string {
 // Review 在调用方事务中按支付→退款加锁，仅审核 pending/manual_review 退款。
 // 第一次通过返回 awaiting_second；另一名有权限的人再次通过后，退款改为 automatic 并安排执行。
 // 驳回只需一人，写入拒绝记录；状态、快照或首位审核人权限不符返回 ErrRefundConflict。
-func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo string, in ReviewDecision) (string, uint64, error) {
-	status := "rejected"
+func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo string, in ReviewDecision) (RefundReviewOutcome, uint64, error) {
+	status := RefundOutcomeRejected
 	recordID := uint64(0)
 	var r RefundRecord
 	if err := tx.WithContext(ctx).Where("refund_no=? AND deleted_at IS NULL", refundNo).Take(&r).Error; err != nil {
@@ -165,7 +167,7 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 		return status, recordID, err
 	}
 	recordID = r.ID
-	if r.Status != "pending" || r.ExecutionPolicy != "manual_review" {
+	if r.Status != money.RefundPending || r.ExecutionPolicy != money.ExecutionManualReview {
 		return status, recordID, ErrRefundConflict
 	}
 	var v reviewRow
@@ -178,14 +180,14 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 		if err := tx.Table("refund_rejection").Create(map[string]any{"refund_record_id": r.ID, "actor_id": in.ActorID, "reason": in.Reason}).Error; err != nil {
 			return status, recordID, err
 		}
-		return status, recordID, tx.Table("refund_record").Where("id=?", r.ID).Updates(map[string]any{"status": "rejected", "failure_reason": in.Reason}).Error
+		return status, recordID, tx.Table("refund_record").Where("id=?", r.ID).Updates(map[string]any{"status": money.RefundRejected, "failure_reason": in.Reason}).Error
 	}
 	if pay.PayMethod != "wechat" || pay.UserID != r.UserID || pay.BizID != r.BizID || pay.BizType != r.BizType || r.RefundCents <= 0 || r.RefundCents > pay.PaidCents-pay.RefundedCents {
 		return status, recordID, ErrRefundConflict
 	}
 	snapshot := refundSnapshot(r)
 	if errors.Is(e, gorm.ErrRecordNotFound) {
-		status = "awaiting_second"
+		status = RefundOutcomeAwaitingSecond
 		return status, recordID, tx.Table("refund_review").Create(map[string]any{"refund_record_id": r.ID, "snapshot_json": snapshot, "first_signer": in.ActorID, "first_comment": in.ApproveComment}).Error
 	}
 	var stored any
@@ -201,11 +203,11 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 	if err != nil || first.Role != "customer_finance" || !first.Permitted {
 		return status, recordID, ErrRefundConflict
 	}
-	status = "approved"
+	status = RefundOutcomeApproved
 	if err := tx.Table("refund_review").Where("refund_record_id=?", r.ID).Updates(map[string]any{"second_signer": in.ActorID, "second_comment": in.ApproveComment, "approved_at": time.Now().UTC()}).Error; err != nil {
 		return status, recordID, err
 	}
-	return status, recordID, tx.Table("refund_record").Where("id=?", r.ID).Updates(map[string]any{"execution_policy": "automatic", "next_attempt_at": time.Now().UTC()}).Error
+	return status, recordID, tx.Table("refund_record").Where("id=?", r.ID).Updates(map[string]any{"execution_policy": money.ExecutionAutomatic, "next_attempt_at": time.Now().UTC()}).Error
 }
 
 // Retry 将 automatic 且 pending/processing 的退款立即排队，返回记录 ID 供审计。
@@ -215,18 +217,31 @@ func (s RefundReviewRepo) Retry(ctx context.Context, tx *gorm.DB, refundNo strin
 	if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("refund_no=? AND deleted_at IS NULL", refundNo).Take(&r).Error; err != nil {
 		return 0, err
 	}
-	if r.ExecutionPolicy != "automatic" || (r.Status != "pending" && r.Status != "processing") {
+	if r.ExecutionPolicy != money.ExecutionAutomatic || !oneOf(r.Status, money.UnsettledRefundStatuses) {
 		return 0, ErrRefundConflict
 	}
 	return r.ID, tx.Table("refund_record").Where("id=?", r.ID).Update("next_attempt_at", time.Now().UTC()).Error
 }
 
-// oneOf 检查值是否属于空白分隔的允许集合。
-func oneOf(value string, options string) bool {
+// oneOf 检查值是否属于空白分隔的允许集合；接受任意字符串基础类型，
+// 使订单与支付等各自的状态类型可直接传入而不必转换。
+func oneOf[T ~string](value T, options string) bool {
 	for _, option := range strings.Fields(options) {
-		if value == option {
+		if string(value) == option {
 			return true
 		}
 	}
 	return false
+}
+
+// unsettledRefundStatuses 返回占用可退额度的在途退款状态集合。申请退款、执行重试
+// 与人工复核三处都要用同一集合，避免各处重复罗列字面量导致漏掉某一类在途记录。
+func unsettledRefundStatuses() []money.RefundStatus {
+	return []money.RefundStatus{money.RefundPending, money.RefundProcessing}
+}
+
+// paymentBizTypes 返回退款单关联的全部业务类型，用于扫描需要执行的退款。
+// 取值集合与 PaymentBizType 全量一致，此处显式列出以便 SQL 使用 IN ? 绑定。
+func paymentBizTypes() []money.PaymentBizType {
+	return []money.PaymentBizType{money.PaymentBizCharge, money.PaymentBizWalletRecharge}
 }

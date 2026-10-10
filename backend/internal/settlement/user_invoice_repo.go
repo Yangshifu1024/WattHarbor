@@ -1,6 +1,8 @@
 package settlement
 
 import (
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"chargepilot/internal/persist"
 	"context"
 	"errors"
@@ -13,17 +15,17 @@ import (
 
 // InvoiceApplyOrder 是申请发票时要核对的订单信息。
 type InvoiceApplyOrder struct {
-	ID     uint64 // 充电订单主键
-	UserID uint64 // 订单所属用户 ID
-	Status string // 同一订单生命周期状态，供用例判断是否可申请
+	ID     uint64                  // 充电订单主键
+	UserID uint64                  // 订单所属用户 ID
+	Status orderdomain.OrderStatus // 同一订单生命周期状态，供用例判断是否可申请
 }
 
 // FindInvoiceableOrder 按订单号和用户读取未删除订单；缺失返回 gorm.ErrRecordNotFound。
 func FindInvoiceableOrder(ctx context.Context, db *gorm.DB, orderNo string, userID uint64) (InvoiceApplyOrder, error) {
 	var row struct {
-		ID     uint64 `gorm:"column:id"`      // 同一订单主键
-		UserID uint64 `gorm:"column:user_id"` // 所属用户 ID
-		Status string `gorm:"column:status"`  // 同一订单生命周期状态
+		ID     uint64                  `gorm:"column:id"`      // 同一订单主键
+		UserID uint64                  `gorm:"column:user_id"` // 所属用户 ID
+		Status orderdomain.OrderStatus `gorm:"column:status"`  // 同一订单生命周期状态
 	}
 	err := db.WithContext(ctx).Table("charge_order").Select("id, user_id, status").
 		Where("order_no = ? AND user_id = ? AND deleted_at IS NULL", orderNo, userID).Take(&row).Error
@@ -36,29 +38,29 @@ var ErrInvoiceDuplicate = errors.New("该订单已申请过发票")
 // InvoiceApplyInput 是一次发票申请。TotalCents 由调用方从费用回执读出后传入，
 // 不是客户端提交的值。
 type InvoiceApplyInput struct {
-	InvoiceNo   string // 稳定申请号，同号必须重放相同身份和内容
-	UserID      uint64 // 申请用户，必须为订单所有者
-	OrderID     uint64 // 申请来源充电订单主键
-	TotalCents  int64  // 已确认费用回执的实际开票额，分
-	InvoiceType string // 票种，由用例校验支持范围
-	Title       string // 发票抬头
-	TaxNo       string // 税号，可按票种为空
-	Email       string // 通知邮箱，未填写为空字符串
+	InvoiceNo   string      // 稳定申请号，同号必须重放相同身份和内容
+	UserID      uint64      // 申请用户，必须为订单所有者
+	OrderID     uint64      // 申请来源充电订单主键
+	TotalCents  int64       // 已确认费用回执的实际开票额，分
+	InvoiceType InvoiceType // 票种，由用例校验支持范围（invoice_request.invoice_type）
+	Title       string      // 发票抬头
+	TaxNo       string      // 税号，可按票种为空
+	Email       string      // 通知邮箱，未填写为空字符串
 }
 
 // ApplyInvoice 在调用方事务中登记发票申请，重放须核对申请人、订单、费用和全部内容。
 // 使用 READ COMMITTED 并先由 order.LockInvoiceSourceInTx 锁定本人订单，防止同单不同请求号重复申请。
 func ApplyInvoice(tx *gorm.DB, in InvoiceApplyInput) (uint64, error) {
 	var existing struct {
-		ID          uint64 `gorm:"column:id"`           // 申请主键
-		UserID      uint64 `gorm:"column:user_id"`      // 申请人
-		BizType     string `gorm:"column:biz_type"`     // 业务类型，必须为 charge
-		BizID       uint64 `gorm:"column:biz_id"`       // 订单 ID
-		TotalCents  int64  `gorm:"column:total_cents"`  // 开票额，分
-		InvoiceType string `gorm:"column:invoice_type"` // 票种
-		Title       string `gorm:"column:title"`        // 抬头
-		TaxNo       string `gorm:"column:tax_no"`       // 税号，未填写为空字符串
-		Email       string `gorm:"column:email"`        // 通知邮箱，未填写为空字符串
+		ID          uint64      `gorm:"column:id"`           // 申请主键
+		UserID      uint64      `gorm:"column:user_id"`      // 申请人
+		BizType     string      `gorm:"column:biz_type"`     // 业务类型，必须为 charge
+		BizID       uint64      `gorm:"column:biz_id"`       // 订单 ID
+		TotalCents  int64       `gorm:"column:total_cents"`  // 开票额，分
+		InvoiceType InvoiceType `gorm:"column:invoice_type"` // 票种
+		Title       string      `gorm:"column:title"`        // 抬头
+		TaxNo       string      `gorm:"column:tax_no"`       // 税号，未填写为空字符串
+		Email       string      `gorm:"column:email"`        // 通知邮箱，未填写为空字符串
 	}
 	if found := tx.Table("invoice_request").Where("invoice_no = ?", in.InvoiceNo).Take(&existing); found.Error == nil {
 		if existing.UserID != in.UserID || existing.BizType != "charge" || existing.BizID != in.OrderID || existing.TotalCents != in.TotalCents || existing.InvoiceType != in.InvoiceType || existing.Title != in.Title || existing.TaxNo != in.TaxNo || existing.Email != in.Email {
@@ -70,7 +72,7 @@ func ApplyInvoice(tx *gorm.DB, in InvoiceApplyInput) (uint64, error) {
 	}
 	var duplicate int64
 	if err := tx.Table("invoice_request").
-		Where("biz_type = 'charge' AND biz_id = ? AND deleted_at IS NULL", in.OrderID).Count(&duplicate).Error; err != nil {
+		Where("biz_type = ? AND biz_id = ? AND deleted_at IS NULL", money.PaymentBizCharge, in.OrderID).Count(&duplicate).Error; err != nil {
 		return 0, err
 	}
 	if duplicate > 0 {
@@ -79,7 +81,7 @@ func ApplyInvoice(tx *gorm.DB, in InvoiceApplyInput) (uint64, error) {
 	if err := tx.Table("invoice_request").Create(map[string]any{
 		"invoice_no": in.InvoiceNo, "user_id": in.UserID, "biz_type": "charge", "biz_id": in.OrderID,
 		"total_cents": in.TotalCents, "invoice_type": in.InvoiceType, "title": in.Title,
-		"tax_no": in.TaxNo, "email": in.Email, "review_status": "pending",
+		"tax_no": in.TaxNo, "email": in.Email, "review_status": InvoiceRequestPending,
 	}).Error; err != nil {
 		return 0, err
 	}

@@ -12,17 +12,17 @@ import (
 
 // testAdapter 通知测试连接已进入适配器，然后等待取消。
 type testAdapter struct {
-	name string
+	name protocol.AdapterID
 	// connected 由测试持有的连接通知通道；适配器只发送名称，不关闭通道。
 	connected chan<- string
 }
 
 // Name 返回适配器名称。
-func (a testAdapter) Name() string { return a.name }
+func (a testAdapter) Name() protocol.AdapterID { return a.name }
 
 // ServeConn 发送连接进入通知，等待 context 取消并返回其错误；连接由 Serve 关闭。
 func (a testAdapter) ServeConn(ctx context.Context, conn net.Conn, _ protocol.Sink) error {
-	a.connected <- a.name
+	a.connected <- string(a.name)
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -51,7 +51,7 @@ func TestServeMultipleProtocolPorts(t *testing.T) {
 	connected := make(chan string, 2)
 	result := make(chan error, 1)
 	go func() {
-		result <- Serve(ctx, []protocol.Endpoint{{Address: ports[0], Adapter: testAdapter{"dc589", connected}}, {Address: ports[1], Adapter: testAdapter{"future", connected}}}, testSink{}, 2)
+		result <- Serve(ctx, []protocol.Endpoint{{Address: ports[0], Adapter: testAdapter{protocol.AdapterID("dc589"), connected}}, {Address: ports[1], Adapter: testAdapter{protocol.AdapterID("future"), connected}}}, testSink{}, 2)
 	}()
 	var wg sync.WaitGroup
 	for _, address := range ports {

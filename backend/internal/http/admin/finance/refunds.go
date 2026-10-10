@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"chargepilot/internal/domain/money"
 	"errors"
 	"strings"
 
@@ -54,7 +55,7 @@ func (a API) manualRefund(c *gin.Context) {
 
 // refunds 按状态、退款单号和分页查询退款记录。
 func (a API) refunds(c *gin.Context) {
-	q, ok := admin.ReadAdminPage(c, "pending processing success failed rejected")
+	q, ok := admin.ReadAdminPage(c, money.AllRefundStatuses)
 	if !ok {
 		return
 	}

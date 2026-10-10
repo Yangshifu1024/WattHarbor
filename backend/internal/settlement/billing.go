@@ -20,7 +20,8 @@ type BillingOrderProcessor interface {
 	// Apply 幂等入账，资金、回执和事件同事务；失败不能标记已投递。
 	Apply(context.Context, Result) error
 	// Defer 更新任务状态并保存脱敏后的失败原因。
-	Defer(context.Context, BillingTask, string, string) error
+	// status 是 charge_billing_job.status 的待写取值，取值见 settlement.BillingJobStatus。
+	Defer(context.Context, BillingTask, BillingJobStatus, string) error
 }
 
 // BillingTask 绑定本轮读取的任务代际；人工决策重新排队后，旧执行不得更新新代际状态。
@@ -69,7 +70,7 @@ func (s BillingService) Run(ctx context.Context) (int, error) {
 			result, err = s.Calculator.Calculate(ctx, source)
 			if errors.Is(err, charging.ErrMeterReview) || errors.Is(err, charging.ErrInvalidPricing) {
 				// 入队与转人工必须由任务仓储在同一短事务内核对代际并提交。
-				err = s.Orders.Defer(ctx, task, "manual_review", "实际计量或计费快照需核实")
+				err = s.Orders.Defer(ctx, task, BillingJobManualReview, "实际计量或计费快照需核实")
 				if err == nil || errors.Is(err, ErrStaleBillingTask) {
 					continue
 				}
@@ -92,7 +93,7 @@ func (s BillingService) Run(ctx context.Context) (int, error) {
 		}
 		if err != nil {
 			// 不要把存储错误暴露到运维可见的队列里。
-			deferErr := s.Orders.Defer(ctx, task, "pending", "计费依赖暂不可用，等待重试")
+			deferErr := s.Orders.Defer(ctx, task, BillingJobPending, "计费依赖暂不可用，等待重试")
 			if errors.Is(deferErr, ErrStaleBillingTask) {
 				continue
 			}

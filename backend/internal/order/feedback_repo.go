@@ -1,6 +1,7 @@
 package order
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"chargepilot/internal/persist"
 	"context"
 	"gorm.io/gorm"
@@ -14,10 +15,10 @@ type FeedbackRepo struct {
 
 // FeedbackOrder 是提交反馈的当前订单信息；锁定后核对用户及完成状态。
 type FeedbackOrder struct {
-	ID       uint64 // 订单主键
-	UserID   uint64 // 订单所有人
-	DeviceID string // 设备编号，写入反馈快照
-	Status   string // 当前 completed/refunding/refunded 等生命周期
+	ID       uint64                  // 订单主键
+	UserID   uint64                  // 订单所有人
+	DeviceID string                  // 设备编号，写入反馈快照
+	Status   orderdomain.OrderStatus // 当前订单生命周期状态，反馈准入只允许 completed、refunding、refunded
 }
 
 // ResolveOwnedReference 按 userID 和 orderNo 读取未删除订单编号，返回主键，缺失时返回错误。
@@ -48,15 +49,18 @@ func (FeedbackRepo) HasFeedback(tx *gorm.DB, orderID uint64) (bool, error) {
 }
 
 // Insert 在调用方事务中为 order 的用户与设备保存已校验 in 和 imagesJSON，返回新反馈主键或写入错误。
-// 反馈初始为 pending；请求身份来自已锁订单，不自行提交或产生回复审计。
+// 反馈初始固定写 FeedbackPending（feedback.status 的可写初始值），枚举见 feedback_status.go；
+// 请求身份来自已锁订单，不自行提交或产生回复审计。
 func (FeedbackRepo) Insert(tx *gorm.DB, order FeedbackOrder, in FeedbackInput, imagesJSON string) (uint64, error) {
-	if err := tx.Table("feedback").Create(map[string]any{"user_id": order.UserID, "order_id": order.ID, "device_id": order.DeviceID, "rating": in.Rating, "category": in.Category, "content": in.Content, "images_json": imagesJSON, "status": "pending"}).Error; err != nil {
+	if err := tx.Table("feedback").Create(map[string]any{"user_id": order.UserID, "order_id": order.ID, "device_id": order.DeviceID, "rating": in.Rating, "category": in.Category, "content": in.Content, "images_json": imagesJSON, "status": FeedbackPending}).Error; err != nil {
 		return 0, err
 	}
 	return persist.LastInsertID(tx)
 }
 
 // List 按 status 和已校验 page/pageSize 分页读取未删除反馈，返回记录、总数。
+// status 是 persist.PageQuery.Status 的共用筛选项，调用方未校验白名单；
+// 此处仅作为 feedback.status 的 WHERE 参数原样传递，返回行仍为 map[string]any。
 func (s FeedbackRepo) List(ctx context.Context, status string, page, pageSize int) ([]map[string]any, int64, error) {
 	q := s.DB.WithContext(ctx).Table("feedback").Where("deleted_at IS NULL")
 	if status != "" {
@@ -72,9 +76,11 @@ func (s FeedbackRepo) List(ctx context.Context, status string, page, pageSize in
 }
 
 // LockStatus 在调用方事务中按 id 读取最新记录并加锁未删除反馈，返回状态，缺失时返回错误。
-func (FeedbackRepo) LockStatus(tx *gorm.DB, id uint64) (string, error) {
+// 返回值是 feedback.status 的 FeedbackStatus；读到未知值时原值返回，由回复流转判定拒绝，
+// 不在此处替换或降级。
+func (FeedbackRepo) LockStatus(tx *gorm.DB, id uint64) (FeedbackStatus, error) {
 	var row struct {
-		Status string /* 当前 pending/processed/closed */
+		Status FeedbackStatus /* 当前 pending/processed/closed */
 	}
 	err := tx.Table("feedback").Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", id).Take(&row).Error
 	return row.Status, err

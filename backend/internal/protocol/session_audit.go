@@ -13,7 +13,15 @@ const (
 	TransportMQTT Transport = "mqtt"
 )
 
+// Known 判断是否属于 device_session.protocol 列的数据库合法集合（两值）。
+// 仅用于识别未知值；读取路径遇到未知值时保持原值透传，不得据此拒绝或替换。
+func (t Transport) Known() bool {
+	return t == TransportTCP || t == TransportMQTT
+}
+
 // SessionRecord 保存连接结束时的审计记录。
+// CloseReason 对应 device_session.close_reason 列，该列是 VARCHAR 开放集合，
+// 不提供统一校验；新增取值不得反向拒绝已写入的历史记录。
 type SessionRecord struct {
 	SessionID   string
 	DeviceID    string
@@ -22,7 +30,7 @@ type SessionRecord struct {
 	StartedAt   time.Time
 	LastActive  time.Time
 	EndedAt     time.Time
-	CloseReason string
+	CloseReason CloseReason
 	BytesIn     int64
 	BytesOut    int64
 	FramesIn    int64

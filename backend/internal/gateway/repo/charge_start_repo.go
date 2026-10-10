@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/devices"
+	"chargepilot/internal/domain/money"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -52,8 +54,8 @@ type PaidOrder struct {
 type StartReservation struct {
 	// CommandID 持久命令 UUID。
 	CommandID string `json:"command_id"`
-	// Status 状态。
-	Status string `json:"status"`
+	// Status 命令持久化状态，对应 charge_command.status（含 stopping）。
+	Status devices.ChargeCommandStatus `json:"status"`
 	// OrderNo 业务订单号。
 	OrderNo string `json:"order_no"`
 	// DeviceID 设备业务编号。
@@ -103,8 +105,8 @@ func (s MySQLSink) ReserveStart(ctx context.Context, paid PaidOrder) (StartReser
 		err := tx.Table("device_port AS p").Select("p.id, p.port_code").
 			Joins("JOIN device AS d ON d.device_id = p.device_id").
 			Joins("JOIN vendor AS v ON v.id = d.vendor_id").
-			Where(`p.device_id = ? AND p.port_no = ? AND p.deleted_at IS NULL AND p.status = 'idle' AND p.current_order_id IS NULL
-				AND d.status = 'enabled' AND d.deleted_at IS NULL AND v.status = 'enabled' AND v.deleted_at IS NULL`, paid.DeviceID, paid.PortNo).
+			Where(`p.device_id = ? AND p.port_no = ? AND p.deleted_at IS NULL AND p.status = ? AND p.current_order_id IS NULL
+				AND d.status = 'enabled' AND d.deleted_at IS NULL AND v.status = 'enabled' AND v.deleted_at IS NULL`, paid.DeviceID, paid.PortNo, money.PortIdle).
 			Clauses(clause.Locking{Strength: "UPDATE"}).Take(&port).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrPortUnavailable
@@ -120,7 +122,7 @@ func (s MySQLSink) ReserveStart(ctx context.Context, paid PaidOrder) (StartReser
 		if _, err := rand.Read(stopSession[:]); err != nil {
 			return err
 		}
-		reserved := tx.Model(&devicePortRow{}).Where("id = ? AND status = 'idle' AND current_order_id IS NULL", port.ID).
+		reserved := tx.Model(&devicePortRow{}).Where("id = ? AND status = ? AND current_order_id IS NULL", port.ID, money.PortIdle).
 			Update("current_order_id", paid.OrderNo)
 		if err := requireOne(reserved); err != nil {
 			return ErrPortUnavailable
@@ -128,13 +130,13 @@ func (s MySQLSink) ReserveStart(ctx context.Context, paid PaidOrder) (StartReser
 		command := chargeCommandRow{CommandID: commandID, StopCommandID: stopID,
 			ChargeOrderID: paid.ChargeOrderID, PaymentOrderID: paid.PaymentOrderID, OrderNo: paid.OrderNo,
 			UserID: paid.UserID, DeviceID: paid.DeviceID, PortNo: paid.PortNo, PortCode: port.PortCode,
-			PortID: sql.NullInt64{Int64: int64(port.ID), Valid: true}, OwnsPort: true, Status: "pending",
+			PortID: sql.NullInt64{Int64: int64(port.ID), Valid: true}, OwnsPort: true, Status: devices.CommandPending,
 			SessionID:     sql.NullString{String: hex.EncodeToString(startSession[:]), Valid: true},
 			StopSessionID: sql.NullString{String: hex.EncodeToString(stopSession[:]), Valid: true}, ChargeMode: mode, Quantity: quantity, ConsumerType: paid.ConsumerType, CardNumber: paid.CardNumber, CardBalanceUnits: paid.CardBalanceUnits}
 		if err := tx.Create(&command).Error; err != nil {
 			return fmt.Errorf("insert charge command: %w", err)
 		}
-		reservation = StartReservation{CommandID: commandID, Status: "pending", OrderNo: paid.OrderNo,
+		reservation = StartReservation{CommandID: commandID, Status: devices.CommandPending, OrderNo: paid.OrderNo,
 			DeviceID: paid.DeviceID, PortNo: paid.PortNo,
 			Wire:     protocol.Command{Kind: protocol.CommandStart, SessionID: startSession, Port: paid.PortNo, OrderBCD: orderBCD, Mode: mode, Quantity: quantity, ConsumerType: paid.ConsumerType, CardNumber: paid.CardNumber, CardBalanceUnits: paid.CardBalanceUnits},
 			StopWire: protocol.Command{Kind: protocol.CommandStop, SessionID: stopSession, Port: paid.PortNo}}
@@ -182,13 +184,17 @@ func reservationFromRow(row chargeCommandRow, paid PaidOrder, orderBCD [8]byte, 
 
 // MarkStartSent 将 pending 命令改为 sent，并记录发送时间；返回是否更新成功。
 func (s MySQLSink) MarkStartSent(ctx context.Context, commandID string) (bool, error) {
+	// SQL 内 status = 'pending'／status IN ('sent','acked')／status = 'stopping' 分别是
+	// devices.CommandPending／CommandSent、CommandAcked／CommandStopping（charge_command.status）；
+	// 字面量随 WHERE 语法保留，取值词表只在这一处集中定义。
 	result := s.DB.WithContext(ctx).Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'pending'", commandID).
-		Updates(map[string]any{"status": "sent", "sent_at": gorm.Expr("CURRENT_TIMESTAMP(3)")})
+		Updates(map[string]any{"status": devices.CommandSent, "sent_at": gorm.Expr("CURRENT_TIMESTAMP(3)")})
 	return result.RowsAffected == 1, result.Error
 }
 
 // StartStatus 按订单号读取启动命令状态；不存在时返回查询错误。
-func (s MySQLSink) StartStatus(ctx context.Context, orderNo string) (string, error) {
+// 读取路径遇到词表外取值时原值透传，不替换也不拒绝。
+func (s MySQLSink) StartStatus(ctx context.Context, orderNo string) (devices.ChargeCommandStatus, error) {
 	var row chargeCommandRow
 	if err := s.DB.WithContext(ctx).Select("status").Where("order_no = ?", orderNo).Take(&row).Error; err != nil {
 		return "", err
@@ -205,8 +211,10 @@ func (s MySQLSink) MarkStartStopping(ctx context.Context, commandID string, caus
 	if len(message) > 255 {
 		message = message[:255]
 	}
+	// SQL 内 status IN ('sent','acked')／status = 'stopping' 分别对应
+	// devices.CommandSent、CommandAcked／CommandStopping（charge_command.status）。
 	return s.DB.WithContext(ctx).Model(&chargeCommandRow{}).Where("command_id = ? AND status IN ('sent','acked')", commandID).
-		Updates(map[string]any{"status": "stopping", "error": message}).Error
+		Updates(map[string]any{"status": devices.CommandStopping, "error": message}).Error
 }
 
 // numericOrderBCD 接收 orderID，左补零转换为八字节 BCD；超过十六位返回 ErrOrderConflict。

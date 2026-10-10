@@ -42,7 +42,7 @@ func (a TCPAdapter) finish(ctx context.Context, sink protocol.Sink, audit *Sessi
 	if clock == nil {
 		clock = time.Now
 	}
-	_ = recorder.RecordSession(ctx, audit.Snapshot(deviceID, string(reason), clock()))
+	_ = recorder.RecordSession(ctx, audit.Snapshot(deviceID, reason, clock()))
 }
 
 // TCPAdapter 处理 DC589 设备连接，实现 protocol.Adapter。
@@ -53,7 +53,7 @@ type TCPAdapter struct {
 }
 
 // Name 返回适配器标识 dc589，用于核对厂商配置。
-func (TCPAdapter) Name() string { return "dc589" }
+func (TCPAdapter) Name() protocol.AdapterID { return protocol.AdapterIDDC589 }
 
 // ServeConn 处理设备注册和后续帧；ctx、conn 和 sink 均不能为 nil。
 // 事件保存成功后才确认帧。取消时关闭连接，所有返回路径都等待取消监听协程退出。

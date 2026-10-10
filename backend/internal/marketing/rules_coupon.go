@@ -11,14 +11,15 @@ import (
 var ErrCouponGrant = errors.New("优惠券不可发放")
 
 // CouponTemplate 是发放时需要用到的券模板字段。
+// Status 对应 coupon.status（券模板启停），与 coupon_grant.status 的 GrantStatus 不同词表。
 type CouponTemplate struct {
-	TemplateID   uint64     // 券模板主键
-	Status       string     // 模板状态：active 可发放 / disabled 不可发放
-	TotalQuota   uint32     // 发放总量上限，0 表示不限量
-	PerUserQuota uint32     // 每人发放上限，必须大于 0
-	ValidHours   uint32     // 领取后的有效小时数
-	StartAt      *time.Time // 生效开始时间；nil 表示立即生效
-	EndAt        *time.Time // 生效结束时间；nil 表示长期有效
+	TemplateID   uint64       // 券模板主键
+	Status       CouponStatus // 模板状态：active 可发放 / disabled 不可发放
+	TotalQuota   uint32       // 发放总量上限，0 表示不限量
+	PerUserQuota uint32       // 每人发放上限，必须大于 0
+	ValidHours   uint32       // 领取后的有效小时数
+	StartAt      *time.Time   // 生效开始时间；nil 表示立即生效
+	EndAt        *time.Time   // 生效结束时间；nil 表示长期有效
 }
 
 // CouponUsage 是某个券模板当前的发放量。
@@ -28,8 +29,9 @@ type CouponUsage struct {
 }
 
 // CheckGrantable 检查模板启用、时间有效，且总发放份数和单人份数均未达上限。
+// 只接受 coupon.status 词表内的 CouponActive；其他取值（含未知值）一律不可发放。
 func CheckGrantable(now time.Time, coupon CouponTemplate, usage CouponUsage) error {
-	if coupon.Status != "active" {
+	if coupon.Status != CouponActive {
 		return ErrCouponGrant
 	}
 	if coupon.StartAt != nil && now.Before(*coupon.StartAt) {

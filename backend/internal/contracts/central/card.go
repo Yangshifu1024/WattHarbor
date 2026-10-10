@@ -1,6 +1,7 @@
 package central
 
 import (
+	carddomain "chargepilot/internal/domain/card"
 	"errors"
 	"time"
 )
@@ -20,15 +21,15 @@ type CardSwipeRequest struct {
 
 // CardOperationReply 返回已保存的扣款结果，不代表设备已经启动。
 type CardOperationReply struct {
-	OperationID   string `json:"operation_id"`    // 操作 UUID
-	DeviceID      string `json:"device_id"`       // 设备编号
-	EventID       string `json:"event_id"`        // 刷卡事件
-	ChargeOrderID uint64 `json:"charge_order_id"` // 充电订单 ID
-	CardID        uint64 `json:"card_id"`         // 在线卡 ID
-	Kind          string `json:"kind"`            // start 首购或 extend 续购
-	PriceCents    int64  `json:"price_cents"`     // 本次实付金额，分
-	Minutes       uint16 `json:"minutes"`         // 本次增加时长，分钟
-	Status        string `json:"status"`          // 操作状态：confirming、confirmed 或 failed
+	OperationID   string                         `json:"operation_id"`    // 操作 UUID
+	DeviceID      string                         `json:"device_id"`       // 设备编号
+	EventID       string                         `json:"event_id"`        // 刷卡事件
+	ChargeOrderID uint64                         `json:"charge_order_id"` // 充电订单 ID
+	CardID        uint64                         `json:"card_id"`         // 在线卡 ID
+	Kind          carddomain.CardOperationKind   `json:"kind"`            // start 首购或 extend 续购
+	PriceCents    int64                          `json:"price_cents"`     // 本次实付金额，分
+	Minutes       uint16                         `json:"minutes"`         // 本次增加时长，分钟
+	Status        carddomain.CardOperationStatus `json:"status"`          // 操作状态：confirming、confirmed 或 failed
 }
 
 // CardBalanceReply 返回卡有效性和可用余额；无效卡的余额为零。

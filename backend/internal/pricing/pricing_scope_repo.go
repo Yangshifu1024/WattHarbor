@@ -6,13 +6,13 @@ import (
 
 // PricingTemplateRow 是计费模板查询记录，发布前须核对当前状态和版本。
 type PricingTemplateRow struct {
-	ID          uint64 `gorm:"column:id"`           // 模板主键
-	Name        string `gorm:"column:name"`         // 模板名称
-	Remark      string `gorm:"column:remark"`       // 模板备注
-	SpecJSON    []byte `gorm:"column:spec_json"`    // 计费规则 JSON，对应 charging.Spec；发布前须解析并校验完整方案
-	DisplayJSON []byte `gorm:"column:display_json"` // 用户端展示开关 JSON，对应 charging.Display
-	Status      string `gorm:"column:status"`       // active 可用于发布；disabled 可编辑和查看，不能用于新发布
-	Version     uint32 `gorm:"column:version"`      // 模板版本号，每次修改或停用都 +1，用作 expected_version 乐观锁
+	ID          uint64                `gorm:"column:id"`           // 模板主键
+	Name        string                `gorm:"column:name"`         // 模板名称
+	Remark      string                `gorm:"column:remark"`       // 模板备注
+	SpecJSON    []byte                `gorm:"column:spec_json"`    // 计费规则 JSON，对应 charging.Spec；发布前须解析并校验完整方案
+	DisplayJSON []byte                `gorm:"column:display_json"` // 用户端展示开关 JSON，对应 charging.Display
+	Status      PricingTemplateStatus `gorm:"column:status"`       // active 可用于发布；disabled 可编辑和查看，不能用于新发布
+	Version     uint32                `gorm:"column:version"`      // 模板版本号，每次修改或停用都 +1，用作 expected_version 乐观锁
 }
 
 // RuleScope 按站点和设备构造规则条件，空设备匹配 SQL NULL。

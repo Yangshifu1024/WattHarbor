@@ -17,6 +17,7 @@ import (
 	"chargepilot/internal/domain/charging"
 	"chargepilot/internal/domain/money"
 	"chargepilot/internal/platform/dbconn"
+	"chargepilot/internal/protocol"
 	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -53,9 +54,9 @@ func (f cutoffCardFacts) ResolveScan(ctx context.Context, code string) (money.Sc
 }
 
 // Capabilities 返回 ctx/station/device 的 DC589 能力 测试替身。
-func (f cutoffCardFacts) Capabilities(ctx context.Context, station uint64, device string) (string, charging.Capabilities, error) {
-	cap, err := charging.ProtocolCapabilities("dc589")
-	return "dc589", cap, err
+func (f cutoffCardFacts) Capabilities(ctx context.Context, station uint64, device string) (protocol.AdapterID, charging.Capabilities, error) {
+	cap, err := charging.ProtocolCapabilities(protocol.AdapterIDDC589)
+	return protocol.AdapterIDDC589, cap, err
 }
 
 // ActiveDeviceRule 拒绝续购读取新报价；入参 ctx/station/device 仅标识目标。

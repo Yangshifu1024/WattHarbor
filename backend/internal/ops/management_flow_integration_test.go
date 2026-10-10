@@ -357,9 +357,9 @@ func TestManagementLastCustomerAdminAllRemovalPaths(t *testing.T) {
 	}
 	ids := make([]uint64, 0, 2)
 	for i := range 2 {
-		status := "active"
+		status := AdminUserActive
 		if i == 1 {
-			status = "disabled"
+			status = AdminUserDisabled
 		}
 		account := AdminAccount{Username: "cust-" + uuid.NewString(), PasswordHash: "fixture", RoleID: rootRole, Status: status, AuthVersion: 1}
 		if err := first.Create(&account).Error; err != nil {

@@ -95,7 +95,9 @@ func (a *SessionAudit) UnknownCommands() []int {
 }
 
 // Snapshot 汇总流量及连接起止时间，结束原因由调用方提供。
-func (a *SessionAudit) Snapshot(deviceID, closeReason string, endedAt time.Time) protocol.SessionRecord {
+// closeReason 是 device_session.close_reason 的同一词表（VARCHAR 开放集合），
+// 未知取值原值透传，不在此处校验或替换。
+func (a *SessionAudit) Snapshot(deviceID string, closeReason protocol.CloseReason, endedAt time.Time) protocol.SessionRecord {
 	if a == nil {
 		return protocol.SessionRecord{}
 	}

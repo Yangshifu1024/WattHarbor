@@ -44,7 +44,7 @@ func (s CardAdminRepo) BindOnlineCard(tx *gorm.DB, id, userID uint64) error {
 
 // SetOnlineCardStatus 在事务中为行锁读取的 card 写 status。
 // card 必须带主键，调用方核对状态约束并同事务审计；不结束充电或提交事务。
-func (s CardAdminRepo) SetOnlineCardStatus(tx *gorm.DB, card OnlineCard, status string) error {
+func (s CardAdminRepo) SetOnlineCardStatus(tx *gorm.DB, card OnlineCard, status CardStatus) error {
 	return tx.Model(&card).Update("status", status).Error
 }
 

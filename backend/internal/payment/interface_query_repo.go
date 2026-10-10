@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"time"
 
@@ -24,6 +25,6 @@ func FindDevelopmentPayment(ctx context.Context, db *gorm.DB, orderNo string, us
 	err := db.WithContext(ctx).Table("payment_order p").
 		Select("p.id,p.order_no,p.biz_type,p.total_cents,p.created_at,u.openid").
 		Joins("JOIN user u ON u.id=p.user_id").
-		Where("p.order_no=? AND p.user_id=? AND p.pay_method='wechat'", orderNo, userID).Take(&row).Error
+		Where("p.order_no=? AND p.user_id=? AND p.pay_method=?", orderNo, userID, money.PayMethodWechat).Take(&row).Error
 	return row, err
 }

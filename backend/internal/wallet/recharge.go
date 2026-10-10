@@ -1,6 +1,8 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -12,11 +14,11 @@ import (
 
 // RechargePayment 返回支付编号、金额、状态与截止时间；预支付参数保留渠道 JSON 格式。
 type RechargePayment struct {
-	ID          uint64     // 支付主键，内部契约使用整数
-	OrderNo     string     // 商户单号，预支付重试不改变
-	AmountCents int64      // 支付金额，单位分
-	Status      string     // 当前支付状态，客户端支付成功不能修改此值
-	ExpiresAt   *time.Time // UTC 支付截止，nil 表示没有有效期限
+	ID          uint64              // 支付主键，内部契约使用整数
+	OrderNo     string              // 商户单号，预支付重试不改变
+	AmountCents int64               // 支付金额，单位分
+	Status      money.PaymentStatus // 当前支付状态，客户端支付成功不能修改此值
+	ExpiresAt   *time.Time          // UTC 支付截止，nil 表示没有有效期限
 }
 
 // RechargePayments 是钱包申请需要的支付能力；实现由 cmd 注入，钱包不引用 payment。
@@ -44,13 +46,13 @@ type RechargeInput struct {
 
 // RechargeResult 是可公开的申请回执，支付参数仅在原单仍可付款时出现。
 type RechargeResult struct {
-	RequestID       string          `json:"request_id"`               // 客户端充值请求 UUID
-	PaymentOrderID  uint64          `json:"payment_order_id"`         // 支付编号，保持既有公开整数契约
-	MerchantOrderNo string          `json:"merchant_order_no"`        // 商户单号
-	AmountCents     int64           `json:"amount_cents"`             // 申请金额，分
-	Status          string          `json:"status"`                   // 已持久支付状态
-	CanPay          bool            `json:"can_pay"`                  // 未支付且未过期才为 true
-	PaymentParams   json.RawMessage `json:"payment_params,omitempty"` // 已保存的渠道参数，不含服务密钥
+	RequestID       string              `json:"request_id"`               // 客户端充值请求 UUID
+	PaymentOrderID  uint64              `json:"payment_order_id"`         // 支付编号，保持既有公开整数契约
+	MerchantOrderNo string              `json:"merchant_order_no"`        // 商户单号
+	AmountCents     int64               `json:"amount_cents"`             // 申请金额，分
+	Status          money.PaymentStatus `json:"status"`                   // 已持久支付状态
+	CanPay          bool                `json:"can_pay"`                  // 未支付且未过期才为 true
+	PaymentParams   json.RawMessage     `json:"payment_params,omitempty"` // 已保存的渠道参数，不含服务密钥
 }
 
 // Create 创建用户充值申请与支付记录，锁序为用户→钱包→请求，失败全部回滚。
@@ -79,7 +81,7 @@ func (s RechargeService) Create(ctx context.Context, userID uint64, in RechargeI
 			}
 		} else if err != nil {
 			return err
-		} else if account.Status != "active" {
+		} else if account.Status != walletdomain.AccountActive {
 			return ErrFrozen
 		}
 		prior, err := repo.FindRechargeRequest(tx, in.RequestID)
@@ -106,7 +108,7 @@ func (s RechargeService) Create(ctx context.Context, userID uint64, in RechargeI
 	if err != nil {
 		return RechargeResult{}, err
 	}
-	out := RechargeResult{RequestID: in.RequestID, PaymentOrderID: pay.ID, MerchantOrderNo: pay.OrderNo, AmountCents: pay.AmountCents, Status: pay.Status, CanPay: pay.Status == "initiated" && pay.ExpiresAt != nil && pay.ExpiresAt.After(time.Now())}
+	out := RechargeResult{RequestID: in.RequestID, PaymentOrderID: pay.ID, MerchantOrderNo: pay.OrderNo, AmountCents: pay.AmountCents, Status: pay.Status, CanPay: pay.Status == money.PayStatusInitiated && pay.ExpiresAt != nil && pay.ExpiresAt.After(time.Now())}
 	if out.CanPay {
 		out.PaymentParams, err = s.Payments.Prepare(ctx, pay, openID)
 		if err != nil {

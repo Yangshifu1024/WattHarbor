@@ -7,13 +7,14 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SERVICES = ['user', 'admin', 'central', 'gateway', 'worker', 'migrate', 'devseed', 'simulator-dc589'];
-const TASKS = ['fmt', 'lint', 'test', 'test-integration', 'build', 'build-all', 'check', 'clean', 'dev-up', 'dev-down'];
+const TASKS = ['fmt', 'lint', 'test', 'test-contract', 'test-integration', 'build', 'build-all', 'check', 'clean', 'dev-up', 'dev-down'];
 const HELP = `用法：node tasks.mjs <任务>
 任务：${TASKS.join('、')}
 单服务构建：node tasks.mjs build <服务>（也可设置 SERVICE 环境变量）
 服务：${SERVICES.join('、')}
 真库测试：先设置 TEST_MYSQL_URL 与所需的 TEST_REDIS_URL，再执行 test-integration。
-自动准备开发数据库并测试：node scripts/db/test-integration.mjs
+    自动准备开发数据库并测试：node scripts/db/test-integration.mjs
+    序列化契约测试：node tasks.mjs test-contract（锁定对外 JSON 形状，不需数据库）。
 check 顺序执行 fmt、lint、test；构建产物位于 bin/。
 clean 仅删除 bin/；dev-down 保留容器与数据卷。`;
 
@@ -49,6 +50,7 @@ export function main(argv, {
     fmt: [[executable, ['fmt', './...'], backend]],
     lint: [[executable, ['vet', './...'], backend]],
     test: [[executable, ['test', './...'], backend]],
+    'test-contract': [[executable, ['test', '-tags=contract', '-count=1', './...'], backend]],
     'test-integration': [[executable, ['test', '-tags=integration', '-count=1', './...'], backend]],
     build: [[executable, ['build', '-trimpath', '-o', join(bin, `${selected}${platform === 'win32' ? '.exe' : ''}`), `./cmd/${selected}`], backend]],
     'build-all': [[executable, ['build', '-trimpath', '-o', `${bin}/`, './cmd/...'], backend]],

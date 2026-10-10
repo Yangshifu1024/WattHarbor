@@ -1,6 +1,9 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/devices"
+	"chargepilot/internal/domain/money"
+	"chargepilot/internal/protocol"
 	"context"
 	"encoding/json"
 	"errors"
@@ -42,12 +45,12 @@ type ProvisionDevice struct {
 }
 
 // lockVendorForProvision 在调用方事务内共享锁定厂商，读取状态和适配器。
-func lockVendorForProvision(tx *gorm.DB, vendorID uint64) (status, adapterClass string, err error) {
+func lockVendorForProvision(tx *gorm.DB, vendorID uint64) (status devices.VendorStatus, adapterClass protocol.AdapterID, err error) {
 	var row struct {
-		// Status 状态。
-		Status string
-		// AdapterClass 厂商设备适配器类型。
-		AdapterClass string
+		// Status 厂商启用状态，对应 vendor.status。
+		Status devices.VendorStatus
+		// AdapterClass 厂商设备适配器类型，对应 vendor.adapter_class。
+		AdapterClass protocol.AdapterID
 	}
 	err = tx.Table("vendor").Clauses(clause.Locking{Strength: "SHARE"}).
 		Where("id=? AND deleted_at IS NULL", vendorID).Take(&row).Error
@@ -95,10 +98,11 @@ func findProvisionedDevice(tx *gorm.DB, deviceID string) (provisionedDevice, err
 }
 
 // createProvisionedDevice 接收调用方 tx 与 d，插入启用设备及厂商、站点、端口数、可空型号；返回 SQL 错误，不自行提交。
+// status 写入的是网关库 device.status（三值），与 vendor.status 不是同一列。
 func createProvisionedDevice(tx *gorm.DB, d ProvisionDevice) error {
 	return tx.Table("device").Create(map[string]any{
 		"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID,
-		"port_count": d.PortCount, "model": d.Model, "status": "enabled",
+		"port_count": d.PortCount, "model": d.Model, "status": devices.GatewayDeviceEnabled,
 	}).Error
 }
 
@@ -107,7 +111,7 @@ func createDevicePorts(tx *gorm.DB, deviceID string, portCount uint8) error {
 	for port := 1; port <= int(portCount); port++ {
 		if err := tx.Table("device_port").Create(map[string]any{
 			"device_id": deviceID, "port_no": port,
-			"port_code": fmt.Sprintf("%s-%d", deviceID, port), "status": "idle",
+			"port_code": fmt.Sprintf("%s-%d", deviceID, port), "status": money.PortIdle,
 		}).Error; err != nil {
 			return err
 		}
@@ -141,12 +145,12 @@ type Vendor struct {
 	VendorCode string `json:"vendor_code"`
 	// VendorName 厂商名称，读取时保留可空映射。
 	VendorName string `json:"vendor_name"`
-	// AdapterClass 厂商设备适配器类型。
-	AdapterClass string `json:"adapter_class"`
-	// Protocol 设备或连接的协议名称。
-	Protocol string `json:"protocol"`
-	// Status 状态。
-	Status string `json:"status"`
+	// AdapterClass 厂商设备适配器类型，对应 vendor.adapter_class。
+	AdapterClass protocol.AdapterID `json:"adapter_class"`
+	// Protocol 厂商传输协议，对应 vendor.protocol。
+	Protocol devices.VendorProtocol `json:"protocol"`
+	// Status 厂商启用状态，对应 vendor.status。
+	Status devices.VendorStatus `json:"status"`
 	// EnabledAt 厂商最近启用时刻，可空。
 	EnabledAt *time.Time `json:"enabled_at"`
 	// CreatedAt 记录创建时刻。
@@ -163,9 +167,9 @@ const vendorColumns = "id,vendor_code,vendor_name,adapter_class,protocol,status,
 
 // VendorQuery 是厂商列表的筛选条件。
 type VendorQuery struct {
-	Keyword string   // 普通编码或名称关键词，LIKE 转义由本仓储完成
-	Status  string   // 状态过滤，空表示不限
-	IDs     []uint64 // 指定厂商范围，空表示不限
+	Keyword string               // 普通编码或名称关键词，LIKE 转义由本仓储完成
+	Status  devices.VendorStatus // 状态过滤，零值（空串）表示不限
+	IDs     []uint64             // 指定厂商范围，空表示不限
 	// Page 从一开始的页码。
 	Page int
 	// PageSize 每页记录上限。
@@ -183,7 +187,8 @@ func ListVendors(ctx context.Context, db *gorm.DB, q VendorQuery) ([]Vendor, int
 	if q.Keyword != "" {
 		query = query.Where("(vendor_code LIKE ? ESCAPE '!' OR vendor_name LIKE ? ESCAPE '!')", pattern, pattern)
 	}
-	if q.Status != "" {
+	// 空串是跨进程约定的“不筛选”，与 Known() 无关。
+	if q.Status.Filtered() {
 		query = query.Where("status = ?", q.Status)
 	}
 	if len(q.IDs) > 0 {
@@ -234,10 +239,10 @@ func provisionOne(tx *gorm.DB, d ProvisionDevice) error {
 	if err != nil {
 		return err
 	}
-	if status != "enabled" {
+	if status != devices.VendorEnabled {
 		return ErrProvisionConflict
 	}
-	if adapterClass == "dc589" && d.PortCount > maxDC589Ports {
+	if adapterClass == protocol.AdapterIDDC589 && d.PortCount > maxDC589Ports {
 		return ErrProvisionConflict
 	}
 	raw, _ := json.Marshal(d)
@@ -277,17 +282,17 @@ type VendorInput struct {
 	VendorCode string `json:"vendor_code"`
 	// VendorName 非空厂商名称，HTTP 已去除两侧空白并校验长度与控制字符。
 	VendorName string `json:"vendor_name"`
-	// AdapterClass 厂商设备适配器类型。
-	AdapterClass string `json:"adapter_class"`
+	// AdapterClass 厂商设备适配器类型，对应 vendor.adapter_class。
+	AdapterClass protocol.AdapterID `json:"adapter_class"`
 	// Protocol 厂商传输协议；支持组合由开通规则核对。
-	Protocol string `json:"protocol"`
-	// Status 状态。
-	Status string `json:"status"`
+	Protocol devices.VendorProtocol `json:"protocol"`
+	// Status 厂商启用状态，对应 vendor.status。
+	Status devices.VendorStatus `json:"status"`
 }
 
-// SupportedVendorAdapter 仅支持 dc589/tcp 组合。
-func SupportedVendorAdapter(adapterClass, protocol string) bool {
-	return adapterClass == "dc589" && protocol == "tcp"
+// SupportedVendorAdapter 仅支持 dc589/tcp 组合；未登记适配器返回 false，不是落库准入门槛。
+func SupportedVendorAdapter(adapterClass protocol.AdapterID, transport devices.VendorProtocol) bool {
+	return adapterClass == protocol.AdapterIDDC589 && transport == devices.VendorProtocolTCP
 }
 
 // GetVendor 读取 id 未删除厂商的公开列，返回记录或缺失、SQL／取消错误，不加锁或写入。
@@ -302,7 +307,7 @@ func GetVendor(ctx context.Context, db *gorm.DB, id uint64) (Vendor, error) {
 func CreateVendor(ctx context.Context, db *gorm.DB, in VendorInput) (Vendor, error) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	row := Vendor{VendorCode: in.VendorCode, VendorName: in.VendorName, AdapterClass: in.AdapterClass, Protocol: in.Protocol, Status: in.Status, CreatedAt: now, UpdatedAt: now}
-	if in.Status == "enabled" {
+	if in.Status == devices.VendorEnabled {
 		row.EnabledAt = &now
 	}
 	// 数据库唯一索引限制有效厂商编码，覆盖并发写入。
@@ -336,8 +341,8 @@ func UpdateVendor(ctx context.Context, db *gorm.DB, id uint64, in VendorInput) (
 			}
 		}
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		updates := map[string]any{"vendor_name": in.VendorName, "adapter_class": in.AdapterClass, "protocol": in.Protocol, "status": in.Status, "updated_at": now}
-		if in.Status == "enabled" && row.Status != "enabled" {
+		updates := map[string]any{"vendor_name": in.VendorName, "adapter_class": string(in.AdapterClass), "protocol": in.Protocol, "status": in.Status, "updated_at": now}
+		if in.Status == devices.VendorEnabled && row.Status != devices.VendorEnabled {
 			updates["enabled_at"] = now
 		}
 		updated, err := updateVendor(tx, row.ID, updates)

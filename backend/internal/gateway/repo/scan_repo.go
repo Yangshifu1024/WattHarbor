@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"database/sql"
 	"errors"
@@ -18,7 +19,7 @@ type ScanPort struct {
 	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no"`
 	// Status 状态。
-	Status string `json:"port_status"`
+	Status money.PortStatus `json:"port_status"`
 	// Online 按可见时间窗口判断的在线状态。
 	Online bool `json:"online"`
 	// Available 空闲、无订单占用且在线的可用状态。
@@ -28,7 +29,7 @@ type ScanPort struct {
 // ScanResult 返回扫描到的设备及端口；端口码命中时使用 Port，设备号命中时使用 Ports。
 type ScanResult struct {
 	// Kind 扫描对象种类，port 或 device。
-	Kind string `json:"kind"`
+	Kind money.ScanKind `json:"kind"`
 	// DeviceID 设备业务编号。
 	DeviceID string `json:"device_id"`
 	// StationID 站点编号，保留可空映射。
@@ -52,7 +53,7 @@ func (s MySQLSink) ResolveScan(ctx context.Context, code string) (ScanResult, er
 		Take(&port).Error
 	if err == nil {
 		view := scanPort(port.PortCode, port.DeviceID, port.PortNo, port.Status, port.CurrentOrderID, port.LastSeenAt)
-		return ScanResult{Kind: "port", DeviceID: view.DeviceID, StationID: uint64(port.StationID.Int64), Port: &view}, nil
+		return ScanResult{Kind: money.ScanKindPort, DeviceID: view.DeviceID, StationID: uint64(port.StationID.Int64), Port: &view}, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return ScanResult{}, err
@@ -87,7 +88,7 @@ type scanPortRow struct {
 	// PortCode 端口业务编码。
 	PortCode string `gorm:"column:port_code"`
 	// Status 状态。
-	Status string `gorm:"column:status"`
+	Status money.PortStatus `gorm:"column:status"`
 	// CurrentOrderID 占用端口的订单号，NULL 表示无占用。
 	CurrentOrderID sql.NullString `gorm:"column:current_order_id"`
 	// LastSeenAt 设备最后可见时刻，可空。
@@ -97,8 +98,8 @@ type scanPortRow struct {
 }
 
 // scanPort 允许心跳晚于当前时间最多 1 分钟、早于当前时间最多 2 分钟，并结合端口占用判断是否可用。
-func scanPort(code, deviceID string, number uint8, status string, current sql.NullString, seen sql.NullTime) ScanPort {
+func scanPort(code, deviceID string, number uint8, status money.PortStatus, current sql.NullString, seen sql.NullTime) ScanPort {
 	online := seen.Valid && time.Since(seen.Time) <= 2*time.Minute && time.Since(seen.Time) >= -time.Minute
-	return ScanPort{PortID: code, DeviceID: deviceID, PortNo: number, Status: string(status), Online: online,
-		Available: status == "idle" && !current.Valid && online}
+	return ScanPort{PortID: code, DeviceID: deviceID, PortNo: number, Status: status, Online: online,
+		Available: status == money.PortIdle && !current.Valid && online}
 }

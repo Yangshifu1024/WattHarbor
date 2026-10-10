@@ -2,6 +2,7 @@
 package payment
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"strconv"
 
 	"chargepilot/internal/platform/snowflake"
@@ -16,7 +17,7 @@ import (
 func CheckoutPortAvailable(tx *gorm.DB, port string) error {
 	var count int64
 	err := tx.Table("charge_payment_intent i").Joins("LEFT JOIN charge_order c ON c.id=i.charge_order_id").
-		Where("i.port_code=? AND ((i.status='initiated' AND i.expires_at>UTC_TIMESTAMP(3)) OR (i.status='paid' AND c.status IN ('paid','charging')))", port).Count(&count).Error
+		Where("i.port_code=? AND ((i.status='initiated' AND i.expires_at>UTC_TIMESTAMP(3)) OR (i.status='paid' AND c.status IN ?))", port, paidOrChargingOrderStatuses()).Count(&count).Error
 	if err != nil {
 		return err
 	}
@@ -34,4 +35,10 @@ func NewOrderNumber(tx *gorm.DB) (string, error) {
 		return "", err
 	}
 	return "P" + strconv.FormatUint(id, 10), nil
+}
+
+// paidOrChargingOrderStatuses 返回占用端口的订单状态集合：已支付未起充与充电中。
+// 该集合只用于判断端口是否已有进行中的订单，与订单侧 Ongoing 的口径必须一致。
+func paidOrChargingOrderStatuses() []orderdomain.OrderStatus {
+	return []orderdomain.OrderStatus{orderdomain.StatusPaid, orderdomain.StatusCharging}
 }

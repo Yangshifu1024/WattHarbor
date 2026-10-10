@@ -1,6 +1,8 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"errors"
 	"time"
@@ -16,10 +18,10 @@ type QueryService struct {
 
 // BalanceView 是账户展示值，金额均以分为单位。
 type BalanceView struct {
-	BalanceCents   int64  `json:"balance_cents"`   // 账面余额
-	FrozenCents    int64  `json:"frozen_cents"`    // 退款预占等已冻结金额
-	AvailableCents int64  `json:"available_cents"` // 余额减冻结额，下限为零
-	Status         string `json:"status"`          // active 或 frozen；未开户显示 active
+	BalanceCents   int64                      `json:"balance_cents"`   // 账面余额
+	FrozenCents    int64                      `json:"frozen_cents"`    // 退款预占等已冻结金额
+	AvailableCents int64                      `json:"available_cents"` // 余额减冻结额，下限为零
+	Status         walletdomain.AccountStatus `json:"status"`          // wallet_account.status；未开户显示 active
 }
 
 // Balance 读取 userID 的余额；未开户返回可用的零余额视图。
@@ -27,7 +29,7 @@ type BalanceView struct {
 func (s QueryService) Balance(ctx context.Context, userID uint64) (BalanceView, error) {
 	w, err := s.Repo.FindWalletBalance(ctx, userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return BalanceView{Status: "active"}, nil
+		return BalanceView{Status: walletdomain.AccountActive}, nil
 	}
 	if err != nil {
 		return BalanceView{}, err
@@ -36,7 +38,7 @@ func (s QueryService) Balance(ctx context.Context, userID uint64) (BalanceView, 
 }
 
 // Transactions 按用户、分页与 direction 查询流水；空方向查全部，in、out 分别查收入、支出。
-func (s QueryService) Transactions(ctx context.Context, userID uint64, direction string, page, size int) (persist.Page[map[string]any], error) {
+func (s QueryService) Transactions(ctx context.Context, userID uint64, direction walletdomain.TxnDirection, page, size int) (persist.Page[map[string]any], error) {
 	return s.Repo.ListWalletTxns(ctx, userID, direction, page, size)
 }
 
@@ -49,7 +51,7 @@ func (s QueryService) Recharges(ctx context.Context, userID uint64, page, size i
 	}
 	for i := range out.Items {
 		r := &out.Items[i]
-		r.CanPay = r.Status == "initiated" && r.ExpiredAt != nil && r.ExpiredAt.After(now)
+		r.CanPay = r.Status == money.PayStatusInitiated && r.ExpiredAt != nil && r.ExpiredAt.After(now)
 	}
 	return out, nil
 }
@@ -66,7 +68,7 @@ type RefundView struct {
 	RequestID     string                `json:"request_id"`       // 用户申请 UUID
 	AmountCents   int64                 `json:"amount_cents"`     // 申请金额，分
 	RefundedCents int64                 `json:"refunded_cents"`   // 已确认成功的金额，分
-	Status        string                `json:"status"`           // pending、processing、needs_review、success、manual_review 或 rejected
+	Status        RefundViewStatus      `json:"status"`           // pending、processing、needs_review、success、manual_review 或 rejected，见 RefundViewStatus
 	Reason        *string               `json:"reason"`           // 申请依据，可空
 	CreatedAt     time.Time             `json:"created_at"`       // 申请创建时间
 	RefundOrders  []WalletRefundPartRow `json:"refund_orders"`    // 各来源退款及渠道结果，空时为数组
@@ -102,26 +104,29 @@ func (s QueryService) Refunds(ctx context.Context, userID uint64, page, size int
 // refundView 组合退款分笔、审核与冻结记录的展示结果。
 // 退款成功以渠道确认金额为准；未审核且有关联冻结时显示待人工审核，明确拒绝后才显示 rejected。
 func refundView(row WalletRefundRequestRow, parts []WalletRefundPartRow, review *RefundReviewView, linked int64) RefundView {
-	out := RefundView{RequestID: row.RequestID, AmountCents: row.AmountCents, Reason: row.Reason, CreatedAt: row.CreatedAt, Status: "pending", RefundOrders: parts, Review: review}
+	out := RefundView{RequestID: row.RequestID, AmountCents: row.AmountCents, Reason: row.Reason, CreatedAt: row.CreatedAt, Status: RefundViewPending, RefundOrders: parts, Review: review}
 	for _, part := range parts {
 		switch part.Status {
-		case "success":
+		case money.RefundSuccess:
 			out.RefundedCents += part.RefundCents
-		case "failed", "needs_review":
-			out.Status = "needs_review"
-		case "processing":
-			if out.Status != "needs_review" {
-				out.Status = "processing"
+		// 保留裸字面量：needs_review 不是 money.RefundStatus 的取值，作为 switch 输入永不命中，
+		// 属 docs/status-enum-roadmap.md 第 10 节独立缺陷 1，本轮只做类型化不顺手修正；
+		// 但 needs_review 作为输出值仍有效，由 query_test.go 覆盖。
+		case money.RefundFailed, "needs_review":
+			out.Status = RefundViewNeedsReview
+		case money.RefundProcessing:
+			if out.Status != RefundViewNeedsReview {
+				out.Status = RefundViewProcessing
 			}
 		}
 	}
 	if out.RefundedCents == row.AmountCents {
-		out.Status = "success"
+		out.Status = RefundViewSuccess
 	}
 	if linked > 0 && review == nil {
-		out.Status = "manual_review"
+		out.Status = RefundViewManualReview
 	} else if review != nil && !review.Approved {
-		out.Status = "rejected"
+		out.Status = RefundViewRejected
 	}
 	return out
 }

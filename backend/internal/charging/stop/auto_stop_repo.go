@@ -1,6 +1,7 @@
 package stop
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"time"
 
@@ -30,7 +31,7 @@ func ListChargingOrdersAfter(ctx context.Context, db *gorm.DB, afterID uint64) (
 		Select("c.id,c.order_no,c.user_id,c.device_id,c.port_no,c.started_at,p.pricing_snapshot,b.cutoff_at").
 		Joins("LEFT JOIN charge_order_pricing p ON p.charge_order_id=c.id").
 		Joins("LEFT JOIN charge_billing_cutoff b ON b.charge_order_id=c.id").
-		Where("c.status='charging' AND c.started_at IS NOT NULL AND c.deleted_at IS NULL AND c.id>?", afterID).
+		Where("c.status=? AND c.started_at IS NOT NULL AND c.deleted_at IS NULL AND c.id>?", orderdomain.StatusCharging, afterID).
 		Order("c.id").Limit(autoStopBatchSize).Find(&rows).Error
 	return rows, err
 }

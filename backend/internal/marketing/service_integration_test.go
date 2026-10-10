@@ -161,7 +161,7 @@ func TestActivitySharedTemplateSerializesDifferentRules(t *testing.T) {
 	coupon := insertServiceCoupon(t, setup, tag, 0)
 	ids := []uint64{testfixture.NewID(), testfixture.NewID() + 1}
 	now := time.Now().UTC()
-	for i, trigger := range []string{TriggerFirstRecharge, TriggerHoliday} {
+	for i, trigger := range []TriggerType{TriggerFirstRecharge, TriggerHoliday} {
 		if err := setup.Table("coupon_activity_rule").Create(map[string]any{"id": ids[i], "name": tag, "trigger_type": trigger, "coupon_id": coupon, "max_grants": 1, "per_user_limit": 2, "status": "active", "start_at": now.Add(-time.Hour), "end_at": now.Add(time.Hour)}).Error; err != nil {
 			t.Fatal(err)
 		}

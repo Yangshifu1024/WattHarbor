@@ -1,6 +1,8 @@
 package wallet
 
 import (
+	identitydomain "chargepilot/internal/domain/identity"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"time"
 
@@ -20,17 +22,17 @@ type WalletRiskRequest struct {
 
 // WalletRiskWallet 是 wallet_account 一行的最小查询结果，用于定位钱包并恢复其状态。
 type WalletRiskWallet struct {
-	ID     uint64 // 钱包主键
-	UserID uint64 // 钱包所属用户
-	Status string // 钱包状态，如 active / frozen
+	ID     uint64                     // 钱包主键
+	UserID uint64                     // 钱包所属用户
+	Status walletdomain.AccountStatus // wallet_account.status，如 active / frozen
 }
 
 // WalletRiskFreeze 是关联到本次申请的冻结记录。
 type WalletRiskFreeze struct {
-	ID          uint64 // 冻结记录主键，解冻时按它更新 risk_freeze_log
-	UserID      uint64 // 被冻结用户，必须与风控请求的申请人对得上
-	Status      string // 冻结状态，解冻要求 frozen
-	TriggerRule string // 触发规则，只有 wallet_refund_frequency 走人工审核
+	ID          uint64                    // 冻结记录主键，解冻时按它更新 risk_freeze_log
+	UserID      uint64                    // 被冻结用户，必须与风控请求的申请人对得上
+	Status      walletdomain.FreezeStatus // risk_freeze_log.status：记录本身的阶段，解冻要求 frozen
+	TriggerRule string                    // 触发规则，只有 wallet_refund_frequency 走人工审核
 }
 
 // WalletRiskPriorReview 是一段已存在的审核或解冻结论。ResponseJSON 是首次返回体。
@@ -166,7 +168,7 @@ func (s RiskRepo) LockFreeze(tx *gorm.DB, requestID string) (WalletRiskFreeze, e
 // Unfreeze 在调用方事务中将 freezeID 置为 unfrozen 并记 at UTC 解冻时刻；返回更新错误，与钱包状态、首次回执及审计一并提交，不释放渠道退款预占。
 func (s RiskRepo) Unfreeze(tx *gorm.DB, freezeID uint64, at time.Time) error {
 	return tx.Table("risk_freeze_log").Where("id=?", freezeID).
-		Updates(map[string]any{"status": "unfrozen", "unfreeze_at": at}).Error
+		Updates(map[string]any{"status": walletdomain.FreezeUnfrozen, "unfreeze_at": at}).Error
 }
 
 // CountActiveFreezes 在已锁钱包的事务中当前读 userID 仍为 frozen 的记录数及读取错误。
@@ -175,14 +177,16 @@ func (s RiskRepo) CountActiveFreezes(tx *gorm.DB, userID uint64) (int64, error) 
 	var rows []struct {
 		ID uint64 // 当前仍生效的冻结记录 ID
 	}
-	err := tx.Table("risk_freeze_log").Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id=? AND status='frozen'", userID).Find(&rows).Error
+	err := tx.Table("risk_freeze_log").Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id=? AND status=?", userID, walletdomain.FreezeFrozen).Find(&rows).Error
 	return int64(len(rows)), err
 }
 
 // UserStatus 读取未删除用户的状态；用户未启用时不能恢复钱包使用。
-func (s RiskRepo) UserStatus(tx *gorm.DB, userID uint64) (string, error) {
+// 读的是 user.status，与 wallet_account.status 取值串相同但分属两列，
+// 词表见 identitydomain.UserStatus，不得与 WalletRiskWallet.Status 互赋。
+func (s RiskRepo) UserStatus(tx *gorm.DB, userID uint64) (identitydomain.UserStatus, error) {
 	var row struct {
-		Status string // 用户当前状态，只有 active 才可恢复钱包
+		Status identitydomain.UserStatus `gorm:"column:status"` // user.status，只有 active 才可恢复钱包
 	}
 	err := tx.Table("user").Where("id=? AND deleted_at IS NULL", userID).Take(&row).Error
 	return row.Status, err
@@ -191,7 +195,7 @@ func (s RiskRepo) UserStatus(tx *gorm.DB, userID uint64) (string, error) {
 // ActivateWallet 在调用方事务中将 walletID 置为 active 并增加一次版本号；调用方已核对用户及剩余冻结，不改变资金金额（分）。
 func (s RiskRepo) ActivateWallet(tx *gorm.DB, walletID uint64) error {
 	return tx.Table("wallet_account").Where("id=?", walletID).
-		Updates(map[string]any{"status": "active", "version": gorm.Expr("version+1")}).Error
+		Updates(map[string]any{"status": walletdomain.AccountActive, "version": gorm.Expr("version+1")}).Error
 }
 
 // InsertRiskRelease 保存首次解冻人、依据与回执，与冻结、钱包状态及审计同事务提交。

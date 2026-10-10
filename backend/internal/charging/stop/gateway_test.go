@@ -131,7 +131,7 @@ func TestEvidenceRejectsPartialOrInvalidPages(t *testing.T) {
 func TestRequestStopUsesOrderIdentityAndReturnsGatewayError(t *testing.T) {
 	want := errors.New("gateway unavailable")
 	stopper := AutoStopper{Gateway: fakeGateway{stop: func(r gatewaycontract.StopRequest) (gatewaycontract.StopReply, error) {
-		if r.OrderNo != "C-1" || r.UserID != 9007199254740993 || r.Source != "auto" {
+		if r.OrderNo != "C-1" || r.UserID != 9007199254740993 || r.Source != gatewaycontract.StopSourceAuto {
 			t.Fatalf("request=%+v", r)
 		}
 		return gatewaycontract.StopReply{}, want

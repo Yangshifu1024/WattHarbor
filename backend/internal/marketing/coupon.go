@@ -2,6 +2,7 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/identity"
 	"chargepilot/internal/ops"
@@ -21,10 +22,12 @@ type InputError struct {
 func (e *InputError) Error() string { return e.Message }
 
 // Coupon 是券模板参数和查询结果，金额、折扣、免费时长三种优惠互斥。
+// DiscountType 与 Status 对应 coupon 表的 discount_type 与 status 列；
+// 与活动的 TriggerType、ActivityStatus 不同表，不得互换。
 type Coupon struct {
 	ID                 uint64           `json:"id"`                   // 券主键，创建时必须为0
 	Name               string           `json:"name"`                 // 非空名称，最多128字
-	DiscountType       string           `json:"discount_type"`        // amount、percentage 或 time_free
+	DiscountType       DiscountType     `json:"discount_type"`        // amount、percentage 或 time_free
 	DiscountValueCents *int64           `json:"discount_value_cents"` // 满减分值，其他优惠类型为空
 	DiscountPercent    *decimal.Decimal `json:"discount_percent"`     // 应付比例百分数，80 表示八折；最多两位小数，严格在 0 与 100 之间
 	FreeMinutes        *uint32          `json:"free_minutes"`         // 免费分钟，1–1440，其他优惠类型为空
@@ -32,15 +35,15 @@ type Coupon struct {
 	ValidHours         uint32           `json:"valid_hours"`          // 领取后有效小时，1–87600
 	TotalQuota         uint32           `json:"total_quota"`          // 模板总量，0 表示不限量
 	PerUserQuota       uint32           `json:"per_user_quota"`       // 人工发放单人上限，必须大于0
-	Status             string           `json:"status"`               // active 或 disabled；创建强制 active
+	Status             CouponStatus     `json:"status"`               // active 或 disabled；创建强制 active
 	StartAt            *time.Time       `json:"start_at"`             // 可选开始时刻
 	EndAt              *time.Time       `json:"end_at"`               // 可选结束时刻；同时设置开始时间时，须晚于开始
 }
 
 // CouponUpdate 只允许修改名称和状态，不改变优惠和发放上限。
 type CouponUpdate struct {
-	Name   string `json:"name"`   // 模板名称，非空最多128字
-	Status string `json:"status"` // active 或 disabled
+	Name   string       `json:"name"`   // 模板名称，非空最多128字
+	Status CouponStatus `json:"status"` // active 或 disabled
 }
 
 // GrantInput 保存人工发放的用户和请求号。
@@ -75,7 +78,7 @@ func (s CouponService) Quote(ctx context.Context, userID, grantID uint64, totalC
 	if err != nil {
 		return 0, err
 	}
-	if grant.Status != "unused" || !grant.ExpiresAt.After(time.Now().UTC()) {
+	if grant.Status != marketingdomain.GrantUnused || !grant.ExpiresAt.After(time.Now().UTC()) {
 		return 0, ErrCouponExhausted
 	}
 	return discountFor(grant, totalCents)
@@ -91,7 +94,7 @@ func (s CouponService) RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) 
 	if err != nil {
 		return err
 	}
-	if grant.Status == "used" {
+	if grant.Status == marketingdomain.GrantUsed {
 		if grant.UsedPaymentOrderID == nil || *grant.UsedPaymentOrderID != ref.PaymentOrder {
 			return ErrCouponExhausted
 		}
@@ -104,7 +107,7 @@ func (s CouponService) RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) 
 		}
 		return nil
 	}
-	if grant.Status != "unused" || !grant.ExpiresAt.After(time.Now().UTC()) {
+	if grant.Status != marketingdomain.GrantUnused || !grant.ExpiresAt.After(time.Now().UTC()) {
 		return ErrCouponExhausted
 	}
 	discount, err := discountFor(grant, ref.TotalCents)
@@ -118,13 +121,14 @@ func (s CouponService) RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) 
 }
 
 // validDiscount 检查金额、折扣和免费时长三选一，且各项满足数值限制。
+// 取值判定按 coupon.discount_type 的三值词表（status.go 的 DiscountType）。
 func validDiscount(in Coupon) bool {
 	switch in.DiscountType {
-	case "amount":
+	case DiscountAmount:
 		return in.DiscountValueCents != nil && *in.DiscountValueCents > 0 && in.DiscountPercent == nil && in.FreeMinutes == nil
-	case "percentage":
+	case DiscountPercentage:
 		return in.DiscountPercent != nil && in.DiscountPercent.GreaterThan(decimal.Zero) && in.DiscountPercent.LessThan(decimal.NewFromInt(100)) && in.DiscountPercent.Equal(in.DiscountPercent.Round(2)) && in.DiscountValueCents == nil && in.FreeMinutes == nil
-	case "time_free":
+	case DiscountTimeFree:
 		return in.FreeMinutes != nil && *in.FreeMinutes > 0 && *in.FreeMinutes <= 1440 && in.DiscountPercent == nil && in.DiscountValueCents == nil
 	}
 	return false
@@ -158,7 +162,7 @@ func (s CouponService) Create(ctx context.Context, audit ops.AuditContext, in Co
 	if !validDiscount(in) {
 		return Coupon{}, &InputError{"优惠参数无效：满减分值须大于 0，折扣为 0–100 之间，免费时长为 1–1440 分钟"}
 	}
-	in.Status = "active"
+	in.Status = CouponActive
 	row := AdminCouponRow(in)
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := (AdminCouponRepo{DB: tx}).CreateCoupon(ctx, &row); err != nil {
@@ -174,7 +178,7 @@ func (s CouponService) Update(ctx context.Context, audit ops.AuditContext, id ui
 	if !audit.Actor.HasPermission("coupon.update") {
 		return in, operations.ErrForbidden
 	}
-	if id == 0 || !operations.ValidText(in.Name, 128) || (in.Status != "active" && in.Status != "disabled") {
+	if id == 0 || !operations.ValidText(in.Name, 128) || !in.Status.Known() {
 		return in, &InputError{"名称或状态无效"}
 	}
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

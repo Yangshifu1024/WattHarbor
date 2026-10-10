@@ -19,8 +19,8 @@ type FaultDispatch struct {
 
 // FaultResolution 保存处理人提交的目标状态和修复说明。
 type FaultResolution struct {
-	Status string  `json:"status"` // fixed 或 closed，不允许跳级
-	Note   *string `json:"note"`   // 可空备注；fixed 必须有非空说明，最多2000字
+	Status FaultStatus `json:"status"` // fixed 或 closed，不允许跳级
+	Note   *string     `json:"note"`   // 可空备注；fixed 必须有非空说明，最多2000字
 }
 
 // List 核对 fault.read 权限和当前范围后分页读取报告。
@@ -29,14 +29,14 @@ func (s FaultService) List(ctx context.Context, actor operations.Profile, q pers
 	if err := requireFaultPermission(actor, "fault.read"); err != nil {
 		return out, err
 	}
-	if !validFaultPage(q) || (q.Status != "" && q.Status != FaultOpen && q.Status != FaultDispatched && q.Status != FaultFixed && q.Status != FaultClosed) {
+	if !validFaultPage(q) || (q.Status != "" && !FaultStatus(q.Status).Valid()) {
 		return out, &FaultInputError{"分页或报修状态无效"}
 	}
 	scope, err := ops.LoadDataScope(ctx, s.DB, actor)
 	if err != nil {
 		return out, err
 	}
-	out.Items, out.Total, err = (FaultRepo{DB: s.DB}).ListReports(ctx, scope, q.Status, q.Page, q.PageSize)
+	out.Items, out.Total, err = (FaultRepo{DB: s.DB}).ListReports(ctx, scope, FaultStatus(q.Status), q.Page, q.PageSize)
 	return out, err
 }
 
@@ -124,9 +124,10 @@ func (s FaultService) Dispatch(ctx context.Context, audit ops.AuditContext, id u
 		if row.AssignedTo != nil && *row.AssignedTo == in.AssignedTo {
 			return nil
 		}
-		event := "dispatched"
+		// dispatched／reassigned 是后台处理写入的两值，均在 BackgroundWritable 集合内。
+		event := FaultEventDispatched
 		if row.AssignedTo != nil {
-			event = "reassigned"
+			event = FaultEventReassigned
 		}
 		if err := repo.UpdateReport(tx, id, map[string]any{"status": FaultDispatched, "assigned_to": in.AssignedTo}); err != nil {
 			return err
@@ -134,7 +135,7 @@ func (s FaultService) Dispatch(ctx context.Context, audit ops.AuditContext, id u
 		if err := repo.AppendFaultEvent(tx, FaultEventInput{ReportID: id, ActorID: audit.Actor.ID, EventType: event, FromStatus: row.Status, ToStatus: FaultDispatched, AssignedTo: in.AssignedTo, Note: in.Note, UserVisible: true}); err != nil {
 			return err
 		}
-		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: event, Target: "device_fault_report", ID: id, Before: row, After: in})
+		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: string(event), Target: "device_fault_report", ID: id, Before: row, After: in})
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
@@ -172,9 +173,11 @@ func (s FaultService) Resolve(ctx context.Context, audit ops.AuditContext, id ui
 		if err := repo.UpdateReport(tx, id, map[string]any{"status": in.Status, "resolved_at": time.Now().UTC()}); err != nil {
 			return err
 		}
-		if err := repo.AppendFaultEvent(tx, FaultEventInput{ReportID: id, ActorID: audit.Actor.ID, EventType: in.Status, FromStatus: row.Status, ToStatus: in.Status, AssignedTo: audit.Actor.ID, Note: in.Note, UserVisible: true}); err != nil {
+		// 既有语义：此处写入的 event_type 取自报修单状态（fixed／closed），
+		// 而非单独的流转事件词表；两字面量恰好同值，不在本批次改写其来源。
+		if err := repo.AppendFaultEvent(tx, FaultEventInput{ReportID: id, ActorID: audit.Actor.ID, EventType: FaultEventType(in.Status), FromStatus: row.Status, ToStatus: in.Status, AssignedTo: audit.Actor.ID, Note: in.Note, UserVisible: true}); err != nil {
 			return err
 		}
-		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: in.Status, Target: "device_fault_report", ID: id, Before: row, After: in})
+		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: string(in.Status), Target: "device_fault_report", ID: id, Before: row, After: in})
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }

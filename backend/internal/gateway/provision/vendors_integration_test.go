@@ -16,6 +16,7 @@ import (
 	"time"
 
 	contract "chargepilot/internal/contracts/gateway"
+	devicesdomain "chargepilot/internal/domain/devices"
 	gatewayrepo "chargepilot/internal/gateway/repo"
 	client "chargepilot/internal/integration/gateway"
 	"chargepilot/internal/platform/serviceclient"
@@ -72,7 +73,7 @@ func TestVendorOperationsKeepConstraintsAndRollback(t *testing.T) {
 	if err != nil || enabled.EnabledAt == nil || !enabled.EnabledAt.Equal(enabled.UpdatedAt) || !enabled.CreatedAt.Equal(created.CreatedAt) {
 		t.Fatalf("enable reply=%+v err=%v", enabled, err)
 	}
-	for _, status := range []string{"enabled", "disabled"} {
+	for _, status := range []devicesdomain.VendorStatus{"enabled", "disabled"} {
 		in.Status = status
 		row, err := gateway.UpdateVendor(ctx, created.ID, in, "vendor-state")
 		if err != nil || row.Status != status || row.EnabledAt == nil || !row.EnabledAt.Equal(*enabled.EnabledAt) || !row.CreatedAt.Equal(created.CreatedAt) {

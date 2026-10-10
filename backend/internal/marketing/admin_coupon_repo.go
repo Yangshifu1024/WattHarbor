@@ -1,6 +1,7 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"context"
 	"time"
 
@@ -12,10 +13,11 @@ import (
 // 后台管理券模板和人工发放；用户持券与核销在 coupon_repo.go、coupon_redeem_repo.go，活动发放在 activity_grant.go。
 
 // AdminCouponRow 是券模板记录：amount 用分值，percentage 用折扣比例，time_free 用免费分钟数，三者互斥。
+// DiscountType 与 Status 对应 coupon 表的 discount_type 与 status 列。
 type AdminCouponRow struct {
 	ID                 uint64           `json:"id" gorm:"column:id;primaryKey"`                          // 券模板主键；创建时须为 0 由库自增
 	Name               string           `json:"name" gorm:"column:name"`                                 // 券名称，非空且不超过 128 字符
-	DiscountType       string           `json:"discount_type" gorm:"column:discount_type"`               // 优惠类型
+	DiscountType       DiscountType     `json:"discount_type" gorm:"column:discount_type"`               // 优惠类型
 	DiscountValueCents *int64           `json:"discount_value_cents" gorm:"column:discount_value_cents"` // 减免分值，可空
 	DiscountPercent    *decimal.Decimal `json:"discount_percent" gorm:"column:discount_percent"`         // 应付比例百分数，80 表示八折；可空
 	FreeMinutes        *uint32          `json:"free_minutes" gorm:"column:free_minutes"`                 // 免费分钟，可空
@@ -23,7 +25,7 @@ type AdminCouponRow struct {
 	ValidHours         uint32           `json:"valid_hours" gorm:"column:valid_hours"`                   // 领取后有效小时
 	TotalQuota         uint32           `json:"total_quota" gorm:"column:total_quota"`                   // 总量上限，0 表示不限量
 	PerUserQuota       uint32           `json:"per_user_quota" gorm:"column:per_user_quota"`             // 人工发放单人上限
-	Status             string           `json:"status" gorm:"column:status"`                             // 业务状态
+	Status             CouponStatus     `json:"status" gorm:"column:status"`                             // 业务状态
 	StartAt            *time.Time       `json:"start_at" gorm:"column:start_at"`                         // 开始时刻，可空表示立即
 	EndAt              *time.Time       `json:"end_at" gorm:"column:end_at"`                             // 截止时刻，可空表示长期
 }
@@ -59,7 +61,8 @@ func (s AdminCouponRepo) CreateCoupon(ctx context.Context, in *AdminCouponRow) e
 }
 
 // UpdateCoupon 锁定模板后只更新名称和启停状态，返回旧值供审计；额度和优惠不能修改。
-func (s AdminCouponRepo) UpdateCoupon(ctx context.Context, id uint64, name, status string) (AdminCouponRow, error) {
+// status 已由 CouponService.Update 按 coupon.status 的两值白名单校验，原样写入 coupon.status。
+func (s AdminCouponRepo) UpdateCoupon(ctx context.Context, id uint64, name string, status CouponStatus) (AdminCouponRow, error) {
 	var before AdminCouponRow
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Table("coupon").Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -88,6 +91,9 @@ func (s AdminCouponRepo) Stats(ctx context.Context, id uint64) (AdminCouponStats
 	}
 	// unused 但已过期的记录计入过期数量。
 	err := db.Table("coupon_grant").
+		// 以下 SUM 条件内的 status 字面量是 coupon_grant.status 的 GrantStatus 词表
+		//（unused／used／expired，internal/domain/marketing/grant.go），
+		// 嵌在聚合表达式里无法绑定 Go 参数，保留原写法不拆分查询。
 		Select("COUNT(*) AS granted_count,"+
 			"COALESCE(SUM(status='unused' AND expired_at>UTC_TIMESTAMP(3)),0) AS unused_count,"+
 			"COALESCE(SUM(status='used'),0) AS used_count,"+
@@ -135,7 +141,7 @@ func manualGrantState(tx *gorm.DB, couponID, userID uint64) (AdminCouponRow, Cou
 
 // saveManualGrant 在调用方事务内保存新券及请求号与发放 ID 的关联，失败须整体回滚。
 func saveManualGrant(tx *gorm.DB, in activityGrant) (uint64, error) {
-	if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": "manual", "status": "unused", "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error; err != nil {
+	if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": marketingdomain.GrantSourceManual, "status": marketingdomain.GrantUnused, "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error; err != nil {
 		return 0, err
 	}
 	var id uint64

@@ -149,7 +149,7 @@ func (s PublicationService) Publish(ctx context.Context, audit ops.AuditContext,
 		if err := repo.RecordPublication(tx, PricingPublication{RequestID: in.RequestID, ActorID: audit.Actor.ID, PayloadHash: hash, RuleID: out.ID, Version: out.Version}); err != nil {
 			return err
 		}
-		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: "charging_scheme.apply", Target: "pricing_rule", ID: out.ID, After: map[string]any{"name": scheme.Name, "station_id": in.StationID, "device_id": in.DeviceID, "template_id": in.TemplateID, "spec_json": string(snapshot), "channel": "default", "version": out.Version, "status": "active"}})
+		return ops.AppendAuditInTx(tx, audit, ops.AuditChange{Action: "charging_scheme.apply", Target: "pricing_rule", ID: out.ID, After: map[string]any{"name": scheme.Name, "station_id": in.StationID, "device_id": in.DeviceID, "template_id": in.TemplateID, "spec_json": string(snapshot), "channel": "default", "version": out.Version, "status": PricingRuleActive}})
 	})
 	return out, err
 }

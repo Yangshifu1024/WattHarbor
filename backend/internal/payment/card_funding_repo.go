@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"chargepilot/internal/domain/money"
 	"errors"
 	"gorm.io/gorm"
 )
@@ -25,7 +26,7 @@ func SetCardOrderInTx(tx *gorm.DB, paymentID, chargeOrderID uint64) error {
 // ExtendCardPaymentInTx 在调用方事务中为 id 已付余额单累计 cents 实付和应付金额，单位分。
 // 未匹配支付记录时返回 ErrCardFundingConflict；钱包实际扣款与本写入由 card 原子提交。
 func ExtendCardPaymentInTx(tx *gorm.DB, id uint64, cents int64) error {
-	res := tx.Model(&PaymentOrderRecord{}).Where("id=? AND pay_method='balance' AND status IN ('paid','partial_refunded')", id).Updates(map[string]any{"paid_cents": gorm.Expr("paid_cents+?", cents), "total_cents": gorm.Expr("total_cents+?", cents)})
+	res := tx.Model(&PaymentOrderRecord{}).Where("id=? AND pay_method=? AND status IN ?", id, money.PayMethodBalance, refundablePaymentStatuses()).Updates(map[string]any{"paid_cents": gorm.Expr("paid_cents+?", cents), "total_cents": gorm.Expr("total_cents+?", cents)})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -33,4 +34,10 @@ func ExtendCardPaymentInTx(tx *gorm.DB, id uint64, cents int64) error {
 		return ErrCardFundingConflict
 	}
 	return nil
+}
+
+// refundablePaymentStatuses 返回仍可发起渠道退款的支付单状态集合：已全额退回的
+// 支付单不再出现。卡续购扣款与充值来源追溯共用该集合，避免两处判定漂移。
+func refundablePaymentStatuses() []money.PaymentStatus {
+	return []money.PaymentStatus{money.PayStatusPaid, money.PayStatusPartialRefunded}
 }

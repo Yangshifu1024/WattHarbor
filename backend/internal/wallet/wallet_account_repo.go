@@ -1,6 +1,8 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"chargepilot/internal/persist"
 	"context"
 	"time"
@@ -13,9 +15,9 @@ import (
 
 // WalletBalance 是钱包余额的可读查询结果。
 type WalletBalance struct {
-	BalanceCents int64  `gorm:"column:balance_cents"` // 当前账面余额，分
-	FrozenCents  int64  `gorm:"column:frozen_cents"`  // 当前预占金额，分
-	Status       string `gorm:"column:status"`        // active 可用或 frozen 冻结
+	BalanceCents int64                      `gorm:"column:balance_cents"` // 当前账面余额，分
+	FrozenCents  int64                      `gorm:"column:frozen_cents"`  // 当前预占金额，分
+	Status       walletdomain.AccountStatus `gorm:"column:status"`        // wallet_account.status：active 可用或 frozen 冻结
 }
 
 // AvailableCents 返回余额减冻结额后的可用金额，单位分，下限为零。
@@ -39,8 +41,9 @@ func (s UserWalletRepo) FindWalletBalance(ctx context.Context, userID uint64) (W
 	return row, err
 }
 
-// ListWalletTxns 按用户分页读取流水；direction 为空时查询所有方向，in、out 分别只查收入、支出。
-func (s UserWalletRepo) ListWalletTxns(ctx context.Context, userID uint64, direction string, page, pageSize int) (persist.Page[map[string]any], error) {
+// ListWalletTxns 按用户分页读取流水；direction 为空值时查询所有方向，in、out 分别只查收入、支出。
+// direction 的词表见 walletdomain.TxnDirection；空值表示不筛选，不是该列的取值。
+func (s UserWalletRepo) ListWalletTxns(ctx context.Context, userID uint64, direction walletdomain.TxnDirection, page, pageSize int) (persist.Page[map[string]any], error) {
 	out := persist.Page[map[string]any]{Items: []map[string]any{}, Page: page, PageSize: pageSize}
 	query := s.DB.WithContext(ctx).Table("wallet_txn").Where("user_id = ?", userID)
 	if direction != "" {
@@ -57,12 +60,12 @@ func (s UserWalletRepo) ListWalletTxns(ctx context.Context, userID uint64, direc
 // 状态与有效期取自 payment_order：充值申请本身只记"发起过"。
 // 能不能付要看支付单有没有过期。
 type WalletRechargeRow struct {
-	RequestID   string     `json:"request_id" gorm:"column:request_id"`     // 申请 UUID，同内容重放沿用
-	AmountCents int64      `json:"amount_cents" gorm:"column:amount_cents"` // 申请金额，分
-	Status      string     `json:"status" gorm:"column:status"`             // 支付 initiated 待付、paid 已到账或退款状态
-	ExpiredAt   *time.Time `json:"expires_at" gorm:"column:expired_at"`     // 支付截止时间
-	CreatedAt   time.Time  `json:"created_at" gorm:"column:created_at"`     // 申请创建 UTC 时刻
-	CanPay      bool       `json:"can_pay" gorm:"-"`                        // 未支付且未过期才允许继续付款
+	RequestID   string              `json:"request_id" gorm:"column:request_id"`     // 申请 UUID，同内容重放沿用
+	AmountCents int64               `json:"amount_cents" gorm:"column:amount_cents"` // 申请金额，分
+	Status      money.PaymentStatus `json:"status" gorm:"column:status"`             // 支付 initiated 待付、paid 已到账或退款状态
+	ExpiredAt   *time.Time          `json:"expires_at" gorm:"column:expired_at"`     // 支付截止时间
+	CreatedAt   time.Time           `json:"created_at" gorm:"column:created_at"`     // 申请创建 UTC 时刻
+	CanPay      bool                `json:"can_pay" gorm:"-"`                        // 未支付且未过期才允许继续付款
 }
 
 // ListWalletRecharges 按用户分页读取充值申请及支付状态，按创建顺序倒序。
@@ -97,18 +100,18 @@ func (s UserWalletRepo) LockWalletAccount(tx *gorm.DB, userID uint64) (WalletRow
 
 // WalletRow 是钱包账户的完整行，充值与退款都要读余额与冻结额。
 type WalletRow struct {
-	ID           uint64 `gorm:"column:id"`            // 钱包主键
-	UserID       uint64 `gorm:"column:user_id"`       // 账户或申请所属用户
-	BalanceCents int64  `gorm:"column:balance_cents"` // 当前账面余额，分
-	FrozenCents  int64  `gorm:"column:frozen_cents"`  // 当前预占金额，分
-	Status       string `gorm:"column:status"`        // active 可用或 frozen 冻结
-	Version      uint64 `gorm:"column:version"`       // 钱包版本号，每次资金或状态变化时增加
+	ID           uint64                     `gorm:"column:id"`            // 钱包主键
+	UserID       uint64                     `gorm:"column:user_id"`       // 账户或申请所属用户
+	BalanceCents int64                      `gorm:"column:balance_cents"` // 当前账面余额，分
+	FrozenCents  int64                      `gorm:"column:frozen_cents"`  // 当前预占金额，分
+	Status       walletdomain.AccountStatus `gorm:"column:status"`        // wallet_account.status：active 可用或 frozen 冻结
+	Version      uint64                     `gorm:"column:version"`       // 钱包版本号，每次资金或状态变化时增加
 }
 
 // OpenWalletAccount 在调用方事务中为 userID 开户，初始余额、冻结额为零且状态 active；唯一键冲突时失败，不自行提交。
 func (s UserWalletRepo) OpenWalletAccount(tx *gorm.DB, userID uint64) error {
 	return tx.Table("wallet_account").Create(map[string]any{
-		"user_id": userID, "balance_cents": 0, "frozen_cents": 0, "status": "active",
+		"user_id": userID, "balance_cents": 0, "frozen_cents": 0, "status": walletdomain.AccountActive,
 	}).Error
 }
 
@@ -202,7 +205,7 @@ func (s UserWalletRepo) LinkFreezeToRefund(tx *gorm.DB, requestID string, freeze
 // FreezeWallet 在调用方事务中将 walletID 钱包置为 frozen 并增加版本号；返回更新错误，不改变余额或已冻结金额，不自行提交。
 func (s UserWalletRepo) FreezeWallet(tx *gorm.DB, walletID uint64) error {
 	return tx.Table("wallet_account").Where("id=?", walletID).
-		Updates(map[string]any{"status": "frozen", "version": gorm.Expr("version+1")}).Error
+		Updates(map[string]any{"status": walletdomain.AccountFrozen, "version": gorm.Expr("version+1")}).Error
 }
 
 // SetRefundResponse 在调用方事务中为 requestID 保存 responseJSON 首次回执；返回更新错误，与申请、预占及风险共同提交，重放读取回执。
@@ -225,9 +228,9 @@ func (s UserWalletRepo) ListWalletRefundRequests(ctx context.Context, userID uin
 
 // WalletRefundPartRow 是退款申请拆出的每一笔原路退款。
 type WalletRefundPartRow struct {
-	RefundNo      string     `json:"refund_no" gorm:"column:refund_no"`           // 分笔退款单号，重试沿用
-	RefundCents   int64      `json:"refund_cents" gorm:"column:refund_cents"`     // 退款金额，单位分
-	Status        string     `json:"status" gorm:"column:status"`                 // active 可用或 frozen 冻结
-	FailureReason *string    `json:"failure_reason" gorm:"column:failure_reason"` // 渠道终态失败或需复核原因，可空
-	CompletedAt   *time.Time `json:"completed_at" gorm:"column:completed_at"`     // 渠道完成 UTC 时刻，未完成为空
+	RefundNo      string             `json:"refund_no" gorm:"column:refund_no"`           // 分笔退款单号，重试沿用
+	RefundCents   int64              `json:"refund_cents" gorm:"column:refund_cents"`     // 退款金额，单位分
+	Status        money.RefundStatus `json:"status" gorm:"column:status"`                 // 取自 refund_record.status：pending 待退 / processing 处理中 / success 已退 / failed 失败 / rejected 否决
+	FailureReason *string            `json:"failure_reason" gorm:"column:failure_reason"` // 渠道终态失败或需复核原因，可空
+	CompletedAt   *time.Time         `json:"completed_at" gorm:"column:completed_at"`     // 渠道完成 UTC 时刻，未完成为空
 }

@@ -15,19 +15,19 @@ import (
 
 // AdminAccount 是登录校验所需的后台账号记录，密码和 MFA 等敏感字段不参与 JSON 输出。
 type AdminAccount struct {
-	AuthVersion      uint64         `json:"-"`             // 凭证版本号：改密或强制下线时自增，用于让已签发的令牌立即失效
-	ID               uint64         `json:"admin_user_id"` // 账号主键
-	Username         string         `json:"username"`      // 登录名
-	DisplayName      sql.NullString `json:"-"`             // 可空显示名，Profile 读取时将 NULL 转为空字符串
-	PasswordHash     string         `json:"-"`             // bcrypt 口令散列，绝不出接口
-	RoleID           uint64         `json:"role_id"`       // 所属角色 ID，权限由此推导
-	Status           string         `json:"-"`             // 账号状态：active / disabled / locked
-	MFASecret        *string        `json:"-"`             // TOTP 密钥；指针，未绑定时为 null
-	MFAEnabled       bool           `json:"-"`             // 是否已启用双因素认证
-	MFASecretVersion uint64         `json:"-"`             // 密钥代际，仅更换或清除密钥时增加，独立于认证版本
-	MFALastStep      *int64         `json:"-"`             // 本密钥最后消费的 30 秒时间步，未消费为空
-	FailedLoginCount uint32         `json:"-"`             // 连续登录失败次数，达到 5 次锁定
-	LockedUntil      sql.NullTime   `json:"-"`             // 锁定到期时间；可空，未锁定为 null
+	AuthVersion      uint64          `json:"-"`             // 凭证版本号：改密或强制下线时自增，用于让已签发的令牌立即失效
+	ID               uint64          `json:"admin_user_id"` // 账号主键
+	Username         string          `json:"username"`      // 登录名
+	DisplayName      sql.NullString  `json:"-"`             // 可空显示名，Profile 读取时将 NULL 转为空字符串
+	PasswordHash     string          `json:"-"`             // bcrypt 口令散列，绝不出接口
+	RoleID           uint64          `json:"role_id"`       // 所属角色 ID，权限由此推导
+	Status           AdminUserStatus `json:"-"`             // 账号状态：active / disabled / locked
+	MFASecret        *string         `json:"-"`             // TOTP 密钥；指针，未绑定时为 null
+	MFAEnabled       bool            `json:"-"`             // 是否已启用双因素认证
+	MFASecretVersion uint64          `json:"-"`             // 密钥代际，仅更换或清除密钥时增加，独立于认证版本
+	MFALastStep      *int64          `json:"-"`             // 本密钥最后消费的 30 秒时间步，未消费为空
+	FailedLoginCount uint32          `json:"-"`             // 连续登录失败次数，达到 5 次锁定
+	LockedUntil      sql.NullTime    `json:"-"`             // 锁定到期时间；可空，未锁定为 null
 }
 
 // TableName 将 AdminAccount 映射到 admin_user。
@@ -66,7 +66,7 @@ func (s AccountRepo) Bootstrap(ctx context.Context, username, password string) e
 		if count > 0 {
 			return nil
 		}
-		account := AdminAccount{Username: username, PasswordHash: string(hash), RoleID: role.ID, Status: "active"}
+		account := AdminAccount{Username: username, PasswordHash: string(hash), RoleID: role.ID, Status: AdminUserActive}
 		if err := tx.Create(&account).Error; err != nil {
 			return err
 		}
@@ -89,10 +89,10 @@ func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (
 			return err
 		}
 		now := time.Now().UTC()
-		if account.Status == "disabled" {
+		if account.Status == AdminUserDisabled {
 			return operations.ErrCredentials
 		}
-		if account.Status == "locked" && (!account.LockedUntil.Valid || account.LockedUntil.Time.After(now)) {
+		if account.Status == AdminUserLocked && (!account.LockedUntil.Valid || account.LockedUntil.Time.After(now)) {
 			return operations.ErrLocked
 		}
 		attempts := account.FailedLoginCount
@@ -101,10 +101,10 @@ func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (
 		}
 		if bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(password)) != nil {
 			attempts++
-			updates := map[string]any{"failed_login_count": attempts, "status": "active", "locked_until": nil}
+			updates := map[string]any{"failed_login_count": attempts, "status": AdminUserActive, "locked_until": nil}
 			denied = operations.ErrCredentials
 			if attempts >= 5 {
-				updates["status"] = "locked"
+				updates["status"] = AdminUserLocked
 				updates["locked_until"] = now.Add(30 * time.Minute)
 				denied = operations.ErrLocked
 			}
@@ -115,13 +115,13 @@ func (s AccountRepo) Login(ctx context.Context, username, password, ip string) (
 		}
 		if account.MFAEnabled {
 			// 口令已验证；启用 MFA 的账号需完成二次验证后才记录登录成功并发放会话。
-			account.Status = "active"
+			account.Status = AdminUserActive
 			return nil
 		}
-		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {
+		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": AdminUserActive, "last_login_at": now}).Error; err != nil {
 			return err
 		}
-		account.Status = "active"
+		account.Status = AdminUserActive
 		return WriteAuthAudit(tx, account, "login", ip)
 	})
 	if err != nil {
@@ -150,10 +150,10 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 		if account.AuthVersion != identity.AuthVersion || account.Username != identity.Username {
 			return operations.ErrInvalidMFAChallenge
 		}
-		if account.Status == "locked" && (!account.LockedUntil.Valid || account.LockedUntil.Time.After(now)) {
+		if account.Status == AdminUserLocked && (!account.LockedUntil.Valid || account.LockedUntil.Time.After(now)) {
 			return operations.ErrLocked
 		}
-		if account.Status == "disabled" || !account.MFAEnabled || account.MFASecret == nil || *account.MFASecret == "" {
+		if account.Status == AdminUserDisabled || !account.MFAEnabled || account.MFASecret == nil || *account.MFASecret == "" {
 			return operations.ErrCredentials
 		}
 		step, verifyErr := auth.VerifyTOTP(*account.MFASecret, code, now)
@@ -165,10 +165,10 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 			if account.LockedUntil.Valid && !account.LockedUntil.Time.After(now) {
 				attempts = 1
 			}
-			updates := map[string]any{"failed_login_count": attempts, "status": "active", "locked_until": nil}
+			updates := map[string]any{"failed_login_count": attempts, "status": AdminUserActive, "locked_until": nil}
 			denied = operations.ErrInvalidTOTP
 			if attempts >= 5 {
-				updates["status"] = "locked"
+				updates["status"] = AdminUserLocked
 				updates["locked_until"] = now.Add(30 * time.Minute)
 				denied = operations.ErrLocked
 			}
@@ -186,10 +186,10 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 		if err := consumeAdminTOTPStep(tx, account, step); err != nil {
 			return err
 		}
-		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": "active", "last_login_at": now}).Error; err != nil {
+		if err := tx.Model(&AdminAccount{}).Where("id = ?", account.ID).Updates(map[string]any{"failed_login_count": 0, "locked_until": nil, "status": AdminUserActive, "last_login_at": now}).Error; err != nil {
 			return err
 		}
-		account.Status = "active"
+		account.Status = AdminUserActive
 		return WriteAuthAudit(tx, account, "login_mfa", ip)
 	})
 	if err != nil {
@@ -202,6 +202,7 @@ func (s AccountRepo) CompleteMFA(ctx context.Context, identity operations.Accoun
 }
 
 // Profile 只读取 status=active 且未删除的账号和角色，并查询当前权限；无匹配记录返回 ErrCredentials。
+// a.status 字面量对应 admin_user.status 词表中的 active，查询不因类型化拆分。
 func (s AccountRepo) Profile(ctx context.Context, id uint64) (operations.Profile, error) {
 	var row struct {
 		// AdminAccount 接收账号列，包括角色和认证版本；密码和 MFA 密钥不进入返回资料。
@@ -209,7 +210,7 @@ func (s AccountRepo) Profile(ctx context.Context, id uint64) (operations.Profile
 		Role     string // 当前有效角色编码
 		RoleName string // 当前角色展示名称
 	}
-	err := s.DB.WithContext(ctx).Table("admin_user AS a").Select("a.*, r.code AS role,r.name AS role_name").Joins("JOIN role AS r ON r.id=a.role_id AND r.deleted_at IS NULL").Where("a.id = ? AND a.status='active' AND a.deleted_at IS NULL", id).Take(&row).Error
+	err := s.DB.WithContext(ctx).Table("admin_user AS a").Select("a.*, r.code AS role,r.name AS role_name").Joins("JOIN role AS r ON r.id=a.role_id AND r.deleted_at IS NULL").Where("a.id = ? AND a.status='"+string(AdminUserActive)+"' AND a.deleted_at IS NULL", id).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return operations.Profile{}, operations.ErrCredentials
 	}
@@ -241,7 +242,7 @@ func (s AccountRepo) ChangePassword(ctx context.Context, id uint64, oldPassword,
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var a AdminAccount
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND status='active' AND deleted_at IS NULL", id).Take(&a).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND status='"+string(AdminUserActive)+"' AND deleted_at IS NULL", id).Take(&a).Error; err != nil {
 			return err
 		}
 		if bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(oldPassword)) != nil {

@@ -1,6 +1,7 @@
 package settlement
 
 import (
+	"chargepilot/internal/domain/money"
 	orderstore "chargepilot/internal/order"
 	pay "chargepilot/internal/payment"
 
@@ -37,9 +38,9 @@ func RefundBalanceInTx(tx *gorm.DB, src BalanceRefundSource, w *wallet.Row, cent
 	if payment.PaidCents-payment.RefundedCents < cents {
 		return ErrBalanceRefundConflict
 	}
-	status := "partial_refunded"
+	status := money.PayStatusPartialRefunded
 	if payment.RefundedCents+cents == payment.PaidCents {
-		status = "refunded"
+		status = money.PayStatusRefunded
 	}
 	if err := pay.AddPaymentRefunded(tx, payment.ID, cents, status); err != nil {
 		return err
@@ -49,7 +50,7 @@ func RefundBalanceInTx(tx *gorm.DB, src BalanceRefundSource, w *wallet.Row, cent
 	}
 	return InsertRefundRecord(tx, RefundRecordInput{
 		RefundNo: refundNo, PaymentOrderID: payment.ID, UserID: src.UserID,
-		BizType: "charge", BizID: src.OrderID, RefundCents: cents, Status: "success",
-		ExecutionPolicy: "automatic", Reason: reason,
+		BizType: money.PaymentBizCharge, BizID: src.OrderID, RefundCents: cents, Status: money.RefundSuccess,
+		ExecutionPolicy: money.ExecutionAutomatic, Reason: reason,
 	}, dbutil.MonthStart())
 }

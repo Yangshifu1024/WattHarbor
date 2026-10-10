@@ -24,10 +24,12 @@ func outboxTable(source string) string {
 
 // ListPublishableOutbox 按 ID 领取最多 100 条到期待发布事件，跳过其他事务已锁定的行。
 // 调用方须使用事务，行锁持续到该事务结束。
+// status 的取值绑定 ops.PublishableOutboxStatusValues（对应三张 outbox 表的 status 词表）；
+// 不把展示用白名单串拼进 IN 括号，那会得到单元素列表而匹配不到行。
 func ListPublishableOutbox(tx *gorm.DB, source string) ([]ops.EventOutboxRecord, error) {
 	rows := []ops.EventOutboxRecord{}
 	err := tx.Table(outboxTable(source)).Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-		Where("status IN ('pending','failed') AND scheduled_at <= NOW(3)").
+		Where("status IN ? AND scheduled_at <= NOW(3)", ops.PublishableOutboxStatusValues).
 		Order("id").Limit(outboxBatch).Find(&rows).Error
 	return rows, err
 }
@@ -36,14 +38,14 @@ func ListPublishableOutbox(tx *gorm.DB, source string) ([]ops.EventOutboxRecord,
 func MarkOutboxPublished(tx *gorm.DB, source string, id uint64) error {
 	return tx.Table(outboxTable(source)).Where("id = ?", id).
 		Updates(map[string]any{
-			"status": "published", "published_at": gorm.Expr("NOW(3)"), "last_error": nil,
+			"status": ops.OutboxPublished, "published_at": gorm.Expr("NOW(3)"), "last_error": nil,
 		}).Error
 }
 
 // MarkOutboxFailed 在调用方事务内记录发送错误、增加重试次数，并延后指定秒数。
 func MarkOutboxFailed(tx *gorm.DB, source string, id uint64, lastError string, backoffSeconds int) error {
 	return tx.Table(outboxTable(source)).Where("id = ?", id).Updates(map[string]any{
-		"status": "failed", "retry_count": gorm.Expr("retry_count + 1"),
+		"status": ops.OutboxFailed, "retry_count": gorm.Expr("retry_count + 1"),
 		"last_error":   lastError,
 		"scheduled_at": gorm.Expr("DATE_ADD(NOW(3), INTERVAL ? SECOND)", backoffSeconds),
 	}).Error

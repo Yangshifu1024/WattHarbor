@@ -1,6 +1,8 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/devices"
+	"chargepilot/internal/domain/money"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -41,8 +43,8 @@ type StopReservation struct {
 	DeviceID string `json:"device_id"`
 	// PortNo 协议端口序号。
 	PortNo uint8 `json:"port_no"`
-	// Status 状态。
-	Status string `json:"status"`
+	// Status 命令持久化状态，对应 charge_stop_command.status（该列没有 stopping）。
+	Status devices.StopCommandStatus `json:"status"`
 	// Wire 待下发的协议命令，不表示设备已确认。
 	Wire protocol.Command `json:"-"`
 }
@@ -79,11 +81,11 @@ func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (Sto
 		if err != nil {
 			return err
 		}
-		if start.Status != "acked" || start.CommandID != active.StartCommandID || start.DeviceID != active.DeviceID || start.PortNo != active.PortNo || !start.PortID.Valid || uint64(start.PortID.Int64) != active.PortID {
+		if start.Status != devices.CommandAcked || start.CommandID != active.StartCommandID || start.DeviceID != active.DeviceID || start.PortNo != active.PortNo || !start.PortID.Valid || uint64(start.PortID.Int64) != active.PortID {
 			return ErrOrderConflict
 		}
 		var port devicePortRow
-		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND device_id = ? AND port_no = ? AND current_order_id = ? AND status = 'charging'", active.PortID, active.DeviceID, active.PortNo, active.OrderNo).Take(&port).Error
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND device_id = ? AND port_no = ? AND current_order_id = ? AND status = ?", active.PortID, active.DeviceID, active.PortNo, active.OrderNo, money.PortCharging).Take(&port).Error
 		if err != nil {
 			return ErrPortUnavailable
 		}
@@ -94,13 +96,13 @@ func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (Sto
 		commandID := uuid.NewString()
 		command := chargeStopCommandRow{CommandID: commandID, StartCommandID: active.StartCommandID, ChargeOrderID: active.ChargeOrderID,
 			OrderNo: active.OrderNo, UserID: active.UserID, DeviceID: active.DeviceID, PortNo: active.PortNo,
-			PortID: sql.NullInt64{Int64: int64(active.PortID), Valid: true}, Status: "pending",
+			PortID: sql.NullInt64{Int64: int64(active.PortID), Valid: true}, Status: devices.StopCommandPending,
 			SessionID: sql.NullString{String: hex.EncodeToString(session[:]), Valid: true}}
 		if err := tx.Create(&command).Error; err != nil {
 			return err
 		}
 		reservation = StopReservation{CommandID: commandID, OrderNo: active.OrderNo, DeviceID: active.DeviceID, PortNo: active.PortNo,
-			Status: "pending", Wire: protocol.Command{Kind: protocol.CommandStop, SessionID: session, Port: active.PortNo}}
+			Status: devices.StopCommandPending, Wire: protocol.Command{Kind: protocol.CommandStop, SessionID: session, Port: active.PortNo}}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -111,13 +113,16 @@ func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (Sto
 
 // MarkUserStopSent 将 pending 或 sent 用户停机命令标记 sent 并更新发送时间；返回 SQL 错误，不确认设备断电。
 func (s MySQLSink) MarkUserStopSent(ctx context.Context, commandID string) error {
+	// SQL 内 status IN ('pending','sent')／status = 'sent' 分别对应
+	// devices.StopCommandPending、StopCommandSent／StopCommandSent（charge_stop_command.status）。
 	return s.DB.WithContext(ctx).Model(&chargeStopCommandRow{}).Where("command_id = ? AND status IN ('pending','sent')", commandID).
-		Updates(map[string]any{"status": "sent", "sent_at": gorm.Expr("CURRENT_TIMESTAMP(3)")}).Error
+		Updates(map[string]any{"status": devices.StopCommandSent, "sent_at": gorm.Expr("CURRENT_TIMESTAMP(3)")}).Error
 }
 
 // PendingUserStops 按创建时间读取最多 50 条待发或已发送超过 10 秒的停机命令，复用 STOP 会话。
 func (s MySQLSink) PendingUserStops(ctx context.Context) ([]StopReservation, error) {
 	var rows []chargeStopCommandRow
+	// SQL 内 status = 'pending'／status = 'sent' 对应 devices.StopCommandPending／StopCommandSent。
 	err := s.DB.WithContext(ctx).Where("status = 'pending' OR (status = 'sent' AND sent_at < DATE_SUB(NOW(3), INTERVAL 10 SECOND))").
 		Order("created_at").Limit(50).Find(&rows).Error
 	if err != nil {
@@ -129,7 +134,7 @@ func (s MySQLSink) PendingUserStops(ctx context.Context) ([]StopReservation, err
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, StopReservation{CommandID: row.CommandID, OrderNo: row.OrderNo, DeviceID: row.DeviceID, PortNo: row.PortNo, Status: "pending", Wire: wire.Wire})
+		result = append(result, StopReservation{CommandID: row.CommandID, OrderNo: row.OrderNo, DeviceID: row.DeviceID, PortNo: row.PortNo, Status: devices.StopCommandPending, Wire: wire.Wire})
 	}
 	return result, nil
 }

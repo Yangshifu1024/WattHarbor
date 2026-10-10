@@ -61,6 +61,39 @@
 
 最容易把新结构改出循环的是支付、钱包和退款。当前已有 `settlement → payment/wallet/card/marketing/order/ops`、`card → payment/wallet/order`、`payment → wallet/marketing/order/ops`、`wallet → ops`、`identity → wallet`、`pricing → device` 等单向引用。新增依赖或调整用例时，要把新增箭头与这些现有关系一起核对。
 
+### 状态词汇的归属与依赖边界
+
+数据库状态列的取值词汇集中在 `internal/domain/<域>/` 与各属主包的就地定义，不放在用例包的散落字面量里：
+
+| 包 | 类型 | 权威列 |
+| --- | --- | --- |
+| `domain/order` | `OrderStatus`、`OrderBusinessStatus`、`OrderPaymentStatus` | `charge_order.status`／`business_status`／`payment_status` |
+| `domain/money` | `PaymentBizType`、`PaymentStatus`、`RefundStatus`、`ScanKind`、`PortStatus`、`PayMethod`、`PaymentIntentStatus`、`ExecutionPolicy` | `payment_order`、`refund_record`、`gateway_db.device_port`；`ScanKind` 无列 |
+| `domain/marketing` | `GrantStatus`、`GrantSource` | `coupon_grant.status`／`grant_source` |
+| `domain/card` | `CardOperationKind`、`CardOperationStatus` | `card_operation.kind`／`status` |
+| `domain/devices` | `DeviceMetaStatus`、`GatewayDeviceStatus`、`AlertStatus`、`AlertSeverity`、`ChargeCommandStatus`、`StopCommandStatus`、`VendorStatus`、`VendorProtocol` | `device_meta.status`、`gateway_db.device.status`、`alert_event.status`／`severity`、`charge_command.status`、`charge_stop_command.status`、`vendor.status`／`protocol` |
+| `domain/wallet` | `AccountStatus`、`TxnDirection`、`TxnBizType`、`FreezeStatus` | `wallet_account.status`、`wallet_txn.direction`／`biz_type`、`risk_freeze_log.status` |
+| `domain/identity` | `UserStatus`、`Gender` | `user.status`／`gender` |
+| `domain/operations` | `ScopeType` | `admin_data_scope.scope_type`（就地升级已有常量） |
+| `protocol`（叶子包） | `AdapterID` | `device_meta.protocol_adapter`、`vendor.adapter_class`、`device_event.protocol_name`（均 VARCHAR，当前受支持集合仅 `dc589`） |
+
+**派生值与外部输入类型的归属**：`order.OrderStartSource` 与 `order.RefundViewStatus`（SQL `CASE` 派生，无数据库列）、`wallet.RefundViewStatus`（内存聚合标签）、`payment.ChannelRefundStatus`（渠道响应原值透传，**开放集合**）、`contracts/gateway.StopSource` 与 `CardAdvanceOutcome`（服务间契约输入）。它们不被其他包消费或只在契约边界出现，故留在属主包内。**`order.RefundViewStatus` 与 `wallet.RefundViewStatus` 虽同名，但分属两个业务域的聚合标签，与 `domain/money.RefundStatus`（`refund_record.status` 持久化词表）三层均不得混用**；`wallet` 的 `needs_review` 更是完全不属于后者。
+
+各属主包的就地定义（不被其他包消费，故不上提）：`device` 的 `StationStatus`／`FaultType`／`ReportSource`／`ImportStatus`／`FaultEventType`、`card` 的 `CardStatus`、`marketing` 的 `CouponStatus`／`ActivityStatus`／`DiscountType`／`TriggerType`、`order` 的 `FeedbackStatus`／`FeedbackCategory`、`ops` 的 `AnnouncementStatus`／`AnnouncementScope`／`AdminUserStatus`／`OutboxStatus`、`settlement` 的 `BillingJobStatus`／`BillStatus`／`MeterReviewStatus`／`ManualFeeReviewStatus`／`InvoiceType`／两套发票审核状态／`RefundReviewOutcome`、`pricing` 的 `PricingRuleStatus`／`PricingTemplateStatus`、`export` 的 `ExportStatus`／`ExportFileFormat`、`worker/repo` 的 `TaskExecutionStatus`／`TaskTriggeredBy`、`gateway/repo` 的 `CardDeliveryStatus`。
+
+`FaultStatus` 未上提到 `domain`，因为报修流转判定只服务设备用例自身，且需要跨用例的权限与数据范围核对，提取到 domain 不会减少反向依赖。`OutboxStatus` 留在 `ops` 而非 domain：事件在 central 与 gateway 两库创建、由 worker 侧统一领取推进，`ops` 位于 central 侧并被 worker 直接消费，上提反而让后台队列依赖领域包。
+
+依赖方向四条约束，破坏任何一条都属于结构错误而非风格问题：
+
+1. **`internal/contracts/*` 不得引用业务实现包**，但**可以**引用 `internal/domain/*` 与 `internal/protocol`。`contracts/central` 与 `contracts/gateway` 都直接承载枚举类型，这是新建 `domain/card`、`domain/devices` 的原因——否则契约层只能引用 `internal/card`。
+2. **`internal/domain/*` 不得反向依赖任何业务实现包**，也不引用数据库模型、HTTP 框架或持久层标签。它只定义取值词汇与判定所需的纯逻辑。当前三条已授权的 domain 内部与对外单向边：`domain/charging → domain/devices`、`domain/devices → domain/money`、`domain/charging → protocol`。`protocol` 是零内部依赖的叶子包而非业务实现包，引用它不违反本条；新增此类边前须先确认目标包仍无反向路径。
+3. **同名不同义的列不得因值相同而合并类型**。`payment_order.status` 与 `charge_payment_intent.status`、`device_port.status` 与 `charge_process.port_status`、`coupon.status` 与 `coupon_grant.status`、`trigger_type` 与 `grant_source` 的 `invite_reward`、`device_meta.status`（四值）与 `gateway_db.device.status`（三值）、`wallet_account.status` 与 `user.status`（取值串完全相同）、`charge_command.status`（含 `stopping`）与 `charge_stop_command.status`（不含）都是字面量有交集但语义独立的列。新增类型时先确认列，再确认取值。
+4. **可写集合按操作边界建模，不用单一 `Valid()` 收口**。`DeviceMetaStatus.Known()` 是数据库合法集合（四值）而 `ManageWritable()` 是管理端启停准入（两值）；`CardStatus` 分 `UserWritable()` 与 `ManageWritable()`。仓储函数本身仍可不做限制（`SaveDeviceStatus` 原样写入），不得由用例的约束推断所有写入路径。
+
+`persist.PageQuery.Status` 是跨业务共用的查询筛选项，被 coupon、activity_rule、export_task、feedback、user、vendor 等多家复用且各自白名单不同，**必须保持 `string`**，各用例在自己的校验处转换。这是共享筛选通道，不是待收敛的枚举。
+
+数据库查询里的状态取值按以下规则落地：`Where`／`Updates` 的条件值绑定为常量或具名集合函数；`CASE` 分支值与聚合表达式（`SUM(status='unused')`）是 SQL 语法的一部分，保留字面量并注释指向词表；跨包 `Raw` SQL 无法用 Go 常量绑定，同样保留并注释。
+
 计费管理入口由 `pricing.SchemeService`／`PublicationService` 负责，新增 `pricing → ops` 只调用同事务审计能力，ops 不反向引用 pricing。显式 `operations.DataScope` 是实时范围输入，厂商归属经 `device.OperationRepo.VendorID` 单向读取；device 不引用 pricing。发布默认事务先锁站点，随后读取原请求、共享锁模板、核对目标兼容与当前版本，发布规则、原请求凭据及审计一起提交。相同请求恢复原结果，不重新读取当前模板或替换任何订单／支付／刷卡快照；HTTP 输入输出和错误码沿用原约定。
 
 设备导入由 `device.ImportService` 拥有原两段事务。受理冻结从 gateway 厂商公开字典解析的协议及能力，设备身份、任务与受理审计同事务；执行前通过注入的窄范围读取重读当前范围。执行同步保持任务锁，最多十秒等待开通；网关失败提交 failed，中央元数据或完成审计失败回滚执行事务，原 pending／failed 任务可重试。`ImportCompatibility` 由 cmd 注入 `pricing.Repo`，device 无 pricing import；新增 `device → ops` 仅用于所属变更的同事务审计。gateway 的具名 Vendor／Provision 客户端只引用共享契约和通用传输，厂商 CRUD 仍归 gateway。实际两库提交、真实注册 gateway 路由及 loopback 网络验证原身份恢复，测试身份按自身清理为零；同请求首次竞争和反向清单重叠的指定并发测试核对中央锁及持久凭据。并发测试中的网关为窄 fixture，不代表真实设备开通；实机及真实外部渠道仍需独立验收。

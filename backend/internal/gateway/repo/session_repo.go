@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"chargepilot/internal/protocol"
+
 	"gorm.io/gorm"
 )
 
@@ -16,8 +18,8 @@ type IdleSessionRow struct {
 	SessionID string `gorm:"column:session_id"`
 	// DeviceID 设备业务编号。
 	DeviceID string `gorm:"column:device_id"`
-	// Protocol 连接协议名称。
-	Protocol string `gorm:"column:protocol"`
+	// Protocol 连接传输方式，对应 device_session.protocol（tcp/mqtt）。
+	Protocol protocol.Transport `gorm:"column:protocol"`
 	// RemoteAddr 连接远端地址。
 	RemoteAddr string `gorm:"column:remote_addr"`
 	// StartedAt 设备连接开始时刻，保留数据库映射，不转换时区。
@@ -94,9 +96,10 @@ func idleSessionsQuery(ctx context.Context, db *gorm.DB, idleThreshold time.Dura
 // closeAbandonedSession 按 id/created_month 关闭仍开放的数据库会话记录，不提交事务或关闭 TCP 连接。
 func closeAbandonedSession(tx *gorm.DB, key sessionKey, at time.Time) (int64, error) {
 	month := time.Date(key.CreatedMonth.UTC().Year(), key.CreatedMonth.UTC().Month(), key.CreatedMonth.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	// close_reason 是 VARCHAR 开放集合；网关侧补记的断开原因使用 protocol.CloseAbandoned。
 	res := tx.Table("device_session").
 		Where("id = ? AND created_month = ? AND ended_at IS NULL", key.ID, month).
-		Updates(map[string]any{"ended_at": at, "close_reason": "abandoned"})
+		Updates(map[string]any{"ended_at": at, "close_reason": protocol.CloseAbandoned})
 	return res.RowsAffected, res.Error
 }
 

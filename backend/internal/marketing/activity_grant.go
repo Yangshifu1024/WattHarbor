@@ -1,6 +1,7 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -14,13 +15,15 @@ import (
 var ErrActivityNotApplicable = errors.New("no activity rule applies")
 
 // ActivityEvent 保存触发类型、用户、金额和事件键，重试时保持不变。
+// TriggerType 对应 coupon_activity_rule.trigger_type；与 marketingdomain.GrantSource
+// 不同源、也不同义，不得互相赋值。
 type ActivityEvent struct {
-	TriggerType string    // 首充／邀请／门槛／节日触发类型
-	UserID      uint64    // 受益用户
-	EventKey    string    // 充值请求号或订单号生成的稳定事件键
-	AmountCents int64     // 已确认金额，分；仅门槛规则读取
-	InviterID   uint64    // 邀请人主键，非邀请触发不读取
-	Now         time.Time // 调用方提供的本次判断时间
+	TriggerType TriggerType // 首充／邀请／门槛／节日触发类型，coupon_activity_rule.trigger_type
+	UserID      uint64      // 受益用户
+	EventKey    string      // 充值请求号或订单号生成的稳定事件键
+	AmountCents int64       // 已确认金额，分；仅门槛规则读取
+	InviterID   uint64      // 邀请人主键，非邀请触发不读取
+	Now         time.Time   // 调用方提供的本次判断时间
 }
 
 // ActivityResult 是规则和券模板的发放结果，重放不会新增券。
@@ -33,11 +36,11 @@ type ActivityResult struct {
 
 // activityGrant 是待保存的发放内容，不含数据库字段映射。
 type activityGrant struct {
-	CouponID  uint64    // 奖励模板
-	UserID    uint64    // 受益用户
-	Source    string    // 活动或邀请来源
-	ExpiresAt time.Time // 自发放起算的有效期，最晚不超过模板和活动的结束时间
-	EventID   string    // 由规则、用户和事件键生成的稳定 32 字符发放号
+	CouponID  uint64                      // 奖励模板
+	UserID    uint64                      // 受益用户
+	Source    marketingdomain.GrantSource // 发放来源，落库为 coupon_grant.grant_source
+	ExpiresAt time.Time                   // 自发放起算的有效期，最晚不超过模板和活动的结束时间
+	EventID   string                      // 由规则、用户和事件键生成的稳定 32 字符发放号
 }
 
 // ApplyInTx 按规则主键→模板主键→发放行加锁，再检查总量和单人额度并发券。
@@ -79,8 +82,9 @@ func (s ActivityService) ApplyInTx(tx *gorm.DB, event ActivityEvent) ([]Activity
 }
 
 // usableActivityCoupon 检查模板状态和有效时间，缺失模板视为不可用。
+// coupon 来自 coupon 表，coupon.Status 是 CouponStatus，启用判定用 CouponActive。
 func usableActivityCoupon(coupon activityCoupon, now time.Time) bool {
-	return coupon.ID != 0 && coupon.Status == "active" && (!coupon.StartAt.Valid || !now.Before(coupon.StartAt.Time)) && (!coupon.EndAt.Valid || now.Before(coupon.EndAt.Time))
+	return coupon.ID != 0 && coupon.Status == CouponActive && (!coupon.StartAt.Valid || !now.Before(coupon.StartAt.Time)) && (!coupon.EndAt.Valid || now.Before(coupon.EndAt.Time))
 }
 
 // activityExpiry 取发放后有效小时、模板结束和活动结束三个时间中的最早值。
@@ -161,7 +165,9 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent, coupons 
 			return out, nil
 		}
 		inviterEvent := ActivityEvent{UserID: event.InviterID, EventKey: eventID, Now: event.Now}
-		_, err = saveActivityGrant(tx, activityGrant{CouponID: id, UserID: event.InviterID, Source: "invite_reward", ExpiresAt: activityExpiry(rule, coupon, event.Now), EventID: activityEventID(rule.ID, inviterEvent, "inviter")}, false)
+		// 邀请人奖励的发放来源直接写 marketingdomain.GrantSourceInviteReward；
+		// 它与 rule.TriggerType（TriggerType）的 invite_reward 同值但不同义，不合并。
+		_, err = saveActivityGrant(tx, activityGrant{CouponID: id, UserID: event.InviterID, Source: marketingdomain.GrantSourceInviteReward, ExpiresAt: activityExpiry(rule, coupon, event.Now), EventID: activityEventID(rule.ID, inviterEvent, "inviter")}, false)
 		if err != nil {
 			return out, err
 		}
@@ -171,11 +177,15 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent, coupons 
 }
 
 // grantSourceFor 将邀请奖励归为 invite_reward，其余活动归为 activity。
-func grantSourceFor(trigger string) string {
+// trigger 是 coupon_activity_rule.trigger_type；返回的是 coupon_grant.grant_source
+// （marketingdomain.GrantSource）。TriggerInviteReward 与 GrantSourceInviteReward
+// 字面串同为 invite_reward，但一个描述触发条件、一个描述发放来源，必须保持不同类型，
+// 此处通过转换函数而非常量共用来传递。
+func grantSourceFor(trigger TriggerType) marketingdomain.GrantSource {
 	if trigger == TriggerInviteReward {
-		return "invite_reward"
+		return marketingdomain.GrantSourceInviteReward
 	}
-	return "activity"
+	return marketingdomain.GrantSourceActivity
 }
 
 // activityEventID 根据规则、用户、事件键和奖励方生成稳定的 32 字符发放号，不使用重试时间。

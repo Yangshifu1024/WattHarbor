@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"chargepilot/internal/domain/devices"
+	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"time"
 
@@ -43,7 +45,7 @@ func (s DashboardRepo) Read(ctx context.Context, start, end, trendStart time.Tim
 	m := DashboardMetrics{DailyTrend: []DashboardTrendDay{}}
 
 	orders := s.DB.WithContext(ctx).Table("charge_order").Where("deleted_at IS NULL")
-	if err := applyCount(orders, &m.ChargingOrders, "status = 'charging'"); err != nil {
+	if err := applyCount(orders, &m.ChargingOrders, "status = ?", orderdomain.StatusCharging); err != nil {
 		return m, err
 	}
 	if err := applyCount(orders, &m.TodayOrders, "created_at >= ? AND created_at < ?", start, end); err != nil {
@@ -86,7 +88,10 @@ func (s DashboardRepo) Read(ctx context.Context, start, end, trendStart time.Tim
 	}
 	m.DailyTrend = rows
 
-	err = admin.Table("alert_event").Where("status IN ('active','acknowledged')").Count(&m.ActiveAlerts).Error
+	// 未处理告警只含 active 与 acknowledged 两个状态，对应 devices.AlertStatus。
+	err = admin.Table("alert_event").
+		Where("status IN ?", []devices.AlertStatus{devices.AlertActive, devices.AlertAcknowledged}).
+		Count(&m.ActiveAlerts).Error
 	return m, err
 }
 

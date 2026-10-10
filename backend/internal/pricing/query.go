@@ -8,6 +8,7 @@ import (
 
 	charging "chargepilot/internal/domain/charging"
 	"chargepilot/internal/domain/operations"
+	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
 )
 
@@ -18,10 +19,10 @@ type QueryService struct {
 
 // SchemeView 是计费模板的公开字段；JSON 无法解析或缺少 Scheme 的记录跳过。
 type SchemeView struct {
-	ID      uint64           `json:"id"`      // 模板主键
-	Scheme  *charging.Scheme `json:"scheme"`  // 已存模板的完整方案
-	Version uint32           `json:"version"` // 当前模板版本
-	Status  string           `json:"status"`  // active／disabled
+	ID      uint64                `json:"id"`      // 模板主键
+	Scheme  *charging.Scheme      `json:"scheme"`  // 已存模板的完整方案
+	Version uint32                `json:"version"` // 当前模板版本
+	Status  PricingTemplateStatus `json:"status"`  // active／disabled
 }
 
 // EffectiveScheme 分别保存设备覆盖版本和实际生效规则，不能用继承版本代替设备覆盖版本。
@@ -35,7 +36,7 @@ type EffectiveScheme struct {
 
 // ExecutionCapabilities 保存设备适配器和支持的功能。
 type ExecutionCapabilities struct {
-	ProtocolAdapter       string                `json:"protocol_adapter"`        // 中央设备选定的适配器
+	ProtocolAdapter       protocol.AdapterID    `json:"protocol_adapter"`        // 中央设备选定的适配器
 	Capabilities          charging.Capabilities `json:"capabilities"`            // 设备协议支持的计费模式、数值上限和控制方法
 	ReportsEnergy         bool                  `json:"reports_energy"`          // 协议是否支持电量上报，来自 Capabilities
 	ReportsSegmentedPower bool                  `json:"reports_segmented_power"` // 协议是否支持分段功率上报，来自 Capabilities

@@ -74,14 +74,14 @@ func (s RefundAdminService) Request(ctx context.Context, audit ops.AuditContext,
 
 // Review 按支付→退款加锁，核对申请快照和首位审核人的当前权限，审核与审计同事务。
 // 批准不表示渠道到账。
-func (s RefundAdminService) Review(ctx context.Context, audit ops.AuditContext, refundNo string, approve bool, in RefundReviewInput) (string, error) {
+func (s RefundAdminService) Review(ctx context.Context, audit ops.AuditContext, refundNo string, approve bool, in RefundReviewInput) (RefundReviewOutcome, error) {
 	if !audit.Actor.HasPermission("order.refund.review") || audit.Actor.Role != "customer_finance" {
 		return "", operations.ErrForbidden
 	}
 	if (approve && !operations.ValidText(in.ApproveComment, 255)) || (!approve && !operations.ValidText(in.Reason, 255)) {
 		return "", operations.ErrConflict
 	}
-	status := ""
+	status := RefundReviewOutcome("")
 	var recordID uint64
 	var changes []ops.AuditChange
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -92,7 +92,7 @@ func (s RefundAdminService) Review(ctx context.Context, audit ops.AuditContext, 
 		if err != nil {
 			return err
 		}
-		changes = []ops.AuditChange{{Action: status, Target: "refund", ID: recordID, Before: nil, After: in, RequestID: ""}}
+		changes = []ops.AuditChange{{Action: string(status), Target: "refund", ID: recordID, Before: nil, After: in, RequestID: ""}}
 		for _, change := range changes {
 			if err := ops.AppendAuditInTx(tx, audit, change); err != nil {
 				return err

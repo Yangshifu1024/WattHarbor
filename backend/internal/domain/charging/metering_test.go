@@ -1,6 +1,10 @@
 package charging
 
-import "testing"
+import (
+	"testing"
+
+	"chargepilot/internal/protocol"
+)
 
 func TestProtocolCapabilitiesCoverDc589(t *testing.T) {
 	caps, err := ProtocolCapabilities("dc589")
@@ -15,7 +19,8 @@ func TestProtocolCapabilitiesCoverDc589(t *testing.T) {
 }
 
 func TestProtocolCapabilitiesRejectUnknownAdapter(t *testing.T) {
-	for _, adapter := range []string{"", "unknown", "DC589", "dc590"} {
+	// 四个值全部非法：空串、未登记标识，以及大小写与序号不同的近似值。
+	for _, adapter := range []protocol.AdapterID{"", "unknown", "DC589", "dc590"} {
 		if _, err := ProtocolCapabilities(adapter); err == nil {
 			t.Fatalf("协议 %q 不应被接受", adapter)
 		}
@@ -57,19 +62,19 @@ func TestCheckModeSupportRejectsModeWithoutRequiredCapability(t *testing.T) {
 }
 
 func TestValidDeviceChargeModeAcceptsEngineModesOnly(t *testing.T) {
-	for _, mode := range []string{
-		string(ModeServerRealtimePower), string(ModeServerMaxPower), string(ModeServerEnergy),
-		string(ModeDeviceDuration), string(ModeDeviceEnergy), string(ModeDevicePower),
+	for _, mode := range []ChargeMode{
+		ModeServerRealtimePower, ModeServerMaxPower, ModeServerEnergy,
+		ModeDeviceDuration, ModeDeviceEnergy, ModeDevicePower,
 	} {
 		if !ValidDeviceChargeMode(mode) {
 			t.Fatalf("计费引擎认可的 %q 应判合法", mode)
 		}
 		// 前后空白表示设备上报时带了填充，不应因此被判非法。
-		if !ValidDeviceChargeMode("  " + mode + "  ") {
+		if !ValidDeviceChargeMode(ChargeMode("  " + string(mode) + "  ")) {
 			t.Fatalf("带空白的 %q 应判合法", mode)
 		}
 	}
-	for _, mode := range []string{"", "   ", "unknown", "none", "server_unknown"} {
+	for _, mode := range []ChargeMode{"", "   ", "unknown", "none", "server_unknown"} {
 		if ValidDeviceChargeMode(mode) {
 			t.Fatalf("计费引擎不认的 %q 应判非法", mode)
 		}

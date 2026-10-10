@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"chargepilot/internal/domain/money"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"encoding/json"
 	"errors"
@@ -90,7 +91,7 @@ func (s RefundService) Request(ctx context.Context, userID uint64, in RefundInpu
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if account.Status != "active" {
+		if account.Status != walletdomain.AccountActive {
 			return ErrFrozen
 		}
 		if account.BalanceCents-account.FrozenCents < in.AmountCents {

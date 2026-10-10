@@ -94,7 +94,7 @@ func TestInviteEligibleRejectsSelfInviteAndEmptyInviter(t *testing.T) {
 	})
 
 	t.Run("非邀请类触发不受邀请关系影响", func(t *testing.T) {
-		for _, trigger := range []string{TriggerFirstRecharge, TriggerThresholdRedeem, TriggerHoliday} {
+		for _, trigger := range []TriggerType{TriggerFirstRecharge, TriggerThresholdRedeem, TriggerHoliday} {
 			if !InviteEligible(trigger, 0, user) {
 				t.Errorf("%s 不依赖邀请关系，邀请人为空也应照常判定", trigger)
 			}
@@ -138,7 +138,7 @@ func TestGrantSourceForMapsOnlyInviteReward(t *testing.T) {
 	if got := grantSourceFor(TriggerInviteReward); got != "invite_reward" {
 		t.Errorf("邀请有奖应记为 invite_reward，实际 %q", got)
 	}
-	for _, trigger := range []string{TriggerFirstRecharge, TriggerThresholdRedeem, TriggerHoliday} {
+	for _, trigger := range []TriggerType{TriggerFirstRecharge, TriggerThresholdRedeem, TriggerHoliday} {
 		if got := grantSourceFor(trigger); got != "activity" {
 			t.Errorf("%s 应记为 activity，实际 %q", trigger, got)
 		}

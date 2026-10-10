@@ -20,7 +20,9 @@ func vendorUnavailable() *contract.VendorFailure {
 
 // Vendors 查询厂商列表并传递请求追踪号，不自动重试。
 func (c *Client) Vendors(ctx context.Context, q contract.VendorListRequest, requestID string) (contract.VendorListReply, error) {
-	query := url.Values{"page": {strconv.Itoa(q.Page)}, "page_size": {strconv.Itoa(q.PageSize)}, "keyword": {q.Keyword}, "status": {q.Status}}
+	// Status 保留空串：零值 VendorStatus 按跨进程约定编码为 status=，表示不过滤；
+	// 不能改成省略该参数，那会改变接口语义。
+	query := url.Values{"page": {strconv.Itoa(q.Page)}, "page_size": {strconv.Itoa(q.PageSize)}, "keyword": {q.Keyword}, "status": {string(q.Status)}}
 	if len(q.IDs) > 0 {
 		ids := make([]string, len(q.IDs))
 		for i, id := range q.IDs {

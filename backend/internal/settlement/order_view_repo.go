@@ -1,6 +1,7 @@
 package settlement
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 
 	"gorm.io/gorm"
@@ -22,7 +23,7 @@ func (endReceiptView) TableName() string { return "charge_end_receipt" }
 func ListOrderRefunds(ctx context.Context, db *gorm.DB, orderID uint64) ([]map[string]any, error) {
 	rows := []map[string]any{}
 	err := db.WithContext(ctx).Table("refund_record").
-		Where("biz_type = 'charge' AND biz_id = ? AND deleted_at IS NULL", orderID).
+		Where("biz_type = ? AND biz_id = ? AND deleted_at IS NULL", money.PaymentBizCharge, orderID).
 		Select("refund_no, refund_cents, status, reason, created_at").Order("id DESC").Find(&rows).Error
 	return rows, err
 }

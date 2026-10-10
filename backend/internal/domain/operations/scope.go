@@ -1,10 +1,21 @@
 package operations
 
-// 数据范围的两种类型，分别约束站点与厂商维度的可见性。
+// ScopeType 是 admin_data_scope.scope_type 列的数据范围类型，约束可见性维度。
+// 取值与 migrations/central_db/0001_init.sql 中该 ENUM 列一致（station/vendor）。
+type ScopeType string
+
 const (
-	ScopeStation = "station"
-	ScopeVendor  = "vendor"
+	// ScopeStation 表示按站点维度限制可见范围。
+	ScopeStation ScopeType = "station"
+	// ScopeVendor 表示按厂商维度限制可见范围。
+	ScopeVendor ScopeType = "vendor"
 )
+
+// Known 判断是否属于该列的数据库合法集合（两值）。
+// 仅用于识别未知值；归并时遇到未知类型按原行为静默忽略，不得据此报错。
+func (t ScopeType) Known() bool {
+	return t == ScopeStation || t == ScopeVendor
+}
 
 // MaxScopeItems 是单个账号可配置的数据范围条数上限。
 const MaxScopeItems = 500
@@ -12,12 +23,12 @@ const MaxScopeItems = 500
 // DataScope 将账号的站点、厂商范围项归并为内存集合。
 // Unrestricted 为真时表示账号没有任何范围记录，不附加数据范围限制；角色权限仍需单独校验。
 type DataScope struct {
-	AdminUserID  uint64   // 账号 ID
-	ScopeType    string   // 范围类型：station 限站点 / vendor 限厂商
-	ScopeID      uint64   // 该类型下的对象 ID，配合 ScopeType 定位一个站点或厂商
-	StationIDs   []uint64 // 归并后的站点 ID 列表
-	VendorIDs    []uint64 // 归并后的厂商 ID 列表
-	Unrestricted bool     // 是否不受限：无任何范围记录即为真
+	AdminUserID  uint64    // 账号 ID
+	ScopeType    ScopeType // 范围类型：station 限站点 / vendor 限厂商
+	ScopeID      uint64    // 该类型下的对象 ID，配合 ScopeType 定位一个站点或厂商
+	StationIDs   []uint64  // 归并后的站点 ID 列表
+	VendorIDs    []uint64  // 归并后的厂商 ID 列表
+	Unrestricted bool      // 是否不受限：无任何范围记录即为真
 }
 
 // NewDataScope 由一组原始范围行归并出内存范围集合。空输入即不受限。
@@ -70,9 +81,9 @@ func (s DataScope) CanManageStationDefault() bool {
 	return s.Unrestricted || (len(s.StationIDs) == 1 && len(s.VendorIDs) == 0)
 }
 
-// ValidScopeType 只接受 station 和 vendor，空字符串返回 false。
-func ValidScopeType(scopeType string) bool {
-	return scopeType == ScopeStation || scopeType == ScopeVendor
+// ValidScopeType 只接受 station 和 vendor，空值返回 false。
+func ValidScopeType(scopeType ScopeType) bool {
+	return scopeType.Known()
 }
 
 // ValidScopeIDs 要求 1–MaxScopeItems 个非零 ID；不检查重复项。

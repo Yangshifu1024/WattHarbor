@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"chargepilot/internal/domain/money"
+	walletdomain "chargepilot/internal/domain/wallet"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -22,12 +23,12 @@ type WalletRefundReservation struct {
 
 // refundWalletReservation 保存预占时加锁读取的钱包余额、冻结额和状态。
 type refundWalletReservation struct {
-	ID           uint64 // 所属钱包主键
-	UserID       uint64 // 账户所属用户
-	Version      uint64 // 当前版本，资金更新增加版本号
-	BalanceCents int64  // 账面余额，分
-	FrozenCents  int64  // 已预占金额，分
-	Status       string // active 或 frozen；已批准风险可在冻结账户继续预占
+	ID           uint64                     // 所属钱包主键
+	UserID       uint64                     // 账户所属用户
+	Version      uint64                     // 当前版本，资金更新增加版本号
+	BalanceCents int64                      // 账面余额，分
+	FrozenCents  int64                      // 已预占金额，分
+	Status       walletdomain.AccountStatus // wallet_account.status：active 或 frozen；已批准风险可在冻结账户继续预占
 }
 
 // ReserveInTx 按充值来源拆分退款，在调用方事务中冻结可用余额。
@@ -71,7 +72,7 @@ func (s RefundService) ReserveInTx(tx *gorm.DB, req WalletRefundReservation) err
 			continue
 		}
 		sum := sha256.Sum256([]byte(req.RequestID + ":" + strconv.FormatUint(pay.ID, 10)))
-		refundID, err := s.Recorder.CreateInTx(tx, money.RefundDraft{RefundNo: "WR" + hex.EncodeToString(sum[:16]), PaymentOrderID: pay.ID, UserID: req.UserID, BizType: "wallet_recharge", BizID: pay.BizID, AmountCents: amount, Reason: req.Reason, NextAttemptAt: now, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)})
+		refundID, err := s.Recorder.CreateInTx(tx, money.RefundDraft{RefundNo: "WR" + hex.EncodeToString(sum[:16]), PaymentOrderID: pay.ID, UserID: req.UserID, BizType: money.PaymentBizWalletRecharge, BizID: pay.BizID, AmountCents: amount, Reason: req.Reason, NextAttemptAt: now, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)})
 		if err != nil {
 			return err
 		}

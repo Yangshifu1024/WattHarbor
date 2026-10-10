@@ -10,35 +10,37 @@ import (
 )
 
 // ActivityInput 是活动请求参数，时间文本在用例中统一解析。
+// TriggerType 对应 coupon_activity_rule.trigger_type，Status 对应同表 status；
+// 两者与券模板的 DiscountType、CouponStatus 不同表不同义，不得互换。
 type ActivityInput struct {
-	Name            string  `json:"name"`              // 非空活动名称，最多128字
-	TriggerType     string  `json:"trigger_type"`      // first_recharge、invite_reward、threshold_redeem 或 holiday
-	CouponID        uint64  `json:"coupon_id"`         // 奖励券模板，须未删除且启用
-	InviterCouponID *uint64 `json:"inviter_coupon_id"` // 邀请人模板，邀请有奖必填，其他类型可空
-	ThresholdCents  int64   `json:"threshold_cents"`   // 触发门槛，分；满减须为正，首充和节日须为零，邀请奖励允许非负值但不使用
-	MaxGrants       int     `json:"max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
-	PerUserLimit    int     `json:"per_user_limit"`    // 单人配置，0沿用默认一份
-	Status          string  `json:"status"`            // active 或 disabled；空值补 active
-	StartAt         string  `json:"start_at"`          // RFC3339 开始时刻
-	EndAt           string  `json:"end_at"`            // RFC3339 结束时刻，须晚于开始且不超过当前时间 365 天后
+	Name            string         `json:"name"`              // 非空活动名称，最多128字
+	TriggerType     TriggerType    `json:"trigger_type"`      // first_recharge、invite_reward、threshold_redeem 或 holiday
+	CouponID        uint64         `json:"coupon_id"`         // 奖励券模板，须未删除且启用
+	InviterCouponID *uint64        `json:"inviter_coupon_id"` // 邀请人模板，邀请有奖必填，其他类型可空
+	ThresholdCents  int64          `json:"threshold_cents"`   // 触发门槛，分；满减须为正，首充和节日须为零，邀请奖励允许非负值但不使用
+	MaxGrants       int            `json:"max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
+	PerUserLimit    int            `json:"per_user_limit"`    // 单人配置，0沿用默认一份
+	Status          ActivityStatus `json:"status"`            // active 或 disabled；空值补 active
+	StartAt         string         `json:"start_at"`          // RFC3339 开始时刻
+	EndAt           string         `json:"end_at"`            // RFC3339 结束时刻，须晚于开始且不超过当前时间 365 天后
 }
 
 // ActivityView 是活动查询结果，发放上限按券模板和发放来源统计。
 type ActivityView struct {
-	ID              uint64     `json:"id"`                // 活动规则主键
-	Name            string     `json:"name"`              // 活动名称
-	TriggerType     string     `json:"trigger_type"`      // 固定触发类型
-	CouponID        uint64     `json:"coupon_id"`         // 奖励券主键
-	CouponName      string     `json:"coupon_name"`       // 关联模板名称
-	InviterCouponID *uint64    `json:"inviter_coupon_id"` // 可选邀请人奖励券主键
-	ThresholdCents  int64      `json:"threshold_cents"`   // 门槛，分
-	MaxGrants       int        `json:"max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
-	PerUserLimit    int        `json:"per_user_limit"`    // 单人份数配置，0由活动引擎归一为1
-	Status          string     `json:"status"`            // active 或 disabled
-	StartAt         time.Time  `json:"start_at"`          // 开始时刻
-	EndAt           *time.Time `json:"end_at"`            // 结束时刻，可空兼容历史记录
-	CreatedAt       time.Time  `json:"created_at"`        // 创建时刻
-	GrantedCount    int64      `json:"granted_count"`     // 券的活动／邀请来源累计数
+	ID              uint64         `json:"id"`                // 活动规则主键
+	Name            string         `json:"name"`              // 活动名称
+	TriggerType     TriggerType    `json:"trigger_type"`      // 固定触发类型
+	CouponID        uint64         `json:"coupon_id"`         // 奖励券主键
+	CouponName      string         `json:"coupon_name"`       // 关联模板名称
+	InviterCouponID *uint64        `json:"inviter_coupon_id"` // 可选邀请人奖励券主键
+	ThresholdCents  int64          `json:"threshold_cents"`   // 门槛，分
+	MaxGrants       int            `json:"max_grants"`        // 同券模板和发放来源共享的份数上限，0 表示不限量
+	PerUserLimit    int            `json:"per_user_limit"`    // 单人份数配置，0由活动引擎归一为1
+	Status          ActivityStatus `json:"status"`            // active 或 disabled
+	StartAt         time.Time      `json:"start_at"`          // 开始时刻
+	EndAt           *time.Time     `json:"end_at"`            // 结束时刻，可空兼容历史记录
+	CreatedAt       time.Time      `json:"created_at"`        // 创建时刻
+	GrantedCount    int64          `json:"granted_count"`     // 券的活动／邀请来源累计数
 }
 
 // ActivityService 负责活动配置校验和同事务审计。
@@ -48,6 +50,8 @@ type ActivityService struct {
 }
 
 // normalize 校验活动请求并将时间转换为 UTC 写入参数。
+// NormalizeActivity 返回的 ActivityStatus 即 coupon_activity_rule.status 的写入值，
+// 同时回填输入副本用于审计快照。
 func normalize(in ActivityInput, now time.Time) (AdminActivityRuleInput, ActivityInput, error) {
 	start, end, status, err := NormalizeActivity(ActivityRule(in), now)
 	if err != nil {
@@ -71,9 +75,11 @@ func (s ActivityService) List(ctx context.Context, actor operations.Profile, q p
 	if !actor.HasPermission("coupon.activity.read") {
 		return out, operations.ErrForbidden
 	}
-	if q.Page < 1 || q.Page > 100000 || q.PageSize < 1 || q.PageSize > 100 || (q.Status != "" && q.Status != "active" && q.Status != "disabled") {
+	if q.Page < 1 || q.Page > 100000 || q.PageSize < 1 || q.PageSize > 100 || (q.Status != "" && !ActivityStatus(q.Status).Known()) {
 		return out, &InputError{"分页或活动状态无效"}
 	}
+	// q.Status 保持 string：persist.PageQuery.Status 是跨业务共用筛选项，
+	// 此处已按 coupon_activity_rule.status 的两值白名单校验后原样传给仓储的 WHERE 参数。
 	rows, total, err := (AdminActivityRepo{DB: s.DB}).ListActivityRules(ctx, q.Status, q.Keyword, q.Page, q.PageSize)
 	if err != nil {
 		return out, err

@@ -13,18 +13,18 @@ import (
 
 // MeterReview 保存修正前后的价格和计量；第二次审核须确认原数据未变且只修正分段。
 type MeterReview struct {
-	ID               uint64          `json:"id"`                 // 核实记录主键
-	RequestID        string          `json:"request_id"`         // 提案 UUID，同号同内容重放
-	ChargeOrderID    uint64          `json:"charge_order_id"`    // 所属同一订单，不接受跨订单核实 ID
-	OriginalJSON     json.RawMessage `json:"original"`           // 原价格和设备计量 JSON，第二次审核时核对未变
-	CorrectedJSON    json.RawMessage `json:"corrected"`          // 只替换分段后的价格和计量 JSON
-	Reason           string          `json:"reason"`             // 提案依据，1–500 字
-	Status           string          `json:"status"`             // awaiting_second、approved 或 rejected
-	FirstReviewerID  uint64          `json:"first_reviewer_id"`  // 首次提交的财务账号 ID
-	SecondReviewerID *uint64         `json:"second_reviewer_id"` // 第二次审核的财务账号 ID；未决定为空，须与首次提交人不同
-	RejectReason     *string         `json:"reject_reason"`      // 驳回依据，通过或未决定为空
-	CreatedAt        time.Time       `json:"created_at"`         // 提案创建 UTC 时刻
-	ReviewedAt       *time.Time      `json:"reviewed_at"`        // 第二次审核的 UTC 时刻，未决定为空
+	ID               uint64            `json:"id"`                 // 核实记录主键
+	RequestID        string            `json:"request_id"`         // 提案 UUID，同号同内容重放
+	ChargeOrderID    uint64            `json:"charge_order_id"`    // 所属同一订单，不接受跨订单核实 ID
+	OriginalJSON     json.RawMessage   `json:"original"`           // 原价格和设备计量 JSON，第二次审核时核对未变
+	CorrectedJSON    json.RawMessage   `json:"corrected"`          // 只替换分段后的价格和计量 JSON
+	Reason           string            `json:"reason"`             // 提案依据，1–500 字
+	Status           MeterReviewStatus `json:"status"`             // awaiting_second、approved 或 rejected
+	FirstReviewerID  uint64            `json:"first_reviewer_id"`  // 首次提交的财务账号 ID
+	SecondReviewerID *uint64           `json:"second_reviewer_id"` // 第二次审核的财务账号 ID；未决定为空，须与首次提交人不同
+	RejectReason     *string           `json:"reject_reason"`      // 驳回依据，通过或未决定为空
+	CreatedAt        time.Time         `json:"created_at"`         // 提案创建 UTC 时刻
+	ReviewedAt       *time.Time        `json:"reviewed_at"`        // 第二次审核的 UTC 时刻，未决定为空
 }
 
 // TableName 返回计量核实记录所属表，不执行查询或修改。
@@ -36,7 +36,7 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 	var out MeterReview
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct {
-			Status string // 计费任务状态，仅 manual_review 可新建核实
+			Status BillingJobStatus // 计费任务状态，仅 manual_review 可新建核实
 		}
 		if err := tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&job).Error; err != nil {
 			return err
@@ -54,10 +54,12 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 			out = prior
 			return nil
 		}
-		if job.Status != "manual_review" {
+		if job.Status != BillingJobManualReview {
 			return ErrBillingConflict
 		}
 		var active []MeterReview
+		// 字面量对应 charge_meter_review.status 的 awaiting_second / approved 两个活跃取值；
+		// 拆成参数绑定会改变查询形状，故保留 SQL 内字面量并在此指向词表 MeterReviewStatus。
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=? AND status IN ('awaiting_second','approved')", id).Find(&active).Error; err != nil {
 			return err
 		}
@@ -78,7 +80,7 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 			return err
 		}
 		corrected, _ := json.Marshal(source)
-		out = MeterReview{RequestID: request, ChargeOrderID: id, OriginalJSON: original, CorrectedJSON: corrected, Reason: reason, Status: "awaiting_second", FirstReviewerID: actor}
+		out = MeterReview{RequestID: request, ChargeOrderID: id, OriginalJSON: original, CorrectedJSON: corrected, Reason: reason, Status: MeterReviewAwaitingSecond, FirstReviewerID: actor}
 		return tx.Create(&out).Error
 	})
 	return out, err
@@ -90,7 +92,7 @@ func (s BillingOrders) ProposeMeter(ctx context.Context, id, actor uint64, reque
 func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint64, approve bool, reason string) error {
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var job struct {
-			Status string // 计费任务状态，通过核实后才重新排队
+			Status BillingJobStatus // 计费任务状态，通过核实后才重新排队
 		}
 		if err := tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&job).Error; err != nil {
 			return err
@@ -99,9 +101,9 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND charge_order_id=?", reviewID, id).Take(&review).Error; err != nil {
 			return err
 		}
-		target := "rejected"
+		target := MeterReviewRejected
 		if approve {
-			target = "approved"
+			target = MeterReviewApproved
 		}
 		if review.Status == target && review.SecondReviewerID != nil && *review.SecondReviewerID == actor {
 			if !approve && (review.RejectReason == nil || *review.RejectReason != reason) {
@@ -109,7 +111,7 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 			}
 			return nil
 		}
-		if job.Status != "manual_review" || review.Status != "awaiting_second" || review.FirstReviewerID == actor {
+		if job.Status != BillingJobManualReview || review.Status != MeterReviewAwaitingSecond || review.FirstReviewerID == actor {
 			return ErrBillingConflict
 		}
 		if approve {
@@ -145,7 +147,7 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 			return err
 		}
 		if approve {
-			return tx.Table("charge_billing_job").Where("charge_order_id=?", id).Updates(map[string]any{"status": "pending", "generation": gorm.Expr("generation+1"), "next_attempt_at": time.Now().UTC(), "last_error": nil}).Error
+			return tx.Table("charge_billing_job").Where("charge_order_id=?", id).Updates(map[string]any{"status": BillingJobPending, "generation": gorm.Expr("generation+1"), "next_attempt_at": time.Now().UTC(), "last_error": nil}).Error
 		}
 		return nil
 	})
@@ -154,7 +156,7 @@ func (s BillingOrders) ReviewMeter(ctx context.Context, id, reviewID, actor uint
 // LockMeterReviewJob 锁定计费任务，使计量核实、人工金额和审计按顺序处理；缺任务返回错误。
 func LockMeterReviewJob(tx *gorm.DB, id uint64) error {
 	var job struct {
-		Status string /* 计费任务状态：pending、manual_review 或 done */
+		Status BillingJobStatus /* 计费任务状态：pending、manual_review 或 done */
 	}
 	return tx.Table("charge_billing_job").Clauses(clause.Locking{Strength: "UPDATE"}).Where("charge_order_id=?", id).Take(&job).Error
 }

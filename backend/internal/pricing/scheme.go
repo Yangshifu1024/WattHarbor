@@ -36,10 +36,54 @@ type SchemeResult struct {
 	Version uint32 `json:"version"` // 保存后的模板版本
 }
 
+// PricingRuleStatus 是 pricing_rule.status 列的计费规则启停状态。
+// 取值与 migrations/central_db/0001_init.sql 中该 ENUM 列一致（active／disabled）。
+// 与 PricingTemplateStatus 分立：同词表但不同表的两个独立列，状态可各自变化。
+type PricingRuleStatus string
+
+const (
+	// PricingRuleActive 表示规则可用于实际计费。
+	PricingRuleActive PricingRuleStatus = "active"
+	// PricingRuleDisabled 表示规则已停用，不能用于新发布，历史订单快照不变。
+	PricingRuleDisabled PricingRuleStatus = "disabled"
+)
+
+// Known 判断是否属于该列的数据库合法集合（两值）。
+func (s PricingRuleStatus) Known() bool {
+	switch s {
+	case PricingRuleActive, PricingRuleDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// PricingTemplateStatus 是 pricing_template.status 列的计费模板启停状态。
+// 取值与 migrations/central_db/0001_init.sql 中该 ENUM 列一致（active／disabled）。
+// 与 PricingRuleStatus 分立：词表相同但列不同，不能互相赋值。
+type PricingTemplateStatus string
+
+const (
+	// PricingTemplateActive 表示模板可用于发布规则。
+	PricingTemplateActive PricingTemplateStatus = "active"
+	// PricingTemplateDisabled 表示模板已停用；软删也固定置为此值。
+	PricingTemplateDisabled PricingTemplateStatus = "disabled"
+)
+
+// Known 判断是否属于该列的数据库合法集合（两值）。
+func (s PricingTemplateStatus) Known() bool {
+	switch s {
+	case PricingTemplateActive, PricingTemplateDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // ChangeSchemeInput 是启停或删除参数；删除时忽略 Status，但审计保留提交内容。
 type ChangeSchemeInput struct {
-	ExpectedVersion uint32 `json:"expected_version"` // 当前模板版本
-	Status          string `json:"status"`           // active／disabled；删除时由 repo 固定为 disabled
+	ExpectedVersion uint32                `json:"expected_version"` // 当前模板版本
+	Status          PricingTemplateStatus `json:"status"`           // active／disabled；删除时由 repo 固定为 disabled
 }
 
 // Save 核对当前权限后保存完整方案，ID=0 创建，否则检查期望版本。
@@ -72,11 +116,13 @@ func (s SchemeService) Save(ctx context.Context, audit ops.AuditContext, id uint
 }
 
 // ChangeStatus 核对当前权限和期望版本后启停或软删模板，与审计同事务；已发布规则和历史订单价格不变。
+// 删除路径不校验 Status：remove=true 时 in.Status 允许是空串或未知值，仓储会固定写成 disabled。
+// 这里不得改成无条件校验，否则删除请求会被提前拒绝，属于行为变更。
 func (s SchemeService) ChangeStatus(ctx context.Context, audit ops.AuditContext, id uint64, in ChangeSchemeInput, remove bool) error {
 	if !audit.Actor.HasPermission("pricing.rule.update") {
 		return operations.ErrForbidden
 	}
-	if !remove && in.Status != "active" && in.Status != "disabled" {
+	if !remove && !in.Status.Known() {
 		return InputError{Reason: "状态无效"}
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

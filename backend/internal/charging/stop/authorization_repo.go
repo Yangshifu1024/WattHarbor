@@ -1,6 +1,7 @@
 package stop
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"database/sql"
 
@@ -25,7 +26,7 @@ func FindActiveStopAuthorization(ctx context.Context, db *gorm.DB, orderNo strin
 	err := db.WithContext(ctx).Table("charge_order AS c").
 		Select("c.id AS charge_order_id, c.order_no, c.user_id, c.device_id, c.port_no, s.port_id, s.command_id AS start_command_id").
 		Joins("JOIN charge_start_receipt AS s ON s.charge_order_id = c.id AND s.success = TRUE").
-		Where("c.order_no = ? AND c.user_id = ? AND c.status = 'charging' AND c.deleted_at IS NULL AND s.port_id IS NOT NULL", orderNo, userID).
+		Where("c.order_no = ? AND c.user_id = ? AND c.status = ? AND c.deleted_at IS NULL AND s.port_id IS NOT NULL", orderNo, userID, orderdomain.StatusCharging).
 		Take(&row).Error
 	return row, err
 }

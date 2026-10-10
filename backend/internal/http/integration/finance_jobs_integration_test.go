@@ -49,7 +49,7 @@ func (o *financeDeliveryOrders) Apply(_ context.Context, result settlement.Resul
 }
 
 // Defer 对任何 ctx、id、状态及原因返回错误，本场景不得进入新计算任务重排。
-func (o *financeDeliveryOrders) Defer(context.Context, settlement.BillingTask, string, string) error {
+func (o *financeDeliveryOrders) Defer(context.Context, settlement.BillingTask, settlement.BillingJobStatus, string) error {
 	return errors.New("unexpected new calculation defer")
 }
 

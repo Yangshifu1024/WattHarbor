@@ -2,6 +2,7 @@ package payment
 
 import (
 	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"chargepilot/internal/marketing"
 	orderstore "chargepilot/internal/order"
 	"chargepilot/internal/wallet"
@@ -87,10 +88,10 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			}
 			return err
 		}
-		if order.BizType == "wallet_recharge" {
+		if order.BizType == money.PaymentBizWalletRecharge {
 			return settleWalletRecharge(tx, order, payment, digest, paidAt, &callbackResult)
 		}
-		if order.BizType != "charge" {
+		if order.BizType != money.PaymentBizCharge {
 			return ErrPaymentCallbackConflict
 		}
 		var intent PaymentIntentRecord
@@ -119,15 +120,15 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			return ErrPaymentCallbackConflict
 		}
 
-		if order.Status == "paid" || order.Status == "partial_refunded" || order.Status == "refunded" {
+		if order.Status == money.PayStatusPaid || order.Status == money.PayStatusPartialRefunded || order.Status == money.PayStatusRefunded {
 			if digestErr != nil || !order.WechatTransactionID.Valid || order.WechatTransactionID.String != payment.TransactionID || order.PaidCents != payment.PaidCents {
 				return ErrPaymentCallbackConflict
 			}
-			if intent.Status == "refund_required" && !intent.ChargeOrderID.Valid {
+			if intent.Status == money.IntentRefundRequired && !intent.ChargeOrderID.Valid {
 				callbackResult = PaymentCallbackResult{RefundRequired: true, Replayed: true}
 				return nil
 			}
-			if intent.Status != "paid" || !intent.ChargeOrderID.Valid || intent.ChargeOrderID.Int64 <= 0 || order.BizID != uint64(intent.ChargeOrderID.Int64) {
+			if intent.Status != money.IntentPaid || !intent.ChargeOrderID.Valid || intent.ChargeOrderID.Int64 <= 0 || order.BizID != uint64(intent.ChargeOrderID.Int64) {
 				return ErrPaymentCallbackConflict
 			}
 			var chargeOrder orderstore.ChargeOrderRecord
@@ -137,7 +138,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			callbackResult = PaymentCallbackResult{ChargeOrderID: order.BizID, ChargeOrderNo: chargeOrder.OrderNo, Replayed: true}
 			return nil
 		}
-		if order.Status != "initiated" || order.BizID != 0 || digestErr == nil {
+		if order.Status != money.PayStatusInitiated || order.BizID != 0 || digestErr == nil {
 			return ErrPaymentCallbackConflict
 		}
 		if err := tx.Create(&PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
@@ -147,8 +148,8 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			return err
 		}
 
-		updated := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'initiated' AND total_cents = ? AND paid_cents = 0", order.ID, order.OrderNo, payment.PaidCents).
-			Updates(map[string]any{"status": "paid", "paid_cents": payment.PaidCents, "wechat_transaction_id": payment.TransactionID, "paid_at": paidAt})
+		updated := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND order_no = ? AND status = ? AND total_cents = ? AND paid_cents = 0", order.ID, order.OrderNo, money.PayStatusInitiated, payment.PaidCents).
+			Updates(map[string]any{"status": money.PayStatusPaid, "paid_cents": payment.PaidCents, "wechat_transaction_id": payment.TransactionID, "paid_at": paidAt})
 		if updated.Error != nil {
 			return updated.Error
 		}
@@ -156,7 +157,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			return ErrPaymentCallbackConflict
 		}
 
-		if intent.Status != "initiated" || time.Now().After(intent.ExpiresAt) || paidAt.After(intent.ExpiresAt) {
+		if intent.Status != money.IntentInitiated || time.Now().After(intent.ExpiresAt) || paidAt.After(intent.ExpiresAt) {
 			if err := s.queueLatePaymentRefund(tx, intent, order, payment, digest, paidAt); err != nil {
 				return err
 			}
@@ -183,7 +184,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 		}
 		chargeOrder := orderstore.ChargeOrderRecord{OrderNo: chargeNo, UserID: intent.UserID, DeviceID: intent.DeviceID, PortNo: intent.PortNo,
 			PortCode: sql.NullString{String: intent.PortCode, Valid: true}, PaymentOrderID: sql.NullInt64{Int64: int64(order.ID), Valid: true},
-			Status: "paid", PaymentStatus: "paid", ChargeMode: intent.ChargeMode, ChargeQuantity: intent.ChargeQuantity,
+			Status: orderdomain.StatusPaid, PaymentStatus: orderdomain.PaymentPaid, ChargeMode: intent.ChargeMode, ChargeQuantity: intent.ChargeQuantity,
 			DiscountCents: intent.DiscountCents, CreatedMonth: dbutil.MonthStart()}
 		if err := orderstore.CreatePaidInTx(tx, &chargeOrder); err != nil {
 			return err
@@ -195,15 +196,15 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			UserID: intent.UserID, PortCode: intent.PortCode, PricingSnapshot: intent.PricingSnapshot}); err != nil {
 			return err
 		}
-		bound := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND biz_id = 0 AND status = 'paid'", order.ID).Update("biz_id", chargeOrder.ID)
+		bound := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND biz_id = 0 AND status = ?", order.ID, money.PayStatusPaid).Update("biz_id", chargeOrder.ID)
 		if bound.Error != nil {
 			return bound.Error
 		}
 		if bound.RowsAffected != 1 {
 			return ErrPaymentCallbackConflict
 		}
-		paid := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status = 'initiated' AND charge_order_id IS NULL", intent.IntentID).
-			Updates(map[string]any{"status": "paid", "paid_at": paidAt, "charge_order_id": chargeOrder.ID})
+		paid := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status = ? AND charge_order_id IS NULL", intent.IntentID, money.IntentInitiated).
+			Updates(map[string]any{"status": money.IntentPaid, "paid_at": paidAt, "charge_order_id": chargeOrder.ID})
 		if paid.Error != nil {
 			return paid.Error
 		}
@@ -232,8 +233,8 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 // queueLatePaymentRefund 在到账事务中登记迟到支付的自动退款与 Outbox。
 // 退款编号由通知摘要稳定派生，失败回滚支付及摘要；只登记退款，不调用渠道。
 func (s CallbackService) queueLatePaymentRefund(tx *gorm.DB, intent PaymentIntentRecord, order PaymentOrderRecord, payment VerifiedPayment, digest string, paidAt time.Time) error {
-	changed := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status IN ('initiated','expired')", intent.IntentID).
-		Updates(map[string]any{"status": "refund_required", "paid_at": paidAt})
+	changed := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status IN ?", intent.IntentID, refundableIntentStatuses()).
+		Updates(map[string]any{"status": money.IntentRefundRequired, "paid_at": paidAt})
 	if changed.Error != nil {
 		return changed.Error
 	}
@@ -244,6 +245,12 @@ func (s CallbackService) queueLatePaymentRefund(tx *gorm.DB, intent PaymentInten
 		return errors.New("late refund recorder not configured")
 	}
 	return s.Refunds.RecordLateInTx(tx, money.RefundDraft{RefundNo: "REF" + digest[:32], PaymentOrderID: order.ID, UserID: intent.UserID, BizType: "charge", AmountCents: payment.PaidCents, Reason: "payment arrived after intent expired", CreatedMonth: dbutil.MonthStart()}, "R"+digest[:32])
+}
+
+// refundableIntentStatuses 返回可被迟到到账改写为需退款的意图状态集合。
+// 仅 initiated 与 expired 两种意图可转 refund_required；取值来自 money.PaymentIntentStatus 词表。
+func refundableIntentStatuses() []money.PaymentIntentStatus {
+	return []money.PaymentIntentStatus{money.IntentInitiated, money.IntentExpired}
 }
 
 // callbackDigest 对 payment 的渠道、商户、应用、付款人、原单、交易号及金额（分）生成 SHA256 十六进制摘要。
@@ -285,7 +292,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	}
 	// 已处理的支付单只核对交易号、金额和通知摘要，不再次充值。
 	// 重放必须匹配渠道交易、金额和验签载荷摘要，不再次增加钱包余额。
-	if order.Status == "paid" || order.Status == "partial_refunded" || order.Status == "refunded" {
+	if order.Status == money.PayStatusPaid || order.Status == money.PayStatusPartialRefunded || order.Status == money.PayStatusRefunded {
 		if digestErr != nil || !order.WechatTransactionID.Valid ||
 			order.WechatTransactionID.String != payment.TransactionID || order.PaidCents != payment.PaidCents {
 			return ErrPaymentCallbackConflict
@@ -293,7 +300,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 		*result = PaymentCallbackResult{Replayed: true}
 		return nil
 	}
-	if order.Status != "initiated" || order.BizID != 0 || digestErr == nil {
+	if order.Status != money.PayStatusInitiated || order.BizID != 0 || digestErr == nil {
 		return ErrPaymentCallbackConflict
 	}
 	if err := tx.Create(&PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
@@ -303,9 +310,9 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 		return err
 	}
 	paid := tx.Model(&PaymentOrderRecord{}).
-		Where("id = ? AND order_no = ? AND status = 'initiated' AND total_cents = ? AND paid_cents = 0",
-			order.ID, order.OrderNo, payment.PaidCents).
-		Updates(map[string]any{"status": "paid", "paid_cents": payment.PaidCents,
+		Where("id = ? AND order_no = ? AND status = ? AND total_cents = ? AND paid_cents = 0",
+			order.ID, order.OrderNo, money.PayStatusInitiated, payment.PaidCents).
+		Updates(map[string]any{"status": money.PayStatusPaid, "paid_cents": payment.PaidCents,
 			"wechat_transaction_id": payment.TransactionID, "paid_at": paidAt})
 	if paid.Error != nil {
 		return paid.Error
@@ -319,7 +326,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	}
 	// 在充值事务内求值首充奖励；事务回滚时奖励一并回滚。规则不适用时跳过，不阻止结算。
 	if _, err := (marketing.ActivityService{}).ApplyInTx(tx, marketing.ActivityEvent{
-		TriggerType: "first_recharge",
+		TriggerType: marketing.TriggerFirstRecharge,
 		UserID:      order.UserID,
 		EventKey:    marketing.ActivityEventKeyForRecharge(request.RequestID),
 		AmountCents: payment.PaidCents,

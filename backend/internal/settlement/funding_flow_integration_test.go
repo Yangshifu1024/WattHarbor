@@ -82,9 +82,9 @@ func TestWalletRefundQueryUsesStoredApprovalAndBoundedReads(t *testing.T) {
 		if !wanted[row.RequestID] || row.Review == nil || row.Review.ActorID != 99 || len(row.RefundOrders) != 1 || row.RefundOrders[0].RefundCents != 100 {
 			t.Fatalf("missing or foreign detail: %+v", row)
 		}
-		want := "pending"
+		want := wallet.RefundViewPending
 		if !row.Review.Approved {
-			want = "rejected"
+			want = wallet.RefundViewRejected
 		}
 		if row.Status != want {
 			t.Fatalf("approval ignored: %+v", row)

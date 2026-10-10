@@ -139,12 +139,12 @@ func TestRegisteredAdminAccountKeywordUsesLiteralCharacters(t *testing.T) {
 		t.Fatalf("anonymous list status=%d", anonymous.Code)
 	}
 	for _, test := range []struct {
-		name       string   // 独立命名的输入与筛选场景。
-		keyword    string   // 经 URL 编码交给真实分页解析器的文字关键词。
-		status     string   // 原状态筛选，空值不加状态条件。
-		page, size int      // 分页请求，不改变排序或计数规则。
-		total      int64    // 匹配未删除夹具的预期总数，独立于页长。
-		offsets    []uint64 // 当页按主键倒序返回的私有身份。
+		name       string              // 独立命名的输入与筛选场景。
+		keyword    string              // 经 URL 编码交给真实分页解析器的文字关键词。
+		status     ops.AdminUserStatus // 原状态筛选，零值（空串）不加状态条件。
+		page, size int                 // 分页请求，不改变排序或计数规则。
+		total      int64               // 匹配未删除夹具的预期总数，独立于页长。
+		offsets    []uint64            // 当页按主键倒序返回的私有身份。
 	}{
 		{"username underscore", prefix + "u_needle", "", 1, 20, 1, []uint64{10}},
 		{"display underscore", prefix + "d_needle", "", 1, 20, 2, []uint64{14, 12}},
@@ -158,7 +158,7 @@ func TestRegisteredAdminAccountKeywordUsesLiteralCharacters(t *testing.T) {
 		{"ordinary keyword active second page", prefix, "active", 2, 2, 8, []uint64{17, 16}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			query := url.Values{"keyword": {test.keyword}, "page": {fmt.Sprint(test.page)}, "page_size": {fmt.Sprint(test.size)}, "status": {test.status}}
+			query := url.Values{"keyword": {test.keyword}, "page": {fmt.Sprint(test.page)}, "page_size": {fmt.Sprint(test.size)}, "status": {string(test.status)}}
 			request := httptest.NewRequest(http.MethodGet, base+"?"+query.Encode(), nil).WithContext(ctx)
 			request.Header.Set("Authorization", "Bearer "+token)
 			reply := httptest.NewRecorder()

@@ -46,11 +46,31 @@ type CardFreezeReply struct {
 	ResponseJSON string `json:"response_json"` // 首次保存的回复；其他请求先保存时必须使用其结果
 }
 
+// CardAdvanceOutcome 是 worker 推进刷卡投递结果时的外部契约输入取值（retry/done）。
+//
+// 与数据库 card_event_delivery.status（pending/done）不是同一集合：
+// 前者表达调用方对本次处理的判断，后者是库内投递进度；
+// 不得合并成一个类型，也不得用本类型表达或复用 DB 投递状态。
+type CardAdvanceOutcome string
+
+const (
+	// CardAdvanceOutcomeRetry 表示本次处理未完成，安排重试。
+	CardAdvanceOutcomeRetry CardAdvanceOutcome = "retry"
+	// CardAdvanceOutcomeDone 表示本次处理完成，不再重试。
+	CardAdvanceOutcomeDone CardAdvanceOutcome = "done"
+)
+
+// Known 判断是否属于本端点的合法取值集合（两值）。
+// 只用于识别输入取值，不改变 binding 校验行为；未知值仍由 oneof 标签拒绝。
+func (o CardAdvanceOutcome) Known() bool {
+	return o == CardAdvanceOutcomeRetry || o == CardAdvanceOutcomeDone
+}
+
 // CardAdvanceRequest 按事件编号标记完成或安排重试，并记录重试原因。
 type CardAdvanceRequest struct {
-	EventKey string `json:"event_key" binding:"required,max=64"`         // 事件 UUID
-	Outcome  string `json:"outcome" binding:"required,oneof=retry done"` // retry 安排重试，done 标记完成
-	Error    string `json:"error" binding:"omitempty,max=255"`           // 重试原因，最多 255 字符，不得包含凭据
+	EventKey string             `json:"event_key" binding:"required,max=64"`         // 事件 UUID
+	Outcome  CardAdvanceOutcome `json:"outcome" binding:"required,oneof=retry done"` // retry 安排重试，done 标记完成
+	Error    string             `json:"error" binding:"omitempty,max=255"`           // 重试原因，最多 255 字符，不得包含凭据
 }
 
 // CardAdvanceReply 返回本次是否更新了投递状态。

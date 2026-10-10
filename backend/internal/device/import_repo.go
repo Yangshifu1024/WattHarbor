@@ -38,12 +38,14 @@ func (s ImportRepo) LockImportJob(tx *gorm.DB, importID string) (ImportJob, erro
 // ClaimImportJob 按唯一导入号保存首次清单，不覆盖已有任务。
 // 重复插入等待提交后，再由 LockImportJob 锁读核对；不要先锁缺失行。
 // 资料和兼容检查、审计同事务，后续失败须回滚 pending 登记。
+// SQL 内的 'pending' 是 device_import.status 的字面量（ImportStatusPending），保留在语法内。
 func (s ImportRepo) ClaimImportJob(tx *gorm.DB, importID string, actorID uint64, requestJSON string) (bool, error) {
 	res := tx.Exec("INSERT IGNORE INTO device_import(import_id,actor_id,request_json,status) VALUES (?,?,?,'pending')", importID, actorID, requestJSON)
 	return res.RowsAffected == 1, res.Error
 }
 
 // FindActiveStation 检查站点存在、未删除且为 active。
+// status='active' 是 station.status 的字面量（StationActive），不是 device_meta.status。
 func (s ImportRepo) FindActiveStation(tx *gorm.DB, stationID uint64) (Station, error) {
 	var row Station
 	err := tx.Where("id=? AND deleted_at IS NULL AND status='active'", stationID).Take(&row).Error
@@ -98,7 +100,10 @@ func (s ImportRepo) LockImportedDevice(tx *gorm.DB, deviceID string) (ImportedDe
 func (s ImportRepo) CreateImportedDevice(tx *gorm.DB, d ImportDevice) error {
 	row := map[string]any{
 		"device_id": d.DeviceID, "vendor_id": d.VendorID, "station_id": d.StationID,
-		"model": d.Model, "status": "enabled", "protocol_adapter": d.ProtocolAdapter,
+		// "enabled" 写入的是 device_meta.status（devices.DeviceMetaStatus），不是 station.status；
+		// 由 devices 包批次统一，本批次保留裸字面量。
+		// protocol_adapter 写入 protocol.AdapterID；显式转换只为 map 落普通字符串，落库值不变。
+		"model": d.Model, "status": "enabled", "protocol_adapter": string(d.ProtocolAdapter),
 	}
 	// 新建设备未提交计费模式时，使用 device_meta.charge_mode 的数据库默认值。
 	if d.ChargeMode != "" {
@@ -108,13 +113,15 @@ func (s ImportRepo) CreateImportedDevice(tx *gorm.DB, d ImportDevice) error {
 }
 
 // MarkImportFailed 保存脱敏失败原因并增加尝试次数，保留首次清单供重试。
+// 写入 device_import.status 的 failed（ImportStatusFailed）。
 func (s ImportRepo) MarkImportFailed(tx *gorm.DB, importID, reason string) error {
 	return tx.Table("device_import").Where("import_id=?", importID).
-		Updates(map[string]any{"status": "failed", "last_error": reason, "attempts": gorm.Expr("attempts+1")}).Error
+		Updates(map[string]any{"status": ImportStatusFailed, "last_error": reason, "attempts": gorm.Expr("attempts+1")}).Error
 }
 
 // MarkImportCompleted 清空失败原因、增加尝试次数并关闭重试，与设备资料和完成审计同事务提交。
+// 写入 device_import.status 的 completed（ImportStatusCompleted）。
 func (s ImportRepo) MarkImportCompleted(tx *gorm.DB, importID string) error {
 	return tx.Table("device_import").Where("import_id=?", importID).
-		Updates(map[string]any{"status": "completed", "last_error": nil, "attempts": gorm.Expr("attempts+1"), "retryable": false}).Error
+		Updates(map[string]any{"status": ImportStatusCompleted, "last_error": nil, "attempts": gorm.Expr("attempts+1"), "retryable": false}).Error
 }
