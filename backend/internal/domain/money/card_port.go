@@ -5,8 +5,8 @@ import "context"
 
 // PortRef 保存刷卡校验所需的设备、站点和端口状态。
 type PortRef struct {
-	Found        bool   // 端口是否解析成功（scan 侧返回 200 且端口存在）
-	Kind         string // 解析结果类型，刷卡要求 "port"
+	Found        bool     // 端口是否解析成功（scan 侧返回 200 且端口存在）
+	Kind         ScanKind // 解析结果类型，刷卡要求 ScanKindPort
 	DeviceID     string
 	StationID    uint64
 	DeviceStatus string // 设备服务状态，如 enabled

@@ -238,6 +238,8 @@ func LoadChargeUserDetail(ctx context.Context, db *gorm.DB, id uint64, orderLimi
 	if err := db.WithContext(ctx).Raw(`
 		SELECT
 		  (SELECT COUNT(*) FROM coupon_grant WHERE user_id = ? AND deleted_at IS NULL) AS coupon_granted,
+		  -- 'unused' 取 coupon_grant.status 的未核销值，词表见 domain/marketing.GrantStatus；
+		  -- 该字面量在 Raw SQL 内联，无法用 Go 常量绑定，改动前须核对营销侧同一词表。
 		  (SELECT COUNT(*) FROM coupon_grant WHERE user_id = ? AND deleted_at IS NULL AND status = 'unused') AS coupon_unused,
 		  (SELECT COUNT(*) FROM device_fault_report WHERE user_id = ? AND deleted_at IS NULL) AS fault_reports`,
 		id, id, id).Scan(&counts).Error; err != nil {

@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
 	"chargepilot/internal/persist"
 	"context"
 	"time"
@@ -57,12 +58,12 @@ func (s UserWalletRepo) ListWalletTxns(ctx context.Context, userID uint64, direc
 // 状态与有效期取自 payment_order：充值申请本身只记"发起过"。
 // 能不能付要看支付单有没有过期。
 type WalletRechargeRow struct {
-	RequestID   string     `json:"request_id" gorm:"column:request_id"`     // 申请 UUID，同内容重放沿用
-	AmountCents int64      `json:"amount_cents" gorm:"column:amount_cents"` // 申请金额，分
-	Status      string     `json:"status" gorm:"column:status"`             // 支付 initiated 待付、paid 已到账或退款状态
-	ExpiredAt   *time.Time `json:"expires_at" gorm:"column:expired_at"`     // 支付截止时间
-	CreatedAt   time.Time  `json:"created_at" gorm:"column:created_at"`     // 申请创建 UTC 时刻
-	CanPay      bool       `json:"can_pay" gorm:"-"`                        // 未支付且未过期才允许继续付款
+	RequestID   string              `json:"request_id" gorm:"column:request_id"`     // 申请 UUID，同内容重放沿用
+	AmountCents int64               `json:"amount_cents" gorm:"column:amount_cents"` // 申请金额，分
+	Status      money.PaymentStatus `json:"status" gorm:"column:status"`             // 支付 initiated 待付、paid 已到账或退款状态
+	ExpiredAt   *time.Time          `json:"expires_at" gorm:"column:expired_at"`     // 支付截止时间
+	CreatedAt   time.Time           `json:"created_at" gorm:"column:created_at"`     // 申请创建 UTC 时刻
+	CanPay      bool                `json:"can_pay" gorm:"-"`                        // 未支付且未过期才允许继续付款
 }
 
 // ListWalletRecharges 按用户分页读取充值申请及支付状态，按创建顺序倒序。
@@ -225,9 +226,9 @@ func (s UserWalletRepo) ListWalletRefundRequests(ctx context.Context, userID uin
 
 // WalletRefundPartRow 是退款申请拆出的每一笔原路退款。
 type WalletRefundPartRow struct {
-	RefundNo      string     `json:"refund_no" gorm:"column:refund_no"`           // 分笔退款单号，重试沿用
-	RefundCents   int64      `json:"refund_cents" gorm:"column:refund_cents"`     // 退款金额，单位分
-	Status        string     `json:"status" gorm:"column:status"`                 // active 可用或 frozen 冻结
-	FailureReason *string    `json:"failure_reason" gorm:"column:failure_reason"` // 渠道终态失败或需复核原因，可空
-	CompletedAt   *time.Time `json:"completed_at" gorm:"column:completed_at"`     // 渠道完成 UTC 时刻，未完成为空
+	RefundNo      string             `json:"refund_no" gorm:"column:refund_no"`           // 分笔退款单号，重试沿用
+	RefundCents   int64              `json:"refund_cents" gorm:"column:refund_cents"`     // 退款金额，单位分
+	Status        money.RefundStatus `json:"status" gorm:"column:status"`                 // 取自 refund_record.status：pending 待退 / processing 处理中 / success 已退 / failed 失败 / rejected 否决
+	FailureReason *string            `json:"failure_reason" gorm:"column:failure_reason"` // 渠道终态失败或需复核原因，可空
+	CompletedAt   *time.Time         `json:"completed_at" gorm:"column:completed_at"`     // 渠道完成 UTC 时刻，未完成为空
 }

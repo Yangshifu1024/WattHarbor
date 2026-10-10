@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"chargepilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -106,7 +107,7 @@ func activityGrantedCounts(db *gorm.DB, couponIDs []uint64) (map[uint64]int64, e
 	}
 	var rows []row
 	err := db.Table("coupon_grant").Select("coupon_id, COUNT(*) AS total").
-		Where("coupon_id IN ? AND grant_source IN ('activity','invite_reward') AND deleted_at IS NULL", couponIDs).
+		Where("coupon_id IN ? AND grant_source IN ? AND deleted_at IS NULL", couponIDs, activityGrantSources()).
 		Group("coupon_id").Scan(&rows).Error
 	if err != nil {
 		return nil, err
@@ -214,4 +215,10 @@ func requireActivityCoupons(tx *gorm.DB, in AdminActivityRuleInput) error {
 		return &InputError{"邀请人券不存在或已停用"}
 	}
 	return nil
+}
+
+// activityGrantSources 返回需要计入活动发放量的来源集合：仅自动发放与邀请奖励
+// 计入，人工发放与注册赠送属于运营或增长口径，不参与活动规则达标判断。
+func activityGrantSources() []marketingdomain.GrantSource {
+	return []marketingdomain.GrantSource{marketingdomain.GrantSourceActivity, marketingdomain.GrantSourceInviteReward}
 }

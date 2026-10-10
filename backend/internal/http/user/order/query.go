@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	chargingquery "chargepilot/internal/charging/query"
+	orderdomain "chargepilot/internal/domain/order"
 	authhttp "chargepilot/internal/http/auth"
 	userhttp "chargepilot/internal/http/user"
 	orderstore "chargepilot/internal/order"
@@ -181,7 +182,7 @@ func (a QueryAPI) history(c *gin.Context) {
 		return
 	}
 	status := strings.TrimSpace(c.Query("status"))
-	if status != "" && !userhttp.AllowedStatus(status, "pending_payment paid charging completed cancelled failed refunding refunded") {
+	if status != "" && !userhttp.AllowedStatus(status, orderdomain.AllStatuses) {
 		httpapi.BadRequest(c, "订单状态无效")
 		return
 	}

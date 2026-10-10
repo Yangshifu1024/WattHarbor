@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -103,8 +104,8 @@ func (s MySQLSink) ReserveStart(ctx context.Context, paid PaidOrder) (StartReser
 		err := tx.Table("device_port AS p").Select("p.id, p.port_code").
 			Joins("JOIN device AS d ON d.device_id = p.device_id").
 			Joins("JOIN vendor AS v ON v.id = d.vendor_id").
-			Where(`p.device_id = ? AND p.port_no = ? AND p.deleted_at IS NULL AND p.status = 'idle' AND p.current_order_id IS NULL
-				AND d.status = 'enabled' AND d.deleted_at IS NULL AND v.status = 'enabled' AND v.deleted_at IS NULL`, paid.DeviceID, paid.PortNo).
+			Where(`p.device_id = ? AND p.port_no = ? AND p.deleted_at IS NULL AND p.status = ? AND p.current_order_id IS NULL
+				AND d.status = 'enabled' AND d.deleted_at IS NULL AND v.status = 'enabled' AND v.deleted_at IS NULL`, paid.DeviceID, paid.PortNo, money.PortIdle).
 			Clauses(clause.Locking{Strength: "UPDATE"}).Take(&port).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrPortUnavailable
@@ -120,7 +121,7 @@ func (s MySQLSink) ReserveStart(ctx context.Context, paid PaidOrder) (StartReser
 		if _, err := rand.Read(stopSession[:]); err != nil {
 			return err
 		}
-		reserved := tx.Model(&devicePortRow{}).Where("id = ? AND status = 'idle' AND current_order_id IS NULL", port.ID).
+		reserved := tx.Model(&devicePortRow{}).Where("id = ? AND status = ? AND current_order_id IS NULL", port.ID, money.PortIdle).
 			Update("current_order_id", paid.OrderNo)
 		if err := requireOne(reserved); err != nil {
 			return ErrPortUnavailable

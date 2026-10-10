@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"errors"
 	"time"
@@ -49,7 +50,7 @@ func (s QueryService) Recharges(ctx context.Context, userID uint64, page, size i
 	}
 	for i := range out.Items {
 		r := &out.Items[i]
-		r.CanPay = r.Status == "initiated" && r.ExpiredAt != nil && r.ExpiredAt.After(now)
+		r.CanPay = r.Status == money.PayStatusInitiated && r.ExpiredAt != nil && r.ExpiredAt.After(now)
 	}
 	return out, nil
 }

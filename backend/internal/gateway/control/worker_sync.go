@@ -2,6 +2,7 @@ package control
 
 import (
 	gatewaycontract "chargepilot/internal/contracts/gateway"
+	"chargepilot/internal/domain/money"
 	gatewayrepo "chargepilot/internal/gateway/repo"
 	"chargepilot/internal/platform/httpapi"
 	"errors"
@@ -159,7 +160,7 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口状态暂不可读取", nil)
 		return
 	}
-	if port.Status == "idle" && !port.CurrentOrderID.Valid {
+	if port.Status == money.PortIdle && !port.CurrentOrderID.Valid {
 		httpapi.OK(c, gatewaycontract.ReleasePortReply{Released: true, Already: true})
 		return
 	}

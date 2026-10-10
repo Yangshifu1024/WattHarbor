@@ -2,6 +2,7 @@ package query
 
 import (
 	contract "chargepilot/internal/contracts/gateway"
+	orderdomain "chargepilot/internal/domain/order"
 	"chargepilot/internal/order"
 	"context"
 	"database/sql"
@@ -140,7 +141,7 @@ func TestUserSnapshotSharesAdminEstimateWithoutConfirmingFees(t *testing.T) {
 	if err != nil || out.TotalCents == nil || *out.TotalCents != 0 || out.Live.Fee.TotalCents != 10 {
 		t.Fatal("estimate overwrote confirmed zero")
 	}
-	for _, status := range []string{"paid", "completed"} {
+	for _, status := range []orderdomain.OrderStatus{orderdomain.StatusPaid, orderdomain.StatusCompleted} {
 		f.row.Status = status
 		before := live.evidenceCalls
 		out, err = s.Snapshot(t.Context(), 7, "original")

@@ -2,6 +2,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -31,7 +32,7 @@ type MySQLSink struct {
 // HasChargingPorts 查询未删除且 charging 的端口是否存在，返回布尔值和 SQL 错误，不写库。
 func (s MySQLSink) HasChargingPorts(ctx context.Context, deviceID string) (bool, error) {
 	var count int64
-	err := s.DB.WithContext(ctx).Model(&devicePortRow{}).Where("device_id=? AND status='charging' AND deleted_at IS NULL", deviceID).Count(&count).Error
+	err := s.DB.WithContext(ctx).Model(&devicePortRow{}).Where("device_id=? AND status=? AND deleted_at IS NULL", deviceID, money.PortCharging).Count(&count).Error
 	return count > 0, err
 }
 
@@ -204,7 +205,7 @@ func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error
 		if err := requireOne(changed); err != nil {
 			return ErrOrderConflict
 		}
-		port := tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status = 'idle'", command.PortID.Int64, command.OrderNo).Update("status", "charging")
+		port := tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status = ?", command.PortID.Int64, command.OrderNo, money.PortIdle).Update("status", money.PortCharging)
 		if err := requireOne(port); err != nil {
 			return ErrPortUnavailable
 		}
@@ -215,7 +216,7 @@ func applyStartAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error
 		if updated.Error != nil {
 			return updated.Error
 		}
-		return tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status = 'idle'", command.PortID.Int64, command.OrderNo).
+		return tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status = ?", command.PortID.Int64, command.OrderNo, money.PortIdle).
 			Update("current_order_id", nil).Error
 	}
 	return nil
@@ -245,8 +246,8 @@ func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error 
 	if err := requireOne(changed); err != nil {
 		return ErrOrderConflict
 	}
-	port := tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status IN ('idle','charging')", command.PortID.Int64, command.OrderNo).
-		Updates(map[string]any{"status": "idle", "current_order_id": nil})
+	port := tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status IN ?", command.PortID.Int64, command.OrderNo, idleOrChargingPorts()).
+		Updates(map[string]any{"status": money.PortIdle, "current_order_id": nil})
 	if err := requireOne(port); err != nil {
 		return ErrPortUnavailable
 	}
@@ -356,4 +357,10 @@ func eventKey(event protocol.Event) string {
 		_, _ = hash.Write([]byte(event.ReceivedAt.UTC().Format(time.RFC3339Nano)))
 	}
 	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// idleOrChargingPorts 返回可被释放的端口状态集合：空闲与充电中的端口都可以结束
+// 占用回落到空闲，full、fault 与 disabled 不在集合内，避免释放不可用端口。
+func idleOrChargingPorts() []money.PortStatus {
+	return []money.PortStatus{money.PortIdle, money.PortCharging}
 }

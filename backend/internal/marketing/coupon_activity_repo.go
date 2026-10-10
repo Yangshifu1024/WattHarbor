@@ -1,6 +1,9 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"database/sql"
 	"errors"
 	"github.com/go-sql-driver/mysql"
@@ -99,7 +102,7 @@ func activityGrantExists(tx *gorm.DB, eventID string, userID uint64) (bool, erro
 
 // saveActivityGrant 保存新券，按需记录请求号与发放 ID 的关联；唯一键重复时返回已发放。
 func saveActivityGrant(tx *gorm.DB, in activityGrant, receipt bool) (bool, error) {
-	err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": in.Source, "status": "unused", "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error
+	err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": in.Source, "status": marketingdomain.GrantUnused, "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error
 	if isDuplicateKey(err) {
 		return true, nil
 	}
@@ -120,13 +123,13 @@ func saveActivityGrant(tx *gorm.DB, in activityGrant, receipt bool) (bool, error
 // isEstablishedUser 检查邀请人是否有已完成充电或已到账充值；只读相关表，不加锁或写入。
 func isEstablishedUser(tx *gorm.DB, userID uint64) (bool, error) {
 	var n int64
-	if err := tx.Table("charge_order").Where("user_id=? AND status='completed' AND deleted_at IS NULL", userID).Count(&n).Error; err != nil {
+	if err := tx.Table("charge_order").Where("user_id=? AND status=? AND deleted_at IS NULL", userID, orderdomain.StatusCompleted).Count(&n).Error; err != nil {
 		return false, err
 	}
 	if n > 0 {
 		return true, nil
 	}
-	if err := tx.Table("payment_order").Where("user_id=? AND biz_type='wallet_recharge' AND status='paid' AND deleted_at IS NULL", userID).Count(&n).Error; err != nil {
+	if err := tx.Table("payment_order").Where("user_id=? AND biz_type=? AND status=? AND deleted_at IS NULL", userID, money.PaymentBizWalletRecharge, money.PayStatusPaid).Count(&n).Error; err != nil {
 		return false, err
 	}
 	return n > 0, nil

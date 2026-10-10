@@ -1,6 +1,7 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"context"
 	"time"
 
@@ -135,7 +136,7 @@ func manualGrantState(tx *gorm.DB, couponID, userID uint64) (AdminCouponRow, Cou
 
 // saveManualGrant 在调用方事务内保存新券及请求号与发放 ID 的关联，失败须整体回滚。
 func saveManualGrant(tx *gorm.DB, in activityGrant) (uint64, error) {
-	if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": "manual", "status": "unused", "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error; err != nil {
+	if err := tx.Table("coupon_grant").Create(map[string]any{"coupon_id": in.CouponID, "user_id": in.UserID, "grant_source": marketingdomain.GrantSourceManual, "status": marketingdomain.GrantUnused, "expired_at": in.ExpiresAt, "source_event_id": in.EventID}).Error; err != nil {
 		return 0, err
 	}
 	var id uint64

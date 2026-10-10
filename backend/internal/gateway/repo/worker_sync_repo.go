@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"time"
 
@@ -81,8 +82,8 @@ func ReleaseChargingPort(
 	orderNo string,
 ) (int64, error) {
 	res := db.WithContext(ctx).Model(&SyncPortRow{}).
-		Where("id = ? AND current_order_id = ? AND status = 'charging'", portID, orderNo).
-		Updates(map[string]any{"status": "idle", "current_order_id": nil})
+		Where("id = ? AND current_order_id = ? AND status = ?", portID, orderNo, money.PortCharging).
+		Updates(map[string]any{"status": money.PortIdle, "current_order_id": nil})
 	return res.RowsAffected, res.Error
 }
 

@@ -122,6 +122,8 @@ func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {
 	var row profileRow
 	result := s.DB.WithContext(ctx).Raw(`SELECT u.id, u.nickname, u.avatar_url, u.phone, u.first_seen_at,
 		w.balance_cents, w.frozen_cents,
+		-- 'unused' 取 coupon_grant.status 的未核销值，词表见 domain/marketing.GrantStatus。
+		-- 该字面量在 Raw SQL 内联，无法用 Go 常量绑定；改动前须核对营销侧同一词表。
 		(SELECT COUNT(*) FROM coupon_grant AS g WHERE g.user_id = u.id AND g.status = 'unused' AND g.expired_at > NOW(3) AND g.deleted_at IS NULL) AS coupon_unused_count
 		FROM user AS u JOIN wallet_account AS w ON w.user_id = u.id AND w.deleted_at IS NULL
 		WHERE u.id = ? AND u.status = 'active' AND u.deleted_at IS NULL LIMIT 1`, id).Scan(&row)

@@ -1,6 +1,8 @@
 package start
 
 import (
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"context"
 
 	"gorm.io/gorm"
@@ -29,11 +31,13 @@ func (s PendingOrders) PaidStarts(ctx context.Context, afterID uint64) ([]PaidCh
 	rows := []PaidChargeOrder{}
 	err := s.DB.WithContext(ctx).Table("charge_order AS c").
 		Select("c.id, c.order_no").
+		// i.status 属于 charge_payment_intent.status，词表为
+		// initiated/paid/expired/closed/refund_required，与 payment_order.status 不同，保留字面量。
 		Joins("JOIN charge_payment_intent AS i ON i.charge_order_id = c.id AND i.user_id = c.user_id AND i.status = 'paid'").
-		Joins("JOIN payment_order AS p ON p.id = i.payment_order_id AND p.biz_type = 'charge' "+
-			"AND p.biz_id = c.id AND p.user_id = c.user_id AND p.status = 'paid' "+
-			"AND p.total_cents > 0 AND p.paid_cents >= p.total_cents").
-		Where("c.status = 'paid' AND c.deleted_at IS NULL AND c.id > ?", afterID).
+		Joins("JOIN payment_order AS p ON p.id = i.payment_order_id AND p.biz_type = ? "+
+			"AND p.biz_id = c.id AND p.user_id = c.user_id AND p.status = ? "+
+			"AND p.total_cents > 0 AND p.paid_cents >= p.total_cents", money.PaymentBizCharge, money.PayStatusPaid).
+		Where("c.status = ? AND c.deleted_at IS NULL AND c.id > ?", orderdomain.StatusPaid, afterID).
 		Order("c.id").Limit(paidStartBatchSize).Find(&rows).Error
 	return rows, err
 }

@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"encoding/json"
 	"errors"
@@ -107,7 +108,7 @@ func createDevicePorts(tx *gorm.DB, deviceID string, portCount uint8) error {
 	for port := 1; port <= int(portCount); port++ {
 		if err := tx.Table("device_port").Create(map[string]any{
 			"device_id": deviceID, "port_no": port,
-			"port_code": fmt.Sprintf("%s-%d", deviceID, port), "status": "idle",
+			"port_code": fmt.Sprintf("%s-%d", deviceID, port), "status": money.PortIdle,
 		}).Error; err != nil {
 			return err
 		}

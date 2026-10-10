@@ -14,7 +14,7 @@ import (
 
 // RefundListQuery 是退款列表的筛选条件。
 type RefundListQuery struct {
-	Status   string // 退款状态，空值不筛选
+	Status   string // 退款状态（refund_record.status 全量取值），空值不筛选；由 HTTP 白名单校验后传入
 	RefundNo string // 完整退款单号，空值不筛选
 	Page     int    // 已规范化的页码，从 1 开始
 	PageSize int    // 已规范化的每页条数

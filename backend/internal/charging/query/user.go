@@ -2,7 +2,10 @@ package query
 
 import (
 	gatewaycontract "chargepilot/internal/contracts/gateway"
+	carddomain "chargepilot/internal/domain/card"
 	"chargepilot/internal/domain/charging"
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"chargepilot/internal/order"
 	"context"
 	"encoding/json"
@@ -71,15 +74,15 @@ func (e *UserInputError) Error() string { return e.Message }
 
 // CardOperation 定义接口返回的刷卡操作，包括扣款金额、购买时长与确认状态。
 type CardOperation struct {
-	OperationID   string `json:"operation_id"`    // 首次操作 UUID
-	DeviceID      string `json:"device_id"`       // 设备编号
-	EventID       string `json:"event_id"`        // 设备事件编号
-	ChargeOrderID uint64 `json:"charge_order_id"` // 充电订单主键
-	CardID        uint64 `json:"card_id"`         // 卡主键
-	Kind          string `json:"kind"`            // start或extend
-	PriceCents    int64  `json:"price_cents"`     // 扣款金额（分）
-	Minutes       uint16 `json:"minutes"`         // 购买分钟数
-	Status        string `json:"status"`          // 确认状态
+	OperationID   string                         `json:"operation_id"`    // 首次操作 UUID
+	DeviceID      string                         `json:"device_id"`       // 设备编号
+	EventID       string                         `json:"event_id"`        // 设备事件编号
+	ChargeOrderID uint64                         `json:"charge_order_id"` // 充电订单主键
+	CardID        uint64                         `json:"card_id"`         // 卡主键
+	Kind          carddomain.CardOperationKind   `json:"kind"`            // start或extend
+	PriceCents    int64                          `json:"price_cents"`     // 扣款金额（分）
+	Minutes       uint16                         `json:"minutes"`         // 购买分钟数
+	Status        carddomain.CardOperationStatus `json:"status"`          // 确认状态
 }
 
 // BillingCutoff 返回已冻结的计费截止时间；没有记录时为空，不重新计算时间。
@@ -98,11 +101,11 @@ type FrozenState struct {
 
 // PaymentBrief 保留已确认支付金额，不携带 ORM 映射。
 type PaymentBrief struct {
-	OrderNo       string `json:"order_no"`       // 商户支付号
-	TotalCents    int64  `json:"total_cents"`    // 应付，分
-	PaidCents     int64  `json:"paid_cents"`     // 实付，分
-	RefundedCents int64  `json:"refunded_cents"` // 成功退款，分
-	Status        string `json:"status"`         // 支付状态
+	OrderNo       string              `json:"order_no"`       // 商户支付号
+	TotalCents    int64               `json:"total_cents"`    // 应付，分
+	PaidCents     int64               `json:"paid_cents"`     // 实付，分
+	RefundedCents int64               `json:"refunded_cents"` // 成功退款，分
+	Status        money.PaymentStatus `json:"status"`         // 支付状态
 }
 
 // DetailFunds 保存支付摘要和退款列表，只供查询展示。
@@ -114,7 +117,7 @@ type DetailFunds struct {
 // UserOrderView 保留公开字段，确认金额缺失时省略，确认零值则显式输出。
 type UserOrderView struct {
 	OrderNo                  string                  `json:"order_no"`                      // 业务单号
-	Status                   string                  `json:"status"`                        // 订单状态
+	Status                   orderdomain.OrderStatus `json:"status"`                        // 订单状态
 	DeviceID                 string                  `json:"device_id"`                     // 设备编号
 	PortNo                   uint8                   `json:"port_no"`                       // 物理端口
 	StartedAt                *time.Time              `json:"started_at"`                    // 开始 UTC 时刻，可空
@@ -159,7 +162,7 @@ func (s UserService) now() time.Time {
 
 // base 将已授权订单的确认费用与冻结方案组合为详情字段。
 func (s UserService) base(ctx context.Context, row order.ChargeOrderRecord) (UserOrderView, error) {
-	out := UserOrderView{OrderNo: row.OrderNo, Status: row.Status, DeviceID: row.DeviceID, PortNo: row.PortNo, DiscountCents: row.DiscountCents, StartConfirmationPending: row.Status == "paid"}
+	out := UserOrderView{OrderNo: row.OrderNo, Status: row.Status, DeviceID: row.DeviceID, PortNo: row.PortNo, DiscountCents: row.DiscountCents, StartConfirmationPending: row.Status == orderdomain.StatusPaid}
 	if row.StartedAt.Valid {
 		at := row.StartedAt.Time.UTC()
 		out.StartedAt = &at
@@ -250,13 +253,13 @@ func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (U
 	if err != nil {
 		return out, err
 	}
-	poll := row.Status == "paid" || row.Status == "charging"
+	poll := row.Status == orderdomain.StatusPaid || row.Status == orderdomain.StatusCharging
 	delay := 5000
 	available := false
 	out.PollContinue = &poll
 	out.NextPollAfterMS = &delay
 	out.TelemetryAvailable = &available
-	if row.Status != "charging" || !row.StartedAt.Valid {
+	if row.Status != orderdomain.StatusCharging || !row.StartedAt.Valid {
 		return out, nil
 	}
 	if err := ctx.Err(); err != nil {

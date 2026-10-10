@@ -2,6 +2,7 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/identity"
 	"chargepilot/internal/ops"
@@ -75,7 +76,7 @@ func (s CouponService) Quote(ctx context.Context, userID, grantID uint64, totalC
 	if err != nil {
 		return 0, err
 	}
-	if grant.Status != "unused" || !grant.ExpiresAt.After(time.Now().UTC()) {
+	if grant.Status != marketingdomain.GrantUnused || !grant.ExpiresAt.After(time.Now().UTC()) {
 		return 0, ErrCouponExhausted
 	}
 	return discountFor(grant, totalCents)
@@ -91,7 +92,7 @@ func (s CouponService) RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) 
 	if err != nil {
 		return err
 	}
-	if grant.Status == "used" {
+	if grant.Status == marketingdomain.GrantUsed {
 		if grant.UsedPaymentOrderID == nil || *grant.UsedPaymentOrderID != ref.PaymentOrder {
 			return ErrCouponExhausted
 		}
@@ -104,7 +105,7 @@ func (s CouponService) RedeemInTx(tx *gorm.DB, ref RedeemRef, reference string) 
 		}
 		return nil
 	}
-	if grant.Status != "unused" || !grant.ExpiresAt.After(time.Now().UTC()) {
+	if grant.Status != marketingdomain.GrantUnused || !grant.ExpiresAt.After(time.Now().UTC()) {
 		return ErrCouponExhausted
 	}
 	discount, err := discountFor(grant, ref.TotalCents)

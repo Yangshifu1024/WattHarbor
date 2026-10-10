@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -83,7 +84,7 @@ func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (Sto
 			return ErrOrderConflict
 		}
 		var port devicePortRow
-		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND device_id = ? AND port_no = ? AND current_order_id = ? AND status = 'charging'", active.PortID, active.DeviceID, active.PortNo, active.OrderNo).Take(&port).Error
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND device_id = ? AND port_no = ? AND current_order_id = ? AND status = ?", active.PortID, active.DeviceID, active.PortNo, active.OrderNo, money.PortCharging).Take(&port).Error
 		if err != nil {
 			return ErrPortUnavailable
 		}

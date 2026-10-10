@@ -1,6 +1,8 @@
 package order
 
 import (
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"errors"
 	"time"
 	"unicode/utf8"
@@ -19,8 +21,8 @@ func (a API) paymentOrders(c *gin.Context) {
 	}
 	q := payment.PaymentOrderQuery{PageQuery: page, OrderNo: c.Query("order_no"), BizType: c.Query("biz_type"),
 		PayMethod: c.Query("pay_method"), PaymentStatus: c.Query("payment_status")}
-	if utf8.RuneCountInString(q.OrderNo) > 64 || !adminhttp.AdminOneOf(q.BizType, "charge wallet_recharge") ||
-		!adminhttp.AdminOneOf(q.PayMethod, "wechat balance") || !adminhttp.AdminOneOf(q.PaymentStatus, "pending paid refunded partial_refunded") {
+	if utf8.RuneCountInString(q.OrderNo) > 64 || !adminhttp.AdminOneOf(q.BizType, money.AllPaymentBizTypes) ||
+		!adminhttp.AdminOneOf(q.PayMethod, "wechat balance") || !adminhttp.AdminOneOf(q.PaymentStatus, orderdomain.AllPaymentStatuses) {
 		httpapi.BadRequest(c, "支付单号、用途、支付方式或支付状态无效")
 		return
 	}

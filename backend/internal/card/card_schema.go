@@ -1,6 +1,7 @@
 package card
 
 import (
+	carddomain "chargepilot/internal/domain/card"
 	"context"
 
 	"gorm.io/gorm"
@@ -32,15 +33,15 @@ type CardCharge struct {
 
 // CardOperation 保存一次首购或续购结果，按设备和事件号判重；confirming 表示仍待启动确认。
 type CardOperation struct {
-	OperationID   string `json:"operation_id"`    // 首次操作 UUID，同事件重试沿用
-	DeviceID      string `json:"device_id"`       // 设备编号，与 EventID 共同判重
-	EventID       string `json:"event_id"`        // 刷卡事件号，重试不得替换
-	ChargeOrderID uint64 `json:"charge_order_id"` // 首次操作所属充电订单主键
-	CardID        uint64 `json:"card_id"`         // 绑定卡主键
-	Kind          string `json:"kind"`            // start 首购或 extend 续购
-	PriceCents    int64  `json:"price_cents"`     // 本次扣款金额，单位分
-	Minutes       uint16 `json:"minutes"`         // 本次购买时长，单位分钟
-	Status        string `json:"status"`          // 操作状态：confirming/confirmed/failed
+	OperationID   string                         `json:"operation_id"`    // 首次操作 UUID，同事件重试沿用
+	DeviceID      string                         `json:"device_id"`       // 设备编号，与 EventID 共同判重
+	EventID       string                         `json:"event_id"`        // 刷卡事件号，重试不得替换
+	ChargeOrderID uint64                         `json:"charge_order_id"` // 首次操作所属充电订单主键
+	CardID        uint64                         `json:"card_id"`         // 绑定卡主键
+	Kind          carddomain.CardOperationKind   `json:"kind"`            // start 首购或 extend 续购
+	PriceCents    int64                          `json:"price_cents"`     // 本次扣款金额，单位分
+	Minutes       uint16                         `json:"minutes"`         // 本次购买时长，单位分钟
+	Status        carddomain.CardOperationStatus `json:"status"`          // 操作状态：confirming/confirmed/failed
 }
 
 // OnlineCardAuditInput 是一次在线卡变更的审计内容。

@@ -2,6 +2,7 @@ package order
 
 import (
 	"chargepilot/internal/domain/operations"
+	orderdomain "chargepilot/internal/domain/order"
 	"chargepilot/internal/ops"
 	"chargepilot/internal/persist"
 	"context"
@@ -107,7 +108,7 @@ func (s FeedbackService) Submit(ctx context.Context, userID, orderID uint64, in 
 		if err != nil {
 			return err
 		}
-		if order.UserID != userID || (order.Status != "completed" && order.Status != "refunding" && order.Status != "refunded") {
+		if order.UserID != userID || (order.Status != orderdomain.StatusCompleted && order.Status != orderdomain.StatusRefunding && order.Status != orderdomain.StatusRefunded) {
 			return ErrFeedbackOrderNotReady
 		}
 		exists, err := repo.HasFeedback(tx, orderID)

@@ -2,6 +2,8 @@ package settlement
 
 import (
 	chargingstore "chargepilot/internal/card"
+	carddomain "chargepilot/internal/domain/card"
+	"chargepilot/internal/domain/money"
 	"chargepilot/internal/marketing"
 	"chargepilot/internal/ops"
 	orderstore "chargepilot/internal/order"
@@ -88,7 +90,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 	if err := db.Where("id=? AND ended_at IS NOT NULL AND deleted_at IS NULL", id).Take(&order).Error; err != nil {
 		return Source{}, err
 	}
-	if !order.StartedAt.Valid || (order.Status != "completed" && order.Status != "refunding" && order.Status != "refunded") {
+	if !order.StartedAt.Valid || !invoiceableStatus(order.Status) {
 		return Source{}, ErrBillingConflict
 	}
 	var snapshot orderstore.ChargePricingSnapshotRecord
@@ -122,7 +124,7 @@ func readOriginalBillingSource(db *gorm.DB, id uint64) (Source, error) {
 		base.DurationMinutes = card.PurchasedMinutes
 		source.Offer = &base
 		var pending int64
-		if err := db.Model(&chargingstore.CardOperation{}).Where("charge_order_id=? AND status='confirming'", id).Count(&pending).Error; err != nil {
+		if err := db.Model(&chargingstore.CardOperation{}).Where("charge_order_id=? AND status=?", id, carddomain.CardStatusConfirming).Count(&pending).Error; err != nil {
 			return source, err
 		}
 		if pending > 0 {
@@ -211,7 +213,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND deleted_at IS NULL", reference.ID).Take(&order).Error; err != nil {
 			return err
 		}
-		if !order.PaymentOrderID.Valid || uint64(order.PaymentOrderID.Int64) != payment.ID || (payment.PayMethod != "wechat" && payment.PayMethod != "balance") || (payment.Status != "paid" && payment.Status != "partial_refunded" && payment.Status != "refunded") || payment.PaidCents != payment.TotalCents || payment.BizID != order.ID || payment.BizType != "charge" || payment.UserID != order.UserID || payment.PaidCents <= 0 || payment.RefundedCents < 0 || payment.RefundedCents > payment.PaidCents {
+		if !order.PaymentOrderID.Valid || uint64(order.PaymentOrderID.Int64) != payment.ID || (payment.PayMethod != "wechat" && payment.PayMethod != "balance") || (!oneOf(payment.Status, money.PaidLikeStatuses)) || payment.PaidCents != payment.TotalCents || payment.BizID != order.ID || payment.BizType != money.PaymentBizCharge || payment.UserID != order.UserID || payment.PaidCents <= 0 || payment.RefundedCents < 0 || payment.RefundedCents > payment.PaidCents {
 			return ErrBillingConflict
 		}
 		source, err := readBillingSource(tx, order.ID)
@@ -265,7 +267,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 		var reserved int64
 		if err := tx.Model(&RefundRecord{}).Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("COALESCE(SUM(refund_cents),0)").
-			Where("payment_order_id=? AND status IN ('pending','processing') AND deleted_at IS NULL", payment.ID).
+			Where("payment_order_id=? AND status IN ? AND deleted_at IS NULL", payment.ID, unsettledRefundStatuses()).
 			Scan(&reserved).Error; err != nil {
 			return err
 		}
@@ -280,7 +282,7 @@ func (s BillingOrders) Apply(ctx context.Context, result Result) error {
 					return err
 				}
 			} else {
-				refund := RefundRecord{RefundNo: fmt.Sprintf("FEE-R%020d", order.ID), PaymentOrderID: payment.ID, UserID: order.UserID, BizType: "charge", BizID: order.ID, RefundCents: surplus, Reason: sql.NullString{String: "实际计费后的预付差额", Valid: true}, Status: "pending", ExecutionPolicy: "automatic", CreatedMonth: dbutil.MonthStart()}
+				refund := RefundRecord{RefundNo: fmt.Sprintf("FEE-R%020d", order.ID), PaymentOrderID: payment.ID, UserID: order.UserID, BizType: money.PaymentBizCharge, BizID: order.ID, RefundCents: surplus, Reason: sql.NullString{String: "实际计费后的预付差额", Valid: true}, Status: money.RefundPending, ExecutionPolicy: "automatic", CreatedMonth: dbutil.MonthStart()}
 				if err := tx.Create(&refund).Error; err != nil {
 					return err
 				}

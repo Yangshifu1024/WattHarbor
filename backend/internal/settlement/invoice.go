@@ -1,6 +1,7 @@
 package settlement
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	orderrepo "chargepilot/internal/order"
 	"chargepilot/internal/persist"
 	"context"
@@ -60,7 +61,7 @@ func (s InvoiceService) Create(ctx context.Context, userID uint64, in InvoiceInp
 	if err != nil {
 		return InvoiceApplication{}, fmt.Errorf("%w: %w", ErrInvoiceOrderLookup, err)
 	}
-	if order.Status != "completed" && order.Status != "refunding" && order.Status != "refunded" {
+	if !invoiceableStatus(order.Status) {
 		return InvoiceApplication{}, ErrInvoiceUnfinished
 	}
 	receipt, err := LoadInvoiceFee(ctx, s.DB, order.ID)
@@ -78,11 +79,18 @@ func (s InvoiceService) Create(ctx context.Context, userID uint64, in InvoiceInp
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrInvoiceOrderLookup, err)
 		}
-		if status != "completed" && status != "refunding" && status != "refunded" {
+		if !invoiceableStatus(status) {
 			return ErrInvoiceUnfinished
 		}
 		id, err = ApplyInvoice(tx, InvoiceApplyInput{InvoiceNo: no, UserID: userID, OrderID: order.ID, TotalCents: total, InvoiceType: in.InvoiceType, Title: title, TaxNo: strings.TrimSpace(in.TaxNo), Email: strings.TrimSpace(in.Email)})
 		return err
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	return InvoiceApplication{InvoiceNo: no, ID: id, ReviewStatus: "pending", TotalCents: total}, err
+}
+
+// invoiceableStatus 判断订单是否已可开票：已完成、已受理退款或已退款都允许，
+// 其余状态说明尚未产生最终可结算的计费凭据。发票申请与计费任务共用该判定，
+// 两处必须一致，否则同一订单会在两条链路上得到相反结论。
+func invoiceableStatus(status orderdomain.OrderStatus) bool {
+	return status == orderdomain.StatusCompleted || status == orderdomain.StatusRefunding || status == orderdomain.StatusRefunded
 }

@@ -1,6 +1,7 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -33,11 +34,11 @@ type ActivityResult struct {
 
 // activityGrant 是待保存的发放内容，不含数据库字段映射。
 type activityGrant struct {
-	CouponID  uint64    // 奖励模板
-	UserID    uint64    // 受益用户
-	Source    string    // 活动或邀请来源
-	ExpiresAt time.Time // 自发放起算的有效期，最晚不超过模板和活动的结束时间
-	EventID   string    // 由规则、用户和事件键生成的稳定 32 字符发放号
+	CouponID  uint64                      // 奖励模板
+	UserID    uint64                      // 受益用户
+	Source    marketingdomain.GrantSource // 发放来源，落库为 coupon_grant.grant_source
+	ExpiresAt time.Time                   // 自发放起算的有效期，最晚不超过模板和活动的结束时间
+	EventID   string                      // 由规则、用户和事件键生成的稳定 32 字符发放号
 }
 
 // ApplyInTx 按规则主键→模板主键→发放行加锁，再检查总量和单人额度并发券。
@@ -161,7 +162,7 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent, coupons 
 			return out, nil
 		}
 		inviterEvent := ActivityEvent{UserID: event.InviterID, EventKey: eventID, Now: event.Now}
-		_, err = saveActivityGrant(tx, activityGrant{CouponID: id, UserID: event.InviterID, Source: "invite_reward", ExpiresAt: activityExpiry(rule, coupon, event.Now), EventID: activityEventID(rule.ID, inviterEvent, "inviter")}, false)
+		_, err = saveActivityGrant(tx, activityGrant{CouponID: id, UserID: event.InviterID, Source: marketingdomain.GrantSourceInviteReward, ExpiresAt: activityExpiry(rule, coupon, event.Now), EventID: activityEventID(rule.ID, inviterEvent, "inviter")}, false)
 		if err != nil {
 			return out, err
 		}
@@ -171,11 +172,11 @@ func grantFromRule(tx *gorm.DB, rule activityRule, event ActivityEvent, coupons 
 }
 
 // grantSourceFor 将邀请奖励归为 invite_reward，其余活动归为 activity。
-func grantSourceFor(trigger string) string {
+func grantSourceFor(trigger string) marketingdomain.GrantSource {
 	if trigger == TriggerInviteReward {
-		return "invite_reward"
+		return marketingdomain.GrantSourceInviteReward
 	}
-	return "activity"
+	return marketingdomain.GrantSourceActivity
 }
 
 // activityEventID 根据规则、用户、事件键和奖励方生成稳定的 32 字符发放号，不使用重试时间。

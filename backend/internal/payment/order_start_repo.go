@@ -1,6 +1,8 @@
 package payment
 
 import (
+	"chargepilot/internal/domain/money"
+	orderdomain "chargepilot/internal/domain/order"
 	"database/sql"
 
 	"gorm.io/gorm"
@@ -59,7 +61,7 @@ func LockWechatPaymentForRefund(tx *gorm.DB, chargeOrderID uint64) (OrderPayment
 		Joins("JOIN payment_order AS p ON p.id = c.payment_order_id AND p.biz_type = 'charge' "+
 			"AND p.pay_method = 'wechat' AND p.biz_id = c.id AND p.user_id = c.user_id").
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("c.id = ? AND p.status = 'paid' AND p.deleted_at IS NULL", chargeOrderID).Take(&row).Error
+		Where("c.id = ? AND p.status = ? AND p.deleted_at IS NULL", chargeOrderID, orderdomain.StatusPaid).Take(&row).Error
 	return row, err
 }
 
@@ -67,7 +69,7 @@ func LockWechatPaymentForRefund(tx *gorm.DB, chargeOrderID uint64) (OrderPayment
 // 状态由调用方依据持锁期间读取的同一份支付金额决定。
 // tx 须已持有 paymentID 支付锁，cents 为本次确认退款的金额（分），status 为核对后的目标状态。
 // 返回更新错误要求业务、钱包及退款一起回滚；不自行提交或请求渠道。
-func AddPaymentRefunded(tx *gorm.DB, paymentID uint64, cents int64, status string) error {
+func AddPaymentRefunded(tx *gorm.DB, paymentID uint64, cents int64, status money.PaymentStatus) error {
 	return tx.Table("payment_order").Where("id=?", paymentID).
 		Updates(map[string]any{"refunded_cents": gorm.Expr("refunded_cents+?", cents), "status": status}).Error
 }

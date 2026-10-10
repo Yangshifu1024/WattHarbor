@@ -1,6 +1,7 @@
 package order
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"chargepilot/internal/persist"
 	"context"
 	"gorm.io/gorm"
@@ -14,10 +15,10 @@ type FeedbackRepo struct {
 
 // FeedbackOrder 是提交反馈的当前订单信息；锁定后核对用户及完成状态。
 type FeedbackOrder struct {
-	ID       uint64 // 订单主键
-	UserID   uint64 // 订单所有人
-	DeviceID string // 设备编号，写入反馈快照
-	Status   string // 当前 completed/refunding/refunded 等生命周期
+	ID       uint64                  // 订单主键
+	UserID   uint64                  // 订单所有人
+	DeviceID string                  // 设备编号，写入反馈快照
+	Status   orderdomain.OrderStatus // 当前订单生命周期状态，反馈准入只允许 completed、refunding、refunded
 }
 
 // ResolveOwnedReference 按 userID 和 orderNo 读取未删除订单编号，返回主键，缺失时返回错误。

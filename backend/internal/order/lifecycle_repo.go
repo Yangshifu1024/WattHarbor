@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	orderdomain "chargepilot/internal/domain/order"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -17,13 +18,13 @@ var ErrLifecycleConflict = errors.New("order lifecycle state conflicts with the 
 // LifecycleView 保存启动、结束回执所需的标识、状态与付款归属信息；
 // 价格、计量与支付金额由各自模块读取。
 type LifecycleView struct {
-	ID             uint64        `gorm:"column:id"`               // 订单主键，与月首共同定位分区
-	UserID         uint64        `gorm:"column:user_id"`          // 订单所有人，决定端口占用与退款归属
-	DeviceID       string        `gorm:"column:device_id"`        // 设备全局编号，必须与回执一致
-	PortNo         uint8         `gorm:"column:port_no"`          // 设备端口号，从 1 开始
-	PaymentOrderID sql.NullInt64 `gorm:"column:payment_order_id"` // 关联支付主键；余额退款按此定位支付，未关联为空
-	Status         string        `gorm:"column:status"`           // 持久化生命周期，阶段校验只认 paid、charging
-	StartedAt      sql.NullTime  `gorm:"column:started_at"`       // 实际启动 UTC 时刻；结束计量不得早于该时刻
+	ID             uint64                  `gorm:"column:id"`               // 订单主键，与月首共同定位分区
+	UserID         uint64                  `gorm:"column:user_id"`          // 订单所有人，决定端口占用与退款归属
+	DeviceID       string                  `gorm:"column:device_id"`        // 设备全局编号，必须与回执一致
+	PortNo         uint8                   `gorm:"column:port_no"`          // 设备端口号，从 1 开始
+	PaymentOrderID sql.NullInt64           `gorm:"column:payment_order_id"` // 关联支付主键；余额退款按此定位支付，未关联为空
+	Status         orderdomain.OrderStatus `gorm:"column:status"`           // 持久化生命周期，阶段校验只认 paid、charging
+	StartedAt      sql.NullTime            `gorm:"column:started_at"`       // 实际启动 UTC 时刻；结束计量不得早于该时刻
 }
 
 // LockForLifecycleInTx 按主键与业务单号锁定未删除订单。
@@ -41,8 +42,8 @@ func LockForLifecycleInTx(tx *gorm.DB, id uint64, orderNo string) (LifecycleView
 // startedAt 取设备回执的 UTC 毫秒时刻；失败时调用方回滚回执和事件，不在此提交。
 func ActivateInTx(tx *gorm.DB, id uint64, orderNo string, startedAt time.Time) error {
 	updated := tx.Model(&ChargeOrderRecord{}).
-		Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", id, orderNo).
-		Updates(map[string]any{"status": "charging", "started_at": startedAt.UTC()})
+		Where("id = ? AND order_no = ? AND status = ? AND deleted_at IS NULL", id, orderNo, orderdomain.StatusPaid).
+		Updates(map[string]any{"status": orderdomain.StatusCharging, "started_at": startedAt.UTC()})
 	if updated.Error != nil {
 		return updated.Error
 	}
@@ -57,8 +58,8 @@ func ActivateInTx(tx *gorm.DB, id uint64, orderNo string, startedAt time.Time) e
 // 渠道路径由 worker 依 refund_record 更新。谓词与行数要求同 ActivateInTx。
 func MarkStartRejectedInTx(tx *gorm.DB, id uint64, orderNo, failureReason string) error {
 	updated := tx.Model(&ChargeOrderRecord{}).
-		Where("id = ? AND order_no = ? AND status = 'paid' AND deleted_at IS NULL", id, orderNo).
-		Updates(map[string]any{"failure_reason": failureReason, "status": "refunding"})
+		Where("id = ? AND order_no = ? AND status = ? AND deleted_at IS NULL", id, orderNo, orderdomain.StatusPaid).
+		Updates(map[string]any{"failure_reason": failureReason, "status": orderdomain.StatusRefunding})
 	if updated.Error != nil {
 		return updated.Error
 	}
@@ -74,8 +75,8 @@ func MarkStartRejectedInTx(tx *gorm.DB, id uint64, orderNo, failureReason string
 // 因此迟到的重复结束不能覆盖已完成的订单计量。函数不提交事务。
 func CompleteInTx(tx *gorm.DB, id uint64, orderNo string, endedAt time.Time, chargedKWh string, chargedSeconds int64) error {
 	updated := tx.Model(&ChargeOrderRecord{}).
-		Where("id = ? AND order_no = ? AND status = 'charging' AND deleted_at IS NULL", id, orderNo).
-		Updates(map[string]any{"status": "completed", "ended_at": endedAt.UTC(), "charged_kwh": chargedKWh, "charged_seconds": chargedSeconds})
+		Where("id = ? AND order_no = ? AND status = ? AND deleted_at IS NULL", id, orderNo, orderdomain.StatusCharging).
+		Updates(map[string]any{"status": orderdomain.StatusCompleted, "ended_at": endedAt.UTC(), "charged_kwh": chargedKWh, "charged_seconds": chargedSeconds})
 	if updated.Error != nil {
 		return updated.Error
 	}

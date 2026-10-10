@@ -1,9 +1,9 @@
 package order
 
 import (
+	devstore "chargepilot/internal/device"
 	"errors"
 
-	devstore "chargepilot/internal/device"
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/http/admin"
 	ordercase "chargepilot/internal/order"
@@ -136,7 +136,7 @@ func (a API) dispatchFault(c *gin.Context) {
 		faultFailure(c, err)
 		return
 	}
-	httpapi.OK(c, gin.H{"assigned_to": in.AssignedTo, "status": "dispatched"})
+	httpapi.OK(c, gin.H{"assigned_to": in.AssignedTo, "status": devstore.FaultDispatched})
 }
 
 // resolveFault 更新报修工单状态和处理说明，返回工单状态。

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"chargepilot/internal/domain/operations"
+	orderdomain "chargepilot/internal/domain/order"
 	adminhttp "chargepilot/internal/http/admin"
 	orderstore "chargepilot/internal/order"
 	"chargepilot/internal/platform/httpapi"
@@ -15,13 +16,13 @@ import (
 
 // orders 按分页、筛选和管理员身份查询充电订单。
 func (a API) orders(c *gin.Context) {
-	page, ok := adminhttp.ReadAdminPage(c, "pending_payment paid charging completed cancelled failed refunding refunded")
+	page, ok := adminhttp.ReadAdminPage(c, orderdomain.AllStatuses)
 	if !ok {
 		return
 	}
 	q := orderstore.OrderQuery{PageQuery: page, OrderNo: c.Query("order_no"), DeviceID: c.Query("device_id"),
 		BusinessStatus: c.Query("business_status"), PaymentStatus: c.Query("payment_status"), StartSource: c.Query("start_source")}
-	if !adminhttp.AdminOneOf(q.BusinessStatus, "pending_start charging completed") || !adminhttp.AdminOneOf(q.PaymentStatus, "pending paid refunded partial_refunded") || !adminhttp.AdminOneOf(q.StartSource, "payment balance card") {
+	if !adminhttp.AdminOneOf(q.BusinessStatus, orderdomain.AllBusinessStatuses) || !adminhttp.AdminOneOf(q.PaymentStatus, orderdomain.AllPaymentStatuses) || !adminhttp.AdminOneOf(q.StartSource, "payment balance card") {
 		httpapi.BadRequest(c, "业务状态、支付状态或启动来源无效")
 		return
 	}

@@ -14,10 +14,10 @@ type FaultRepo struct {
 
 // FaultRow 是报修状态变更所需的记录字段。
 type FaultRow struct {
-	ID         uint64  // 报修单主键
-	DeviceID   string  // 报告设备编号，范围核对不接受调用方替换
-	Status     string  // 当前状态：open 待受理 / dispatched 已指派 / fixed 已修复 / closed 已关闭
-	AssignedTo *uint64 // 当前处理人 ID，nil 表示还没人接手
+	ID         uint64      // 报修单主键
+	DeviceID   string      // 报告设备编号，范围核对不接受调用方替换
+	Status     FaultStatus // 当前状态：open 待受理 / dispatched 已指派 / fixed 已修复 / closed 已关闭
+	AssignedTo *uint64     // 当前处理人 ID，nil 表示还没人接手
 }
 
 // scopedFaultQuery 通过现有设备资料限制报告范围；不受限账号保留未知设备的历史报告。
@@ -38,7 +38,7 @@ func (s FaultRepo) ScopedFaultExists(ctx context.Context, scope operations.DataS
 }
 
 // ListReports 按范围、状态分页读取报告和总数。
-func (s FaultRepo) ListReports(ctx context.Context, scope operations.DataScope, status string, page, pageSize int) ([]map[string]any, int64, error) {
+func (s FaultRepo) ListReports(ctx context.Context, scope operations.DataScope, status FaultStatus, page, pageSize int) ([]map[string]any, int64, error) {
 	q := scopedFaultQuery(ctx, s.DB, scope)
 	if status != "" {
 		q = q.Where("f.status=?", status)
@@ -62,14 +62,14 @@ func (s FaultRepo) LockFault(tx *gorm.DB, id uint64) (FaultRow, error) {
 
 // FaultEventInput 保存报修变更事件及是否对用户可见，须如实填写操作内容。
 type FaultEventInput struct {
-	ReportID    uint64  // 所属报修单
-	ActorID     uint64  // 操作的后台账号
-	EventType   string  // dispatched / reassigned / fixed / closed
-	FromStatus  string  // 流转前状态
-	ToStatus    string  // 流转后状态
-	AssignedTo  uint64  // 流转后的处理人
-	Note        *string // 备注，可空
-	UserVisible bool    // 是否对用户可见
+	ReportID    uint64      // 所属报修单
+	ActorID     uint64      // 操作的后台账号
+	EventType   string      // dispatched / reassigned / fixed / closed
+	FromStatus  FaultStatus // 流转前状态
+	ToStatus    FaultStatus // 流转后状态
+	AssignedTo  uint64      // 流转后的处理人
+	Note        *string     // 备注，可空
+	UserVisible bool        // 是否对用户可见
 }
 
 // AppendFaultEvent 在报告状态事务中保存操作人、状态、指派和可见性，状态是否合法由用例判断。

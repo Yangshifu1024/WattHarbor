@@ -3,6 +3,7 @@
 package wallet
 
 import (
+	"chargepilot/internal/domain/money"
 	"errors"
 	"time"
 
@@ -15,17 +16,17 @@ var ErrWalletRefundConflict = errors.New("wallet refund identity or amount confl
 
 // Settlement 是退款结算事务传给钱包侧的必要信息。
 type Settlement struct {
-	ID          uint64 // 退款主键，关联来源分摊
-	UserID      uint64 // 支付及钱包所属用户
-	RefundNo    string // 退款单号，派生稳定出账流水
-	BizType     string // wallet_recharge 处理钱包；其他业务不操作钱包
-	RefundCents int64  // 已确认成功或终态失败的本笔金额，分
+	ID          uint64               // 退款主键，关联来源分摊
+	UserID      uint64               // 支付及钱包所属用户
+	RefundNo    string               // 退款单号，派生稳定出账流水
+	BizType     money.PaymentBizType // wallet_recharge 处理钱包；其他业务不操作钱包
+	RefundCents int64                // 已确认成功或终态失败的本笔金额，分
 }
 
 // LockRefundWallet 在回执事务中锁定退款来源钱包，核对用户与分摊金额。
 // 非钱包退款无需处理；缺来源或金额不符时报错。调用方须先锁钱包再锁支付，避免死锁。
 func LockRefundWallet(tx *gorm.DB, s Settlement) error {
-	if s.BizType != "wallet_recharge" {
+	if s.BizType != money.PaymentBizWalletRecharge {
 		return nil
 	}
 	var part struct {
@@ -48,7 +49,7 @@ func LockRefundWallet(tx *gorm.DB, s Settlement) error {
 // 调用前须锁钱包与支付；金额不符、余额不足或已处理时报冲突，写入失败全部回滚。
 // 钱包资金、分摊完成标记与渠道回执同事务，不再次向渠道申请退款。
 func SettleRefundWallet(tx *gorm.DB, s Settlement) error {
-	if s.BizType != "wallet_recharge" {
+	if s.BizType != money.PaymentBizWalletRecharge {
 		return nil
 	}
 	var part struct {
@@ -87,7 +88,7 @@ func SettleRefundWallet(tx *gorm.DB, s Settlement) error {
 // ReleaseFailedRefund 仅在渠道确认终态失败后释放冻结额，结果未知时保留预占。
 // 调用前按钱包→支付锁序取得锁；只减少冻结额并标记分摊已处理，不扣余额。
 func ReleaseFailedRefund(tx *gorm.DB, s Settlement) error {
-	if s.BizType != "wallet_recharge" {
+	if s.BizType != money.PaymentBizWalletRecharge {
 		return nil
 	}
 	var part struct {

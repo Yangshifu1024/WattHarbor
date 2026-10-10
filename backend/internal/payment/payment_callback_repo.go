@@ -87,10 +87,10 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			}
 			return err
 		}
-		if order.BizType == "wallet_recharge" {
+		if order.BizType == money.PaymentBizWalletRecharge {
 			return settleWalletRecharge(tx, order, payment, digest, paidAt, &callbackResult)
 		}
-		if order.BizType != "charge" {
+		if order.BizType != money.PaymentBizCharge {
 			return ErrPaymentCallbackConflict
 		}
 		var intent PaymentIntentRecord
@@ -119,7 +119,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			return ErrPaymentCallbackConflict
 		}
 
-		if order.Status == "paid" || order.Status == "partial_refunded" || order.Status == "refunded" {
+		if order.Status == money.PayStatusPaid || order.Status == money.PayStatusPartialRefunded || order.Status == money.PayStatusRefunded {
 			if digestErr != nil || !order.WechatTransactionID.Valid || order.WechatTransactionID.String != payment.TransactionID || order.PaidCents != payment.PaidCents {
 				return ErrPaymentCallbackConflict
 			}
@@ -137,7 +137,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			callbackResult = PaymentCallbackResult{ChargeOrderID: order.BizID, ChargeOrderNo: chargeOrder.OrderNo, Replayed: true}
 			return nil
 		}
-		if order.Status != "initiated" || order.BizID != 0 || digestErr == nil {
+		if order.Status != money.PayStatusInitiated || order.BizID != 0 || digestErr == nil {
 			return ErrPaymentCallbackConflict
 		}
 		if err := tx.Create(&PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
@@ -147,8 +147,8 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			return err
 		}
 
-		updated := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND order_no = ? AND status = 'initiated' AND total_cents = ? AND paid_cents = 0", order.ID, order.OrderNo, payment.PaidCents).
-			Updates(map[string]any{"status": "paid", "paid_cents": payment.PaidCents, "wechat_transaction_id": payment.TransactionID, "paid_at": paidAt})
+		updated := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND order_no = ? AND status = ? AND total_cents = ? AND paid_cents = 0", order.ID, order.OrderNo, money.PayStatusInitiated, payment.PaidCents).
+			Updates(map[string]any{"status": money.PayStatusPaid, "paid_cents": payment.PaidCents, "wechat_transaction_id": payment.TransactionID, "paid_at": paidAt})
 		if updated.Error != nil {
 			return updated.Error
 		}
@@ -195,7 +195,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			UserID: intent.UserID, PortCode: intent.PortCode, PricingSnapshot: intent.PricingSnapshot}); err != nil {
 			return err
 		}
-		bound := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND biz_id = 0 AND status = 'paid'", order.ID).Update("biz_id", chargeOrder.ID)
+		bound := tx.Model(&PaymentOrderRecord{}).Where("id = ? AND biz_id = 0 AND status = ?", order.ID, money.PayStatusPaid).Update("biz_id", chargeOrder.ID)
 		if bound.Error != nil {
 			return bound.Error
 		}
@@ -203,7 +203,7 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 			return ErrPaymentCallbackConflict
 		}
 		paid := tx.Model(&PaymentIntentRecord{}).Where("intent_id = ? AND status = 'initiated' AND charge_order_id IS NULL", intent.IntentID).
-			Updates(map[string]any{"status": "paid", "paid_at": paidAt, "charge_order_id": chargeOrder.ID})
+			Updates(map[string]any{"status": money.PayStatusPaid, "paid_at": paidAt, "charge_order_id": chargeOrder.ID})
 		if paid.Error != nil {
 			return paid.Error
 		}
@@ -285,7 +285,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 	}
 	// 已处理的支付单只核对交易号、金额和通知摘要，不再次充值。
 	// 重放必须匹配渠道交易、金额和验签载荷摘要，不再次增加钱包余额。
-	if order.Status == "paid" || order.Status == "partial_refunded" || order.Status == "refunded" {
+	if order.Status == money.PayStatusPaid || order.Status == money.PayStatusPartialRefunded || order.Status == money.PayStatusRefunded {
 		if digestErr != nil || !order.WechatTransactionID.Valid ||
 			order.WechatTransactionID.String != payment.TransactionID || order.PaidCents != payment.PaidCents {
 			return ErrPaymentCallbackConflict
@@ -293,7 +293,7 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 		*result = PaymentCallbackResult{Replayed: true}
 		return nil
 	}
-	if order.Status != "initiated" || order.BizID != 0 || digestErr == nil {
+	if order.Status != money.PayStatusInitiated || order.BizID != 0 || digestErr == nil {
 		return ErrPaymentCallbackConflict
 	}
 	if err := tx.Create(&PaymentCallbackDigestRecord{WechatTransactionID: payment.TransactionID, RequestDigest: digest}).Error; err != nil {
@@ -303,9 +303,9 @@ func settleWalletRecharge(tx *gorm.DB, order PaymentOrderRecord, payment Verifie
 		return err
 	}
 	paid := tx.Model(&PaymentOrderRecord{}).
-		Where("id = ? AND order_no = ? AND status = 'initiated' AND total_cents = ? AND paid_cents = 0",
-			order.ID, order.OrderNo, payment.PaidCents).
-		Updates(map[string]any{"status": "paid", "paid_cents": payment.PaidCents,
+		Where("id = ? AND order_no = ? AND status = ? AND total_cents = ? AND paid_cents = 0",
+			order.ID, order.OrderNo, money.PayStatusInitiated, payment.PaidCents).
+		Updates(map[string]any{"status": money.PayStatusPaid, "paid_cents": payment.PaidCents,
 			"wechat_transaction_id": payment.TransactionID, "paid_at": paidAt})
 	if paid.Error != nil {
 		return paid.Error

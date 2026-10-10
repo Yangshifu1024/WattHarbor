@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"chargepilot/internal/domain/money"
 	"context"
 	"database/sql"
 	"encoding/hex"
@@ -50,7 +51,7 @@ func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID strin
 			if changed.RowsAffected != 1 {
 				return ErrOrderConflict
 			}
-			return tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status = 'idle'", row.PortID.Int64, orderNo).
+			return tx.Model(&devicePortRow{}).Where("id = ? AND current_order_id = ? AND status = ?", row.PortID.Int64, orderNo, money.PortIdle).
 				Update("current_order_id", nil).Error
 		}
 		if row.Status == "rejected" {

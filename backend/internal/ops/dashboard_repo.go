@@ -1,6 +1,7 @@
 package ops
 
 import (
+	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"time"
 
@@ -43,7 +44,7 @@ func (s DashboardRepo) Read(ctx context.Context, start, end, trendStart time.Tim
 	m := DashboardMetrics{DailyTrend: []DashboardTrendDay{}}
 
 	orders := s.DB.WithContext(ctx).Table("charge_order").Where("deleted_at IS NULL")
-	if err := applyCount(orders, &m.ChargingOrders, "status = 'charging'"); err != nil {
+	if err := applyCount(orders, &m.ChargingOrders, "status = ?", orderdomain.StatusCharging); err != nil {
 		return m, err
 	}
 	if err := applyCount(orders, &m.TodayOrders, "created_at >= ? AND created_at < ?", start, end); err != nil {

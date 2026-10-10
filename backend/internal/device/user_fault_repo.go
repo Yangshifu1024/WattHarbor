@@ -24,7 +24,7 @@ func InsertFaultReport(tx *gorm.DB, in FaultReportInput) (uint64, error) {
 	if err := tx.Table("device_fault_report").Create(map[string]any{
 		"device_id": in.DeviceID, "user_id": in.UserID, "report_source": "user",
 		"fault_type": in.FaultType, "description": in.Description,
-		"images_json": in.ImagesJSON, "status": "open",
+		"images_json": in.ImagesJSON, "status": FaultOpen,
 	}).Error; err != nil {
 		return 0, err
 	}
@@ -33,7 +33,7 @@ func InsertFaultReport(tx *gorm.DB, in FaultReportInput) (uint64, error) {
 		return 0, err
 	}
 	if err := tx.Table("device_fault_report_event").Create(map[string]any{
-		"report_id": id, "event_type": "reported", "from_status": "", "to_status": "open",
+		"report_id": id, "event_type": "reported", "from_status": "", "to_status": FaultOpen,
 		"actor_id": in.UserID, "assigned_to": in.UserID, "user_visible": true, "note": "用户提交报修",
 	}).Error; err != nil {
 		return 0, err

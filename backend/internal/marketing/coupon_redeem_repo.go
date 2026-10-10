@@ -1,6 +1,8 @@
 package marketing
 
 import (
+	marketingdomain "chargepilot/internal/domain/marketing"
+	"chargepilot/internal/domain/money"
 	"context"
 	"errors"
 	"gorm.io/gorm"
@@ -61,19 +63,19 @@ type redemptionReceipt struct {
 // findRedemption 在券锁内用当前读查询支付对应的充电核销记录。
 func findRedemption(tx *gorm.DB, paymentID uint64) (redemptionReceipt, error) {
 	var row redemptionReceipt
-	err := tx.Table("coupon_redemption").Clauses(clause.Locking{Strength: "UPDATE"}).Where("biz_type='charge' AND biz_id=?", paymentID).Take(&row).Error
+	err := tx.Table("coupon_redemption").Clauses(clause.Locking{Strength: "UPDATE"}).Where("biz_type=? AND biz_id=?", money.PaymentBizCharge, paymentID).Take(&row).Error
 	return row, err
 }
 
 // saveRedemption 在事务中将券标为已用并保存核销记录，失败须整体回滚。
 func saveRedemption(tx *gorm.DB, grant CouponGrant, ref RedeemRef, reference string) error {
-	updated := tx.Table("coupon_grant").Where("id=? AND user_id=? AND status='unused'", ref.CouponGrantID, ref.UserID).
-		Updates(map[string]any{"status": "used", "used_payment_order_id": ref.PaymentOrder, "used_at": time.Now().UTC()})
+	updated := tx.Table("coupon_grant").Where("id=? AND user_id=? AND status=?", ref.CouponGrantID, ref.UserID, marketingdomain.GrantUnused).
+		Updates(map[string]any{"status": marketingdomain.GrantUsed, "used_payment_order_id": ref.PaymentOrder, "used_at": time.Now().UTC()})
 	if updated.Error != nil {
 		return updated.Error
 	}
 	if updated.RowsAffected != 1 {
 		return ErrCouponExhausted
 	}
-	return tx.Table("coupon_redemption").Create(map[string]any{"coupon_id": grant.CouponID, "user_id": ref.UserID, "biz_type": "charge", "biz_id": ref.PaymentOrder, "discount_cents": ref.DiscountCents, "order_no": reference}).Error
+	return tx.Table("coupon_redemption").Create(map[string]any{"coupon_id": grant.CouponID, "user_id": ref.UserID, "biz_type": money.PaymentBizCharge, "biz_id": ref.PaymentOrder, "discount_cents": ref.DiscountCents, "order_no": reference}).Error
 }

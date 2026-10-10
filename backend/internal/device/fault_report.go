@@ -27,8 +27,8 @@ type FaultSubmission struct {
 
 // FaultSubmissionResult 返回首次报告主键和 open 状态，失败不留下报告或事件。
 type FaultSubmissionResult struct {
-	ID     uint64 `json:"id"`     // 工单自增主键
-	Status string `json:"status"` // 首次 open
+	ID     uint64      `json:"id"`     // 工单自增主键
+	Status FaultStatus `json:"status"` // 首次 open
 }
 
 // FaultService 负责报修校验、状态事务和查询，连接由进程管理。

@@ -71,7 +71,7 @@ func (s RefundService) ReserveInTx(tx *gorm.DB, req WalletRefundReservation) err
 			continue
 		}
 		sum := sha256.Sum256([]byte(req.RequestID + ":" + strconv.FormatUint(pay.ID, 10)))
-		refundID, err := s.Recorder.CreateInTx(tx, money.RefundDraft{RefundNo: "WR" + hex.EncodeToString(sum[:16]), PaymentOrderID: pay.ID, UserID: req.UserID, BizType: "wallet_recharge", BizID: pay.BizID, AmountCents: amount, Reason: req.Reason, NextAttemptAt: now, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)})
+		refundID, err := s.Recorder.CreateInTx(tx, money.RefundDraft{RefundNo: "WR" + hex.EncodeToString(sum[:16]), PaymentOrderID: pay.ID, UserID: req.UserID, BizType: money.PaymentBizWalletRecharge, BizID: pay.BizID, AmountCents: amount, Reason: req.Reason, NextAttemptAt: now, CreatedMonth: time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)})
 		if err != nil {
 			return err
 		}

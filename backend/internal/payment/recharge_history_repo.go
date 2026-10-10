@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"chargepilot/internal/domain/money"
 	"chargepilot/internal/persist"
 	"chargepilot/internal/wallet"
 	"context"
@@ -14,7 +15,7 @@ type RechargeHistoryRepo struct {
 
 // WalletRecharges 仅查询 userID 的 page 充值支付，返回公开查询结果；无资金写入。
 func (s RechargeHistoryRepo) WalletRecharges(ctx context.Context, userID uint64, page persist.PageQuery) (persist.Page[wallet.AdminRechargeRow], error) {
-	original, err := PaymentOrders(ctx, s.DB, PaymentOrderQuery{PageQuery: page, UserID: userID, BizType: "wallet_recharge"})
+	original, err := PaymentOrders(ctx, s.DB, PaymentOrderQuery{PageQuery: page, UserID: userID, BizType: string(money.PaymentBizWalletRecharge)})
 	out := persist.Page[wallet.AdminRechargeRow]{Items: []wallet.AdminRechargeRow{}, Total: original.Total, Page: original.Page, PageSize: original.PageSize}
 	if err != nil {
 		return out, err
