@@ -5,6 +5,10 @@ target/
 node_modules/
 .tmp/
 bin/
+# Root-level service build outputs
+/admin
+/central
+/user
 frontend/admin-web/dist/
 frontend/miniprogram/dist/
 frontend/miniprogram/.taro/
