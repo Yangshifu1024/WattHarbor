@@ -21,6 +21,7 @@ type BillRepo struct {
 type Bill struct {
 	ID             uint64     `json:"id,string" gorm:"column:id"`                      // 账单主键
 	BillNo         string     `json:"bill_no" gorm:"column:bill_no"`                   // 同一订单派生账单号，重试沿用
+	OrderNo        string     `json:"order_no" gorm:"column:order_no"`                 // 所属充电业务订单号，来源详情跳转使用
 	ChargeOrderID  uint64     `json:"charge_order_id" gorm:"column:charge_order_id"`   // 所属充电订单，一单一份账单
 	PaymentOrderID *uint64    `json:"payment_order_id" gorm:"column:payment_order_id"` // 支付主键，无关联时为空
 	UserID         uint64     `json:"user_id,string" gorm:"column:user_id"`            // 账单所属用户，公开为十进制字符串
@@ -167,7 +168,7 @@ func (s BillRepo) Missing(ctx context.Context, limit int) ([]uint64, error) {
 func (s BillRepo) Load(ctx context.Context, chargeOrderID uint64) (Bill, error) {
 	bill := Bill{}
 	err := s.DB.WithContext(ctx).Table("charge_bill").
-		Select("id, bill_no, charge_order_id, payment_order_id, user_id, device_id, port_no, electric_cents, service_cents, total_cents, prepaid_cents, refund_cents, shortfall_cents, charged_kwh, charged_seconds, status, issued_at, settled_at").
+		Select("id, bill_no, (SELECT c.order_no FROM charge_order c WHERE c.id=charge_bill.charge_order_id LIMIT 1) AS order_no, charge_order_id, payment_order_id, user_id, device_id, port_no, electric_cents, service_cents, total_cents, prepaid_cents, refund_cents, shortfall_cents, charged_kwh, charged_seconds, status, issued_at, settled_at").
 		Where("charge_order_id = ?", chargeOrderID).Take(&bill).Error
 	return bill, err
 }
@@ -176,7 +177,7 @@ func (s BillRepo) Load(ctx context.Context, chargeOrderID uint64) (Bill, error) 
 func (s BillRepo) LoadByID(ctx context.Context, userID, billID uint64) (Bill, error) {
 	bill := Bill{}
 	err := s.DB.WithContext(ctx).Table("charge_bill").
-		Select("id, bill_no, charge_order_id, payment_order_id, user_id, device_id, port_no, electric_cents, service_cents, total_cents, prepaid_cents, refund_cents, shortfall_cents, charged_kwh, charged_seconds, status, issued_at, settled_at").
+		Select("id, bill_no, (SELECT c.order_no FROM charge_order c WHERE c.id=charge_bill.charge_order_id LIMIT 1) AS order_no, charge_order_id, payment_order_id, user_id, device_id, port_no, electric_cents, service_cents, total_cents, prepaid_cents, refund_cents, shortfall_cents, charged_kwh, charged_seconds, status, issued_at, settled_at").
 		Where("id = ? AND user_id = ?", billID, userID).Take(&bill).Error
 	return bill, err
 }
@@ -197,7 +198,7 @@ func (s BillRepo) ListBills(ctx context.Context, userID uint64, page, pageSize i
 	}
 	rows := []Bill{}
 	if err := base.
-		Select("id, bill_no, charge_order_id, payment_order_id, user_id, device_id, port_no, electric_cents, service_cents, total_cents, prepaid_cents, refund_cents, shortfall_cents, charged_kwh, charged_seconds, status, issued_at, settled_at, created_month").
+		Select("id, bill_no, (SELECT c.order_no FROM charge_order c WHERE c.id=charge_bill.charge_order_id LIMIT 1) AS order_no, charge_order_id, payment_order_id, user_id, device_id, port_no, electric_cents, service_cents, total_cents, prepaid_cents, refund_cents, shortfall_cents, charged_kwh, charged_seconds, status, issued_at, settled_at, created_month").
 		Order("issued_at DESC, id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
 		return nil, 0, err
 	}

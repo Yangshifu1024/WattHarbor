@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -195,5 +196,47 @@ func TestBillPaymentReadFailurePreservesRecovery(t *testing.T) {
 		if err := tx.Table(table).Where("charge_order_id=?", id).Count(&n).Error; err != nil || n != 1 {
 			t.Fatalf("%s count=%d err=%v", table, n, err)
 		}
+	}
+}
+
+// TestBillQueriesIncludeSourceOrder 验证出账、用户详情和列表均返回真实充电号，不能用账单或支付号替代。
+func TestBillQueriesIncludeSourceOrder(t *testing.T) {
+	db, closeDB := testConn(t)
+	defer closeDB()
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	id := testfixture.NewID()
+	no := "C-SOURCE-" + uuid.NewString()
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	for _, seed := range []struct {
+		table string
+		row   map[string]any
+	}{
+		{"charge_order", map[string]any{"id": id, "order_no": no, "user_id": id, "device_id": "BILL-SOURCE", "port_no": 1, "status": "completed", "started_at": at, "created_month": at.Format("2006-01") + "-01"}},
+		{"charge_bill", map[string]any{"id": id, "bill_no": "B-" + no, "charge_order_id": id, "user_id": id, "device_id": "BILL-SOURCE", "port_no": 1, "total_cents": 100, "issued_at": at, "created_month": at.Format("2006-01") + "-01"}},
+	} {
+		if err := tx.Table(seed.table).Create(seed.row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := BillRepo{DB: tx}
+	bill, err := repo.Load(t.Context(), id)
+	if err != nil || bill.OrderNo != no {
+		t.Fatalf("load order=%q err=%v", bill.OrderNo, err)
+	}
+	bill, err = repo.LoadByID(t.Context(), id, id)
+	if err != nil || bill.OrderNo != no {
+		t.Fatalf("detail order=%q err=%v", bill.OrderNo, err)
+	}
+	rows, total, err := repo.ListBills(t.Context(), id, 1, 20)
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].OrderNo != no {
+		t.Fatalf("list=%+v total=%d err=%v", rows, total, err)
+	}
+	raw, err := json.Marshal(bill)
+	if err != nil || !strings.Contains(string(raw), `"order_no":"`+no+`"`) {
+		t.Fatalf("bill JSON=%s err=%v", raw, err)
 	}
 }

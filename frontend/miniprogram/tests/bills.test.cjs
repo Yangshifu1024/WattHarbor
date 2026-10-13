@@ -126,3 +126,11 @@ test('server read flag preserves a saved receipt without inventing a read timest
  const app={globalData:{token:'t'},request:async()=>({items:[{...bill('8996759476100805168',false),read:true}],total:1})};
  const p=page('list',app);await p.load(true);assert.equal(p.data.items[0].unread,false);assert.equal(p.data.items[0].readText,'');
 });
+
+test('账单来源跳转使用业务订单号，不使用账单或支付编号', async () => {
+  const routes = [];
+  const p = page('detail', { globalData: { token: 't' }, request: async () => ({ ...bill(9, true), order_no: 'C/SOURCE 1', payment_order_id: 77 }) }, { navigateTo: ({ url }) => routes.push(url) });
+  p._id = '9'; await p.load(); p.orderDetail();
+  assert.deepEqual(routes, ['/pages/charge/detail?order_id=C%2FSOURCE%201']);
+  delete p.data.bill.order_no; p.orderDetail(); assert.equal(routes.length, 1);
+});

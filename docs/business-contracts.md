@@ -102,7 +102,7 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 
 普通 JSON 响应为 `code/message/data/request_id/trace_id`，成功 `code=0`，HTTP 状态同时表达结果。`X-Request-ID` 允许 1～128 位字母、数字、下划线或连字符，无效或缺失则生成；响应 trace 与 request 使用同值。微信回调、OpenAPI、文件下载和指标按各自格式响应。
 
-C 端账单 `id`、设备报修提交与列表的 `id` 均为十进制字符串，避免 JavaScript 大整数精度丢失。钱包流水金额为正数，收支由 `direction=in/out` 决定；筛选同样使用 `direction`，业务类别来自 `biz_type`，不得仅按金额符号推断资金方向。
+C 端账单 `id`、设备报修提交与列表的 `id` 均为十进制字符串，避免 JavaScript 大整数精度丢失。账单列表和详情返回来源 `order_no`，客户端据此打开订单详情，不将账单主键当作订单号；关联订单缺失时来源不可跳转。钱包流水金额为正数，收支由 `direction=in/out` 决定；筛选同样使用 `direction`，业务类别来自 `biz_type`，不得仅按金额符号推断资金方向。
 
 金额为整数分，计量字段注明单位。用户 Snowflake ID 使用十进制字符串，前端不得转成 JavaScript `Number`。数据库时间按 UTC 解析，计费日界和 DC589 本地时间按北京时间。列表常用 `page/page_size`，默认 1/20，上限 100；过程查询另有游标、时间窗及行数限制。
 
