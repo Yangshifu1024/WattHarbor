@@ -504,3 +504,35 @@ func TestPhoneServiceConcurrentUniqueOwnership(t *testing.T) {
 		t.Fatalf("unbind NULL=%d %v", n, err)
 	}
 }
+
+// TestProfileReportsAvailableFundsAndWalletStatus 用真实联表投影验证部分/全部冻结及钱包独立风控状态。
+func TestProfileReportsAvailableFundsAndWalletStatus(t *testing.T) {
+	db := identityDB(t)
+	for _, tc := range []struct {
+		name   string
+		frozen int64
+		status string
+		want   int64
+	}{
+		{"active", 0, "active", 10000}, {"reserved", 3000, "active", 7000}, {"fully_reserved", 10000, "active", 0}, {"risk_frozen", 3000, "frozen", 7000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tx := db.Begin()
+			if tx.Error != nil {
+				t.Fatal(tx.Error)
+			}
+			defer tx.Rollback()
+			user, err := (UserRepo{DB: tx}).Login(t.Context(), "profile-"+uuid.NewString(), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Table("wallet_account").Where("user_id=?", user.ID).Updates(map[string]any{"balance_cents": 10000, "frozen_cents": tc.frozen, "status": tc.status}).Error; err != nil {
+				t.Fatal(err)
+			}
+			profile, err := (UserRepo{DB: tx}).Profile(t.Context(), user.ID)
+			if err != nil || profile.Wallet.AvailableCents != tc.want || profile.Wallet.FrozenCents != tc.frozen || string(profile.Wallet.Status) != tc.status {
+				t.Fatalf("wallet=%+v err=%v", profile.Wallet, err)
+			}
+		})
+	}
+}

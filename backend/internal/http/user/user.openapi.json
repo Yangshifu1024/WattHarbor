@@ -143,6 +143,11 @@
                   "frozen_cents": {
                     "type": "integer",
                     "description": "冻结金额，单位分"
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "钱包当前状态，与用户账号状态独立",
+                    "enum": ["active", "frozen"]
                   }
                 }
               },

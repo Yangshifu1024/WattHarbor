@@ -122,7 +122,7 @@ func LockStatusInTx(tx *gorm.DB, id uint64) (identitydomain.UserStatus, error) {
 func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {
 	var row profileRow
 	result := s.DB.WithContext(ctx).Raw(`SELECT u.id, u.nickname, u.avatar_url, u.phone, u.first_seen_at,
-		w.balance_cents, w.frozen_cents,
+		w.balance_cents, w.frozen_cents, w.status AS wallet_status,
 		-- 'unused' 取 coupon_grant.status 的未核销值，词表见 domain/marketing.GrantStatus。
 		-- 该字面量在 Raw SQL 内联，无法用 Go 常量绑定；改动前须核对营销侧同一词表。
 		(SELECT COUNT(*) FROM coupon_grant AS g WHERE g.user_id = u.id AND g.status = 'unused' AND g.expired_at > NOW(3) AND g.deleted_at IS NULL) AS coupon_unused_count
@@ -135,7 +135,8 @@ func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {
 		return Profile{}, gorm.ErrRecordNotFound
 	}
 	profile := Profile{UserID: row.ID, Nickname: row.Nickname.String, AvatarURL: row.AvatarURL.String, PhoneBound: row.Phone.Valid && row.Phone.String != "", RegisteredAt: row.FirstSeenAt.UTC(), CouponUnusedCount: row.CouponUnusedCount}
-	profile.Wallet.AvailableCents = row.BalanceCents
+	profile.Wallet.Status = row.WalletStatus
+	profile.Wallet.AvailableCents = row.BalanceCents - row.FrozenCents
 	profile.Wallet.FrozenCents = row.FrozenCents
 	return profile, nil
 }

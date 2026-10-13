@@ -16,7 +16,7 @@ export interface ChargeUserProfile {
   avatar_url: string;
   phone_bound: boolean;
   registered_at: string;
-  wallet: { available_cents: number; frozen_cents: number };
+  wallet: { status: string; available_cents: number; frozen_cents: number };
   coupon_unused_count: number;
 }
 

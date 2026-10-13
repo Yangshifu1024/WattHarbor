@@ -2,6 +2,7 @@
 package identity
 
 import (
+	walletdomain "chargepilot/internal/domain/wallet"
 	"errors"
 	"time"
 )
@@ -26,8 +27,9 @@ type Profile struct {
 	PhoneBound   bool      `json:"phone_bound"`    // 是否存在已绑定号码
 	RegisteredAt time.Time `json:"registered_at"`  // 首次注册 UTC 时间
 	Wallet       struct {
-		AvailableCents int64 `json:"available_cents"` // 钱包可用余额，分
-		FrozenCents    int64 `json:"frozen_cents"`    // 钱包冻结余额，分
+		Status         walletdomain.AccountStatus `json:"status"`          // 所属钱包的当前状态，与用户账号状态独立
+		AvailableCents int64                      `json:"available_cents"` // 钱包可用余额，分
+		FrozenCents    int64                      `json:"frozen_cents"`    // 钱包冻结余额，分
 	} `json:"wallet"` // 所属钱包只读查询结果
 	CouponUnusedCount int64 `json:"coupon_unused_count"` // 未删除且未过期的未用券数量
 }
