@@ -46,7 +46,7 @@ function resolveCli(tool) {
 
 function runCli(tool, args) {
   const { cmd, prefix } = resolveCli(tool);
-  return spawnSync(cmd, [...prefix, ...args], { cwd: ROOT, encoding: 'utf8' });
+  return spawnSync(cmd, [...prefix, ...args], { cwd: ROOT, encoding: 'utf8', env: nativeEnv });
 }
 
 // 输出目录必须已存在，由操作者指定备份位置。

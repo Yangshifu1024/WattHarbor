@@ -180,7 +180,7 @@ node scripts/dev/prepare.mjs
 
 ## 备份与恢复
 
-[backup.mjs](../scripts/db/backup.mjs) 和 [restore.mjs](../scripts/db/restore.mjs) 依赖 Node.js 24（gzip 由内置 zlib 提供）与 MySQL 客户端。输出目录须预先存在；容器客户端回退需设置 `MYSQL_CLIENT_CONTAINER`。连接参数为 `MYSQL_HOST/MYSQL_PORT/MYSQL_USER`；原生客户端用 `MYSQL_PWD`，容器回退从 `MYSQL_PASSWORD` 传入密码。凭证从安全环境加载，避免写入命令历史。
+[backup.mjs](../scripts/db/backup.mjs) 和 [restore.mjs](../scripts/db/restore.mjs) 依赖 Node.js 24（gzip 由内置 zlib 提供）与 MySQL 客户端。输出目录须预先存在；容器客户端回退需设置 `MYSQL_CLIENT_CONTAINER`。连接参数为 `MYSQL_HOST/MYSQL_PORT/MYSQL_USER`；原生客户端优先用非空 `MYSQL_PWD`，只提供 `MYSQL_PASSWORD` 时映射到 `MYSQL_PWD`，探库和数据读写使用同一环境。容器回退从 `MYSQL_PASSWORD` 传入密码。凭证从安全环境加载，避免写入命令历史。
 
 ```bash
 mkdir -p .tmp/backups
