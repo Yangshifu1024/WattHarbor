@@ -117,6 +117,10 @@ func TestInvoiceApplicationReplaysOnlyIdenticalOwnerAndContent(t *testing.T) {
 	}
 	defer tx.Rollback()
 	seedRefundableOrder(t, tx)
+	// 本用例独立指定400分权威费用，替换共享退款夹具中的默认回执。
+	if err := tx.Table("charge_fee_receipt").Where("charge_order_id=?", refundOrderID).Delete(nil).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := tx.Create(&ChargeFeeRecord{ChargeOrderID: refundOrderID, CalculationNo: "INV-" + rand.Text(), ResultJSON: []byte(`{"electric_cents":300,"service_cents":100,"total_cents":400}`)}).Error; err != nil {
 		t.Fatal(err)
 	}

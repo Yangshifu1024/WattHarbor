@@ -3,6 +3,7 @@ package finance
 import (
 	"chargepilot/internal/domain/money"
 	"errors"
+	"net/http"
 	"strings"
 
 	"chargepilot/internal/domain/operations"
@@ -23,7 +24,7 @@ func (a API) registerRefunds(r *gin.Engine) {
 
 // asConflict 将 err 中的退款或发票冲突转为后台 409 对应的错误类型，其余错误原样返回。
 func asConflict(err error) error {
-	if errors.Is(err, settlement.ErrRefundConflict) ||
+	if errors.Is(err, settlement.ErrRefundConflict) || errors.Is(err, settlement.ErrRefundNotSettled) ||
 		errors.Is(err, settlement.ErrInvoiceConflict) {
 		return admin.ErrConflict
 	}
@@ -46,6 +47,10 @@ func (a API) manualRefund(c *gin.Context) {
 	}
 	created, refundNo, err := a.Refunds.Request(c.Request.Context(), admin.AdminAuditContext(c), id, in)
 
+	if errors.Is(err, settlement.ErrRefundNotSettled) {
+		httpapi.Write(c, http.StatusConflict, 2000, "订单尚未完成费用结算，请结算后再申请退款", nil)
+		return
+	}
 	if err != nil {
 		admin.AdminResourceFailure(c, asConflict(err))
 		return

@@ -49,7 +49,10 @@ func manualRefundNo(requestID string) string {
 	return "MR" + hex.EncodeToString(sum[:16])
 }
 
-// ManualCreate 在支付锁内核对订单和累计可退金额，再登记待双审退款。
+// ErrRefundNotSettled 表示实际结束的充电尚无权威费用回执，不能抢在计费之前退款。
+var ErrRefundNotSettled = errors.New("charge fee has not been settled")
+
+// ManualCreate 在支付锁内核对订单、费用回执和累计可退金额，再登记待双审退款。
 // 同一 request_id 且内容一致时返回首次退款号、created=false 和 ID=0；首次返回新主键。
 // 同号异内容或状态不符返回 ErrRefundConflict；用例负责同事务审计和提交。
 func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in ManualRefundInput) (created bool, refundNo string, recordID uint64, err error) {
@@ -95,6 +98,9 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 		if !oneOf(order.Status, orderdomain.AllChannelRefundableStatuses) || order.Status == orderdomain.StatusRefunded || pay.UserID != order.UserID || pay.PayMethod != "wechat" || !oneOf(pay.Status, money.RefundablePaymentStatuses) || in.AmountCents > pay.PaidCents-pay.RefundedCents {
 			return ErrRefundConflict
 		}
+		if err := requireManualRefundSettlement(tx, order); err != nil {
+			return err
+		}
 		// 初次读取订单可能已建立 RR 快照。支付行锁串行化同支付的退款写入，
 		// 但不会刷新既有快照；待退聚合使用当前读，以纳入锁等待期间提交的预占。
 		var pending int64
@@ -119,6 +125,22 @@ func (s RefundReviewRepo) ManualCreate(ctx context.Context, tx *gorm.DB, in Manu
 		return nil
 	}()
 	return created, refundNo, recordID, err
+}
+
+// requireManualRefundSettlement 在调用方持支付锁后，以当前读核对已完成充电的费用回执。
+// 启动失败、取消和从未启动的订单保留原退款准入；真实充电结束须先入账。
+// 使用 SHARE 避免旧 RR 快照漏掉等待支付锁期间刚提交的回执，不写入或重算金额。
+func requireManualRefundSettlement(tx *gorm.DB, order orderstore.ChargeOrderRecord) error {
+	if !order.StartedAt.Valid || (order.Status != orderdomain.StatusCompleted && order.Status != orderdomain.StatusRefunding && order.Status != orderdomain.StatusRefunded) {
+		return nil
+	}
+	var receipt struct{ ChargeOrderID uint64 }
+	err := tx.Table("charge_fee_receipt").Clauses(clause.Locking{Strength: "SHARE"}).
+		Select("charge_order_id").Where("charge_order_id=?", order.ID).Take(&receipt).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrRefundNotSettled
+	}
+	return err
 }
 
 // ReviewDecision 是一笔复核决定；Approve=true 走双人通过，false 为单人驳回。
@@ -184,6 +206,16 @@ func (s RefundReviewRepo) Review(ctx context.Context, tx *gorm.DB, refundNo stri
 	}
 	if pay.PayMethod != "wechat" || pay.UserID != r.UserID || pay.BizID != r.BizID || pay.BizType != r.BizType || r.RefundCents <= 0 || r.RefundCents > pay.PaidCents-pay.RefundedCents {
 		return status, recordID, ErrRefundConflict
+	}
+	// 升级前已申请的人工退款同样不能在费用确认前批准；驳回仍允许执行。
+	if r.BizType == money.PaymentBizCharge {
+		var order orderstore.ChargeOrderRecord
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND deleted_at IS NULL", r.BizID).Take(&order).Error; err != nil {
+			return status, recordID, err
+		}
+		if err := requireManualRefundSettlement(tx, order); err != nil {
+			return status, recordID, err
+		}
 	}
 	snapshot := refundSnapshot(r)
 	if errors.Is(e, gorm.ErrRecordNotFound) {

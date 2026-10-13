@@ -93,6 +93,10 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 	defer cancel()
 	result, err := e.Provider.QueryRefund(callCtx, request)
 	if errors.Is(err, pay.ErrRefundNotFound) {
+		// 历史已批准人工单可能早于费用闸门。已有渠道结果照常处理，缺单时才限制新发起。
+		if err := e.requireSettlementBeforeCreate(ctx, r); err != nil {
+			return err
+		}
 		result, err = e.Provider.CreateRefund(callCtx, request)
 	}
 	if err != nil {
@@ -107,6 +111,32 @@ func (e RefundExecutor) Execute(ctx context.Context, id uint64) error {
 		return unknown
 	}
 	return e.apply(ctx, r, request, result)
+}
+
+// requireSettlementBeforeCreate 以短事务核对实际完成充电的新退款，不持锁请求渠道。
+// 费用差额自动单创建时已有费用回执；启动失败、取消和迟到支付保留原处理。
+// 已存在的渠道单不经过此闸门；只按主键锁支付、订单和费用，不扫描人工申请表。
+func (e RefundExecutor) requireSettlementBeforeCreate(ctx context.Context, r RefundRecord) error {
+	if r.BizType != money.PaymentBizCharge || r.BizID == 0 {
+		return nil
+	}
+	err := e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := pay.LockPaymentForRefund(tx, r.PaymentOrderID); err != nil {
+			return err
+		}
+		var order orderstore.ChargeOrderRecord
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id=? AND deleted_at IS NULL", r.BizID).Take(&order).Error; err != nil {
+			return err
+		}
+		return requireManualRefundSettlement(tx, order)
+	})
+	if errors.Is(err, ErrRefundNotSettled) {
+		if diagnostic := e.DB.WithContext(ctx).Model(&RefundRecord{}).Where("id=? AND status=?", r.ID, money.RefundProcessing).
+			Update("failure_reason", "充电费用尚未结算，保留原退款号等待费用回执").Error; diagnostic != nil {
+			return errors.Join(err, diagnostic)
+		}
+	}
+	return err
 }
 
 // failPermanent 将退款标为终态失败，保存脱敏原因，不再安排重试。

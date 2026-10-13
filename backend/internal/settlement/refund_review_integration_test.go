@@ -42,6 +42,12 @@ func seedRefundableOrder(t *testing.T, db *gorm.DB) {
 	}).Error; err != nil {
 		t.Fatalf("造充电订单失败：%v", err)
 	}
+	if err := db.Table("charge_fee_receipt").Create(map[string]any{
+		"charge_order_id": refundOrderID, "calculation_no": "CALC-REFUND-1", "result_json": `{"total_cents":10000}`,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 // cleanupRefundableOrder 清理固定支付身份的退款、MR-CONC 请求和订单，核对零残留；调用方负责身份独占。
@@ -54,6 +60,7 @@ func cleanupRefundableOrder(t *testing.T, db *gorm.DB) {
 	}{
 		{"refund_record", "payment_order_id = ?", []any{refundPayOrdID}},
 		{"manual_refund_request", "request_id LIKE ?", []any{"MR-CONC-%"}},
+		{"charge_fee_receipt", "charge_order_id = ?", []any{refundOrderID}},
 		{"charge_order", "id = ?", []any{refundOrderID}},
 		{"payment_order", "id = ?", []any{refundPayOrdID}},
 	} {
@@ -151,5 +158,76 @@ func TestConcurrentManualRefundsDoNotExceedPaidAmount(t *testing.T) {
 	}
 	if rows != 1 {
 		t.Errorf("并发的两笔申请都落了库（%d 条，合计 %d 分）", rows, total)
+	}
+}
+
+// TestManualRefundRequiresSettledCharge 真实充电缺回执时拒绝且不留退款/请求；失败和取消仍可退款。
+func TestManualRefundRequiresSettledCharge(t *testing.T) {
+	for _, status := range []string{"completed", "failed", "cancelled"} {
+		t.Run(status, func(t *testing.T) {
+			db, closeDB := testConn(t)
+			defer closeDB()
+			tx := db.Begin()
+			if tx.Error != nil {
+				t.Fatal(tx.Error)
+			}
+			defer tx.Rollback()
+			// 此夹具的支付/订单身份只在当前回滚事务内存在；不清理他人记录。
+			seedRefundableOrder(t, tx)
+			if err := tx.Table("charge_fee_receipt").Where("charge_order_id=?", refundOrderID).Delete(nil).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Table("charge_order").Where("id=?", refundOrderID).Update("status", status).Error; err != nil {
+				t.Fatal(err)
+			}
+			in := ManualRefundInput{ActorID: refundActorID, OrderID: refundOrderID, RequestID: "unsettled-" + status, AmountCents: refundPaid, Reason: "退款准入"}
+			created, _, _, err := (RefundReviewRepo{}).ManualCreate(t.Context(), tx, in)
+			if status == "completed" {
+				if !errors.Is(err, ErrRefundNotSettled) || created {
+					t.Fatalf("created=%v err=%v", created, err)
+				}
+				for _, table := range []string{"refund_record", "manual_refund_request"} {
+					var n int64
+					query := tx.Table(table)
+					if table == "refund_record" {
+						query = query.Where("payment_order_id=?", refundPayOrdID)
+					} else {
+						query = query.Where("request_id=?", in.RequestID)
+					}
+					if err := query.Count(&n).Error; err != nil || n != 0 {
+						t.Fatalf("%s count=%d err=%v", table, n, err)
+					}
+				}
+			} else if err != nil || !created {
+				t.Fatalf("%s created=%v err=%v", status, created, err)
+			}
+		})
+	}
+}
+
+// TestManualRefundReceiptUsesCurrentRead 锁前建立旧 RR 快照后，仍识别另一连接提交的费用回执。
+func TestManualRefundReceiptUsesCurrentRead(t *testing.T) {
+	writer, closeWriter := testConn(t)
+	defer closeWriter()
+	reader, closeReader := testConn(t)
+	defer closeReader()
+	cleanupRefundableOrder(t, writer)
+	seedRefundableOrder(t, writer)
+	defer cleanupRefundableOrder(t, writer)
+	if err := writer.Table("charge_fee_receipt").Where("charge_order_id=?", refundOrderID).Delete(nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	old := oldFundingSnapshot(t, reader, "charge_order", "id", refundOrderID)
+	defer old.Rollback()
+	if err := writer.Table("charge_fee_receipt").Create(map[string]any{"charge_order_id": refundOrderID, "calculation_no": "CALC-CURRENT-1", "result_json": `{"total_cents":10000}`}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 渠道缺单后的执行闸门同样须当前读，不能因调用方已有旧RR快照而误挡费用已提交的单。
+	if err := (RefundExecutor{DB: old}).requireSettlementBeforeCreate(t.Context(), RefundRecord{PaymentOrderID: refundPayOrdID, BizType: "charge", BizID: refundOrderID}); err != nil {
+		t.Fatalf("executor current fee read: %v", err)
+	}
+	created, _, _, err := (RefundReviewRepo{}).ManualCreate(t.Context(), old, ManualRefundInput{ActorID: refundActorID, OrderID: refundOrderID, RequestID: "current-fee-receipt", AmountCents: 100, Reason: "当前费用回执"})
+	if err != nil || !created {
+		t.Fatalf("current read created=%v err=%v", created, err)
 	}
 }
