@@ -43,6 +43,14 @@ func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID strin
 		if row.CommandID != commandID || !row.PortID.Valid || row.PortID.Int64 <= 0 {
 			return ErrOrderConflict
 		}
+		// 已结束或换单的端口不再补偿，不改写历史 START 的状态，也不向新订单发送 STOP。
+		var port devicePortRow
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND device_id=? AND port_no=?", row.PortID.Int64, row.DeviceID, row.PortNo).Take(&port).Error; err != nil {
+			return err
+		}
+		if !port.CurrentOrderID.Valid || port.CurrentOrderID.String != row.OrderNo {
+			return nil
+		}
 		// SQL 内 status = 'pending'／status IN ('sent','acked')／status = 'stopping' 分别对应
 		// devices.CommandPending／CommandSent、CommandAcked／CommandStopping（charge_command.status）。
 		if row.Status == devices.CommandPending {
@@ -79,13 +87,30 @@ func (s MySQLSink) CompensateStart(ctx context.Context, orderNo, commandID strin
 	return job, shouldSend, nil
 }
 
-// StoppingJobs 按更新时间读取最多五十个到期待补偿命令并还原 STOP 会话；返回任务或 SQL、会话错误，不更新状态。
-func (s MySQLSink) StoppingJobs(ctx context.Context) ([]StopJob, error) {
+// CommandDevice 按订单和命令身份读取设备编号，供控制服务在改变补偿状态前取得设备许可。
+// 身份不存在返回 ErrOrderConflict，不改变命令或占用；设备编号在命令生命周期内不可变。
+func (s MySQLSink) CommandDevice(ctx context.Context, orderNo, commandID string) (string, error) {
+	var row chargeCommandRow
+	err := s.DB.WithContext(ctx).Select("device_id").Where("order_no=? AND command_id=?", orderNo, commandID).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrOrderConflict
+	}
+	return row.DeviceID, err
+}
+
+// StoppingJobs 在 LIMIT 前过滤在线设备及仍属于原订单的端口，按最近发送尝试读取最多五十项。
+// online 是连接登记快照；空集合不查询，允许已预占但 START 尚未确认的 idle 端口。
+func (s MySQLSink) StoppingJobs(ctx context.Context, online []string) ([]StopJob, error) {
+	if len(online) == 0 {
+		return []StopJob{}, nil
+	}
 	var rows []chargeCommandRow
 	// SQL 内 status = 'stopping' 对应 devices.CommandStopping（charge_command.status）。
-	err := s.DB.WithContext(ctx).Select("command_id, order_no, device_id, port_no, stop_session_id").
-		Where("status = 'stopping' AND (stop_sent_at IS NULL OR stop_sent_at < DATE_SUB(NOW(3), INTERVAL 10 SECOND))").
-		Order("updated_at").Limit(50).Find(&rows).Error
+	err := s.DB.WithContext(ctx).Table("charge_command c").Select("c.command_id, c.order_no, c.device_id, c.port_no, c.stop_session_id").
+		Joins("JOIN device_port p ON p.id=c.port_id AND p.device_id=c.device_id AND p.port_no=c.port_no AND p.current_order_id=c.order_no").
+		Where("c.device_id IN ? AND c.status=? AND p.status IN ?", online, devices.CommandStopping, idleOrChargingPorts()).
+		Where("c.stop_sent_at IS NULL OR c.stop_sent_at < DATE_SUB(NOW(3), INTERVAL 10 SECOND)").
+		Order("COALESCE(c.stop_sent_at,c.updated_at),c.command_id").Limit(50).Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -100,11 +125,15 @@ func (s MySQLSink) StoppingJobs(ctx context.Context) ([]StopJob, error) {
 	return jobs, nil
 }
 
-// MarkStopSent 仅更新 stopping 命令的停止发送时间；返回 SQL 错误，不确认停止或释放端口。
-func (s MySQLSink) MarkStopSent(ctx context.Context, commandID string) error {
+// MarkStopSent 在同设备许可内核对原订单占用后保存补偿 STOP 的尝试时间，返回是否仍可发送及 SQL 错误。
+// 零影响表示已经失去占用或命令已终结，不发包、不确认停止、不释放端口。
+func (s MySQLSink) MarkStopSent(ctx context.Context, commandID string) (bool, error) {
 	// SQL 内 status = 'stopping' 对应 devices.CommandStopping（charge_command.status）。
-	return s.DB.WithContext(ctx).Model(&chargeCommandRow{}).Where("command_id = ? AND status = 'stopping'", commandID).
-		Update("stop_sent_at", gorm.Expr("CURRENT_TIMESTAMP(3)")).Error
+	res := s.DB.WithContext(ctx).Exec(`UPDATE charge_command c
+JOIN device_port p ON p.id=c.port_id AND p.device_id=c.device_id AND p.port_no=c.port_no
+SET c.stop_sent_at=CURRENT_TIMESTAMP(3)
+WHERE c.command_id=? AND c.status=? AND p.current_order_id=c.order_no AND p.status IN ?`, commandID, devices.CommandStopping, idleOrChargingPorts())
+	return res.RowsAffected == 1, res.Error
 }
 
 // stopJob 解码 6 字节会话并生成 STOP 任务；会话无效返回 ErrOrderConflict。

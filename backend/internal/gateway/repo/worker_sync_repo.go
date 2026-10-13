@@ -108,7 +108,7 @@ func ReleaseChargingPort(
 // ReadSyncPort 查询端口状态和当前订单；不加锁，缺失时返回错误。
 func ReadSyncPort(ctx context.Context, db *gorm.DB, portID uint64) (SyncPortRow, error) {
 	var port SyncPortRow
-	err := db.WithContext(ctx).Select("status, current_order_id").Where("id = ?", portID).Take(&port).Error
+	err := db.WithContext(ctx).Select("device_id, status, current_order_id").Where("id = ?", portID).Take(&port).Error
 	return port, err
 }
 

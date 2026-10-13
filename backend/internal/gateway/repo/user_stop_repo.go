@@ -61,7 +61,7 @@ func (s MySQLSink) ExistingUserStop(ctx context.Context, orderNo string, userID 
 	return stopReservationFromRow(row)
 }
 
-// ReserveUserStop 在 READ COMMITTED 事务内先锁启动命令、再锁端口，创建稳定 STOP 命令；重复请求复用已保存的命令。
+// ReserveUserStop 在 READ COMMITTED 事务内锁启动命令、重读已有 STOP、再锁端口；重复请求复用已保存的命令。
 func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (StopReservation, error) {
 	if active.ChargeOrderID == 0 || active.OrderNo == "" || active.UserID == 0 || active.DeviceID == "" || active.PortNo == 0 || active.PortID == 0 || active.StartCommandID == "" {
 		return StopReservation{}, ErrOrderConflict
@@ -79,6 +79,19 @@ func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (Sto
 			return ErrOrderConflict
 		}
 		if err != nil {
+			return err
+		}
+		// 原 START 锁将创建串行化；等待后须当前读，避免两个首次请求撞上订单唯一键。
+		var existing chargeStopCommandRow
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("order_no=?", active.OrderNo).Take(&existing).Error
+		if err == nil {
+			if existing.UserID != active.UserID {
+				return ErrOrderConflict
+			}
+			reservation, err = stopReservationFromRow(existing)
+			return err
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		if start.Status != devices.CommandAcked || start.CommandID != active.StartCommandID || start.DeviceID != active.DeviceID || start.PortNo != active.PortNo || !start.PortID.Valid || uint64(start.PortID.Int64) != active.PortID {
@@ -111,20 +124,33 @@ func (s MySQLSink) ReserveUserStop(ctx context.Context, active ActiveOrder) (Sto
 	return reservation, nil
 }
 
-// MarkUserStopSent 将 pending 或 sent 用户停机命令标记 sent 并更新发送时间；返回 SQL 错误，不确认设备断电。
-func (s MySQLSink) MarkUserStopSent(ctx context.Context, commandID string) error {
-	// SQL 内 status IN ('pending','sent')／status = 'sent' 分别对应
-	// devices.StopCommandPending、StopCommandSent／StopCommandSent（charge_stop_command.status）。
-	return s.DB.WithContext(ctx).Model(&chargeStopCommandRow{}).Where("command_id = ? AND status IN ('pending','sent')", commandID).
-		Updates(map[string]any{"status": devices.StopCommandSent, "sent_at": gorm.Expr("CURRENT_TIMESTAMP(3)")}).Error
+// MarkUserStopSent 在同设备许可内核对原 START 和当前占用，再保存发送尝试；返回是否仍可发送。
+// 零影响表示命令已终结或占用已释放/换单，不发旧 STOP；SQL 失败返回错误，不确认断电。
+func (s MySQLSink) MarkUserStopSent(ctx context.Context, commandID string) (bool, error) {
+	res := s.DB.WithContext(ctx).Exec(`UPDATE charge_stop_command s
+JOIN charge_command c ON c.command_id=s.start_command_id AND c.charge_order_id=s.charge_order_id AND c.order_no=s.order_no
+JOIN device_port p ON p.id=s.port_id AND p.id=c.port_id AND p.device_id=s.device_id AND p.port_no=s.port_no
+SET s.status=?, s.sent_at=CURRENT_TIMESTAMP(3)
+WHERE s.command_id=? AND s.status IN ? AND c.status=? AND c.device_id=s.device_id AND c.port_no=s.port_no
+AND p.current_order_id=s.order_no AND p.status=?`, devices.StopCommandSent, commandID,
+		[]devices.StopCommandStatus{devices.StopCommandPending, devices.StopCommandSent}, devices.CommandAcked, money.PortCharging)
+	return res.RowsAffected == 1, res.Error
 }
 
-// PendingUserStops 按创建时间读取最多 50 条待发或已发送超过 10 秒的停机命令，复用 STOP 会话。
-func (s MySQLSink) PendingUserStops(ctx context.Context) ([]StopReservation, error) {
+// PendingUserStops 先按在线设备和原订单占用过滤，再按最近发送尝试读取最多 50 条到期 STOP。
+// online 是连接登记快照，空集合不查询；执行时须重新核对归属和连接，旧记录保留但不再派发。
+func (s MySQLSink) PendingUserStops(ctx context.Context, online []string) ([]StopReservation, error) {
+	if len(online) == 0 {
+		return []StopReservation{}, nil
+	}
 	var rows []chargeStopCommandRow
 	// SQL 内 status = 'pending'／status = 'sent' 对应 devices.StopCommandPending／StopCommandSent。
-	err := s.DB.WithContext(ctx).Where("status = 'pending' OR (status = 'sent' AND sent_at < DATE_SUB(NOW(3), INTERVAL 10 SECOND))").
-		Order("created_at").Limit(50).Find(&rows).Error
+	err := s.DB.WithContext(ctx).Table("charge_stop_command s").Select("s.*").
+		Joins("JOIN charge_command c ON c.command_id=s.start_command_id AND c.charge_order_id=s.charge_order_id AND c.order_no=s.order_no AND c.device_id=s.device_id AND c.port_no=s.port_no").
+		Joins("JOIN device_port p ON p.id=s.port_id AND p.id=c.port_id AND p.device_id=s.device_id AND p.port_no=s.port_no AND p.current_order_id=s.order_no").
+		Where("s.device_id IN ? AND c.status=? AND p.status=?", online, devices.CommandAcked, money.PortCharging).
+		Where("s.status = ? OR (s.status = ? AND s.sent_at < DATE_SUB(NOW(3), INTERVAL 10 SECOND))", devices.StopCommandPending, devices.StopCommandSent).
+		Order("COALESCE(s.sent_at,s.created_at),s.command_id").Limit(50).Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}

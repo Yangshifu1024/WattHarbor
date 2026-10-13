@@ -59,6 +59,8 @@ func (SyncEventRow) TableName() string { return "device_event" }
 type SyncPortRow struct {
 	// ID device_port 表的自增主键。
 	ID uint64 `gorm:"column:id;primaryKey"`
+	// DeviceID 所属设备编号，释放操作用它取得同设备许可。
+	DeviceID string `gorm:"column:device_id"`
 	// Status 状态。
 	Status money.PortStatus `gorm:"column:status"`
 	// CurrentOrderID 占用端口的订单号，NULL 表示无占用。

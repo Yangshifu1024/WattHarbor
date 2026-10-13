@@ -24,6 +24,7 @@ import (
 	gatewaycontract "chargepilot/internal/contracts/gateway"
 	"chargepilot/internal/gateway/control"
 	gatewayrepo "chargepilot/internal/gateway/repo"
+	"chargepilot/internal/gateway/session"
 	centralhttp "chargepilot/internal/http/central"
 	centralclient "chargepilot/internal/integration/central"
 	gatewayclient "chargepilot/internal/integration/gateway"
@@ -339,7 +340,7 @@ func (f *endWorkflowFixture) servers(t *testing.T) (string, string, *atomic.Bool
 			c.Abort()
 		}
 	})
-	(control.TelemetryAPI{DB: privateEvents, ServiceToken: "end-workflow-token"}).Register(gatewayRouter)
+	(control.TelemetryAPI{DB: privateEvents, Devices: &session.Registry{}, ServiceToken: "end-workflow-token"}).Register(gatewayRouter)
 	gatewayServer := httptest.NewServer(gatewayRouter)
 	t.Cleanup(gatewayServer.Close)
 	return centralServer.URL, gatewayServer.URL, denyCentral, denyRelease

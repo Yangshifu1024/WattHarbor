@@ -3,6 +3,7 @@
 package control
 
 import (
+	"chargepilot/internal/gateway/session"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -51,7 +52,7 @@ func TestWorkerSyncClientMatchesRegisteredGatewayAndMySQL(t *testing.T) {
 		}
 	}
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: tx, ServiceToken: "secret"}).Register(router)
+	(TelemetryAPI{DB: tx, Devices: &session.Registry{}, ServiceToken: "secret"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "secret")

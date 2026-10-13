@@ -2,6 +2,7 @@ package control
 
 import (
 	gatewayrepo "chargepilot/internal/gateway/repo"
+	"chargepilot/internal/gateway/session"
 	"context"
 	"net/http"
 	"strconv"
@@ -18,6 +19,8 @@ import (
 type TelemetryAPI struct {
 	// DB 是网关数据库连接。
 	DB *gorm.DB
+	// Devices 与启动、停止及 ACK 持久化共用，用于串行化端口释放。
+	Devices *session.Registry
 	// ServiceToken 服务鉴权期望令牌，空配置拒绝调用。
 	ServiceToken string
 	// MaxWindow 允许的最大曲线查询窗口。

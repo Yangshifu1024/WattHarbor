@@ -23,38 +23,46 @@ type Compensation struct {
 
 // Request 先保存补偿停机状态，再向在线设备下发 STOP。
 func (c Compensation) Request(ctx context.Context, orderNo, commandID string) error {
-	job, needsStop, err := c.Repo.CompensateStart(ctx, orderNo, commandID)
-	if err != nil || !needsStop {
+	device, err := c.Repo.CommandDevice(ctx, orderNo, commandID)
+	if err != nil {
 		return err
 	}
-	if !c.Devices.Connected(job.DeviceID) {
-		return nil
-	}
-	if err := c.Repo.MarkStopSent(ctx, job.CommandID); err != nil {
-		return err
-	}
-	return c.Devices.Send(ctx, job.DeviceID, job.Wire)
+	return c.Devices.WithDeviceOperation(ctx, device, func() error {
+		job, needsStop, err := c.Repo.CompensateStart(ctx, orderNo, commandID)
+		if err != nil || !needsStop {
+			return err
+		}
+		if !c.Devices.Connected(job.DeviceID) {
+			return nil
+		}
+		eligible, err := c.Repo.MarkStopSent(ctx, job.CommandID)
+		if err != nil || !eligible {
+			return err
+		}
+		return c.Devices.Send(ctx, job.DeviceID, job.Wire)
+	})
 }
 
 // RetryStopping 读取到期补偿任务，为在线设备依次标记发送并下发同一 STOP。
 // 返回首次持久化或发送错误，继续其它任务，不创建第二条 START 或新会话。
 func (c Compensation) RetryStopping(ctx context.Context) error {
-	jobs, err := c.Repo.StoppingJobs(ctx)
+	jobs, err := c.Repo.StoppingJobs(ctx, c.Devices.ConnectedDeviceIDs())
 	if err != nil {
 		return err
 	}
 	var first error
 	for _, job := range jobs {
-		if !c.Devices.Connected(job.DeviceID) {
-			continue
-		}
-		if err := c.Repo.MarkStopSent(ctx, job.CommandID); err != nil {
-			if first == nil {
-				first = err
+		err := c.Devices.WithDeviceOperation(ctx, job.DeviceID, func() error {
+			if !c.Devices.Connected(job.DeviceID) {
+				return nil
 			}
-			continue
-		}
-		if err := c.Devices.Send(ctx, job.DeviceID, job.Wire); err != nil && first == nil {
+			eligible, err := c.Repo.MarkStopSent(ctx, job.CommandID)
+			if err != nil || !eligible {
+				return err
+			}
+			return c.Devices.Send(ctx, job.DeviceID, job.Wire)
+		})
+		if err != nil && first == nil {
 			first = err
 		}
 	}

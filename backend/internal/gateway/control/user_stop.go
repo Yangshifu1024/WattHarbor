@@ -38,46 +38,64 @@ func (s UserStopService) Stop(ctx context.Context, orderNo string, userID uint64
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return repo.StopReservation{}, err
 	}
+	var active repo.ActiveOrder
+	deviceID := reservation.DeviceID
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		active, err := s.Orders.ActiveStop(ctx, orderNo, userID)
+		active, err = s.Orders.ActiveStop(ctx, orderNo, userID)
 		if err != nil {
 			return repo.StopReservation{}, err
 		}
-		reservation, err = s.Repo.ReserveUserStop(ctx, active)
-		if err != nil {
-			return repo.StopReservation{}, err
-		}
+		deviceID = active.DeviceID
 	}
-	if reservation.Status == "pending" && s.Devices.Connected(reservation.DeviceID) {
-		if err := s.Repo.MarkUserStopSent(ctx, reservation.CommandID); err != nil {
-			return repo.StopReservation{}, err
+	err = s.Devices.WithDeviceOperation(ctx, deviceID, func() error {
+		// 等待设备许可期间可能已由另一请求创建 STOP，重新读取并复用其身份。
+		reservation, err = s.Repo.ExistingUserStop(ctx, orderNo, userID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			reservation, err = s.Repo.ReserveUserStop(ctx, active)
 		}
-		reservation.Status = "sent"
-		// 写入失败或部分写入时保留停止命令，重试使用同一 STOP 会话标识。
-		// HTTP 接受请求不表示设备已经断电。
-		_ = s.Devices.Send(ctx, reservation.DeviceID, reservation.Wire)
+		if err != nil {
+			return err
+		}
+		if reservation.Status == "pending" && s.Devices.Connected(reservation.DeviceID) {
+			eligible, err := s.Repo.MarkUserStopSent(ctx, reservation.CommandID)
+			if err != nil {
+				return err
+			}
+			if !eligible {
+				return nil
+			}
+			reservation.Status = "sent"
+			// 写入失败或部分写入时保留停止命令，重试使用同一 STOP 会话标识。
+			// HTTP 接受请求不表示设备已经断电。
+			_ = s.Devices.Send(ctx, reservation.DeviceID, reservation.Wire)
+		}
+		return nil
+	})
+	if err != nil {
+		return repo.StopReservation{}, err
 	}
 	return reservation, nil
 }
 
 // RetryPending 向在线设备重发到期 STOP，保留原会话编号；单项失败后继续其余命令。
 func (s UserStopService) RetryPending(ctx context.Context) error {
-	jobs, err := s.Repo.PendingUserStops(ctx)
+	jobs, err := s.Repo.PendingUserStops(ctx, s.Devices.ConnectedDeviceIDs())
 	if err != nil {
 		return err
 	}
 	var first error
 	for _, job := range jobs {
-		if !s.Devices.Connected(job.DeviceID) {
-			continue
-		}
-		if err := s.Repo.MarkUserStopSent(ctx, job.CommandID); err != nil {
-			if first == nil {
-				first = err
+		err := s.Devices.WithDeviceOperation(ctx, job.DeviceID, func() error {
+			if !s.Devices.Connected(job.DeviceID) {
+				return nil
 			}
-			continue
-		}
-		if err := s.Devices.Send(ctx, job.DeviceID, job.Wire); err != nil && first == nil {
+			eligible, err := s.Repo.MarkUserStopSent(ctx, job.CommandID)
+			if err != nil || !eligible {
+				return err
+			}
+			return s.Devices.Send(ctx, job.DeviceID, job.Wire)
+		})
+		if err != nil && first == nil {
 			first = err
 		}
 	}

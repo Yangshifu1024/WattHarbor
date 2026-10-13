@@ -3,6 +3,7 @@
 package control
 
 import (
+	"chargepilot/internal/gateway/session"
 	"context"
 	"encoding/json"
 	"errors"
@@ -129,7 +130,7 @@ func TestLateReleaseCannotFreeNewOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: tx, ServiceToken: "release-test"}).Register(router)
+	(TelemetryAPI{DB: tx, Devices: &session.Registry{}, ServiceToken: "release-test"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "release-test")

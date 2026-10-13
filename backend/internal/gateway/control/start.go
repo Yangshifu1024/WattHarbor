@@ -28,6 +28,18 @@ func (s StartService) Start(ctx context.Context, orderNo string) (repo.StartRese
 	if err != nil {
 		return repo.StartReservation{}, err
 	}
+	var reservation repo.StartReservation
+	err = s.Devices.WithDeviceOperation(ctx, paid.DeviceID, func() error {
+		var err error
+		reservation, err = s.startPaid(ctx, paid)
+		return err
+	})
+	return reservation, err
+}
+
+// startPaid 在调用方已持同设备许可时保存和发送 START；不在网络写入期间持数据库事务。
+// paid 是中央授权，返回稳定命令或存储/发送核实错误；补偿 STOP 留在同一许可内。
+func (s StartService) startPaid(ctx context.Context, paid repo.PaidOrder) (repo.StartReservation, error) {
 	reservation, err := s.Repo.ReserveStart(ctx, paid)
 	if err != nil {
 		return repo.StartReservation{}, err
@@ -46,7 +58,7 @@ func (s StartService) Start(ctx context.Context, orderNo string) (repo.StartRese
 		return repo.StartReservation{}, err
 	}
 	if !sent {
-		status, err := s.Repo.StartStatus(ctx, orderNo)
+		status, err := s.Repo.StartStatus(ctx, paid.OrderNo)
 		reservation.Status = status
 		return reservation, err
 	}
@@ -58,7 +70,13 @@ func (s StartService) Start(ctx context.Context, orderNo string) (repo.StartRese
 		if persistErr := s.Repo.MarkStartStopping(cleanupCtx, reservation.CommandID, err); persistErr != nil {
 			return repo.StartReservation{}, persistErr
 		}
-		_ = s.Devices.Send(cleanupCtx, paid.DeviceID, reservation.StopWire)
+		eligible, markErr := s.Repo.MarkStopSent(cleanupCtx, reservation.CommandID)
+		if markErr != nil {
+			return repo.StartReservation{}, markErr
+		}
+		if eligible {
+			_ = s.Devices.Send(cleanupCtx, paid.DeviceID, reservation.StopWire)
+		}
 		reservation.Status = "stopping"
 	}
 	return reservation, nil

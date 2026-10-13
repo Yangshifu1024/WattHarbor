@@ -160,18 +160,8 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 		httpapi.BadRequest(c, "端口释放请求无效")
 		return
 	}
-	affected, err := gatewayrepo.ReleaseChargingPort(
-		c.Request.Context(),
-		a.DB,
-		in.PortID,
-		in.OrderNo,
-	)
-	if err != nil {
-		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口释放暂不可用", nil)
-		return
-	}
-	if affected == 1 {
-		httpapi.OK(c, gatewaycontract.ReleasePortReply{Released: true, Already: false})
+	if a.Devices == nil {
+		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口释放保护未装配", nil)
 		return
 	}
 	port, err := gatewayrepo.ReadSyncPort(c.Request.Context(), a.DB, in.PortID)
@@ -179,8 +169,32 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口状态暂不可读取", nil)
 		return
 	}
-	if port.Status == money.PortIdle && !port.CurrentOrderID.Valid {
-		httpapi.OK(c, gatewaycontract.ReleasePortReply{Released: true, Already: true})
+	reply := gatewaycontract.ReleasePortReply{}
+	err = a.Devices.WithDeviceOperation(c.Request.Context(), port.DeviceID, func() error {
+		affected, err := gatewayrepo.ReleaseChargingPort(c.Request.Context(), a.DB, in.PortID, in.OrderNo)
+		if err != nil {
+			return err
+		}
+		if affected == 1 {
+			reply.Released = true
+			return nil
+		}
+		current, err := gatewayrepo.ReadSyncPort(c.Request.Context(), a.DB, in.PortID)
+		if err != nil {
+			return err
+		}
+		// 保留原重放契约：仅空闲且无占用时确认已释放，换单仍冲突且不修改新订单。
+		if current.Status == money.PortIdle && !current.CurrentOrderID.Valid {
+			reply.Released, reply.Already = true, true
+		}
+		return nil
+	})
+	if err != nil {
+		httpapi.Write(c, http.StatusServiceUnavailable, 5003, "端口释放暂不可用", nil)
+		return
+	}
+	if reply.Released {
+		httpapi.OK(c, reply)
 		return
 	}
 	httpapi.Write(c, http.StatusConflict, 2009, "端口在结算后无法释放", nil)

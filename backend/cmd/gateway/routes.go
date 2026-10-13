@@ -55,6 +55,7 @@ func newRouter(cfg config.Gateway, r *resources, deviceConnections *session.Regi
 	// 在此设置遥测查询的时间和点数上限，以及会话无数据的超时阈值。
 	control.TelemetryAPI{
 		DB:           orm,
+		Devices:      deviceConnections,
 		MaxWindow:    24 * time.Hour,
 		MaxPoints:    2000,
 		ServiceToken: token,

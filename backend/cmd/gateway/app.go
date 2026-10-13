@@ -73,7 +73,7 @@ func assemble(cfg config.Gateway, r *resources) (*application, error) {
 				Address: cfg.DC589Addr,
 				Adapter: dc589.TCPAdapter{Registry: connections, DebugHeartbeat: cfg.DebugHeartbeat},
 			}},
-			Sink:           sink,
+			Sink:           session.SerializedSink{Registry: connections, Sink: sink},
 			MaxConnections: cfg.MaxConnections,
 			Compensation:   compensation,
 			UserStops:      userStops,
