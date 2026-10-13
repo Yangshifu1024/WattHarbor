@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, App, Button, Form, Modal, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, App, Button, DatePicker, Form, Modal, Select, Space, Table, Tag, Typography } from 'antd';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { apiGet, apiPost } from '../api/client';
 import { formatTime } from '../utils/time';
@@ -78,11 +78,14 @@ export default function ExportsPage() {
   useEffect(() => { void load(); }, [load]);
 
   const create = async () => {
-    const values = await form.validateFields();
-    setSaving(true);
     try {
+      const values = await form.validateFields();
+      setSaving(true);
       const result = await apiPost<{ status: string; row_count: number }>(endpoint, {
-        request_id: crypto.randomUUID(), resource: values.resource, filter: {},
+        request_id: crypto.randomUUID(), resource: values.resource,
+        filter: values.resource === 'bills'
+          ? { from: values.period[0].format('YYYY-MM-DD'), to: values.period[1].format('YYYY-MM-DD') }
+          : {},
       });
       if (result?.status === 'completed') message.success(`导出完成，共 ${result.row_count} 行`);
       else message.warning('导出未完成，请刷新查看详情');
@@ -148,7 +151,7 @@ export default function ExportsPage() {
           },
         ]}
       />
-      <ModalLazy open={creating} onCancel={() => setCreating(false)} onOk={() => void create()}
+      <ModalLazy open={creating} onCancel={() => setCreating(false)} onOk={() => create()}
         saving={saving} form={form} options={allowed} maxRows={maxRows} />
     </div>
   );
@@ -163,12 +166,23 @@ function ModalLazy(props: {
   options: string[];
   maxRows: number;
 }) {
+  const resource = Form.useWatch('resource', props.form);
   return (
     <Modal title="创建导出任务" open={props.open} onCancel={props.onCancel} onOk={props.onOk} confirmLoading={props.saving} okText="开始导出" cancelText="取消" destroyOnHidden>
       <Form form={props.form} layout="vertical" preserve={false}>
         <Form.Item name="resource" label="导出资源" rules={[{ required: true, message: '请选择资源' }]}>
           <Select options={props.options.map((v) => ({ value: v, label: resourceLabel[v] || v }))} />
         </Form.Item>
+        {resource === 'bills' && <Form.Item name="period" label="账单日期" rules={[
+          { required: true, message: '请选择账单日期范围' },
+          { validator: async (_, period) => {
+            if (!period?.[0] || !period?.[1]) throw Error('请选择完整日期范围');
+            const days = period[1].startOf('day').diff(period[0].startOf('day'), 'day');
+            if (days < 0 || days > 30) throw Error('日期范围最多包含 31 天，结束日期不能早于开始日期');
+          } },
+        ]}>
+          <DatePicker.RangePicker format="YYYY-MM-DD" style={{ width: '100%' }} />
+        </Form.Item>}
       </Form>
       <Paragraph type="secondary">单次最多导出 {props.maxRows || 50000} 行。</Paragraph>
     </Modal>
