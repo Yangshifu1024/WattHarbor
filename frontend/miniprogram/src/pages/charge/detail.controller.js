@@ -1,11 +1,12 @@
 import { defineController, getApp, wx } from "../../runtime";
+import { beginOperation, operationVisible, finishOperation, syncOperations } from '../../utils/page-operation';
 const detailApp = getApp();
 import { formatOrder } from '../../utils/order';
 import { paymentParams } from '../../utils/payment';
 export default defineController({
   data: { order: null, loading: false, error: '', needsLogin: false, paying:false,paymentNotice:'',curve:null,curveLoading:false,curveError:'',feedbackRatingIndex:4,feedbackCategoryIndex:0,feedbackRatings:['1 星','2 星','3 星','4 星','5 星'],feedbackCategories:['评价','投诉','建议'],feedbackCategoryValues:['rating','complaint','suggestion'],feedbackContent:'',feedbackBusy:false,feedbackError:'',feedbackNotice:'' },
   onLoad(query) { this._orderId = query.order_id || query.order_no; this._gone = false; this._generation = 0; this.load(); },
-  onShow(){this._gone=false;if(this._openAfterShow){this._openAfterShow=false;this.charging();}else if(this._wasHidden && !this._paying)this.load();this._wasHidden=false;},
+  onShow(){this._gone=false;syncOperations(this,detailApp,['feedbackBusy']);if(this._feedbackSession!==detailApp._generation)this.setData({feedbackContent:'',feedbackError:'',feedbackNotice:''});this._feedbackSession=detailApp._generation;if(this._openAfterShow){this._openAfterShow=false;this.charging();}else if(this._wasHidden && !this._paying)this.load();this._wasHidden=false;},
   onHide(){this._gone=true;this._wasHidden=true;this._generation++;},
   onUnload() { this._unloaded=true;this.onHide(); },
   onPullDownRefresh() { this.load().finally(() => wx.stopPullDownRefresh()); },
@@ -63,15 +64,15 @@ export default defineController({
     if(this.data.feedbackBusy||this._gone||!order||!['completed','refunding','refunded'].includes(order.status)||order.feedback_submitted)return;
     const content=this.data.feedbackContent.trim();
     if(content.length>2000){this.setData({feedbackError:'反馈内容最多 2000 字'});return;}
-    const generation=detailApp._generation;
-    this.setData({feedbackBusy:true,feedbackError:'',feedbackNotice:''});
+    const operation=beginOperation(this,detailApp,'feedbackBusy');if(!operation)return;
+    this.setData({feedbackError:'',feedbackNotice:''});
     try{
       const result=await detailApp.request('POST',`/user/charge/${encodeURIComponent(order.order_no)}/feedback`,{rating:this.data.feedbackRatingIndex+1,category:this.data.feedbackCategoryValues[this.data.feedbackCategoryIndex],content:content||null});
-      if(this._gone||generation!==detailApp._generation)return;
+      if(!operationVisible(this,detailApp,operation))return;
       if(!result||result.submitted!==true)throw new Error('反馈结果未确认，请刷新订单详情');
       this.setData({order:{...order,feedback_submitted:true},feedbackContent:'',feedbackNotice:'感谢反馈，运营方会按流程处理。'});
-    }catch(error){if(!this._gone&&generation===detailApp._generation)this.setData({feedbackError:error.message||'反馈提交失败，请重试'});}
-    finally{if(!this._gone)this.setData({feedbackBusy:false});}
+    }catch(error){if(operationVisible(this,detailApp,operation))this.setData({feedbackError:error.message||'反馈提交失败，请重试'});}
+    finally{finishOperation(this,operation);}
   },
   invoice(){wx.navigateTo({url:'/pages/invoice/apply'});},
   reportFault(){const order=this.data.order;if(order?.device_id)wx.navigateTo({url:'/pages/dev/fault?device_id='+encodeURIComponent(order.device_id)});},
