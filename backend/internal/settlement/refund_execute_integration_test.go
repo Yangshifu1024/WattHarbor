@@ -5,6 +5,8 @@ package settlement
 import (
 	"chargepilot/internal/testfixture"
 	"context"
+	"fmt"
+	"github.com/google/uuid"
 	"testing"
 	"time"
 
@@ -297,5 +299,99 @@ func TestApplyRejectsRefundBeyondRemainingAmount(t *testing.T) {
 	}
 	if receipts != 0 {
 		t.Errorf("被拒绝的超额退款却留下了 %d 条成功回执", receipts)
+	}
+}
+
+// TestAbnormalWalletRefundKeepsReservationUntilTerminal 使用真实资金表验证异常不是失败，最终结果只结算一次。
+func TestAbnormalWalletRefundKeepsReservationUntilTerminal(t *testing.T) {
+	for _, terminal := range []pay.ChannelRefundStatus{pay.ChannelRefundStatusSuccess, pay.ChannelRefundStatusClosed} {
+		t.Run(string(terminal), func(t *testing.T) {
+			db, closeDB := testConn(t)
+			defer closeDB()
+			tx := db.Begin()
+			if tx.Error != nil {
+				t.Fatal(tx.Error)
+			}
+			defer tx.Rollback()
+			id := testfixture.NewID()
+			no := fmt.Sprintf("ABN-%d", id)
+			for _, seed := range []struct {
+				table string
+				row   map[string]any
+			}{
+				{"wallet_account", map[string]any{"id": id, "user_id": id, "balance_cents": 1000, "frozen_cents": 400}},
+				{"payment_order", map[string]any{"id": id, "order_no": "P-" + no, "user_id": id, "biz_type": "wallet_recharge", "biz_id": 0, "pay_method": "wechat", "status": "paid", "total_cents": 1000, "paid_cents": 1000, "wechat_transaction_id": "TX-" + no, "created_month": "2026-10-01"}},
+				{"refund_record", map[string]any{"id": id, "refund_no": no, "payment_order_id": id, "user_id": id, "biz_type": "wallet_recharge", "biz_id": 0, "refund_cents": 400, "status": "processing", "execution_policy": "automatic", "created_month": "2026-10-01"}},
+				{"wallet_refund_part", map[string]any{"refund_record_id": id, "request_id": uuid.NewString(), "wallet_account_id": id, "amount_cents": 400}},
+			} {
+				if err := tx.Table(seed.table).Create(seed.row).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			r := RefundRecord{ID: id, RefundNo: no, PaymentOrderID: id, UserID: id, BizType: "wallet_recharge", RefundCents: 400, Status: "processing"}
+			request := pay.RefundRequest{RefundNo: no, MerchantOrderNo: "P-" + no, TransactionID: "TX-" + no, TotalCents: 1000, RefundCents: 400}
+			result := pay.RefundResult{RefundNo: no, MerchantOrderNo: request.MerchantOrderNo, TransactionID: request.TransactionID, TotalCents: 1000, RefundCents: 400, RefundID: "WX-" + no, Status: pay.ChannelRefundStatusAbnormal}
+			executor := RefundExecutor{DB: tx}
+			for range 2 {
+				if err := executor.apply(t.Context(), r, request, result); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var account struct{ BalanceCents, FrozenCents int64 }
+			var part struct{ Settled bool }
+			var current struct {
+				Status         string
+				WechatRefundID string
+				FailureReason  string
+			}
+			if err := tx.Table("wallet_account").Where("id=?", id).Take(&account).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Table("wallet_refund_part").Where("refund_record_id=?", id).Take(&part).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Table("refund_record").Where("id=?", id).Take(&current).Error; err != nil {
+				t.Fatal(err)
+			}
+			if account.BalanceCents != 1000 || account.FrozenCents != 400 || part.Settled || current.Status != "processing" || current.WechatRefundID != result.RefundID || current.FailureReason == "" {
+				t.Fatalf("abnormal changed funds: wallet=%+v part=%+v refund=%+v", account, part, current)
+			}
+			result.Status = terminal
+			result.SuccessAt = time.Now().UTC()
+			for range 2 {
+				if err := executor.apply(t.Context(), r, request, result); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// 终态已落库后迟到的异常不能复活退款或恢复旧冻结。
+			result.Status = pay.ChannelRefundStatusAbnormal
+			if err := executor.apply(t.Context(), r, request, result); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Table("refund_record").Where("id=?", id).Take(&current).Error; err != nil {
+				t.Fatal(err)
+			}
+			wantStatus := "failed"
+			if terminal == pay.ChannelRefundStatusSuccess {
+				wantStatus = "success"
+			}
+			if current.Status != wantStatus {
+				t.Fatalf("late abnormal revived refund: %+v", current)
+			}
+			if err := tx.Table("wallet_account").Where("id=?", id).Take(&account).Error; err != nil {
+				t.Fatal(err)
+			}
+			var ledger int64
+			if err := tx.Table("wallet_txn").Where("user_id=?", id).Count(&ledger).Error; err != nil {
+				t.Fatal(err)
+			}
+			wantBalance, wantLedger := int64(1000), int64(0)
+			if terminal == pay.ChannelRefundStatusSuccess {
+				wantBalance, wantLedger = 600, 1
+			}
+			if account.BalanceCents != wantBalance || account.FrozenCents != 0 || ledger != wantLedger {
+				t.Fatalf("terminal %s wallet=%+v ledger=%d", terminal, account, ledger)
+			}
+		})
 	}
 }

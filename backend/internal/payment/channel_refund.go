@@ -27,7 +27,7 @@ type RefundResult struct {
 	MerchantOrderNo string              // 渠道关联的商户支付号
 	TransactionID   string              // 渠道支付交易号
 	RefundID        string              // 渠道退款唯一编号，执行器要求非空且最多 64 字节
-	Status          ChannelRefundStatus // 渠道响应原值：SUCCESS、PROCESSING 或终态 CLOSED、ABNORMAL；未知取值原样透传，见 ChannelRefundStatus
+	Status          ChannelRefundStatus // 渠道响应原值：终态 SUCCESS/CLOSED、在途 PROCESSING/ABNORMAL；未知取值原样透传，见 ChannelRefundStatus
 	TotalCents      int64               // 渠道支付总额，CNY 分
 	RefundCents     int64               // 渠道本次退款额，分
 	SuccessAt       time.Time           // SUCCESS 必须有确认时刻，其他状态允许零值

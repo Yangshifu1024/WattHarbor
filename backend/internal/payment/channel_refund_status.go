@@ -21,7 +21,7 @@ package payment
 // 渠道返回未登记的新状态时，原值必须到达执行器，由执行器保持退款在途。
 //
 // 与 domain/money.RefundStatus（refund_record.status 列）没有任何映射关系：
-// 两者取值的大小写与语义都不同（success 对 SUCCESS、failed 对 CLOSED/ABNORMAL、
+// 两者取值的大小写与语义都不同（success 对 SUCCESS、failed 对 CLOSED、
 // pending 与 rejected 在渠道侧无对应），且退款单状态由执行器按资金事务独立流转。
 // 严禁把本类型并入 RefundStatus，或在二者之间建立转换函数。
 type ChannelRefundStatus string
@@ -33,7 +33,7 @@ const (
 	ChannelRefundStatusProcessing ChannelRefundStatus = "PROCESSING"
 	// ChannelRefundStatusClosed 表示退款已关闭，视为终态失败并释放钱包预占。
 	ChannelRefundStatusClosed ChannelRefundStatus = "CLOSED"
-	// ChannelRefundStatusAbnormal 表示退款异常，视为终态失败并释放钱包预占。
+	// ChannelRefundStatusAbnormal 表示退款异常，资金仍在渠道；保留预占并查询人工处理后的结果。
 	ChannelRefundStatusAbnormal ChannelRefundStatus = "ABNORMAL"
 )
 

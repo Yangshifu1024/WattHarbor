@@ -210,7 +210,7 @@ func providerMatchesChannel(providerName, transactionID string) bool {
 	return (providerName == "simulation") == simulated
 }
 
-// apply 核对渠道回执；PROCESSING 保留原状态，CLOSED/ABNORMAL 在钱包→退款锁内释放预占。
+// apply 核对渠道回执；PROCESSING/ABNORMAL 保持在途，只有 CLOSED 在钱包→退款锁内释放预占。
 // SUCCESS 按钱包（适用时）→支付→退款加锁，保存已退款金额、回执、订单和 Outbox。
 // 重放不重复出账，错误整体回滚，事务内不请求渠道。
 // default 不是词表校验，而是资金闸门：未登记的渠道取值无法判定该不该动资金，
@@ -220,9 +220,16 @@ func (e RefundExecutor) apply(ctx context.Context, r RefundRecord, request pay.R
 		return ErrRefundConflict
 	}
 	switch result.Status {
-	case pay.ChannelRefundStatusProcessing:
+	case pay.ChannelRefundStatusProcessing, pay.ChannelRefundStatusAbnormal:
+		// ABNORMAL 的钱仍在渠道退款中间账户，人工处理后可能 SUCCESS。
+		// 保存渠道身份和核实原因，但不释放钱包冻结、不换退款号；后续继续查原单。
+		if result.Status == pay.ChannelRefundStatusAbnormal {
+			return e.DB.WithContext(ctx).Model(&RefundRecord{}).
+				Where("id=? AND status=?", r.ID, money.RefundProcessing).
+				Updates(map[string]any{"wechat_refund_id": result.RefundID, "failure_reason": "渠道退款异常，需在商户平台核实；资金保持预占"}).Error
+		}
 		return nil
-	case pay.ChannelRefundStatusClosed, pay.ChannelRefundStatusAbnormal:
+	case pay.ChannelRefundStatusClosed:
 		return e.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := wallet.LockRefundWallet(tx, walletSettlement(r)); err != nil {
 				return err
