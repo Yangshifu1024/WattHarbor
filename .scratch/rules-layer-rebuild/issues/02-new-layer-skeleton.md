@@ -52,7 +52,8 @@ Standards 轴与 Spec 轴各抓到同一个最重的问题：我在新层文档�
 - `node tasks.mjs check-rules` 退出 0，报告「通过：冻结文档顶部带冻结声明并指向新层」「0 条失败，5 条尚未实现」。
 - `node --test scripts/tasks.test.mjs scripts/rules/check-rules.test.mjs scripts/ops/check-deploy.test.mjs scripts/db/backup.test.mjs scripts/db/provision-runtime.test.mjs` → 73 条用例全过。
 - 仓库文档 363 条相对链接逐条解析，0 条死链（跨文档链接不变量尚未实现，这条是一次性脚本验证，不进仓库）。
-- `node tasks.mjs check`：check-rules 排在最前面并通过，随后在 Go 步骤失败——`goproxy.io` 不可达、模块缓存缺 14 个包，与本票无关，本票未新增 Go 代码。
+- `node tasks.mjs check` **退出 0，全绿**：check-rules 排在最前面并通过，随后 `go fmt`、`go vet ./...` 无输出，`go test ./...` 95 个包零失败。
+- 首次执行时门禁曾在 Go 步骤失败：`GOPROXY` 原为不可达的 `goproxy.io`，模块缓存缺 14 个包。改用 `https://goproxy.cn,direct`（Go 全局环境，本机配置，不入库）后模块补齐，门禁转绿。本票未新增 Go 代码，此项属环境限制而非改动引入。
 
 ### 留给后续票的账
 
