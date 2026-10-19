@@ -7,7 +7,8 @@
 
 ## 依据与边界
 
-- 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。本文件记录维护规则；[README](README.md) 提供项目概览、启动与检查入口；[业务与接口契约](docs/business-contracts.md) 记录计量、资金、权限及异步恢复规则；[运行与数据维护](docs/operations.md) 记录配置、部署、备份恢复、监控及模拟器操作。修改行为或运行方式时同步所属文档，避免在多处复制完整规则。难以逆转且无上下文时令人困惑的取舍记入 `docs/adr/`，术语边界记入根目录 `GLOSSARY.md`；两者按需惰性创建，不为凑数预建。
+- 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。**规则层的单一入口是 [规则层入口](docs/rules/README.md)**，七个类目各有唯一落点，新增规则怎么落位见该文件。[README](README.md) 提供项目概览、启动与检查入口，[运行与数据维护](docs/operations.md) 记录配置、部署、备份恢复、监控及模拟器操作。修改行为或运行方式时同步所属文档，避免在多处复制完整规则。难以逆转且无上下文时令人困惑的取舍记入 [docs/adr/](docs/adr/README.md)，术语边界记入根目录 [GLOSSARY.md](GLOSSARY.md)；两者按需惰性创建，不为凑数预建。
+- `docs/business-contracts.md`、`docs/architecture-boundaries.md`、`docs/refactor-roadmap.md` 与 `docs/status-enum-roadmap.md` **已冻结、只读**，不再接受新增或修改规则，现行落点见 [规则层入口](docs/rules/README.md)。冻结声明由 `node tasks.mjs check-rules` 判定；已实施批次的流水进 [docs/rules/plans/archive/](docs/rules/plans/archive/README.md)，活跃规则不写入归档。
 - **文档重述枚举时分治，不一律照抄取值列表**：取值真相源是 `migrations/*/0001_init.sql` 的 ENUM 声明与 `internal/domain/` 的 Go 常量，文档负责语义。**顺序有语义**的不重述列表——MySQL ENUM 按声明序存序位，任何 `ORDER BY` 或序位比较都依赖声明顺序，照抄必然漂移（`payment_status` 的文档顺序已与 SQL 相反），改为指向真相源；**纯集合、顺序无意义**的保留在文档，可读性价值大于漂移风险。文档中出现只存在于文档、代码与迁移里零命中的取值名，按文档错误处理并核对真相源，不得当作「兼容输入」放过。
 - 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
 - 用户端 `frontend/miniprogram/` 的后续开发任务与交互优化计划见 [docs/miniprogram-roadmap.md](docs/miniprogram-roadmap.md)；完成任务后原位更新该文件的状态与证据。新增页面只登记 `frontend/miniprogram/src/app.config.ts` 一处，不另建页面清单副本；改动该文件后 Taro dev server 不会热重建路由表，须重启 `user-h5` 容器。
@@ -91,7 +92,7 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab
 | [golang-security](.agents/skills/golang-security/SKILL.md) | 注入、路径穿越、SSRF、密码学、HTTP 安全、认证、凭据与敏感日志；威胁建模和安全发现核验。 | 处理用户输入、鉴权、文件或网络 IO、签名验签、秘密信息，或进行安全审查时。 | 重点核对实时权限、资源归属、服务令牌和支付通知；报告需有可达路径与证据。依赖漏洞扫描用 dependency-management；把扫描接入 CI 用 continuous-integration。 |
 | [golang-structs-interfaces](.agents/skills/golang-structs-interfaces/SKILL.md) | 窄接口、消费方定义接口、组合与嵌入、类型断言、零值、序列化标签、值与指针接收者。 | 定义用例依赖、DTO、仓储接口、适配器，或判断接口拆分与类型组合方式时。 | 用例定义所需窄接口，`cmd` 注入实现；contracts 不依赖 gin/gorm。JSON 标签、数值类型和单位须与双方契约一致；不为每个结构体机械增加接口。 |
 | [golang-lint](.agents/skills/golang-lint/SKILL.md) | 理解 `go vet`、staticcheck 等诊断；选择检查项、配置 golangci-lint、解释或合理抑制告警。 | 处理静态检查失败，讨论检查器或 `nolint`，维护已有检查配置时。 | 本项目 `node tasks.mjs lint` 使用 `go vet ./...`，`node tasks.mjs check` 不增加架构脚本。通用 golangci-lint 示例不替代既有检查入口；CI job 编排用 continuous-integration。 |
-| [golang-documentation](.agents/skills/golang-documentation/SKILL.md) | godoc、包与接口说明、README、变更记录、示例、配置和 API 文档；保持条件与业务含义准确。 | 编写或审查 Go 项目文档、维护本文件、解释接口约束或增加可运行示例时。 | README 保留运行入口，业务规则与运维细节分别维护于 `docs/business-contracts.md`、`docs/operations.md`，本文件管维护规则；架构记录放既有 `docs/`。API 文档核对真实接口；不因通用模板额外创建文档站、`llms.txt` 或重复文档树。 |
+| [golang-documentation](.agents/skills/golang-documentation/SKILL.md) | godoc、包与接口说明、README、变更记录、示例、配置和 API 文档；保持条件与业务含义准确。 | 编写或审查 Go 项目文档、维护本文件、解释接口约束或增加可运行示例时。 | README 保留运行入口，业务规则与运维细节按 [规则层入口](docs/rules/README.md) 的类目分别维护于 `docs/rules/business-invariants.md`、`docs/operations.md`，本文件管维护规则；架构记录放 `docs/rules/architecture.md` 与既有 `docs/`。API 文档核对真实接口；不因通用模板额外创建文档站、`llms.txt` 或重复文档树。 |
 
 ### 设计、并发与数据访问（8 个）
 
@@ -722,8 +723,14 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   └── miniprogram/                                     用户端 Taro（H5 与微信小程序）
 ├── docker/                                               Compose 编排（compose.dev／prod.yaml）、Caddyfile 与 MySQL 初始化 SQL
 ├── scripts/db/  scripts/dev/  scripts/git/  scripts/ops/  scripts/rules/ 跨平台 Node 脚本
-├── docs/  .agents/  .githooks/                           DC589 协议文档在 docs/protocols/
-└── AGENTS.md  README.md  LICENSE  tasks.mjs  .env.example
+├── docs/                                                 DC589 协议文档在 docs/protocols/
+│   ├── rules/                                            规则层人读层，单一入口 docs/rules/README.md
+│   │   ├── architecture.md  business-invariants.md      架构边界与依赖、业务不变量
+│   │   ├── verification.md                               验证入口，仅指针不重述规则
+│   │   └── plans/  plans/archive/                       进度与计划；归档只放历史快照
+│   └── adr/                                              架构决策记录，编号连续、每份带状态
+├── .agents/  .githooks/
+└── AGENTS.md  README.md  GLOSSARY.md  LICENSE  tasks.mjs  .env.example
 ```
 
 - **代码按 use case 组织**，主轴是业务用例不是技术层。每个 use case 目录自己

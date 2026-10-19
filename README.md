@@ -82,7 +82,7 @@ node scripts/dev/simulator.mjs --number 2
 
 central 的 `8082` 在开发和生产编排中都不映射到宿主机，只能从容器网络访问。生产 HTTP 经 Caddy 分流至 user/admin，gateway/worker HTTP 仅内网可达；设备另走 `9100/TCP`。五个服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。
 
-业务按 `backend/internal/` 下十二个 use case 组织；`backend/cmd/` 负责装配与生命周期，`backend/internal/http/` 负责 HTTP 适配，`backend/internal/domain/` 保存纯规则。服务间 DTO 在 `contracts/`，具名客户端在 `integration/`；请求以 `Request` 结尾，响应以 `Reply` 结尾。完整职责和维护规则见 [AGENTS.md](AGENTS.md) 与 [架构边界](docs/architecture-boundaries.md)。
+业务按 `backend/internal/` 下十二个 use case 组织；`backend/cmd/` 负责装配与生命周期，`backend/internal/http/` 负责 HTTP 适配，`backend/internal/domain/` 保存纯规则。服务间 DTO 在 `contracts/`，具名客户端在 `integration/`；请求以 `Request` 结尾，响应以 `Reply` 结尾。完整职责和维护规则见 [AGENTS.md](AGENTS.md)；规则层按类目各有唯一落点，单一入口是 [规则层入口](docs/rules/README.md)。
 
 下面展示生产环境的主要调用与存储关系。三库是同一 MySQL 实例中的独立 schema；内部 HTTP 调用携服务令牌。五个进程复用同一套用例包，user/admin 在本进程执行所属用例并访问 `central_db`。
 
@@ -400,7 +400,7 @@ flowchart TD
 - 金额使用整数分；用户 Snowflake ID 为十进制字符串，前端须保留精度。数据库时间按 UTC，计费日界及 DC589 本地时间按北京时间。
 - 下单冻结方案与价格；启动受理、设备启动、充电结束、结算及退款到账分别确认。未知设备结果保留占用，渠道结果未知复用原退款号查询。
 
-计价、钱包、卡、审核、权限和异步恢复的完整规则见 [业务与接口契约](docs/business-contracts.md)；设备报文见 [DC589 协议](docs/protocols/dc589.md)。
+计价、钱包、卡、审核、权限和异步恢复的规则现行落点是 [业务不变量](docs/rules/business-invariants.md)，迁移前仍读冻结的 [业务与接口契约](docs/business-contracts.md)；设备报文见 [DC589 协议](docs/protocols/dc589.md)。
 
 ## 开发与验证
 
