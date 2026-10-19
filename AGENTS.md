@@ -1,8 +1,14 @@
 # 仓库维护规则
 
+## 语言约束
+1. 使用中文进行思考和回复
+2. 使用中文进行注释和文档编写
+3. Git 提交使用英文
+
 ## 依据与边界
 
-- 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。本文件记录维护规则；[README](README.md) 提供项目概览、启动与检查入口；[业务与接口契约](docs/business-contracts.md) 记录计量、资金、权限及异步恢复规则；[运行与数据维护](docs/operations.md) 记录配置、部署、备份恢复、监控及模拟器操作。修改行为或运行方式时同步所属文档，避免在多处复制完整规则。
+- 以当前源码、路由注册、数据库初始化 SQL、Compose 配置和测试为实现依据。本文件记录维护规则；[README](README.md) 提供项目概览、启动与检查入口；[业务与接口契约](docs/business-contracts.md) 记录计量、资金、权限及异步恢复规则；[运行与数据维护](docs/operations.md) 记录配置、部署、备份恢复、监控及模拟器操作。修改行为或运行方式时同步所属文档，避免在多处复制完整规则。难以逆转且无上下文时令人困惑的取舍记入 `docs/adr/`，术语边界记入根目录 `GLOSSARY.md`；两者按需惰性创建，不为凑数预建。
+- **文档重述枚举时分治，不一律照抄取值列表**：取值真相源是 `migrations/*/0001_init.sql` 的 ENUM 声明与 `internal/domain/` 的 Go 常量，文档负责语义。**顺序有语义**的不重述列表——MySQL ENUM 按声明序存序位，任何 `ORDER BY` 或序位比较都依赖声明顺序，照抄必然漂移（`payment_status` 的文档顺序已与 SQL 相反），改为指向真相源；**纯集合、顺序无意义**的保留在文档，可读性价值大于漂移风险。文档中出现只存在于文档、代码与迁移里零命中的取值名，按文档错误处理并核对真相源，不得当作「兼容输入」放过。
 - 重构的完成证据与核验方法见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)，目标结构与实施记录见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md)。
 - 用户端 `frontend/miniprogram/` 的后续开发任务与交互优化计划见 [docs/miniprogram-roadmap.md](docs/miniprogram-roadmap.md)；完成任务后原位更新该文件的状态与证据。新增页面只登记 `frontend/miniprogram/src/app.config.ts` 一处，不另建页面清单副本；改动该文件后 Taro dev server 不会热重建路由表，须重启 `user-h5` 容器。
 - 后端状态与枚举字段的类型化计划见 [docs/status-enum-roadmap.md](docs/status-enum-roadmap.md)，记录数据库 ENUM 列、VARCHAR 有限集合与 Go 侧裸字符串的分类维度、放置规则与依赖可行性判定、逐枚举清单、分批顺序与验收标准；数据库列定义仍以 `migrations/*/0001_init.sql` 为准。**P0 批次 12 项枚举已实施**，取值词汇落在 `internal/domain/<域>/`（`order`／`money`／`marketing`／`card`／`devices`／`wallet`／`identity`）、就地升级的 `device.FaultStatus` 与 `operations.ScopeType`，以及各属主包的就地定义（`card`、`marketing`、`order`、`settlement`、`ops`、`pricing`、`export`、`worker/repo`、`gateway/repo`）；类型归属与依赖边界见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md) 的「状态词汇的归属与依赖边界」，保留裸字面量的例外逐条登记在路线图 8.1.2（P0）、8.3.2（P1）与 8.4（P2）节。**P0（12 项）、P1（38 项）与 P2（6 项）批次均已实施并通过 `node tasks.mjs check`、`build-all`、`go vet -tags integration` 与**真实 MySQL 集成测试**（95 个包零失败）；真库运行找出并修复的六个回归登记在路线图 9.2 节，其中**白名单常量串不可直接拼进 SQL 的 `IN (...)`**（会得到单元素列表）一条必须遵守。前后基线也已部分执行：三库 schema 逐字节一致、`central_db` 60 张表中 58 张数据逐字节一致，**接口响应层面的逐字节锁定改由 `node tasks.mjs test-contract` 的 452 条序列化契约用例承担**（覆盖全部 56 项枚举的每个取值，含 `cmd/devseed` 触及不到的 `marketing`／`card`／`ops`／`pricing`／`export`／`worker` 等域）；「改造前后各起服务比对响应体」本身未执行，详见路线图 9.3 与 9.4 节，表述时不得把契约测试说成前后基线。P1 实施前的依赖复核修正见路线图 8.3.1（该节列出的四处原归属结论已被实测推翻），P2 的三项决策见 8.4 节（`delivery` 包因是死代码路径移入 8.5、`domain/charging → protocol` 新增依赖边已授权、测试夹具只做类型适配不改断言值）。
@@ -37,6 +43,22 @@
 - 子代理共享工作区时，应按业务范围或文件归属划分任务；避免多个代理同时修改同一文件，避免针对同一数据库或端口并发执行互相干扰的测试。主代理负责核对返回的证据、汇总遗漏与冲突，完成必要修复和验证后再交付。
 - 常见协作顺序为：需求不清时先由 `manager` 明确范围与验收，再实施；实现完成后由 `reviewer` 审查、主代理修复，由 `tester` 验证相关行为。用户已给出明确范围时无需额外需求分析；纯文档更新只核对事实、链接与格式，不默认运行业务测试或启动三个代理。
 - `tester` 的执行入口以当前仓库为准：后端默认检查为 `node tasks.mjs check`，真库集成为 `node scripts/db/test-integration.mjs`；前端分别在 `frontend/admin-web/` 与 `frontend/miniprogram/` 执行 README 所列命令，E2E 按 [运行与数据维护](docs/operations.md) 使用现有开发栈与模拟器。真库测试会使用开发数据，执行前核对夹具、并发和清理边界；没有实机、真实支付或第三方平台证据时，必须保留对应验收边界。
+
+## Agent skills
+
+本节记录工程技能读取的本仓库配置；与上节的 Go 技能目录（`.agents/skills/`）分工不同——本节指向 `docs/agents/` 下的仓库级约定文件。
+
+### Issue tracker
+
+Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab Issues。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+采用五个规范 triage 角色的默认标签字符串：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文布局：仓库根目录一个 `GLOSSARY.md`，ADR 位于 `docs/adr/`。见 `docs/agents/domain.md`。
 
 ## Go 技能与使用时机
 
