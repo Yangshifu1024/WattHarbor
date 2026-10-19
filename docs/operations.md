@@ -109,7 +109,7 @@ node scripts/db/audit-design.mjs
 
 仅应用 2026-10-09 审查修复结构时使用 `node scripts/db/upgrade-design.mjs --review-fixes` 预检，再执行 `node scripts/db/upgrade-design.mjs --review-fixes --apply`。该范围只补 `central_db.admin_user.mfa_secret_version/mfa_last_step`、`charge_billing_job.generation` 与 `gateway_db.sync_delivery_retry`；执行前仍备份三库，不删除数据或改变 Goose 版本。已有列默认保留原值，新消费记录为空；上线时先补结构，再部署使用新字段及退避接口的 gateway、admin／central 与 worker，避免混用接口版本。生产使用审核后的同等 DDL，而非直接调用仅面向开发编排的脚本。
 
-投递异常可按 `sync_delivery_retry.kind/delivery_key` 查询 `state/attempts/last_reason/next_attempt_at`，`review` 表示待核实，不代表独立人工审核页面已装配。分类只存固定值，核对原命令／事件、冻结请求和端口占用后再处理；禁止通过标记已上报／已处理掩盖未知结果。成功项退避与源记录标记同事务删除；迟到失败不会重建已完成项。gateway 在启动时及每小时清理30天前已完成或缺源的历史，每轮最多500条短事务，取消后等待任务退出再关闭资源。未完成的 `review/retry` 即使超过30天也保留；持续增加表示待处理业务异常积压，不能通过TTL删除来隐藏。清理错误记录为 `sync delivery history cleanup`，下轮继续。
+投递异常可按 `sync_delivery_retry.kind/delivery_key` 查询 `state/attempts/last_reason/next_attempt_at`。`state` 取值见迁移 SQL 的 `gateway_db.sync_delivery_retry`，其中待核实那一档表示尚未确认、不代表独立人工审核页面已装配。分类只存固定值，核对原命令／事件、冻结请求和端口占用后再处理；禁止通过标记已上报／已处理掩盖未知结果。成功项退避与源记录标记同事务删除；迟到失败不会重建已完成项。gateway 在启动时及每小时清理30天前已完成或缺源的历史，每轮最多500条短事务，取消后等待任务退出再关闭资源。未完成的 `review/retry` 即使超过30天也保留；持续增加表示待处理业务异常积压，不能通过TTL删除来隐藏。清理错误记录为 `sync delivery history cleanup`，下轮继续。
 
 结束候选使用 `device_event.idx_pending_type(event_type,processed_at,id)`；退避关联键显式使用 `ascii_bin`，避免连接字符集导致仅利用复合主键的kind前缀。旧开发库以全量兼容预检／`--apply` 补这两项索引（另一项为退避的 `idx_updated`）；`--review-fixes` 只补退避表索引，结束候选索引沿用全量入口。两条同步查询仍有跨表到期排序，EXPLAIN通过不构成规模吞吐验收。
 
@@ -258,9 +258,11 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 | 3 | 拒绝起充 | `reject-start` | 启动回执 `success=0`；订单转 `refunding`；全额退款 `success`；不建立端口占用 |
 | 4 | 预算封顶 | 小额金额套餐加高功率持续充电 | `charge_billing_cutoff` 落 `budget_exhausted`；电费加服务费精确等于套餐价；无人工复核 |
 | 5 | 掉电零功率 | 拔出或 `fault` 后等待满一分钟 | 截止原因 `automatic_stop`；电量为零全额退；不把断线当零功率提前停机 |
-| 6 | 刷卡全流程 | 绑卡、刷卡首购、移卡重刷续购、用户停机 | 扣款、累计时长、操作凭据同事务；停机后结算与余额退款到账 |
+| 6 | 刷卡全流程 | 绑卡、刷卡首购、移卡重刷续购、**不移开重复上报**、用户停机 | 扣款、累计时长、操作凭据同事务；**不移开的第二次上报不产生第二笔扣款**；停机后结算与余额退款到账 |
 | 7 | worker 中断恢复 | 充电中 SIGKILL worker，再用户停机，最后重启 worker | worker 缺席期间中央订单保持充电中且无结束回执；重启后数秒内补齐回执、订单完成、事件与 Outbox 同步补发 |
 | 8 | 断线重连 | `reconnect` 场景断网后恢复 | 恢复后证据连续，不因缺口误判零功率停机 |
+
+**场景 6 含一票否决项**：[ADR-0001](adr/0001-card-swipe-duplicate-report.md) 记录平台有意不引入服务端去重，代价是「同一张卡不移开而被重复上报」只能由设备侧保证不发生。该条因此是上线前的阻断条件：向模拟器控制口连发两次 `{"type":"card","port":<端口>,"card":<同一卡号>}` 且中间不发 `remove-card`，**第二笔不得产生扣款**。该断言不通过即视为阻断上线，不接受「最终余额相符」这类近似豁免——重复扣款会先发生，再被别的路径掩盖。
 
 ### 逐表断言清单
 

@@ -396,7 +396,7 @@ flowchart TD
 
 - 后台接口文档：`GET /api/docs/admin.openapi.json`，源文件为 [admin.openapi.json](backend/internal/http/auth/admin.openapi.json)。该文档端点未由生产 Caddy 对外代理。
 - 用户接口文档：[user.openapi.json](backend/internal/http/user/user.openapi.json)，目前是静态契约文件。两份 OpenAPI 随接口变更维护，测试核对文档中的路由是否注册；实际路由见 [user](backend/cmd/user/routes.go)、[admin](backend/cmd/admin/routes.go)、[central](backend/cmd/central/routes.go)。
-- 普通 JSON 响应使用 `code/message/data/request_id/trace_id`，成功 `code=0`；微信通知、文件、指标和 OpenAPI 使用各自格式。用户与后台会话分开，内部接口使用 `X-Service-Token`。
+- 普通 JSON 响应的字段构成与 `code=0` 约定见[业务与接口契约](docs/business-contracts.md#接口与权限)；微信通知、文件、指标和 OpenAPI 使用各自格式。用户与后台会话分开，内部接口使用 `X-Service-Token`。
 - 金额使用整数分；用户 Snowflake ID 为十进制字符串，前端须保留精度。数据库时间按 UTC，计费日界及 DC589 本地时间按北京时间。
 - 下单冻结方案与价格；启动受理、设备启动、充电结束、结算及退款到账分别确认。未知设备结果保留占用，渠道结果未知复用原退款号查询。
 

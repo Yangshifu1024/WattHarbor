@@ -49,7 +49,7 @@ START 回执与 END 事件的失败退避由 gateway 的 `sync_delivery_retry` �
 
 设备结束事件先落库并提交 central；central 保存结束回执、最终计量和计费任务后，gateway 才释放对应占用。首次预算、最长时长、购买时长或用户停止确定计费截止点，迟到的物理停机不增加截止点后的费用。最终实收不超过已付可用额度。后台订单与用户充电快照复用同一实时估价用例，以订单冻结方案和设备观测计算 `live.fee`，仅用于展示；用户端标注“预估费用”与 `≈`，超过 30 秒未更新标记为 stale 并提示旧值。估价不可读取时保留待结算及原因；`total_cents` 等确认金额仍只来自有效结算回执，实时费用不作为最终计费证据。
 
-设备 `enabled/disabled` 与 TCP 在线状态独立。禁用阻止新扫码付款、新刷卡启动及加时，已有订单仍可停止、结算和退款。
+设备状态全集见 `migrations/*/0001_init.sql` 的 `device_meta.status`（`enabled/disabled/retired/fault`），其中**运营可切换的仅 `enabled/disabled`**，`retired` 与 `fault` 由设备生命周期产生、不经运营开关。启用状态与 TCP 在线状态相互独立。禁用阻止新扫码付款、新刷卡启动及加时，已有订单仍可停止、结算和退款。
 
 自动停止还检测持续至少 1 分钟的端口零功率，最新观测须在 30 秒内；缺失目标端口或重新出现正功率会重置判断。离线、缺失读数不能作为拔出或零功率证据。
 
@@ -57,13 +57,17 @@ START 回执与 END 事件的失败退避由 gateway 的 `sync_delivery_retry` �
 
 gateway 在同一设备的操作许可内创建或复用命令、核对占用、保存发送尝试并下发；START／STOP 回执和端口释放共用该许可，网络发送期间不持数据库事务。用户 STOP 只发送给仍由原订单占用的充电端口；启动补偿还允许原订单保留的 idle 占用。释放或换单后的旧 STOP 保留历史但停止派发，不补造设备确认。两类恢复队列在每批 50 条限制之前筛选当前在线设备和原占用，再按最近发送尝试排序；离线历史不会堵住在线任务。该许可属于当前 gateway 进程，不能作为多实例或实机验收证据。
 
-| 状态轴 | 取值及含义 |
-| --- | --- |
-| `charge_order.status` | `pending_payment/paid/charging/completed/cancelled/failed/refunding/refunded`，内部生命周期 |
-| `business_status` | `pending_start/charging/completed`，由订单状态生成 |
-| `payment_status` | `pending/paid/partial_refunded/refunded`，按实际到账及成功退款更新 |
-| `payment_order.status` | `initiated/paid/closed/refunded/partial_refunded/failed` |
-| `refund_record.status` | `pending/processing/success/failed/rejected`；`execution_policy` 独立决定人工审核或自动执行 |
+本表只记录各轴的语义。**取值的权威声明一律在迁移 SQL 的列定义里**（MySQL ENUM 按声明序存序位，任何 `ORDER BY` 或序位比较都依赖该顺序），下表不再重述取值串。
+
+| 状态轴 | 语义 | 取值出处 |
+| --- | --- | --- |
+| `charge_order.status` | 内部生命周期 | `central_db.0001_init.sql` 的 `charge_order.status` |
+| `business_status` | 由订单状态派生的 `STORED` 生成列，不直接写入 | 同上 `charge_order.business_status` |
+| `payment_status` | 独立支付状态，按实际到账及成功退款更新 | 同上 `charge_order.payment_status` |
+| `payment_order.status` | 渠道支付单生命周期 | 同上 `payment_order.status` |
+| `refund_record.status` | 退款记录状态 | 同上 `refund_record.status` |
+| `refund_record.execution_policy` | **独立于 status**，决定人工审核还是自动执行 | 同上 `refund_record.execution_policy` |
+| `payment_intent.status` | 冻结的支付意图，取值词表**不同于** `payment_order.status`，过期付款退款依赖它 | 同上 `charge_payment_intent.status` |
 
 充电结束、费用结算、退款申请与退款到账是不同事实。`processing` 不表示退款成功。
 
@@ -75,7 +79,7 @@ gateway 在同一设备的操作许可内创建或复用命令、核对占用、
 
 DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UUID，投递重试复用该 UUID；已完成操作返回原结果，新事件超过 30 秒不再扣款。实机须保证一次放卡只报告一次，移开重刷才产生新事件。设备余额显示使用 0.1 元并向下取整，钱包始终按分记账。
 
-钱包可用金额为 `balance_cents - frozen_cents`，用户档案的 `wallet.available_cents` 使用同一口径，并返回账户状态 `wallet.status=active/frozen`。钱包退款按原充值支付单拆分，预留余额及各支付单可退额度。成功才扣减和释放，明确失败释放，渠道结果未知保持预留。5 分钟内第三次钱包退款请求触发频次风控；审核、解冻权限独立，解除一项冻结不自动解除其他冻结。
+钱包可用金额为 `balance_cents - frozen_cents`，用户档案的 `wallet.available_cents` 使用同一口径，并返回账户状态 `wallet.status`（取值见迁移 SQL 的 `central_db.wallet_account`）。钱包退款按原充值支付单拆分，预留余额及各支付单可退额度。成功才扣减和释放，明确失败释放，渠道结果未知保持预留。5 分钟内第三次钱包退款请求触发频次风控；审核、解冻权限独立，解除一项冻结不自动解除其他冻结。
 
 钱包余额与冻结额必须非负，冻结额不超过余额；流水金额必须为正，余额变动在入账前核对 int64 范围，数据库约束作为最后兜底。各 `created_month` 月键固定为 UTC 月首。微信 OpenID/UnionID 以字节精确比较，有效用户身份、设备编号、端口二维码和设备元数据由独立有效记录唯一键约束，软删除记录保留历史。
 
@@ -94,7 +98,7 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 后台订单详情仅在实时身份有 `order.refund.create` 时返回 `refund_applicant_id`，值为当前管理员的十进制字符串。前端申请草稿按管理员与订单隔离；网络失败沿用同一请求标识，组件卸载或会话变化后的旧响应不得删除草稿或回写界面。接口操作人仍取服务端实时身份。
 
 
-普通账单由权威计费回执生成；发票申请金额取该回执，同一订单仅允许一份有效申请。导出不提供对账资源；导出使用固定资源白名单生成 CSV、XLSX，限制查询范围、行数和有效期，下载时重新鉴权。账单导出必须传 `filter.from/to`（`YYYY-MM-DD`），最多 31 个自然日，包含首尾日期；后台表单选择完整日期后才提交。
+普通账单由权威计费回执生成；发票申请金额取该回执，同一订单仅允许一份有效申请。导出不提供对账资源；导出使用固定资源白名单生成导出文件（格式取值见迁移 SQL 的 `central_db.export_task.file_format`），限制查询范围、行数和有效期，下载时重新鉴权。账单导出必须传 `filter.from/to`（`YYYY-MM-DD`），最多 31 个自然日，包含首尾日期；后台表单选择完整日期后才提交。
 
 出账有支付关联时，读取失败或关联支付缺失必须返回错误，账单与 `bill_issued` 事件均不生成。调度计数表示费用成功投递，不因出账失败扣减；末尾仍扫描已入账但缺账单的订单，允许同轮补账。`Missing` 不修复历史已写错的账单。
 
@@ -102,7 +106,7 @@ DC589 原生刷卡报文没有事件序号。gateway 为每次新报文生成 UU
 
 普通 JSON 响应为 `code/message/data/request_id/trace_id`，成功 `code=0`，HTTP 状态同时表达结果。`X-Request-ID` 允许 1～128 位字母、数字、下划线或连字符，无效或缺失则生成；响应 trace 与 request 使用同值。微信回调、OpenAPI、文件下载和指标按各自格式响应。
 
-C 端账单 `id`、设备报修提交与列表的 `id` 均为十进制字符串，避免 JavaScript 大整数精度丢失。账单列表和详情返回来源 `order_no`，客户端据此打开订单详情，不将账单主键当作订单号；关联订单缺失时来源不可跳转。钱包流水金额为正数，收支由 `direction=in/out` 决定；筛选同样使用 `direction`，业务类别来自 `biz_type`，不得仅按金额符号推断资金方向。
+C 端账单 `id`、设备报修提交与列表的 `id` 均为十进制字符串，避免 JavaScript 大整数精度丢失。账单列表和详情返回来源 `order_no`，客户端据此打开订单详情，不将账单主键当作订单号；关联订单缺失时来源不可跳转。钱包流水金额为正数，收支由 `direction` 决定（取值见迁移 SQL 的 `central_db.wallet_txn`）；筛选同样使用 `direction`，业务类别来自 `biz_type`，不得仅按金额符号推断资金方向。
 
 用户端发票、手机号、卡状态和反馈写请求的忙碌状态属于操作及发起会话：隐藏后完成仍释放，返回时尚在途则继续阻止重复提交；确认框也保留打开时的账号。切换账号或卸载后的旧响应不能回写新账号视图或解除新操作。发票未知结果重试复用原请求标识及完整内容，不把后来编辑的内容绑定到旧标识。
 
@@ -124,14 +128,16 @@ TOTP 校验扫描当前及前后各一步并返回实际命中步骤，碰撞时
 
 ## Webhook 发送契约（尚未接线）
 
-保留的发送适配器要求目标地址使用 HTTPS，校验 DNS 和目标 IP，拒绝 loopback、私网、元数据地址及 URL 用户信息。签名为 `HMAC-SHA256(secret, timestamp + "." + raw_body)`。
+保留的发送适配器要求目标地址使用 HTTPS，校验 DNS 和目标 IP，拒绝 loopback、私网、元数据地址及 URL 用户信息。签名为 `HMAC-SHA256(secret, timestamp + "." + raw_body)`；`raw_body` 是实际 POST 的报文字节，即**经 `ValidateEvent` 规范化后的完整信封**，因此签名与报文内容始终一致。
 
 | Header | 值 |
 | --- | --- |
 | `X-ChargePilot-Timestamp` | 十进制 Unix 秒时间戳 |
 | `X-ChargePilot-Signature` | `sha256=` 加签名十六进制值 |
-| `X-ChargePilot-Event` | 事件类型 |
+| `X-ChargePilot-Event` | 事件的 `object_type`，取值见 `internal/delivery` 的 `Event.ObjectType`（监管事件分类，**不是**订单生命周期状态） |
 | `X-ChargePilot-Event-Id` | 稳定事件 ID |
+
+本契约是监管事件投递的契约，与订单、支付、退款等业务事件流不是同一套词汇。发送前会执行 `ValidateEvent` 校验载荷与 `object_key` 一致性，畸形事件不会被投递。
 
 接入时接收方须校验原始请求体签名和时间窗，并按事件 ID 去重。当前 worker 尚未装配此发送适配器，当前消费及游标限制见[异步任务](#异步任务)。
 
