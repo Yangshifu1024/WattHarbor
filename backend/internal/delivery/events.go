@@ -61,7 +61,8 @@ type batteryData struct {
 
 var validate = validator.New()
 
-// ValidateEvent 校验事件结构和载荷，返回规范化后的 data 字节；入队和发送使用同一规则。
+// ValidateEvent 校验事件结构和载荷，返回规范化后的 data 字节。
+// 发送路径由 HTTPSender.Send 调用；投递入队路径尚未接线，接入时须调用同一函数。
 func ValidateEvent(event Event) ([]byte, error) {
 	if err := validate.Struct(event); err != nil {
 		return nil, fmt.Errorf("invalid event envelope: %w", err)

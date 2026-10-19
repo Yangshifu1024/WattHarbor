@@ -51,7 +51,14 @@ func (s HTTPSender) Send(ctx context.Context, event Event) error {
 	if err := netguard.ValidatePublicHTTPS(s.Endpoint); err != nil {
 		return err
 	}
-	body, err := json.Marshal(event)
+	// 发送前执行本校验并改用规范化后的载荷：签名内容与实际 POST 的报文字节因此始终一致。
+	data, err := ValidateEvent(event)
+	if err != nil {
+		return err
+	}
+	normalized := event
+	normalized.Data = data
+	body, err := json.Marshal(normalized)
 	if err != nil {
 		return err
 	}
@@ -64,9 +71,10 @@ func (s HTTPSender) Send(ctx context.Context, event Event) error {
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-ChargePilot-Event", event.ObjectType)
 	request.Header.Set("X-ChargePilot-Event-Id", event.EventID)
 	request.Header.Set("X-ChargePilot-Timestamp", ts)
-	request.Header.Set("X-ChargePilot-Signature", hex.EncodeToString(mac.Sum(nil)))
+	request.Header.Set("X-ChargePilot-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	client := s.Client
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
