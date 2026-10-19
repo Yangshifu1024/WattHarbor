@@ -414,9 +414,9 @@ node tasks.mjs build-all
 node scripts/db/test-integration.mjs
 ```
 
-`node tasks.mjs check` 顺序运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`（go 命令由 tasks.mjs 进入 `backend/` 执行）；pre-commit 直接运行 vet 和默认测试（经 scripts/git/pre-commit.mjs，不依赖 Make）。任务路径以入口文件定位，可从任意工作目录调用其绝对路径；`node tasks.mjs --help` 查看全部任务。编译产物在 `bin/`，可用 `node tasks.mjs build central` 单独构建。
+`node tasks.mjs check` 先运行规则层检查 `node tasks.mjs check-rules`（只读文档与迁移 schema），再依次运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`（go 命令由 tasks.mjs 进入 `backend/` 执行）；pre-commit 只运行 vet 和默认测试，不含规则层检查（经 scripts/git/pre-commit.mjs，不依赖 Make）。任务路径以入口文件定位，可从任意工作目录调用其绝对路径；`node tasks.mjs --help` 查看全部任务。编译产物在 `bin/`，可用 `node tasks.mjs build central` 单独构建。
 
-任务入口覆盖 `fmt`、`lint`、`test`、`test-integration`、`build`、`build-all`、`check`、`clean`、`dev-up` 和 `dev-down`。`clean` 只清理 `bin/`，`dev-down` 停止开发容器并保留数据卷。任务编排与跨平台路径测试使用 `node --test scripts/tasks.test.mjs`。
+任务入口覆盖 `fmt`、`lint`、`test`、`test-integration`、`build`、`build-all`、`check-rules`、`check`、`clean`、`dev-up` 和 `dev-down`。`clean` 只清理 `bin/`，`dev-down` 停止开发容器并保留数据卷。任务编排与跨平台路径测试使用 `node --test scripts/tasks.test.mjs`。
 
 真库测试由 `integration` tag 隔离，不包含在 `node tasks.mjs check` 中。按 2026-10-06 的决定，集成测试直接使用开发环境（3306/6379/6380）：`node scripts/db/test-integration.mjs` 会起依赖服务、补 [锁观测只读授权](docker/mysql/test-lock-observer.sql)、迁移三库并注入连接串。注意集成测试的显式主键会抬高开发库自增序号，必要时用 reset-dev 重建；直接执行 `node tasks.mjs test-integration` 须自行配置 `TEST_MYSQL_URL` 和 `TEST_REDIS_URL`。
 

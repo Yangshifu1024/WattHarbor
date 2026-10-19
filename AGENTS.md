@@ -198,7 +198,7 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab
 ## 工具与代码风格
 
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
-- 后端检查直接使用 tasks.mjs：`node tasks.mjs fmt` 调用 `go fmt ./...`，`node tasks.mjs lint` 调用 `go vet ./...`，`node tasks.mjs test` 调用 `go test ./...`；`node tasks.mjs check` 顺序执行这三项。**涉及 GORM 投影、枚举参数、状态写入、行锁或幂等的改动，除默认门禁外还必须跑 `go vet -tags integration ./...` 与 `node scripts/db/test-integration.mjs`**：前者能在真库执行前发现类型断裂，后者是唯一能发现单元素 `IN` 列表、map 动态类型比较与 GORM Statement 复用问题的门禁（路线图 9.2 节登记了六个此类回归）。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
+- 后端检查直接使用 tasks.mjs：`node tasks.mjs fmt` 调用 `go fmt ./...`，`node tasks.mjs lint` 调用 `go vet ./...`，`node tasks.mjs test` 调用 `go test ./...`；`node tasks.mjs check` 顺序执行 `check-rules`、fmt、lint、test 四项，其中规则层检查 `node tasks.mjs check-rules` 只读文档与迁移 schema（运行方式见 [运行与数据维护](docs/operations.md)）。**涉及 GORM 投影、枚举参数、状态写入、行锁或幂等的改动，除默认门禁外还必须跑 `go vet -tags integration ./...` 与 `node scripts/db/test-integration.mjs`**：前者能在真库执行前发现类型断裂，后者是唯一能发现单元素 `IN` 列表、map 动态类型比较与 GORM Statement 复用问题的门禁（路线图 9.2 节登记了六个此类回归）。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
 - **真库集成测试单列一层**：`node tasks.mjs test-integration`（预先设置 `TEST_MYSQL_URL`） 带 `//go:build integration` 跑真实 MySQL。`node tasks.mjs check` 不含它（不依赖 Docker）。2026-10-06 起 CI workflow 与独立测试实例编排（compose.test.yaml）已移除，集成测试经 `scripts/db/test-integration.mjs` 直接对开发环境执行；行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 需要真实 MySQL 语义验证，详见「并发与幂等」。
 - 目录结构定稿如下。后端 Go 模块整体位于 `backend/`（含 `cmd/`、`internal/`、`migrations/`、`go.mod` 与服务镜像 `Dockerfile`），下图为 `backend/` 内部结构；本文件后文与 `docs/` 提到的 `cmd/`、`internal/`、`migrations/` 路径均相对 `backend/`。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
@@ -721,7 +721,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   ├── admin-web/                                       运营后台
 │   └── miniprogram/                                     用户端 Taro（H5 与微信小程序）
 ├── docker/                                               Compose 编排（compose.dev／prod.yaml）、Caddyfile 与 MySQL 初始化 SQL
-├── scripts/db/  scripts/dev/  scripts/git/  scripts/ops/ 跨平台 Node 脚本
+├── scripts/db/  scripts/dev/  scripts/git/  scripts/ops/  scripts/rules/ 跨平台 Node 脚本
 ├── docs/  .agents/  .githooks/                           DC589 协议文档在 docs/protocols/
 └── AGENTS.md  README.md  LICENSE  tasks.mjs  .env.example
 ```
@@ -902,7 +902,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 - Git 操作一律需要用户明确授权。未获授权不得执行 `commit`、`reset`、`revert`、`push`、`rebase`、`merge`、`cherry-pick`、`tag`，不得新建或切换分支，不得改写提交历史。改动只落在工作区，由用户审阅后自行提交。`git status`、`git diff`、`git log`、`git show` 等只读命令可以直接使用。
 - 交付时报告工作区的未提交改动，不代替用户提交。
 - Go 业务变更运行 `node tasks.mjs check`；涉及模块依赖时运行 `go mod tidy -diff`，涉及进程装配或构建时用 `node tasks.mjs build <name>` 或 `node tasks.mjs build-all` 构建对应 `cmd`，可执行文件一律落在已忽略的 `bin/`，不在包目录下留产物。
-- `node tasks.mjs check` 跑格式化、go vet 与默认测试；架构规范由代码评审核对。资金、并发、唯一性与幂等路径另跑 `node tasks.mjs test-integration`（预先设置 `TEST_MYSQL_URL`）；本地入口是 `node scripts/db/test-integration.mjs`，2026-10-06 起直接使用开发环境（3306/6379），不再有 compose.test.yaml 独立实例。显式测试主键即使回滚仍会抬高开发库自增序号，必要时以 reset-dev 重建；有构建 tag 的真库测试不能用默认测试通过替代。
+- `node tasks.mjs check` 先跑规则层检查 `node tasks.mjs check-rules`（只读文档与迁移 schema，秒级），再跑格式化、go vet 与默认测试；架构规范由代码评审核对，规则层检查只判定文档层不变量，不判依赖方向与表归属。资金、并发、唯一性与幂等路径另跑 `node tasks.mjs test-integration`（预先设置 `TEST_MYSQL_URL`）；本地入口是 `node scripts/db/test-integration.mjs`，2026-10-06 起直接使用开发环境（3306/6379），不再有 compose.test.yaml 独立实例。显式测试主键即使回滚仍会抬高开发库自增序号，必要时以 reset-dev 重建；有构建 tag 的真库测试不能用默认测试通过替代。
 - 真实会话测试还须配置 `TEST_REDIS_URL`（开发 Redis 6379）。确定性角色锁测试需要 `performance_schema.data_lock_waits`、`data_locks`、`threads` 的 SELECT 权限；测试入口加载 `docker/mysql/test-lock-observer.sql` 补幂等授权，生产初始化不加载这份测试授权。缺少连接或观测权限须明确失败，不跳过或改用模拟锁。
 - 后台逻辑修改运行 `npm test` 与 `npm run build`；用户端逻辑修改运行 `npm run typecheck`、`npm test`，涉及平台适配或构建配置时构建受影响的 H5／微信目标。命令在对应前端目录执行。
 - 纯文档、注释和文案修改检查链接、引用、事实与格式；不为低影响可逆修改增加重复测试。已有验证通过后，仅在新增修改、失败或未决问题需要时扩大检查。

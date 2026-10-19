@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SERVICES = ['user', 'admin', 'central', 'gateway', 'worker', 'migrate', 'devseed', 'simulator-dc589'];
-const TASKS = ['fmt', 'lint', 'test', 'test-contract', 'test-integration', 'build', 'build-all', 'check', 'clean', 'dev-up', 'dev-down'];
+const TASKS = ['fmt', 'lint', 'test', 'test-contract', 'test-integration', 'build', 'build-all', 'check-rules', 'check', 'clean', 'dev-up', 'dev-down'];
 const HELP = `用法：node tasks.mjs <任务>
 任务：${TASKS.join('、')}
 单服务构建：node tasks.mjs build <服务>（也可设置 SERVICE 环境变量）
@@ -15,7 +15,8 @@ const HELP = `用法：node tasks.mjs <任务>
 真库测试：先设置 TEST_MYSQL_URL 与所需的 TEST_REDIS_URL，再执行 test-integration。
     自动准备开发数据库并测试：node scripts/db/test-integration.mjs
     序列化契约测试：node tasks.mjs test-contract（锁定对外 JSON 形状，不需数据库）。
-check 顺序执行 fmt、lint、test；构建产物位于 bin/。
+    规则层检查：node tasks.mjs check-rules（只读文档与迁移 schema，不连数据库）。
+check 顺序执行 check-rules、fmt、lint、test；构建产物位于 bin/。
 clean 仅删除 bin/；dev-down 保留容器与数据卷。`;
 
 // main 校验参数并执行任务；测试可通过 options 替换环境、平台和命令执行器。
@@ -52,6 +53,8 @@ export function main(argv, {
     test: [[executable, ['test', './...'], backend]],
     'test-contract': [[executable, ['test', '-tags=contract', '-count=1', './...'], backend]],
     'test-integration': [[executable, ['test', '-tags=integration', '-count=1', './...'], backend]],
+    // 规则层检查秒级完成且只读文档，放在 check 最前面以便漂移在提交前被拦下。
+    'check-rules': [[process.execPath, [join(root, 'scripts/rules/check-rules.mjs')], root]],
     build: [[executable, ['build', '-trimpath', '-o', join(bin, `${selected}${platform === 'win32' ? '.exe' : ''}`), `./cmd/${selected}`], backend]],
     'build-all': [[executable, ['build', '-trimpath', '-o', `${bin}/`, './cmd/...'], backend]],
     'dev-up': [[process.execPath, [join(root, 'scripts/dev/start.mjs')], root]],
@@ -63,7 +66,9 @@ export function main(argv, {
       return 0;
     }
     if (['build', 'build-all'].includes(task)) mkdirSync(bin, { recursive: true });
-    const sequence = task === 'check' ? [...commands.fmt, ...commands.lint, ...commands.test] : commands[task];
+    const sequence = task === 'check'
+      ? [...commands['check-rules'], ...commands.fmt, ...commands.lint, ...commands.test]
+      : commands[task];
     for (const [command, args, cwd] of sequence) {
       const result = run(command, args, { cwd, env, stdio: 'inherit', shell: false });
       if (result.error || result.signal) {

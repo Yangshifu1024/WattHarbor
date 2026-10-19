@@ -20,14 +20,34 @@ function fixture(t, overrides = {}) {
   return { root, calls, options };
 }
 
-test('check runs formatting, vet and tests in order from backend', t => {
+test('check 以规则检查开头，再顺序执行格式化、静态检查与测试', t => {
   const f = fixture(t);
   assert.equal(main(['check'], f.options), 0);
-  assert.deepEqual(f.calls.map(c => c.args), [['fmt', './...'], ['vet', './...'], ['test', './...']]);
-  for (const c of f.calls) {
+  assert.deepEqual(f.calls.map(c => c.args), [
+    [join(f.root, 'scripts/rules/check-rules.mjs')],
+    ['fmt', './...'], ['vet', './...'], ['test', './...'],
+  ]);
+  assert.equal(f.calls[0].command, process.execPath);
+  assert.equal(f.calls[0].options.cwd, f.root);
+  for (const c of f.calls.slice(1)) {
     assert.equal(c.options.cwd, join(f.root, 'backend'));
     assert.equal(c.options.shell, false);
   }
+});
+
+test('规则检查不通过时 check 立刻返回，不再执行后续检查', t => {
+  const f = fixture(t);
+  f.options.run = (...args) => { f.calls.push(args); return { status: f.calls.length === 1 ? 1 : 0 }; };
+  assert.equal(main(['check'], f.options), 1);
+  assert.equal(f.calls.length, 1);
+});
+
+test('check-rules 作为独立任务调用仓库内的规则检查脚本', t => {
+  const f = fixture(t);
+  assert.equal(main(['check-rules'], f.options), 0);
+  assert.equal(f.calls[0].command, process.execPath);
+  assert.deepEqual(f.calls[0].args, [join(f.root, 'scripts/rules/check-rules.mjs')]);
+  assert.equal(f.calls[0].options.cwd, f.root);
 });
 
 test('check stops at the first failed child and preserves its exit code', t => {
@@ -115,4 +135,12 @@ test('help performs no subprocess or filesystem work', t => {
   for (const args of [[], ['help'], ['--help'], ['-h']]) assert.equal(main(args, f.options), 0);
   assert.equal(f.calls.length, 0);
   assert.equal(existsSync(join(f.root, 'bin')), false);
+});
+
+test('help documents the same check order that check actually runs', t => {
+  const f = fixture(t);
+  const lines = [];
+  f.options.log = line => lines.push(String(line));
+  assert.equal(main(['help'], f.options), 0);
+  assert.match(lines.join('\n'), /check 顺序执行 check-rules、fmt、lint、test/);
 });
