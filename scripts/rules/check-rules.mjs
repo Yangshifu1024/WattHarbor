@@ -1,6 +1,6 @@
 // 规则层检查：判定「规则层是否完好」，失败时指明被违反的不变量与涉及的文件。
 // 只读文档与迁移 schema，不连数据库、不连网络。
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -67,6 +67,64 @@ function assertFrozenDeclarations(root) {
   return violations;
 }
 
+// ADR_DIRECTORY 是架构决策目录；目录里的 .md 全部是决策记录，目录说明本身除外。
+const ADR_DIRECTORY = 'docs/adr';
+
+// ADR_FILE 约定文件名即编号：四位编号 + 短横线 + 小写短横线 slug。
+// 编号写在文件名里，目录本身就是索引，不需要另建一份编号对照表。
+const ADR_FILE = /^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
+
+// ADR_STATUSES 是状态取值的固定集合，不是自由文本；docs/adr/README.md 写给人看，
+// 这里才是机器认的那一份，改集合要同时改说明。
+const ADR_STATUSES = ['proposed', 'accepted', 'rejected', 'deprecated', 'superseded'];
+
+// ADR_STATUS 取文件头 YAML front matter 里的 status 值；位置固定在第一块 front matter。
+// 取不到返回 null，与「写了但取值非法」区分开，两者的提示不同。
+function adrStatus(source) {
+  const frontMatter = source.split(/^---$/m);
+  if (frontMatter.length < 3) return null;
+  const line = frontMatter[1].split('\n').find(content => content.startsWith('status:'));
+  return line ? line.slice('status:'.length).trim() : null;
+}
+
+// assertAdrNumbering 判定编号连续：读者靠编号发现「中间缺了一篇」，
+// 不会因为编号跳号而误以为某条决策不存在。
+function assertAdrNumbering(root) {
+  const directory = join(root, ADR_DIRECTORY);
+  if (!existsSync(directory)) return [];
+  const entries = readdirSync(directory)
+    .filter(name => name.endsWith('.md') && name !== 'README.md')
+    .map(name => ({ name, match: ADR_FILE.exec(name) }));
+  const violations = [];
+  const seen = new Map();
+  for (const entry of entries) {
+    const file = `${ADR_DIRECTORY}/${entry.name}`;
+    if (!entry.match) {
+      violations.push({ file, message: '文件名不符合 NNNN-<slug>.md 的约定，编号是目录索引的一部分' });
+      continue;
+    }
+    const number = entry.match[1];
+    if (seen.has(number)) {
+      violations.push({ file, message: `编号 ${number} 重号：与 ${ADR_DIRECTORY}/${seen.get(number)} 重复` });
+      continue;
+    }
+    seen.set(number, entry.name);
+    const status = adrStatus(readFileSync(join(directory, entry.name), 'utf8'));
+    if (status === null) {
+      violations.push({ file, message: '文件头的 front matter 缺少 status 状态标注' });
+    } else if (!ADR_STATUSES.includes(status)) {
+      violations.push({ file, message: `状态取值「${status}」不在约定集合内：${ADR_STATUSES.join('、')}` });
+    }
+  }
+  for (let index = 1; index <= seen.size; index++) {
+    const expected = String(index).padStart(4, '0');
+    if (!seen.has(expected)) {
+      violations.push({ file: ADR_DIRECTORY, message: `编号断号：缺少 ${expected}，现有编号 ${[...seen.keys()].sort().join('、')}` });
+    }
+  }
+  return violations;
+}
+
 // INVARIANTS 是六条文档层不变量的唯一登记处；assert 为 null 表示该断言尚未实现，
 // 报告必须显式标注「尚未实现」，不得把它计入已验证而制造假绿。
 // 已实现的断言签名是 assert(root)，返回被违反的清单 [{ file, message }]，空数组表示通过；
@@ -78,7 +136,7 @@ export const INVARIANTS = [
   { id: 'enum-value-strings', title: '数据库枚举的取值串不得出现在任何文档中，只能是指向迁移 schema 的指针', assert: null },
   { id: 'cross-doc-links', title: '跨文档引用的文件与锚点均可解析', assert: null },
   { id: 'frozen-documents', title: '冻结文档顶部带冻结声明并指向新层', assert: assertFrozenDeclarations },
-  { id: 'adr-numbering', title: '架构决策目录编号连续、每份带状态标注', assert: null },
+  { id: 'adr-numbering', title: '架构决策目录编号连续、每份带状态标注', assert: assertAdrNumbering },
 ];
 
 // main 逐条判定不变量并报告结果；有违反返回 1，用法错误返回 2，无违反返回 0。

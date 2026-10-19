@@ -18,8 +18,8 @@ test('尚未实现的断言逐条标为尚未实现，不计入已验证', () =>
   const status = main([], options);
   const output = lines.join('\n');
   assert.equal(status, 0);
-  assert.equal(lines.filter(line => line.startsWith('尚未实现：')).length, 5);
-  assert.match(output, /0 条失败，5 条尚未实现/);
+  assert.equal(lines.filter(line => line.startsWith('尚未实现：')).length, 4);
+  assert.match(output, /0 条失败，4 条尚未实现/);
   assert.doesNotMatch(output, /全部通过/);
 });
 
@@ -150,6 +150,92 @@ test('冻结文档补上声明后判定为绿，并点名该条不变量已实�
   const output = lines.join('\n');
   assert.equal(status, 0);
   assert.match(output, /通过：冻结文档顶部带冻结声明并指向新层/);
-  assert.match(output, /0 条失败，5 条尚未实现/);
+  assert.match(output, /0 条失败，4 条尚未实现/);
   assert.doesNotMatch(output, /失败：\[frozen-documents\]/);
+});
+
+// —— 架构决策目录（ADR）的编号与状态约定 ——
+
+// ADR 样板：文件头是 YAML front matter，status 位置固定在首块。
+function adr(number, slug, status) {
+  return `---\nstatus: ${status}\n---\n\n# ADR-${number} ${slug}\n\n背景、取舍与代价。\n`;
+}
+
+// 搭一个只含架构决策目录的假仓库；files 的键是文件名，值是文件内容。
+async function adrRepo(t, files) {
+  const root = await mkdtemp(join(tmpdir(), 'check-rules-adr-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'docs/adr'), { recursive: true });
+  // 目录说明不是决策记录，检查必须跳过它，否则每次都被当成不合约定的文件名。
+  await writeFile(join(root, 'docs/adr/README.md'), '# 架构决策记录\n');
+  for (const [name, source] of Object.entries(files)) {
+    await writeFile(join(root, 'docs/adr', name), source);
+  }
+  return root;
+}
+
+test('架构决策编号断号时报红，并指出缺哪个编号', async (t) => {
+  const root = await adrRepo(t, {
+    '0001-first.md': adr('0001', 'first', 'accepted'),
+    '0003-third.md': adr('0003', 'third', 'accepted'),
+  });
+  const { lines, options } = capture();
+  const status = main([], { ...options, root });
+  const output = lines.join('\n');
+  assert.notEqual(status, 0);
+  assert.match(output, /架构决策目录编号连续/);
+  assert.match(output, /0002/);
+});
+
+test('架构决策文件名不符合 NNNN-<slug>.md 时报红并点名该文件', async (t) => {
+  const root = await adrRepo(t, {
+    '0001-first.md': adr('0001', 'first', 'accepted'),
+    '002-second.md': adr('0002', 'second', 'accepted'),
+  });
+  const { lines, options } = capture();
+  const status = main([], { ...options, root });
+  const output = lines.join('\n');
+  assert.notEqual(status, 0);
+  assert.match(output, /docs\/adr\/002-second\.md/);
+  assert.match(output, /文件名/);
+});
+
+test('架构决策缺少状态标注时报红并点名该文件', async (t) => {
+  const root = await adrRepo(t, {
+    '0001-first.md': adr('0001', 'first', 'accepted'),
+    '0002-second.md': '# ADR-0002 second\n\n没有状态标注。\n',
+  });
+  const { lines, options } = capture();
+  const status = main([], { ...options, root });
+  const output = lines.join('\n');
+  assert.notEqual(status, 0);
+  assert.match(output, /docs\/adr\/0002-second\.md/);
+  assert.match(output, /状态标注/);
+});
+
+test('架构决策的状态取值不在约定集合内时报红', async (t) => {
+  const root = await adrRepo(t, {
+    '0001-first.md': adr('0001', 'first', 'accepted'),
+    '0002-second.md': adr('0002', 'second', '写完了'),
+  });
+  const { lines, options } = capture();
+  const status = main([], { ...options, root });
+  const output = lines.join('\n');
+  assert.notEqual(status, 0);
+  assert.match(output, /docs\/adr\/0002-second\.md/);
+  assert.match(output, /写完了/);
+});
+
+test('架构决策编号重号时报红，并指出互相重复的两个文件', async (t) => {
+  const root = await adrRepo(t, {
+    '0001-first.md': adr('0001', 'first', 'accepted'),
+    '0001-second.md': adr('0001', 'second', 'accepted'),
+  });
+  const { lines, options } = capture();
+  const status = main([], { ...options, root });
+  const output = lines.join('\n');
+  assert.notEqual(status, 0);
+  assert.match(output, /docs\/adr\/0001-first\.md/);
+  assert.match(output, /docs\/adr\/0001-second\.md/);
+  assert.match(output, /重号/);
 });
