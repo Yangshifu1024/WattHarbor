@@ -14,4 +14,4 @@ if (configured.status !== 0) {
   process.exit(1);
 }
 chmodSync(join(ROOT, '.githooks', 'pre-commit'), 0o755);
-console.log('pre-commit enabled: go vet + go test (requires Go 1.27)');
+console.log('pre-commit enabled: check-rules + go vet + go test (requires Go 1.27)');
