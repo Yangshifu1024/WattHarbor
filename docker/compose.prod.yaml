@@ -182,6 +182,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
+      WORKER_INTERNAL_URL: http://chargepilot-worker:8085
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
     expose: ["8081"]

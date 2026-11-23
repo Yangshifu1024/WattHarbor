@@ -12,6 +12,7 @@ import StationDetailsDrawer, { type StationReference } from '../stations/Station
 import type { StationRecord } from '../stations/StationWorkspace';
 import OrderPackageDetails, { type SelectedPackage } from './OrderPackageDetails';
 import OrderPowerCurve from './OrderPowerCurve';
+import OrderRefunds from './OrderRefunds';
 import { businessStatusInfo, paymentStatusInfo, paymentStatusColors, chargingDuration, refundedAmount } from './presentation';
 
 export interface Order {
@@ -232,6 +233,9 @@ function OrderDetailsContent({ orderID, onClose, onChanged, onUserSelect, childr
           { key: 'package', label: '所选套餐', children: <OrderPackageDetails value={detail.selected_package} /> },
           { key: 'power', label: '功率曲线', children: <OrderPowerCurve key={detail.order_id} orderID={detail.order_id}
             active={detailTab === 'power'} charging={detail.business_status === 'charging'} /> },
+          ...(permissions.includes('order.read') && permissions.includes('finance.refund.read')
+            ? [{ key: 'refunds', label: '退款记录', children: <OrderRefunds orderID={detail.order_id} /> }]
+            : []),
           { key: 'payment', label: '费用与支付', children: <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {detail.status === 'charging' && <Alert type="info" showIcon message="充电中的费用为按冻结费率计算的估算值，结束后以最终结算为准。" />}
         <Descriptions bordered column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }} items={[

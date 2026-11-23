@@ -49,7 +49,7 @@ export default defineController({
     const generation=this._generation;
     this.setData({curveLoading:true,curveError:''});
     try{
-      const result=await detailApp.request('GET',`/user/charge/${encodeURIComponent(order.order_no)}/curve`,{granularity:'15min'});
+      const result=await detailApp.request('GET',`/user/charge/${encodeURIComponent(order.order_no)}/curve`,{granularity:'auto'});
       if(this._gone||generation!==this._generation)return;
       const series=Array.isArray(result.series)?result.series:[];
       this.setData({curve:{...result,series:series.map(point=>({...point,bucketText:point.bucket_start||point.ts?new Date(point.bucket_start||point.ts).toLocaleString():'—',power_w_avg:point.power_w_avg??point.power_w,temperature_c_avg:point.temperature_c_avg??point.temperature_c,voltage_v_avg:point.voltage_v_avg??point.voltage_v,current_a_avg:point.current_a_avg??point.current_a}))}});

@@ -144,3 +144,38 @@ func (c *Client) OrderProcess(ctx context.Context, q contract.OrderProcessReques
 	}
 	return data, nil
 }
+
+// OrderCurve 读取已授权订单的过程采样，设备和端口只用于约束订单范围。
+func (c *Client) OrderCurve(ctx context.Context, q contract.OrderCurveRequest) (contract.OrderCurveReply, error) {
+	if !validQueryDevice(q.DeviceID, q.PortNo) || q.OrderID == 0 || q.OrderNo == "" ||
+		len(q.OrderNo) > 64 || !q.From.Before(q.To) {
+		return contract.OrderCurveReply{}, fmt.Errorf("invalid order curve query")
+	}
+	values := url.Values{
+		"charge_order_id": {strconv.FormatUint(q.OrderID, 10)}, "device_id": {q.DeviceID},
+		"port_no": {strconv.FormatUint(uint64(q.PortNo), 10)}, "from": {q.From.UTC().Format(time.RFC3339Nano)},
+		"to": {q.To.UTC().Format(time.RFC3339Nano)}, "granularity": {q.Granularity},
+	}
+	if q.Latest {
+		values.Set("view", "latest")
+	} else if q.Summary {
+		values.Set("view", "history")
+	}
+	out, err := queryData[contract.OrderCurveReply](
+		ctx, c, contract.OrderProcessPath+url.PathEscape(q.OrderNo)+"/curve?"+values.Encode(),
+		"series", "summary", "sampling_interval_seconds",
+	)
+	if err != nil {
+		return out, err
+	}
+	if !validSeries(out.Series, len(out.Series)) || out.SamplingIntervalSeconds < 0 || (q.Latest && len(out.Series) > 1) {
+		return out, fmt.Errorf("%w: order curve result", ErrInvalidResponse)
+	}
+	for _, point := range out.Series {
+		ts, _ := time.Parse(time.RFC3339Nano, point.TS)
+		if ts.Before(q.From) || ts.After(q.To) {
+			return out, fmt.Errorf("%w: order curve query window", ErrInvalidResponse)
+		}
+	}
+	return out, nil
+}

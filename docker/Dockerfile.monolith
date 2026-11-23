@@ -1,0 +1,35 @@
+FROM node:24-alpine AS admin-web
+WORKDIR /app
+COPY frontend/admin-web/package*.json ./
+RUN npm ci
+COPY frontend/admin-web/ ./
+RUN npm run build
+
+FROM node:24-bookworm-slim AS h5
+WORKDIR /app
+COPY frontend/miniprogram/package*.json ./
+COPY frontend/miniprogram/.npmrc ./
+RUN npm ci
+COPY frontend/miniprogram/ ./
+RUN H5_BASE_PATH=/h5/ npm run build:h5
+
+FROM golang:1.27-alpine AS backend
+WORKDIR /app
+COPY backend/go.* ./
+RUN go mod download
+COPY backend/ ./
+COPY --from=admin-web /app/dist ./internal/application/monolith/web/admin
+COPY --from=h5 /app/dist/h5 ./internal/application/monolith/web/h5
+RUN CGO_ENABLED=0 go build -trimpath -o /out/chargepilot ./cmd/chargepilot && \
+    CGO_ENABLED=0 go build -trimpath -o /out/migrate ./cmd/migrate
+
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 chargepilot && \
+    install -d -o chargepilot -g chargepilot /var/lib/chargepilot/exports
+ENV TZ=Asia/Shanghai
+WORKDIR /opt/chargepilot
+COPY --from=backend /out/* /usr/local/bin/
+COPY backend/migrations ./migrations
+USER chargepilot
+EXPOSE 8080 9100
+CMD ["/usr/local/bin/chargepilot"]

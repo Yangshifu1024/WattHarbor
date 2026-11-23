@@ -2,9 +2,11 @@
 package runtime
 
 import (
+	"chargepilot/internal/platform/diagnostics"
 	"context"
 	"errors"
 	"log"
+	"sync/atomic"
 	"time"
 )
 
@@ -48,6 +50,9 @@ type Publication struct {
 
 // Runtime 组织已注入任务的时钟、串行轮次及取消检查；不打开或关闭进程资源。
 type Runtime struct {
+	Wake        <-chan struct{} // 同进程已提交事件唤醒轮询；空值只使用原定时器。
+	SyncReady   *atomic.Bool    // 当前同步轮次是否成功；可空。
+	Diagnostics *diagnostics.Registry
 	// Scheduler 调度清理与到期执行能力，运行时串行调用，不接管其数据库资源。
 	Scheduler interface {
 		// CleanupHistory 按传入的任务 context 清理历史；同步返回执行错误，取消影响与事务责任由实现负责，不启动脱离管理的任务。
@@ -81,11 +86,11 @@ func (r *Runtime) RunScheduler(ctx context.Context) error {
 	nextCleanup := time.Now()
 	return poll(ctx, time.Second, func(ctx context.Context) {
 		if time.Now().After(nextCleanup) {
-			report("scheduled history cleanup", r.Scheduler.CleanupHistory(ctx))
+			report("scheduled history cleanup", r.Diagnostics.Run(ctx, "scheduled history cleanup", r.Scheduler.CleanupHistory))
 			nextCleanup = time.Now().Add(time.Hour)
 		}
 		if ctx.Err() == nil {
-			report("scheduled tasks", r.Scheduler.RunDue(ctx))
+			report("scheduled tasks", r.Diagnostics.Run(ctx, "scheduled tasks", r.Scheduler.RunDue))
 		}
 	})
 }
@@ -97,7 +102,7 @@ func (r *Runtime) RunFinance(ctx context.Context) error {
 
 // financeOnce 按自动停机、计费、退款顺序同步执行；每项前检查取消，单项失败不阻止后续任务。
 func (r *Runtime) financeOnce(ctx context.Context) {
-	runSequence(ctx, []task{
+	r.runSequence(ctx, []task{
 		{"charge auto stop", counted(r.AutoStops.Run)},
 		{"billing dispatch", r.Billing.Run},
 		{"refund dispatch", r.Refunds.Run},
@@ -108,7 +113,19 @@ func (r *Runtime) financeOnce(ctx context.Context) {
 // ctx 为同步循环生命周期，首次执行等待一秒 tick；每轮复用 r 的任务与发布器实例。
 // 取消后等待当前同步任务返回并返回 nil，单任务错误只记录，不关闭资源或返回业务错误。
 func (r *Runtime) RunSync(ctx context.Context) error {
-	return poll(ctx, time.Second, r.syncOnce)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		case <-r.Wake:
+		}
+		if ctx.Err() == nil {
+			r.syncOnce(ctx)
+		}
+	}
 }
 
 // syncOnce 接收单轮 ctx，按告警、刷卡、待启动、启动回执、结束回执、发布切片顺序同步执行。
@@ -124,7 +141,10 @@ func (r *Runtime) syncOnce(ctx context.Context) {
 	for _, publisher := range r.Publishers {
 		tasks = append(tasks, task{"outbox " + publisher.Source, counted(publisher.Publisher.PublishBatch)})
 	}
-	runSequence(ctx, tasks)
+	healthy := r.runSequence(ctx, tasks)
+	if r.SyncReady != nil {
+		r.SyncReady.Store(healthy)
+	}
 }
 
 // task 组合日志名称与同步任务回调，供单轮顺序执行。
@@ -141,13 +161,17 @@ func counted(run func(context.Context) (int, error)) func(context.Context) error
 }
 
 // runSequence 按顺序同步执行 tasks 并记录错误；取消后不再开始下一项，单项失败仍继续。
-func runSequence(ctx context.Context, tasks []task) {
+func (r *Runtime) runSequence(ctx context.Context, tasks []task) bool {
+	healthy := true
 	for _, task := range tasks {
 		if ctx.Err() != nil {
-			return
+			return false
 		}
-		report(task.name, task.run(ctx))
+		err := r.Diagnostics.Run(ctx, task.name, task.run)
+		healthy = healthy && err == nil
+		report(task.name, err)
 	}
+	return healthy
 }
 
 // report 按任务名记录错误；nil 和 context.Canceled 不记录。

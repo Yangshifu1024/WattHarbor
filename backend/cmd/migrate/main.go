@@ -20,7 +20,7 @@ import (
 var schemas = []string{"gateway_db", "central_db", "worker_db"}
 
 func main() {
-	selected := flag.String("schema", "all", "schema name or all")
+	selected := flag.String("schema", "all", "schema name, all, or unified")
 	directory := flag.String("dir", "migrations", "migration root directory")
 	flag.Parse()
 	if err := run(*selected, *directory); err != nil {
@@ -30,6 +30,9 @@ func main() {
 }
 
 func run(selected, directory string) error {
+	if selected == "unified" {
+		return migrateUnified(directory)
+	}
 	if selected != "all" && !contains(schemas, selected) {
 		return fmt.Errorf("unknown schema %q", selected)
 	}
@@ -65,7 +68,7 @@ func run(selected, directory string) error {
 	return nil
 }
 
-// migrateOne 核对目标库名和迁移记录，拒绝无 Goose 记录的非空库及版本大于 1 的旧库。
+// migrateOne 核对目标库名和迁移记录，拒绝无 Goose 记录的非空库和不属于当前迁移集的版本。
 func migrateOne(ctx context.Context, db *sql.DB, schema, directory string) error {
 	if err := db.PingContext(ctx); err != nil {
 		return err
@@ -93,8 +96,12 @@ func migrateOne(ctx context.Context, db *sql.DB, schema, directory string) error
 		if err != nil {
 			return err
 		}
-		if version > 1 {
-			return errors.New("legacy migration history detected; rebuild the pre-release database using the consolidated init")
+		migrations, err := goose.CollectMigrations(directory, 0, goose.MaxVersion)
+		if err != nil {
+			return err
+		}
+		if version != 0 && !slices.ContainsFunc(migrations, func(m *goose.Migration) bool { return m.Version == version }) {
+			return fmt.Errorf("unknown migration version %d", version)
 		}
 	}
 	return goose.UpContext(ctx, db, directory)

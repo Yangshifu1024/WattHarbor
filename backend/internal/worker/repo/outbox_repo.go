@@ -16,6 +16,9 @@ const outboxBatch = 100
 // outboxTable 按 source 选择表名：仅 admin 使用后台队列，其余来源均使用 event_outbox。
 // source 的非空检查由发布用例负责；本函数不新增来源白名单。
 func outboxTable(source string) string {
+	if source == "gateway_unified" {
+		return "gateway_event_outbox"
+	}
 	if source == "admin" {
 		return ops.AdminEventOutboxTable
 	}

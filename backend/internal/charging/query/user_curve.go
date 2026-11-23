@@ -33,22 +33,24 @@ type HistoricalPoint struct {
 
 // CurveView 是实时曲线公开查询结果；窗口上界只捕获一次，系列为空时仍输出数组。
 type CurveView struct {
-	OrderNo string       `json:"order_no"` // 已授权业务单号
-	Window  string       `json:"window"`   // 已允许的回看枚举
-	From    time.Time    `json:"from"`     // 本次请求窗口下界 UTC
-	To      time.Time    `json:"to"`       // 本次请求窗口上界 UTC
-	Series  []CurvePoint `json:"series"`   // 按输入顺序返回的观测，不插值或补零
-	Count   int          `json:"count"`    // 返回点数
+	OrderNo                 string       `json:"order_no"` // 已授权业务单号
+	Window                  string       `json:"window"`   // 已允许的回看枚举
+	From                    time.Time    `json:"from"`     // 本次请求窗口下界 UTC
+	To                      time.Time    `json:"to"`       // 本次请求窗口上界 UTC
+	Series                  []CurvePoint `json:"series"`   // 按输入顺序返回的观测，不插值或补零
+	Count                   int          `json:"count"`    // 返回点数
+	SamplingIntervalSeconds int64        `json:"sampling_interval_seconds"`
 }
 
 // HistoricalView 保留订单标识、聚合边界与摘要，确认电量以 DECIMAL 文本优先。
 type HistoricalView struct {
-	OrderID             uint64                     `json:"order_id"`             // 中央订单主键，保持现有整数契约
-	OrderNo             string                     `json:"order_no"`             // 已授权业务单号
-	Granularity         string                     `json:"granularity"`          // 请求15min或hourly
-	Series              []HistoricalPoint          `json:"series"`               // 按输入顺序返回的统计点，不用于计费
-	Summary             map[string]json.RawMessage `json:"summary"`              // 摘要JSON，保留数字精度及空值
-	BoundaryApproximate bool                       `json:"boundary_approximate"` // 统计区间是否与订单起止时刻有偏差
+	OrderID                 uint64                     `json:"order_id"`             // 中央订单主键，保持现有整数契约
+	OrderNo                 string                     `json:"order_no"`             // 已授权业务单号
+	Granularity             string                     `json:"granularity"`          // 请求15min或hourly
+	Series                  []HistoricalPoint          `json:"series"`               // 按输入顺序返回的统计点，不用于计费
+	Summary                 map[string]json.RawMessage `json:"summary"`              // 摘要JSON，保留数字精度及空值
+	BoundaryApproximate     bool                       `json:"boundary_approximate"` // 保留兼容字段
+	SamplingIntervalSeconds int64                      `json:"sampling_interval_seconds"`
 }
 
 // windowDuration 校验曲线窗口，返回窗口名称与时长。
@@ -93,7 +95,23 @@ func (s UserService) Curve(ctx context.Context, userID uint64, raw, window strin
 	if s.Gateway == nil {
 		return out, &UserReadError{Stage: "curve", Cause: errors.New("gateway reader unavailable")}
 	}
-	data, err := s.Gateway.Telemetry(ctx, contract.TelemetryRequest{DeviceID: row.DeviceID, PortNo: row.PortNo, From: from, To: now})
+	if !row.StartedAt.Valid {
+		return out, nil
+	}
+	if row.StartedAt.Time.After(from) {
+		from = row.StartedAt.Time.UTC()
+	}
+	to := now
+	if row.EndedAt.Valid && row.EndedAt.Time.Before(to) {
+		to = row.EndedAt.Time.UTC()
+	}
+	if !from.Before(to) {
+		return out, nil
+	}
+	data, err := s.Gateway.OrderCurve(ctx, contract.OrderCurveRequest{
+		OrderID: row.ID, OrderNo: row.OrderNo, DeviceID: row.DeviceID, PortNo: row.PortNo,
+		From: from, To: to, Granularity: "auto",
+	})
 	if err != nil {
 		return out, &UserReadError{Stage: "curve", Cause: err}
 	}
@@ -105,10 +123,11 @@ func (s UserService) Curve(ctx context.Context, userID uint64, raw, window strin
 		out.Series = append(out.Series, CurvePoint{TS: at.UTC(), PowerW: p.PowerW, CurrentA: p.CurrentA, VoltageV: p.VoltageV, TemperatureC: p.TemperatureC, BatterySOC: p.BatterySOC, MeterKWh: p.MeterKWh})
 	}
 	out.Count = len(out.Series)
+	out.SamplingIntervalSeconds = data.SamplingIntervalSeconds
 	return out, nil
 }
 
-// HistoricalCurve 校验订单归属，用已保存的起止时间查询历史聚合。
+// HistoricalCurve 校验订单归属，用已保存的起止时间查询该订单的过程采样。
 // 查询前限制最长三年、最多 2000 点；未开始或时间倒置报冲突，超过保留期报错。
 // 摘要电量优先使用订单 DECIMAL 文本，不从实时观测重算。
 func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, granularity string) (HistoricalView, error) {
@@ -122,8 +141,8 @@ func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, gr
 	if granularity == "" {
 		granularity = "15min"
 	}
-	if granularity != "15min" && granularity != "hourly" {
-		return HistoricalView{}, &UserInputError{Kind: "input", Message: "granularity 须为 15min 或 hourly"}
+	if granularity != "15min" && granularity != "hourly" && granularity != "auto" {
+		return HistoricalView{}, &UserInputError{Kind: "input", Message: "granularity 须为 auto、15min 或 hourly"}
 	}
 	now := s.now()
 	start := row.StartedAt.Time.UTC()
@@ -141,7 +160,7 @@ func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, gr
 	if granularity == "hourly" {
 		bucket = time.Hour
 	}
-	if end.Truncate(bucket).Sub(start.Truncate(bucket))/bucket+1 > contract.MaxQueryPoints {
+	if granularity != "auto" && end.Truncate(bucket).Sub(start.Truncate(bucket))/bucket+1 > contract.MaxQueryPoints {
 		return HistoricalView{}, &UserInputError{Kind: "input", Message: "订单时间窗超过当前粒度的最大点数，请使用更粗粒度"}
 	}
 	out := HistoricalView{OrderID: row.ID, OrderNo: row.OrderNo, Granularity: granularity, Series: []HistoricalPoint{}, Summary: map[string]json.RawMessage{}}
@@ -151,7 +170,10 @@ func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, gr
 	if s.Gateway == nil {
 		return out, &UserReadError{Stage: "history_curve", Cause: errors.New("gateway reader unavailable")}
 	}
-	data, err := s.Gateway.HistoricalCurve(ctx, contract.HistoricalCurveRequest{DeviceID: row.DeviceID, OrderNo: row.OrderNo, PortNo: row.PortNo, StartedAt: start, EndedAt: end, Granularity: granularity})
+	data, err := s.Gateway.OrderCurve(ctx, contract.OrderCurveRequest{
+		OrderID: row.ID, OrderNo: row.OrderNo, DeviceID: row.DeviceID, PortNo: row.PortNo,
+		From: start, To: end, Granularity: granularity, Summary: true,
+	})
 	if err != nil {
 		return out, &UserReadError{Stage: "history_curve", Cause: err}
 	}
@@ -165,6 +187,6 @@ func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, gr
 		value, _ := json.Marshal(row.ChargedKWh.String)
 		out.Summary["total_kwh"] = value
 	}
-	out.BoundaryApproximate = data.BoundaryApproximate
+	out.SamplingIntervalSeconds = data.SamplingIntervalSeconds
 	return out, nil
 }

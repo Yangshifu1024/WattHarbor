@@ -3,6 +3,7 @@ package settlement
 import (
 	"chargepilot/internal/domain/operations"
 	"chargepilot/internal/ops"
+	"chargepilot/internal/order"
 	"chargepilot/internal/persist"
 	"context"
 	"github.com/google/uuid"
@@ -18,6 +19,17 @@ type RefundAdminService struct {
 // List 分页读取全局退款记录和执行进度；调用方须先检查 finance.refund.read 权限。
 func (s RefundAdminService) List(ctx context.Context, q RefundListQuery) (persist.Page[map[string]any], error) {
 	return ListRefunds(ctx, s.DB, q)
+}
+
+// ListForOrder 复用订单可见性和资金查询权限，投影只读退款明细。
+func (s RefundAdminService) ListForOrder(ctx context.Context, actor operations.Profile, orderID uint64) ([]map[string]any, error) {
+	if !actor.HasPermission("order.read") || !actor.HasPermission("finance.refund.read") {
+		return nil, operations.ErrForbidden
+	}
+	if err := order.OrderExists(ctx, s.DB, orderID); err != nil {
+		return nil, err
+	}
+	return ListOrderRefunds(ctx, s.DB, orderID)
 }
 
 // ManualRefundRequest 是公开提交内容，也是首次审计快照。

@@ -27,12 +27,9 @@ type UserStateReader interface {
 	Funds(ctx context.Context, row order.ChargeOrderRecord) (DetailFunds, error)
 }
 
-// UserCurveReader 提供设备端口的有界观测，不持有业务授权或改变订单状态。
+// UserCurveReader 读取已授权订单的有界过程采样。
 type UserCurveReader interface {
-	// Telemetry 读取 q 设备窗口，返回共享契约或网络、契约错误。
-	Telemetry(ctx context.Context, q gatewaycontract.TelemetryRequest) (gatewaycontract.TelemetryReply, error)
-	// HistoricalCurve 读取 q 订单聚合窗口，返回共享契约或网络、契约错误。
-	HistoricalCurve(ctx context.Context, q gatewaycontract.HistoricalCurveRequest) (gatewaycontract.HistoricalCurveReply, error)
+	OrderCurve(ctx context.Context, q gatewaycontract.OrderCurveRequest) (gatewaycontract.OrderCurveReply, error)
 }
 
 // UserLiveReader 提供已授权订单的实时估算，只填充公开查询结果，不写入结算费用。
@@ -291,7 +288,10 @@ func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (U
 	if s.Gateway == nil {
 		return out, nil
 	}
-	data, err := s.Gateway.Telemetry(ctx, gatewaycontract.TelemetryRequest{DeviceID: row.DeviceID, PortNo: row.PortNo, From: from, To: now})
+	data, err := s.Gateway.OrderCurve(ctx, gatewaycontract.OrderCurveRequest{
+		OrderID: row.ID, OrderNo: row.OrderNo, DeviceID: row.DeviceID, PortNo: row.PortNo,
+		From: from, To: now, Granularity: "auto", Latest: true,
+	})
 	if err != nil {
 		if ctx.Err() != nil {
 			return out, ctx.Err()

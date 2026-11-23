@@ -17,6 +17,7 @@ import (
 
 // TelemetryAPI 提供设备读数查询；telemetry 按 ts 分区，所有查询必须包含限定起止时间的窗口。
 type TelemetryAPI struct {
+	Snapshots *gatewayrepo.ProcessSnapshots
 	// DB 是网关数据库连接。
 	DB *gorm.DB
 	// Devices 与启动、停止及 ACK 持久化共用，用于串行化端口释放。
@@ -37,6 +38,7 @@ func (a TelemetryAPI) Register(router *gin.Engine) {
 	// 静态段 charging-evidence 会与其在 gin 基数树上冲突。
 	router.POST(gatewaycontract.ChargingEvidencePath, a.chargingEvidence)
 	router.GET(gatewaycontract.OrderProcessPath+":order_no/process", a.chargeProcess)
+	router.GET(gatewaycontract.OrderProcessPath+":order_no/curve", a.orderCurve)
 	router.GET(gatewaycontract.HistoricalCurvePath+":device_id/historical-curve", a.historicalCurve)
 	router.POST("/api/v1/internal/devices/:device_id/backfill", a.backfill)
 	a.registerDeviceFaults(router)

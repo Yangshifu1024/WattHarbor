@@ -1,0 +1,18 @@
+{
+    admin off
+}
+
+{$PUBLIC_DOMAIN} {
+    encode zstd gzip
+    header Strict-Transport-Security "max-age=63072000; includeSubDomains"
+    header X-Content-Type-Options "nosniff"
+    header X-Frame-Options "DENY"
+
+    @public path / /admin /admin/* /h5 /h5/* /api/v1/admin/* /api/v1/user/* /api/v1/public/*
+    handle @public {
+        reverse_proxy app:8080
+    }
+    handle {
+        respond 404
+    }
+}

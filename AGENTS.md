@@ -206,31 +206,15 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab
 ```text
 charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾）
 │
-├── cmd                                                   部署单元，每个子目录一个进程
-│   ├── cmd/admin/main.go
-│   ├── cmd/admin/app.go（迁移前：cmd/admin/main.go[装配与生命周期]）
-│   ├── cmd/admin/resources.go（迁移前：cmd/admin/main.go[资源]）
-│   ├── cmd/admin/routes.go（迁移前：cmd/admin/main.go[路由]）
-│   ├── cmd/central/main.go
-│   ├── cmd/central/app.go（迁移前：cmd/central/main.go[装配与生命周期]）
-│   ├── cmd/central/resources.go（迁移前：cmd/central/main.go[资源]）
-│   ├── cmd/central/routes.go（迁移前：cmd/central/main.go[路由]）
-│   ├── cmd/devseed/main.go
-│   ├── cmd/devseed/scheme.go
-│   ├── cmd/gateway/main.go
-│   ├── cmd/gateway/app.go（迁移前：cmd/gateway/main.go[装配与生命周期]）
-│   ├── cmd/gateway/resources.go（迁移前：cmd/gateway/main.go[资源]）
-│   ├── cmd/gateway/routes.go（迁移前：cmd/gateway/main.go[路由]）
-│   ├── cmd/migrate/main.go
-│   ├── cmd/simulator-dc589/main.go
-│   ├── cmd/user/main.go
-│   ├── cmd/user/app.go（迁移前：cmd/user/main.go[装配与生命周期]）
-│   ├── cmd/user/resources.go（迁移前：cmd/user/main.go[资源]）
-│   ├── cmd/user/routes.go（迁移前：cmd/user/main.go[路由]）
-│   ├── cmd/worker/main.go
-│   ├── cmd/worker/app.go（迁移前：cmd/worker/main.go[装配与生命周期]）
-│   ├── cmd/worker/resources.go（迁移前：cmd/worker/main.go[资源]）
-│   └── cmd/worker/routes.go（迁移前：cmd/worker/main.go[路由]）
+├── cmd                                                   进程入口
+│   ├── chargepilot/main.go                               单体入口
+│   ├── {admin,central,gateway,user,worker}/main.go         五进程部署入口
+│   ├── devseed/{main,scheme}.go
+│   ├── migrate/{main,unified}.go
+│   └── simulator-dc589/main.go
+├── internal/application                                 进程装配，不承载业务规则
+│   ├── {admin,central,gateway,user,worker}/                装配、资源与路由（迁移前：cmd/<服务>/）
+│   └── monolith/                                         单体生命周期、公开路由与进程内传输
 ├── internal/charging                                     充电生命周期与只读组合：按业务步骤组织子包
 │   ├── internal/charging/start                           启动授权、待启动查询与启动回执
 │   │   ├── internal/charging/start/authorization.go（迁移前：internal/charging/authorization.go[启动部分]）

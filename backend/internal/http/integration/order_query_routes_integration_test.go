@@ -290,6 +290,18 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// 两条同时间、同端口的过程记录：只允许本单采样进入用户快照与曲线。
+	for i, orderID := range []uint64{id, id + 9999} {
+		point := map[string]any{
+			"event_key": tag + "recent" + strconv.Itoa(i), "charge_order_id": orderID,
+			"order_no": no, "device_id": "OR" + tag, "port_no": 1, "ts": observation,
+			"power_deciwatts": i * 9990, "charged_seconds": 110, "remaining_seconds": 1,
+			"charged_mwh": 2500, "remaining_mwh": 0, "signal_strength": 0,
+		}
+		if err := gatewayTx.Table("charge_process").Create(point).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	userDetail := "/api/v1/user/charge/" + no
 	snapshotPath := "/api/v1/user/charge/ongoing/snapshot?order_id=" + no
 	curvePath := "/api/v1/user/charge/ongoing/curve?order_id=" + no + "&window=last_30min"
@@ -319,7 +331,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	var curveReply struct {
 		Data chargingquery.CurveView `json:"data"` /* 遥测模型 */
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &curveReply); err != nil || w.Code != 200 || curveReply.Data.Count != 1 || curveReply.Data.Series[0].PowerW == nil || *curveReply.Data.Series[0].PowerW != 0 || curveReply.Data.Series[0].VoltageV != nil {
+	if err := json.Unmarshal(w.Body.Bytes(), &curveReply); err != nil || w.Code != 200 || curveReply.Data.Count < 2 || curveReply.Data.Series[curveReply.Data.Count-1].PowerW == nil || *curveReply.Data.Series[curveReply.Data.Count-1].PowerW != 0 || curveReply.Data.Series[curveReply.Data.Count-1].VoltageV != nil {
 		t.Fatalf("registered curve=%d %s", w.Code, w.Body)
 	}
 	for _, path := range []string{userDetail, snapshotPath, curvePath, userDetail + "/curve"} {
@@ -341,14 +353,14 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	var historyReply struct {
 		Data chargingquery.HistoricalView `json:"data"` /* 历史模型 */
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &historyReply); err != nil || w.Code != 200 || historyReply.Data.OrderID != id || historyReply.Data.OrderNo != no || len(historyReply.Data.Series) != 1 || string(historyReply.Data.Summary["total_kwh"]) != `"0.2500"` || !historyReply.Data.BoundaryApproximate {
+	if err := json.Unmarshal(w.Body.Bytes(), &historyReply); err != nil || w.Code != 200 || historyReply.Data.OrderID != id || historyReply.Data.OrderNo != no || len(historyReply.Data.Series) != 1 || string(historyReply.Data.Summary["total_kwh"]) != `"0.2500"` || historyReply.Data.BoundaryApproximate {
 		t.Fatalf("registered original history=%d %s", w.Code, w.Body)
 	}
 	var originalAverage string
 	if err := json.Unmarshal(historyReply.Data.Summary["avg_power_w"], &originalAverage); err != nil {
 		t.Fatal("registered original average missing", err)
 	}
-	if value, err := strconv.ParseFloat(originalAverage, 64); err != nil || value != 150.125 {
+	if value, err := strconv.ParseFloat(originalAverage, 64); err != nil || value != 148.5 {
 		t.Fatal("registered original average lost", originalAverage, err)
 	}
 	if w := call(userDetail+"/curve?granularity=minute", owner); w.Code != 400 {

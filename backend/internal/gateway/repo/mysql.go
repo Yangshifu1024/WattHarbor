@@ -26,6 +26,9 @@ var ErrDeviceNotProvisioned = errors.New("device is not provisioned for this pro
 // MySQLSink 保存设备事件、连接记录和命令结果，并提供网关查询。
 // 数据库连接由进程管理，各方法按需要使用事务。
 type MySQLSink struct {
+	Snapshots      *ProcessSnapshots
+	NotifyDelivery func()
+	UnifiedOutbox  bool
 	// DB 是网关数据库连接。
 	DB *gorm.DB
 }
@@ -104,7 +107,8 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	if err != nil {
 		return fmt.Errorf("marshal device event envelope: %w", err)
 	}
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var samples []chargeProcessRow
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		inserted := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&deviceEventRow{
 			EventKey: key, Protocol: event.Protocol, DeviceID: event.DeviceID,
 			EventType: event.Type, PortNo: event.Port, EventJSON: data, ReceivedAt: event.ReceivedAt.UTC(),
@@ -117,7 +121,11 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 				return err
 			}
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&deviceOutboxRow{EventID: key, Stream: "device_event_stream", EnvelopeJSON: envelope}).Error; err != nil {
+		outbox := tx
+		if s.UnifiedOutbox {
+			outbox = tx.Table("gateway_event_outbox")
+		}
+		if err := outbox.Clauses(clause.OnConflict{DoNothing: true}).Create(&deviceOutboxRow{EventID: key, Stream: "device_event_stream", EnvelopeJSON: envelope}).Error; err != nil {
 			return fmt.Errorf("queue device event: %w", err)
 		}
 		if inserted.RowsAffected == 1 && event.Type == protocol.StartResult {
@@ -144,9 +152,11 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 				if err := recordHeartbeatState(ctx, tx, event); err != nil {
 					return fmt.Errorf("persist heartbeat state: %w", err)
 				}
-				if err := insertChargeProcess(ctx, tx, key, event); err != nil {
+				points, err := insertChargeProcess(ctx, tx, key, event)
+				if err != nil {
 					return fmt.Errorf("persist charge process: %w", err)
 				}
+				samples = points
 			}
 			if err := insertMeasurements(ctx, tx, event); err != nil {
 				return fmt.Errorf("persist device telemetry: %w", err)
@@ -154,6 +164,17 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 		}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err == nil {
+		s.Snapshots.record(samples)
+		switch event.Type {
+		case protocol.StartResult, protocol.StopResult, protocol.ChargeEnd,
+			protocol.CardSwipe, protocol.CardBalanceQuery, protocol.Fault:
+			if s.NotifyDelivery != nil {
+				s.NotifyDelivery()
+			}
+		}
+	}
+	return err
 }
 
 // stopAckAccepted 识别已停止输出（0x10）或已空闲（0x01）的设备回执。

@@ -63,7 +63,7 @@ func TestServeDrainsRequestsBeforeReturning(t *testing.T) {
 		_, _ = io.WriteString(w, "completed")
 	})}
 	finished := make(chan error, 1)
-	go func() { finished <- serve(ctx, server, l, time.Second) }()
+	go func() { finished <- ServeOn(ctx, server, l, time.Second) }()
 	response := make(chan error, 1)
 	go func() {
 		client := &http.Client{Timeout: 3 * time.Second}
@@ -125,7 +125,7 @@ func TestServeTimeoutCancelsAndWaitsForHandler(t *testing.T) {
 		<-release
 	})}
 	finished := make(chan error, 1)
-	go func() { finished <- serve(ctx, server, l, 30*time.Millisecond) }()
+	go func() { finished <- ServeOn(ctx, server, l, 30*time.Millisecond) }()
 	requestDone := make(chan struct{})
 	go func() {
 		defer close(requestDone)

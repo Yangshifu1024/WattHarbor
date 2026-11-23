@@ -61,24 +61,19 @@ func (f *userQueryFixture) Fees(ctx context.Context, ids []uint64) (map[uint64]o
 	return f.fees, f.feeError
 }
 
-// Telemetry 记录 q 窗口，返回 f 观测或取消、注入错误，不启动后台任务。
-func (f *userQueryFixture) Telemetry(ctx context.Context, q contract.TelemetryRequest) (contract.TelemetryReply, error) {
+// OrderCurve 记录实际请求，并从当前场景返回有界采样。
+func (f *userQueryFixture) OrderCurve(ctx context.Context, q contract.OrderCurveRequest) (contract.OrderCurveReply, error) {
+	if err := ctx.Err(); err != nil {
+		return contract.OrderCurveReply{}, err
+	}
+	if q.Summary {
+		f.historyCalls++
+		f.lastHistory = contract.HistoricalCurveRequest{DeviceID: q.DeviceID, PortNo: q.PortNo, OrderNo: q.OrderNo, StartedAt: q.From, EndedAt: q.To, Granularity: q.Granularity}
+		return contract.OrderCurveReply{Series: f.history.Series, Summary: f.history.Summary}, f.gatewayError
+	}
 	f.telemetryCalls++
-	f.lastTelemetry = q
-	if err := ctx.Err(); err != nil {
-		return f.telemetry, err
-	}
-	return f.telemetry, f.gatewayError
-}
-
-// HistoricalCurve 记录 q 窗口，返回 f 聚合或取消、注入错误，不启动后台任务。
-func (f *userQueryFixture) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveRequest) (contract.HistoricalCurveReply, error) {
-	f.historyCalls++
-	f.lastHistory = q
-	if err := ctx.Err(); err != nil {
-		return f.history, err
-	}
-	return f.history, f.gatewayError
+	f.lastTelemetry = contract.TelemetryRequest{DeviceID: q.DeviceID, PortNo: q.PortNo, From: q.From, To: q.To}
+	return contract.OrderCurveReply{Series: f.telemetry.Series}, f.gatewayError
 }
 
 // userQueryService 创建固定时刻与标识 测试替身，返回可注入故障源和业务服务，不执行外部 I/O。
@@ -321,6 +316,7 @@ func TestUserCurvesBoundWindowsAndKeepOriginalSummary(t *testing.T) {
 	if !errors.As(err, &input) || input.Kind != "conflict" {
 		t.Fatal("unstarted order did not conflict")
 	}
+	f.row.StartedAt = sql.NullTime{Time: now.Add(-time.Hour), Valid: true}
 	f.gatewayError = errors.New("offline")
 	_, err = s.Curve(context.Background(), 7, "original", "last_2h")
 	var read *UserReadError

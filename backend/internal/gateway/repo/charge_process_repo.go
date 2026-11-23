@@ -80,9 +80,9 @@ type chargeProcessRow struct {
 func (chargeProcessRow) TableName() string { return "charge_process" }
 
 // insertChargeProcess 在事务内锁定端口，将心跳关联到此前已确认启动的订单，并去重插入采样点。
-func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event protocol.Event) error {
+func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event protocol.Event) ([]chargeProcessRow, error) {
 	if event.Protocol != protocol.AdapterIDDC589 || len(event.ChargingPorts) == 0 {
-		return nil
+		return nil, nil
 	}
 	ports := make([]int, 0, len(event.ChargingPorts))
 	for _, port := range event.ChargingPorts {
@@ -95,7 +95,7 @@ func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event pro
 	if err := tx.WithContext(ctx).Select("id").
 		Where("device_id=? AND port_no IN ? AND deleted_at IS NULL", event.DeviceID, ports).
 		Order("port_no").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&locked).Error; err != nil {
-		return err
+		return nil, err
 	}
 	var sessions []struct {
 		// ChargeOrderID 中央充电订单编号。
@@ -110,7 +110,7 @@ func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event pro
 		Joins("JOIN charge_command AS c ON c.order_no=p.current_order_id AND c.device_id=p.device_id AND c.port_no=p.port_no AND c.port_id=p.id").
 		Where("p.device_id=? AND p.port_no IN ? AND p.deleted_at IS NULL AND p.status=? AND c.status='acked' AND c.ack_at<=?", event.DeviceID, ports, money.PortCharging, at).
 		Scan(&sessions).Error; err != nil {
-		return err
+		return nil, err
 	}
 	byPort := make(map[uint8]int, len(sessions))
 	for i, session := range sessions {
@@ -136,7 +136,7 @@ func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event pro
 		rows = append(rows, row)
 	}
 	if len(rows) == 0 {
-		return nil
+		return nil, nil
 	}
-	return tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	return rows, tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }

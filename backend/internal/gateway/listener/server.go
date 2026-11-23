@@ -17,26 +17,54 @@ import (
 // 连接上限由所有端点共享；取消或 Accept 失败后关闭监听及连接，等待全部处理器退出。
 // 返回配置、监听或取消错误；endpoints 在运行期间不得并发修改，sink 由调用方关闭。
 func Serve(ctx context.Context, endpoints []protocol.Endpoint, sink protocol.Sink, maxConnections int) error {
-	if len(endpoints) == 0 || sink == nil || maxConnections < 1 {
-		return errors.New("invalid protocol listener configuration")
+	ports, err := Bind(endpoints)
+	if err != nil {
+		return err
+	}
+	return ports.Serve(ctx, ctx, sink, maxConnections)
+}
+
+// Ports 持有已绑定的设备端口。
+type Ports struct {
+	listeners []net.Listener
+	endpoints []protocol.Endpoint
+}
+
+// Bind 先占用全部设备端口，失败时释放此前绑定的端口。
+func Bind(endpoints []protocol.Endpoint) (Ports, error) {
+	if len(endpoints) == 0 {
+		return Ports{}, errors.New("invalid protocol listener configuration")
 	}
 	listeners := make([]net.Listener, 0, len(endpoints))
 	seen := make(map[string]bool, len(endpoints))
 	for _, endpoint := range endpoints {
 		if endpoint.Adapter == nil || endpoint.Address == "" || seen[endpoint.Address] {
 			closeAll(listeners)
-			return errors.New("duplicate address or missing adapter")
+			return Ports{}, errors.New("duplicate address or missing adapter")
 		}
 		seen[endpoint.Address] = true
-		listener, err := net.Listen("tcp", endpoint.Address)
+		bound, err := net.Listen("tcp", endpoint.Address)
 		if err != nil {
 			closeAll(listeners)
-			return fmt.Errorf("listen %s: %w", endpoint.Address, err)
+			return Ports{}, fmt.Errorf("listen device %s: %w", endpoint.Address, err)
 		}
-		listeners = append(listeners, listener)
-		log.Printf("device listener ready protocol=%s address=%s", endpoint.Adapter.Name(), listener.Addr())
+		listeners = append(listeners, bound)
 	}
-	defer closeAll(listeners)
+	return Ports{listeners: listeners, endpoints: endpoints}, nil
+}
+
+// Close 释放监听，允许在装配失败时清理。
+func (p Ports) Close() { closeAll(p.listeners) }
+
+// Serve 独立关闭接入和现有会话，让在途 HTTP 操作保留对设备的访问。
+func (p Ports) Serve(acceptCtx, sessionCtx context.Context, sink protocol.Sink, maxConnections int) error {
+	defer p.Close()
+	if len(p.listeners) == 0 || sink == nil || maxConnections < 1 {
+		return errors.New("invalid protocol listener configuration")
+	}
+	listeners, endpoints := p.listeners, p.endpoints
+	sessions, cancelSessions := context.WithCancel(sessionCtx)
+	defer cancelSessions()
 	limit := make(chan struct{}, maxConnections)
 	errorsOut := make(chan error, len(listeners))
 	var acceptWG sync.WaitGroup
@@ -45,11 +73,12 @@ func Serve(ctx context.Context, endpoints []protocol.Endpoint, sink protocol.Sin
 	active := make(map[net.Conn]struct{})
 	for i, listener := range listeners {
 		adapter := endpoints[i].Adapter
+		log.Printf("device listener ready protocol=%s address=%s", adapter.Name(), listener.Addr())
 		acceptWG.Go(func() {
 			for {
 				conn, err := listener.Accept()
 				if err != nil {
-					if ctx.Err() == nil {
+					if acceptCtx.Err() == nil {
 						errorsOut <- fmt.Errorf("accept %s: %w", adapter.Name(), err)
 					}
 					return
@@ -68,7 +97,7 @@ func Serve(ctx context.Context, endpoints []protocol.Endpoint, sink protocol.Sin
 							<-limit
 						}()
 						// 记录注册、协议解码等异常会话的结束原因；正常断开不记为错误。
-						if err := adapter.ServeConn(ctx, conn, sink); err != nil && ctx.Err() == nil {
+						if err := adapter.ServeConn(sessions, conn, sink); err != nil && sessions.Err() == nil {
 							log.Printf("device session ended on %s: %v", adapter.Name(), err)
 						}
 					})
@@ -81,14 +110,18 @@ func Serve(ctx context.Context, endpoints []protocol.Endpoint, sink protocol.Sin
 	}
 	var result error
 	select {
-	case <-ctx.Done():
-		result = ctx.Err()
+	case <-acceptCtx.Done():
+		result = acceptCtx.Err()
 	case err := <-errorsOut:
 		result = err
 	}
 	// 先等待接收循环，防止活跃连接集合或连接 WaitGroup 在等待期间继续增长。
 	closeAll(listeners)
 	acceptWG.Wait()
+	if acceptCtx.Err() != nil {
+		<-sessionCtx.Done()
+	}
+	cancelSessions()
 	connMu.Lock()
 	for conn := range active {
 		_ = conn.Close()

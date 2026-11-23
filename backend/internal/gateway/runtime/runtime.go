@@ -2,6 +2,7 @@
 package runtime
 
 import (
+	"chargepilot/internal/platform/diagnostics"
 	"context"
 	"errors"
 	"log"
@@ -14,6 +15,7 @@ import (
 // Runtime 持有设备监听、两类停机恢复及投递历史清理能力，执行受管理的监听与定时循环。
 // 本类型不创建或关闭数据库、连接注册表与客户端资源；调用方负责有效依赖及所有方法的取消与等待。
 type Runtime struct {
+	Diagnostics *diagnostics.Registry
 	// Endpoints 协议适配器及 TCP 监听地址集合；Serve 交监听器校验并先完成全部端口绑定。
 	Endpoints []protocol.Endpoint
 	// Sink 设备协议事件接收能力，交各适配器处理连接；实际持久化等副作用由实现负责，本类型不关闭它。
@@ -49,7 +51,7 @@ func (r Runtime) CleanupSyncHistory(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err := r.SyncHistory.CleanupSyncRetries(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		if err := r.Diagnostics.Run(ctx, "sync history cleanup", r.SyncHistory.CleanupSyncRetries); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("sync delivery history cleanup: %v", err)
 		}
 		select {
@@ -85,13 +87,13 @@ func (r Runtime) RetryStops(ctx context.Context) error {
 			if ctx.Err() != nil {
 				continue
 			}
-			if err := r.Compensation.RetryStopping(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			if err := r.Diagnostics.Run(ctx, "compensation stop retry", r.Compensation.RetryStopping); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("STOP compensation: %v", err)
 			}
 			if ctx.Err() != nil {
 				continue
 			}
-			if err := r.UserStops.RetryPending(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			if err := r.Diagnostics.Run(ctx, "user stop retry", r.UserStops.RetryPending); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("user STOP retry: %v", err)
 			}
 		}

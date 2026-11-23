@@ -13,9 +13,10 @@ import (
 
 // Publisher 将数据库事件队列推送到 Redis，并保存发送结果。
 type Publisher struct {
-	Source string        // 原来源标识；非空即可，表选择由 worker repo 保持规则。
-	DB     *gorm.DB      // 来源队列的受管理连接，行锁和状态更新共用事务。
-	Stream *redis.Client // 受管理的目标事件流客户端，不由本用例关闭。
+	UnifiedGateway bool
+	Source         string        // 原来源标识；非空即可，表选择由 worker repo 保持规则。
+	DB             *gorm.DB      // 来源队列的受管理连接，行锁和状态更新共用事务。
+	Stream         *redis.Client // 受管理的目标事件流客户端，不由本用例关闭。
 }
 
 // PublishBatch 在 READ COMMITTED 事务内锁定待发布事件，每次 Redis 请求最多等待 3 秒。
@@ -26,8 +27,12 @@ func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("outbox publisher is not configured")
 	}
 	published := 0
+	queue := p.Source
+	if p.Source == "gateway" && p.UnifiedGateway {
+		queue = "gateway_unified"
+	}
 	err := p.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		rows, err := workerrepo.ListPublishableOutbox(tx, p.Source)
+		rows, err := workerrepo.ListPublishableOutbox(tx, queue)
 		if err != nil {
 			return err
 		}
@@ -39,12 +44,12 @@ func (p Publisher) PublishBatch(ctx context.Context) (int, error) {
 			cancel()
 			if pushErr != nil {
 				backoff := 1 << min(row.RetryCount, 8)
-				if err := workerrepo.MarkOutboxFailed(tx, p.Source, row.ID, truncate(pushErr.Error(), 255), backoff); err != nil {
+				if err := workerrepo.MarkOutboxFailed(tx, queue, row.ID, truncate(pushErr.Error(), 255), backoff); err != nil {
 					return err
 				}
 				continue
 			}
-			if err := workerrepo.MarkOutboxPublished(tx, p.Source, row.ID); err != nil {
+			if err := workerrepo.MarkOutboxPublished(tx, queue, row.ID); err != nil {
 				return err
 			}
 			published++

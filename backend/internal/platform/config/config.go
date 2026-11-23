@@ -29,6 +29,7 @@ func (c DatabasePool) validate() error {
 
 // Gateway 配置设备接入进程的监听、数据库及 central 授权客户端。
 type Gateway struct {
+	UnifiedDatabase bool `env:"APP_UNIFIED_DATABASE" envDefault:"false"`
 	DatabasePool
 	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
 	HTTPAddr string `env:"GATEWAY_HTTP_ADDR" envDefault:":8083"`
@@ -77,7 +78,7 @@ type Central struct {
 }
 
 // User 配置 C 端登录、手机号授权和支付，不连接事件流 Redis。
-// 充电遥测和历史曲线通过 GATEWAY_INTERNAL_URL 查询 gateway。
+// 订单曲线与最新采样通过 GATEWAY_INTERNAL_URL 查询 gateway。
 type User struct {
 	DatabasePool
 	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
@@ -134,12 +135,14 @@ type Admin struct {
 	AdminBootstrapPassword string `env:"ADMIN_BOOTSTRAP_PASSWORD"`
 	// GatewayInternalURL gateway 内部 HTTP 基址；默认使用容器网络中的 gateway:8083。
 	GatewayInternalURL string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
+	WorkerInternalURL  string `env:"WORKER_INTERNAL_URL" envDefault:"http://worker:8085"`
 	// ExportDir 后台导出文件目录；空值使用导出服务的默认目录。
 	ExportDir string `env:"EXPORT_DIR"`
 }
 
 // Worker 配置受管理的后台任务、三库连接及事件流客户端，不包含用户登录或支付凭据。
 type Worker struct {
+	UnifiedDatabase bool `env:"APP_UNIFIED_DATABASE" envDefault:"false"`
 	DatabasePool
 	// CentralDatabaseURL worker 发布 central 业务事件所用的 central_db MySQL URL；加载时必须提供。
 	CentralDatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`

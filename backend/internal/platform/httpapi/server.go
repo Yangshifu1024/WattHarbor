@@ -25,13 +25,13 @@ func Serve(ctx context.Context, server *http.Server, grace time.Duration) error 
 		return err
 	}
 	defer listener.Close()
-	return serve(ctx, server, listener, grace)
+	return ServeOn(ctx, server, listener, grace)
 }
 
-// serve 运行已绑定的 HTTP 服务；停机先等待请求，失败时取消请求并关闭连接。
+// ServeOn 运行已绑定的 HTTP 服务；停机先等待请求，失败时取消请求并关闭连接。
 // 停止接收新处理器后，仍等待已有处理器退出；返回合并后的运行和停机错误。
 // 本函数管理 server 的请求 context 和 Handler，调用方负责关闭监听及其他资源。
-func serve(ctx context.Context, server *http.Server, listener net.Listener, grace time.Duration) error {
+func ServeOn(ctx context.Context, server *http.Server, listener net.Listener, grace time.Duration) error {
 	// 收到进程取消后，先让已有请求完成；超过宽限期才取消请求。
 	requests, cancelRequests := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelRequests()

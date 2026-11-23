@@ -2116,6 +2116,11 @@
                 "additionalProperties": true,
                 "description": "原聚合摘要；total_kwh优先保留原确认DECIMAL文本，其他摘要保持原JSON精度。"
               },
+              "sampling_interval_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "实际采样桶宽，0 表示保留原始订单采样。"
+              },
               "boundary_approximate": {
                 "type": "boolean",
                 "description": "原开始／结束与聚合桶边界不完全对齐。"
@@ -3350,6 +3355,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "auto",
                 "15min",
                 "hourly"
               ],

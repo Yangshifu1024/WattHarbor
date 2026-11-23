@@ -38,7 +38,25 @@
 
 `.env.example` 还含未被当前实现或根 Compose 消费的 `TAG`、`ADMIN_BOOTSTRAP_PHONE`、`WECHAT_REFUND_NOTIFY_URL`、`WECHAT_CUSTOMER_SERVICE_CORP_ID`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`DEFAULT_TIME_OF_USE_JSON`，修改这些值不会启用相应功能。
 
-## 生产部署
+## 单体部署
+
+[compose.monolith.yaml](../docker/compose.monolith.yaml) 构建一个含后台和 H5 的应用镜像。填写 `MYSQL_ROOT_PASSWORD`、`DB_PASSWORD`、`REDIS_PASSWORD`、`REDIS_STREAM_PASSWORD`、`JWT_SECRET`、`SERVICE_TOKEN`、`WECHAT_APPID`、`WECHAT_SECRET` 和 `PUBLIC_DOMAIN`。连接 URL 中的密码需要符合 URL 转义规则。首个后台账号由 `ADMIN_BOOTSTRAP_USER` 和 `ADMIN_BOOTSTRAP_PASSWORD` 配置。
+
+```sh
+docker compose -f docker/compose.monolith.yaml config --quiet
+docker compose -f docker/compose.monolith.yaml up -d --build
+docker compose -f docker/compose.monolith.yaml exec app wget -qO- http://127.0.0.1:8080/health/ready
+```
+
+MySQL 和 Redis 就绪后，Goose 先初始化 `chargepilot`。应用装配五个角色，绑定 DC589 和 HTTP 后启动后台任务。首次成功完成同步轮次且依赖检查通过后，`/health/ready` 返回 200。`/health/live` 供进程存活探测。收到 SIGTERM 时停止接收 HTTP 请求及设备连接，等待已接收请求，随后取消设备会话和后台任务，最后关闭资源。应用总关停时限为 15 秒，Compose 留出 20 秒。
+
+Caddy 仅代理后台、H5 和公开 API。其固定代理地址使用 `172.30.82.2`，部署前核对代理子网。内网可在 `/metrics/{admin,user,central,gateway,worker}` 分别抓取各角色的指标。拥有 `audit.read` 权限的后台用户可以在「系统管理 → 运行诊断」查看任务与积压，每次访问记录审计。
+
+已有数据时可用 `node tasks.mjs build chargepilot` 构建单体，并继续使用原三库。按配置表填写原三库 URL，由 `DATABASE_URL` 指向 gateway，`APP_UNIFIED_DATABASE` 留空。切换前停旧进程，避免两套进程同时监听设备和运行任务，并复用原事件 Redis。单库初始化命令为 `cd backend && go run ./cmd/migrate -schema unified`，读取 `DATABASE_URL` 并要求库名为 `chargepilot`。该命令只初始化单库。已有部署如果需要合库，应在备份环境单独校对业务表、两路 Outbox 和 Redis Stream 再切换。
+
+单体部署使用微信直连时，将下节的商户私钥只读挂载加在 `app` 容器，容器进程 UID 为 10001。设备入口仍为 `9100/TCP`。
+
+## 五进程生产部署
 
 [compose.prod.yaml](../docker/compose.prod.yaml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/DB_USER_PASSWORD/DB_ADMIN_PASSWORD/DB_CENTRAL_PASSWORD/DB_GATEWAY_PASSWORD/DB_WORKER_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
 

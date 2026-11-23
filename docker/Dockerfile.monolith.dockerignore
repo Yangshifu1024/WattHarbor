@@ -1,0 +1,10 @@
+.git
+**/node_modules
+**/dist
+**/.taro
+**/.swc
+**/.env
+**/.env.*
+backend/bin
+backend/internal/application/monolith/web/admin
+backend/internal/application/monolith/web/h5

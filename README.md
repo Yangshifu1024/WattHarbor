@@ -72,6 +72,10 @@ node scripts/dev/simulator.mjs --number 2
 
 ## 服务与代码
 
+`chargepilot` 单体命令装配下表中的五个角色，同一进程运行 HTTP、DC589 TCP 和后台任务。新部署可使用一个 MySQL schema；使用现有三库时可在启用单体的同时保留三个 schema。可执行入口位于 `backend/cmd/`，服务装配和生命周期位于 `backend/internal/application/`。
+
+五进程编排的端口与数据库如下。
+
 | 进程 | 职责 | 数据库 | HTTP |
 | --- | --- | --- | --- |
 | `user` | 用户登录、扫码、订单、支付、钱包与卡券 | `central_db` | `8080` |
@@ -82,9 +86,9 @@ node scripts/dev/simulator.mjs --number 2
 
 central 的 `8082` 在开发和生产编排中都不映射到宿主机，只能从容器网络访问。生产 HTTP 经 Caddy 分流至 user/admin，gateway/worker HTTP 仅内网可达；设备另走 `9100/TCP`。五个服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。
 
-业务按 `backend/internal/` 下十二个 use case 组织；`backend/cmd/` 负责装配与生命周期，`backend/internal/http/` 负责 HTTP 适配，`backend/internal/domain/` 保存纯规则。服务间 DTO 在 `contracts/`，具名客户端在 `integration/`；请求以 `Request` 结尾，响应以 `Reply` 结尾。完整职责和维护规则见 [AGENTS.md](AGENTS.md)；规则层按类目各有唯一落点，单一入口是 [规则层入口](docs/rules/README.md)。
+业务按 `backend/internal/` 下十二个 use case 组织；`backend/internal/http/` 负责 HTTP 适配，`backend/internal/domain/` 保存纯规则。服务间 DTO 在 `contracts/`，具名客户端在 `integration/`；请求以 `Request` 结尾，响应以 `Reply` 结尾。完整职责和维护规则见 [AGENTS.md](AGENTS.md)；规则层按类目各有唯一落点，单一入口是 [规则层入口](docs/rules/README.md)。
 
-下面展示生产环境的主要调用与存储关系。三库是同一 MySQL 实例中的独立 schema；内部 HTTP 调用携服务令牌。五个进程复用同一套用例包，user/admin 在本进程执行所属用例并访问 `central_db`。
+下面展示五进程部署的主要调用与存储关系。三库是同一 MySQL 实例中的独立 schema；内部 HTTP 调用携服务令牌。五个进程复用同一套用例包，user/admin 在本进程执行所属用例并访问 `central_db`。
 
 ```mermaid
 flowchart TB
@@ -99,7 +103,7 @@ flowchart TB
         Central["central · 8082"]
         Gateway
         Worker["worker · 8085"]
-        User -->|"扫码 / 遥测 / 停止"| Gateway
+        User -->|"扫码 / 订单采样 / 停止"| Gateway
         Admin -->|"设备读写"| Gateway
         Gateway -->|"启动 / 停止授权"| Central
         Central -->|"观测查询 / 自动停止"| Gateway
@@ -390,12 +394,12 @@ flowchart TD
     Mark -->|"提交成功"| Done["发布完成"]
 ```
 
-实现入口：[worker 装配](backend/cmd/worker/app.go)、[轮询运行时](backend/internal/worker/runtime/runtime.go)、[Outbox 发布器](backend/internal/worker/outbox/publisher.go)。每秒同步刷卡、待启动、启动及结束结果并发布 Outbox；每 10 秒依次触发自动停止、计费及退款。Redis 已写入但发布标记未提交时可能重复发布，事件处理须按稳定 ID 去重。当前调度器处理器表为空，Webhook、通用 DLQ 和监管投递未装配；任务周期、Stream 用途与恢复边界见[异步任务](docs/business-contracts.md#异步任务)。
+实现入口：[worker 装配](backend/internal/application/worker/app.go)、[轮询运行时](backend/internal/worker/runtime/runtime.go)、[Outbox 发布器](backend/internal/worker/outbox/publisher.go)。单体在付款确认或关键设备事件提交后立即唤醒同步，并保留每秒补扫。五进程模式每秒同步刷卡、待启动、启动及结束结果并发布 Outbox。两种模式每 10 秒依次触发自动停止、计费及退款。Redis 已写入但发布标记未提交时可能重复发布，事件处理须按稳定 ID 去重。当前调度器处理器表为空，Webhook、通用 DLQ 和监管投递未装配；任务周期、Stream 用途与恢复边界见[异步任务](docs/business-contracts.md#异步任务)。
 
 ## 接口与业务约定
 
 - 后台接口文档：`GET /api/docs/admin.openapi.json`，源文件为 [admin.openapi.json](backend/internal/http/auth/admin.openapi.json)。该文档端点未由生产 Caddy 对外代理。
-- 用户接口文档：[user.openapi.json](backend/internal/http/user/user.openapi.json)，目前是静态契约文件。两份 OpenAPI 随接口变更维护，测试核对文档中的路由是否注册；实际路由见 [user](backend/cmd/user/routes.go)、[admin](backend/cmd/admin/routes.go)、[central](backend/cmd/central/routes.go)。
+- 用户接口文档：[user.openapi.json](backend/internal/http/user/user.openapi.json)，目前是静态契约文件。两份 OpenAPI 随接口变更维护，测试核对文档中的路由是否注册；实际路由见 [user](backend/internal/application/user/routes.go)、[admin](backend/internal/application/admin/routes.go)、[central](backend/internal/application/central/routes.go)。
 - 普通 JSON 响应的字段构成与 `code=0` 约定见[业务与接口契约](docs/business-contracts.md#接口与权限)；微信通知、文件、指标和 OpenAPI 使用各自格式。用户与后台会话分开，内部接口使用 `X-Service-Token`。
 - 金额使用整数分；用户 Snowflake ID 为十进制字符串，前端须保留精度。数据库时间按 UTC，计费日界及 DC589 本地时间按北京时间。
 - 下单冻结方案与价格；启动受理、设备启动、充电结束、结算及退款到账分别确认。未知设备结果保留占用，渠道结果未知复用原退款号查询。
@@ -431,7 +435,16 @@ node scripts/db/test-integration.mjs
 
 ## 生产部署与维护
 
-生产入口为 [compose.prod.yaml](docker/compose.prod.yaml)。复制 [.env.example](.env.example) 为 `.env`，填写实际凭据和域名，先构建后台静态文件，再检查并启动：
+新环境可用单体镜像部署。镜像同时内嵌管理后台 `/admin/` 和用户 H5 `/h5/`，启动前用 Goose 初始化 `chargepilot` 单库。
+
+```sh
+docker compose -f docker/compose.monolith.yaml config --quiet
+docker compose -f docker/compose.monolith.yaml up -d --build
+```
+
+配置、启动次序、健康检查及已有三库部署的切换方式见 [单体部署](docs/operations.md#单体部署)。
+
+五进程入口为 [compose.prod.yaml](docker/compose.prod.yaml)。复制 [.env.example](.env.example) 为 `.env`，填写实际凭据和域名，先构建后台静态文件，再检查并启动：
 
 ```sh
 npm --prefix frontend/admin-web ci

@@ -1,0 +1,120 @@
+x-app-build: &app-build
+  image: chargepilot-go:monolith
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.monolith
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      MYSQL_DATABASE: chargepilot
+      MYSQL_USER: chargepilot
+      MYSQL_PASSWORD: ${DB_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u chargepilot -e 'SELECT 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    volumes:
+      - monolith-mysql:/var/lib/mysql
+    restart: unless-stopped
+
+  cache:
+    image: redis:8-alpine
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?required}
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?required}"]
+    healthcheck: &redis-health
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  stream:
+    image: redis:8-alpine
+    environment:
+      REDISCLI_AUTH: ${REDIS_STREAM_PASSWORD:?required}
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_STREAM_PASSWORD:?required}"]
+    healthcheck: *redis-health
+    volumes:
+      - monolith-stream:/data
+    restart: unless-stopped
+
+  migrate:
+    <<: *app-build
+    command: ["/usr/local/bin/migrate", "-schema", "unified"]
+    environment:
+      DATABASE_URL: &dsn mysql://chargepilot:${DB_PASSWORD:?required}@mysql:3306/chargepilot
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  app:
+    <<: *app-build
+    environment:
+      APP_UNIFIED_DATABASE: "true"
+      DATABASE_URL: *dsn
+      DATABASE_URL_CENTRAL: *dsn
+      DATABASE_URL_GATEWAY: *dsn
+      DATABASE_URL_WORKER: *dsn
+      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD:?required}@cache:6379/0
+      REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD:?required}@stream:6379/0
+      JWT_SECRET: ${JWT_SECRET:?required}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
+      WECHAT_APPID: ${WECHAT_APPID:?required}
+      WECHAT_SECRET: ${WECHAT_SECRET:?required}
+      PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
+      LOGIN_MODE: ${LOGIN_MODE:-wechat}
+      WECHAT_MCH_ID: ${WECHAT_MCH_ID:-}
+      WECHAT_CERT_SERIAL: ${WECHAT_CERT_SERIAL:-}
+      WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:-}
+      WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
+      WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
+      ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      EXPORT_DIR: /var/lib/chargepilot/exports
+      ADMIN_TRUSTED_PROXIES: 172.30.82.2
+    networks: [default, edge]
+    expose: ["8080"]
+    ports: ["9100:9100"]
+    volumes:
+      - monolith-exports:/var/lib/chargepilot/exports
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      cache: { condition: service_healthy }
+      stream: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/live"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    stop_grace_period: 20s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?required}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile.monolith:/etc/caddy/Caddyfile:ro
+      - monolith-caddy:/data
+    networks:
+      edge:
+        ipv4_address: 172.30.82.2
+    depends_on: [app]
+    restart: unless-stopped
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.82.0/24
+
+volumes:
+  monolith-mysql:
+  monolith-stream:
+  monolith-exports:
+  monolith-caddy:

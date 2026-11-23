@@ -50,6 +50,7 @@ type PaymentCallbackResult struct {
 
 // CallbackService 核对渠道交易，事务内更新支付、创建订单或充值钱包。
 type CallbackService struct {
+	NotifyChargePaid   func()             // 成功提交可启动订单后通知同进程派发器。
 	DB                 *gorm.DB           // central 支付连接，由进程管理
 	ExpectedProvider   string             // 本进程接受的渠道
 	ExpectedMerchantID string             // 本进程收款商户
@@ -227,6 +228,9 @@ func (s CallbackService) Apply(ctx context.Context, payment VerifiedPayment) (Pa
 		callbackResult = PaymentCallbackResult{ChargeOrderID: chargeOrder.ID, ChargeOrderNo: chargeNo}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err == nil && callbackResult.ChargeOrderID != 0 && s.NotifyChargePaid != nil {
+		s.NotifyChargePaid()
+	}
 	return callbackResult, err
 }
 

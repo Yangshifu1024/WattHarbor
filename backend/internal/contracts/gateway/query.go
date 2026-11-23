@@ -97,3 +97,23 @@ type OrderProcessReply struct {
 	Items       []ProcessPoint `json:"items"`         // 按原顺序排列的过程点，无点为空数组
 	NextAfterID *uint64        `json:"next_after_id"` // 下一页游标，末页为空
 }
+
+// OrderCurveRequest 限制曲线为已授权订单的完整身份及时间窗。
+type OrderCurveRequest struct {
+	OrderNo     string
+	OrderID     uint64
+	DeviceID    string
+	PortNo      uint8
+	From        time.Time
+	To          time.Time
+	Granularity string // auto、15min、hourly
+	Latest      bool
+	Summary     bool
+}
+
+// OrderCurveReply 保留实际桶宽。原始样本的采样间隔为 0。
+type OrderCurveReply struct {
+	Series                  []CurvePoint               `json:"series"`
+	Summary                 map[string]json.RawMessage `json:"summary"`
+	SamplingIntervalSeconds int64                      `json:"sampling_interval_seconds"`
+}

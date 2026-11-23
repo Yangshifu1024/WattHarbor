@@ -10,6 +10,8 @@ bin/
 /central
 /user
 frontend/admin-web/dist/
+backend/internal/application/monolith/web/admin/
+backend/internal/application/monolith/web/h5/
 frontend/miniprogram/dist/
 frontend/miniprogram/.taro/
 frontend/miniprogram/.swc/

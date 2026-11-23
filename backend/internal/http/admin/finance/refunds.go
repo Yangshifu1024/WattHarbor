@@ -15,11 +15,30 @@ import (
 
 // registerRefunds 注册人工退款申请、列表、审核和重试接口，并校验各自权限。
 func (a API) registerRefunds(r *gin.Engine) {
+	r.GET("/api/v1/admin/orders/:id/refunds", a.Auth.Require("finance.refund.read"), a.orderRefunds)
 	r.POST("/api/v1/admin/orders/:id/refunds", a.Auth.Require("order.refund.create"), a.manualRefund)
 	r.GET("/api/v1/admin/billing/refunds", a.Auth.Require("finance.refund.read"), a.refunds)
 	r.POST("/api/v1/admin/billing/refunds/:refund_no/approve", a.Auth.Require("order.refund.review"), a.reviewRefund)
 	r.POST("/api/v1/admin/billing/refunds/:refund_no/reject", a.Auth.Require("order.refund.review"), a.reviewRefund)
 	r.POST("/api/v1/admin/billing/refunds/:refund_no/retry", a.Auth.Require("finance.refund.retry"), a.retryRefund)
+}
+
+// orderRefunds 返回指定订单现有退款，不创建退款或触发审核。
+func (a API) orderRefunds(c *gin.Context) {
+	id, ok := admin.AdminPathID(c)
+	if !ok {
+		return
+	}
+	items, err := a.Refunds.ListForOrder(c.Request.Context(), c.MustGet("admin_profile").(operations.Profile), id)
+	if errors.Is(err, operations.ErrForbidden) {
+		httpapi.Write(c, http.StatusForbidden, 1003, "当前权限不足", nil)
+		return
+	}
+	if err != nil {
+		admin.AdminResourceFailure(c, err)
+		return
+	}
+	httpapi.OK(c, gin.H{"order_id": id, "items": items, "total": len(items)})
 }
 
 // asConflict 将 err 中的退款或发票冲突转为后台 409 对应的错误类型，其余错误原样返回。

@@ -17,6 +17,7 @@ import AnnouncementsPage from './pages/Announcements';
 import CaseworkPage from './pages/Casework';
 import ExportsPage from './pages/Exports';
 import AuditLogsPage from './pages/AuditLogs';
+import DiagnosticsPage from './pages/Diagnostics';
 import TemplatesPage from './pages/Templates';
 import OnlineCards from './pages/OnlineCards';
 
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="alerts" element={<AlertsPage />} />
         <Route path="exports" element={<ExportsPage />} />
         <Route path="audit-logs" element={<AuditLogsPage />} />
+        <Route path="diagnostics" element={<DiagnosticsPage />} />
         <Route path="coupons" element={<CouponsPage />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="announcements" element={<AnnouncementsPage />} />

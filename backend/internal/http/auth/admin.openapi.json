@@ -2890,7 +2890,35 @@
         ]
       }
     },
+    "/api/v1/admin/diagnostics": {
+      "get": {
+        "summary": "查询任务运行与队列积压",
+        "security": [{"bearerAuth": []}],
+        "x-permission": "audit.read",
+        "responses": {
+          "200": {"description": "返回 scanners、queues、unavailable"},
+          "401": {"description": "未登录或会话失效"},
+          "403": {"description": "权限不足"},
+          "503": {"description": "依赖不可用"}
+        }
+      }
+    },
     "/api/v1/admin/orders/{id}/refunds": {
+      "get": {
+        "summary": "查询指定订单的退款记录",
+        "security": [{"bearerAuth": []}],
+        "x-permission": "finance.refund.read",
+        "description": "同时要求 order.read；无退款时 items 为空数组。",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1}}],
+        "responses": {
+          "200": {"description": "返回 order_id、items、total"},
+          "400": {"description": "订单编号无效"},
+          "401": {"description": "未登录或会话失效"},
+          "403": {"description": "权限不足"},
+          "404": {"description": "订单不存在"},
+          "503": {"description": "依赖不可用"}
+        }
+      },
       "post": {
         "summary": "POST /api/v1/admin/orders/{id}/refunds",
         "security": [

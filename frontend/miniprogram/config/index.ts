@@ -24,9 +24,9 @@ export default defineConfig({
   plugins: ['@tarojs/plugin-platform-h5', '@tarojs/plugin-platform-weapp'],
   mini: { postcss: { pxtransform: { enable: true }, cssModules: { enable: false } } },
   h5: {
-    publicPath: '/',
+    publicPath: process.env.H5_BASE_PATH || '/',
     staticDirectory: 'static',
-    router: { mode: 'hash' },
+    router: { mode: 'hash', basename: process.env.H5_BASE_PATH || '/' },
     devServer: {
       host: '0.0.0.0',
       port: 5174,
