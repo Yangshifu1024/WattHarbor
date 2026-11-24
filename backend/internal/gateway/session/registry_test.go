@@ -135,7 +135,7 @@ func (s *callbackSink) RecordSession(context.Context, protocol.SessionRecord) er
 	return nil
 }
 
-// TestSerializedSinkGuardsAcknowledgementsAndPreservesCapabilities 取消的两类 ACK 不写库，普通遥测与会话能力不丢失。
+// TestSerializedSinkGuardsAcknowledgementsAndPreservesCapabilities 取消的两类 ACK 不写库，普通设备事件与会话能力不丢失。
 func TestSerializedSinkGuardsAcknowledgementsAndPreservesCapabilities(t *testing.T) {
 	registry := &Registry{}
 	base := &callbackSink{}
@@ -164,7 +164,7 @@ func TestSerializedSinkGuardsAcknowledgementsAndPreservesCapabilities(t *testing
 		t.Fatal("cancelled acknowledgement persisted")
 	}
 	if err := sink.Record(t.Context(), protocol.Event{Type: protocol.Heartbeat, DeviceID: "board"}); err != nil || base.records.Load() != 1 {
-		t.Fatal("telemetry capability lost", err)
+		t.Fatal("device event capability lost", err)
 	}
 	if charging, err := sink.HasChargingPorts(t.Context(), "board"); err != nil || !charging {
 		t.Fatal("reconnect capability lost", err)

@@ -16,7 +16,7 @@ func metricsRouter() *gin.Engine {
 	m := NewMetrics("testsvc")
 	router := NewRouter(m)
 	m.Register(router)
-	router.GET("/api/v1/devices/:device_id/telemetry", func(c *gin.Context) { OK(c, gin.H{"ok": true}) })
+	router.GET("/api/v1/devices/:device_id/summary", func(c *gin.Context) { OK(c, gin.H{"ok": true}) })
 	return router
 }
 
@@ -35,7 +35,7 @@ func TestMetricsLabelRoutesByTemplateNotRawPath(t *testing.T) {
 	router := metricsRouter()
 	for _, id := range []string{"device-aaa", "device-bbb", "device-ccc"} {
 		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, httptest.NewRequest("GET", "/api/v1/devices/"+id+"/telemetry", nil))
+		router.ServeHTTP(recorder, httptest.NewRequest("GET", "/api/v1/devices/"+id+"/summary", nil))
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("request returned %d", recorder.Code)
 		}
@@ -44,11 +44,11 @@ func TestMetricsLabelRoutesByTemplateNotRawPath(t *testing.T) {
 	if strings.Contains(body, "device-aaa") || strings.Contains(body, "device-bbb") {
 		t.Fatalf("metric labels leaked a device id:\n%s", body)
 	}
-	if !strings.Contains(body, `route="/api/v1/devices/:device_id/telemetry"`) {
+	if !strings.Contains(body, `route="/api/v1/devices/:device_id/summary"`) {
 		t.Fatalf("expected the route template label, got:\n%s", body)
 	}
 	// 三台不同的设备不能产生三条序列。
-	if got := strings.Count(body, `route="/api/v1/devices/:device_id/telemetry",status="200"`); got != 1 {
+	if got := strings.Count(body, `route="/api/v1/devices/:device_id/summary",status="200"`); got != 1 {
 		t.Fatalf("expected 1 counter series, found %d", got)
 	}
 }
@@ -72,7 +72,7 @@ func TestMetricsCollapseUnmatchedRequests(t *testing.T) {
 func TestMetricsExposeValidExposition(t *testing.T) {
 	router := metricsRouter()
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest("GET", "/api/v1/devices/dev-1/telemetry", nil))
+	router.ServeHTTP(recorder, httptest.NewRequest("GET", "/api/v1/devices/dev-1/summary", nil))
 	body := scrape(t, router)
 
 	for _, want := range []string{

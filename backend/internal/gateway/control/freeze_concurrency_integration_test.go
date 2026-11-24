@@ -45,7 +45,7 @@ func TestConcurrentEndFreezeKeepsFirstEvidence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: db, ServiceToken: "freeze-concurrency-test"}).Register(router)
+	(DeviceEventAPI{DB: db, ServiceToken: "freeze-concurrency-test"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "freeze-concurrency-test")
@@ -168,7 +168,7 @@ func TestConcurrentEndFreezeKeepsFirstEvidence(t *testing.T) {
 func TestEndFreezeKeepsReadAndWriteFailureMessages(t *testing.T) {
 	db := gatewayContractDB(t)
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: db, ServiceToken: "freeze-failure-test"}).Register(router)
+	(DeviceEventAPI{DB: db, ServiceToken: "freeze-failure-test"}).Register(router)
 	for _, tc := range []struct {
 		name     string // 失败阶段。
 		payload  string // 待冻结载荷。

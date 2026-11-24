@@ -55,9 +55,7 @@ func TestDeviceMetaStatusAllValues(t *testing.T) {
 
 // TestGatewayDeviceStatusAllValues 锁定 devices.GatewayDeviceStatus 的全部 3 个取值。
 //
-// **这个枚举没有任何对外结构体承载**：gateway/repo 里它只出现在
-// backfill_repo.go 的匿名扫描 struct（无 JSON tag，且不参与任何响应），
-// 因此序列化后暴露的是类型自身的字面量。
+// 设备开通使用此枚举写入网关状态，当前无对外响应结构体承载。
 // 断言的目的是锁死「它不会因为未来被塞进某个响应结构体而改变字面量」，
 // 同时与上一条 TestDeviceMetaStatusAllValues 的 fault 形成对照。
 func TestGatewayDeviceStatusAllValues(t *testing.T) {

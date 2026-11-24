@@ -14,22 +14,22 @@ import (
 
 // userQueryFixture 提供归属与取消闸门，不冒充真实网关或存储验收。
 type userQueryFixture struct {
-	row            order.ChargeOrderRecord         // 本用户信息
-	ownerError     error                           // 所属读取故障
-	frozen         FrozenState                     // 冻结查询结果
-	fees           map[uint64]order.FeeFacts       // 确认费用
-	funds          DetailFunds                     // 资金查询结果
-	stateError     error                           // 冻结故障
-	feeError       error                           // 回执故障
-	fundsError     error                           // 支付、退款故障
-	gatewayError   error                           // 网络故障
-	telemetry      contract.TelemetryReply         // 观测
-	history        contract.HistoricalCurveReply   // 聚合
-	reads          int                             // 授权后组合调用计数
-	telemetryCalls int                             // 遥测调用计数
-	historyCalls   int                             // 历史调用计数
-	lastTelemetry  contract.TelemetryRequest       // 实际规范遥测窗口
-	lastHistory    contract.HistoricalCurveRequest // 实际规范历史窗口
+	row           order.ChargeOrderRecord    // 本用户信息
+	ownerError    error                      // 所属读取故障
+	frozen        FrozenState                // 冻结查询结果
+	fees          map[uint64]order.FeeFacts  // 确认费用
+	funds         DetailFunds                // 资金查询结果
+	stateError    error                      // 冻结故障
+	feeError      error                      // 回执故障
+	fundsError    error                      // 支付、退款故障
+	gatewayError  error                      // 网络故障
+	samples       contract.OrderCurveReply   // 观测
+	history       contract.OrderCurveReply   // 聚合
+	reads         int                        // 授权后组合调用计数
+	samplingCalls int                        // 采样调用计数
+	historyCalls  int                        // 历史调用计数
+	lastSample    contract.OrderCurveRequest // 实际采样窗口
+	lastHistory   contract.OrderCurveRequest // 实际规范历史窗口
 }
 
 // Resolve 检查 uid/no 与 f 用户及单号，返回信息或取消、测试替身校验错误。
@@ -68,18 +68,18 @@ func (f *userQueryFixture) OrderCurve(ctx context.Context, q contract.OrderCurve
 	}
 	if q.Summary {
 		f.historyCalls++
-		f.lastHistory = contract.HistoricalCurveRequest{DeviceID: q.DeviceID, PortNo: q.PortNo, OrderNo: q.OrderNo, StartedAt: q.From, EndedAt: q.To, Granularity: q.Granularity}
+		f.lastHistory = q
 		return contract.OrderCurveReply{Series: f.history.Series, Summary: f.history.Summary}, f.gatewayError
 	}
-	f.telemetryCalls++
-	f.lastTelemetry = contract.TelemetryRequest{DeviceID: q.DeviceID, PortNo: q.PortNo, From: q.From, To: q.To}
-	return contract.OrderCurveReply{Series: f.telemetry.Series}, f.gatewayError
+	f.samplingCalls++
+	f.lastSample = q
+	return contract.OrderCurveReply{Series: f.samples.Series}, f.gatewayError
 }
 
 // userQueryService 创建固定时刻与标识 测试替身，返回可注入故障源和业务服务，不执行外部 I/O。
 func userQueryService() (*userQueryFixture, UserService, time.Time) {
 	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-	f := &userQueryFixture{row: order.ChargeOrderRecord{ID: 19, UserID: 7, OrderNo: "original", DeviceID: "board", PortNo: 2, Status: "charging", StartedAt: sql.NullTime{Time: now.Add(-time.Hour), Valid: true}}, fees: map[uint64]order.FeeFacts{19: {OrderID: 19}}, telemetry: contract.TelemetryReply{Series: []contract.CurvePoint{}}, history: contract.HistoricalCurveReply{Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{}}}
+	f := &userQueryFixture{row: order.ChargeOrderRecord{ID: 19, UserID: 7, OrderNo: "original", DeviceID: "board", PortNo: 2, Status: "charging", StartedAt: sql.NullTime{Time: now.Add(-time.Hour), Valid: true}}, fees: map[uint64]order.FeeFacts{19: {OrderID: 19}}, samples: contract.OrderCurveReply{Series: []contract.CurvePoint{}}, history: contract.OrderCurveReply{Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{}}}
 	return f, UserService{Orders: f, Fees: f, State: f, Gateway: f, Now: func() time.Time { return now }}, now
 }
 
@@ -109,7 +109,7 @@ func TestUserQueryOwnershipPrecedesAllSupplementalReads(t *testing.T) {
 			t.Fatalf("cancel=%v", err)
 		}
 	}
-	if f.reads != 0 || f.telemetryCalls != 0 || f.historyCalls != 0 || live.evidenceCalls != 0 {
+	if f.reads != 0 || f.samplingCalls != 0 || f.historyCalls != 0 || live.evidenceCalls != 0 {
 		t.Fatal("denied/cancelled request started supplemental reads")
 	}
 }
@@ -146,14 +146,14 @@ func TestUserSnapshotSharesAdminEstimateWithoutConfirmingFees(t *testing.T) {
 	}
 }
 
-// TestUserSnapshotEstimateFailurePreservesTelemetry 检查估费失败仍显示遥测，计量不足时不输出费用，过期读数标记为陈旧。
-func TestUserSnapshotEstimateFailurePreservesTelemetry(t *testing.T) {
+// TestUserSnapshotEstimateFailurePreservesSamples 检查估费失败仍显示采样，计量不足时不输出费用，过期读数标记为陈旧。
+func TestUserSnapshotEstimateFailurePreservesSamples(t *testing.T) {
 	for _, fault := range []string{"first_batch", "snapshot", "incomplete", "stale"} {
 		t.Run(fault, func(t *testing.T) {
 			f, s, now := userQueryService()
 			f.fees = map[uint64]order.FeeFacts{}
 			power := float64(6000)
-			f.telemetry.Series = []contract.CurvePoint{{TS: now.Format(time.RFC3339), PowerW: &power}}
+			f.samples.Series = []contract.CurvePoint{{TS: now.Format(time.RFC3339), PowerW: &power}}
 			live := &liveFixture{raw: durationSnapshot(t), fault: fault}
 			if fault == "incomplete" {
 				live.mutate = func(p []contract.EvidencePageReply) { p[0].Complete = false; p[0].NextAfterID = 1 }
@@ -161,7 +161,7 @@ func TestUserSnapshotEstimateFailurePreservesTelemetry(t *testing.T) {
 			s.Live = LiveService{Gateway: live, Orders: live, Cards: live, Now: s.Now}
 			out, err := s.Snapshot(t.Context(), 7, "original")
 			if err != nil || out.TotalCents != nil || out.CurrentPowerW == nil || *out.CurrentPowerW != power {
-				t.Fatalf("estimate failure hid telemetry: %+v %v", out, err)
+				t.Fatalf("estimate failure hid order samples: %+v %v", out, err)
 			}
 			if fault == "stale" {
 				if out.Live == nil || !out.Live.Stale || out.Live.Fee == nil {
@@ -174,14 +174,14 @@ func TestUserSnapshotEstimateFailurePreservesTelemetry(t *testing.T) {
 	}
 }
 
-// TestUserSnapshotEstimateCancellationStopsTelemetry 验证估价阶段请求取消不继续遥测读取。
-func TestUserSnapshotEstimateCancellationStopsTelemetry(t *testing.T) {
+// TestUserSnapshotEstimateCancellationStopsSampleRead 验证估价阶段请求取消不继续读取采样。
+func TestUserSnapshotEstimateCancellationStopsSampleRead(t *testing.T) {
 	f, s, _ := userQueryService()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	live := &liveFixture{raw: durationSnapshot(t), cancel: cancel}
 	s.Live = LiveService{Gateway: live, Orders: live, Cards: live}
-	if _, err := s.Snapshot(ctx, 7, "original"); !errors.Is(err, context.Canceled) || f.telemetryCalls != 0 {
+	if _, err := s.Snapshot(ctx, 7, "original"); !errors.Is(err, context.Canceled) || f.samplingCalls != 0 {
 		t.Fatalf("cancelled estimate continued reads: %v", err)
 	}
 }
@@ -191,7 +191,7 @@ func TestUserSnapshotKeepsConfirmedZeroAndOptionalObservations(t *testing.T) {
 	f, s, now := userQueryService()
 	zero := float64(0)
 	meter := .25
-	f.telemetry.Series = []contract.CurvePoint{{TS: now.Add(-3 * time.Minute).Format(time.RFC3339), PowerW: &meter}, {TS: now.Add(-time.Minute).Format(time.RFC3339), PowerW: &zero, MeterKWh: &meter}, {TS: now.Format(time.RFC3339), VoltageV: &zero}, {TS: now.Add(time.Minute).Format(time.RFC3339), PowerW: &meter}}
+	f.samples.Series = []contract.CurvePoint{{TS: now.Add(-3 * time.Minute).Format(time.RFC3339), PowerW: &meter}, {TS: now.Add(-time.Minute).Format(time.RFC3339), PowerW: &zero, MeterKWh: &meter}, {TS: now.Format(time.RFC3339), VoltageV: &zero}, {TS: now.Add(time.Minute).Format(time.RFC3339), PowerW: &meter}}
 	out, err := s.Snapshot(context.Background(), 7, "original")
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +199,7 @@ func TestUserSnapshotKeepsConfirmedZeroAndOptionalObservations(t *testing.T) {
 	if out.TotalCents == nil || *out.TotalCents != 0 || out.ChargedKWh != meter || out.CurrentPowerW == nil || *out.CurrentPowerW != 0 || out.TemperatureC != nil || out.TelemetryAvailable == nil || !*out.TelemetryAvailable || out.ElapsedSeconds == nil || *out.ElapsedSeconds != 3600 || out.TelemetryAt == nil || !out.TelemetryAt.Equal(now) {
 		t.Fatalf("snapshot=%+v", out)
 	}
-	if !f.lastTelemetry.From.Equal(now.Add(-2*time.Minute)) || !f.lastTelemetry.To.Equal(now) || f.lastTelemetry.DeviceID != "board" || f.lastTelemetry.PortNo != 2 || f.telemetryCalls != 1 {
+	if !f.lastSample.From.Equal(now.Add(-2*time.Minute)) || !f.lastSample.To.Equal(now) || f.lastSample.DeviceID != "board" || f.lastSample.PortNo != 2 || !f.lastSample.Latest || f.lastSample.OrderID != 19 || f.samplingCalls != 1 {
 		t.Fatal("canonical snapshot window changed")
 	}
 	f.gatewayError = errors.New("offline")
@@ -209,9 +209,9 @@ func TestUserSnapshotKeepsConfirmedZeroAndOptionalObservations(t *testing.T) {
 	}
 	f.row.Status = "completed"
 	f.row.ChargedKWh = sql.NullString{String: "0.250000", Valid: true}
-	before := f.telemetryCalls
+	before := f.samplingCalls
 	out, err = s.Snapshot(context.Background(), 7, "original")
-	if err != nil || out.ChargedKWh != "0.250000" || out.PollContinue == nil || *out.PollContinue || f.telemetryCalls != before {
+	if err != nil || out.ChargedKWh != "0.250000" || out.PollContinue == nil || *out.PollContinue || f.samplingCalls != before {
 		t.Fatal("completed snapshot queried gateway or changed confirmed decimal")
 	}
 }
@@ -274,7 +274,7 @@ func TestUserCurvesBoundWindowsAndKeepOriginalSummary(t *testing.T) {
 			t.Fatal("disabled/invalid window accepted")
 		}
 	}
-	if f.telemetryCalls != 0 {
+	if f.samplingCalls != 0 {
 		t.Fatal("invalid window reached gateway")
 	}
 	out, err := s.Curve(context.Background(), 7, "original", "")
@@ -305,12 +305,17 @@ func TestUserCurvesBoundWindowsAndKeepOriginalSummary(t *testing.T) {
 	if _, err := s.HistoricalCurve(context.Background(), 7, "original", "hourly"); err != nil {
 		t.Fatal("coarse original window rejected", err)
 	}
-	f.row.StartedAt.Time = now.AddDate(-3, 0, -1)
+	f.row.StartedAt.Time = now.Add(-contract.MaxOrderCurveWindow - time.Second)
 	before = f.historyCalls
-	_, err = s.HistoricalCurve(context.Background(), 7, "original", "hourly")
-	if !errors.As(err, &input) || input.Kind != "expired" || f.historyCalls != before {
-		t.Fatal("expired window reached gateway")
+	_, err = s.HistoricalCurve(context.Background(), 7, "original", "auto")
+	if !errors.As(err, &input) || input.Kind != "input" || f.historyCalls != before {
+		t.Fatal("oversized order window reached gateway")
 	}
+	f.row.EndedAt.Time = f.row.StartedAt.Time.Add(time.Minute)
+	if _, err := s.HistoricalCurve(context.Background(), 7, "original", "auto"); err != nil || !f.lastHistory.From.Equal(f.row.StartedAt.Time) {
+		t.Fatal("old order with a bounded window could not be read", err)
+	}
+	f.row.EndedAt.Time = now
 	f.row.StartedAt.Valid = false
 	_, err = s.HistoricalCurve(context.Background(), 7, "original", "15min")
 	if !errors.As(err, &input) || input.Kind != "conflict" {

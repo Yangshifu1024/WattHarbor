@@ -70,7 +70,7 @@ CREATE TABLE `charge_end_delivery` (
   KEY `idx_order` (`charge_order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='设备结束事件投递与重试';
 
--- charge_process：按已确认充电订单归属的 A4 心跳过程记录，独立于遥测保留期。
+-- charge_process：按已确认充电订单归属的 A4 心跳过程记录。
 CREATE TABLE `charge_process` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '充电过程采样主键 ID',
   `event_key` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '来源设备心跳事件幂等键',
@@ -179,7 +179,6 @@ CREATE TABLE `device_port` (
   `port_code` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '端口二维码字符串',
   `status` enum('idle','charging','full','fault','disabled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'idle' COMMENT '当前业务状态；取值 idle / charging / full / fault / disabled',
   `current_order_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '正在充电订单 ID(冗余自 central_db.charge_order)',
-  `last_telemetry_at` datetime(3) DEFAULT NULL COMMENT '最近遥测时间',
   `reported_status` tinyint unsigned DEFAULT NULL COMMENT '最近心跳上报的端口状态码，与业务预约状态独立',
   `reported_status_at` datetime(3) DEFAULT NULL COMMENT '最近端口状态心跳的 UTC 接收时间，只按事件时间前进',
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
@@ -249,89 +248,6 @@ CREATE TABLE `event_outbox` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='与业务事务一起写入的待投递事件';
 
 
--- telemetry：设备遥测原始记录，按 ts 分区；归档与保留期由运维明确执行。
-CREATE TABLE `telemetry` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
-  `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',
-  `port_no` tinyint unsigned DEFAULT NULL COMMENT '遥测所属端口号，为 NULL 时表示设备级指标',
-  `port_key` tinyint unsigned GENERATED ALWAYS AS (COALESCE(`port_no`,0)) STORED COMMENT '样本唯一键端口，设备级 NULL 映射为零',
-  `metric` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'voltage_v / current_a / temperature_c / battery_soc / power_w / meter_kwh',
-  `value_num` decimal(18,6) DEFAULT NULL COMMENT '遥测数值，单位随指标',
-  `value_json` json DEFAULT NULL COMMENT '非数值遥测内容 JSON',
-  `ts` datetime(3) NOT NULL COMMENT '采集时间戳',
-  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间',
-  PRIMARY KEY (`id`,`ts`),
-  UNIQUE KEY `uk_sample` (`device_id`,`port_key`,`metric`,`ts`),
-  KEY `idx_device_ts` (`device_id`,`ts`),
-  KEY `idx_device_metric_ts` (`device_id`,`metric`,`ts`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='设备遥测原始记录，按 ts 分区，无自动清理'
-/*!50100 PARTITION BY RANGE (to_days(`ts`))
-(PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
- PARTITION p_2026m10 VALUES LESS THAN (740286) ENGINE = InnoDB,
- PARTITION p_2026m11 VALUES LESS THAN (740316) ENGINE = InnoDB,
- PARTITION p_2026m12 VALUES LESS THAN (740347) ENGINE = InnoDB,
- PARTITION p_max VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */;
-
--- telemetry_aggregate_15min：遥测 15 分钟聚合
-CREATE TABLE `telemetry_aggregate_15min` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
-  `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',
-  `port_no` tinyint unsigned DEFAULT NULL COMMENT '聚合所属端口号，为 NULL 时表示设备级指标',
-  `port_key` tinyint unsigned GENERATED ALWAYS AS (COALESCE(`port_no`,0)) STORED COMMENT '聚合唯一键端口；设备级 NULL 映射为 0，实际端口从 1 开始',
-  `metric` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '指标名称',
-  `bucket_start` datetime(3) NOT NULL COMMENT '聚合桶起点',
-  `bucket_month` date NOT NULL COMMENT '分区字段',
-  `avg_value` decimal(18,6) NOT NULL COMMENT '聚合桶内有效样本的平均值，单位随指标',
-  `min_value` decimal(18,6) NOT NULL COMMENT '聚合桶内有效样本的最小值，单位随指标',
-  `max_value` decimal(18,6) NOT NULL COMMENT '聚合桶内有效样本的最大值，单位随指标',
-  `count` int unsigned NOT NULL COMMENT '聚合桶内有效样本数量',
-  PRIMARY KEY (`id`,`bucket_month`),
-  UNIQUE KEY `uk_bucket` (`device_id`,`port_key`,`metric`,`bucket_start`,`bucket_month`),
-  KEY `idx_metric_time` (`metric`,`bucket_start`),
-  KEY `idx_device_time` (`device_id`,`bucket_start`),
-  CONSTRAINT `chk_telemetry_aggregate_15min_month` CHECK (DAYOFMONTH(bucket_month) = 1)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='遥测 15 分钟聚合'
-/*!50100 PARTITION BY RANGE (to_days(`bucket_month`))
-(PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
- PARTITION p_2026m10 VALUES LESS THAN (740286) ENGINE = InnoDB,
- PARTITION p_2026m11 VALUES LESS THAN (740316) ENGINE = InnoDB,
- PARTITION p_2026m12 VALUES LESS THAN (740347) ENGINE = InnoDB,
- PARTITION p_2027q1 VALUES LESS THAN (740437) ENGINE = InnoDB,
- PARTITION p_2027q2 VALUES LESS THAN (740528) ENGINE = InnoDB,
- PARTITION p_2027q3 VALUES LESS THAN (740620) ENGINE = InnoDB,
- PARTITION p_2027q4 VALUES LESS THAN (740712) ENGINE = InnoDB,
- PARTITION p_max VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */;
-
--- telemetry_aggregate_hourly：遥测小时聚合
-CREATE TABLE `telemetry_aggregate_hourly` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
-  `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',
-  `port_no` tinyint unsigned DEFAULT NULL COMMENT '聚合所属端口号，为 NULL 时表示设备级指标',
-  `port_key` tinyint unsigned GENERATED ALWAYS AS (COALESCE(`port_no`,0)) STORED COMMENT '聚合唯一键端口；设备级 NULL 映射为 0，实际端口从 1 开始',
-  `metric` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '指标名称',
-  `bucket_start` datetime(3) NOT NULL COMMENT '聚合桶起始时间',
-  `bucket_month` date NOT NULL COMMENT '月分区归属日期，取对应月份第一天',
-  `avg_value` decimal(18,6) NOT NULL COMMENT '聚合桶内有效样本的平均值，单位随指标',
-  `min_value` decimal(18,6) NOT NULL COMMENT '聚合桶内有效样本的最小值，单位随指标',
-  `max_value` decimal(18,6) NOT NULL COMMENT '聚合桶内有效样本的最大值，单位随指标',
-  `count` int unsigned NOT NULL COMMENT '聚合桶内有效样本数量',
-  PRIMARY KEY (`id`,`bucket_month`),
-  UNIQUE KEY `uk_bucket` (`device_id`,`port_key`,`metric`,`bucket_start`,`bucket_month`),
-  KEY `idx_metric_time` (`metric`,`bucket_start`),
-  KEY `idx_device_time` (`device_id`,`bucket_start`),
-  CONSTRAINT `chk_telemetry_aggregate_hourly_month` CHECK (DAYOFMONTH(bucket_month) = 1)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='遥测小时聚合'
-/*!50100 PARTITION BY RANGE (to_days(`bucket_month`))
-(PARTITION p_init VALUES LESS THAN (740255) ENGINE = InnoDB,
- PARTITION p_2026m10 VALUES LESS THAN (740286) ENGINE = InnoDB,
- PARTITION p_2026m11 VALUES LESS THAN (740316) ENGINE = InnoDB,
- PARTITION p_2026m12 VALUES LESS THAN (740347) ENGINE = InnoDB,
- PARTITION p_2027q1 VALUES LESS THAN (740437) ENGINE = InnoDB,
- PARTITION p_2027q2 VALUES LESS THAN (740528) ENGINE = InnoDB,
- PARTITION p_2027q3 VALUES LESS THAN (740620) ENGINE = InnoDB,
- PARTITION p_2027q4 VALUES LESS THAN (740712) ENGINE = InnoDB,
- PARTITION p_max VALUES LESS THAN MAXVALUE ENGINE = InnoDB) */;
-
 -- vendor：硬件厂适配器注册表
 CREATE TABLE `vendor` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '记录主键 ID',
@@ -371,9 +287,6 @@ CREATE TABLE `sync_delivery_retry` (
 -- 仅供一次性开发/测试库回退；删除当前库全部业务表。
 DROP TABLE IF EXISTS `vendor`;
 DROP TABLE IF EXISTS `sync_delivery_retry`;
-DROP TABLE IF EXISTS `telemetry_aggregate_hourly`;
-DROP TABLE IF EXISTS `telemetry_aggregate_15min`;
-DROP TABLE IF EXISTS `telemetry`;
 DROP TABLE IF EXISTS `event_outbox`;
 DROP TABLE IF EXISTS `device_session`;
 DROP TABLE IF EXISTS `device_provision`;

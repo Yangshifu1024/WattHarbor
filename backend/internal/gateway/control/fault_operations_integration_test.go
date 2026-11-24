@@ -26,11 +26,11 @@ type faultEnvelopeReply struct {
 	Data    json.RawMessage `json:"data"`    // 数据，失败须为 null。
 }
 
-// callFaultEndpoint 经实际 TelemetryAPI.Register 发送携令牌请求，ctx 管理数据库取消，不启动异步请求。
+// callFaultEndpoint 经实际 DeviceEventAPI.Register 发送携令牌请求，ctx 管理数据库取消，不启动异步请求。
 func callFaultEndpoint(t *testing.T, db *gorm.DB, method, path, body string, ctx context.Context) (int, faultEnvelopeReply) {
 	t.Helper()
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: db, ServiceToken: "fault-operations-test"}).Register(router)
+	(DeviceEventAPI{DB: db, ServiceToken: "fault-operations-test"}).Register(router)
 	req := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Service-Token", "fault-operations-test")

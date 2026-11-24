@@ -12,7 +12,7 @@ import (
 )
 
 // chargeProcess 鉴权并校验订单和游标，分页返回充电采样点及下一页游标。
-func (a TelemetryAPI) chargeProcess(c *gin.Context) {
+func (a DeviceEventAPI) chargeProcess(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}

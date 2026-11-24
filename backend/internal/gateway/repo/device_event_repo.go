@@ -143,3 +143,25 @@ func latestHeartbeatAfter(ctx context.Context, db *gorm.DB, deviceID string, aft
 		Order("received_at DESC, id DESC").Take(&row).Error
 	return row, err
 }
+
+// HeartbeatSample 是一条心跳事件的原始载荷。
+type HeartbeatSample struct {
+	// ID device_event 表的自增主键，用作心跳分页游标。
+	ID uint64 `gorm:"column:id"`
+	// EventJSON 持久协议事件 JSON 字节。
+	EventJSON []byte `gorm:"column:event_json"`
+}
+
+// ListHeartbeatsInWindow 按 ID 升序查询时间闭区间内的心跳，并多取一条判断是否还有下一页。
+// SQL 内 event_type='heartbeat' 对应 protocol.Heartbeat；该列是 VARCHAR 开放集合，
+// 此处只按已知取值筛选，不据此拒绝其他值。
+func ListHeartbeatsInWindow(ctx context.Context, db *gorm.DB, device string, from, to time.Time, afterID uint64, limit int) ([]HeartbeatSample, error) {
+	query := db.WithContext(ctx).Table("device_event").Select("id, event_json").
+		Where("device_id=? AND event_type='heartbeat' AND received_at>=? AND received_at<=?", device, from.UTC(), to.UTC())
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
+	}
+	rows := []HeartbeatSample{}
+	err := query.Order("id ASC").Limit(limit + 1).Find(&rows).Error
+	return rows, err
+}

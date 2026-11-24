@@ -14,7 +14,7 @@ if (Number.isNaN(through.getTime()) || throughArg && through.toISOString().slice
 if (through.getUTCFullYear() > now.getUTCFullYear()+5) throw new Error('最多提前扩展5年');
 const allowed = {
   central_db: ['charge_order','payment_order','refund_record','wallet_txn','audit_log','alert_event','fee_calculation'],
-  gateway_db: ['telemetry','telemetry_aggregate_15min','telemetry_aggregate_hourly','device_session'],
+  gateway_db: ['device_session'],
   worker_db: ['task_execution_log'],
 };
 const db = openMySQL();
@@ -26,7 +26,7 @@ try {
     const rows = await db.query(`SELECT partition_name,partition_description,partition_expression FROM information_schema.partitions WHERE table_schema='${schema}' AND table_name='${table}' ORDER BY partition_ordinal_position;`);
     const parts = rows.map(row => row.split('\t'));
     if (!parts.length || parts.some(p => p[0] === 'NULL')) throw new Error(`${schema}.${table}: 缺少预期分区`);
-    if (parts.at(-1)[0] !== 'p_max' || parts.at(-1)[1] !== 'MAXVALUE' || !/^to_days\(`?(ts|bucket_month|created_month)`?\)$/i.test(parts[0][2])) throw new Error(`${schema}.${table}: 分区设计不符合白名单`);
+    if (parts.at(-1)[0] !== 'p_max' || parts.at(-1)[1] !== 'MAXVALUE' || !/^to_days\(`?created_month`?\)$/i.test(parts[0][2])) throw new Error(`${schema}.${table}: 分区设计不符合白名单`);
     const last = parts.at(-2)?.[1];
     if (!/^\d+$/.test(last || '')) throw new Error('Invalid partition boundary');
     const [date] = await db.query(`SELECT DATE_FORMAT(FROM_DAYS(${last}),'%Y-%m-%d');`);

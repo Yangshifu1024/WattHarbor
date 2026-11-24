@@ -12,7 +12,7 @@ import (
 // fixture 未注入数据库，拒绝应先于持久操作，本测试不验证合法身份的业务读写。
 func TestWorkerSyncAPIRequiresServiceToken(t *testing.T) {
 	router := httpapi.NewRouter()
-	(TelemetryAPI{ServiceToken: "service"}).Register(router)
+	(DeviceEventAPI{ServiceToken: "service"}).Register(router)
 	cases := []struct {
 		method string
 		path   string

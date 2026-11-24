@@ -36,7 +36,7 @@ func (s DeviceMetaStatus) ManageWritable() bool {
 	return s == DeviceEnabled || s == DeviceDisabled
 }
 
-// GatewayDeviceStatus 是网关库 device.status 列的设备状态，用于会话建立与资料回填。
+// GatewayDeviceStatus 是网关库 device.status 列的设备状态，用于设备开通与运行管理。
 // 取值与 migrations/gateway_db/0001_init.sql 中该 ENUM 列一致（enabled/disabled/retired）。
 //
 // 与 DeviceMetaStatus 分立：网关库该列没有 fault，四个枚举中只有中央库有。
@@ -48,7 +48,7 @@ const (
 	GatewayDeviceEnabled GatewayDeviceStatus = "enabled"
 	// GatewayDeviceDisabled 表示网关侧设备已停用。
 	GatewayDeviceDisabled GatewayDeviceStatus = "disabled"
-	// GatewayDeviceRetired 表示网关侧设备已退役，回填时按未知设备处理。
+	// GatewayDeviceRetired 表示网关侧设备已退役。
 	GatewayDeviceRetired GatewayDeviceStatus = "retired"
 )
 

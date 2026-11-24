@@ -155,20 +155,3 @@ type deviceOutboxRow struct {
 
 // TableName 返回固定表名 event_outbox，供 GORM 定位模型。
 func (deviceOutboxRow) TableName() string { return "event_outbox" }
-
-// telemetryRow 映射 telemetry 的设备、可空端口、指标、十进制值及采样时刻插入列，不修改库内分区规则。
-type telemetryRow struct {
-	// DeviceID 设备业务编号。
-	DeviceID string `gorm:"column:device_id"`
-	// PortNo 协议端口序号。
-	PortNo sql.NullInt16 `gorm:"column:port_no"`
-	// Metric 遥测指标名。
-	Metric string `gorm:"column:metric"`
-	// ValueNum 十进制遥测数值文本。
-	ValueNum string `gorm:"column:value_num"`
-	// TS 采样时刻，使用该结构的时间格式。
-	TS time.Time `gorm:"column:ts"`
-}
-
-// TableName 返回固定表名 telemetry，供 GORM 定位模型。
-func (telemetryRow) TableName() string { return "telemetry" }

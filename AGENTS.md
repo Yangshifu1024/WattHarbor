@@ -18,7 +18,7 @@
 
 五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
 - 后台进程不取微信与支付凭据：它不替用户登录，也不发起支付。`config.Admin` 与 `config.Central` 分开定义，让"这个进程需要什么凭据"在类型上就是清楚的——多给一份 `WECHAT_SECRET` 就等于多一处泄露面。
-- C 端充电中的遥测、历史曲线、充电采样与设备摘要，经 `GATEWAY_INTERNAL_URL` 回调 **gateway**（`:8083`）的 `/api/v1/internal/devices/*`，携服务令牌。这些端点由 `internal/gateway/control` 提供，不在 central 进程里——判断回调对象要看代码用的 base URL 字段，不能只看路径里有 `/internal`。
+- 订单快照、历史曲线和过程采样经 `GATEWAY_INTERNAL_URL` 调用 gateway 的 `/api/v1/internal/charge-orders/*`。计量证据和设备摘要也由 gateway 提供。端点位于 `internal/gateway/control`，内部请求携服务令牌。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
 - HTTP 适配位于 `internal/http/auth`、`internal/http/admin`、`internal/http/central` 与 `internal/http/user/<业务族>`。跨接口族的集成测试集中在 `internal/http/integration`，该目录只有测试文件。公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
 - 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。具名客户端的请求 DTO 必须以 `Request` 结尾，响应 DTO 必须以 `Reply` 结尾；共享集合中的记录、采样点等子对象保留业务名称，不能用 `Data`、`Result`、`Acceptance` 代替端点响应名。
@@ -102,7 +102,7 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab
 | [golang-dependency-injection](.agents/skills/golang-dependency-injection/SKILL.md) | 手工构造函数注入、依赖反转、可测试性、单例与工厂管理；比较 Wire、Dig、Fx、Do 的适用成本。 | 设计依赖关系、解耦具体实现、调整 `cmd` 装配或评估是否需要 DI 容器时。 | 当前依赖由 `cmd` 装配，优先沿用现有注入方式；明确采用某容器后再加载对应库技能。注入方式不能让用例持有 URL、服务令牌或通用 HTTP 客户端。 |
 | [golang-concurrency](.agents/skills/golang-concurrency/SKILL.md) | goroutine 生命周期、channel 所有权、`select`、互斥锁与原子操作、WaitGroup/errgroup、singleflight、worker pool。 | 新增后台循环、并发任务、共享状态或限流；评审退出条件、channel 关闭和竞态风险时。 | 每个任务有取消与等待路径，任务退出后再关 DB/Redis。取消同时加载 context；数据库串行化与幂等还需 database 和真库测试；已有死锁先 troubleshooting。 |
 | [golang-context](.agents/skills/golang-context/SKILL.md) | context 跨层传播、取消、超时与截止时间、请求级值，以及 Background/TODO/WithoutCancel 的取舍。 | 设计请求到用例、数据库、服务客户端的取消链；修改超时、退出流程或 context 生命周期时。 | 处理器响应请求取消，后台任务接受受管理的生命周期 context。`WithoutCancel` 的通用示例不能绕过任务管理；仅有 `ctx` 参数而未改变传播语义时无需额外审计。 |
-| [golang-data-structures](.agents/skills/golang-data-structures/SKILL.md) | slice/map/array 的容量与复制语义，标准容器、泛型集合、Builder/Buffer、unsafe 与弱指针的适用场景。 | 选择数据结构、合并或分组采样、批量读模型组合、解释 slice/map 行为或实现集合时。 | 关注遥测批量处理的内存归属与复制成本；意外别名配合 safety。已测得的热点优化用 performance，测量方法用 benchmark，不能只凭数据结构知识宣称性能提升。 |
+| [golang-data-structures](.agents/skills/golang-data-structures/SKILL.md) | slice/map/array 的容量与复制语义，标准容器、泛型集合、Builder/Buffer、unsafe 与弱指针的适用场景。 | 选择数据结构、合并或分组采样、批量读模型组合、解释 slice/map 行为或实现集合时。 | 关注采样批量处理的内存归属与复制成本；意外别名配合 safety。已测得的热点优化用 performance，测量方法用 benchmark，不能只凭数据结构知识宣称性能提升。 |
 | [golang-database](.agents/skills/golang-database/SKILL.md) | 参数化查询、扫描与 NULL、事务与隔离级别、行锁、连接池、批处理、数据库 context 及迁移工具使用。 | 编写或审查仓储查询、事务、锁顺序、幂等、连接池，或排查数据库行为时。 | 保留 MySQL/GORM 与所属领域表访问，schema 仍修改对应 `0001_init.sql`；技能不生成 schema 或迁移 SQL。资金、锁、唯一键和重放同时加载 testing，执行独立真库集成验证。 |
 | [golang-modernize](.agents/skills/golang-modernize/SKILL.md) | 使用当前 Go 语言与标准库能力、替换弃用 API、更新惯用写法并评估版本升级风险。 | 遇到弃用告警、旧式循环或集合操作，用户要求现代化或升级 Go/tooling 时。 | 以 `go.mod` 的 Go 1.27 为准，核对行为和工具链兼容性；不为旧编译器降级写法。移包、抽函数或改变结构用 refactoring；静态检查配置用 lint。 |
 | [golang-refactoring](.agents/skills/golang-refactoring/SKILL.md) | 分阶段、保持行为的重构；按风险建立验证依据，安全改名/抽取/内联/移包，拆解循环依赖。 | 函数或包职责过大、重复结构阻碍需求、批量重命名、迁移所属模块或规划多步重构时。 | 同时加载目标规则技能与 gopls；保持事务、锁顺序和幂等。参考既有重构路线与边界文档；通用分支、提交和叠加 PR 流程受本文件 Git 授权规则约束。 |
@@ -189,7 +189,7 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab
 | 修改登录、MFA、鉴权或敏感日志 | security、error-handling、testing；涉及事务加 database | 实时权限、用户归属、数据范围、凭据隔离和脱敏，核验实际可达路径。 |
 | 移包、拆用例或批量改名 | refactoring、gopls，配合 project-layout、naming 或 structs-interfaces | 更新目录图与架构记录，保持契约、事务和幂等，不自动执行 Git 写操作。 |
 | 修改服务间 HTTP 契约 | structs-interfaces、naming、context、error-handling、testing | contracts/integration 依赖方向、Request/Reply、JSON 字段与单位、处理器和客户端双向契约。 |
-| 排查慢查询或遥测热点 | troubleshooting 定位，benchmark 测量，performance 改进；SQL 加 database | 区分数据库/网络与 Go 热点，记录基线及前后结果，保持业务正确性。 |
+| 排查慢查询或设备采样热点 | troubleshooting 定位，benchmark 测量，performance 改进；SQL 加 database | 区分数据库/网络与 Go 热点，记录基线及前后结果，保持业务正确性。 |
 | 修改依赖版本或 Go 能力使用 | dependency-management 或 modernize；公开资料用 pkg-go-dev | 以本地 `go.mod/go.sum` 为准，依赖改动检查 `go mod tidy -diff`，核对构建与测试。 |
 | 修改 Go CI 或真库测试 job | continuous-integration，配合 lint、testing、dependency-management | `node tasks.mjs check` 与 integration 分层，缺库失败，构建产物位于 `bin/`。 |
 | 修改 README、AGENTS 或 API 说明 | documentation；涉及 OpenAPI 工具时加 swagger | 文档职责分工、真实路由与接口核对、链接有效；纯文档不运行无关业务测试。 |
@@ -235,7 +235,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   │   ├── internal/charging/finish/receipt_schema.go（结束回执写模型、启动回执只读投影与端口释放模型）
 │   │   └── internal/charging/finish/result_repo.go（迁移前：internal/charging/finish/result_repo.go）
 │   ├── internal/charging/measurement                     无 IO 的协议事件与计量证据转换
-│   │   └── internal/charging/measurement/telemetry.go（迁移前：internal/charging/telemetry.go）
+│   │   └── internal/charging/measurement/samples.go（迁移前：internal/charging/telemetry.go）
 │   └── internal/charging/query                           只读组合与实时估算（新增充电子包）
 │       ├── internal/charging/query/user.go（迁移前：internal/interface/http/charge_user_query.go[详情与快照组合]）
 │       ├── internal/charging/query/user_curve.go（迁移前：internal/interface/http/charge_user_query.go[窗口与曲线]）
@@ -323,7 +323,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   ├── internal/card/interface_query_repo.go
 │   ├── internal/card/start_result_repo.go（迁移前：internal/payment/order_start_repo.go[刷卡写入部分]）
 │   └── internal/card/user_card_repo.go
-├── internal/device                                       设备接入、遥测、会话、故障
+├── internal/device                                       设备接入、状态、会话、故障
 │   ├── internal/device/fault_report.go（迁移前：internal/interface/http/user_fault.go[提交与所属查询]）
 │   ├── internal/device/fault_casework.go（迁移前：internal/interface/http/admin/order/casework.go[流转事务]）
 │   ├── internal/device/fault_repo.go（迁移前：internal/infrastructure/database/admin_case_store.go[报修表访问]）
@@ -468,20 +468,19 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   └── internal/delivery/senders.go
 ├── internal/gateway                                      设备接入运行时
 │   ├── internal/gateway/control/authorize.go
-│   ├── internal/gateway/control/backfill.go
 │   ├── internal/gateway/control/card_delivery.go
 │   ├── internal/gateway/control/cards.go
 │   ├── internal/gateway/control/charge_process.go
 │   ├── internal/gateway/control/charging_samples.go
 │   ├── internal/gateway/control/compensate.go
+│   ├── internal/gateway/control/device_events.go（迁移前：internal/gateway/control/telemetry.go）
 │   ├── internal/gateway/control/device_faults.go
 │   ├── internal/gateway/control/device_summary.go
-│   ├── internal/gateway/control/historical_curve.go
 │   ├── internal/gateway/control/http.go
+│   ├── internal/gateway/control/order_curve.go
 │   ├── internal/gateway/control/scan.go
 │   ├── internal/gateway/control/session.go
 │   ├── internal/gateway/control/start.go
-│   ├── internal/gateway/control/telemetry.go
 │   ├── internal/gateway/control/user_stop.go
 │   ├── internal/gateway/control/worker_sync.go
 │   ├── internal/gateway/control/worker_sync_models.go
@@ -493,8 +492,6 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   ├── internal/gateway/simulator/dc589/behavior.go
 │   ├── internal/gateway/simulator/dc589/simulator.go
 │   ├── internal/gateway/simulator/dc589/tui.go
-│   ├── internal/gateway/repo/aggregate_repo.go（迁移前：internal/gateway/store/aggregate_store.go）
-│   ├── internal/gateway/repo/backfill_repo.go（迁移前：internal/gateway/store/backfill_store.go、control/backfill.go[完整补录操作]）
 │   ├── internal/gateway/repo/card_delivery_repo.go（迁移前：internal/gateway/store/card_delivery_store.go、control/card_delivery.go[决策读取事务与冻结操作]）
 │   ├── internal/gateway/repo/charge_process_repo.go（迁移前：internal/gateway/store/charge_process_store.go）
 │   ├── internal/gateway/repo/charge_start_repo.go（迁移前：internal/gateway/store/charge_start_store.go）
@@ -503,14 +500,14 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   ├── internal/gateway/repo/end_delivery_repo.go（迁移前：internal/gateway/control/worker_sync.go[结束回执冻结]、internal/gateway/repo/telemetry_read_repo.go[冻结记录读写]）
 │   ├── internal/gateway/repo/gorm_models.go（迁移前：internal/gateway/store/gorm_models.go）
 │   ├── internal/gateway/repo/mysql.go（迁移前：internal/gateway/store/mysql.go）
+│   ├── internal/gateway/repo/order_curve_repo.go
+│   ├── internal/gateway/repo/process_snapshots.go
 │   ├── internal/gateway/repo/port_repo.go（迁移前：internal/gateway/store/port_store.go）
 │   ├── internal/gateway/repo/provision_repo.go（迁移前：internal/gateway/store/provision_store.go、provision/http.go[整批开通事务]、provision/vendors.go[完整厂商操作]）
 │   ├── internal/gateway/repo/scan_repo.go（迁移前：internal/gateway/store/scan_store.go）
 │   ├── internal/gateway/repo/session.go（迁移前：internal/gateway/store/session.go）
 │   ├── internal/gateway/repo/session_repo.go（迁移前：internal/gateway/store/session_store.go、internal/gateway/control/session.go[完整静默查询与清理事务]）
 │   ├── internal/gateway/repo/sync_models.go（迁移前：internal/gateway/store/sync_models.go）
-│   ├── internal/gateway/repo/telemetry_curve_repo.go（迁移前：internal/gateway/store/telemetry_curve_store.go）
-│   ├── internal/gateway/repo/telemetry_read_repo.go（迁移前：internal/gateway/store/telemetry_read_store.go）
 │   ├── internal/gateway/repo/worker_sync_repo.go（迁移前：internal/gateway/control/worker_sync.go[同步查询、批量标记与端口读写]）
 │   └── internal/gateway/repo/user_stop_repo.go（迁移前：internal/gateway/store/user_stop_store.go）
 ├── internal/worker                                       事件消费、定时与投递编排
@@ -664,7 +661,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 │   ├── internal/domain/charging/scheme_cost.go
 │   ├── internal/domain/charging/segments.go
 │   ├── internal/domain/charging/spec.go
-│   ├── internal/domain/devices/telemetry.go
+│   ├── internal/domain/devices/reading.go
 │   ├── internal/domain/money/refund.go（新增：无 ORM 的事务内退款输入）
 │   ├── internal/domain/money/card_number.go
 │   ├── internal/domain/money/card_port.go
@@ -761,7 +758,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
   其他用例反过来引它。当前子包见上方目录树：charging / money / devices /
   operations。
 
-- `internal/charging/` 包含 `start`、`stop`、`finish`、`measurement` 四个生命周期子包及 `query` 查询组合包，根目录不放业务代码或汇总转发服务。`start` 管启动授权、待启动清单与启动回执；`stop` 管停止授权、自动停机和计费截止；`finish` 管结束回执及提交结算任务；`measurement` 管无 IO 的协议事件转换；`query` 组合订单状态、遥测及过程读模型。
+- `internal/charging/` 包含 `start`、`stop`、`finish`、`measurement` 四个生命周期子包及 `query` 查询组合包，根目录不放业务代码或汇总转发服务。`start` 管启动授权、待启动清单与启动回执；`stop` 管停止授权、自动停机和计费截止；`finish` 管结束回执及提交结算任务；`measurement` 管无 IO 的协议事件转换；`query` 组合订单状态、计量证据及订单采样。
 - `start`、`stop`、`finish` 不相互依赖；需要共享的计量证据转换放 `measurement`，纯业务规则放 `domain`。`measurement` 只引用领域契约与 `protocol` 根契约，不引用数据库、HTTP、设备具体协议或其他用例。子包的数据库代码、业务编排和测试放在一起，不统一再拆 `service/repository/model` 技术目录。
 - 跨聚合事务在对应生命周期子包内编排。付款渠道属于 payment，余额入账属于 wallet，退款事务、计费任务及其状态查询属于 settlement，刷卡操作状态属于 card。新增抽象以实际复用或隔离需求为依据；迁移不切碎既有事务、锁顺序和幂等判定。
 - 停止用例的 `Gateway` 接口只包含取证与停止受理。分页策略在用例中，单次 HTTP 调用、状态码、业务 code 与响应对应关系由专用客户端核对；不完整证据不得用于自动停机判定。wire DTO 显式标记 JSON 字段并保留既有大小写、整数类型与单位，处理器与客户端共用；字段变更需同步核对双方与契约测试。
@@ -789,7 +786,7 @@ charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾�
 - 编号分配与业务记录共用事务；重试复用已持久化编号。保留历史业务编号，不重新生成或批量改写。
 - 数据库连接按 UTC 解析时间；业务日界与 DC589 本地时间使用北京时间。转换必须显式指定时区，不依赖宿主机时区。
 - 订单计费使用创建支付意图时冻结的完整方案、套餐及实际计量；刷卡在首次扣款事务中冻结。不得读取当前模板重算历史订单。跨费率缺少边界实测读数时进入计量复核，不按时间均摊电量或插值补造证据。
-- 缺失遥测、金额、关联信息以 `null` 或明确状态表达，不用零值伪装为已测量、已结算、已到账或端口空闲。
+- 缺失采样、金额、关联信息以 `null` 或明确状态表达，不用零值伪装为已测量、已结算、已到账或端口空闲。
 - 手机号存入 `central_db.user.phone` 明文列，未绑定为 `NULL`，由唯一索引约束号码归属。复用 `internal/platform/phone` 的规范化、校验和展示脱敏；正式绑定须使用微信验证结果。
 
 ## 状态、幂等与审计

@@ -38,7 +38,7 @@ type UserLiveReader interface {
 	Fill(ctx context.Context, rows []order.OrderView)
 }
 
-// UserService 负责用户充电详情、状态补充和曲线窗口；确认金额、实时估价与遥测展示保持独立。
+// UserService 负责用户充电详情、状态补充和曲线窗口；确认金额、实时估价与采样展示保持独立。
 type UserService struct {
 	Orders         UserOrders       // 所属订单隔离读取
 	Fees           order.FeeReader  // 所属结算确认费用，不计算实时估价
@@ -63,7 +63,7 @@ func (e *UserReadError) Unwrap() error { return e.Cause }
 
 // UserInputError 是既定窗口校验结果，不包含他人订单信息。
 type UserInputError struct {
-	Kind    string // input非法窗口、conflict未开始、倒置窗口、expired超过保留期
+	Kind    string // input 非法窗口；conflict 订单未开始或窗口倒置
 	Message string // 公开错误文案
 }
 
@@ -239,9 +239,9 @@ func (s UserService) Detail(ctx context.Context, userID uint64, raw string) (Use
 	return out, nil
 }
 
-// Snapshot 先校验订单属于当前用户，再补充最近两分钟的端口观测与实时估价。
+// Snapshot 先校验订单属于当前用户，再补充最近两分钟的订单采样与实时估价。
 // 网关失败时仍返回已有订单信息，并设 telemetry_available=false；数据库错误不能伪装为空值。
-// 经过时长只供展示，预估费用不覆盖结算金额；已结束订单不再查询遥测或估费。
+// 经过时长只供展示，预估费用不覆盖结算金额；已结束订单不再查询最新采样或估费。
 func (s UserService) Snapshot(ctx context.Context, userID uint64, raw string) (UserOrderView, error) {
 	row, err := s.Orders.Resolve(ctx, userID, raw)
 	if err != nil {

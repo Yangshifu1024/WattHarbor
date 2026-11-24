@@ -8,11 +8,11 @@ import (
 	"chargepilot/internal/platform/httpapi"
 )
 
-// 校验批量计量查询的令牌与请求体；同时覆盖 TelemetryAPI 全量路由
+// 校验批量计量查询的令牌与请求体；同时覆盖 DeviceEventAPI 全量路由
 // 注册（gin 静态段与 :device_id 通配冲突会在此 panic）。
 func TestChargingEvidenceRequiresServiceTokenAndValidBounds(t *testing.T) {
 	r := httpapi.NewRouter()
-	(TelemetryAPI{ServiceToken: "service"}).Register(r)
+	(DeviceEventAPI{ServiceToken: "service"}).Register(r)
 	post := func(token, body string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/api/v1/internal/charging-evidence", strings.NewReader(body))
@@ -53,7 +53,7 @@ func TestChargingEvidenceRequiresServiceTokenAndValidBounds(t *testing.T) {
 // GET 端点的 after_id 游标参数校验。
 func TestChargingSamplesRejectsInvalidCursor(t *testing.T) {
 	r := httpapi.NewRouter()
-	(TelemetryAPI{ServiceToken: "service"}).Register(r)
+	(DeviceEventAPI{ServiceToken: "service"}).Register(r)
 	for _, query := range []string{"?after_id=-1", "?after_id=abc", "?after_id=18446744073709551616"} {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/api/v1/internal/devices/d1/charging-samples?port_no=1&started_at=2026-10-01T00:00:00Z"+query, nil)

@@ -56,7 +56,7 @@ func TestChargingEvidenceClientMatchesRegisteredGateway(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: orm, ServiceToken: "contract-test-token"}).Register(router)
+	(DeviceEventAPI{DB: orm, ServiceToken: "contract-test-token"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "contract-test-token")

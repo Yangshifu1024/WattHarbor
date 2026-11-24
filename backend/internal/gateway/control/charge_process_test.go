@@ -10,7 +10,7 @@ import (
 
 func TestChargeProcessRequiresServiceTokenAndValidBounds(t *testing.T) {
 	r := httpapi.NewRouter()
-	(TelemetryAPI{ServiceToken: "service"}).Register(r)
+	(DeviceEventAPI{ServiceToken: "service"}).Register(r)
 	for _, tc := range []struct {
 		name, order, query, token string
 		status                    int

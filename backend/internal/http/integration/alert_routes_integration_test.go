@@ -180,7 +180,7 @@ func TestRegisteredAlertOwnershipScopeAndWorkerTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer gw.Callback().Query().Remove(key)
-	(control.TelemetryAPI{DB: gw, ServiceToken: "registered-alert-token"}).Register(gatewayRouter)
+	(control.DeviceEventAPI{DB: gw, ServiceToken: "registered-alert-token"}).Register(gatewayRouter)
 	gatewayServer := httptest.NewServer(gatewayRouter)
 	defer gatewayServer.Close()
 	gateway, err := gatewayclient.NewClient(serviceclient.Client{HTTP: gatewayServer.Client()}, gatewayServer.URL, "registered-alert-token")

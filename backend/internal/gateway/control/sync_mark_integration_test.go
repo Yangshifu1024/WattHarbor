@@ -60,7 +60,7 @@ func TestSyncMarkBatchRollsBackAfterCancellation(t *testing.T) {
 				}
 			}
 			router := httpapi.NewRouter()
-			(TelemetryAPI{DB: db, ServiceToken: "sync-mark-test"}).Register(router)
+			(DeviceEventAPI{DB: db, ServiceToken: "sync-mark-test"}).Register(router)
 			data, err := json.Marshal(body)
 			if err != nil {
 				t.Fatal(err)
@@ -130,7 +130,7 @@ func TestLateReleaseCannotFreeNewOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: tx, Devices: &session.Registry{}, ServiceToken: "release-test"}).Register(router)
+	(DeviceEventAPI{DB: tx, Devices: &session.Registry{}, ServiceToken: "release-test"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "release-test")

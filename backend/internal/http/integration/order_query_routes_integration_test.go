@@ -136,7 +136,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	defer gatewayTx.Rollback()
 	gatewayRouter := httpapi.NewRouter()
-	control.TelemetryAPI{DB: gatewayTx, ServiceToken: "registered-live-query"}.Register(gatewayRouter)
+	control.DeviceEventAPI{DB: gatewayTx, ServiceToken: "registered-live-query"}.Register(gatewayRouter)
 	gatewayServer := httptest.NewServer(gatewayRouter)
 	defer gatewayServer.Close()
 	gatewayClient, err := gatewayclient.NewClient(serviceclient.Client{HTTP: gatewayServer.Client()}, gatewayServer.URL, "registered-live-query")
@@ -281,15 +281,6 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 	observation := time.Now().UTC().Truncate(time.Second).Add(-10 * time.Second)
-	for _, metric := range []struct {
-		port  uint8  /* 端口 */
-		name  string /* 指标 */
-		value string /* DECIMAL */
-	}{{1, "power_w", "0"}, {1, "meter_kwh", "0.0025"}, {2, "power_w", "9999"}} {
-		if err := gatewayTx.Table("telemetry").Create(map[string]any{"device_id": "OR" + tag, "port_no": metric.port, "metric": metric.name, "value_num": metric.value, "ts": observation}).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
 	// 两条同时间、同端口的过程记录：只允许本单采样进入用户快照与曲线。
 	for i, orderID := range []uint64{id, id + 9999} {
 		point := map[string]any{
@@ -329,7 +320,7 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	w = call(curvePath, owner)
 	var curveReply struct {
-		Data chargingquery.CurveView `json:"data"` /* 遥测模型 */
+		Data chargingquery.CurveView `json:"data"` /* 订单曲线模型 */
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &curveReply); err != nil || w.Code != 200 || curveReply.Data.Count < 2 || curveReply.Data.Series[curveReply.Data.Count-1].PowerW == nil || *curveReply.Data.Series[curveReply.Data.Count-1].PowerW != 0 || curveReply.Data.Series[curveReply.Data.Count-1].VoltageV != nil {
 		t.Fatalf("registered curve=%d %s", w.Code, w.Body)
@@ -341,10 +332,6 @@ func TestRegisteredOrderQueryKeepsOriginalPagesAndFrozenDetail(t *testing.T) {
 	}
 	if w := call(curvePath+"bad", owner); w.Code != 400 || !strings.Contains(w.Body.String(), "1005") {
 		t.Fatal("illegal window silently replaced")
-	}
-	bucket := liveStart.Truncate(15 * time.Minute)
-	if err := gatewayTx.Table("telemetry_aggregate_15min").Create(map[string]any{"device_id": "OR" + tag, "port_no": 1, "metric": "power_w", "bucket_start": bucket, "bucket_month": month, "avg_value": "150.125", "min_value": "100.25", "max_value": "200.375", "count": 3}).Error; err != nil {
-		t.Fatal(err)
 	}
 	if err := tx.Table("charge_order").Where("id=?", id).Updates(map[string]any{"status": "completed", "ended_at": liveStart.Add(time.Minute), "charged_kwh": "0.2500", "charged_seconds": 60}).Error; err != nil {
 		t.Fatal(err)

@@ -92,7 +92,7 @@ func TestLiveUsesRegisteredGatewayAndTwoOwnedQueries(t *testing.T) {
 	router := httpapi.NewRouter()
 	var calls atomic.Int64
 	router.Use(func(c *gin.Context) { calls.Add(1); c.Next() })
-	control.TelemetryAPI{DB: gateway, ServiceToken: "live-evidence-token"}.Register(router)
+	control.DeviceEventAPI{DB: gateway, ServiceToken: "live-evidence-token"}.Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "live-evidence-token")

@@ -130,7 +130,7 @@ func (r *Registry) WithDeviceOperation(ctx context.Context, deviceID string, run
 // Registry 必须与所有控制服务及释放端点共用；Sink 的连接资源仍由进程管理。
 type SerializedSink struct {
 	Registry *Registry     // 命令与占用操作共用的许可属主
-	Sink     protocol.Sink // 实际鉴权、事件和遥测持久化能力
+	Sink     protocol.Sink // 实际鉴权与设备事件持久化能力
 }
 
 // Register 原样委托设备鉴权，不改变端口占用或建立后台任务。

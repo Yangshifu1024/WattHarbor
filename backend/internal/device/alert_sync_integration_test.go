@@ -62,7 +62,7 @@ func TestConcurrentAlertSyncKeepsOneActiveEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	(control.TelemetryAPI{DB: gw, ServiceToken: "alert-concurrent-token"}).Register(router)
+	(control.DeviceEventAPI{DB: gw, ServiceToken: "alert-concurrent-token"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "alert-concurrent-token")
@@ -190,7 +190,7 @@ func TestAlertSyncUsesRegisteredGatewayAndPersistentWatermark(t *testing.T) {
 	}
 	defer gateway.Callback().Query().Remove(key)
 	router := httpapi.NewRouter()
-	(control.TelemetryAPI{DB: gateway, ServiceToken: "alert-test-token"}).Register(router)
+	(control.DeviceEventAPI{DB: gateway, ServiceToken: "alert-test-token"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	httpClient := *server.Client()

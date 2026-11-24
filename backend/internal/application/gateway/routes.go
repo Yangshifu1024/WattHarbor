@@ -52,13 +52,11 @@ func newRouter(cfg config.Gateway, r *resources, deviceConnections *session.Regi
 	control.UserStopAPI{Service: userStops, ServiceToken: token}.Register(router)
 	control.ScanAPI{Scanner: sink, ServiceToken: token}.Register(router)
 	control.DeviceSummaryAPI{DB: orm, ServiceToken: token}.Register(router)
-	// 在此设置遥测查询的时间和点数上限，以及会话无数据的超时阈值。
-	control.TelemetryAPI{
+	// 注册设备事件、计量证据和订单采样的内部接口。
+	control.DeviceEventAPI{
 		Snapshots:    snapshots,
 		DB:           orm,
 		Devices:      deviceConnections,
-		MaxWindow:    24 * time.Hour,
-		MaxPoints:    2000,
 		ServiceToken: token,
 	}.Register(router)
 	control.SessionAPI{

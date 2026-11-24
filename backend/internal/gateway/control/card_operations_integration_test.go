@@ -187,7 +187,7 @@ func TestConcurrentCardFreezeKeepsFirstReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := httpapi.NewRouter()
-	(TelemetryAPI{DB: db, ServiceToken: "card-freeze-test"}).Register(router)
+	(DeviceEventAPI{DB: db, ServiceToken: "card-freeze-test"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	edge, err := client.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "card-freeze-test")

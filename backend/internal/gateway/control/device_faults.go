@@ -15,14 +15,14 @@ import (
 
 // registerDeviceFaults 注册故障列表、处理标记和最新心跳接口，供中央服务同步告警。
 // 接口均要求服务令牌，事件 JSON 原样返回。
-func (a TelemetryAPI) registerDeviceFaults(r *gin.Engine) {
+func (a DeviceEventAPI) registerDeviceFaults(r *gin.Engine) {
 	r.GET(contract.DeviceFaultsPath, a.deviceFaults)
 	r.POST(contract.MarkDeviceFaultsPath, a.markFaultsProcessed)
 	r.GET("/api/v1/internal/devices/:device_id/latest-heartbeat", a.latestHeartbeat)
 }
 
 // deviceFaults 鉴权后按 ID 升序返回未处理故障，最多 100 条；空列表返回 []。
-func (a TelemetryAPI) deviceFaults(c *gin.Context) {
+func (a DeviceEventAPI) deviceFaults(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -48,7 +48,7 @@ func (a TelemetryAPI) deviceFaults(c *gin.Context) {
 }
 
 // markFaultsProcessed 鉴权后在同一事务内标记 1 至 100 条故障事件，返回实际影响行数。
-func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
+func (a DeviceEventAPI) markFaultsProcessed(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -67,7 +67,7 @@ func (a TelemetryAPI) markFaultsProcessed(c *gin.Context) {
 
 // latestHeartbeat 查询指定起点之后的最新心跳；after_key 优先，只有它为空时才解析 after 时间。
 // 设备和时间无效返回 400，起点不可读或数据库错误返回 503。
-func (a TelemetryAPI) latestHeartbeat(c *gin.Context) {
+func (a DeviceEventAPI) latestHeartbeat(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}

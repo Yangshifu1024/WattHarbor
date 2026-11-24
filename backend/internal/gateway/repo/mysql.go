@@ -1,4 +1,4 @@
-// Package repo 查询和更新网关的设备、端口、命令、事件及遥测表。
+// Package repo 查询和更新网关的设备、端口、命令、事件及订单采样。
 package repo
 
 import (
@@ -15,7 +15,6 @@ import (
 
 	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -80,7 +79,7 @@ func (s MySQLSink) Register(ctx context.Context, registration protocol.Registrat
 	return nil
 }
 
-// Record 在 READ COMMITTED 事务内保存事件、Outbox、命令回执和遥测；提交成功后由适配器确认设备帧。
+// Record 在 READ COMMITTED 事务内保存事件、Outbox、命令回执和订单采样；提交成功后由适配器确认设备帧。
 func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 	if s.DB == nil {
 		return errors.New("gateway database is unavailable")
@@ -147,19 +146,22 @@ func (s MySQLSink) Record(ctx context.Context, event protocol.Event) error {
 				return fmt.Errorf("touch device heartbeat: %w", err)
 			}
 		}
-		if inserted.RowsAffected == 1 {
-			if event.Type == protocol.Heartbeat {
-				if err := recordHeartbeatState(ctx, tx, event); err != nil {
-					return fmt.Errorf("persist heartbeat state: %w", err)
-				}
-				points, err := insertChargeProcess(ctx, tx, key, event)
-				if err != nil {
-					return fmt.Errorf("persist charge process: %w", err)
-				}
-				samples = points
+		if inserted.RowsAffected == 1 && event.Type == protocol.Heartbeat {
+			if err := recordHeartbeatState(ctx, tx, event); err != nil {
+				return fmt.Errorf("persist heartbeat state: %w", err)
 			}
-			if err := insertMeasurements(ctx, tx, event); err != nil {
-				return fmt.Errorf("persist device telemetry: %w", err)
+			points, err := insertChargeProcess(ctx, tx, key, event)
+			if err != nil {
+				return fmt.Errorf("persist charge process: %w", err)
+			}
+			samples = points
+		}
+		// 心跳、结束回执及档位上报仍须归属未删除设备，与设备软删串行。
+		if inserted.RowsAffected == 1 && (event.Type == protocol.Heartbeat || event.Type == protocol.ChargeEnd || event.Type == protocol.Telemetry) {
+			var device deviceRow
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+				Where("device_id = ? AND deleted_at IS NULL", event.DeviceID).Take(&device).Error; err != nil {
+				return fmt.Errorf("verify event device: %w", err)
 			}
 		}
 		return nil
@@ -286,61 +288,6 @@ func applyStopAck(ctx context.Context, tx *gorm.DB, event protocol.Event) error 
 	return nil
 }
 
-// insertMeasurements 在调用方事务内转换协议单位，保存遥测并更新两类汇总。
-func insertMeasurements(ctx context.Context, tx *gorm.DB, event protocol.Event) error {
-	if event.Type != protocol.Heartbeat && event.Type != protocol.ChargeEnd && len(event.ChargingPorts) == 0 {
-		return nil
-	}
-	// 与补传共用设备行锁，避免两条写入链在预查与插入之间抢占相同样本。
-	if _, err := deviceStatus(ctx, tx, event.DeviceID); err != nil {
-		return err
-	}
-	// 收集本批样本，按汇总粒度批量更新，避免逐指标执行 SQL。
-	rollup := make([]AggregateSample, 0, 8)
-	insert := func(port sql.NullInt16, metric, value string) error {
-		at := event.ReceivedAt.UTC().Truncate(time.Millisecond)
-		inserted := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).
-			Create(&telemetryRow{DeviceID: event.DeviceID, PortNo: port, Metric: metric, ValueNum: value, TS: at})
-		if inserted.Error != nil {
-			return inserted.Error
-		}
-		// 重复样本保留首次读数，只有新插入的样本才计入汇总。
-		if inserted.RowsAffected == 1 {
-			rollup = append(rollup, AggregateSample{DeviceID: event.DeviceID, Port: port, Metric: metric, Value: value, TS: at})
-		}
-		return nil
-	}
-	if event.Type == protocol.Heartbeat {
-		if err := insert(sql.NullInt16{}, "signal", decimal.NewFromInt(int64(event.Signal)).String()); err != nil {
-			return err
-		}
-		if event.PortStates != nil {
-			if err := insert(sql.NullInt16{}, "voltage_v", decimal.NewFromInt(int64(event.VoltageV)).String()); err != nil {
-				return err
-			}
-			if err := insert(sql.NullInt16{}, "temperature_c", decimal.NewFromInt(int64(event.TemperatureC)).String()); err != nil {
-				return err
-			}
-		}
-	}
-	for _, port := range event.ChargingPorts {
-		id := sql.NullInt16{Int16: int16(port.Port), Valid: true}
-		if err := insert(id, "meter_kwh", decimal.NewFromInt(int64(port.ChargedMWh)).Shift(-6).StringFixed(6)); err != nil {
-			return err
-		}
-		if err := insert(id, "power_w", decimal.NewFromInt(int64(port.PowerDeciWatts)).Shift(-1).StringFixed(1)); err != nil {
-			return err
-		}
-	}
-	if event.Type == protocol.ChargeEnd {
-		id := sql.NullInt16{Int16: int16(event.Port), Valid: true}
-		if err := insert(id, "meter_kwh", decimal.NewFromInt(int64(event.EnergyMilliKWh)).Shift(-3).StringFixed(3)); err != nil {
-			return err
-		}
-	}
-	return refreshAggregates(ctx, tx, rollup)
-}
-
 // requireOne 要求恰好更新一行；SQL 失败或行数不符时返回错误。
 func requireOne(result *gorm.DB) error {
 	if result.Error != nil {
@@ -353,7 +300,7 @@ func requireOne(result *gorm.DB) error {
 }
 
 // eventKey 生成事件去重键：刷卡复用 UUID，心跳和故障包含接收时间。
-// 独立遥测每次生成新 UUID，其余事件按设备、会话和原始载荷计算摘要。
+// C2 档位事件每次生成新 UUID，其余事件按设备、会话和原始载荷计算摘要。
 func eventKey(event protocol.Event) string {
 	if (event.Type == protocol.CardSwipe || event.Type == protocol.CardBalanceQuery) && uuid.Validate(event.EventID) == nil {
 		return event.EventID

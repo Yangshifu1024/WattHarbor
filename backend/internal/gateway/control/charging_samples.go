@@ -22,7 +22,7 @@ const chargingEvidenceWindow = 7 * 24 * time.Hour
 
 // collectChargingSamples 按 ID 升序读取时间窗口内的心跳，只返回目标端口的读数。
 // complete=false 时，使用 nextAfterID 继续读取 ID 更大的记录。
-func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string, port uint8, from time.Time, afterID uint64, limit int) ([]gatewaycontract.EvidenceSample, uint64, bool, error) {
+func (a DeviceEventAPI) collectChargingSamples(ctx context.Context, device string, port uint8, from time.Time, afterID uint64, limit int) ([]gatewaycontract.EvidenceSample, uint64, bool, error) {
 	now := time.Now().UTC()
 	rows, err := gatewayrepo.ListHeartbeatsInWindow(ctx, a.DB, device, from, now, afterID, limit)
 	if err != nil {
@@ -44,7 +44,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 			continue
 		}
 		// 心跳未包含目标端口时也返回空读数，使停机判断中断连续计数。
-		// 只输出目标端口，不泄露其他端口遥测、卡号或原始载荷。
+		// 只输出目标端口，不泄露其他端口读数、卡号或原始载荷。
 		sample := gatewaycontract.EvidenceSample{Type: protocol.Heartbeat, DeviceID: device, ReceivedAt: e.ReceivedAt, ChargingPorts: []protocol.PortTelemetry{}}
 		for _, p := range e.ChargingPorts {
 			if p.Port == port {
@@ -62,7 +62,7 @@ func (a TelemetryAPI) collectChargingSamples(ctx context.Context, device string,
 }
 
 // chargingSamples 分页读取指定端口的心跳；after_id 继续读取 ID 更大的记录。
-func (a TelemetryAPI) chargingSamples(c *gin.Context) {
+func (a DeviceEventAPI) chargingSamples(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -97,7 +97,7 @@ func (a TelemetryAPI) chargingSamples(c *gin.Context) {
 
 // chargingEvidence 批量读取各订单的端口心跳，减少停机扫描中的 HTTP 调用。
 // 每条最多返回 10080 条记录；任一请求参数无效则整批拒绝。
-func (a TelemetryAPI) chargingEvidence(c *gin.Context) {
+func (a DeviceEventAPI) chargingEvidence(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}

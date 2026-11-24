@@ -128,7 +128,7 @@ func (s UserService) Curve(ctx context.Context, userID uint64, raw, window strin
 }
 
 // HistoricalCurve 校验订单归属，用已保存的起止时间查询该订单的过程采样。
-// 查询前限制最长三年、最多 2000 点；未开始或时间倒置报冲突，超过保留期报错。
+// 查询前限制订单的起止跨度和 2000 点上限；未开始或时间倒置报冲突。
 // 摘要电量优先使用订单 DECIMAL 文本，不从实时观测重算。
 func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, granularity string) (HistoricalView, error) {
 	row, err := s.Orders.Resolve(ctx, userID, raw)
@@ -153,8 +153,8 @@ func (s UserService) HistoricalCurve(ctx context.Context, userID uint64, raw, gr
 	if !start.Before(end) {
 		return HistoricalView{}, &UserInputError{Kind: "conflict", Message: "订单时间窗无效"}
 	}
-	if start.Before(now.AddDate(-3, 0, 0)) {
-		return HistoricalView{}, &UserInputError{Kind: "expired", Message: "历史遥测已超过三年保留期"}
+	if end.Sub(start) > contract.MaxOrderCurveWindow {
+		return HistoricalView{}, &UserInputError{Kind: "input", Message: "订单起止时间跨度超过查询上限"}
 	}
 	bucket := 15 * time.Minute
 	if granularity == "hourly" {

@@ -140,3 +140,63 @@ func insertChargeProcess(ctx context.Context, tx *gorm.DB, key string, event pro
 	}
 	return rows, tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
+
+// ListChargeProcessPoints 按 ID 升序查询订单采样，多取一条判断是否有下一页。
+// 功率换算为 W、电量换算为 kWh；可选设备和端口参数进一步限制查询范围。
+func ListChargeProcessPoints(
+	ctx context.Context,
+	db *gorm.DB,
+	orderNo string,
+	chargeOrderID uint64,
+	deviceID string,
+	portNo uint64,
+	afterID uint64,
+	limit int,
+) ([]ChargeProcessPoint, error) {
+	query := db.WithContext(ctx).Table("charge_process").
+		Select("id,ts,power_deciwatts/10.0 AS power_w,"+
+			"charged_mwh/1000000.0 AS charged_kwh,remaining_mwh/1000000.0 AS remaining_kwh,"+
+			"charged_seconds,remaining_seconds,signal_strength,port_status,"+
+			"voltage_v,temperature_c,device_status").
+		Where("order_no=? AND id>?", orderNo, afterID)
+	if chargeOrderID > 0 {
+		query = query.Where("charge_order_id=?", chargeOrderID)
+	}
+	if deviceID != "" {
+		query = query.Where("device_id=?", deviceID)
+	}
+	if portNo > 0 {
+		query = query.Where("port_no=?", portNo)
+	}
+	rows := []ChargeProcessPoint{}
+	err := query.Order("id ASC").Limit(limit + 1).Scan(&rows).Error
+	return rows, err
+}
+
+// ChargeProcessPoint 返回订单采样，功率单位 W、电量单位 kWh，未上报扩展字段为 nil。
+type ChargeProcessPoint struct {
+	// ID charge_process 表的自增主键，用作过程曲线游标。
+	ID uint64 `json:"id"`
+	// TS 采样时刻，使用该结构的时间格式。
+	TS time.Time `json:"ts"`
+	// PowerW 转换后的功率，单位瓦。
+	PowerW float64 `json:"power_w"`
+	// ChargedKWh 转换后的已充电量，单位千瓦时。
+	ChargedKWh float64 `json:"charged_kwh" gorm:"column:charged_kwh"`
+	// RemainingKWh 转换后的剩余电量，单位千瓦时。
+	RemainingKWh float64 `json:"remaining_kwh" gorm:"column:remaining_kwh"`
+	// ChargedSeconds 已充时长秒数。
+	ChargedSeconds uint32 `json:"charged_seconds"`
+	// RemainingSeconds 剩余时长秒数。
+	RemainingSeconds uint32 `json:"remaining_seconds"`
+	// SignalStrength 设备信号强度整数，零为有效报告，不具有 NULL 标志。
+	SignalStrength uint8 `json:"signal_strength"`
+	// PortStatus 是端口状态，nil 表示未上报。
+	PortStatus *uint8 `json:"port_status"`
+	// VoltageV 是整机电压，单位 V；nil 表示未上报。
+	VoltageV *uint16 `json:"voltage_v"`
+	// TemperatureC 是整机温度，单位摄氏度；nil 表示未上报。
+	TemperatureC *int16 `json:"temperature_c"`
+	// DeviceStatus 设备协议状态，保留可空扩展块。
+	DeviceStatus *uint8 `json:"device_status"`
+}

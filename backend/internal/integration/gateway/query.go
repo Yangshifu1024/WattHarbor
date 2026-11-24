@@ -72,8 +72,8 @@ func validQueryDevice(device string, port uint8) bool {
 }
 
 // validSeries 检查点数上限和时间格式，缺失的指标不补零。
-func validSeries(points []contract.CurvePoint, count int) bool {
-	if points == nil || len(points) > contract.MaxQueryPoints || count != len(points) {
+func validSeries(points []contract.CurvePoint) bool {
+	if points == nil || len(points) > contract.MaxQueryPoints {
 		return false
 	}
 	for _, point := range points {
@@ -82,40 +82,6 @@ func validSeries(points []contract.CurvePoint, count int) bool {
 		}
 	}
 	return true
-}
-
-// Telemetry 查询端口遥测，核对设备、实际时间范围、点数和采样粒度。
-// 保留单位和空值，网关错误不能变成空曲线。
-func (c *Client) Telemetry(ctx context.Context, q contract.TelemetryRequest) (contract.TelemetryReply, error) {
-	if !validQueryDevice(q.DeviceID, q.PortNo) || q.From.IsZero() || !q.From.Before(q.To) || q.To.Sub(q.From) > 24*time.Hour {
-		return contract.TelemetryReply{}, fmt.Errorf("invalid telemetry query")
-	}
-	values := url.Values{"port_no": {strconv.FormatUint(uint64(q.PortNo), 10)}, "from": {q.From.UTC().Format(time.RFC3339Nano)}, "to": {q.To.UTC().Format(time.RFC3339Nano)}}
-	data, err := queryData[contract.TelemetryReply](ctx, c, contract.TelemetryPath+url.PathEscape(q.DeviceID)+"/telemetry?"+values.Encode(), "device_id", "from", "to", "series", "count", "granularity", "bucket")
-	if err != nil {
-		return data, err
-	}
-	if data.DeviceID != q.DeviceID || !data.From.Before(data.To) || data.From.Before(q.From) || data.To.After(q.To) || !validSeries(data.Series, data.Count) || (data.Granularity != "raw" && data.Granularity != "15min" && data.Granularity != "hourly") {
-		return contract.TelemetryReply{}, fmt.Errorf("%w: telemetry identity, window or series", ErrInvalidResponse)
-	}
-	return data, nil
-}
-
-// HistoricalCurve 查询订单的聚合曲线，核对订单、设备、端口、时间和粒度。
-// 保留摘要数字精度；聚合边界可落在查询范围两侧的相邻时间桶内。
-func (c *Client) HistoricalCurve(ctx context.Context, q contract.HistoricalCurveRequest) (contract.HistoricalCurveReply, error) {
-	if !validQueryDevice(q.DeviceID, q.PortNo) || q.OrderNo == "" || len(q.OrderNo) > 64 || strings.TrimSpace(q.OrderNo) != q.OrderNo || q.StartedAt.IsZero() || !q.StartedAt.Before(q.EndedAt) || (q.Granularity != "15min" && q.Granularity != "hourly") {
-		return contract.HistoricalCurveReply{}, fmt.Errorf("invalid historical curve query")
-	}
-	values := url.Values{"order_id": {q.OrderNo}, "port_no": {strconv.FormatUint(uint64(q.PortNo), 10)}, "started_at": {q.StartedAt.UTC().Format(time.RFC3339Nano)}, "ended_at": {q.EndedAt.UTC().Format(time.RFC3339Nano)}, "granularity": {q.Granularity}}
-	data, err := queryData[contract.HistoricalCurveReply](ctx, c, contract.HistoricalCurvePath+url.PathEscape(q.DeviceID)+"/historical-curve?"+values.Encode(), "order_id", "device_id", "port_no", "started_at", "ended_at", "granularity", "series", "count", "summary", "boundary_approximate")
-	if err != nil {
-		return data, err
-	}
-	if data.OrderNo != q.OrderNo || data.DeviceID != q.DeviceID || data.PortNo != q.PortNo || !data.StartedAt.Equal(q.StartedAt) || !data.EndedAt.Equal(q.EndedAt) || data.Granularity != q.Granularity || data.Summary == nil || !validSeries(data.Series, data.Count) {
-		return contract.HistoricalCurveReply{}, fmt.Errorf("%w: historical curve identity, window or series", ErrInvalidResponse)
-	}
-	return data, nil
 }
 
 // OrderProcess 按订单和游标查询过程记录；ID 必须递增，下一页游标必须等于末条 ID。
@@ -148,7 +114,7 @@ func (c *Client) OrderProcess(ctx context.Context, q contract.OrderProcessReques
 // OrderCurve 读取已授权订单的过程采样，设备和端口只用于约束订单范围。
 func (c *Client) OrderCurve(ctx context.Context, q contract.OrderCurveRequest) (contract.OrderCurveReply, error) {
 	if !validQueryDevice(q.DeviceID, q.PortNo) || q.OrderID == 0 || q.OrderNo == "" ||
-		len(q.OrderNo) > 64 || !q.From.Before(q.To) {
+		len(q.OrderNo) > 64 || !q.From.Before(q.To) || q.To.Sub(q.From) > contract.MaxOrderCurveWindow {
 		return contract.OrderCurveReply{}, fmt.Errorf("invalid order curve query")
 	}
 	values := url.Values{
@@ -168,7 +134,7 @@ func (c *Client) OrderCurve(ctx context.Context, q contract.OrderCurveRequest) (
 	if err != nil {
 		return out, err
 	}
-	if !validSeries(out.Series, len(out.Series)) || out.SamplingIntervalSeconds < 0 || (q.Latest && len(out.Series) > 1) {
+	if !validSeries(out.Series) || out.SamplingIntervalSeconds < 0 || (q.Latest && len(out.Series) > 1) {
 		return out, fmt.Errorf("%w: order curve result", ErrInvalidResponse)
 	}
 	for _, point := range out.Series {

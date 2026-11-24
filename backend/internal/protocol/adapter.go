@@ -34,7 +34,7 @@ const (
 	RemoteResult EventType = "remote_result"
 	// ConfigResult 表示心跳、参数表及电源控制的设备响应，包含拒绝原因，供运维确认配置是否生效。
 	ConfigResult EventType = "config_result"
-	// Telemetry 表示单独上报的遥测数据。
+	// Telemetry 表示 C2 等独立档位上报，保留事件与事件流编码。
 	Telemetry EventType = "telemetry"
 	// TimeSync 表示设备校时请求或回复。
 	TimeSync EventType = "time_sync"

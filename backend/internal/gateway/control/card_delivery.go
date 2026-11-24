@@ -15,7 +15,7 @@ import (
 )
 
 // cardEvents 按 ID 升序返回最多 100 条待投递卡事件及其已保存回复。
-func (a TelemetryAPI) cardEvents(c *gin.Context) {
+func (a DeviceEventAPI) cardEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -32,7 +32,7 @@ func (a TelemetryAPI) cardEvents(c *gin.Context) {
 }
 
 // cardDecideBegin 锁定投递记录后查询事件；已有回复时直接返回并跳过事件校验。
-func (a TelemetryAPI) cardDecideBegin(c *gin.Context) {
+func (a DeviceEventAPI) cardDecideBegin(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -72,7 +72,7 @@ var errCardIdentity = errors.New("card event identity mismatch")
 
 // cardDecideFinish 保存首次回复；已有回复时原样返回。
 // stored 表示本次是否写入成功，更新失败与读取失败使用不同错误提示。
-func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
+func (a DeviceEventAPI) cardDecideFinish(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -99,7 +99,7 @@ func (a TelemetryAPI) cardDecideFinish(c *gin.Context) {
 }
 
 // cardEventAdvance 标记完成，或将失败事件延后 5 秒并增加重试次数。
-func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
+func (a DeviceEventAPI) cardEventAdvance(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -118,7 +118,7 @@ func (a TelemetryAPI) cardEventAdvance(c *gin.Context) {
 }
 
 // resolvePort 按设备和端口序号查询端口编码；未开通时返回 found=false。
-func (a TelemetryAPI) resolvePort(c *gin.Context) {
+func (a DeviceEventAPI) resolvePort(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}

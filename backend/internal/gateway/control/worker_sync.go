@@ -14,7 +14,7 @@ import (
 
 // registerWorkerSync 注册 worker 所需的内部同步接口，要求服务令牌。
 // 网关负责启动结果、结束事件、端口释放、计量读数和刷卡事件的读写。
-func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
+func (a DeviceEventAPI) registerWorkerSync(r *gin.Engine) {
 	r.GET(gatewaycontract.StartResultsPath, a.startResults)
 	r.POST(gatewaycontract.DeferSyncDeliveryPath, a.deferSyncDelivery)
 	r.POST(gatewaycontract.MarkStartResultsPath, a.markStartResultsReported)
@@ -33,7 +33,7 @@ func (a TelemetryAPI) registerWorkerSync(r *gin.Engine) {
 
 // deferSyncDelivery 鉴权并校验固定失败分类，将退避交由网关仓储持久化；失败返回503。
 // c 提供请求 context，取消不再提交；响应只确认退避，不覆盖命令或端口业务状态。
-func (a TelemetryAPI) deferSyncDelivery(c *gin.Context) {
+func (a DeviceEventAPI) deferSyncDelivery(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -50,7 +50,7 @@ func (a TelemetryAPI) deferSyncDelivery(c *gin.Context) {
 }
 
 // startResults 鉴权后查询到期且未上报的启动命令，可按 command_id 筛选；首投与重试共同排序，最多50条。
-func (a TelemetryAPI) startResults(c *gin.Context) {
+func (a DeviceEventAPI) startResults(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -73,7 +73,7 @@ func (a TelemetryAPI) startResults(c *gin.Context) {
 
 // markStartResultsReported 在同一事务内标记输入命令已上报，返回实际影响行数。
 // 重复标记不重复计数；任一写入失败整批回滚。
-func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
+func (a DeviceEventAPI) markStartResultsReported(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -91,7 +91,7 @@ func (a TelemetryAPI) markStartResultsReported(c *gin.Context) {
 }
 
 // endEvents 鉴权后返回最多50条到期且未处理的 ConsumerType 2/3 结束事件，首投与重试共同排序。
-func (a TelemetryAPI) endEvents(c *gin.Context) {
+func (a DeviceEventAPI) endEvents(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -108,7 +108,7 @@ func (a TelemetryAPI) endEvents(c *gin.Context) {
 }
 
 // chargeCommandByOrder 鉴权后查询订单命令，不指定排序；无记录返回 found:false。
-func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
+func (a DeviceEventAPI) chargeCommandByOrder(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -132,7 +132,7 @@ func (a TelemetryAPI) chargeCommandByOrder(c *gin.Context) {
 
 // markDeviceEventsProcessed 在同一事务内标记输入事件已处理，返回实际影响行数。
 // 重复标记不重复计数；任一写入失败整批回滚。
-func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
+func (a DeviceEventAPI) markDeviceEventsProcessed(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -151,7 +151,7 @@ func (a TelemetryAPI) markDeviceEventsProcessed(c *gin.Context) {
 
 // releasePort 只释放该订单占用且处于 charging 的端口。
 // 更新成功返回 released；已是 idle/NULL 返回 already；其他占用状态返回 409。
-func (a TelemetryAPI) releasePort(c *gin.Context) {
+func (a DeviceEventAPI) releasePort(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -202,7 +202,7 @@ func (a TelemetryAPI) releasePort(c *gin.Context) {
 
 // meterSamples 鉴权后查询 UTC 时间闭区间内、ID 不超过 end_id 的心跳。
 // 按 ID 升序最多 10081 条，包含一条超限检查记录。
-func (a TelemetryAPI) meterSamples(c *gin.Context) {
+func (a DeviceEventAPI) meterSamples(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -239,7 +239,7 @@ func (a TelemetryAPI) meterSamples(c *gin.Context) {
 
 // freezeEndDelivery 保存首次结束请求；重复请求关键字段一致时返回已保存内容。
 // frozen 表示使用了旧内容；关键字段冲突返回 409，数据库错误返回 503。
-func (a TelemetryAPI) freezeEndDelivery(c *gin.Context) {
+func (a DeviceEventAPI) freezeEndDelivery(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}

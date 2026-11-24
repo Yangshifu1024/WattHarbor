@@ -24,17 +24,16 @@ func TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision(t *testing.T) {
 			t.Errorf("original query identity lost: %s", r.URL)
 		}
 		switch r.URL.Path {
-		case "/api/v1/internal/devices/" + device + "/telemetry":
-			if q.Get("from") != from.Format(time.RFC3339Nano) || q.Get("to") != to.Format(time.RFC3339Nano) {
-				t.Error("telemetry time lost")
+		case "/api/v1/internal/charge-orders/CH&+原单/curve":
+			if q.Get("from") != from.Format(time.RFC3339Nano) || q.Get("to") != to.Format(time.RFC3339Nano) ||
+				q.Get("charge_order_id") != "18446744073709551613" || q.Get("device_id") != device || q.Get("view") != "history" {
+				t.Error("order curve identity or time window changed")
 			}
 			zero := float64(0)
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.TelemetryReply{DeviceID: device, From: from, To: to, Series: []contract.CurvePoint{{TS: from.Format(time.RFC3339Nano), PowerW: &zero}}, Count: 1, Granularity: "raw", Bucket: "0s"}})
-		case "/api/v1/internal/devices/" + device + "/historical-curve":
-			if q.Get("order_id") != "CH&+原单" || q.Get("granularity") != "15min" {
-				t.Error("historical identity lost")
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.HistoricalCurveReply{OrderNo: "CH&+原单", DeviceID: device, PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min", Series: []contract.CurvePoint{}, Summary: map[string]json.RawMessage{"original_id": json.RawMessage("18446744073709551614")}, BoundaryApproximate: true}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": contract.OrderCurveReply{
+				Series:  []contract.CurvePoint{{TS: from.Format(time.RFC3339Nano), PowerW: &zero}},
+				Summary: map[string]json.RawMessage{"original_id": json.RawMessage("18446744073709551614")},
+			}})
 		case "/api/v1/internal/charge-orders/CH&+原单/process":
 			if q.Get("charge_order_id") != "18446744073709551613" || q.Get("device_id") != device || q.Get("after_id") != "18446744073709551612" || q.Get("limit") != "2" {
 				t.Error("process identity precision lost")
@@ -44,13 +43,13 @@ func TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision(t *testing.T) {
 			t.Errorf("unexpected query path %s", r.URL.Path)
 		}
 	})
-	telemetry, err := client.Telemetry(context.Background(), contract.TelemetryRequest{DeviceID: device, PortNo: 2, From: from, To: to})
-	if err != nil || len(telemetry.Series) != 1 || telemetry.Series[0].PowerW == nil || *telemetry.Series[0].PowerW != 0 || telemetry.Series[0].VoltageV != nil {
-		t.Fatalf("nullable telemetry=%+v %v", telemetry, err)
-	}
-	history, err := client.HistoricalCurve(context.Background(), contract.HistoricalCurveRequest{DeviceID: device, OrderNo: "CH&+原单", PortNo: 2, StartedAt: from, EndedAt: to, Granularity: "15min"})
-	if err != nil || history.Series == nil || !history.BoundaryApproximate || string(history.Summary["original_id"]) != "18446744073709551614" {
-		t.Fatalf("history summary=%+v %v", history, err)
+	curve, err := client.OrderCurve(context.Background(), contract.OrderCurveRequest{
+		OrderID: 18446744073709551613, OrderNo: "CH&+原单", DeviceID: device, PortNo: 2, From: from, To: to,
+		Granularity: "auto", Summary: true,
+	})
+	if err != nil || len(curve.Series) != 1 || curve.Series[0].PowerW == nil || *curve.Series[0].PowerW != 0 ||
+		curve.Series[0].VoltageV != nil || string(curve.Summary["original_id"]) != "18446744073709551614" {
+		t.Fatalf("order curve changed: %+v %v", curve, err)
 	}
 	page, err := client.OrderProcess(context.Background(), contract.OrderProcessRequest{OrderID: 18446744073709551613, OrderNo: "CH&+原单", DeviceID: device, PortNo: 2, AfterID: 18446744073709551612, Limit: 2})
 	if err != nil || len(page.Items) != 1 || page.NextAfterID == nil || *page.NextAfterID != 18446744073709551614 {

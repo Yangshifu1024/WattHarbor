@@ -34,7 +34,7 @@ func measuredMeter(order AutoStopOrder, latest meterReading, samples []protocol.
 
 // meterReading 保存一次心跳的接收时刻、累计 Wh 和累计秒数，供检查费用上限。
 type meterReading struct {
-	at      time.Time // 遥测接收的 UTC 时刻
+	at      time.Time // 心跳接收的 UTC 时刻
 	wh      uint32    // 累计电量，单位 Wh
 	seconds uint32    // 累计充电时长，单位秒
 }
@@ -91,7 +91,7 @@ func noPowerForMinute(samples []protocol.Event, port uint8, now time.Time) bool 
 			}
 		}
 		if !seen {
-			// 其他端口的遥测无法证明这个端口没有电。
+			// 其他端口的读数无法证明这个端口没有电。
 			since = time.Time{}
 			continue
 		}

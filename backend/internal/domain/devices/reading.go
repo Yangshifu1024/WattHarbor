@@ -1,4 +1,4 @@
-// Package devices 定义端口、读数与遥测类型，不依赖厂商协议；协议帧由适配器转换。
+// Package devices 定义端口与计量读数类型，不依赖厂商协议；协议帧由适配器转换。
 package devices
 
 import "time"

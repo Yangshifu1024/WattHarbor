@@ -127,3 +127,10 @@ func ListMeterSamples(
 		Order("id").Limit(10081).Find(&rows).Error
 	return rows, err
 }
+
+// MarkSyncEventProcessed 在调用方事务内标记尚未处理的事件，返回影响行数。
+func MarkSyncEventProcessed(tx *gorm.DB, id uint64) (int64, error) {
+	res := tx.Table("device_event").Where("id = ? AND processed_at IS NULL", id).
+		Update("processed_at", gorm.Expr("CURRENT_TIMESTAMP(3)"))
+	return res.RowsAffected, res.Error
+}

@@ -329,7 +329,7 @@ func TestPortReleaseWaitsForOldStopBeforeReuse(t *testing.T) {
 	}
 	defer db.Callback().Query().Remove(hook)
 	router := httpapi.NewRouter()
-	TelemetryAPI{DB: db, Devices: registry, ServiceToken: "guard-test"}.Register(router)
+	DeviceEventAPI{DB: db, Devices: registry, ServiceToken: "guard-test"}.Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "guard-test")

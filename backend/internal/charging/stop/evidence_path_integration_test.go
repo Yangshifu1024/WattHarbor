@@ -47,7 +47,7 @@ func TestGatewayEvidenceReachesNoPowerDecision(t *testing.T) {
 	}
 	defer tx.Rollback()
 	router := httpapi.NewRouter()
-	(control.TelemetryAPI{DB: tx, ServiceToken: "evidence-test"}).Register(router)
+	(control.DeviceEventAPI{DB: tx, ServiceToken: "evidence-test"}).Register(router)
 	server := httptest.NewServer(router)
 	defer server.Close()
 	client, err := gatewayclient.NewClient(serviceclient.Client{HTTP: server.Client()}, server.URL, "evidence-test")

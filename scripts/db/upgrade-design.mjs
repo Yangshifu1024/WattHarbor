@@ -23,7 +23,6 @@ function sql(statement) {
 }
 
 const checks = [
-  ['gateway_db.telemetry', 'SELECT device_id,COALESCE(port_no,0),metric,ts FROM gateway_db.telemetry GROUP BY device_id,COALESCE(port_no,0),metric,ts HAVING COUNT(*)>1'],
   ['central_db.user', 'SELECT BINARY openid FROM central_db.user WHERE deleted_at IS NULL GROUP BY BINARY openid HAVING COUNT(*)>1'],
   ['gateway_db.device', 'SELECT device_id FROM gateway_db.device WHERE deleted_at IS NULL GROUP BY device_id HAVING COUNT(*)>1'],
   ['gateway_db.device_port', 'SELECT port_code FROM gateway_db.device_port WHERE deleted_at IS NULL GROUP BY port_code HAVING COUNT(*)>1'],
@@ -80,7 +79,7 @@ for (const schema of ['central_db', 'gateway_db', 'worker_db']) {
         if (sql(`SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema='${schema}' AND table_name='${table}' AND constraint_name='${constraint[1]}';`) === '0') {
           operations.push(`ALTER TABLE ${target} ADD ${line};`);
         }
-      } else if (column && (column[1].startsWith('live_') || table === 'telemetry' && column[1] === 'port_key')) {
+      } else if (column && column[1].startsWith('live_')) {
         if (sql(`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='${schema}' AND table_name='${table}' AND column_name='${column[1]}';`) === '0') {
           operations.push(`ALTER TABLE ${target} ADD COLUMN ${line};`);
         }
@@ -88,7 +87,7 @@ for (const schema of ['central_db', 'gateway_db', 'worker_db']) {
         if (sql(`SELECT data_type FROM information_schema.columns WHERE table_schema='${schema}' AND table_name='${table}' AND column_name='${column[1]}';`) !== 'varbinary') {
           operations.push(`ALTER TABLE ${target} MODIFY COLUMN ${line};`);
         }
-      } else if (index && ['uk_live_openid', 'uk_live_device_id', 'uk_live_port_code', 'uk_sample', 'idx_device_ts', 'idx_device_time', 'idx_port_expiry', 'idx_order_started', 'idx_order_created', 'idx_user_ongoing', 'idx_pending_type'].includes(index[1])) {
+      } else if (index && ['uk_live_openid', 'uk_live_device_id', 'uk_live_port_code', 'idx_device_time', 'idx_port_expiry', 'idx_order_started', 'idx_order_created', 'idx_user_ongoing', 'idx_pending_type'].includes(index[1])) {
         if (sql(`SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='${schema}' AND table_name='${table}' AND index_name='${index[1]}';`) === '0') {
           operations.push(`ALTER TABLE ${target} ADD ${line};`);
         }

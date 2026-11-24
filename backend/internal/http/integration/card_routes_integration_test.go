@@ -118,7 +118,7 @@ func TestRegisteredCardRoutesUseOwnedServicesAndNamedClients(t *testing.T) {
 	const token = "registered-card-service"
 	edgeRouter := httpapi.NewRouter()
 	(control.ScanAPI{Scanner: repo.MySQLSink{DB: gateway}, ServiceToken: token}).Register(edgeRouter)
-	(control.TelemetryAPI{DB: gateway, ServiceToken: token}).Register(edgeRouter)
+	(control.DeviceEventAPI{DB: gateway, ServiceToken: token}).Register(edgeRouter)
 	edgeServer := httptest.NewServer(edgeRouter)
 	defer edgeServer.Close()
 	edge, err := gatewayclient.NewClient(serviceclient.Client{}, edgeServer.URL, token)

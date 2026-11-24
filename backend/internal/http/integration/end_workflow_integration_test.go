@@ -340,7 +340,7 @@ func (f *endWorkflowFixture) servers(t *testing.T) (string, string, *atomic.Bool
 			c.Abort()
 		}
 	})
-	(control.TelemetryAPI{DB: privateEvents, Devices: &session.Registry{}, ServiceToken: "end-workflow-token"}).Register(gatewayRouter)
+	(control.DeviceEventAPI{DB: privateEvents, Devices: &session.Registry{}, ServiceToken: "end-workflow-token"}).Register(gatewayRouter)
 	gatewayServer := httptest.NewServer(gatewayRouter)
 	t.Cleanup(gatewayServer.Close)
 	return centralServer.URL, gatewayServer.URL, denyCentral, denyRelease

@@ -930,7 +930,7 @@ CREATE TABLE `alert_event` (
   `device_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '设备全局唯一编号',
   `rule_id` bigint unsigned DEFAULT NULL COMMENT '历史阈值规则 ID；当前设备上报告警为 NULL',
   `severity` enum('warning','critical','fatal') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'warning' COMMENT '告警严重程度；取值 warning / critical / fatal',
-  `metric` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '告警指标；smoke 烟雾、high_temperature 高温、device_fault 设备故障、port_fault_N 端口故障，或遥测指标',
+  `metric` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '告警指标；smoke 烟雾、high_temperature 高温、device_fault 设备故障、port_fault_N 端口故障',
   `value` decimal(18,6) DEFAULT NULL COMMENT '告警观测值；设备故障时为协议故障码',
   `threshold` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '历史阈值规则触发阈值；当前设备上报告警为 NULL',
   `status` enum('active','acknowledged','resolved','auto_resolved') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active' COMMENT '当前业务状态；取值 active / acknowledged / resolved / auto_resolved',

@@ -42,12 +42,9 @@ func queryFailure(c *gin.Context, err error) {
 	}
 	var window *chargingquery.UserInputError
 	if errors.As(err, &window) {
-		switch window.Kind {
-		case "conflict":
+		if window.Kind == "conflict" {
 			httpapi.Write(c, 409, 2009, window.Message, nil)
-		case "expired":
-			httpapi.Write(c, 422, 2018, window.Message, nil)
-		default:
+		} else {
 			httpapi.BadRequest(c, window.Message)
 		}
 		return

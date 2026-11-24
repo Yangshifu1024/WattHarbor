@@ -1915,7 +1915,7 @@
       },
       "ChargeSnapshot": {
         "type": "object",
-        "description": "原订单快照；确认费用与补充遥测独立。网关失败时订单快照仍成功且telemetry_available=false；订单、确认费用及冻结状态存储失败返回503。墙钟elapsed_seconds只用于展示，不参加计费。 充电中已授权订单复用后台估价：live.fee 为预估分值，与 total_cents 等确认金额独立；超过30秒的观测标记 stale，取证失败通过 live_unavailable 或 live.fee_unavailable 提示，不伪造零费用。",
+        "description": "原订单快照；确认费用与补充订单采样独立。网关失败时订单快照仍成功且telemetry_available=false；订单、确认费用及冻结状态存储失败返回503。墙钟elapsed_seconds只用于展示，不参加计费。 充电中已授权订单复用后台估价：live.fee 为预估分值，与 total_cents 等确认金额独立；超过30秒的观测标记 stale，取证失败通过 live_unavailable 或 live.fee_unavailable 提示，不伪造零费用。",
         "properties": {
           "order_no": {
             "type": "string"
@@ -3375,19 +3375,16 @@
             }
           },
           "400": {
-            "description": "粒度非法或超过2000桶上限。"
+            "description": "粒度、起止跨度或点数超过查询限制。"
           },
           "409": {
             "description": "订单尚未开始或原时间窗无效。"
-          },
-          "422": {
-            "description": "历史遥测超过三年保留期。"
           },
           "503": {
             "description": "网关不可用，不能当作空曲线。"
           }
         },
-        "description": "先核对原订单归属，再使用原开始／结束窗口。三年保留期、2000聚合桶上限在外部读取前校验；超限可选择hourly。"
+        "description": "先核对原订单归属，再按订单起止时间查询专属采样。每次最多返回 2000 点，auto 按样本量选择粒度。"
       }
     },
     "/api/v1/user/charge/ongoing": {
@@ -3418,7 +3415,7 @@
     },
     "/api/v1/user/charge/ongoing/snapshot": {
       "get": {
-        "summary": "查询当前用户原订单快照与补充遥测",
+        "summary": "查询当前用户原订单快照与补充订单采样",
         "operationId": "user_charge_snapshot",
         "tags": [
           "charge"
@@ -3440,7 +3437,7 @@
             }
           },
           "503": {
-            "description": "订单、确认费用或冻结状态读取失败；网关故障仅使遥测不可用。"
+            "description": "订单、确认费用或冻结状态读取失败；网关故障仅使最新订单采样不可用。"
           }
         },
         "parameters": [

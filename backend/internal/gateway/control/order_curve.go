@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (a TelemetryAPI) orderCurve(c *gin.Context) {
+func (a DeviceEventAPI) orderCurve(c *gin.Context) {
 	if !a.authorized(c) {
 		return
 	}
@@ -31,7 +31,7 @@ func (a TelemetryAPI) orderCurve(c *gin.Context) {
 	to, toErr := time.Parse(time.RFC3339Nano, c.Query("to"))
 	if idErr != nil || id == 0 || portErr != nil || port == 0 ||
 		q.OrderNo == "" || len(q.OrderNo) > 64 || q.DeviceID == "" || len(q.DeviceID) > 64 ||
-		fromErr != nil || toErr != nil || !from.Before(to) || to.Sub(from) > 3*366*24*time.Hour ||
+		fromErr != nil || toErr != nil || !from.Before(to) || to.Sub(from) > contract.MaxOrderCurveWindow ||
 		(q.Granularity != "auto" && q.Granularity != "15min" && q.Granularity != "hourly") {
 		httpapi.BadRequest(c, "订单采样查询参数无效")
 		return
