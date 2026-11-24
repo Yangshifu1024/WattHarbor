@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // TestUnknownCommandDoesNotKillTheConnection 验证未知但格式正确的命令不会关闭连接。

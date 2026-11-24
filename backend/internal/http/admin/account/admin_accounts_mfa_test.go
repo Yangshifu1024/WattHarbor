@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/httpapi"
 )
 
 func TestAdministratorMFAEndpointStillRejectsSelfOperation(t *testing.T) {

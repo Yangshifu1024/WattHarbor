@@ -1,15 +1,15 @@
 package marketing
 
 import (
-	marketingdomain "chargepilot/internal/domain/marketing"
-	"chargepilot/internal/domain/money"
-	orderdomain "chargepilot/internal/domain/order"
 	"database/sql"
 	"errors"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"time"
+	marketingdomain "wattharbor/internal/domain/marketing"
+	"wattharbor/internal/domain/money"
+	orderdomain "wattharbor/internal/domain/order"
 )
 
 // activityRule 保存加锁后用于发券的完整配置，不使用锁前查询结果。

@@ -2,10 +2,8 @@
 
 Issues and specs for this repo live as markdown files in `.scratch/`.
 
-This repo **does not** use GitLab Issues. The `origin` remote
-(`https://git.chongdian.xyz/yangshifu/chargepilot.git`) is a GitLab instance, but
-tickets are tracked in-repo as files, so no CLI (`glab`, `gh`) is involved in any
-tracker operation.
+The Git remote is [Yangshifu1024/WattHarbor](https://github.com/Yangshifu1024/WattHarbor).
+Issue-tracking operations use the files in `.scratch/`.
 
 ## Conventions
 

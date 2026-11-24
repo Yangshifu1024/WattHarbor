@@ -1,8 +1,8 @@
 package charging
 
 import (
-	"chargepilot/internal/domain/devices"
 	"time"
+	"wattharbor/internal/domain/devices"
 )
 
 // maxSamples 限制单次计费的心跳条数，防止异常上报导致无界计算；与网关取数上限一致。

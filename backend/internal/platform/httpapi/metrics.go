@@ -31,31 +31,31 @@ func NewMetrics(service string, pools ...DatabasePool) *Metrics {
 	registry := prometheus.NewRegistry()
 	started := time.Now()
 	requests := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "chargepilot_http_requests_total", Help: "Handled HTTP requests.",
+		Name: "wattharbor_http_requests_total", Help: "Handled HTTP requests.",
 	}, []string{"method", "route", "status"})
 	duration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "chargepilot_http_request_duration_seconds", Help: "HTTP request latency in seconds.",
+		Name: "wattharbor_http_request_duration_seconds", Help: "HTTP request latency in seconds.",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 	}, []string{"method", "route"})
 	registry.MustRegister(requests, duration,
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "chargepilot_service_info", Help: "Always 1; the service this scrape came from.",
+			Name: "wattharbor_service_info", Help: "Always 1; the service this scrape came from.",
 			ConstLabels: prometheus.Labels{"service": service},
 		}, func() float64 { return 1 }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "chargepilot_build_info", Help: "Build and start information.",
+			Name: "wattharbor_build_info", Help: "Build and start information.",
 			ConstLabels: prometheus.Labels{"service": service, "go_version": runtime.Version()},
 		}, func() float64 { return 1 }),
 		prometheus.NewCounterFunc(prometheus.CounterOpts{
-			Name: "chargepilot_uptime_seconds", Help: "Seconds since this process started.",
+			Name: "wattharbor_uptime_seconds", Help: "Seconds since this process started.",
 			ConstLabels: prometheus.Labels{"service": service},
 		}, func() float64 { return time.Since(started).Seconds() }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "chargepilot_goroutines", Help: "Number of goroutines.",
+			Name: "wattharbor_goroutines", Help: "Number of goroutines.",
 			ConstLabels: prometheus.Labels{"service": service},
 		}, func() float64 { return float64(runtime.NumGoroutine()) }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "chargepilot_heap_in_use_bytes", Help: "Bytes of heap in use.",
+			Name: "wattharbor_heap_in_use_bytes", Help: "Bytes of heap in use.",
 			ConstLabels: prometheus.Labels{"service": service},
 		}, func() float64 { var mem runtime.MemStats; runtime.ReadMemStats(&mem); return float64(mem.HeapInuse) }),
 	)
@@ -99,7 +99,7 @@ func registerPoolMetrics(registry *prometheus.Registry, service string, pool Dat
 		{"idle_connections", "Number of idle SQL connections.", func(s sql.DBStats) float64 { return float64(s.Idle) }},
 		{"max_open_connections", "Configured SQL connection limit; zero means unlimited.", func(s sql.DBStats) float64 { return float64(s.MaxOpenConnections) }},
 	} {
-		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "chargepilot_db_" + metric.name, Help: metric.help, ConstLabels: labels}, func() float64 { return metric.value(pool.DB.Stats()) }))
+		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "wattharbor_db_" + metric.name, Help: metric.help, ConstLabels: labels}, func() float64 { return metric.value(pool.DB.Stats()) }))
 	}
 	for _, metric := range []struct {
 		name  string
@@ -112,6 +112,6 @@ func registerPoolMetrics(registry *prometheus.Registry, service string, pool Dat
 		{"max_idle_time_closed_total", "SQL connections closed by the idle time limit.", func(s sql.DBStats) float64 { return float64(s.MaxIdleTimeClosed) }},
 		{"max_lifetime_closed_total", "SQL connections closed by the lifetime limit.", func(s sql.DBStats) float64 { return float64(s.MaxLifetimeClosed) }},
 	} {
-		registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "chargepilot_db_" + metric.name, Help: metric.help, ConstLabels: labels}, func() float64 { return metric.value(pool.DB.Stats()) }))
+		registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "wattharbor_db_" + metric.name, Help: metric.help, ConstLabels: labels}, func() float64 { return metric.value(pool.DB.Stats()) }))
 	}
 }

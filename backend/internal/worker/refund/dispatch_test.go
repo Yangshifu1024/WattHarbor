@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestDispatcherRequiresSuccessfulEnvelope 使用专用客户端核对退款 POST 及有效回执；回环响应不执行退款。

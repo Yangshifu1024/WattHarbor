@@ -5,7 +5,7 @@
 // 用法：
 //   node scripts/db/backup.mjs <output-dir>
 //   MYSQL_HOST=... MYSQL_PORT=... MYSQL_USER=... MYSQL_PWD=... node scripts/db/backup.mjs out/
-//   MYSQL_CLIENT_CONTAINER=chargepilot-dev-mysql-1 MYSQL_PASSWORD=... node scripts/db/backup.mjs out/
+//   MYSQL_CLIENT_CONTAINER=wattharbor-dev-mysql-1 MYSQL_PASSWORD=... node scripts/db/backup.mjs out/
 import { spawnSync, spawn } from 'node:child_process';
 import { createWriteStream, createReadStream, statSync, existsSync } from 'node:fs';
 import { createGzip, createGunzip } from 'node:zlib';
@@ -62,7 +62,7 @@ for (const schema of SCHEMAS) {
   }
 }
 
-const archive = join(outDir, `chargepilot-${stamp}.sql.gz`);
+const archive = join(outDir, `wattharbor-${stamp}.sql.gz`);
 // 禁用 GTID、列统计和表空间输出，兼容容器内外的 MySQL 客户端。
 const dumpArgs = ['--single-transaction', '--routines', '--triggers', '--events', '--set-gtid-purged=OFF', '--column-statistics=0', '--no-tablespaces'];
 
@@ -72,7 +72,7 @@ const gzip = createGzip({ level: 9 }).setMaxListeners(25);
 const sink = createWriteStream(archive);
 gzip.pipe(sink);
 
-await pipeline(Readable.from(`-- ChargePilot backup ${stamp}\n-- schemas: ${SCHEMAS.join(' ')}\n`), gzip, { end: false });
+await pipeline(Readable.from(`-- WattHarbor backup ${stamp}\n-- schemas: ${SCHEMAS.join(' ')}\n`), gzip, { end: false });
 
 for (const schema of SCHEMAS) {
   // 每份数据库 dump 前写入对应的 USE 语句，避免恢复到错误的库。

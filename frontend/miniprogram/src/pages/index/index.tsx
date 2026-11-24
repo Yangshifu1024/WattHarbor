@@ -13,7 +13,7 @@ export default function PageView() {
   const announcements = data.announcements || []
   return <>
     <View className='home'>
-      <View className='home-brand'><AtIcon value='lightning-bolt' size={26} color='#168665' /><View><Text className='brand-name'>ChargePilot</Text><Text className='page-subtitle'>充电，从这里开始</Text></View></View>
+      <View className='home-brand'><AtIcon value='lightning-bolt' size={26} color='#168665' /><View><Text className='brand-name'>电港充电</Text><Text className='page-subtitle'>充电，从这里开始</Text></View></View>
       <View className='scan-hero'>
         <Button className='scan-main' onClick={event('onScanTap')}><AtIcon value='camera' size={34} /><View><Text className='scan-title'>扫码充电</Text><Text className='scan-description'>扫描设备或插座二维码</Text></View></Button>
         <Button className='scan-manual' onClick={event('onScanTap')}>手动输入编号 ›</Button>

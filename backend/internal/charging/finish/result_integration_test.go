@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	rules "chargepilot/internal/domain/charging"
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
+	rules "wattharbor/internal/domain/charging"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // 验证并发或顺序投递结束回执不会重复保存计量、释放占用或派发计费。

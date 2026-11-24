@@ -5,8 +5,8 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
 )
 
 // Synchronizer 向中央提交启动回执，确认成功后标记已上报；启动成功但中央拒绝时请求停机补偿。

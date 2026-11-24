@@ -3,7 +3,6 @@
 package control
 
 import (
-	"chargepilot/internal/gateway/session"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,14 +11,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"wattharbor/internal/gateway/session"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/testfixture"
 )
 
 // TestSyncMarkBatchRollsBackAfterCancellation 验证实际注册端点的首行写入后取消会回滚整批，恢复和重复身份仍按实际影响行数返回。

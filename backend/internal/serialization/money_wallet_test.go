@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/card"
-	"chargepilot/internal/contracts/gateway"
-	carddomain "chargepilot/internal/domain/card"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/domain/money"
-	walletdomain "chargepilot/internal/domain/wallet"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/settlement"
-	"chargepilot/internal/wallet"
+	"wattharbor/internal/card"
+	"wattharbor/internal/contracts/gateway"
+	carddomain "wattharbor/internal/domain/card"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/domain/money"
+	walletdomain "wattharbor/internal/domain/wallet"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/settlement"
+	"wattharbor/internal/wallet"
 )
 
 // TestMoneyPaymentStatus 锁定 money.PaymentStatus 的 6 个取值，

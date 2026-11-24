@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestVendorProxyForwardsConfigurationAndTrace 验证更新厂商时传递配置、服务令牌和追踪号；本地响应不验证数据库写入。

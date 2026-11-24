@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/config"
+	contract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/config"
 )
 
 // workerJobTransport 检查启动代码创建的客户端请求，并返回固定响应。

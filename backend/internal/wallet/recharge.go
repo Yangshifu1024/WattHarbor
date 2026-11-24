@@ -1,8 +1,6 @@
 package wallet
 
 import (
-	"chargepilot/internal/domain/money"
-	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"time"
+	"wattharbor/internal/domain/money"
+	walletdomain "wattharbor/internal/domain/wallet"
 )
 
 // RechargePayment 返回支付编号、金额、状态与截止时间；预支付参数保留渠道 JSON 格式。

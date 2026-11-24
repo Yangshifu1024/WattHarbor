@@ -1,8 +1,8 @@
 package device
 
 import (
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/protocol"
 )
 
 // 批量导入请求和任务记录定义在 device 用例内；ImportService 管理事务和网关调用，HTTP 负责格式转换。

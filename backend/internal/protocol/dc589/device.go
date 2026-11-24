@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // 本文件实现 DC589 设备方向的编解码，与服务端 commands.go 和 measurements.go 配对。

@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // liveSession 让测试会话始终有效，JWT 身份仍由真实认证器解析。

@@ -3,8 +3,6 @@
 package card
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/testfixture"
 	"context"
 	"gorm.io/gorm"
 	"strconv"
@@ -12,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/testfixture"
 )
 
 // TestFirstCardBindingUsesUniqueClaimAndCurrentLockedIdentity 用两条独立连接控制首次绑定写入等待。

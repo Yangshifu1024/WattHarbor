@@ -3,9 +3,9 @@ package auth
 import (
 	"net/http"
 
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // RequireServiceToken 返回按 token 校验 X-Service-Token 的内部路由中间件。

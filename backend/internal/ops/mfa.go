@@ -1,8 +1,6 @@
 package ops
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/auth"
 	"context"
 	"crypto/subtle"
 	"errors"
@@ -10,6 +8,8 @@ import (
 	"gorm.io/gorm"
 	"strings"
 	"time"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/auth"
 )
 
 // mfaEnrollmentTTL 限制待绑定窗口为五分钟，确认时仍核对截止时间。
@@ -141,7 +141,7 @@ func (s MFAService) apply(ctx context.Context, p operations.Profile, sid string,
 			if err != nil {
 				return err
 			}
-			uri, err := auth.TOTPURI("ChargePilot", account.Username, secret)
+			uri, err := auth.TOTPURI("WattHarbor", account.Username, secret)
 			if err != nil {
 				return err
 			}

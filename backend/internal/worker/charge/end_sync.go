@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strconv"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/protocol"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/protocol"
 )
 
 // EndGateway 提供结束事件、心跳读数、请求保存、端口释放及处理标记。

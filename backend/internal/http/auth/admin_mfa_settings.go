@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // mfaSettings 校验 MFA 设置输入，以当前管理员和会话执行设置操作。

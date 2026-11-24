@@ -4,9 +4,9 @@ package user
 import (
 	"errors"
 
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // WriteResourceFailure 将 err 写入 c 的错误响应：缺失记录为 404／1004，其他错误为 503／5003；不返回错误或读取、修改业务资源。

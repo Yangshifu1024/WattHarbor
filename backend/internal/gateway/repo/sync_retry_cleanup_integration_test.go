@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/testfixture"
 )
 
 // TestSyncRetryCleanupPreservesPendingAndDeletesFinished 验证成功标记原子清理、迟到失败不重建，及有上限历史清理。

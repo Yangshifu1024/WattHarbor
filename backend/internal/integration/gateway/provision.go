@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
+	contract "wattharbor/internal/contracts/gateway"
 )
 
 // Provision 同步开通设备，最多等待十秒，仅 HTTP 200 表示成功。

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
 )
 
 // startSyncScenario 记录启动同步请求和次序，按配置返回错误。

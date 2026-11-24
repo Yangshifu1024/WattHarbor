@@ -76,14 +76,14 @@ func TestMetricsExposeValidExposition(t *testing.T) {
 	body := scrape(t, router)
 
 	for _, want := range []string{
-		"# TYPE chargepilot_http_requests_total counter",
-		"# TYPE chargepilot_http_request_duration_seconds histogram",
-		"chargepilot_service_info{service=\"testsvc\"} 1",
-		"chargepilot_uptime_seconds{service=\"testsvc\"}",
-		"chargepilot_goroutines{service=\"testsvc\"}",
-		"chargepilot_http_request_duration_seconds_bucket",
+		"# TYPE wattharbor_http_requests_total counter",
+		"# TYPE wattharbor_http_request_duration_seconds histogram",
+		"wattharbor_service_info{service=\"testsvc\"} 1",
+		"wattharbor_uptime_seconds{service=\"testsvc\"}",
+		"wattharbor_goroutines{service=\"testsvc\"}",
+		"wattharbor_http_request_duration_seconds_bucket",
 		"le=\"+Inf\"",
-		"chargepilot_http_request_duration_seconds_count",
+		"wattharbor_http_request_duration_seconds_count",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("exposition missing %q:\n%s", want, body)
@@ -94,7 +94,7 @@ func TestMetricsExposeValidExposition(t *testing.T) {
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !strings.Contains(line, "chargepilot_") {
+		if !strings.Contains(line, "wattharbor_") {
 			t.Fatalf("unexpected exposition line: %q", line)
 		}
 	}
@@ -112,10 +112,10 @@ func TestMetricsExposePoolBudgetWithoutCredentials(t *testing.T) {
 	m.Register(router)
 	body := scrape(t, router)
 	for _, want := range []string{
-		`chargepilot_db_max_open_connections{schema="central_db",service="worker"} 12`,
-		`chargepilot_db_wait_total{schema="central_db",service="worker"} 0`,
-		`chargepilot_db_wait_seconds_total{schema="central_db",service="worker"} 0`,
-		`chargepilot_db_max_idle_time_closed_total{schema="central_db",service="worker"} 0`,
+		`wattharbor_db_max_open_connections{schema="central_db",service="worker"} 12`,
+		`wattharbor_db_wait_total{schema="central_db",service="worker"} 0`,
+		`wattharbor_db_wait_seconds_total{schema="central_db",service="worker"} 0`,
+		`wattharbor_db_max_idle_time_closed_total{schema="central_db",service="worker"} 0`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)

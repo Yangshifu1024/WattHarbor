@@ -27,7 +27,7 @@ export default defineAppConfig({
   "window": {
     "backgroundTextStyle": "light",
     "navigationBarBackgroundColor": "#f5f7f6",
-    "navigationBarTitleText": "ChargePilot 充电",
+    "navigationBarTitleText": "电港充电",
     "navigationBarTextStyle": "black"
   },
   "permission": {

@@ -3,7 +3,6 @@
 package control
 
 import (
-	"chargepilot/internal/gateway/session"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -13,15 +12,16 @@ import (
 	"reflect"
 	"testing"
 	"time"
+	"wattharbor/internal/gateway/session"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/charging"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/charging"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/testfixture"
 )
 
 // 实际路由与真实 SQL 验证同步契约，所有测试写入和端点事务位于外层回滚事务中。

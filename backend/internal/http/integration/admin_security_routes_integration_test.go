@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"chargepilot/internal/domain/operations"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,15 +13,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"wattharbor/internal/domain/operations"
 
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
 )
 
 // TestRegisteredAdminSecurityLifecycle 使用真实 MySQL／Redis 和注册认证路由验证登记、确认、挑战和关闭。

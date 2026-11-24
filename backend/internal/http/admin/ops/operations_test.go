@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
 )
 
 func TestRetiredPermissionsPreserveFeedbackWalletAndDeviceAlerts(t *testing.T) {

@@ -3,9 +3,6 @@
 package card_test
 
 import (
-	"chargepilot/internal/card"
-	"chargepilot/internal/charging/stop"
-	"chargepilot/internal/domain/money"
 	"context"
 	"errors"
 	"github.com/google/uuid"
@@ -14,6 +11,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"wattharbor/internal/card"
+	"wattharbor/internal/charging/stop"
+	"wattharbor/internal/domain/money"
 )
 
 // TestExtensionAndDeadlineSerializePurchasedDuration 控制两条真库连接在会话锁上等待，核对两种提交次序。

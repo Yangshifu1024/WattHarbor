@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // ErrInvalidResponse 表示服务响应不符合接口要求。

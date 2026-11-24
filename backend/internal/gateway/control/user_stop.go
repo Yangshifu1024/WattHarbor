@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/gateway/repo"
-	"chargepilot/internal/gateway/session"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/gateway/repo"
+	"wattharbor/internal/gateway/session"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // StopAuthorizer 用户停机用例需要的中央订单归属及充电状态授权能力，返回授权结果或错误。

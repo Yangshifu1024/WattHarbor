@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
 )
 
 // TestSyncReadOperationsPreserveNullsAndEvidenceWindow 验证命令筛选参数的 URL 编码、空值、大整数和 UTC 计量时间范围。

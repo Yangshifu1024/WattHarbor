@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "ChargePilot C 端接口",
+    "title": "WattHarbor C 端接口",
     "version": "1.0.0",
     "description": "充电用户端接口。由 user 进程（:8080）承载，是唯一直接对用户开放的业务进程。\n\n鉴权：除登录、刷新与站点查询等公开接口外，其余接口都要求 `Authorization: Bearer <token>`。\n令牌由 `/api/v1/user/auth/login` 签发，8 小时有效。\n\n**大 ID 一律以十进制字符串传输**：用户 ID、订单 ID、设备 ID 等字段在响应里是字符串，避免 JavaScript number 在发出请求前就丢掉精度。请求里同样要传字符串。"
   },

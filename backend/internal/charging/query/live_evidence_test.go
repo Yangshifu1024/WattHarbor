@@ -1,12 +1,12 @@
 package query
 
 import (
-	"chargepilot/internal/charging/measurement"
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/protocol"
 	"testing"
 	"time"
+	"wattharbor/internal/charging/measurement"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/protocol"
 )
 
 // TestLiveMeterKeepsLastEvidenceWhenOfflineAndIsolatesPort 验证计量单位、离线保留最后读数及端口和订单隔离。

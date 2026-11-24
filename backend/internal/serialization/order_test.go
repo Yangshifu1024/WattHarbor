@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
-	orderdomain "chargepilot/internal/domain/order"
-	"chargepilot/internal/order"
+	charging "wattharbor/internal/domain/charging"
+	orderdomain "wattharbor/internal/domain/order"
+	"wattharbor/internal/order"
 )
 
 // 固定时间戳：所有期望串里的时间字段都用它，保证序列化字节可复现。

@@ -1,11 +1,11 @@
 package device
 
 import (
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/domain/operations"
 	"context"
 	"errors"
 	"time"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/domain/operations"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

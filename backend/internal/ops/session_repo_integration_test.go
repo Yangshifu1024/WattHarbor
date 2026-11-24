@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/sessiontoken"
 	"github.com/redis/go-redis/v9"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/sessiontoken"
 )
 
 // TestAdminSessionConcurrentRotationHasOneWinner 验证两个真实 Redis 调用同令牌轮换只有一次成功，旧令牌仍可注销。

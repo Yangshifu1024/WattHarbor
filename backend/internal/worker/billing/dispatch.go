@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "chargepilot/internal/contracts/central"
+	centralcontract "wattharbor/internal/contracts/central"
 )
 
 // DispatchClient 调用中央服务触发计费任务。

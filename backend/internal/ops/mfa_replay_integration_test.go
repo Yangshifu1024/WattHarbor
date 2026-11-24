@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/auth"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/auth"
 )
 
 // TestUsedTOTPDoesNotLockAccount 使用真实SQL/Redis挑战重复提交已消费正确码，保持已有4次坏码计数。

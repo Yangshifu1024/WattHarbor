@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbutil"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbutil"
+	"wattharbor/internal/testfixture"
 )
 
 func TestMoveWritesMonthAnchorAndBalance(t *testing.T) {

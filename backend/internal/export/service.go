@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/persist"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/persist"
 )
 
 // InputError 表示导出请求参数不合法，提示不含存储细节。
@@ -70,7 +70,7 @@ type ResourcesResult struct {
 // ExportService 校验导出请求并同步生成、发布文件，不另起后台任务。
 type ExportService struct {
 	DB        *gorm.DB         // 中央导出任务及来源查询连接
-	ExportDir string           // 导出根目录；空值使用系统临时目录下的 chargepilot-exports
+	ExportDir string           // 导出根目录；空值使用系统临时目录下的 wattharbor-exports
 	MaxRows   int              // 单次上限，非正数默认50000
 	Clock     func() time.Time // 可注入测试时钟，nil 使用实际墙钟；到期检查须在等待锁后调用
 }
@@ -96,7 +96,7 @@ func (s ExportService) exportDir() string {
 	if s.ExportDir != "" {
 		return s.ExportDir
 	}
-	return filepath.Join(os.TempDir(), "chargepilot-exports")
+	return filepath.Join(os.TempDir(), "wattharbor-exports")
 }
 
 // repo 返回当前连接的仓储，不创建新连接池。

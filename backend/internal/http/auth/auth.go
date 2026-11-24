@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strings"
 
-	identity "chargepilot/internal/identity"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	identity "wattharbor/internal/identity"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // NewAuthenticator 组合 JWT、会话和用户状态校验接口，创建 C 端认证器。

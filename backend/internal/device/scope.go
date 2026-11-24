@@ -1,8 +1,8 @@
 package device
 
 import (
-	"chargepilot/internal/domain/operations"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
 )
 
 // ScopeStations 给指定站点列追加范围条件；不受限或站点范围为空时不加条件。

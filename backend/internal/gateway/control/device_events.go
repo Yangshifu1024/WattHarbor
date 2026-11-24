@@ -1,15 +1,15 @@
 package control
 
 import (
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	"chargepilot/internal/gateway/session"
 	"net/http"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	"wattharbor/internal/gateway/session"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // DeviceEventAPI 提供设备事件、计量证据与订单采样的内部接口。

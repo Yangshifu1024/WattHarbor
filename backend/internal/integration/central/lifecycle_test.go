@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestAuthorizationWireIdentityAndNullableAbsence 验证授权路径、服务令牌、大整数 ID 和设备参数，以及可为空的响应字段。

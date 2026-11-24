@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // StopAPI 适配已认证用户的停止请求，依赖由 cmd 注入；受理及设备控制由 gateway 执行。

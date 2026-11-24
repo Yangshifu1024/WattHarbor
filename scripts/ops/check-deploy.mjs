@@ -51,41 +51,41 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
   const services = config?.services;
   requireValue(services && typeof services === 'object', 'Compose services are missing.');
   for (const name of ['mysql', ...applicationNames, 'migrate', 'provision-runtime', 'caddy', 'redis-cache', 'redis-stream']) {
-    requireValue(services[`chargepilot-${name}`], `Missing service: chargepilot-${name}.`);
+    requireValue(services[`wattharbor-${name}`], `Missing service: wattharbor-${name}.`);
   }
   for (const [name, service] of Object.entries(services)) {
     for (const port of service.ports ?? []) {
-      const allowed = name === 'chargepilot-caddy' ? [80, 443] : name === 'chargepilot-gateway' ? [9100] : [];
+      const allowed = name === 'wattharbor-caddy' ? [80, 443] : name === 'wattharbor-gateway' ? [9100] : [];
       requireValue(allowed.includes(Number(port.target)) && Number(port.published) === Number(port.target), `Unexpected published port on ${name}.`);
     }
   }
 
-  const central = services['chargepilot-central'].environment ?? {};
+  const central = services['wattharbor-central'].environment ?? {};
   for (const key of ['DATABASE_URL_USER', 'DATABASE_URL_ADMIN', 'DATABASE_URL_BILLING', 'DATABASE_URL_GATEWAY', 'DATABASE_URL_WORKER']) {
     requireValue(!Object.hasOwn(central, key), 'Central must use one database URL.');
   }
   const centralDB = databaseURL(central, 'DATABASE_URL_CENTRAL', 'central_db');
   for (const name of ['user', 'admin', 'worker', 'migrate']) {
-    const url = databaseURL(services[`chargepilot-${name}`].environment ?? {}, 'DATABASE_URL_CENTRAL', 'central_db');
+    const url = databaseURL(services[`wattharbor-${name}`].environment ?? {}, 'DATABASE_URL_CENTRAL', 'central_db');
     requireValue(url.host === centralDB.host && url.pathname === centralDB.pathname, `${name} must use the shared central database URL.`);
   }
   for (const [key, schema, owner] of [['DATABASE_URL_GATEWAY', 'gateway_db', 'gateway'], ['DATABASE_URL_WORKER', 'worker_db', 'worker']]) {
     const ownerKey = owner === 'gateway' ? 'DATABASE_URL' : key;
-    const ownerDB = databaseURL(services[`chargepilot-${owner}`].environment ?? {}, ownerKey, schema);
+    const ownerDB = databaseURL(services[`wattharbor-${owner}`].environment ?? {}, ownerKey, schema);
     for (const name of ['worker', 'migrate']) {
-      const url = databaseURL(services[`chargepilot-${name}`].environment ?? {}, key, schema);
+      const url = databaseURL(services[`wattharbor-${name}`].environment ?? {}, key, schema);
       requireValue(url.host === ownerDB.host && url.pathname === ownerDB.pathname, `${name} must use the ${schema} database URL.`);
     }
   }
 
-  const provision = services['chargepilot-provision-runtime'];
-  requireValue(provision.depends_on?.['chargepilot-migrate']?.condition === 'service_completed_successfully', 'Runtime accounts must be provisioned after migration.');
+  const provision = services['wattharbor-provision-runtime'];
+  requireValue(provision.depends_on?.['wattharbor-migrate']?.condition === 'service_completed_successfully', 'Runtime accounts must be provisioned after migration.');
   for (const name of applicationNames) {
-    const service = services[`chargepilot-${name}`];
-    requireValue(service.depends_on?.['chargepilot-provision-runtime']?.condition === 'service_completed_successfully', `${name} must wait for runtime accounts.`);
+    const service = services[`wattharbor-${name}`];
+    requireValue(service.depends_on?.['wattharbor-provision-runtime']?.condition === 'service_completed_successfully', `${name} must wait for runtime accounts.`);
     for (const key of name === 'worker' ? ['DATABASE_URL_CENTRAL','DATABASE_URL_GATEWAY','DATABASE_URL_WORKER'] : [name === 'gateway' ? 'DATABASE_URL' : 'DATABASE_URL_CENTRAL']) {
       const url = new URL(service.environment[key]);
-      requireValue(url.username === `chargepilot_${name}`, `${name} must use its own runtime database account.`);
+      requireValue(url.username === `wattharbor_${name}`, `${name} must use its own runtime database account.`);
       if (!configOnly) {
         const password = provision.environment?.[`DB_${name.toUpperCase()}_PASSWORD`];
         requireValue(typeof password === 'string' && password.length > 0 && !password.startsWith('change-me'), `${name} database password is missing or still uses a template value.`);
@@ -94,12 +94,12 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
     }
   }
   for (const key of ['DATABASE_URL_CENTRAL','DATABASE_URL_GATEWAY','DATABASE_URL_WORKER']) {
-    requireValue(new URL(services['chargepilot-migrate'].environment[key]).username === 'chargepilot', 'Migration must use the maintenance database account.');
+    requireValue(new URL(services['wattharbor-migrate'].environment[key]).username === 'wattharbor', 'Migration must use the maintenance database account.');
   }
 
   // 只检查部署配置的实际凭据归属，不扫描源码或建立架构检查规则。
   for (const name of applicationNames) {
-    const environment = services[`chargepilot-${name}`].environment ?? {};
+    const environment = services[`wattharbor-${name}`].environment ?? {};
     const disallowed = [];
     if (name !== 'user' && name !== 'admin') disallowed.push('JWT_SECRET');
     if (name !== 'user') disallowed.push('WECHAT_SECRET', 'LOGIN_MODE');
@@ -110,10 +110,10 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
     for (const key of disallowed) requireValue(!Object.hasOwn(environment, key), `${name} must not receive ${key}.`);
   }
   for (const [name, policy] of [['redis-cache', 'allkeys-lru'], ['redis-stream', 'noeviction']]) {
-    requireValue(redisArgument(services[`chargepilot-${name}`], '--maxmemory-policy') === policy, `${name} must use ${policy}.`);
+    requireValue(redisArgument(services[`wattharbor-${name}`], '--maxmemory-policy') === policy, `${name} must use ${policy}.`);
   }
 
-  const user = services['chargepilot-user'].environment ?? {};
+  const user = services['wattharbor-user'].environment ?? {};
   const userMode = user.PAYMENT_MODE || 'disabled';
   const centralMode = central.PAYMENT_MODE || 'disabled';
   for (const [name, mode] of [['user', userMode], ['central', centralMode]]) {
@@ -126,22 +126,22 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
 
   if (!configOnly) {
     const secrets = {
-      MYSQL_ROOT_PASSWORD: services['chargepilot-mysql'].environment?.MYSQL_ROOT_PASSWORD,
-      DB_PASSWORD: services['chargepilot-mysql'].environment?.MYSQL_PASSWORD,
+      MYSQL_ROOT_PASSWORD: services['wattharbor-mysql'].environment?.MYSQL_ROOT_PASSWORD,
+      DB_PASSWORD: services['wattharbor-mysql'].environment?.MYSQL_PASSWORD,
       'user.JWT_SECRET': user.JWT_SECRET,
-      'admin.JWT_SECRET': services['chargepilot-admin'].environment?.JWT_SECRET,
-      REDIS_PASSWORD: redisArgument(services['chargepilot-redis-cache'], '--requirepass'),
-      REDIS_STREAM_PASSWORD: redisArgument(services['chargepilot-redis-stream'], '--requirepass'),
+      'admin.JWT_SECRET': services['wattharbor-admin'].environment?.JWT_SECRET,
+      REDIS_PASSWORD: redisArgument(services['wattharbor-redis-cache'], '--requirepass'),
+      REDIS_STREAM_PASSWORD: redisArgument(services['wattharbor-redis-stream'], '--requirepass'),
       'user.WECHAT_SECRET': user.WECHAT_SECRET,
     };
-    for (const name of applicationNames) secrets[`${name}.SERVICE_TOKEN`] = services[`chargepilot-${name}`].environment?.SERVICE_TOKEN;
+    for (const name of applicationNames) secrets[`${name}.SERVICE_TOKEN`] = services[`wattharbor-${name}`].environment?.SERVICE_TOKEN;
     for (const [name, value] of Object.entries(secrets)) {
       requireValue(typeof value === 'string' && value.length > 0 && !value.startsWith('change-me') && value !== 'your_app_secret', `${name} is missing or still uses a template value.`);
     }
-    for (const name of ['user', 'admin']) requireValue(services[`chargepilot-${name}`].environment.JWT_SECRET.length >= 32, `${name}.JWT_SECRET must contain at least 32 characters.`);
-    for (const name of applicationNames) requireValue(services[`chargepilot-${name}`].environment.SERVICE_TOKEN === central.SERVICE_TOKEN, `${name} must use the shared SERVICE_TOKEN.`);
+    for (const name of ['user', 'admin']) requireValue(services[`wattharbor-${name}`].environment.JWT_SECRET.length >= 32, `${name}.JWT_SECRET must contain at least 32 characters.`);
+    for (const name of applicationNames) requireValue(services[`wattharbor-${name}`].environment.SERVICE_TOKEN === central.SERVICE_TOKEN, `${name} must use the shared SERVICE_TOKEN.`);
     for (const name of ['user', 'central']) {
-      const environment = services[`chargepilot-${name}`].environment;
+      const environment = services[`wattharbor-${name}`].environment;
       requireValue(typeof environment.WECHAT_APPID === 'string' && environment.WECHAT_APPID.length > 0 && environment.WECHAT_APPID !== 'wx_your_appid', `${name}.WECHAT_APPID is missing or still uses a template value.`);
       if (userMode === 'wechat_direct') {
         for (const key of ['WECHAT_MCH_ID', 'WECHAT_CERT_SERIAL', 'WECHAT_PRIVATE_KEY_PATH', 'WECHAT_NOTIFY_URL']) {
@@ -155,17 +155,17 @@ export function validateDeployment(config, { configOnly = false, caddyText } = {
 
   // 后台仅信任专用代理网络内 Caddy 的单一地址，默认业务网络里的其他服务不能伪造来源。
   const proxyNetwork = config.networks?.['admin-proxy'];
-  const proxyIP = services['chargepilot-caddy'].networks?.['admin-proxy']?.ipv4_address;
+  const proxyIP = services['wattharbor-caddy'].networks?.['admin-proxy']?.ipv4_address;
   requireValue(proxyNetwork?.internal === true && isIP(proxyIP ?? '') === 4, 'Admin proxy requires an internal network and fixed Caddy IPv4 address.');
-  requireValue(services['chargepilot-admin'].environment?.ADMIN_TRUSTED_PROXIES === proxyIP, 'Admin must trust only the fixed Caddy proxy address.');
-  requireValue(services['chargepilot-admin'].networks?.['admin-proxy']?.aliases?.includes('admin-proxy-upstream'), 'Admin proxy upstream alias is missing.');
+  requireValue(services['wattharbor-admin'].environment?.ADMIN_TRUSTED_PROXIES === proxyIP, 'Admin must trust only the fixed Caddy proxy address.');
+  requireValue(services['wattharbor-admin'].networks?.['admin-proxy']?.aliases?.includes('admin-proxy-upstream'), 'Admin proxy upstream alias is missing.');
   for (const [name, service] of Object.entries(services)) {
-    requireValue(!service.networks?.['admin-proxy'] || ['chargepilot-admin', 'chargepilot-caddy'].includes(name), 'Only admin and Caddy may join the admin proxy network.');
+    requireValue(!service.networks?.['admin-proxy'] || ['wattharbor-admin', 'wattharbor-caddy'].includes(name), 'Only admin and Caddy may join the admin proxy network.');
   }
   requireValue(typeof caddyText === 'string', 'Caddy configuration text is missing.');
   const internal = caddyBlock(caddyText, '/api/v1/internal/*');
   requireValue(/^\s*respond 404\s*$/m.test(internal) && !/\breverse_proxy\b/.test(internal), 'Caddy must block the internal API routes.');
-  for (const [path, destination] of [['/api/v1/admin/*', 'admin-proxy-upstream:8081'], ['/api/v1/user/*', 'chargepilot-user:8080'], ['/api/v1/public/*', 'chargepilot-user:8080']]) {
+  for (const [path, destination] of [['/api/v1/admin/*', 'admin-proxy-upstream:8081'], ['/api/v1/user/*', 'wattharbor-user:8080'], ['/api/v1/public/*', 'wattharbor-user:8080']]) {
     requireValue(new RegExp(`^\\s*reverse_proxy ${destination}\\s*$`, 'm').test(caddyBlock(caddyText, path)), `Caddy must route ${path} to ${destination}.`);
   }
   requireValue(/^\s*respond 404\s*$/m.test(caddyBlock(caddyText, '/api/*')), 'Caddy must reject other API routes.');
@@ -198,7 +198,7 @@ export function main(args = process.argv.slice(2)) {
     validateDeployment(config, { configOnly: args.includes('--config-only'), caddyText: readFileSync(caddy, 'utf8') });
     validatePaths(config);
     console.log('Compose and structure checks passed; validating Caddy configuration...');
-    docker(['run', '--rm', '--network', 'none', '-e', `PUBLIC_DOMAIN=${config.services['chargepilot-caddy'].environment.PUBLIC_DOMAIN}`, '-v', `${caddy}:/etc/caddy/Caddyfile:ro`, config.services['chargepilot-caddy'].image, 'caddy', 'adapt', '--config', '/etc/caddy/Caddyfile', '--validate'], 'Caddy validation failed. Check Docker image availability and docker/Caddyfile.');
+    docker(['run', '--rm', '--network', 'none', '-e', `PUBLIC_DOMAIN=${config.services['wattharbor-caddy'].environment.PUBLIC_DOMAIN}`, '-v', `${caddy}:/etc/caddy/Caddyfile:ro`, config.services['wattharbor-caddy'].image, 'caddy', 'adapt', '--config', '/etc/caddy/Caddyfile', '--validate'], 'Caddy validation failed. Check Docker image availability and docker/Caddyfile.');
     console.log('Compose, bind paths, ports, database URLs, Redis policies and Caddy validation passed.');
     return 0;
   } catch (error) {

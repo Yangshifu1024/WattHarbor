@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestAutoStopConsumerPreservesValidatedProgress 和真实专用客户端核对成功及未完成计数、 wire 和一次调用。

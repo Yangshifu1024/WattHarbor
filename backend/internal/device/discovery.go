@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/money"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/money"
 )
 
 // ScanReader 提供扫描所需的网关连接和端口信息。

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/platform/config"
 	"github.com/gin-gonic/gin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/platform/config"
 )
 
 // TestAdminTrustedProxyBoundary 使用内存请求核对单一可信代理、伪造头及空/无效配置，不代表生产验收。

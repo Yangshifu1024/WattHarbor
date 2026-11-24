@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/platform/serviceclient"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // clientForServer 为测试创建本地 HTTP 服务和 gateway 客户端，并注册服务清理。

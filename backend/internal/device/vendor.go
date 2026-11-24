@@ -5,12 +5,12 @@ import (
 	"errors"
 	"log"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/persist"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/persist"
 )
 
 // VendorGateway 提供厂商列表、详情、创建和更新方法，不暴露传输配置或数据库。

@@ -1,18 +1,18 @@
 package identity
 
 import (
-	identitydomain "chargepilot/internal/domain/identity"
-	"chargepilot/internal/wallet"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"time"
+	identitydomain "wattharbor/internal/domain/identity"
+	"wattharbor/internal/wallet"
 
-	"chargepilot/internal/platform/snowflake"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/platform/snowflake"
 )
 
 // UserRepo 持有进程管理的 central 连接；用户与开户事务由对应用例负责。

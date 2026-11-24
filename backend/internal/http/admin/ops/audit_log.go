@@ -3,10 +3,10 @@ package ops
 import (
 	"time"
 
-	adminhttp "chargepilot/internal/http/admin"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	adminhttp "wattharbor/internal/http/admin"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerAuditLogs 挂载审计日志查询接口，权限为 audit.read。

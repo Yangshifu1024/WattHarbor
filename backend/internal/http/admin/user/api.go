@@ -2,10 +2,10 @@
 package user
 
 import (
-	"chargepilot/internal/card"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/identity"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/card"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/identity"
 )
 
 // API 仅持有用户与卡用例及后台鉴权适配，不直接装配表访问或外部调用。

@@ -1,14 +1,14 @@
 package central
 
 import (
-	chargefinish "chargepilot/internal/charging/finish"
-	centralcontract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	chargefinish "wattharbor/internal/charging/finish"
+	centralcontract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // EndResultAPI 接收 worker 提交的设备结束结果，交给结束服务处理。

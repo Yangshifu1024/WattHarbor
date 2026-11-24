@@ -1,8 +1,8 @@
 package device
 
 import (
-	"chargepilot/internal/persist"
 	"context"
+	"wattharbor/internal/persist"
 
 	"gorm.io/gorm"
 )

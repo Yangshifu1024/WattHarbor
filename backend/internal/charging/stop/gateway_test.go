@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/protocol"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/protocol"
 )
 
 // fakeGateway 仅以注入回调提供心跳与停止响应，供调用顺序检查，不执行服务间网络调用。

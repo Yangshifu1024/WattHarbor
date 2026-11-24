@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
+	contract "wattharbor/internal/contracts/gateway"
 )
 
 // DeviceFaults 查询最多 100 条待处理故障，ID 必须递增。

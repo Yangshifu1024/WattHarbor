@@ -1,9 +1,9 @@
 package settlement
 
 import (
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/order"
 	"testing"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/order"
 )
 
 func TestSettlementNoticeUsesFrozenDisplayAndFinalAmounts(t *testing.T) {

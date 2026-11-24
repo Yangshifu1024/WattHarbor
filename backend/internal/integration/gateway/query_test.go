@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/serviceclient"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestQueryClientsKeepIdentityUnitsNullAndIntegerPrecision 验证本地 HTTP 响应保留编号、计量单位、空值和 64 位游标精度。

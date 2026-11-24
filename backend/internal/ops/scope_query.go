@@ -3,8 +3,8 @@ package ops
 import (
 	"context"
 
-	"chargepilot/internal/domain/operations"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
 )
 
 // ScopeQueryService 读取当前账号允许操作的站点和厂商，供 HTTP 和导入调用。

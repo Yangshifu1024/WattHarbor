@@ -1,10 +1,10 @@
 package marketing
 
 import (
-	marketingdomain "chargepilot/internal/domain/marketing"
 	"context"
 	"errors"
 	"time"
+	marketingdomain "wattharbor/internal/domain/marketing"
 
 	"gorm.io/gorm"
 )

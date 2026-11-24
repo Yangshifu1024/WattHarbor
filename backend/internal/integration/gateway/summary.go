@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
+	contract "wattharbor/internal/contracts/gateway"
 )
 
 // DeviceSummaries 批量查询 1 至 100 台设备，每个编号非空且最多 64 字节。

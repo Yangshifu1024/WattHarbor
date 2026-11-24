@@ -9,14 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/devices"
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/devices"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/protocol"
 )
 
 // vendorTestToken 是默认测试的非生产服务鉴权期望值。

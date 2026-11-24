@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	chargefinish "chargepilot/internal/charging/finish"
-	chargestart "chargepilot/internal/charging/start"
-	chargestop "chargepilot/internal/charging/stop"
-	centralcontract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/domain/charging"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
+	chargefinish "wattharbor/internal/charging/finish"
+	chargestart "wattharbor/internal/charging/start"
+	chargestop "wattharbor/internal/charging/stop"
+	centralcontract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/domain/charging"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 const receiptStartID = "10000000-0000-4000-8000-000000000001"

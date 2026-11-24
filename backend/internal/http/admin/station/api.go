@@ -2,10 +2,10 @@
 package station
 
 import (
-	"chargepilot/internal/device"
-	adminhttp "chargepilot/internal/http/admin"
-	authhttp "chargepilot/internal/http/auth"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	adminhttp "wattharbor/internal/http/admin"
+	authhttp "wattharbor/internal/http/auth"
 )
 
 // API 提供站点管理接口，依赖站点服务、当前范围读取和后台鉴权。

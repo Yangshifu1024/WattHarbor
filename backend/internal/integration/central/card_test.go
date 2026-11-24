@@ -1,13 +1,13 @@
 package central
 
 import (
-	contract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	contract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestCardServiceFailuresDoNotBecomeBusinessDeclines 验证只有明确业务拒绝返回 CardDeclineReply；服务故障和错误响应不能当成刷卡拒绝。

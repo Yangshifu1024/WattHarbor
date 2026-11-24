@@ -9,11 +9,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/auth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/auth"
 )
 
 // accountUsernamePattern 限制登录名为 3–64 位英文、数字、下划线、点或连字符。
@@ -350,7 +350,7 @@ func (s AccountService) MFA(ctx context.Context, audit AuditContext, id uint64, 
 			if err != nil {
 				return err
 			}
-			uri, err := auth.TOTPURI("ChargePilot", account.Username, secret)
+			uri, err := auth.TOTPURI("WattHarbor", account.Username, secret)
 			if err != nil {
 				return err
 			}

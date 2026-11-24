@@ -1,11 +1,11 @@
 package central
 
 import (
-	"chargepilot/internal/card"
-	contract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/httpapi"
 	"errors"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/card"
+	contract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // balance 校验服务令牌，返回卡有效性和可用余额，金额单位为分。

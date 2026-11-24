@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestActiveWalletFreezeCountUsesCurrentReadAfterOldSnapshot 防止解冻忽略旧快照之后提交的其他冻结。

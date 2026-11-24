@@ -1,11 +1,11 @@
 package marketing
 
 import (
-	marketingdomain "chargepilot/internal/domain/marketing"
-	"chargepilot/internal/persist"
 	"context"
 	"gorm.io/gorm"
 	"time"
+	marketingdomain "wattharbor/internal/domain/marketing"
+	"wattharbor/internal/persist"
 )
 
 // AvailableCoupon 是支付前可用券的展示资料。

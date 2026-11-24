@@ -1,15 +1,15 @@
 package control
 
 import (
-	gatewayrepo "chargepilot/internal/gateway/repo"
 	"net/http"
 	"time"
+	gatewayrepo "wattharbor/internal/gateway/repo"
 
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/protocol"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/protocol"
 )
 
 // SessionAPI 查询和清理数据库中的静默连接记录，不关闭实际 TCP 连接。

@@ -1,11 +1,6 @@
 package wallet
 
 import (
-	identitydomain "chargepilot/internal/domain/identity"
-	"chargepilot/internal/domain/money"
-	"chargepilot/internal/domain/operations"
-	walletdomain "chargepilot/internal/domain/wallet"
-	"chargepilot/internal/ops"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -13,6 +8,11 @@ import (
 	"gorm.io/gorm"
 	"strconv"
 	"time"
+	identitydomain "wattharbor/internal/domain/identity"
+	"wattharbor/internal/domain/money"
+	"wattharbor/internal/domain/operations"
+	walletdomain "wattharbor/internal/domain/wallet"
+	"wattharbor/internal/ops"
 )
 
 // RiskService 在钱包模块负责风险审核、资金预占及解冻事务。

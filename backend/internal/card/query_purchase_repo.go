@@ -1,9 +1,9 @@
 package card
 
 import (
-	charging "chargepilot/internal/domain/charging"
 	"context"
 	"gorm.io/gorm"
+	charging "wattharbor/internal/domain/charging"
 )
 
 // PurchaseQueryRepo 批量提供刷卡累计购买记录，只读卡表，不重算支付金额。

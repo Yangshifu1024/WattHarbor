@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	authhttp "chargepilot/internal/http/auth"
-	usersettlement "chargepilot/internal/http/user/settlement"
-	"chargepilot/internal/identity"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/settlement"
-	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
+	authhttp "wattharbor/internal/http/auth"
+	usersettlement "wattharbor/internal/http/user/settlement"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/settlement"
+	"wattharbor/internal/testfixture"
 )
 
 // TestRegisteredUserBillServicePreservesOwnershipAndRead 验证服务后的三个真实注册路由。

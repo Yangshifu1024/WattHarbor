@@ -7,13 +7,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // ReadAdminPage 解析并校验通用分页参数：page ≥ 1、page_size 1–100（page 上限 1000000），

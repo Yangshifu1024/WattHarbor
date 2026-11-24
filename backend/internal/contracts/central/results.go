@@ -1,8 +1,8 @@
 package central
 
 import (
-	"chargepilot/internal/domain/charging"
 	"time"
+	"wattharbor/internal/domain/charging"
 )
 
 const (

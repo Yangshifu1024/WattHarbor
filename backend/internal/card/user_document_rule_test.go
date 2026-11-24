@@ -3,8 +3,8 @@ package card_test
 import (
 	"testing"
 
-	cardstore "chargepilot/internal/card"
-	charging "chargepilot/internal/domain/charging"
+	cardstore "wattharbor/internal/card"
+	charging "wattharbor/internal/domain/charging"
 )
 
 // TestUserDocumentCardAdditionRule 用 t 验证卡续加的纯校验规则与文档金额示例，不执行资金事务或 HTTP 请求。

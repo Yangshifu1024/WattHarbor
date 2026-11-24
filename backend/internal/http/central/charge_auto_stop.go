@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	centralcontract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // AutoStopAPI 接收 worker 的自动停机扫描请求。

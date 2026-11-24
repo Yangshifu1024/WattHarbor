@@ -2,17 +2,17 @@
 package central
 
 import (
-	"chargepilot/internal/card"
-	contract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/order"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
+	"wattharbor/internal/card"
+	contract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/order"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // CardAPI 提供内部刷卡和设备卡余额接口。

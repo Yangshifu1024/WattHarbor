@@ -1,7 +1,6 @@
 package marketing
 
 import (
-	marketingdomain "chargepilot/internal/domain/marketing"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"strings"
 	"time"
+	marketingdomain "wattharbor/internal/domain/marketing"
 )
 
 // ErrActivityNotApplicable 表示事件或规则不满足发券条件；数据库故障仍返回错误，调用方须整体回滚。

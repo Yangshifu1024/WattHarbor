@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/payment"
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestRechargeCancellationAfterBalanceWriteRollsBackAllFunds 验证余额写入后取消回调，支付、摘要、钱包和流水一起回滚；不请求渠道，仅清理本测试数据。

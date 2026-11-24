@@ -1,14 +1,14 @@
 package gateway
 
 import (
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestCardClientsRequireDecisionFields 核对冻结／开通缺字段不成为正常 false，重复调用返回的 false 仍可恢复。

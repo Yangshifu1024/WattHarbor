@@ -4,13 +4,13 @@ package marketing
 import (
 	"errors"
 
-	"chargepilot/internal/domain/operations"
-	adminhttp "chargepilot/internal/http/admin"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/marketing"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	adminhttp "wattharbor/internal/http/admin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/marketing"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // API 提供优惠券和活动规则接口，依赖营销服务和后台鉴权。

@@ -15,16 +15,16 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/charging"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/testfixture"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/charging"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/testfixture"
 )
 
 // TestConcurrentEndFreezeKeepsFirstEvidence 让两个实际注册请求先读到缺失，再以真实唯一键竞争首次冻结。

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/dbutil"
-	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/dbutil"
+	"wattharbor/internal/protocol"
 )
 
 // Device 是设备列表和详情资料，从 device_meta 读取并关联站点名；关联、返回和搜索都使用站点 ID。

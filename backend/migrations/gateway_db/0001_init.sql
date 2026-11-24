@@ -1,7 +1,7 @@
 -- +goose NO TRANSACTION
 -- +goose Up
 
--- ChargePilot gateway_db 初始化结构
+-- WattHarbor gateway_db 初始化结构
 -- 设备网关：厂商协议、连接会话、计量数据及指令回执
 -- 发布前基线：直接修改 CREATE TABLE，重建空库；不叠加增量 ALTER。
 -- 表间关联由所属服务维护；此文件只初始化当前库。

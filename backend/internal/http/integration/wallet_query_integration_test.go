@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	authhttp "chargepilot/internal/http/auth"
-	userwallet "chargepilot/internal/http/user/wallet"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
+	authhttp "wattharbor/internal/http/auth"
+	userwallet "wattharbor/internal/http/user/wallet"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestRegisteredWalletRefundQueryPreservesApprovalAndJSON 使用实际注册路由验证鉴权及公开退款回执。

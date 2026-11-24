@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/protocol"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/protocol"
 )
 
 // Gateway 查询设备心跳并提交停止请求，实现方负责网络调用和响应校验。

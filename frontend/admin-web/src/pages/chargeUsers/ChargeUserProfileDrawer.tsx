@@ -120,7 +120,7 @@ export default function ChargeUserProfileDrawer({ userID, onClose }: { userID: s
     window.addEventListener('cp-session', closeExpired);
     window.addEventListener('storage', closeExpired);
     setState(previous => ({ userID, detail: previous.userID === userID ? previous.detail : null, error: '', loading: true }));
-    const request = { signal: controller.signal, cpEpoch: epoch };
+    const request = { signal: controller.signal, sessionEpoch: epoch };
     http.get<ApiEnvelope<ChargeUserDetail>>(`/api/v1/admin/users/${userID}`, request)
       .then(response => {
         if (!current()) return;

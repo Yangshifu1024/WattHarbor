@@ -3,7 +3,7 @@
 package settlement
 
 import (
-	"chargepilot/internal/testfixture"
+	"wattharbor/internal/testfixture"
 
 	"context"
 	"crypto/rand"

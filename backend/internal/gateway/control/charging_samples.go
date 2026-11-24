@@ -1,17 +1,17 @@
 package control
 
 import (
-	gatewayrepo "chargepilot/internal/gateway/repo"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
+	gatewayrepo "wattharbor/internal/gateway/repo"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/protocol"
 	"github.com/gin-gonic/gin"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/protocol"
 )
 
 // 每页最多返回 10080 条心跳；每分钟一条时可覆盖 7 天。

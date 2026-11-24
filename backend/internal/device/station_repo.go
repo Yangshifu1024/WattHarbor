@@ -3,11 +3,11 @@ package device
 import (
 	"context"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/dbutil"
 )
 
 // Station 是站点对外资料，设备和计费配置均通过主键 ID 关联，不使用独立站点编码。

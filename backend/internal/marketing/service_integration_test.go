@@ -3,10 +3,6 @@
 package marketing
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/testfixture"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +10,10 @@ import (
 	"gorm.io/gorm"
 	"testing"
 	"time"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/testfixture"
 )
 
 // marketingAudit 返回测试操作者，审计仍使用真实数据库保存。

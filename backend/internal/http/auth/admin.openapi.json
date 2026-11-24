@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "ChargePilot Go admin API",
+    "title": "WattHarbor Go admin API",
     "version": "2026-10-01",
     "description": "后台认证、仪表盘及运营页面的部分接口契约。完整接口以服务实际注册路由和 DTO 为准；业务规则以所属用例源码为准。"
   },

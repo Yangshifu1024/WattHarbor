@@ -3,10 +3,10 @@ package charge
 import (
 	"errors"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/protocol"
 	"testing"
 	"time"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/protocol"
 )
 
 func TestMeasuredSegmentsUseElapsedCumulativeMeter(t *testing.T) {

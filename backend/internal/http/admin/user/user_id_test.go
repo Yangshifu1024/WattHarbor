@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"chargepilot/internal/identity"
-	"chargepilot/internal/order"
-	"chargepilot/internal/payment"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/order"
+	"wattharbor/internal/payment"
 )
 
 func TestPublicUserIDsRemainExactDecimalStrings(t *testing.T) {

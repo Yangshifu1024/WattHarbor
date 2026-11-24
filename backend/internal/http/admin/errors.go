@@ -3,10 +3,10 @@ package admin
 import (
 	"errors"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // AdminManagementFailure 为 c 映射 err 输入、越权、身份和角色缺失，其余复用通用资源错误。

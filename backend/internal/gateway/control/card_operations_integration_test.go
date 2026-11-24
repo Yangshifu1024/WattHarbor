@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	client "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	client "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/protocol"
 )
 
 // TestCardDecisionInputKeepsFrozenBypass 验证实际注册输入端点的事件标识校验、已保存回复优先及缺失/取消消息。

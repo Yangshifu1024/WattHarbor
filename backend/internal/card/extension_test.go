@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/wallet"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/wallet"
 )
 
 // TestCanExtendRequiresEveryGuard 验证续购的卡标识、套餐、金额、时长、待确认状态、余额及上限条件。

@@ -35,11 +35,11 @@ const grant = spawnSync('docker', [...COMPOSE, 'exec', '-T', 'mysql',
   { cwd: ROOT, input: readFileSync(join(ROOT, 'docker/mysql/test-lock-observer.sql')), stdio: ['pipe', 'inherit', 'inherit'] });
 if (grant.status !== 0) fail('Development lock observation grant failed.');
 
-process.env.TEST_MYSQL_URL = 'mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/central_db';
+process.env.TEST_MYSQL_URL = 'mysql://wattharbor:wattharbor_dev@127.0.0.1:3306/central_db';
 process.env.TEST_REDIS_URL = 'redis://127.0.0.1:6379/0';
 process.env.DATABASE_URL_CENTRAL = process.env.TEST_MYSQL_URL;
-process.env.DATABASE_URL_GATEWAY = 'mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/gateway_db';
-process.env.DATABASE_URL_WORKER = 'mysql://chargepilot:chargepilot_dev@127.0.0.1:3306/worker_db';
+process.env.DATABASE_URL_GATEWAY = 'mysql://wattharbor:wattharbor_dev@127.0.0.1:3306/gateway_db';
+process.env.DATABASE_URL_WORKER = 'mysql://wattharbor:wattharbor_dev@127.0.0.1:3306/worker_db';
 
 const migrated = run('go', ['run', './cmd/migrate', '--schema', 'all'], BACKEND);
 if (migrated.missing || migrated.status !== 0) fail('Development migration failed.');

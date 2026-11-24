@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	authhttp "chargepilot/internal/http/auth"
-	useridentity "chargepilot/internal/http/user/identity"
-	"chargepilot/internal/identity"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/sessiontoken"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	authhttp "wattharbor/internal/http/auth"
+	useridentity "wattharbor/internal/http/user/identity"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/sessiontoken"
 )
 
 // identityRouteRedis 为 t 打开真实测试 Redis，缺配置或连接失败终止；只关闭本连接，不清空数据。

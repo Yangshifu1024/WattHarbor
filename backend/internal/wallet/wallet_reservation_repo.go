@@ -1,13 +1,13 @@
 package wallet
 
 import (
-	"chargepilot/internal/domain/money"
-	walletdomain "chargepilot/internal/domain/wallet"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"strconv"
 	"time"
+	"wattharbor/internal/domain/money"
+	walletdomain "wattharbor/internal/domain/wallet"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"chargepilot/internal/device"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
+	"wattharbor/internal/device"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 func TestDeviceStatusRejectsInvalidRequestsBeforeWriting(t *testing.T) {

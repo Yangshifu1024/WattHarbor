@@ -3,7 +3,7 @@ package gateway
 import (
 	"time"
 
-	"chargepilot/internal/domain/devices"
+	"wattharbor/internal/domain/devices"
 )
 
 const (

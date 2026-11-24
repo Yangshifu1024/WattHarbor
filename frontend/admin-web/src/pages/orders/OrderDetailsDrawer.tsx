@@ -161,7 +161,7 @@ function OrderDetailsContent({ orderID, onClose, onChanged, onUserSelect, childr
     }
     const controller = new AbortController();
     request.current = controller;
-    const requestConfig = { signal: controller.signal, cpEpoch: session.current };
+    const requestConfig = { signal: controller.signal, sessionEpoch: session.current };
     const current = () => isCurrent() && !controller.signal.aborted;
     if (!detail) setDetailLoading(true);
     setDetailError(null);

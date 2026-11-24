@@ -1,9 +1,9 @@
 package repo
 
 import (
-	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
 	"testing"
+	"wattharbor/internal/protocol"
 )
 
 func TestCardEventIdentitySurvivesReplayWithoutCollapsingReswipe(t *testing.T) {

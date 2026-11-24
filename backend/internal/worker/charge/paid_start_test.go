@@ -10,11 +10,11 @@ import (
 	"reflect"
 	"testing"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	centralclient "chargepilot/internal/integration/central"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	centralclient "wattharbor/internal/integration/central"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // starterForServer 为同一本地 HTTP 服务创建中央和网关客户端，并返回 PaidStarter。

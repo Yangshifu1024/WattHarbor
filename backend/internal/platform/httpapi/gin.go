@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const requestIDKey = "chargepilot.request_id"
+const requestIDKey = "wattharbor.request_id"
 
 // Envelope 是统一响应格式；RequestID 与 TraceID 使用同一请求编号。
 type Envelope struct {

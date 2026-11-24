@@ -87,11 +87,11 @@ func TestTOTPCodeRoundTripsThroughVerify(t *testing.T) {
 }
 
 func TestTOTPURICarriesTheProtectedAccount(t *testing.T) {
-	uri, err := TOTPURI("ChargePilot", "finance_user", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+	uri, err := TOTPURI("WattHarbor", "finance_user", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"otpauth://totp/", "ChargePilot", "finance_user", "secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "digits=6", "period=30"} {
+	for _, want := range []string{"otpauth://totp/", "WattHarbor", "finance_user", "secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", "digits=6", "period=30"} {
 		if !contains(uri, want) {
 			t.Errorf("otpauth URI missing %q: %s", want, uri)
 		}

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/serviceclient"
+	contract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestAlertTriggerOwnsDeadlineWithoutChangingPool 验证告警触发请求可设置独立超时，仍共享连接池并响应调用方取消。

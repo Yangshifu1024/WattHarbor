@@ -9,11 +9,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/device"
-	money "chargepilot/internal/domain/money"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/device"
+	money "wattharbor/internal/domain/money"
+	"wattharbor/internal/platform/httpapi"
 )
 
 var userScanCodePattern = regexp.MustCompile(`^[A-Za-z0-9_:-]{1,64}$`)

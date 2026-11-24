@@ -9,17 +9,17 @@ import (
 	"strings"
 	"testing"
 
-	authhttp "chargepilot/internal/http/auth"
-	usercard "chargepilot/internal/http/user/card"
-	userdevice "chargepilot/internal/http/user/device"
-	useridentity "chargepilot/internal/http/user/identity"
-	usermarketing "chargepilot/internal/http/user/marketing"
-	userorder "chargepilot/internal/http/user/order"
-	userpayment "chargepilot/internal/http/user/payment"
-	usersettlement "chargepilot/internal/http/user/settlement"
-	userwallet "chargepilot/internal/http/user/wallet"
-	"chargepilot/internal/identity"
-	"chargepilot/internal/platform/httpapi"
+	authhttp "wattharbor/internal/http/auth"
+	usercard "wattharbor/internal/http/user/card"
+	userdevice "wattharbor/internal/http/user/device"
+	useridentity "wattharbor/internal/http/user/identity"
+	usermarketing "wattharbor/internal/http/user/marketing"
+	userorder "wattharbor/internal/http/user/order"
+	userpayment "wattharbor/internal/http/user/payment"
+	usersettlement "wattharbor/internal/http/user/settlement"
+	userwallet "wattharbor/internal/http/user/wallet"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // deniedUserIdentity 提供指定认证结果的测试替身，不模拟业务查询或写入。

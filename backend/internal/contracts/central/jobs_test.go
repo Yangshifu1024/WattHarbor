@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"chargepilot/internal/contracts/central"
+	"wattharbor/internal/contracts/central"
 )
 
 // TestJobReplyShapes 检查各任务的响应 JSON；退款失败且未提供 enabled 时应省略该字段。

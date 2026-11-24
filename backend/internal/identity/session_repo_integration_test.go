@@ -3,7 +3,6 @@
 package identity
 
 import (
-	"chargepilot/internal/platform/sessiontoken"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"wattharbor/internal/platform/sessiontoken"
 )
 
 // identityRedis 为 t 打开独立 TEST_REDIS_URL 并核对真实 PING，缺配置或连接失败终止，不跳过。

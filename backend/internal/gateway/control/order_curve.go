@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/gateway/repo"
-	"chargepilot/internal/platform/httpapi"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/gateway/repo"
+	"wattharbor/internal/platform/httpapi"
 
 	"github.com/gin-gonic/gin"
 )

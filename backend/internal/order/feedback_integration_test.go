@@ -3,10 +3,6 @@
 package order
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/testfixture"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +12,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/testfixture"
 )
 
 // feedbackDB 为 t 打开独立 TEST_MYSQL_URL，缺配置或连接失败终止；测试退出关闭自身池。

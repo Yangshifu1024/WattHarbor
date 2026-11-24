@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net/http"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerVendors 注册厂商查询和管理接口，并校验各自权限。

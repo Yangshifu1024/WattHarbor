@@ -1,11 +1,6 @@
 package payment
 
 import (
-	"chargepilot/internal/domain/money"
-	orderdomain "chargepilot/internal/domain/order"
-	"chargepilot/internal/marketing"
-	orderstore "chargepilot/internal/order"
-	"chargepilot/internal/wallet"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -16,10 +11,15 @@ import (
 	"math"
 	"strconv"
 	"time"
+	"wattharbor/internal/domain/money"
+	orderdomain "wattharbor/internal/domain/order"
+	"wattharbor/internal/marketing"
+	orderstore "wattharbor/internal/order"
+	"wattharbor/internal/wallet"
 
-	"chargepilot/internal/ops"
+	"wattharbor/internal/ops"
 
-	"chargepilot/internal/platform/dbutil"
+	"wattharbor/internal/platform/dbutil"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

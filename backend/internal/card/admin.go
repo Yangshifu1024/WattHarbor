@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"chargepilot/internal/domain/money"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/identity"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/money"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/identity"
 )
 
 // ErrCardAdminInput 标识绑定或运营状态输入不满足业务约束。

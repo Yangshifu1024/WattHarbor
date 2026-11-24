@@ -1,9 +1,6 @@
 package ops
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
 	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
@@ -12,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // TestIssuedAdminAccessTokenLastsEightHours 验证真实签发结果、HTTP 响应和 JWT 的八小时期限、别名及账号和会话一致性；不执行数据库登录。

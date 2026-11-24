@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/money"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/money"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestWalletRefundQueryUsesStoredApprovalAndBoundedReads 使用真实申请、退款及审核行验证批量组合。

@@ -1,10 +1,10 @@
 package device
 
 import (
-	"chargepilot/internal/domain/operations"
 	"context"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/domain/operations"
 )
 
 // FaultRepo 保存报修状态和事件，事务提交及连接生命周期由调用方管理。

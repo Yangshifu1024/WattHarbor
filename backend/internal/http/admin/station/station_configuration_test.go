@@ -4,8 +4,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"chargepilot/internal/http/admin"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/http/admin"
 )
 
 func TestStationFilterValidation(t *testing.T) {

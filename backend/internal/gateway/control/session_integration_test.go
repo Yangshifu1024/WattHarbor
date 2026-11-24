@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
 )
 
 // sessionDataReply 描述会话审计接口的数据，仅供注册端点回归断言。

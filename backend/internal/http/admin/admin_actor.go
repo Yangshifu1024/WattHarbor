@@ -1,9 +1,9 @@
 package admin
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // RequireFinanceActor 要求当前账号是拥有指定权限的客户财务人员。

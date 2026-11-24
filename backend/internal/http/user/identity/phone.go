@@ -3,10 +3,10 @@ package identity
 import (
 	"errors"
 
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/identity"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // PhoneAPI 提供当前用户手机号的绑定和解绑接口。

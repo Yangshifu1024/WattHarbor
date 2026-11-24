@@ -11,8 +11,8 @@ import (
 	"sort"
 	"time"
 
-	"chargepilot/internal/protocol"
-	wire "chargepilot/internal/protocol/dc589"
+	"wattharbor/internal/protocol"
+	wire "wattharbor/internal/protocol/dc589"
 )
 
 // Input 模拟设备物理状态变化或刷卡，不直接调用网关或写数据库。

@@ -1,10 +1,10 @@
 package card
 
 import (
-	carddomain "chargepilot/internal/domain/card"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"time"
+	carddomain "wattharbor/internal/domain/card"
 )
 
 // LockChargeForOrder 在调用方事务中锁定刷卡会话，供起充回执与刷卡操作共用锁序。

@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/dbconn"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // secondExportDB 创建独立连接池，源查询只覆盖本测试两个站点，结束后关闭池和回调。

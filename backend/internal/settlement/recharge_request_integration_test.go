@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/payment"
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestConcurrentRechargeRequestsReplayAfterIdentityRead 验证查询账号后等待用户锁的同请求充值，仍重放首次支付。

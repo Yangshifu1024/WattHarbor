@@ -1,11 +1,11 @@
 package device
 
 import (
-	"chargepilot/internal/protocol"
 	"encoding/json"
 	"testing"
+	"wattharbor/internal/protocol"
 
-	"chargepilot/internal/protocol/dc589"
+	"wattharbor/internal/protocol/dc589"
 )
 
 // TestRecoveryRequiresExplicitNormalStates 验证缺字段或 null 不会因零值解码被当作正常设备或空闲端口。

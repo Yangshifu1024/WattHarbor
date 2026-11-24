@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"chargepilot/internal/application/worker"
+	"wattharbor/internal/application/worker"
 )
 
 // main 等待中断或 SIGTERM 后退出；正常取消直接结束，其他错误记录后以退出码 1 结束。

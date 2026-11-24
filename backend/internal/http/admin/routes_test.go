@@ -10,17 +10,17 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/http/admin/device"
-	"chargepilot/internal/http/admin/finance"
-	"chargepilot/internal/http/admin/marketing"
-	"chargepilot/internal/http/admin/ops"
-	"chargepilot/internal/http/admin/order"
-	"chargepilot/internal/http/admin/pricing"
-	"chargepilot/internal/http/admin/station"
-	"chargepilot/internal/http/admin/user"
-	"chargepilot/internal/http/admin/vendor"
-	authhttp "chargepilot/internal/http/auth"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/http/admin/device"
+	"wattharbor/internal/http/admin/finance"
+	"wattharbor/internal/http/admin/marketing"
+	"wattharbor/internal/http/admin/ops"
+	"wattharbor/internal/http/admin/order"
+	"wattharbor/internal/http/admin/pricing"
+	"wattharbor/internal/http/admin/station"
+	"wattharbor/internal/http/admin/user"
+	"wattharbor/internal/http/admin/vendor"
+	authhttp "wattharbor/internal/http/auth"
 )
 
 func TestRetiredAdminRoutesAreRemoved(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/devices"
+	"wattharbor/internal/domain/devices"
 )
 
 // 覆盖中央起充时间与设备时间的偏差，复现两者相差一秒时仍可生成合法分段。

@@ -1,17 +1,17 @@
 package central
 
 import (
-	chargestop "chargepilot/internal/charging/stop"
-	centralcontract "chargepilot/internal/contracts/central"
 	"context"
 	"errors"
 	"net/http"
 	"strconv"
+	chargestop "wattharbor/internal/charging/stop"
+	centralcontract "wattharbor/internal/contracts/central"
 
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // StopAuthorization 为网关提供停机授权；停机服务会核对用户归属并固定计费截止时间。

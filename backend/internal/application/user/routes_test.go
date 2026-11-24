@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/identity"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/config"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/config"
 )
 
 // TestUserAssemblyRegistersDocumentedRoutes 对照 OpenAPI 检查模拟模式下的 C 端路由，并确认未注册其他业务族的路由。

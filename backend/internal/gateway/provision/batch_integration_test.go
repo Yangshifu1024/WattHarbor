@@ -12,14 +12,14 @@ import (
 	"sync"
 	"testing"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/gateway/repo"
-	client "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/gateway/repo"
+	client "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // provisionFixture 打开真实网关库，创建私有启用厂商与随机设备名；退出只清理自身身份并核对零残留。

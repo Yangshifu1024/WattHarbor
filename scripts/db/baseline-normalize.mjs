@@ -13,7 +13,7 @@
 //
 // 本脚本只处理含造数数据的表，不触碰其他行。
 // 用法：
-//   MYSQL_CLIENT_CONTAINER=cp-base-mysql MYSQL_PASSWORD=... MYSQL_USER=root \
+//   MYSQL_CLIENT_CONTAINER=wattharbor-base-mysql MYSQL_PASSWORD=... MYSQL_USER=root \
 //     node scripts/db/baseline-normalize.mjs
 import { openMySQL } from './mysql-client.mjs';
 

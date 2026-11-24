@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // ErrOffline 设备当前没有已登记连接。

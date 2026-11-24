@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // AdminAuth 是后台认证 HTTP 适配；会话、实时权限和安全设置顺序由服务负责。

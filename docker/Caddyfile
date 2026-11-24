@@ -24,10 +24,10 @@
 
     # C 端与支付回调。支付回调由渠道服务器打进来，同样属于对外进程。
     handle /api/v1/user/* {
-        reverse_proxy chargepilot-user:8080
+        reverse_proxy wattharbor-user:8080
     }
     handle /api/v1/public/* {
-        reverse_proxy chargepilot-user:8080
+        reverse_proxy wattharbor-user:8080
     }
 
     # 其余一律对内，不经 Caddy。

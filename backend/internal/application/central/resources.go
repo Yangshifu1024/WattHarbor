@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"chargepilot/internal/platform/config"
-	"chargepilot/internal/platform/dbconn"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/config"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // resources 持有本进程的连接，初始化失败或应用完全退出后统一关闭。

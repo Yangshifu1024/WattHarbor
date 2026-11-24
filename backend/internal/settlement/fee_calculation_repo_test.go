@@ -3,7 +3,7 @@ package settlement
 import (
 	"testing"
 
-	"chargepilot/internal/domain/charging"
+	"wattharbor/internal/domain/charging"
 )
 
 // TestPriceSourceRejectsUnauditedFinalFee 验证人工核定金额必须有已保存的复核单和有效档位。

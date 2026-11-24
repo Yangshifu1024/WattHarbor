@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
+	contract "wattharbor/internal/contracts/gateway"
 )
 
 // TestAlertClientsKeepOriginalIDsWatermarkAndReplay 用本地 HTTP 服务检查大整数 ID、事件接收时间和重复标记结果。

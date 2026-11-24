@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 const (

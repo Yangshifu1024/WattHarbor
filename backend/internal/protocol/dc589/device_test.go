@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // 验证设备编码与服务端解析的往返一致性，覆盖字段偏移、单位和固定宽度约束。

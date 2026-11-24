@@ -19,7 +19,7 @@ const allowed = {
 };
 const db = openMySQL();
 try {
-  const lock = await db.query("SELECT GET_LOCK('chargepilot_partition_maintenance',0); SET SESSION lock_wait_timeout=10; SET SESSION time_zone='+00:00';");
+  const lock = await db.query("SELECT GET_LOCK('wattharbor_partition_maintenance',0); SET SESSION lock_wait_timeout=10; SET SESSION time_zone='+00:00';");
   if (lock[0] !== '1') throw new Error('另一维护会话持有分区锁');
   let planned = 0;
   for (const [schema,tables] of Object.entries(allowed)) for (const table of tables) {
@@ -46,5 +46,5 @@ try {
     if (apply) await db.query(sql);
   }
   console.log(`合计 ${planned} 个新月分区；未删除历史数据。`);
-  await db.query("SELECT RELEASE_LOCK('chargepilot_partition_maintenance');");
+  await db.query("SELECT RELEASE_LOCK('wattharbor_partition_maintenance');");
 } finally { db.close(); }

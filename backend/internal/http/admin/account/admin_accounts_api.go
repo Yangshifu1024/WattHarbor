@@ -2,8 +2,8 @@
 package account
 
 import (
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
 )
 
 // AdminAccounts 是后台账号／角色 HTTP 适配，只持有服务与鉴权适配。

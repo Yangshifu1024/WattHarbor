@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/operations"
-	exportpkg "chargepilot/internal/export"
-	adminexport "chargepilot/internal/http/admin/export"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/operations"
+	exportpkg "wattharbor/internal/export"
+	adminexport "wattharbor/internal/http/admin/export"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // TestRegisteredExportRoutes 用实际注册路由及 SQL／Redis 验证 CSV／XLSX 回执、下载、错误和实时撤权。

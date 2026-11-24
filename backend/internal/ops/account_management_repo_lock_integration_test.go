@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // roleSerialLockConnection 按 TEST_MYSQL_URL 打开真库连接，配置或连接失败即终止测试。

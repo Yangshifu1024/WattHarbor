@@ -100,7 +100,7 @@ if (apply && operations.length) {
   const directory = join(root, '.tmp/db-design-backups');
   mkdirSync(directory, { recursive: true });
   const backup = spawnSync('node', ['scripts/db/backup.mjs', directory], { cwd: root, stdio: 'inherit',
-    env: { ...process.env, MYSQL_CLIENT_CONTAINER: 'chargepilot-dev-mysql-1', MYSQL_PASSWORD: 'chargepilot_root_dev' } });
+    env: { ...process.env, MYSQL_CLIENT_CONTAINER: 'wattharbor-dev-mysql-1', MYSQL_PASSWORD: 'wattharbor_root_dev' } });
   if (backup.status !== 0) throw new Error('完整备份失败，未执行更新。');
   for (const operation of operations) {
     sql(`SET SESSION lock_wait_timeout=10; SET SESSION time_zone='+00:00';\n${operation}`);

@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestRiskApprovalSeesRechargeCommittedDuringWalletLockWait 验证审核读取申请后等待钱包锁时仍采用新到账来源。

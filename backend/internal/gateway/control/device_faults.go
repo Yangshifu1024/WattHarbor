@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/httpapi"
 
-	"chargepilot/internal/gateway/repo"
+	"wattharbor/internal/gateway/repo"
 )
 
 // registerDeviceFaults 注册故障列表、处理标记和最新心跳接口，供中央服务同步告警。

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // 事件外盒领取的真库并发测试。

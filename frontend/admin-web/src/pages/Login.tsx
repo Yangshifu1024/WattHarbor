@@ -49,7 +49,7 @@ export default function LoginPage() {
     <div className="login-bg">
       <Card className="login-card">
         <Title level={3} style={{ textAlign: 'center', marginBottom: 24 }}>
-          <span style={{ color: '#1677ff' }}>ChargePilot</span>
+          <span style={{ color: '#1677ff' }}>WattHarbor</span>
         </Title>
         {challenge ? (
           <Alert

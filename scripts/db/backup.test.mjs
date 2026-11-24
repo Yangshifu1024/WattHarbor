@@ -12,7 +12,7 @@ for (const [name, password, pwd, expected] of [
   ['MYSQL_PASSWORD mapping', 'test-only-password', undefined, 'test-only-password'],
   ['MYSQL_PWD wins', 'unused-password', 'explicit-password', 'explicit-password'],
 ]) test(name, t => {
-  const root = mkdtempSync(join(tmpdir(), 'chargepilot-backup-test-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const root = mkdtempSync(join(tmpdir(), 'wattharbor-backup-test-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, 'bin'), out = join(root, 'out'), log = join(root, 'calls'); mkdirSync(bin); mkdirSync(out);
   const cli = `#!${process.execPath}\nconst fs=require('node:fs'),crypto=require('node:crypto');
 const args=process.argv.slice(2),tool=process.argv[1].split('/').at(-1);

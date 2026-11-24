@@ -3,7 +3,7 @@ package admin
 import (
 	"context"
 
-	"chargepilot/internal/domain/operations"
+	"wattharbor/internal/domain/operations"
 )
 
 // ScopeReader 是后台 HTTP 调用方所需的当前账号范围读取能力，由 cmd 注入 ops 服务。

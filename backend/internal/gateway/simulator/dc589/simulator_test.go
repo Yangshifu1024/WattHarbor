@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/gateway/session"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/protocol/dc589"
+	"wattharbor/internal/gateway/session"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/protocol/dc589"
 )
 
 // 通过实际 TCP 和网关适配器验证组帧、会话协商及载荷校验。

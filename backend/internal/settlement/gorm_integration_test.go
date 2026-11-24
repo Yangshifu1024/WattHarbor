@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // 真库测试共用连接、并发闸门和锁回调；两个并发事务必须使用独立连接。

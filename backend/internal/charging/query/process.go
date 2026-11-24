@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/order"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/order"
 )
 
 // ErrProcessUnavailable 表示网关无法提供充电过程数据，不泄露服务配置或数据库内容。

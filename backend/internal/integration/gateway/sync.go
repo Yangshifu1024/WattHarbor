@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
 )
 
 // get 读取内部接口，只接受 HTTP 200、code=0 且 data 非空的响应，不自动重试。

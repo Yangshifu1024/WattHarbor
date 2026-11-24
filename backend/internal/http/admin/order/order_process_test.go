@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"chargepilot/internal/platform/httpapi"
+	"wattharbor/internal/platform/httpapi"
 )
 
 func TestOrderProcessRejectsInvalidIdentityAndPaging(t *testing.T) {

@@ -2,15 +2,15 @@
 package marketing
 
 import (
-	marketingdomain "chargepilot/internal/domain/marketing"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/identity"
-	"chargepilot/internal/ops"
 	"context"
 	"errors"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"time"
+	marketingdomain "wattharbor/internal/domain/marketing"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/ops"
 )
 
 // InputError 表示营销请求内容不合法；数据库故障不能包装成输入错误。

@@ -1,9 +1,9 @@
 package payment
 
 import (
-	"chargepilot/internal/domain/money"
-	orderdomain "chargepilot/internal/domain/order"
 	"database/sql"
+	"wattharbor/internal/domain/money"
+	orderdomain "wattharbor/internal/domain/order"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

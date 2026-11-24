@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	chargestop "chargepilot/internal/charging/stop"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	chargestop "wattharbor/internal/charging/stop"
 )
 
 // stopAuthorizationStub 仅返回指定的停止授权错误，供真实注册 HTTP 路由核对公开映射。

@@ -51,7 +51,7 @@
 
 ### Issue tracker
 
-Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab Issues。见 `docs/agents/issue-tracker.md`。
+Issue 与规格以 markdown 文件形式存放在 `.scratch/`。见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
@@ -204,10 +204,10 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`，不使用 GitLab
 - 目录结构定稿如下。后端 Go 模块整体位于 `backend/`（含 `cmd/`、`internal/`、`migrations/`、`go.mod` 与服务镜像 `Dockerfile`），下图为 `backend/` 内部结构；本文件后文与 `docs/` 提到的 `cmd/`、`internal/`、`migrations/` 路径均相对 `backend/`。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
 ```text
-charge-pilot/backend/          Go 后端模块（仓库根布局见本图末尾）
+wattharbor/backend/          Go 后端模块（仓库根布局见本图末尾）
 │
 ├── cmd                                                   进程入口
-│   ├── chargepilot/main.go                               单体入口
+│   ├── wattharbor/main.go                               单体入口
 │   ├── {admin,central,gateway,user,worker}/main.go         五进程部署入口
 │   ├── devseed/{main,scheme}.go
 │   ├── migrate/{main,unified}.go

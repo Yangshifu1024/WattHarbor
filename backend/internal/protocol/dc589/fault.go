@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/protocol"
 )
 
 // FaultMetric 按故障码返回指标名、严重程度和说明。

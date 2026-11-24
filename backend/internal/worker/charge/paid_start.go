@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
 )
 
 // PaidStarter 分页请求启动已支付订单，并保存当前扫描游标。

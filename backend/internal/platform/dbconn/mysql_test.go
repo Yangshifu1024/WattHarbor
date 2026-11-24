@@ -9,7 +9,7 @@ import (
 )
 
 func TestDSN(t *testing.T) {
-	dsn, err := DSN("mysql://chargepilot:p%40ss@localhost:3306/user_db", false)
+	dsn, err := DSN("mysql://wattharbor:p%40ss@localhost:3306/user_db", false)
 	if err != nil {
 		t.Fatal(err)
 	}

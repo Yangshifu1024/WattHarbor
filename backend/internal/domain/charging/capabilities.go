@@ -3,7 +3,7 @@ package charging
 import (
 	"fmt"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // ProtocolCapabilities 定义协议适配器的能力；运营配置不能覆盖协议本身的能力。

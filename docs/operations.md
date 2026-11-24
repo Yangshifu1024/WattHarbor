@@ -40,6 +40,10 @@
 
 ## 单体部署
 
+构建命令为 `node tasks.mjs build wattharbor`，产物为 `bin/wattharbor`。日志与 Prometheus 指标使用 WattHarbor 名称，指标以 `wattharbor_` 为前缀。后台和用户端继续读取原浏览器存储键，保留会话和待重试请求的幂等号。监管协议的签名请求头沿用现有契约。
+
+三个 Compose 文件分别使用 `wattharbor-dev`、`wattharbor` 和 `wattharbor-monolith` 项目名。已有本地环境时，启动新项目会使用新项目的数据卷。已有环境切换前需核对原有卷、MySQL 账号及导出挂载路径。
+
 [compose.monolith.yaml](../docker/compose.monolith.yaml) 构建一个含后台和 H5 的应用镜像。填写 `MYSQL_ROOT_PASSWORD`、`DB_PASSWORD`、`REDIS_PASSWORD`、`REDIS_STREAM_PASSWORD`、`JWT_SECRET`、`SERVICE_TOKEN`、`WECHAT_APPID`、`WECHAT_SECRET` 和 `PUBLIC_DOMAIN`。连接 URL 中的密码需要符合 URL 转义规则。首个后台账号由 `ADMIN_BOOTSTRAP_USER` 和 `ADMIN_BOOTSTRAP_PASSWORD` 配置。
 
 ```sh
@@ -48,11 +52,11 @@ docker compose -f docker/compose.monolith.yaml up -d --build
 docker compose -f docker/compose.monolith.yaml exec app wget -qO- http://127.0.0.1:8080/health/ready
 ```
 
-MySQL 和 Redis 就绪后，Goose 先初始化 `chargepilot`。应用装配五个角色，绑定 DC589 和 HTTP 后启动后台任务。首次成功完成同步轮次且依赖检查通过后，`/health/ready` 返回 200。`/health/live` 供进程存活探测。收到 SIGTERM 时停止接收 HTTP 请求及设备连接，等待已接收请求，随后取消设备会话和后台任务，最后关闭资源。应用总关停时限为 15 秒，Compose 留出 20 秒。
+MySQL 和 Redis 就绪后，Goose 先初始化 `wattharbor`。应用装配五个角色，绑定 DC589 和 HTTP 后启动后台任务。首次成功完成同步轮次且依赖检查通过后，`/health/ready` 返回 200。`/health/live` 供进程存活探测。收到 SIGTERM 时停止接收 HTTP 请求及设备连接，等待已接收请求，随后取消设备会话和后台任务，最后关闭资源。应用总关停时限为 15 秒，Compose 留出 20 秒。
 
 Caddy 仅代理后台、H5 和公开 API。其固定代理地址使用 `172.30.82.2`，部署前核对代理子网。内网可在 `/metrics/{admin,user,central,gateway,worker}` 分别抓取各角色的指标。拥有 `audit.read` 权限的后台用户可以在「系统管理 → 运行诊断」查看任务与积压，每次访问记录审计。
 
-已有数据时可用 `node tasks.mjs build chargepilot` 构建单体，并继续使用原三库。按配置表填写原三库 URL，由 `DATABASE_URL` 指向 gateway，`APP_UNIFIED_DATABASE` 留空。切换前停旧进程，避免两套进程同时监听设备和运行任务，并复用原事件 Redis。单库初始化命令为 `cd backend && go run ./cmd/migrate -schema unified`，读取 `DATABASE_URL` 并要求库名为 `chargepilot`。该命令只初始化单库。已有部署如果需要合库，应在备份环境单独校对业务表、两路 Outbox 和 Redis Stream 再切换。
+已有数据时可用 `node tasks.mjs build wattharbor` 构建单体，并继续使用原三库。按配置表填写原三库 URL，由 `DATABASE_URL` 指向 gateway，`APP_UNIFIED_DATABASE` 留空。切换前停旧进程，避免两套进程同时监听设备和运行任务，并复用原事件 Redis。单库初始化命令为 `cd backend && go run ./cmd/migrate -schema unified`，读取 `DATABASE_URL` 并要求库名为 `wattharbor`。该命令只初始化单库。已有部署如果需要合库，应在备份环境单独校对业务表、两路 Outbox 和 Redis Stream 再切换。
 
 单体部署使用微信直连时，将下节的商户私钥只读挂载加在 `app` 容器，容器进程 UID 为 10001。设备入口仍为 `9100/TCP`。
 
@@ -68,7 +72,7 @@ Caddy 公网暴露 `80/443`，`/api/v1/admin/*` 代理 admin，`/api/v1/user/*` 
 node scripts/ops/check-deploy.mjs
 docker compose -f docker/compose.prod.yaml up -d --build
 docker compose -f docker/compose.prod.yaml ps
-docker compose -f docker/compose.prod.yaml logs --tail=100 chargepilot-central chargepilot-gateway chargepilot-worker chargepilot-caddy
+docker compose -f docker/compose.prod.yaml logs --tail=100 wattharbor-central wattharbor-gateway wattharbor-worker wattharbor-caddy
 ```
 
 部署检查核对五个应用服务的配置归属、共享业务库、内部端口隔离、Redis 策略与 Caddy 分流，再用无网络临时容器验证 Caddy 语法；不会启动生产应用。`--config-only` 仅跳过凭据值检查，Compose 的必填变量及挂载路径仍须有效。检查器回归使用 `node --test scripts/ops/check-deploy.test.mjs`。模板检查通过不代表真实凭据、支付私钥或生产连通性已经验收。
@@ -83,12 +87,12 @@ docker compose -f docker/compose.prod.yaml logs --tail=100 chargepilot-central c
 
 ```yaml
 services:
-  chargepilot-user:
+  wattharbor-user:
     volumes:
-      - /etc/chargepilot/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
-  chargepilot-central:
+      - /etc/wattharbor/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
+  wattharbor-central:
     volumes:
-      - /etc/chargepilot/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
+      - /etc/wattharbor/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
 ```
 
 保存部署侧文件为 `compose.payment.yaml` 后，使用 `docker compose -f docker/compose.prod.yaml -f compose.payment.yaml config --quiet` 检查合并配置，启动及后续维护也使用这两个 `-f` 文件。`check-deploy.mjs` 只检查生产 Compose。商户私钥文件权限须允许容器非 root UID 65532 读取；API v3 密钥为 32 字节。配置加载及 Compose 展开通过不证明私钥可读取、渠道可达或真实微信支付已验收。worker 通过 central 的同一支付提供方执行退款和查询。正式用户端须使用真实 AppID、已配置的 API 域名和微信发布环境。
@@ -167,15 +171,15 @@ node scripts/db/maintain-partitions.mjs --through=2027-12 --apply
 
 ### 迁移与运行账号
 
-`chargepilot` 保留三库 DDL 与数据权限，仅用于 migrate、测试、devseed、重置与备份恢复。五个服务使用独立账号；密码分别由 `DB_USER_PASSWORD`、`DB_ADMIN_PASSWORD`、`DB_CENTRAL_PASSWORD`、`DB_GATEWAY_PASSWORD`、`DB_WORKER_PASSWORD` 配置。运行账号没有 CREATE、ALTER、DROP、TRUNCATE、GRANT 权限。
+`wattharbor` 保留三库 DDL 与数据权限，仅用于 migrate、测试、devseed、重置与备份恢复。五个服务使用独立账号；密码分别由 `DB_USER_PASSWORD`、`DB_ADMIN_PASSWORD`、`DB_CENTRAL_PASSWORD`、`DB_GATEWAY_PASSWORD`、`DB_WORKER_PASSWORD` 配置。运行账号没有 CREATE、ALTER、DROP、TRUNCATE、GRANT 权限。
 
 | 账号 | 数据权限 |
 | --- | --- |
-| `chargepilot_user`、`chargepilot_admin`、`chargepilot_central` | `central_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
-| `chargepilot_gateway` | `gateway_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
-| `chargepilot_worker` | `worker_db.*` 的 SELECT / INSERT / UPDATE / DELETE；`gateway_db.event_outbox`、`central_db.event_outbox`、`central_db.admin_event_outbox` 的 SELECT / UPDATE |
+| `wattharbor_user`、`wattharbor_admin`、`wattharbor_central` | `central_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
+| `wattharbor_gateway` | `gateway_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
+| `wattharbor_worker` | `worker_db.*` 的 SELECT / INSERT / UPDATE / DELETE；`gateway_db.event_outbox`、`central_db.event_outbox`、`central_db.admin_event_outbox` 的 SELECT / UPDATE |
 
-[provision-runtime.mjs](../scripts/db/provision-runtime.mjs) 以 root 创建/更新运行账号并重置其直接权限；不改变 `chargepilot` 权限。脚本使用 Node.js 24 和 MySQL CLI，不依赖 shell、sed 或临时 SQL 文件；Compose 的专用镜像提供两项运行依赖，宿主机仅需 Docker Compose。两套 Compose 均按 MySQL 就绪 → migrate 完成 → provision-runtime 完成 → 服务启动排列依赖。root 凭据只注入 MySQL 与一次性账号配置容器，运行服务不持有它。密码通过环境传入，SQL 经标准输入交给客户端，账号配置容器不输出密码或原始客户端诊断。Compose 将运行密码原值拼入 MySQL URL，须使用 URL 安全字符，可用 Node.js 的 `crypto.randomBytes(32).toString('hex')` 分别生成。开发默认密码仅供本机使用。
+[provision-runtime.mjs](../scripts/db/provision-runtime.mjs) 以 root 创建/更新运行账号并重置其直接权限；不改变 `wattharbor` 权限。脚本使用 Node.js 24 和 MySQL CLI，不依赖 shell、sed 或临时 SQL 文件；Compose 的专用镜像提供两项运行依赖，宿主机仅需 Docker Compose。两套 Compose 均按 MySQL 就绪 → migrate 完成 → provision-runtime 完成 → 服务启动排列依赖。root 凭据只注入 MySQL 与一次性账号配置容器，运行服务不持有它。密码通过环境传入，SQL 经标准输入交给客户端，账号配置容器不输出密码或原始客户端诊断。Compose 将运行密码原值拼入 MySQL URL，须使用 URL 安全字符，可用 Node.js 的 `crypto.randomBytes(32).toString('hex')` 分别生成。开发默认密码仅供本机使用。
 
 MySQL 与账号配置容器共享 `mysql-socket` 卷，后者只读挂载 Unix socket 并连接 `root@localhost`，且设置 `network_mode: none`；新实例显式设置 `MYSQL_ROOT_HOST=localhost`，不需要远程 root。共享 socket 仅挂载到这两个容器。
 
@@ -186,8 +190,8 @@ MySQL 与账号配置容器共享 `mysql-socket` 卷，后者只读挂载 Unix s
 docker compose -f docker/compose.dev.yaml up -d --no-deps --wait mysql
 docker compose -f docker/compose.dev.yaml run --rm --no-deps provision-runtime
 # 生产栈：先填写五个运行密码；有 override 时仍使用完整 -f 列表。
-docker compose -f docker/compose.prod.yaml up -d --no-deps --wait chargepilot-mysql
-docker compose -f docker/compose.prod.yaml run --rm --no-deps chargepilot-provision-runtime
+docker compose -f docker/compose.prod.yaml up -d --no-deps --wait wattharbor-mysql
+docker compose -f docker/compose.prod.yaml run --rm --no-deps wattharbor-provision-runtime
 ```
 
 已有卷的账号不会因 `MYSQL_ROOT_HOST` 变化而重建。若原实例已有远程 root 账号，确认 socket 的 `root@localhost` 登录及维护工具可用后，由管理员在维护窗口撤销不再需要的远程 root 账号；配置脚本不自动删除历史管理员账号。
@@ -240,7 +244,7 @@ RESTORE_CONFIRM="gateway_db central_db worker_db" node scripts/db/restore.mjs "$
 
 五个 Go 服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。live 只说明进程存活，ready 检查服务依赖。HTTP 指标按已注册路由统计，不能作为 TCP 连接数或设备在线率。
 
-每池增加 `chargepilot_db_open_connections/in_use_connections/idle_connections/max_open_connections`，以及 `wait_total/wait_seconds_total/max_idle_closed_total/max_idle_time_closed_total/max_lifetime_closed_total` 累计指标。标签仅固定 `service/schema`；等待持续增长时结合在用数、慢查询和锁等待诊断。所有新 MySQL 物理会话显式设置 UTC 和严格 SQL 模式，避免宿主机时区影响数据库时间。
+每池增加 `wattharbor_db_open_connections/in_use_connections/idle_connections/max_open_connections`，以及 `wait_total/wait_seconds_total/max_idle_closed_total/max_idle_time_closed_total/max_lifetime_closed_total` 累计指标。标签仅固定 `service/schema`；等待持续增长时结合在用数、慢查询和锁等待诊断。所有新 MySQL 物理会话显式设置 UTC 和严格 SQL 模式，避免宿主机时区影响数据库时间。
 
 | 现象 | 核对项 |
 | --- | --- |

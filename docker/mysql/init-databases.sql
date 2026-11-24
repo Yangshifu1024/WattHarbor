@@ -6,7 +6,7 @@ CREATE DATABASE IF NOT EXISTS gateway_db CHARACTER SET utf8mb4 COLLATE utf8mb4_u
 CREATE DATABASE IF NOT EXISTS central_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE IF NOT EXISTS worker_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-GRANT ALL PRIVILEGES ON gateway_db.* TO 'chargepilot'@'%';
-GRANT ALL PRIVILEGES ON central_db.* TO 'chargepilot'@'%';
-GRANT ALL PRIVILEGES ON worker_db.* TO 'chargepilot'@'%';
+GRANT ALL PRIVILEGES ON gateway_db.* TO 'wattharbor'@'%';
+GRANT ALL PRIVILEGES ON central_db.* TO 'wattharbor'@'%';
+GRANT ALL PRIVILEGES ON worker_db.* TO 'wattharbor'@'%';
 FLUSH PRIVILEGES;

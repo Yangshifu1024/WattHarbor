@@ -1,12 +1,6 @@
 package card
 
 import (
-	carddomain "chargepilot/internal/domain/card"
-	money "chargepilot/internal/domain/money"
-	"chargepilot/internal/identity"
-	orderstore "chargepilot/internal/order"
-	pay "chargepilot/internal/payment"
-	"chargepilot/internal/wallet"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -14,12 +8,18 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+	carddomain "wattharbor/internal/domain/card"
+	money "wattharbor/internal/domain/money"
+	"wattharbor/internal/identity"
+	orderstore "wattharbor/internal/order"
+	pay "wattharbor/internal/payment"
+	"wattharbor/internal/wallet"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/platform/dbutil"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/platform/dbutil"
 )
 
 // ErrCardOperation 表示卡状态、端口、累计时长或启动确认状态不允许刷卡。

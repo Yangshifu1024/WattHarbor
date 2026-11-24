@@ -25,7 +25,7 @@ const sessionLock = async <T,>(action: () => Promise<T>): Promise<T> => {
   return next;
 };
 export const adminSession = createSessionManager(localStorage, sessionLock, () => window.dispatchEvent(new Event('cp-session')), () => crypto.randomUUID());
-type SessionRequest = InternalAxiosRequestConfig & { cpEpoch?: string | null; cpSentToken?: string; cpRetried?: boolean };
+type SessionRequest = InternalAxiosRequestConfig & { sessionEpoch?: string | null; sentToken?: string; retried?: boolean };
 const createsSession = (url?: string) => url === '/api/v1/admin/auth/login' || url === '/api/v1/admin/auth/mfa';
 const isExpiredSession = (error: unknown) => error instanceof SessionExpired || (axios.isAxiosError(error) && error.response?.status === 401);
 const requestSessionTokens = async (refresh: string): Promise<SessionTokens> => {
@@ -38,28 +38,28 @@ const expireSession = async (expected: string | null) => {
 };
 
 http.interceptors.request.use(async (cfg: SessionRequest) => {
-  if (cfg.cpEpoch === undefined) cfg.cpEpoch = adminSession.epoch();
-  if (cfg.cpEpoch !== adminSession.epoch()) throw new Error('登录账号已变化，请重新打开页面');
+  if (cfg.sessionEpoch === undefined) cfg.sessionEpoch = adminSession.epoch();
+  if (cfg.sessionEpoch !== adminSession.epoch()) throw new Error('登录账号已变化，请重新打开页面');
   if (!createsSession(cfg.url)) {
     try {
-      await adminSession.ensureFresh(cfg.cpEpoch, requestSessionTokens);
+      await adminSession.ensureFresh(cfg.sessionEpoch, requestSessionTokens);
     } catch (error) {
-      if (isExpiredSession(error)) await expireSession(cfg.cpEpoch);
+      if (isExpiredSession(error)) await expireSession(cfg.sessionEpoch);
       if (axios.isAxiosError(error)) error.message = apiErrorMessage(error.response?.status, error.response?.data, error.code);
       throw error;
     }
   }
-  if (cfg.cpEpoch !== adminSession.epoch()) throw new Error('登录账号已变化，请重新打开页面');
+  if (cfg.sessionEpoch !== adminSession.epoch()) throw new Error('登录账号已变化，请重新打开页面');
   const t = localStorage.getItem('cp_token');
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
-  cfg.cpSentToken = t || '';
+  cfg.sentToken = t || '';
   return cfg;
 });
 
 http.interceptors.response.use(
   (resp) => {
     const cfg = resp.config as SessionRequest;
-    if (cfg.cpEpoch !== adminSession.epoch()) throw new Error('登录账号已变化，请重新打开页面');
+    if (cfg.sessionEpoch !== adminSession.epoch()) throw new Error('登录账号已变化，请重新打开页面');
     const env = resp.data as ApiEnvelope;
     if (env && env.code !== 0) {
       const err = new Error(env.message || 'api error');
@@ -77,11 +77,11 @@ http.interceptors.response.use(
     if (isLogin && err.response?.status === 404) err.message = '后台登录接口不可用，请确认后端服务已更新';
     const cfg = err.config as SessionRequest | undefined;
     // 预刷新使用独立 axios；其错误没有业务请求的 epoch，不能再次刷新或清理其他会话。
-    if (err.response?.status === 401 && !createsSession(cfg?.url) && cfg?.cpEpoch !== undefined) {
-      if (cfg && !cfg.cpRetried) {
-        cfg.cpRetried = true;
+    if (err.response?.status === 401 && !createsSession(cfg?.url) && cfg?.sessionEpoch !== undefined) {
+      if (cfg && !cfg.retried) {
+        cfg.retried = true;
         try {
-          await adminSession.refresh(cfg.cpSentToken || '', cfg.cpEpoch, requestSessionTokens);
+          await adminSession.refresh(cfg.sentToken || '', cfg.sessionEpoch, requestSessionTokens);
           return http.request(cfg);
         } catch (refreshError) {
           if (!isExpiredSession(refreshError)) {
@@ -90,7 +90,7 @@ http.interceptors.response.use(
           }
         }
       }
-      await expireSession(cfg.cpEpoch);
+      await expireSession(cfg.sessionEpoch);
     }
     return Promise.reject(err);
   }

@@ -1,11 +1,6 @@
 package device_test
 
 import (
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/operations"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/serviceclient"
 	"context"
 	"errors"
 	"net/http"
@@ -13,6 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/operations"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestVendorQueryUsesAccountScope 核对只有账号范围进入查询，站点限制不会冒充厂商限制。

@@ -1,13 +1,13 @@
 package central
 
 import (
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // SimulationCallbackAPI 接收模拟支付成功通知，仅在 simulation 模式注册。

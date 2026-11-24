@@ -1,14 +1,14 @@
 package device
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/persist"
 	"context"
 	"database/sql"
 	"errors"
 	"gorm.io/gorm"
 	"time"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/persist"
 )
 
 // FaultDispatch 保存指派人和可空备注，不允许覆盖报告状态或用户。

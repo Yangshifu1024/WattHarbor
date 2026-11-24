@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"chargepilot/internal/gateway/simulator/dc589"
-	"chargepilot/internal/protocol/dc589"
+	"wattharbor/internal/gateway/simulator/dc589"
+	"wattharbor/internal/protocol/dc589"
 )
 
 // 协议板号为 16 位十进制数字；未指定时使用预置测试编号。

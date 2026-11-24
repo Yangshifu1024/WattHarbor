@@ -1,13 +1,13 @@
 package device
 
 import (
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/devices"
-	money "chargepilot/internal/domain/money"
-	"chargepilot/internal/protocol"
 	"context"
 	"errors"
 	"gorm.io/gorm"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/devices"
+	money "wattharbor/internal/domain/money"
+	"wattharbor/internal/protocol"
 )
 
 // DeviceOperationReader 读取中央运营状态，不能代替网关连接状态。

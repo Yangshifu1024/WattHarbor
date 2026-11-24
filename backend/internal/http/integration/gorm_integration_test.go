@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // testConn 报告 TEST_MYSQL_URL 缺失或建连错误，返回真实 MySQL 的 GORM 句柄及关闭函数。

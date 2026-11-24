@@ -2,10 +2,10 @@
 package ops
 
 import (
-	"chargepilot/internal/device"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
 )
 
 // API 适配后台账号创建、公告、审计和告警，业务流程与事务由注入服务拥有。

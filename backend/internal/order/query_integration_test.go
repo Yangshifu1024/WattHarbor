@@ -3,13 +3,6 @@
 package order_test
 
 import (
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/order"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/settlement"
-	"chargepilot/internal/testfixture"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +12,13 @@ import (
 	"os"
 	"testing"
 	"time"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/order"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/settlement"
+	"wattharbor/internal/testfixture"
 )
 
 // queryDB 为 t 打开独立 TEST_MYSQL_URL，缺配置或失败终止；退出只关闭自身连接池。

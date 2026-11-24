@@ -1,13 +1,13 @@
 package marketing
 
 import (
-	marketingdomain "chargepilot/internal/domain/marketing"
-	"chargepilot/internal/domain/money"
 	"context"
 	"errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"time"
+	marketingdomain "wattharbor/internal/domain/marketing"
+	"wattharbor/internal/domain/money"
 )
 
 // loadGrant 按用户和发放 ID 读取启用模板的券，需要核销时在调用方事务中加锁。

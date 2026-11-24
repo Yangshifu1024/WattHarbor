@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	contract "chargepilot/internal/contracts/gateway"
 	"context"
 	"encoding/json"
 	"io"
@@ -11,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	contract "wattharbor/internal/contracts/gateway"
 )
 
 // vendorUnavailable 返回统一的厂商服务错误，隐藏凭据、响应正文和存储细节。

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"chargepilot/internal/domain/operations"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
 )
 
 // roleCodePattern 限制角色编码为小写字母开头、3–64 位字母数字或下划线。

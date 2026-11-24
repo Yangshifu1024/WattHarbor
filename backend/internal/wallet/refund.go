@@ -1,8 +1,6 @@
 package wallet
 
 import (
-	"chargepilot/internal/domain/money"
-	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +8,8 @@ import (
 	"gorm.io/gorm"
 	"strings"
 	"time"
+	"wattharbor/internal/domain/money"
+	walletdomain "wattharbor/internal/domain/wallet"
 )
 
 var (

@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"time"
 
-	"chargepilot/internal/http/admin"
-	authhttp "chargepilot/internal/http/auth"
-	adminops "chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
+	"wattharbor/internal/http/admin"
+	authhttp "wattharbor/internal/http/auth"
+	adminops "wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"

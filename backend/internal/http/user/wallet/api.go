@@ -2,9 +2,9 @@
 package wallet
 
 import (
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/wallet"
 	"github.com/gin-gonic/gin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/wallet"
 )
 
 // API 将本业务族的用户请求交给用例，字段由 cmd 装配。

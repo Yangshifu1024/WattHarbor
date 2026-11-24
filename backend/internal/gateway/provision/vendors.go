@@ -1,8 +1,6 @@
 package provision
 
 import (
-	contract "chargepilot/internal/contracts/gateway"
-	gatewayrepo "chargepilot/internal/gateway/repo"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,13 +10,15 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	contract "wattharbor/internal/contracts/gateway"
+	gatewayrepo "wattharbor/internal/gateway/repo"
 
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 var vendorCodePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)

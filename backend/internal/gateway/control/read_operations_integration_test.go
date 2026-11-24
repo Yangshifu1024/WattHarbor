@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	gatewayrepo "chargepilot/internal/gateway/repo"
+	contract "wattharbor/internal/contracts/gateway"
+	gatewayrepo "wattharbor/internal/gateway/repo"
 )
 
 // TestGatewayReadOperationsHonorCanceledContext 验证订单采样读取返回真实取消错误，不能把取消当作空数据成功。

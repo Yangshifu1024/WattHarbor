@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
 	"github.com/gin-gonic/gin"
+	charging "wattharbor/internal/domain/charging"
 )
 
 func TestFullSchemePreviewIsReadOnlyAndRejectsMissingInputs(t *testing.T) {

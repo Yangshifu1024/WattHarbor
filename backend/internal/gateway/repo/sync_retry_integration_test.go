@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/testfixture"
 )
 
 // syncTestConn 打开独立 gateway 连接，使用显式测试配置；失败直接终止，不提供跳过路径。

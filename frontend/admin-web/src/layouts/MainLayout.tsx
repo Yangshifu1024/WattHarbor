@@ -120,7 +120,7 @@ export default function MainLayout() {
         <div className="layout-header-frame" ref={headerRef}>
           <div className="layout-header-top">
             <div className="layout-heading">
-              <Text strong className="layout-brand">ChargePilot ·</Text>
+              <Text strong className="layout-brand">WattHarbor ·</Text>
               {pageTitle && <Typography.Title level={3} className="layout-page-title">{pageTitle}</Typography.Title>}
             </div>
             <Menu

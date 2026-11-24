@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/config"
-	"chargepilot/internal/platform/httpapi"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/config"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // TestCentralAssemblyRejectsInvalidServiceIdentityBeforeBusinessIO 验证内部路由和模拟开关保持一致，空配置或错误令牌返回一次 401。

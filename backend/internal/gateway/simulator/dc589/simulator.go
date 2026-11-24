@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"chargepilot/internal/protocol/dc589"
+	"wattharbor/internal/protocol/dc589"
 )
 
 // Scenario 选择充电行为；各场景共用注册与心跳流程，仅改变启动后的执行结果。

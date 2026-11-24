@@ -7,15 +7,15 @@ import (
 	"net/http"
 	"time"
 
-	"chargepilot/internal/identity"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/config"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/go-pay/wechat-sdk/mini"
 	"github.com/go-pay/xhttp"
+	"wattharbor/internal/identity"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/config"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // Run 启动兼容的独立进程。

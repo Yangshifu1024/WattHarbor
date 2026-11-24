@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 func TestFrameLogsSuppressHeartbeatAndExcludePayload(t *testing.T) {

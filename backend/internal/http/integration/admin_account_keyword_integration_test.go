@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	adminaccounthttp "chargepilot/internal/http/admin/account"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
+	"wattharbor/internal/domain/operations"
+	adminaccounthttp "wattharbor/internal/http/admin/account"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
 )
 
 // TestRegisteredAdminAccountKeywordUsesLiteralCharacters 用实际注册 GET、真实 MySQL 与 Redis 会话验证账号关键词的文字匹配。

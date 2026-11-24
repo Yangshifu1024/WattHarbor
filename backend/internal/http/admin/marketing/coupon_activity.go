@@ -3,11 +3,11 @@ package marketing
 import (
 	"errors"
 
-	adminhttp "chargepilot/internal/http/admin"
-	"chargepilot/internal/marketing"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	adminhttp "wattharbor/internal/http/admin"
+	"wattharbor/internal/marketing"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerActivityRules 注册优惠券活动规则查询、创建和修改接口。

@@ -7,8 +7,8 @@ import (
 	"errors"
 	"math"
 
-	walletdomain "chargepilot/internal/domain/wallet"
-	"chargepilot/internal/platform/dbutil"
+	walletdomain "wattharbor/internal/domain/wallet"
+	"wattharbor/internal/platform/dbutil"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

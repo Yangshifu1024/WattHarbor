@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/card"
-	"chargepilot/internal/charging/stop"
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/money"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/card"
+	"wattharbor/internal/charging/stop"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/money"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/testfixture"
 )
 
 // cutoffCardConn 为 t 打开独立真实连接并注册关闭，缺配置或失败终止，不跳过。

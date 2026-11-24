@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
 )
 
 // faultEnvelopeReply 保留注册端点的原状态、消息及可空数据，用于指定持久操作回归。

@@ -1,11 +1,11 @@
 package ops
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerOperations 注册账号创建、告警查询和认领、公告查询和发布接口。

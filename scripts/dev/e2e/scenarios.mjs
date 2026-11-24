@@ -51,7 +51,7 @@ const simEvent = async body => {
 
 function sql(db, text) {
   const out = execFileSync('docker', ['compose', '-f', 'docker/compose.dev.yaml', 'exec', '-T', 'mysql', 'sh', '-c',
-    `MYSQL_PWD="$MYSQL_PASSWORD" mysql --protocol=TCP -uchargepilot ${db} -N -B -e '${text}'`],
+    `MYSQL_PWD="$MYSQL_PASSWORD" mysql --protocol=TCP -uwattharbor ${db} -N -B -e '${text}'`],
     { encoding: 'utf8', cwd: ROOT });
   return out.trim().split('\n').filter(l => l !== '').map(l => l.split('\t'));
 }

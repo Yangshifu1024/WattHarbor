@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/platform/httpapi"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // TestWorkerSyncAPIRequiresServiceToken 通过实际注册的十三条同步路由验证缺失服务令牌返回 401；

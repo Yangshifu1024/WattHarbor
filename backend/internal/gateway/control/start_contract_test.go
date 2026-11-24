@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/gateway/repo"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/gateway/repo"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // startContractService 记录启动调用，返回预设状态和错误。

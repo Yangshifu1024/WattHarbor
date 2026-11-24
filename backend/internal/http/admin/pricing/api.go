@@ -2,10 +2,10 @@
 package pricing
 
 import (
-	adminhttp "chargepilot/internal/http/admin"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/pricing"
 	"github.com/gin-gonic/gin"
+	adminhttp "wattharbor/internal/http/admin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/pricing"
 )
 
 // API 提供充电方案接口，依赖方案管理、查询和后台鉴权。

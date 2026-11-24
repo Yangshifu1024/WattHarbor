@@ -3,16 +3,16 @@
 package payment
 
 import (
-	"chargepilot/internal/testfixture"
 	"context"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"wattharbor/internal/testfixture"
 
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // 使用真实 MySQL 行锁、事务与唯一键验证并发回调只入账一次。

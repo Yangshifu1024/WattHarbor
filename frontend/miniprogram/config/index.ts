@@ -1,7 +1,7 @@
 import { defineConfig } from '@tarojs/cli'
 
 export default defineConfig({
-  projectName: 'chargepilot-user',
+  projectName: 'wattharbor-user',
   date: '2026-10-01',
   designWidth: 750,
   deviceRatio: { 640: 2.34 / 2, 750: 1, 828: 1.81 / 2 },
@@ -9,7 +9,7 @@ export default defineConfig({
   outputRoot: `dist/${process.env.TARO_ENV || 'h5'}`,
   framework: 'react',
   compiler: { type: 'vite', prebundle: { enable: false }, vitePlugins: [{
-    name: 'chargepilot-home',
+    name: 'wattharbor-home',
     configureServer(server) {
       server.middlewares.use((request, _response, next) => {
         if (request.url === '/') request.url = '/index.html'

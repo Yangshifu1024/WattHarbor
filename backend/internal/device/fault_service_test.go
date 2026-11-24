@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
 )
 
 // TestFaultAdmissionBeforeStorage 验证无权限或请求不合法时，在数据库访问前拒绝。

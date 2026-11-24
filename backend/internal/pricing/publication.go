@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 
-	"chargepilot/internal/device"
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/device"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
 )
 
 // PublicationService 在同一事务内检查范围、请求重放、设备兼容，再保存规则和审计。

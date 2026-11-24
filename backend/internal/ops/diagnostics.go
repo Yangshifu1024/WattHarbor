@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"chargepilot/internal/platform/diagnostics"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/diagnostics"
 )
 
 // QueueDepth 返回积压数量和最早的一笔记录时间；缺失统计由 unavailable 标记。

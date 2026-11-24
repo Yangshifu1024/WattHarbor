@@ -4,9 +4,9 @@ package measurement
 import (
 	"time"
 
-	rules "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/protocol"
+	rules "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/protocol"
 )
 
 // SessionSpanOf 将结束事件转换为设备会话计量，零时刻或结束早于开始时返回 false。

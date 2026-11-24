@@ -1,12 +1,12 @@
 package control
 
 import (
-	contract "chargepilot/internal/contracts/gateway"
-	gatewayrepo "chargepilot/internal/gateway/repo"
+	contract "wattharbor/internal/contracts/gateway"
+	gatewayrepo "wattharbor/internal/gateway/repo"
 
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // DeviceSummaryAPI 返回网关设备和端口摘要，要求服务令牌。

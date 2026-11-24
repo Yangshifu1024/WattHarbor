@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	marketingdomain "chargepilot/internal/domain/marketing"
-	"chargepilot/internal/platform/dbutil"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	marketingdomain "wattharbor/internal/domain/marketing"
+	"wattharbor/internal/platform/dbutil"
 )
 
 // 后台负责活动规则读写和统计，触发发券由 activity_grant.go 执行。

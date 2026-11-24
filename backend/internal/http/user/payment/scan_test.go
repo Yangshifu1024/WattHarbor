@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/devices"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/devices"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // scanSession 是支付路由测试的固定有效会话能力，用于隔离 Redis 会话读取，不创建真实会话。

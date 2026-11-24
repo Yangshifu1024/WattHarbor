@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/testfixture"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/testfixture"
 )
 
 // TestConcurrentDeviceMetadataKeepsOneVersion 验证两个真库连接更新同一旧版本时只有一次成功。

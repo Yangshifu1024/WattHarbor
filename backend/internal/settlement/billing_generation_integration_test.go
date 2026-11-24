@@ -3,8 +3,6 @@
 package settlement
 
 import (
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/testfixture"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +10,8 @@ import (
 	"gorm.io/gorm"
 	"testing"
 	"time"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/testfixture"
 )
 
 // pausedBillingRead 固定 Due 的旧代际，在真实来源读取完成后暂停；放行后仍返回旧快照。

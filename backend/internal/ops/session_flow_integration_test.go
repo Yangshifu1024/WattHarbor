@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/dbconn"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // securityFixture 用真库和 Redis 创建本测试的角色、账号和会话；不修改初始管理员。

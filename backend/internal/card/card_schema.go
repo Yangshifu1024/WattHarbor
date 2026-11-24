@@ -1,8 +1,8 @@
 package card
 
 import (
-	carddomain "chargepilot/internal/domain/card"
 	"context"
+	carddomain "wattharbor/internal/domain/card"
 
 	"gorm.io/gorm"
 )

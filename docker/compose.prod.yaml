@@ -1,6 +1,6 @@
 # 生产拓扑。环境变量与服务配置以本文件及配置加载代码为准。
 # 本文件位于 docker/，该目录即 Compose 项目目录：文件内宿主机相对路径相对 docker/ 解析。
-name: chargepilot
+name: wattharbor
 
 # Go 模块位于 backend/，构建上下文即该目录；镜像内编译 ./cmd/<SERVICE>。
 x-go-build: &go-build
@@ -8,27 +8,27 @@ x-go-build: &go-build
   dockerfile: Dockerfile
 
 services:
-  chargepilot-mysql:
+  wattharbor-mysql:
     image: mysql:8.4
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
       MYSQL_ROOT_HOST: localhost
-      MYSQL_USER: chargepilot
+      MYSQL_USER: wattharbor
       MYSQL_PASSWORD: ${DB_PASSWORD:?required}
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     volumes:
       - mysql-data:/var/lib/mysql
       - mysql-socket:/var/run/mysqld
-      - ./mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-chargepilot.sql:ro
+      - ./mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-wattharbor.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u chargepilot -e 'SELECT 1'"]
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u wattharbor -e 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 20
       start_period: 30s
 
-  chargepilot-redis-cache:
+  wattharbor-redis-cache:
     image: redis:8-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?required}"]
@@ -38,7 +38,7 @@ services:
       timeout: 3s
       retries: 5
 
-  chargepilot-redis-stream:
+  wattharbor-redis-stream:
     image: redis:8-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_STREAM_PASSWORD:?required}"]
@@ -49,20 +49,20 @@ services:
       timeout: 3s
       retries: 5
 
-  chargepilot-migrate:
+  wattharbor-migrate:
     build:
       <<: *go-build
       args: { SERVICE: migrate }
     command: ["--schema", "all"]
     restart: "no"
     environment:
-      DATABASE_URL_GATEWAY: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/gateway_db
-      DATABASE_URL_CENTRAL: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/central_db
-      DATABASE_URL_WORKER: mysql://chargepilot:${DB_PASSWORD}@chargepilot-mysql:3306/worker_db
+      DATABASE_URL_GATEWAY: mysql://wattharbor:${DB_PASSWORD}@wattharbor-mysql:3306/gateway_db
+      DATABASE_URL_CENTRAL: mysql://wattharbor:${DB_PASSWORD}@wattharbor-mysql:3306/central_db
+      DATABASE_URL_WORKER: mysql://wattharbor:${DB_PASSWORD}@wattharbor-mysql:3306/worker_db
     depends_on:
-      chargepilot-mysql: { condition: service_healthy }
+      wattharbor-mysql: { condition: service_healthy }
 
-  chargepilot-provision-runtime:
+  wattharbor-provision-runtime:
     build:
       context: ./mysql
       dockerfile: runtime-accounts.Dockerfile
@@ -80,9 +80,9 @@ services:
       DB_GATEWAY_PASSWORD: ${DB_GATEWAY_PASSWORD:?required}
       DB_WORKER_PASSWORD: ${DB_WORKER_PASSWORD:?required}
     depends_on:
-      chargepilot-migrate: { condition: service_completed_successfully }
+      wattharbor-migrate: { condition: service_completed_successfully }
 
-  chargepilot-gateway:
+  wattharbor-gateway:
     build:
       <<: *go-build
       args: { SERVICE: gateway }
@@ -92,17 +92,17 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL: mysql://chargepilot_gateway:${DB_GATEWAY_PASSWORD:?required}@chargepilot-mysql:3306/gateway_db
+      DATABASE_URL: mysql://wattharbor_gateway:${DB_GATEWAY_PASSWORD:?required}@wattharbor-mysql:3306/gateway_db
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       DC589_ADDR: :9100
-      CENTRAL_INTERNAL_URL: http://chargepilot-central:8082
+      CENTRAL_INTERNAL_URL: http://wattharbor-central:8082
     ports: ["9100:9100"]
     expose: ["8083"]
     depends_on:
-      chargepilot-provision-runtime: { condition: service_completed_successfully }
+      wattharbor-provision-runtime: { condition: service_completed_successfully }
 
   # C 端。对外只经 Caddy 进入。
-  chargepilot-user:
+  wattharbor-user:
     build:
       <<: *go-build
       args: { SERVICE: user }
@@ -112,8 +112,8 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://chargepilot_user:${DB_USER_PASSWORD:?required}@chargepilot-mysql:3306/central_db
-      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
+      DATABASE_URL_CENTRAL: mysql://wattharbor_user:${DB_USER_PASSWORD:?required}@wattharbor-mysql:3306/central_db
+      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@wattharbor-redis-cache:6379/0
       JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       WECHAT_APPID: ${WECHAT_APPID:?required}
@@ -124,14 +124,14 @@ services:
       WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
       WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
       WECHAT_SECRET: ${WECHAT_SECRET:?required}
-      GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
+      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
     expose: ["8080"]
     depends_on:
-      chargepilot-provision-runtime: { condition: service_completed_successfully }
-      chargepilot-redis-cache: { condition: service_healthy }
+      wattharbor-provision-runtime: { condition: service_completed_successfully }
+      wattharbor-redis-cache: { condition: service_healthy }
 
   # central 只在容器网络内接受服务令牌调用，不映射端口，也不签发用户会话。
-  chargepilot-central:
+  wattharbor-central:
     build:
       <<: *go-build
       args: { SERVICE: central }
@@ -141,8 +141,8 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://chargepilot_central:${DB_CENTRAL_PASSWORD:?required}@chargepilot-mysql:3306/central_db
-      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
+      DATABASE_URL_CENTRAL: mysql://wattharbor_central:${DB_CENTRAL_PASSWORD:?required}@wattharbor-mysql:3306/central_db
+      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@wattharbor-redis-cache:6379/0
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
       WECHAT_APPID: ${WECHAT_APPID:?required}
       PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
@@ -151,15 +151,15 @@ services:
       WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:-}
       WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
       WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
-      GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
+      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
     expose: ["8082"]
     depends_on:
-      chargepilot-provision-runtime: { condition: service_completed_successfully }
-      chargepilot-redis-cache: { condition: service_healthy }
+      wattharbor-provision-runtime: { condition: service_completed_successfully }
+      wattharbor-redis-cache: { condition: service_healthy }
 
   # 后台由 Caddy 转发至容器内的 8081，不映射到宿主机。
   # 后台不处理用户微信登录或发起支付，不读取相关凭据。
-  chargepilot-admin:
+  wattharbor-admin:
     build:
       <<: *go-build
       args: { SERVICE: admin }
@@ -169,28 +169,28 @@ services:
       admin-proxy:
         aliases: [admin-proxy-upstream]
     volumes:
-      - export-files:/var/lib/chargepilot/exports
+      - export-files:/var/lib/wattharbor/exports
     environment:
       DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://chargepilot_admin:${DB_ADMIN_PASSWORD:?required}@chargepilot-mysql:3306/central_db
-      EXPORT_DIR: /var/lib/chargepilot/exports
+      DATABASE_URL_CENTRAL: mysql://wattharbor_admin:${DB_ADMIN_PASSWORD:?required}@wattharbor-mysql:3306/central_db
+      EXPORT_DIR: /var/lib/wattharbor/exports
       ADMIN_TRUSTED_PROXIES: ${CADDY_ADMIN_PROXY_IP:-172.30.81.2}
-      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@chargepilot-redis-cache:6379/0
+      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@wattharbor-redis-cache:6379/0
       JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
-      WORKER_INTERNAL_URL: http://chargepilot-worker:8085
+      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
+      WORKER_INTERNAL_URL: http://wattharbor-worker:8085
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
     expose: ["8081"]
     depends_on:
-      chargepilot-provision-runtime: { condition: service_completed_successfully }
-      chargepilot-redis-cache: { condition: service_healthy }
+      wattharbor-provision-runtime: { condition: service_completed_successfully }
+      wattharbor-redis-cache: { condition: service_healthy }
 
-  chargepilot-worker:
+  wattharbor-worker:
     build:
       <<: *go-build
       args: { SERVICE: worker }
@@ -200,22 +200,22 @@ services:
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_WORKER: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:?required}@chargepilot-mysql:3306/worker_db
-      DATABASE_URL_GATEWAY: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:?required}@chargepilot-mysql:3306/gateway_db
-      DATABASE_URL_CENTRAL: mysql://chargepilot_worker:${DB_WORKER_PASSWORD:?required}@chargepilot-mysql:3306/central_db
-      REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD}@chargepilot-redis-stream:6379/0
+      DATABASE_URL_WORKER: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:?required}@wattharbor-mysql:3306/worker_db
+      DATABASE_URL_GATEWAY: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:?required}@wattharbor-mysql:3306/gateway_db
+      DATABASE_URL_CENTRAL: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:?required}@wattharbor-mysql:3306/central_db
+      REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD}@wattharbor-redis-stream:6379/0
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      CENTRAL_INTERNAL_URL: http://chargepilot-central:8082
-      GATEWAY_INTERNAL_URL: http://chargepilot-gateway:8083
+      CENTRAL_INTERNAL_URL: http://wattharbor-central:8082
+      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
       REGULATORY_MODE: ${REGULATORY_MODE:-disabled}
       REGULATORY_ENDPOINT: ${REGULATORY_ENDPOINT:-}
       REGULATORY_SIGNING_SECRET: ${REGULATORY_SIGNING_SECRET:-}
     expose: ["8085"]
     depends_on:
-      chargepilot-provision-runtime: { condition: service_completed_successfully }
-      chargepilot-redis-stream: { condition: service_healthy }
+      wattharbor-provision-runtime: { condition: service_completed_successfully }
+      wattharbor-redis-stream: { condition: service_healthy }
 
-  chargepilot-caddy:
+  wattharbor-caddy:
     image: caddy:2.11-alpine
     restart: unless-stopped
     networks:
@@ -231,7 +231,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      chargepilot-central: { condition: service_started }
+      wattharbor-central: { condition: service_started }
 
 # 专用网段仅连接 Caddy 与 admin；后台只信任 Caddy 单一地址，其他服务不能伪造来源。
 networks:

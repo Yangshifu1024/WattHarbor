@@ -5,12 +5,12 @@ import (
 	"errors"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	adminhttp "chargepilot/internal/http/admin"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	adminhttp "wattharbor/internal/http/admin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // Dashboard 只持有看板服务，不组装查询或业务日界。

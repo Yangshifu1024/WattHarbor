@@ -3,7 +3,7 @@
 // gzip 解压由 node:zlib 提供，不依赖外部 gzip 命令。
 //
 // 用法：
-//   RESTORE_CONFIRM="gateway_db central_db worker_db" node scripts/db/restore.mjs backups/chargepilot-20260929T000000Z.sql.gz
+//   RESTORE_CONFIRM="gateway_db central_db worker_db" node scripts/db/restore.mjs backups/wattharbor-20260929T000000Z.sql.gz
 import { spawnSync, spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { createGunzip } from 'node:zlib';

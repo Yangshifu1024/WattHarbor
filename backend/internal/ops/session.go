@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/auth"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/auth"
 )
 
 // AccessTTL 是八小时访问令牌有效期，刷新会话保持七天绝对期限。

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"net/url"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/serviceclient"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // ResolveScan 按二维码查询设备和端口，不读取中央运营状态。

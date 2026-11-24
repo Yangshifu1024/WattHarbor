@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"strings"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/platform/serviceclient"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // ErrInvalidResponse 表示服务响应不符合接口要求。

@@ -13,13 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"chargepilot/internal/application/admin"
-	"chargepilot/internal/application/central"
-	"chargepilot/internal/application/gateway"
-	"chargepilot/internal/application/user"
-	"chargepilot/internal/application/worker"
-	"chargepilot/internal/gateway/listener"
-	"chargepilot/internal/platform/httpapi"
+	"wattharbor/internal/application/admin"
+	"wattharbor/internal/application/central"
+	"wattharbor/internal/application/gateway"
+	"wattharbor/internal/application/user"
+	"wattharbor/internal/application/worker"
+	"wattharbor/internal/gateway/listener"
+	"wattharbor/internal/platform/httpapi"
 )
 
 var errShutdownTimeout = errors.New("application shutdown timed out")
@@ -123,7 +123,7 @@ func Run(ctx context.Context) (err error) {
 	done := make(chan struct{})
 	go func() { group.Wait(); close(exits); close(done) }()
 	ready.Store(true)
-	log.Printf("chargepilot listening http=%s", httpPort.Addr())
+	log.Printf("wattharbor listening http=%s", httpPort.Addr())
 	select {
 	case <-ctx.Done():
 	case err = <-exits:

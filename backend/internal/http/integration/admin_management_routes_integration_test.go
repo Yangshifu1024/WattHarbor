@@ -12,17 +12,17 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	adminaccounthttp "chargepilot/internal/http/admin/account"
-	admindashboard "chargepilot/internal/http/admin/dashboard"
-	adminops "chargepilot/internal/http/admin/ops"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	adminaccounthttp "wattharbor/internal/http/admin/account"
+	admindashboard "wattharbor/internal/http/admin/dashboard"
+	adminops "wattharbor/internal/http/admin/ops"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
 )
 
 // TestRegisteredAdminManagement 使用实际账号／角色注册路由和真实 SQL／Redis 验证输入、状态、撤权及安全审计。

@@ -1,6 +1,6 @@
 package gateway
 
-import "chargepilot/internal/protocol"
+import "wattharbor/internal/protocol"
 
 const (
 	CardEventsPath  = "/api/v1/internal/card-events"               // 待处理的卡事件列表

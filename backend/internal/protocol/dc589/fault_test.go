@@ -3,7 +3,7 @@ package dc589
 import (
 	"testing"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 func TestFaultMetricNamesDeviceAndPortFaults(t *testing.T) {

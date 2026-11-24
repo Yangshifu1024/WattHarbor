@@ -2,9 +2,9 @@
 package identity
 
 import (
-	walletdomain "chargepilot/internal/domain/wallet"
 	"errors"
 	"time"
+	walletdomain "wattharbor/internal/domain/wallet"
 )
 
 // ErrUserFrozen 表示账号已被冻结，不允许继续使用会话。

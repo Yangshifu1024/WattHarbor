@@ -7,9 +7,9 @@ import (
 	"errors"
 	"testing"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/testfixture"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/testfixture"
 )
 
 // TestImportCompatibilityCachesAbsentRuleAndChecksWholeScheme 验证无站点规则时可导入，有规则时检查全部套餐和算法。

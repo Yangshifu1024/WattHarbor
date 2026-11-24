@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/protocol"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/protocol"
 )
 
 // budgetHeartbeatFixture 构造 1500 W、每 15 秒一次的心跳。

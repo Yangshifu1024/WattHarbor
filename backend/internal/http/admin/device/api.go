@@ -2,11 +2,11 @@
 package device
 
 import (
-	"chargepilot/internal/device"
-	adminhttp "chargepilot/internal/http/admin"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/settlement"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	adminhttp "wattharbor/internal/http/admin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/settlement"
 )
 
 // API 提供设备管理接口，依赖设备、导入、计量复核服务和后台鉴权。

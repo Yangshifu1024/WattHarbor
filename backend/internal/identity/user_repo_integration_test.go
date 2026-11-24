@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/testfixture"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/testfixture"
 )
 
 // identityDB 为 t 打开独立 TEST_MYSQL_URL 连接池，缺配置或失败终止；测试结束关闭自身连接。

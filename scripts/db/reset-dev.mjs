@@ -10,8 +10,8 @@ import { parseArgs } from 'node:util';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]$/, '');
 const COMPOSE = ['compose', '-f', 'docker/compose.dev.yaml'];
-const CONTAINER = 'chargepilot-dev-mysql-1';
-const REDIS_CONTAINERS = ['chargepilot-dev-redis-cache-1', 'chargepilot-dev-redis-stream-1'];
+const CONTAINER = 'wattharbor-dev-mysql-1';
+const REDIS_CONTAINERS = ['wattharbor-dev-redis-cache-1', 'wattharbor-dev-redis-stream-1'];
 
 function fail(message) {
   console.error(message);
@@ -32,8 +32,8 @@ function run(cmd, args) {
 // 只认本仓库开发项目的 MySQL 容器，避免对同名他项容器执行毁灭性 SQL。
 const inspected = spawnSync('docker', ['inspect', CONTAINER, '--format',
   '{{ index .Config.Labels "com.docker.compose.project" }}'], { cwd: ROOT, encoding: 'utf8' });
-if (inspected.status !== 0 || inspected.stdout.trim() !== 'chargepilot-dev') {
-  fail('Expected local chargepilot-dev MySQL container.');
+if (inspected.status !== 0 || inspected.stdout.trim() !== 'wattharbor-dev') {
+  fail('Expected local wattharbor-dev MySQL container.');
 }
 
 const backupDir = join(ROOT, '.tmp');
@@ -45,13 +45,13 @@ if (stopped.status !== 0) fail('Unable to stop backend services.');
 
 // 备份先于一切破坏性动作落盘；容器内重定向需要 sh，宿主机侧经 docker cp 取回。
 const dumped = spawnSync('docker', ['exec', CONTAINER, 'sh', '-c',
-  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -u root --single-transaction --routines --triggers --databases gateway_db central_db worker_db > /tmp/chargepilot-before-reset.sql'],
+  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -u root --single-transaction --routines --triggers --databases gateway_db central_db worker_db > /tmp/wattharbor-before-reset.sql'],
   { cwd: ROOT, stdio: 'inherit' });
 if (dumped.status !== 0) fail('Backup failed; schemas were not reset.');
 
-const copied = spawnSync('docker', ['cp', `${CONTAINER}:/tmp/chargepilot-before-reset.sql`, backup], { cwd: ROOT, stdio: 'inherit' });
+const copied = spawnSync('docker', ['cp', `${CONTAINER}:/tmp/wattharbor-before-reset.sql`, backup], { cwd: ROOT, stdio: 'inherit' });
 if (copied.status !== 0 || statSync(backup).size === 0) fail('Backup copy failed; schemas were not reset.');
-rmSync(join(backupDir, 'chargepilot-before-reset.sql'), { force: true });
+rmSync(join(backupDir, 'wattharbor-before-reset.sql'), { force: true });
 
 // DROP 后按初始化同款字符集重建；此时备份已在 .tmp/，失败也留有恢复依据。
 const sql = [

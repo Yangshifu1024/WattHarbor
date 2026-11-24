@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // 真库并发测试用独立连接和锁闸门固定执行顺序。

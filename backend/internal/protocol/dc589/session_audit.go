@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // Transport 是该适配器使用的传输方式，取值见 protocol.Transport。

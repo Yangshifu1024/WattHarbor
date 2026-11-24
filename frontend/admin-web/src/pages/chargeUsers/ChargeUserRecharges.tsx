@@ -49,7 +49,7 @@ export default function ChargeUserRecharges({ userID }: { userID: string }) {
     window.addEventListener('cp-session', invalidate);
     window.addEventListener('storage', invalidate);
     setPage(null); setError(''); setLoading(true);
-    const request = { signal: controller.signal, params: pagination, cpEpoch: epoch };
+    const request = { signal: controller.signal, params: pagination, sessionEpoch: epoch };
     http.get<ApiEnvelope<RechargePage>>(`/api/v1/admin/users/${userID}/recharges`, request).then(response => {
       if (!current()) return;
       const result = response.data.data;

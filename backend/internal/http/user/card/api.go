@@ -4,11 +4,11 @@ package card
 import (
 	"errors"
 
-	"chargepilot/internal/card"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"wattharbor/internal/card"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // API 提供当前用户的卡列表、挂失和解绑接口。

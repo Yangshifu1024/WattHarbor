@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/central"
-	centralhttp "chargepilot/internal/http/central"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/settlement"
-	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/central"
+	centralhttp "wattharbor/internal/http/central"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/settlement"
+	"wattharbor/internal/testfixture"
 )
 
 // financeDeliveryOrders 只在订单入账边界记录标识并固定第二笔故障。

@@ -2,7 +2,6 @@ package central
 
 import (
 	"bytes"
-	contract "chargepilot/internal/contracts/central"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+	contract "wattharbor/internal/contracts/central"
 )
 
 // SwipeCard 提交刷卡事件，不自动重试；响应丢失后必须继续使用同一事件号。

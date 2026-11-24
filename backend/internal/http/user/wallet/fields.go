@@ -1,8 +1,8 @@
 package wallet
 
 import (
-	"chargepilot/internal/platform/httpapi"
 	"github.com/google/uuid"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // rechargeFieldErrors 校验 requestID 的 UUID 格式与 amountCents 的 100..5000000 分范围，返回全部字段错误；空切片表示合法。

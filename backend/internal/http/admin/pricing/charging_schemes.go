@@ -3,15 +3,15 @@ package pricing
 import (
 	"errors"
 
-	devstore "chargepilot/internal/device"
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/pricing"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	devstore "wattharbor/internal/device"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/pricing"
 )
 
 // registerChargingSchemes 注册方案模板、发布、继承、预览和执行能力接口，并校验各自权限。

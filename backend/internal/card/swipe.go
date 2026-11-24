@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/money"
 	"gorm.io/gorm"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/money"
 )
 
 // SwipePorts 提供中央运营状态及网关物理端口信息，不负责扣款或发送设备命令。

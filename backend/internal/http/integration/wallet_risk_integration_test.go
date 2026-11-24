@@ -14,15 +14,15 @@ import (
 	"testing"
 	"time"
 
-	authhttp "chargepilot/internal/http/auth"
-	userwallet "chargepilot/internal/http/user/wallet"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/settlement"
-	"chargepilot/internal/wallet"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	authhttp "wattharbor/internal/http/auth"
+	userwallet "wattharbor/internal/http/user/wallet"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/settlement"
+	"wattharbor/internal/wallet"
 )
 
 // 钱包退款的注册 HTTP 并发验收使用两条独立 MySQL 连接。

@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"chargepilot/internal/platform/config"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/worker/schedule"
 	"github.com/redis/go-redis/v9"
+	"wattharbor/internal/platform/config"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/worker/schedule"
 )
 
 // deniedOpsRedisHook 统计 Redis 命令并直接返回错误，避免测试建立 Redis 连接。

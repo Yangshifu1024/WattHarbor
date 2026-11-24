@@ -3,11 +3,11 @@ package user
 import (
 	"errors"
 
-	"chargepilot/internal/card"
-	"chargepilot/internal/domain/operations"
-	adminhttp "chargepilot/internal/http/admin"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/card"
+	"wattharbor/internal/domain/operations"
+	adminhttp "wattharbor/internal/http/admin"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerOnlineCards 注册在线卡查询、绑定和状态修改接口。

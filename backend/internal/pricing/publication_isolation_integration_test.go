@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/testfixture"
 )
 
 // cleanupPricingIsolation 等所有发布事务退出后，按完整主键删除本测试规则、审计、站点、设备和请求，并检查残留。

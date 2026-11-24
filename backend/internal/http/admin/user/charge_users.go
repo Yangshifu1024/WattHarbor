@@ -3,10 +3,10 @@ package user
 import (
 	"net/url"
 
-	"chargepilot/internal/domain/operations"
-	adminhttp "chargepilot/internal/http/admin"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	adminhttp "wattharbor/internal/http/admin"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // 本文件处理后台充电用户的 HTTP 参数与响应，查询编排由 identity 用例执行。

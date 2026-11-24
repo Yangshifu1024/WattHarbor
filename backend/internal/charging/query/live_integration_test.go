@@ -12,18 +12,18 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/card"
-	"chargepilot/internal/gateway/control"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/order"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/testfixture"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/card"
+	"wattharbor/internal/gateway/control"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/order"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/testfixture"
 )
 
 // liveDB 为 t 按 name 打开指定真实数据库，缺配置失败；只关闭本测试连接池，不建表或清库。

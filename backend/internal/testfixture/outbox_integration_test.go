@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
+	"wattharbor/internal/platform/dbconn"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

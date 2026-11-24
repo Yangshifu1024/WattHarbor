@@ -1,8 +1,8 @@
 package control
 
 import (
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	gatewayrepo "chargepilot/internal/gateway/repo"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	gatewayrepo "wattharbor/internal/gateway/repo"
 )
 
 // syncCommandDTO 将命令标识及可空端口、结果和 UTC 确认时刻映射为共享记录；返回记录。

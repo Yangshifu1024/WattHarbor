@@ -2,12 +2,12 @@
 package order
 
 import (
-	chargingquery "chargepilot/internal/charging/query"
-	"chargepilot/internal/device"
-	authhttp "chargepilot/internal/http/auth"
-	ordercase "chargepilot/internal/order"
-	"chargepilot/internal/payment"
 	"github.com/gin-gonic/gin"
+	chargingquery "wattharbor/internal/charging/query"
+	"wattharbor/internal/device"
+	authhttp "wattharbor/internal/http/auth"
+	ordercase "wattharbor/internal/order"
+	"wattharbor/internal/payment"
 )
 
 // API 提供订单查询和工单接口，依赖订单、计量、报修服务和后台鉴权。

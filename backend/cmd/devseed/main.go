@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/platform/snowflake"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/platform/snowflake"
 )
 
 // demoPrefix 标识本工具创建的记录，支持清理完整或部分写入的示例数据。

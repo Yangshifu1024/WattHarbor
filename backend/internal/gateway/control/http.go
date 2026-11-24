@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"strings"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/gateway/repo"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/gateway/repo"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // StartAPI 适配内部启动请求，输出已保存的受理结果及设备确认标志，不把 HTTP 接受视为设备执行成功。

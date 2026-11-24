@@ -10,9 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
 )
 
 // Generate 同步为申请人生成文件；先锁客户管理员角色，再锁申请人、当前角色及任务，直到文件发布和 completed 提交。

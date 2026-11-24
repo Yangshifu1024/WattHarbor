@@ -1,13 +1,13 @@
 package charge
 
 import (
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/protocol"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/protocol"
 )
 
 func TestBalanceQueryAndInvalidPortProduceNativeReplies(t *testing.T) {

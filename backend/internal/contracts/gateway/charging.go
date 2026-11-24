@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/protocol"
 )
 
 // ErrInvalidResponse 表示响应状态、字段或处理结果不符合接口要求。

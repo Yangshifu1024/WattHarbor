@@ -1,10 +1,10 @@
 package wallet
 
 import (
-	identitydomain "chargepilot/internal/domain/identity"
-	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
 	"time"
+	identitydomain "wattharbor/internal/domain/identity"
+	walletdomain "wattharbor/internal/domain/wallet"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

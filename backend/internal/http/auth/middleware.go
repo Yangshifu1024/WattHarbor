@@ -3,8 +3,8 @@ package auth
 import (
 	"strings"
 
-	identity "chargepilot/internal/identity"
 	"github.com/gin-gonic/gin"
+	identity "wattharbor/internal/identity"
 )
 
 // SessionAuthenticator 是 C 端鉴权的 HTTP 适配器。

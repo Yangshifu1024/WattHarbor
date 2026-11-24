@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"github.com/google/uuid"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestRechargePaymentLookupDoesNotLockOtherRequests 验证另一连接锁住无关申请时，按支付ID定位本次申请仍可完成。

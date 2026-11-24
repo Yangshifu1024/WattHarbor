@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/testfixture"
 )
 
 // exportFixture 创建本测试私有账号、角色和站点，源查询始终限定自身数据。

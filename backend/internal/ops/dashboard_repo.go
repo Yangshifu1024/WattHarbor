@@ -1,10 +1,10 @@
 package ops
 
 import (
-	"chargepilot/internal/domain/devices"
-	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"time"
+	"wattharbor/internal/domain/devices"
+	orderdomain "wattharbor/internal/domain/order"
 
 	"gorm.io/gorm"
 )

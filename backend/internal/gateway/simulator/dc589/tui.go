@@ -393,7 +393,7 @@ func (m terminalModel) View() string {
 		status = green.Render("已连接")
 	}
 	var header strings.Builder
-	header.WriteString(blue.Render("ChargePilot · DC589 设备模拟器") + "  " + status + "\n" + fmt.Sprintf("设备 %s · 软件 %s/%d · 当前端口 %d\n", m.state.Identity.BoardID, m.state.Identity.SoftwareID, m.state.Identity.SoftwareVersion, m.port))
+	header.WriteString(blue.Render("WattHarbor · DC589 设备模拟器") + "  " + status + "\n" + fmt.Sprintf("设备 %s · 软件 %s/%d · 当前端口 %d\n", m.state.Identity.BoardID, m.state.Identity.SoftwareID, m.state.Identity.SoftwareVersion, m.port))
 	tabs := []string{"端口与充电", "参数与身份", "待确认上报", "日志"}
 	for i, t := range tabs {
 		if i == m.tab {

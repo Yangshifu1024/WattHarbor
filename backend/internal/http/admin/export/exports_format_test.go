@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/domain/operations"
-	exportpkg "chargepilot/internal/export"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	exportpkg "wattharbor/internal/export"
 )
 
 func TestExportPeriod(t *testing.T) {

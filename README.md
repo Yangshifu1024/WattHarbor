@@ -1,6 +1,6 @@
-# ChargePilot
+# WattHarbor · 电港
 
-ChargePilot 是单客户独立部署的二轮车充电运营平台，支持扫码充电、钱包与在线卡、计费退款及运营管理。后端使用 Go，后台使用 React，用户端使用 Taro 构建 H5 和微信小程序，设备通过 DC589/TCP 接入。
+WattHarbor（电港）是单客户独立部署的二轮车充电运营平台，支持扫码充电、钱包与在线卡、计费退款及运营管理。后端使用 Go，后台使用 React，用户端使用 Taro 构建 H5 和微信小程序，设备通过 DC589/TCP 接入。
 
 ## 功能概览
 
@@ -20,7 +20,7 @@ ChargePilot 是单客户独立部署的二轮车充电运营平台，支持扫�
 
 ## 仓库结构
 
-- `backend/`：后端 Go 模块 `chargepilot`（`cmd/`、`internal/`、`migrations/`、`go.mod`），服务镜像定义为 `backend/Dockerfile`，构建上下文即该目录。后端路径约定见 [AGENTS.md](AGENTS.md)。
+- `backend/`：后端 Go 模块 `wattharbor`（`cmd/`、`internal/`、`migrations/`、`go.mod`），服务镜像定义为 `backend/Dockerfile`，构建上下文即该目录。后端路径约定见 [AGENTS.md](AGENTS.md)。
 - `frontend/admin-web/`、`frontend/miniprogram/`：运营后台与用户端前端。
 - `docker/`：Compose 编排（`compose.dev.yaml`、`compose.prod.yaml`）、生产 Caddyfile 与 MySQL 初始化 SQL。
 - 仓库根：`scripts/`（跨平台 Node 脚本）、`docs/` 与根 `tasks.mjs`。
@@ -72,7 +72,7 @@ node scripts/dev/simulator.mjs --number 2
 
 ## 服务与代码
 
-`chargepilot` 单体命令装配下表中的五个角色，同一进程运行 HTTP、DC589 TCP 和后台任务。新部署可使用一个 MySQL schema；使用现有三库时可在启用单体的同时保留三个 schema。可执行入口位于 `backend/cmd/`，服务装配和生命周期位于 `backend/internal/application/`。
+`wattharbor` 单体命令装配下表中的五个角色，同一进程运行 HTTP、DC589 TCP 和后台任务。新部署可使用一个 MySQL schema；使用现有三库时可在启用单体的同时保留三个 schema。可执行入口位于 `backend/cmd/`，服务装配和生命周期位于 `backend/internal/application/`。
 
 五进程编排的端口与数据库如下。
 
@@ -435,7 +435,7 @@ node scripts/db/test-integration.mjs
 
 ## 生产部署与维护
 
-新环境可用单体镜像部署。镜像同时内嵌管理后台 `/admin/` 和用户 H5 `/h5/`，启动前用 Goose 初始化 `chargepilot` 单库。
+新环境可用单体镜像部署。镜像同时内嵌管理后台 `/admin/` 和用户 H5 `/h5/`，启动前用 Goose 初始化 `wattharbor` 单库。
 
 ```sh
 docker compose -f docker/compose.monolith.yaml config --quiet

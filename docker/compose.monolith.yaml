@@ -1,5 +1,7 @@
+name: wattharbor-monolith
+
 x-app-build: &app-build
-  image: chargepilot-go:monolith
+  image: wattharbor:monolith
   build:
     context: ..
     dockerfile: docker/Dockerfile.monolith
@@ -9,11 +11,11 @@ services:
     image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
-      MYSQL_DATABASE: chargepilot
-      MYSQL_USER: chargepilot
+      MYSQL_DATABASE: wattharbor
+      MYSQL_USER: wattharbor
       MYSQL_PASSWORD: ${DB_PASSWORD:?required}
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u chargepilot -e 'SELECT 1'"]
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u wattharbor -e 'SELECT 1'"]
       interval: 5s
       timeout: 5s
       retries: 24
@@ -47,7 +49,7 @@ services:
     <<: *app-build
     command: ["/usr/local/bin/migrate", "-schema", "unified"]
     environment:
-      DATABASE_URL: &dsn mysql://chargepilot:${DB_PASSWORD:?required}@mysql:3306/chargepilot
+      DATABASE_URL: &dsn mysql://wattharbor:${DB_PASSWORD:?required}@mysql:3306/wattharbor
     depends_on:
       mysql: { condition: service_healthy }
 
@@ -74,13 +76,13 @@ services:
       WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
-      EXPORT_DIR: /var/lib/chargepilot/exports
+      EXPORT_DIR: /var/lib/wattharbor/exports
       ADMIN_TRUSTED_PROXIES: 172.30.82.2
     networks: [default, edge]
     expose: ["8080"]
     ports: ["9100:9100"]
     volumes:
-      - monolith-exports:/var/lib/chargepilot/exports
+      - monolith-exports:/var/lib/wattharbor/exports
     depends_on:
       migrate: { condition: service_completed_successfully }
       cache: { condition: service_healthy }

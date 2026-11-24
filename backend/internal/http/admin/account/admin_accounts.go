@@ -1,11 +1,11 @@
 package account
 
 import (
-	"chargepilot/internal/domain/operations"
-	adminhttp "chargepilot/internal/http/admin"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	adminhttp "wattharbor/internal/http/admin"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // Register 注册后台账号查询、修改、删除、解锁、重置密码和 MFA 管理接口。账号创建由 ops 包注册。

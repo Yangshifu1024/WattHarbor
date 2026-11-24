@@ -9,7 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"chargepilot/internal/marketing"
+	"wattharbor/internal/marketing"
 )
 
 // 本文件锁定 discount_percent 在两端的不同 JSON 形状。

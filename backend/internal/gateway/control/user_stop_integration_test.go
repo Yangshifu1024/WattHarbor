@@ -3,14 +3,6 @@
 package control
 
 import (
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	"chargepilot/internal/gateway/session"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/testfixture"
 	"context"
 	"fmt"
 	"github.com/google/uuid"
@@ -20,6 +12,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	"wattharbor/internal/gateway/session"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/testfixture"
 )
 
 // stopRecordingSession 记录真实恢复用例发出的命令；不模拟数据库语义或真实断电。

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/testfixture"
 )
 
 // 启动失败回执必须原子退款；重放不得重复增加余额或重复派发事件。

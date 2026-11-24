@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/ops"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/testfixture"
 )
 
 // deviceAuditKey 保存审计记录的完整分区主键，仅用于本测试的精确清理和锁定位。

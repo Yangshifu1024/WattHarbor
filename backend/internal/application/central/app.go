@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/config"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/config"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // Run 启动兼容的独立进程。

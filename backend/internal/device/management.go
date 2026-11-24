@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/persist"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/persist"
 )
 
 // SummaryReader 仅查询已授权设备的运行摘要。

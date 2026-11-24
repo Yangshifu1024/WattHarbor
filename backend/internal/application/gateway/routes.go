@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"time"
 
-	"chargepilot/internal/gateway/control"
-	"chargepilot/internal/gateway/provision"
-	"chargepilot/internal/gateway/repo"
-	"chargepilot/internal/gateway/session"
-	"chargepilot/internal/platform/config"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/gateway/control"
+	"wattharbor/internal/gateway/provision"
+	"wattharbor/internal/gateway/repo"
+	"wattharbor/internal/gateway/session"
+	"wattharbor/internal/platform/config"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // newRouter 注册本进程的业务路由、指标和健康检查，不启动监听。

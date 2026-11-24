@@ -2,9 +2,9 @@
 package marketing
 
 import (
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/marketing"
 	"github.com/gin-gonic/gin"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/marketing"
 )
 
 // API 将本业务族的用户请求交给用例，字段由 cmd 装配。

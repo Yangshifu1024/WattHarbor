@@ -1,9 +1,9 @@
 package card
 
 import (
-	identitydomain "chargepilot/internal/domain/identity"
-	walletdomain "chargepilot/internal/domain/wallet"
 	"context"
+	identitydomain "wattharbor/internal/domain/identity"
+	walletdomain "wattharbor/internal/domain/wallet"
 
 	"gorm.io/gorm"
 )

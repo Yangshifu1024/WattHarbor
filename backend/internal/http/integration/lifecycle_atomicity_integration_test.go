@@ -12,17 +12,17 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/charging/finish"
-	"chargepilot/internal/charging/start"
-	centralcontract "chargepilot/internal/contracts/central"
-	rules "chargepilot/internal/domain/charging"
-	centralhttp "chargepilot/internal/http/central"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/charging/finish"
+	"wattharbor/internal/charging/start"
+	centralcontract "wattharbor/internal/contracts/central"
+	rules "wattharbor/internal/domain/charging"
+	centralhttp "wattharbor/internal/http/central"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/testfixture"
 )
 
 // lifecycleAtomicFixture 保存已提交的测试订单，以及独立的写入和观察连接。

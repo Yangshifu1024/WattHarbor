@@ -2,11 +2,11 @@ package dc589
 
 import (
 	"bytes"
-	"chargepilot/internal/protocol"
 	"encoding/binary"
 	"encoding/hex"
 	"github.com/google/uuid"
 	"testing"
+	"wattharbor/internal/protocol"
 )
 
 func TestDocumentedOnlineCardFrames(t *testing.T) {

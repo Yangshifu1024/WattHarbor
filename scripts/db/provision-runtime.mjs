@@ -17,7 +17,7 @@ export function buildProvisionSQL(env) {
   const statements = ["SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';"];
   for (const name of names) {
     const password = env[`DB_${name.toUpperCase()}_PASSWORD`].replaceAll("'", "''");
-    const account = `'chargepilot_${name}'@'%'`;
+    const account = `'wattharbor_${name}'@'%'`;
     statements.push(
       `CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY '${password}';`,
       `ALTER USER ${account} IDENTIFIED BY '${password}';`,
@@ -27,7 +27,7 @@ export function buildProvisionSQL(env) {
     statements.push(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${schema}.* TO ${account};`);
   }
   for (const table of ['gateway_db.event_outbox', 'central_db.event_outbox', 'central_db.admin_event_outbox']) {
-    statements.push(`GRANT SELECT, UPDATE ON ${table} TO 'chargepilot_worker'@'%';`);
+    statements.push(`GRANT SELECT, UPDATE ON ${table} TO 'wattharbor_worker'@'%';`);
   }
   return statements.join('\n') + '\n';
 }

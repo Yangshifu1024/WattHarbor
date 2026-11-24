@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"chargepilot/internal/platform/dbutil"
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/platform/dbutil"
+	"wattharbor/internal/protocol"
 )
 
 // deviceSessionRow 映射 device_session；created_month 为分区键和联合主键的一部分，读写必须保留。

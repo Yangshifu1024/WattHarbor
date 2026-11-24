@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	rules "chargepilot/internal/domain/charging"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	rules "wattharbor/internal/domain/charging"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/testfixture"
 )
 
 // stopTestDB 打开已迁移开发库；t 注册关闭，缺少配置或连接失败直接失败。

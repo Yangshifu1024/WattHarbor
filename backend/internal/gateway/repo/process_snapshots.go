@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
+	contract "wattharbor/internal/contracts/gateway"
 )
 
 const snapshotTTL = 2 * time.Minute

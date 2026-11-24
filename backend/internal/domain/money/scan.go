@@ -1,6 +1,6 @@
 package money
 
-import "chargepilot/internal/domain/devices"
+import "wattharbor/internal/domain/devices"
 
 // ScanPort 保存扫码结果中的端口编号、设备状态和可用性。
 type ScanPort struct {

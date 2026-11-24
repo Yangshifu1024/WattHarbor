@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/money"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/order"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/money"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/order"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/testfixture"
 )
 
 // 测试替身Cutoff 当前读 测试替身 复现注入接口；实际 stop 能力在外部包的两连接测试中覆盖。

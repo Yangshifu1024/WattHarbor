@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // 真库测试验证两个管理员并发互删仍保留一人。

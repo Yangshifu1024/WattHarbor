@@ -1,9 +1,9 @@
 package start
 
 import (
-	"chargepilot/internal/domain/money"
-	orderdomain "chargepilot/internal/domain/order"
 	"context"
+	"wattharbor/internal/domain/money"
+	orderdomain "wattharbor/internal/domain/order"
 
 	"gorm.io/gorm"
 )

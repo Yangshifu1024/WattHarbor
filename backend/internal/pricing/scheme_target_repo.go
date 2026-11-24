@@ -3,10 +3,10 @@ package pricing
 import (
 	"fmt"
 
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/protocol"
 )
 
 // EffectiveRuleSQL 限定规则启用、未删除且当前时间有效；统计和校验共用，整站变更排除有自有规则的设备。

@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/testfixture"
 )
 
 // TestConcurrentInvoiceApplicationsSerializeOnOwnedOrder 验证两连接对同一订单不同请求号只能创建一份申请。

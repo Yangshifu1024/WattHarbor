@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
+	contract "wattharbor/internal/contracts/gateway"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/testfixture"
 )
 
 // TestQueryClientsMatchRegisteredGateway 验证实际路由及真实 MySQL 的单位、端口隔离、空值、摘要与 64 位分页。

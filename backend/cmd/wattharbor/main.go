@@ -1,4 +1,4 @@
-// 命令 chargepilot 运行单进程部署。
+// 命令 wattharbor 运行单进程部署。
 package main
 
 import (
@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"chargepilot/internal/application/monolith"
+	"wattharbor/internal/application/monolith"
 )
 
 func main() {

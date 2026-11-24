@@ -1,4 +1,4 @@
-module chargepilot
+module wattharbor
 
 go 1.27.0
 

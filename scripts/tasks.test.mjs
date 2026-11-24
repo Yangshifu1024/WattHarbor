@@ -9,7 +9,7 @@ import { main } from '../tasks.mjs';
 // fixture 创建临时仓库目录，用替代执行器记录命令；测试结束后删除目录。
 // 可覆盖执行器、环境和平台来模拟失败。
 function fixture(t, overrides = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'chargepilot-tasks-'));
+  const root = mkdtempSync(join(tmpdir(), 'wattharbor-tasks-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const calls = [];
   const options = {

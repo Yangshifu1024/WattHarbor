@@ -9,11 +9,11 @@ import (
 	"log"
 	"time"
 
-	"chargepilot/internal/card"
-	rules "chargepilot/internal/domain/charging"
-	orderrepo "chargepilot/internal/order"
-	"chargepilot/internal/protocol"
 	"gorm.io/gorm"
+	"wattharbor/internal/card"
+	rules "wattharbor/internal/domain/charging"
+	orderrepo "wattharbor/internal/order"
+	"wattharbor/internal/protocol"
 )
 
 // AutoStopper 按订单已购额度和设备心跳检查自动停止条件。

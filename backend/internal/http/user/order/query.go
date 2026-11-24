@@ -5,15 +5,15 @@ import (
 	"errors"
 	"strings"
 
-	chargingquery "chargepilot/internal/charging/query"
-	orderdomain "chargepilot/internal/domain/order"
-	authhttp "chargepilot/internal/http/auth"
-	userhttp "chargepilot/internal/http/user"
-	orderstore "chargepilot/internal/order"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	chargingquery "wattharbor/internal/charging/query"
+	orderdomain "wattharbor/internal/domain/order"
+	authhttp "wattharbor/internal/http/auth"
+	userhttp "wattharbor/internal/http/user"
+	orderstore "wattharbor/internal/order"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // QueryAPI 提供当前用户的充电状态、历史订单和曲线查询。

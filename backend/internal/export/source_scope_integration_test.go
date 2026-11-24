@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
 )
 
 // TestExportDeviceScopeIntersection 使用真库验证仅厂商、仅站点及两维交集，不因缺一维扩大到全库。

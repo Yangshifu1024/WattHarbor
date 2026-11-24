@@ -14,19 +14,19 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/gateway/control"
-	userdevice "chargepilot/internal/http/user/device"
-	userops "chargepilot/internal/http/user/ops"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/testfixture"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/device"
+	"wattharbor/internal/gateway/control"
+	userdevice "wattharbor/internal/http/user/device"
+	userops "wattharbor/internal/http/user/ops"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/testfixture"
 )
 
 // TestRegisteredPublicStationQueriesUseOwnedSources 验证无需登录的公开接口、真实两库和实际摘要端点。

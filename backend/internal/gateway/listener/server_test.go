@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // testAdapter 通知测试连接已进入适配器，然后等待取消。

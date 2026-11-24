@@ -1,13 +1,13 @@
 package marketing
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
 	"context"
 	"errors"
 	"github.com/shopspring/decimal"
 	"testing"
 	"time"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
 )
 
 // TestMarketingAdmissionBeforeStorage 验证权限和优惠互斥检查在 SQL 执行前拒绝非法请求。

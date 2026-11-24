@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/money"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/money"
 )
 
 // CheckoutFailure 表示支付准备失败的业务阶段；HTTP 在适配层决定状态码与文案。

@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	"chargepilot/internal/platform/config"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/worker/internaljob"
-	"chargepilot/internal/worker/outbox"
-	"chargepilot/internal/worker/schedule"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/platform/config"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/worker/internaljob"
+	"wattharbor/internal/worker/outbox"
+	"wattharbor/internal/worker/schedule"
 )
 
 // newRouter 注册本进程的业务路由、指标和健康检查，不启动监听。

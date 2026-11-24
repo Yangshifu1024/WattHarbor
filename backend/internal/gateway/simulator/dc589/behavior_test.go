@@ -3,7 +3,6 @@ package dc589sim
 import (
 	"bufio"
 	"bytes"
-	wire "chargepilot/internal/protocol/dc589"
 	"context"
 	"encoding/binary"
 	"net"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	wire "wattharbor/internal/protocol/dc589"
 )
 
 // 捕获编码后的实际帧，独立检查字节、长度和会话标识。

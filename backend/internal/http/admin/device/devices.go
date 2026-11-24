@@ -3,12 +3,12 @@ package device
 import (
 	"errors"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // devices 响应设备分页列表，状态入参只接受 device_meta.status 的四值词表，

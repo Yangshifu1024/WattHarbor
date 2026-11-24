@@ -1,10 +1,10 @@
 package marketing
 
 import (
-	adminhttp "chargepilot/internal/http/admin"
-	"chargepilot/internal/marketing"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	adminhttp "wattharbor/internal/http/admin"
+	"wattharbor/internal/marketing"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerCoupons 注册优惠券模板、发放统计和人工发券接口，并校验各自权限。

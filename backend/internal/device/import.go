@@ -9,13 +9,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	contract "chargepilot/internal/contracts/gateway"
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/protocol"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/protocol"
 )
 
 // ImportGateway 提供公开厂商资料和同步开通方法，不暴露 URL、令牌或通用 HTTP 客户端。

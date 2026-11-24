@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strconv"
 
-	"chargepilot/internal/device"
-	userhttp "chargepilot/internal/http/user"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"wattharbor/internal/device"
+	userhttp "wattharbor/internal/http/user"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // reportFault 提交当前用户的设备报修，返回工单编号和状态。

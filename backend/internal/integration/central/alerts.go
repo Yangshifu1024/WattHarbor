@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	contract "chargepilot/internal/contracts/central"
+	contract "wattharbor/internal/contracts/central"
 )
 
 // SyncDeviceAlerts 触发一次告警同步，返回新增告警数；请求最多三十秒。

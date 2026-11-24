@@ -3,13 +3,13 @@ package finance
 import (
 	"errors"
 
-	"chargepilot/internal/domain/money"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/wallet"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/money"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/wallet"
 )
 
 // registerWalletRisks 注册风控列表、审核和解冻路由。

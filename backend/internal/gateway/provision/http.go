@@ -2,17 +2,17 @@
 package provision
 
 import (
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/device"
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"net/http"
 	"strings"
 	"unicode/utf8"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/device"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // API 适配内部设备开通和厂商管理接口；开通由仓储执行整批事务，HTTP 保留服务鉴权与字段校验。

@@ -1,12 +1,12 @@
 package ops
 
 import (
-	"chargepilot/internal/domain/operations"
 	"context"
 	"encoding/json"
 	"errors"
 	"gorm.io/gorm"
 	"time"
+	"wattharbor/internal/domain/operations"
 )
 
 // AnnouncementStatus 是 announcement.status 列的公告发布状态，用于后台列表与写入。

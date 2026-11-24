@@ -13,6 +13,6 @@ FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/service /app/service
 COPY migrations /app/migrations
-COPY --from=build --chown=nonroot:nonroot /out/exports /var/lib/chargepilot/exports
+COPY --from=build --chown=nonroot:nonroot /out/exports /var/lib/wattharbor/exports
 USER nonroot:nonroot
 ENTRYPOINT ["/app/service"]

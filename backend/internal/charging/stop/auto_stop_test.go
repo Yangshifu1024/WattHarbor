@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // TestNoPowerRecoversOnlyAfterIndependentWindow 验证旧重复和乱序不永久阻断，异常前累计不能补入新窗口。

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	centralhttp "chargepilot/internal/http/central"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	centralhttp "wattharbor/internal/http/central"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // registeredJobStopper 返回预设停机数量和错误。

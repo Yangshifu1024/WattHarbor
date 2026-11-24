@@ -15,38 +15,38 @@ function configuration() {
   const jwt = 'fixture-session-secret-at-least-32-characters';
   const value = {
     services: {
-      'chargepilot-mysql': { environment: { MYSQL_ROOT_PASSWORD: 'fixture-root-password', MYSQL_PASSWORD: 'fixture-database-password' } },
-      'chargepilot-user': { environment: { DATABASE_URL_CENTRAL: centralURL, REDIS_CACHE_URL: 'redis://cache:6379/0', JWT_SECRET: jwt, SERVICE_TOKEN: token, WECHAT_APPID: 'wx_fixture', WECHAT_SECRET: 'fixture-login-secret' } },
-      'chargepilot-admin': { environment: { DATABASE_URL_CENTRAL: centralURL, REDIS_CACHE_URL: 'redis://cache:6379/0', JWT_SECRET: jwt, SERVICE_TOKEN: token } },
-      'chargepilot-central': { environment: { DATABASE_URL_CENTRAL: centralURL, REDIS_CACHE_URL: 'redis://cache:6379/0', SERVICE_TOKEN: token, WECHAT_APPID: 'wx_fixture' }, expose: ['8082'] },
-      'chargepilot-gateway': { environment: { DATABASE_URL: gatewayURL, SERVICE_TOKEN: token }, ports: [{ target: 9100, published: '9100' }] },
-      'chargepilot-worker': { environment: { DATABASE_URL_CENTRAL: centralURL, DATABASE_URL_GATEWAY: gatewayURL, DATABASE_URL_WORKER: workerURL, REDIS_STREAM_URL: 'redis://stream:6379/0', SERVICE_TOKEN: token } },
-      'chargepilot-migrate': { environment: { DATABASE_URL_CENTRAL: centralURL, DATABASE_URL_GATEWAY: gatewayURL, DATABASE_URL_WORKER: workerURL } },
-      'chargepilot-caddy': { image: 'fixture-caddy', environment: { PUBLIC_DOMAIN: 'fixture.example' }, ports: [{ target: 80, published: '80' }, { target: 443, published: '443' }] },
-      'chargepilot-redis-cache': { command: ['redis-server', '--maxmemory-policy', 'allkeys-lru', '--requirepass', 'fixture-cache-password'] },
-      'chargepilot-redis-stream': { command: ['redis-server', '--maxmemory-policy', 'noeviction', '--appendonly', 'yes', '--requirepass', 'fixture-stream-password'] },
+      'wattharbor-mysql': { environment: { MYSQL_ROOT_PASSWORD: 'fixture-root-password', MYSQL_PASSWORD: 'fixture-database-password' } },
+      'wattharbor-user': { environment: { DATABASE_URL_CENTRAL: centralURL, REDIS_CACHE_URL: 'redis://cache:6379/0', JWT_SECRET: jwt, SERVICE_TOKEN: token, WECHAT_APPID: 'wx_fixture', WECHAT_SECRET: 'fixture-login-secret' } },
+      'wattharbor-admin': { environment: { DATABASE_URL_CENTRAL: centralURL, REDIS_CACHE_URL: 'redis://cache:6379/0', JWT_SECRET: jwt, SERVICE_TOKEN: token } },
+      'wattharbor-central': { environment: { DATABASE_URL_CENTRAL: centralURL, REDIS_CACHE_URL: 'redis://cache:6379/0', SERVICE_TOKEN: token, WECHAT_APPID: 'wx_fixture' }, expose: ['8082'] },
+      'wattharbor-gateway': { environment: { DATABASE_URL: gatewayURL, SERVICE_TOKEN: token }, ports: [{ target: 9100, published: '9100' }] },
+      'wattharbor-worker': { environment: { DATABASE_URL_CENTRAL: centralURL, DATABASE_URL_GATEWAY: gatewayURL, DATABASE_URL_WORKER: workerURL, REDIS_STREAM_URL: 'redis://stream:6379/0', SERVICE_TOKEN: token } },
+      'wattharbor-migrate': { environment: { DATABASE_URL_CENTRAL: centralURL, DATABASE_URL_GATEWAY: gatewayURL, DATABASE_URL_WORKER: workerURL } },
+      'wattharbor-caddy': { image: 'fixture-caddy', environment: { PUBLIC_DOMAIN: 'fixture.example' }, ports: [{ target: 80, published: '80' }, { target: 443, published: '443' }] },
+      'wattharbor-redis-cache': { command: ['redis-server', '--maxmemory-policy', 'allkeys-lru', '--requirepass', 'fixture-cache-password'] },
+      'wattharbor-redis-stream': { command: ['redis-server', '--maxmemory-policy', 'noeviction', '--appendonly', 'yes', '--requirepass', 'fixture-stream-password'] },
     },
   };
   value.networks = { 'admin-proxy': { internal: true, ipam: { config: [{ subnet: '172.30.81.0/29' }] } } };
-  value.services['chargepilot-admin'].environment.ADMIN_TRUSTED_PROXIES = '172.30.81.2';
-  value.services['chargepilot-admin'].networks = { default: {}, 'admin-proxy': { aliases: ['admin-proxy-upstream'] } };
-  value.services['chargepilot-caddy'].networks = { default: {}, 'admin-proxy': { ipv4_address: '172.30.81.2' } };
-  const provision = { environment: {}, depends_on: { 'chargepilot-migrate': { condition: 'service_completed_successfully' } } };
-  value.services['chargepilot-provision-runtime'] = provision;
+  value.services['wattharbor-admin'].environment.ADMIN_TRUSTED_PROXIES = '172.30.81.2';
+  value.services['wattharbor-admin'].networks = { default: {}, 'admin-proxy': { aliases: ['admin-proxy-upstream'] } };
+  value.services['wattharbor-caddy'].networks = { default: {}, 'admin-proxy': { ipv4_address: '172.30.81.2' } };
+  const provision = { environment: {}, depends_on: { 'wattharbor-migrate': { condition: 'service_completed_successfully' } } };
+  value.services['wattharbor-provision-runtime'] = provision;
   for (const name of ['user','admin','central','gateway','worker']) {
-    const service = value.services[`chargepilot-${name}`];
+    const service = value.services[`wattharbor-${name}`];
     const password = `fixture-${name}-database-password`;
     provision.environment[`DB_${name.toUpperCase()}_PASSWORD`] = password;
-    service.depends_on = { 'chargepilot-provision-runtime': { condition: 'service_completed_successfully' } };
+    service.depends_on = { 'wattharbor-provision-runtime': { condition: 'service_completed_successfully' } };
     for (const key of Object.keys(service.environment).filter(key => key.startsWith('DATABASE_URL'))) {
       const url = new URL(service.environment[key]);
-      url.username = `chargepilot_${name}`;
+      url.username = `wattharbor_${name}`;
       url.password = password;
       service.environment[key] = url.href;
     }
   }
-  for (const key of Object.keys(value.services['chargepilot-migrate'].environment)) {
-    value.services['chargepilot-migrate'].environment[key] = value.services['chargepilot-migrate'].environment[key].replace('fixture:', 'chargepilot:');
+  for (const key of Object.keys(value.services['wattharbor-migrate'].environment)) {
+    value.services['wattharbor-migrate'].environment[key] = value.services['wattharbor-migrate'].environment[key].replace('fixture:', 'wattharbor:');
   }
   return value;
 }
@@ -61,10 +61,10 @@ test('canonical five services pass without central JWT, login secret or stream',
 });
 
 for (const [label, change] of [
-  ['entire subnet trust', value => { value.services['chargepilot-admin'].environment.ADMIN_TRUSTED_PROXIES = '172.30.81.0/29'; }],
+  ['entire subnet trust', value => { value.services['wattharbor-admin'].environment.ADMIN_TRUSTED_PROXIES = '172.30.81.0/29'; }],
   ['public proxy network', value => { value.networks['admin-proxy'].internal = false; }],
-  ['extra member', value => { value.services['chargepilot-worker'].networks = { 'admin-proxy': {} }; }],
-  ['wrong upstream network', value => { value.services['chargepilot-admin'].networks['admin-proxy'].aliases = []; }],
+  ['extra member', value => { value.services['wattharbor-worker'].networks = { 'admin-proxy': {} }; }],
+  ['wrong upstream network', value => { value.services['wattharbor-admin'].networks['admin-proxy'].aliases = []; }],
 ]) {
   test(`admin source isolation rejects ${label}`, () => { const value = configuration(); change(value); assert.throws(() => validate(value, { configOnly: true })); });
 }
@@ -72,15 +72,15 @@ for (const [label, change] of [
 for (const name of ['user', 'admin', 'central', 'gateway', 'worker']) {
   test(`missing ${name} fails with its service name`, () => {
     const value = configuration();
-    delete value.services[`chargepilot-${name}`];
-    assert.throws(() => validate(value), { message: `Missing service: chargepilot-${name}.` });
+    delete value.services[`wattharbor-${name}`];
+    assert.throws(() => validate(value), { message: `Missing service: wattharbor-${name}.` });
   });
 }
 
 for (const key of ['JWT_SECRET', 'LOGIN_MODE', 'WECHAT_SECRET', 'REDIS_STREAM_URL', 'ADMIN_BOOTSTRAP_USER']) {
   test(`central must not receive ${key}`, () => {
     const value = configuration();
-    value.services['chargepilot-central'].environment[key] = 'unused-fixture-value';
+    value.services['wattharbor-central'].environment[key] = 'unused-fixture-value';
     assert.throws(() => validate(value, { configOnly: true }), { message: `central must not receive ${key}.` });
   });
 }
@@ -88,7 +88,7 @@ for (const key of ['JWT_SECRET', 'LOGIN_MODE', 'WECHAT_SECRET', 'REDIS_STREAM_UR
 for (const name of ['user', 'admin']) {
   test(`${name} keeps JWT minimum length and rejects missing/default values`, () => {
     const value = configuration();
-    const environment = value.services[`chargepilot-${name}`].environment;
+    const environment = value.services[`wattharbor-${name}`].environment;
     environment.JWT_SECRET = 'fixture-too-short';
     assert.throws(() => validate(value), { message: `${name}.JWT_SECRET must contain at least 32 characters.` });
     environment.JWT_SECRET = 'change-me-fixture-template-secret';
@@ -100,57 +100,57 @@ for (const name of ['user', 'admin']) {
 
 test('config-only skips credential values and lengths while preserving topology', () => {
   const value = configuration();
-  value.services['chargepilot-user'].environment.JWT_SECRET = 'change-me';
-  delete value.services['chargepilot-admin'].environment.JWT_SECRET;
-  value.services['chargepilot-user'].environment.WECHAT_SECRET = 'your_app_secret';
-  value.services['chargepilot-worker'].environment.SERVICE_TOKEN = 'different-token';
+  value.services['wattharbor-user'].environment.JWT_SECRET = 'change-me';
+  delete value.services['wattharbor-admin'].environment.JWT_SECRET;
+  value.services['wattharbor-user'].environment.WECHAT_SECRET = 'your_app_secret';
+  value.services['wattharbor-worker'].environment.SERVICE_TOKEN = 'different-token';
   assert.doesNotThrow(() => validate(value, { configOnly: true }));
-  value.services['chargepilot-central'].ports = [{ target: 8082, published: '8082' }];
-  assert.throws(() => validate(value, { configOnly: true }), { message: 'Unexpected published port on chargepilot-central.' });
+  value.services['wattharbor-central'].ports = [{ target: 8082, published: '8082' }];
+  assert.throws(() => validate(value, { configOnly: true }), { message: 'Unexpected published port on wattharbor-central.' });
 });
 
 for (const name of ['user', 'admin', 'central', 'worker']) {
   test(`${name} HTTP port must stay unpublished`, () => {
     const value = configuration();
-    value.services[`chargepilot-${name}`].ports = [{ target: 8082, published: '18082', host_ip: '127.0.0.1' }];
-    assert.throws(() => validate(value), { message: `Unexpected published port on chargepilot-${name}.` });
+    value.services[`wattharbor-${name}`].ports = [{ target: 8082, published: '18082', host_ip: '127.0.0.1' }];
+    assert.throws(() => validate(value), { message: `Unexpected published port on wattharbor-${name}.` });
   });
 }
 
 test('only original Caddy and gateway port mappings pass', () => {
   const value = configuration();
-  value.services['chargepilot-gateway'].ports.push({ target: 8083, published: '8083' });
-  assert.throws(() => validate(value), { message: 'Unexpected published port on chargepilot-gateway.' });
-  value.services['chargepilot-gateway'].ports.pop();
-  value.services['chargepilot-caddy'].ports[0].published = '18080';
-  assert.throws(() => validate(value), { message: 'Unexpected published port on chargepilot-caddy.' });
+  value.services['wattharbor-gateway'].ports.push({ target: 8083, published: '8083' });
+  assert.throws(() => validate(value), { message: 'Unexpected published port on wattharbor-gateway.' });
+  value.services['wattharbor-gateway'].ports.pop();
+  value.services['wattharbor-caddy'].ports[0].published = '18080';
+  assert.throws(() => validate(value), { message: 'Unexpected published port on wattharbor-caddy.' });
 });
 
 for (const [name, key, schema] of [['user', 'DATABASE_URL_CENTRAL', 'central_db'], ['admin', 'DATABASE_URL_CENTRAL', 'central_db'], ['worker', 'DATABASE_URL_GATEWAY', 'gateway_db'], ['worker', 'DATABASE_URL_WORKER', 'worker_db'], ['gateway', 'DATABASE_URL', 'gateway_db'], ['migrate', 'DATABASE_URL_WORKER', 'worker_db']]) {
   test(`${name}/${key} keeps its schema`, () => {
     const value = configuration();
-    value.services[`chargepilot-${name}`].environment[key] = 'mysql://fixture:fixture@mysql:3306/wrong_db';
+    value.services[`wattharbor-${name}`].environment[key] = 'mysql://fixture:fixture@mysql:3306/wrong_db';
     assert.throws(() => validate(value), { message: `${key} must target ${schema}.` });
   });
 }
 
 test('shared central URL cannot silently point user at another database host', () => {
   const value = configuration();
-  value.services['chargepilot-user'].environment.DATABASE_URL_CENTRAL = 'mysql://fixture:fixture-database-password@other:3306/central_db';
+  value.services['wattharbor-user'].environment.DATABASE_URL_CENTRAL = 'mysql://fixture:fixture-database-password@other:3306/central_db';
   assert.throws(() => validate(value), { message: 'user must use the shared central database URL.' });
 });
 
 test('obsolete central aliases remain rejected', () => {
   const value = configuration();
-  value.services['chargepilot-central'].environment.DATABASE_URL_USER = 'unused-fixture';
+  value.services['wattharbor-central'].environment.DATABASE_URL_USER = 'unused-fixture';
   assert.throws(() => validate(value), { message: 'Central must use one database URL.' });
 });
 
 test('runtime account and provisioning dependency cannot be bypassed', () => {
   const value = configuration();
-  const service = value.services['chargepilot-worker'];
+  const service = value.services['wattharbor-worker'];
   const original = service.environment.DATABASE_URL_CENTRAL;
-  service.environment.DATABASE_URL_CENTRAL = original.replace('chargepilot_worker:', 'chargepilot:');
+  service.environment.DATABASE_URL_CENTRAL = original.replace('wattharbor_worker:', 'wattharbor:');
   assert.throws(() => validate(value), { message: 'worker must use its own runtime database account.' });
   service.environment.DATABASE_URL_CENTRAL = original;
   delete service.depends_on;
@@ -159,79 +159,79 @@ test('runtime account and provisioning dependency cannot be bypassed', () => {
 
 test('mismatched runtime password is rejected without exposing it', () => {
   const value = configuration();
-  value.services['chargepilot-provision-runtime'].environment.DB_USER_PASSWORD = 'fixture-sensitive-wrong-password';
+  value.services['wattharbor-provision-runtime'].environment.DB_USER_PASSWORD = 'fixture-sensitive-wrong-password';
   assert.throws(() => validate(value), { message: 'user database password must match account provisioning.' });
 });
 
 test('Redis policies retain cache eviction and durable stream noeviction', () => {
   for (const name of ['redis-cache', 'redis-stream']) {
     const value = configuration();
-    value.services[`chargepilot-${name}`].command[2] = 'wrong-policy';
+    value.services[`wattharbor-${name}`].command[2] = 'wrong-policy';
     assert.throws(() => validate(value), new RegExp(`${name} must use`));
   }
 });
 
 test('all application tokens must be present and equal without leaking their values', () => {
   const value = configuration();
-  value.services['chargepilot-worker'].environment.SERVICE_TOKEN = 'fixture-sensitive-token-should-never-appear';
+  value.services['wattharbor-worker'].environment.SERVICE_TOKEN = 'fixture-sensitive-token-should-never-appear';
   assert.throws(() => validate(value), { message: 'worker must use the shared SERVICE_TOKEN.' });
-  delete value.services['chargepilot-worker'].environment.SERVICE_TOKEN;
+  delete value.services['wattharbor-worker'].environment.SERVICE_TOKEN;
   assert.throws(() => validate(value), { message: 'worker.SERVICE_TOKEN is missing or still uses a template value.' });
 });
 
 test('user login secret and payment application IDs reject template values', () => {
   const value = configuration();
-  value.services['chargepilot-user'].environment.WECHAT_SECRET = 'your_app_secret';
+  value.services['wattharbor-user'].environment.WECHAT_SECRET = 'your_app_secret';
   assert.throws(() => validate(value), { message: 'user.WECHAT_SECRET is missing or still uses a template value.' });
-  value.services['chargepilot-user'].environment.WECHAT_SECRET = 'fixture-secret';
-  value.services['chargepilot-central'].environment.WECHAT_APPID = 'wx_your_appid';
+  value.services['wattharbor-user'].environment.WECHAT_SECRET = 'fixture-secret';
+  value.services['wattharbor-central'].environment.WECHAT_APPID = 'wx_your_appid';
   assert.throws(() => validate(value), { message: 'central.WECHAT_APPID is missing or still uses a template value.' });
 });
 
 test('absent payment mode keeps disabled and an explicit mismatch fails', () => {
   const value = configuration();
   assert.doesNotThrow(() => validate(value));
-  value.services['chargepilot-user'].environment.PAYMENT_MODE = 'simulation';
+  value.services['wattharbor-user'].environment.PAYMENT_MODE = 'simulation';
   assert.throws(() => validate(value), { message: 'user and central must use the same PAYMENT_MODE.' });
-  value.services['chargepilot-central'].environment.PAYMENT_MODE = 'simulation';
-  value.services['chargepilot-user'].environment.LOGIN_MODE = 'development';
+  value.services['wattharbor-central'].environment.PAYMENT_MODE = 'simulation';
+  value.services['wattharbor-user'].environment.LOGIN_MODE = 'development';
   assert.doesNotThrow(() => validate(value));
-  value.services['chargepilot-central'].environment.PAYMENT_MODE = 'invalid';
+  value.services['wattharbor-central'].environment.PAYMENT_MODE = 'invalid';
   assert.throws(() => validate(value), { message: 'central has invalid PAYMENT_MODE.' });
 });
 
 test('user development login still requires simulation', () => {
   const value = configuration();
-  value.services['chargepilot-user'].environment.LOGIN_MODE = 'development';
+  value.services['wattharbor-user'].environment.LOGIN_MODE = 'development';
   assert.throws(() => validate(value), { message: 'Development login requires PAYMENT_MODE=simulation.' });
 });
 
 test('direct payment requires credentials in both real consumers without opening key files', () => {
   const value = configuration();
   for (const name of ['user', 'central']) {
-    Object.assign(value.services[`chargepilot-${name}`].environment, {
+    Object.assign(value.services[`wattharbor-${name}`].environment, {
       PAYMENT_MODE: 'wechat_direct', WECHAT_MCH_ID: 'fixture-merchant', WECHAT_CERT_SERIAL: 'fixture-cert',
       WECHAT_APIV3_KEY: '12345678901234567890123456789012', WECHAT_PRIVATE_KEY_PATH: '/run/secrets/fixture.pem',
       WECHAT_NOTIFY_URL: 'https://fixture.example/api/v1/public/payments/wechat/callback',
     });
   }
   assert.doesNotThrow(() => validate(value));
-  value.services['chargepilot-central'].environment.WECHAT_APIV3_KEY = '密'.repeat(32);
+  value.services['wattharbor-central'].environment.WECHAT_APIV3_KEY = '密'.repeat(32);
   assert.throws(() => validate(value), { message: 'central.WECHAT_APIV3_KEY must contain 32 bytes.' });
-  value.services['chargepilot-central'].environment.WECHAT_APIV3_KEY = '12345678901234567890123456789012';
-  delete value.services['chargepilot-central'].environment.WECHAT_PRIVATE_KEY_PATH;
+  value.services['wattharbor-central'].environment.WECHAT_APIV3_KEY = '12345678901234567890123456789012';
+  delete value.services['wattharbor-central'].environment.WECHAT_PRIVATE_KEY_PATH;
   assert.throws(() => validate(value), { message: 'central.WECHAT_PRIVATE_KEY_PATH is missing or still uses a template value.' });
 });
 
 test('Caddy internal handler must actually reject requests', () => {
-  const unsafe = caddyText.replace('handle /api/v1/internal/* {\n        respond 404', 'handle /api/v1/internal/* {\n        reverse_proxy chargepilot-central:8082');
+  const unsafe = caddyText.replace('handle /api/v1/internal/* {\n        respond 404', 'handle /api/v1/internal/* {\n        reverse_proxy wattharbor-central:8082');
   assert.notEqual(unsafe, caddyText);
   assert.throws(() => validate(configuration(), { caddyText: unsafe }), { message: 'Caddy must block the internal API routes.' });
 });
 
 test('Caddy must route user and admin to their own deployed services', () => {
-  for (const [destination, path] of [['admin-proxy-upstream:8081', '/api/v1/admin/*'], ['chargepilot-user:8080', '/api/v1/user/*']]) {
-    const wrong = caddyText.replace(destination, 'chargepilot-central:8082');
+  for (const [destination, path] of [['admin-proxy-upstream:8081', '/api/v1/admin/*'], ['wattharbor-user:8080', '/api/v1/user/*']]) {
+    const wrong = caddyText.replace(destination, 'wattharbor-central:8082');
     assert.throws(() => validate(configuration(), { caddyText: wrong }), { message: `Caddy must route ${path} to ${destination}.` });
   }
 });

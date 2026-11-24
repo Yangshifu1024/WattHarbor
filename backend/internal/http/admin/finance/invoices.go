@@ -1,11 +1,11 @@
 package finance
 
 import (
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/settlement"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/settlement"
 )
 
 // registerInvoices 挂载开票审核的三个接口。列表只读，要求 finance.read；审批和驳回

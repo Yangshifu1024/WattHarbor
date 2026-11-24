@@ -1,9 +1,9 @@
 package order
 
 import (
-	orderdomain "chargepilot/internal/domain/order"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	orderdomain "wattharbor/internal/domain/order"
 )
 
 // LockCardChargingInTx 在调用方事务中锁定 id 未删除且充电中的订单，返回完整订单，缺失时返回错误。

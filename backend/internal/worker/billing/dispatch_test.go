@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/serviceclient"
+	centralcontract "wattharbor/internal/contracts/central"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 func TestBillingDispatchCallsProtectedRoute(t *testing.T) {

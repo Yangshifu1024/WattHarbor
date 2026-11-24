@@ -1,10 +1,10 @@
 package account
 
 import (
-	adminhttp "chargepilot/internal/http/admin"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	adminhttp "wattharbor/internal/http/admin"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // RegisterRoles 注册角色列表、权限字典和角色管理接口。

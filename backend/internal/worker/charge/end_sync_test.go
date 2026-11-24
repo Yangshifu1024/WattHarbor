@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/charging"
-	"chargepilot/internal/protocol"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/charging"
+	"wattharbor/internal/protocol"
 )
 
 // endBatchScenario 将两笔独立订单放入同一批，指定一笔端口释放失败；其余命名接口仍执行真实编排。

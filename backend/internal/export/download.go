@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
 	"gorm.io/gorm"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
 )
 
 // Download 保存已通过校验的打开文件，HTTP 读取后负责关闭，不再使用数据库路径。

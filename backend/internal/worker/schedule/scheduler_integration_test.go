@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
 )
 
 // scheduleFixture 打开独立 worker 真库并提交仅本测试的任务；退出按日志完整分区主键及任务主键清理、核对零残留。

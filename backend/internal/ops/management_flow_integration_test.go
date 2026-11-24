@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/auth"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/auth"
 )
 
 // managementFixture 为自身自定义角色授予九项权限，并创建两条真库连接及审计参数；不修改内置角色或初始管理员。

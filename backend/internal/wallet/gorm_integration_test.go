@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"gorm.io/gorm"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // walletDB 为当前测试打开独立真库连接池；缺少配置即失败，清理只关闭自身池。

@@ -3,8 +3,6 @@
 package settlement
 
 import (
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/testfixture"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -13,6 +11,8 @@ import (
 	"gorm.io/gorm"
 	"testing"
 	"time"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/testfixture"
 )
 
 // TestBillingMarketingStorageFailureRollsBackFunds 验证发券查询故障连同已写费用一起回滚，而规则不适用仍可完成结算。

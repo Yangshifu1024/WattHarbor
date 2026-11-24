@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/payment"
-	"chargepilot/internal/testfixture"
-	"chargepilot/internal/wallet"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/testfixture"
+	"wattharbor/internal/wallet"
 )
 
 // TestWalletRefundSourcesDoNotLockPendingRecharge 固定到账持有待支付行、退款持有钱包的锁序。

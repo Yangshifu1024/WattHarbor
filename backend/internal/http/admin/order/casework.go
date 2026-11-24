@@ -1,15 +1,15 @@
 package order
 
 import (
-	devstore "chargepilot/internal/device"
 	"errors"
+	devstore "wattharbor/internal/device"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	ordercase "chargepilot/internal/order"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	ordercase "wattharbor/internal/order"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerCasework 注册反馈和设备报修路由，分别校验读取与操作权限。

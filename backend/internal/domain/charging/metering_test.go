@@ -3,7 +3,7 @@ package charging
 import (
 	"testing"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 func TestProtocolCapabilitiesCoverDc589(t *testing.T) {

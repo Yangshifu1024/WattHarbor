@@ -3,7 +3,7 @@ package settlement
 import (
 	"testing"
 
-	"chargepilot/internal/payment"
+	"wattharbor/internal/payment"
 )
 
 // TestReceiptMatchesRejectsAnyMismatch 验证渠道回执任一身份或金额字段不匹配时都不能入账。

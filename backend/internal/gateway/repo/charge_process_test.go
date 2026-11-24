@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 func TestHeartbeatEventKeyIdentifiesReceiptAndStructuredMeasurements(t *testing.T) {

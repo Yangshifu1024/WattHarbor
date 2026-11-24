@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
+	contract "wattharbor/internal/contracts/gateway"
 )
 
 // stationSummaryFunc 提供摘要查询测试替身，不模拟数据库。

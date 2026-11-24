@@ -1,9 +1,9 @@
 package control
 
 import (
-	"chargepilot/internal/platform/httpapi"
 	"net/http/httptest"
 	"testing"
+	"wattharbor/internal/platform/httpapi"
 )
 
 func TestDeviceSummaryIsAuthenticatedAndBounded(t *testing.T) {

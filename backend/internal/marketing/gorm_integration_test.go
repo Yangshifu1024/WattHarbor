@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/testfixture"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/testfixture"
 )
 
 // 真库测试通过 integration 标签显式运行，TEST_MYSQL_URL 缺失或连接失败直接终止。

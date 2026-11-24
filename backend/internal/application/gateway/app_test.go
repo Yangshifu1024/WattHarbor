@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	gatewayruntime "chargepilot/internal/gateway/runtime"
-	"chargepilot/internal/protocol"
+	gatewayruntime "wattharbor/internal/gateway/runtime"
+	"wattharbor/internal/protocol"
 )
 
 // idleSink 提供不持久化的设备 sink，供应用启动失败路径装配。

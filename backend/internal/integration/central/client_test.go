@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"chargepilot/internal/platform/serviceclient"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // centralForServer 为测试创建本地 HTTP 服务和 central 客户端，并注册服务清理。

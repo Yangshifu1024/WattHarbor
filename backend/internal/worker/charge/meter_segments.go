@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"time"
 
-	"chargepilot/internal/charging/measurement"
-	centralcontract "chargepilot/internal/contracts/central"
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/charging/measurement"
+	centralcontract "wattharbor/internal/contracts/central"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/protocol"
 )
 
 // measuredSegments 根据设备累计电量和时长计算各时间段的用电量。

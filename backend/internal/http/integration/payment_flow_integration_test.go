@@ -14,17 +14,17 @@ import (
 	"testing"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/domain/money"
-	authhttp "chargepilot/internal/http/auth"
-	userpayment "chargepilot/internal/http/user/payment"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/domain/money"
+	authhttp "wattharbor/internal/http/auth"
+	userpayment "wattharbor/internal/http/user/payment"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/testfixture"
 )
 
 // routeCheckoutFixture 仅替换设备规则和兼容性校验结果与渠道响应，支付请求及参数持久化使用实际 MySQL。

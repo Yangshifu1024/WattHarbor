@@ -10,9 +10,9 @@ import (
 	"slices"
 	"testing"
 
-	"chargepilot/internal/identity"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/config"
+	"wattharbor/internal/identity"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/config"
 )
 
 // routeModeChannel 只提供真实装配要求的渠道接口，不执行预支付、验签或数据库操作。

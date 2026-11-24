@@ -1,9 +1,9 @@
 package order
 
 import (
-	orderdomain "chargepilot/internal/domain/order"
 	"context"
 	"gorm.io/gorm"
+	orderdomain "wattharbor/internal/domain/order"
 )
 
 // QueryRepo 读取用户负责的订单，表归属与请求隔离集中于对应仓储。

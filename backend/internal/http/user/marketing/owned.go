@@ -3,10 +3,10 @@ package marketing
 import (
 	"errors"
 
-	"chargepilot/internal/marketing"
-	"chargepilot/internal/persist"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/marketing"
+	"wattharbor/internal/persist"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // myCoupons 按分页和状态返回当前用户持有的优惠券。

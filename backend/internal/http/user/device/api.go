@@ -2,9 +2,9 @@
 package device
 
 import (
-	"chargepilot/internal/device"
-	authhttp "chargepilot/internal/http/auth"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	authhttp "wattharbor/internal/http/auth"
 )
 
 // API 将本业务族的用户请求交给用例，字段由 cmd 装配。

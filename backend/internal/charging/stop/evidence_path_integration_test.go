@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/gateway/control"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/gateway/control"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/protocol"
 )
 
 // TestGatewayEvidenceReachesNoPowerDecision 贯通真库事件、实际注册路由、客户端和停机判断。

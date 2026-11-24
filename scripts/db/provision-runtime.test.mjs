@@ -20,8 +20,8 @@ test('runtime grants remain bounded and worker cross-schema rights are only SELE
   const grants = buildProvisionSQL(env).split('\n').filter(row => row.startsWith('GRANT '));
   assert.equal(grants.length, 8);
   for (const row of grants) assert.doesNotMatch(row, /ALL PRIVILEGES|CREATE|ALTER|DROP|GRANT OPTION|ON \*\.\*/);
-  assert.equal(grants.filter(row => row.endsWith("TO 'chargepilot_worker'@'%';")).length, 4);
-  for (const row of grants.filter(row => /ON (central|gateway)_db\./.test(row) && row.includes('chargepilot_worker'))) {
+  assert.equal(grants.filter(row => row.endsWith("TO 'wattharbor_worker'@'%';")).length, 4);
+  for (const row of grants.filter(row => /ON (central|gateway)_db\./.test(row) && row.includes('wattharbor_worker'))) {
     assert.match(row, /^GRANT SELECT, UPDATE ON /);
   }
 });

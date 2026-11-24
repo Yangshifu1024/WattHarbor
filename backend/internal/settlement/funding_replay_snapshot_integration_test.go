@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/testfixture"
 )
 
 // oldFundingSnapshot 开启 RR 事务并普通读取测试记录以建立旧快照，调用方负责回滚。

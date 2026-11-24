@@ -3,11 +3,11 @@ package station
 import (
 	"errors"
 
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // stations 按分页、筛选和当前管理员站点范围查询站点，返回列表和权限。

@@ -1,14 +1,14 @@
 package control
 
 import (
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/gateway/session"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
-	"chargepilot/internal/protocol"
 	"encoding/hex"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/gateway/session"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
+	"wattharbor/internal/protocol"
 )
 
 // CardReplyAPI 向设备发送已保存的刷卡拒绝或余额回复。

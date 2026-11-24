@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"chargepilot/internal/platform/httpapi"
+	"wattharbor/internal/platform/httpapi"
 )
 
 func TestStopContractKeepsAuthenticationAndInputValidation(t *testing.T) {

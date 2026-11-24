@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"time"
 
-	identitydomain "chargepilot/internal/domain/identity"
-	walletdomain "chargepilot/internal/domain/wallet"
+	identitydomain "wattharbor/internal/domain/identity"
+	walletdomain "wattharbor/internal/domain/wallet"
 )
 
 // LoginIdentity 按 openid 保存唯一加锁记录，使同一微信用户的开户事务依次执行。

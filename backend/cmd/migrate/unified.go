@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"github.com/pressly/goose/v3"
+	"wattharbor/internal/platform/dbconn"
 )
 
-const unifiedSchema = "chargepilot"
+const unifiedSchema = "wattharbor"
 
 // unifiedMigrations 固定各原始迁移在单库中的版本；新版本只能在末尾追加。
 var unifiedMigrations = []string{
@@ -33,7 +33,7 @@ func migrateUnified(sources string) (err error) {
 	if err != nil {
 		return err
 	}
-	assembled, err := os.MkdirTemp("", "chargepilot-unified-")
+	assembled, err := os.MkdirTemp("", "wattharbor-unified-")
 	if err != nil {
 		return err
 	}

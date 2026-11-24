@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	"chargepilot/internal/protocol"
-	"chargepilot/internal/testfixture"
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	"wattharbor/internal/protocol"
+	"wattharbor/internal/testfixture"
 )
 
 // gatewayIdentityFixture 为 t 在真实网关库创建私有停用设备、一个有效及一个已删除端口，返回连接与设备编号。

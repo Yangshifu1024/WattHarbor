@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/platform/dbconn"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/platform/dbconn"
 )
 
 // TestSourceQueryCancellation 使用真实连接验证源取数收到请求取消，不访问开发库或写入数据。

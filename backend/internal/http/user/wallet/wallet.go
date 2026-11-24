@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	walletdomain "chargepilot/internal/domain/wallet"
-	userhttp "chargepilot/internal/http/user"
-	"chargepilot/internal/platform/httpapi"
-	walletpkg "chargepilot/internal/wallet"
 	"github.com/gin-gonic/gin"
+	walletdomain "wattharbor/internal/domain/wallet"
+	userhttp "wattharbor/internal/http/user"
+	"wattharbor/internal/platform/httpapi"
+	walletpkg "wattharbor/internal/wallet"
 )
 
 // txnDirectionAllowed 返回 value 是否属于 walletdomain.TxnDirection 的合法取值串。

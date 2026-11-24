@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	gatewayclient "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/platform/serviceclient"
 	"gorm.io/gorm"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	gatewayclient "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // gatewayContractDB 优先使用 DATABASE_URL_GATEWAY；否则将 TEST_MYSQL_URL 的库名改为 gateway_db。

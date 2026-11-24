@@ -3,14 +3,14 @@ package device
 import (
 	"errors"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/http/admin"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/pricing"
 	"github.com/gin-gonic/gin"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/http/admin"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/pricing"
 )
 
 // registerImports 注册设备导入列表、创建和重试接口，均要求 device.import 权限。

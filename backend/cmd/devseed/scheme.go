@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	charging "chargepilot/internal/domain/charging"
-	"chargepilot/internal/platform/snowflake"
-	"chargepilot/internal/settlement"
 	"github.com/google/uuid"
+	charging "wattharbor/internal/domain/charging"
+	"wattharbor/internal/platform/snowflake"
+	"wattharbor/internal/settlement"
 )
 
 func demoScheme() charging.Scheme {

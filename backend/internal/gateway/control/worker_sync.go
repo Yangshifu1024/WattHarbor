@@ -1,15 +1,15 @@
 package control
 
 import (
-	gatewaycontract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/domain/money"
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	"chargepilot/internal/platform/httpapi"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"
 	"time"
+	gatewaycontract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/domain/money"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // registerWorkerSync 注册 worker 所需的内部同步接口，要求服务令牌。

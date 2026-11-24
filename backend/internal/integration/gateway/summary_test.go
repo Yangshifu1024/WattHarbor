@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/platform/serviceclient"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestSummaryClientRequiresSuccessfulEnvelope 验证摘要响应的设备编号、成功状态和必需字段；不连接实际网关。

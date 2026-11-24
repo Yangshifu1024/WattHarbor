@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	chargestart "chargepilot/internal/charging/start"
-	centralclient "chargepilot/internal/integration/central"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/gin-gonic/gin"
+	chargestart "wattharbor/internal/charging/start"
+	centralclient "wattharbor/internal/integration/central"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // paidStartsStub 记录游标和调用次数，返回固定待启动订单或指定错误。

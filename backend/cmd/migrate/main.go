@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"chargepilot/internal/platform/dbconn"
 	"github.com/pressly/goose/v3"
+	"wattharbor/internal/platform/dbconn"
 )
 
 var schemas = []string{"gateway_db", "central_db", "worker_db"}

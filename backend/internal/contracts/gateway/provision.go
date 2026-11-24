@@ -1,9 +1,9 @@
 package gateway
 
 import (
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/protocol"
 	"time"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/protocol"
 )
 
 const (

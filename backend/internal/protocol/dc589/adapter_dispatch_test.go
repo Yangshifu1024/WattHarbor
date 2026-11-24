@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"chargepilot/internal/protocol"
+	"wattharbor/internal/protocol"
 )
 
 // recordingSink 收集适配器产生的事件，供测试断言解码结果与运维审计内容。

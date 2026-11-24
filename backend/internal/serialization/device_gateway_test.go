@@ -5,15 +5,15 @@ package serialization
 import (
 	"testing"
 
-	"chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/devices"
-	"chargepilot/internal/domain/money"
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	"chargepilot/internal/order"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/protocol"
-	workerrepo "chargepilot/internal/worker/repo"
+	"wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/devices"
+	"wattharbor/internal/domain/money"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	"wattharbor/internal/order"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/protocol"
+	workerrepo "wattharbor/internal/worker/repo"
 )
 
 // 本文件覆盖 B 组（设备、网关、协议）枚举的对外 JSON 形状。

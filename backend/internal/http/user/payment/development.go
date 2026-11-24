@@ -3,11 +3,11 @@ package payment
 import (
 	"errors"
 
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/payment"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/payment"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // DevelopmentAPI 仅在 PAYMENT_MODE=simulation 时注册。

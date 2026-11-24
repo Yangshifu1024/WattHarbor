@@ -12,15 +12,15 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	"chargepilot/internal/device"
-	"chargepilot/internal/domain/operations"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/pricing"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	contract "wattharbor/internal/contracts/gateway"
+	"wattharbor/internal/device"
+	"wattharbor/internal/domain/operations"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/pricing"
+	"wattharbor/internal/testfixture"
 )
 
 // concurrentImportGateway 只确认测试厂商并统计调用次数，不执行实际设备开通。

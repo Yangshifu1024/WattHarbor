@@ -3,11 +3,11 @@ package central
 import (
 	"net/http"
 
-	contract "chargepilot/internal/contracts/central"
-	"chargepilot/internal/device"
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/platform/httpapi"
 	"github.com/gin-gonic/gin"
+	contract "wattharbor/internal/contracts/central"
+	"wattharbor/internal/device"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/platform/httpapi"
 )
 
 // DeviceAlertSyncAPI 接收 worker 的设备告警同步请求。

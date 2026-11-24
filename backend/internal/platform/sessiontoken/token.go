@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"chargepilot/internal/platform/auth"
 	"github.com/redis/go-redis/v9"
+	"wattharbor/internal/platform/auth"
 )
 
 // Layout 设置令牌和 Redis 会话键的前缀。

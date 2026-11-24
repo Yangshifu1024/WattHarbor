@@ -2,10 +2,10 @@
 package vendor
 
 import (
-	"chargepilot/internal/device"
-	adminhttp "chargepilot/internal/http/admin"
-	authhttp "chargepilot/internal/http/auth"
 	"github.com/gin-gonic/gin"
+	"wattharbor/internal/device"
+	adminhttp "wattharbor/internal/http/admin"
+	authhttp "wattharbor/internal/http/auth"
 )
 
 // API 提供厂商查询和管理接口，依赖厂商服务和后台鉴权。

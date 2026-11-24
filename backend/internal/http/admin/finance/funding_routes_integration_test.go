@@ -16,14 +16,14 @@ import (
 	"testing"
 	"time"
 
-	authhttp "chargepilot/internal/http/auth"
-	"chargepilot/internal/ops"
-	"chargepilot/internal/platform/auth"
-	"chargepilot/internal/platform/dbconn"
-	"chargepilot/internal/platform/httpapi"
-	"chargepilot/internal/settlement"
-	"chargepilot/internal/testfixture"
 	"github.com/google/uuid"
+	authhttp "wattharbor/internal/http/auth"
+	"wattharbor/internal/ops"
+	"wattharbor/internal/platform/auth"
+	"wattharbor/internal/platform/dbconn"
+	"wattharbor/internal/platform/httpapi"
+	"wattharbor/internal/settlement"
+	"wattharbor/internal/testfixture"
 )
 
 // routeSessionHook 仅提供测试会话记录；权限、账号及发票审核使用真实 MySQL。

@@ -1,11 +1,6 @@
 package settlement
 
 import (
-	"chargepilot/internal/domain/money"
-	"chargepilot/internal/ops"
-	orderstore "chargepilot/internal/order"
-	pay "chargepilot/internal/payment"
-	"chargepilot/internal/wallet"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +9,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"wattharbor/internal/domain/money"
+	"wattharbor/internal/ops"
+	orderstore "wattharbor/internal/order"
+	pay "wattharbor/internal/payment"
+	"wattharbor/internal/wallet"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

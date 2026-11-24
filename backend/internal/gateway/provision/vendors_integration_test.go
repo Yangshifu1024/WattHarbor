@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	contract "chargepilot/internal/contracts/gateway"
-	devicesdomain "chargepilot/internal/domain/devices"
-	gatewayrepo "chargepilot/internal/gateway/repo"
-	client "chargepilot/internal/integration/gateway"
-	"chargepilot/internal/platform/serviceclient"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	contract "wattharbor/internal/contracts/gateway"
+	devicesdomain "wattharbor/internal/domain/devices"
+	gatewayrepo "wattharbor/internal/gateway/repo"
+	client "wattharbor/internal/integration/gateway"
+	"wattharbor/internal/platform/serviceclient"
 )
 
 // TestVendorOperationsKeepConstraintsAndRollback 经实际注册路由使用专用客户端核对完整厂商操作。
