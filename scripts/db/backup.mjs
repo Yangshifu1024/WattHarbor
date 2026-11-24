@@ -1,9 +1,9 @@
-// 将三个数据库备份到同一个压缩包；完整解压检查失败时退出报错。
+// 备份开发三库或生产单库；完整解压检查失败时退出报错。
 // gzip 由 node:zlib 提供，不依赖外部 gzip 命令；MySQL 客户端可用宿主机
 // mysql/mysqldump，或经 MYSQL_CLIENT_CONTAINER 在数据库容器内执行。
 //
 // 用法：
-//   node scripts/db/backup.mjs <output-dir>
+//   node scripts/db/backup.mjs [--unified] <output-dir>
 //   MYSQL_HOST=... MYSQL_PORT=... MYSQL_USER=... MYSQL_PWD=... node scripts/db/backup.mjs out/
 //   MYSQL_CLIENT_CONTAINER=wattharbor-dev-mysql-1 MYSQL_PASSWORD=... node scripts/db/backup.mjs out/
 import { spawnSync, spawn } from 'node:child_process';
@@ -13,11 +13,14 @@ import { pipeline, finished } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { parseArgs } from 'node:util';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]$/, '');
-const SCHEMAS = ['gateway_db', 'central_db', 'worker_db'];
+const { values, positionals } = parseArgs({ options: { unified: { type: 'boolean' } }, allowPositionals: true });
+if (positionals.length > 1) throw new Error('Usage: node scripts/db/backup.mjs [--unified] [output-dir]');
+const SCHEMAS = values.unified ? ['wattharbor'] : ['gateway_db', 'central_db', 'worker_db'];
 
-const outDir = (process.argv[2] ?? './backups').replace(/[\\/]+$/, '');
+const outDir = (positionals[0] ?? './backups').replace(/[\\/]+$/, '');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 const host = process.env.MYSQL_HOST ?? '127.0.0.1';
 const port = process.env.MYSQL_PORT ?? '3306';
@@ -33,15 +36,16 @@ function fail(message) {
 const nativeEnv = { ...process.env };
 if (!nativeEnv.MYSQL_PWD && password) nativeEnv.MYSQL_PWD = password;
 
-// MySQL 客户端可能只存在于数据库容器里：优先取宿主机 mysql/mysqldump，
-// 否则按 MYSQL_CLIENT_CONTAINER 经 docker exec 在容器内连 127.0.0.1。
+// 显式指定容器时优先使用容器客户端；生产 MySQL 默认不发布端口。
 function resolveCli(tool) {
-  if (spawnSync(tool, ['--version'], { stdio: 'ignore' }).status === 0) {
-    return { cmd: tool, prefix: [`-h${host}`, `-P${port}`, `-u${user}`] };
-  }
   const container = process.env.MYSQL_CLIENT_CONTAINER;
-  if (!container) fail(`no ${tool} available; set MYSQL_CLIENT_CONTAINER to the database container`);
-  return { cmd: 'docker', prefix: ['exec', '-e', `MYSQL_PWD=${password}`, container, tool, '-h127.0.0.1', '-u' + user] };
+  if (container) {
+    return { cmd: 'docker', prefix: ['exec', '-e', 'MYSQL_PWD', container, tool, '-h127.0.0.1', '-u' + user] };
+  }
+  if (spawnSync(tool, ['--version'], { stdio: 'ignore' }).status !== 0) {
+    fail(`no ${tool} available; set MYSQL_CLIENT_CONTAINER to the database container`);
+  }
+  return { cmd: tool, prefix: [`-h${host}`, `-P${port}`, `-u${user}`] };
 }
 
 function runCli(tool, args) {

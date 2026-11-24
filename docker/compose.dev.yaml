@@ -1,4 +1,4 @@
-# 本地开发栈：Go 容器在 /workspace/backend 运行。
+# 本地开发栈：单体 Go 应用在 /workspace/backend 编译并运行。
 # 宿主机相对路径以 docker/ 为起点，.. 表示仓库根。
 # 启动保留数据；重建数据库使用 scripts/db/reset-dev.mjs。
 name: wattharbor-dev
@@ -19,10 +19,7 @@ x-go: &go
     DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
     GOTOOLCHAIN: auto
     # 使用 goproxy.cn 下载 Go 依赖；可按开发环境调整代理。
-    GOPROXY: https://goproxy.cn,direct
-    SERVICE_TOKEN: local-dev-service-token-do-not-use-in-production
-  depends_on:
-    provision-runtime: { condition: service_completed_successfully }
+    GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
 
 services:
   mysql:
@@ -75,7 +72,7 @@ services:
       - go-modules:/go/pkg/mod
       - go-build:/root/.cache/go-build
     environment:
-      GOPROXY: https://goproxy.cn,direct
+      GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
       DATABASE_URL_GATEWAY: mysql://wattharbor:wattharbor_dev@mysql:3306/gateway_db
       DATABASE_URL_CENTRAL: mysql://wattharbor:wattharbor_dev@mysql:3306/central_db
       DATABASE_URL_WORKER: mysql://wattharbor:wattharbor_dev@mysql:3306/worker_db
@@ -86,6 +83,7 @@ services:
     build:
       context: ./mysql
       dockerfile: runtime-accounts.Dockerfile
+    command: ["--three-schema"]
     restart: "no"
     network_mode: none
     volumes:
@@ -94,59 +92,13 @@ services:
     environment:
       MYSQL_SOCKET: /var/run/mysqld/mysqld.sock
       MYSQL_ROOT_PASSWORD: wattharbor_root_dev
-      DB_USER_PASSWORD: ${DB_USER_PASSWORD:-wattharbor_user_dev}
-      DB_ADMIN_PASSWORD: ${DB_ADMIN_PASSWORD:-wattharbor_admin_dev}
-      DB_CENTRAL_PASSWORD: ${DB_CENTRAL_PASSWORD:-wattharbor_central_dev}
-      DB_GATEWAY_PASSWORD: ${DB_GATEWAY_PASSWORD:-wattharbor_gateway_dev}
-      DB_WORKER_PASSWORD: ${DB_WORKER_PASSWORD:-wattharbor_worker_dev}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:-wattharbor_app_dev}
     depends_on:
       migrate: { condition: service_completed_successfully }
 
-  gateway:
+  app:
     <<: *go
-    command: ["go", "run", "./cmd/gateway"]
-    environment:
-      <<: *go-env
-      DATABASE_URL: mysql://wattharbor_gateway:${DB_GATEWAY_PASSWORD:-wattharbor_gateway_dev}@mysql:3306/gateway_db
-      GATEWAY_DEBUG_HEARTBEAT: true
-    ports: ["127.0.0.1:8083:8083", "127.0.0.1:9100:9100"]
-
-  # C 端。与运营后台、后台服务分属不同进程，对外只暴露 8080。
-  user:
-    <<: *go
-    command: ["go", "run", "./cmd/user"]
-    environment:
-      <<: *go-env
-      JWT_SECRET: local-dev-jwt-secret-do-not-use-in-production
-      WECHAT_APPID: wx_local_dev
-      WECHAT_SECRET: local-dev-placeholder
-      PAYMENT_MODE: simulation
-      LOGIN_MODE: development
-      REDIS_CACHE_URL: redis://redis-cache:6379/0
-      DATABASE_URL_CENTRAL: mysql://wattharbor_user:${DB_USER_PASSWORD:-wattharbor_user_dev}@mysql:3306/central_db
-    depends_on:
-      provision-runtime: { condition: service_completed_successfully }
-      redis-cache: { condition: service_healthy }
-    ports: ["127.0.0.1:8080:8080"]
-
-  # central 仅供容器网络内调用，不映射到宿主机。
-  central:
-    <<: *go
-    command: ["go", "run", "./cmd/central"]
-    environment:
-      <<: *go-env
-      WECHAT_APPID: wx_local_dev
-      PAYMENT_MODE: simulation
-      REDIS_CACHE_URL: redis://redis-cache:6379/0
-      DATABASE_URL_CENTRAL: mysql://wattharbor_central:${DB_CENTRAL_PASSWORD:-wattharbor_central_dev}@mysql:3306/central_db
-    depends_on:
-      provision-runtime: { condition: service_completed_successfully }
-      redis-cache: { condition: service_healthy }
-
-  # 运营后台。只暴露 /api/v1/admin/*，与 C 端走不同的进程与端口。
-  admin:
-    <<: *go
-    command: ["go", "run", "./cmd/admin"]
+    command: ["sh", "-ec", "go build -o /tmp/wattharbor ./cmd/wattharbor && exec /tmp/wattharbor"]
     volumes:
       - ..:/workspace
       - go-modules:/go/pkg/mod
@@ -154,9 +106,20 @@ services:
       - export-files:/var/lib/wattharbor/exports
     environment:
       <<: *go-env
-      JWT_SECRET: local-dev-jwt-secret-do-not-use-in-production
+      APP_UNIFIED_DATABASE: "false"
+      DATABASE_URL: &gateway-dsn mysql://wattharbor_app:${DB_APP_PASSWORD:-wattharbor_app_dev}@mysql:3306/gateway_db
+      DATABASE_URL_GATEWAY: *gateway-dsn
+      DATABASE_URL_CENTRAL: mysql://wattharbor_app:${DB_APP_PASSWORD:-wattharbor_app_dev}@mysql:3306/central_db
+      DATABASE_URL_WORKER: mysql://wattharbor_app:${DB_APP_PASSWORD:-wattharbor_app_dev}@mysql:3306/worker_db
       REDIS_CACHE_URL: redis://redis-cache:6379/0
-      DATABASE_URL_CENTRAL: mysql://wattharbor_admin:${DB_ADMIN_PASSWORD:-wattharbor_admin_dev}@mysql:3306/central_db
+      REDIS_STREAM_URL: redis://redis-stream:6379/0
+      JWT_SECRET: local-dev-jwt-secret-do-not-use-in-production
+      SERVICE_TOKEN: local-dev-service-token-do-not-use-in-production
+      WECHAT_APPID: wx_local_dev
+      WECHAT_SECRET: local-dev-placeholder
+      PAYMENT_MODE: simulation
+      LOGIN_MODE: development
+      GATEWAY_DEBUG_HEARTBEAT: true
       EXPORT_DIR: /var/lib/wattharbor/exports
       # 开发后台由宿主机直连，不默认信任 Vite 或其他来源的转发头。
       ADMIN_TRUSTED_PROXIES: ${ADMIN_TRUSTED_PROXIES:-}
@@ -165,22 +128,15 @@ services:
     depends_on:
       provision-runtime: { condition: service_completed_successfully }
       redis-cache: { condition: service_healthy }
-    ports: ["127.0.0.1:8081:8081"]
-
-  worker:
-    <<: *go
-    command: ["go", "run", "./cmd/worker"]
-    environment:
-      <<: *go-env
-      REDIS_STREAM_URL: redis://redis-stream:6379/0
-      DATABASE_URL_WORKER: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:-wattharbor_worker_dev}@mysql:3306/worker_db
-      DATABASE_URL_GATEWAY: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:-wattharbor_worker_dev}@mysql:3306/gateway_db
-      DATABASE_URL_CENTRAL: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:-wattharbor_worker_dev}@mysql:3306/central_db
-      REGULATORY_MODE: simulation
-    depends_on:
-      provision-runtime: { condition: service_completed_successfully }
       redis-stream: { condition: service_healthy }
-    ports: ["127.0.0.1:8085:8085"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 4s
+      retries: 30
+      start_period: 45s
+    stop_grace_period: 20s
+    ports: ["127.0.0.1:8080:8080", "127.0.0.1:9100:9100"]
 
   admin-web:
     image: node:24-bookworm-slim
@@ -188,7 +144,7 @@ services:
     working_dir: /workspace/frontend/admin-web
     command: ["sh", "-c", "npm ci --no-audit --no-fund && exec npm run dev -- --host 0.0.0.0"]
     environment:
-      DEV_API_PROXY_TARGET: http://admin:8081
+      DEV_API_PROXY_TARGET: http://app:8080
       DEV_USE_POLLING: "true"
       VITE_API_BASE: ""
     ports: ["127.0.0.1:5173:5173"]
@@ -197,7 +153,7 @@ services:
       - node-modules:/workspace/frontend/admin-web/node_modules
       - npm-cache:/root/.npm
     depends_on:
-      admin: { condition: service_started }
+      app: { condition: service_healthy }
 
   user-h5:
     image: node:24-bookworm-slim
@@ -205,7 +161,7 @@ services:
     working_dir: /workspace/frontend/miniprogram
     command: ["sh", "-c", "npm ci --legacy-peer-deps --no-audit --no-fund && exec npm run dev:h5"]
     environment:
-      DEV_API_PROXY_TARGET: http://user:8080
+      DEV_API_PROXY_TARGET: http://app:8080
       TARO_APP_API_BASE: /api/v1
       TARO_APP_LOGIN_MODE: development
     ports: ["127.0.0.1:5174:5174"]
@@ -214,7 +170,7 @@ services:
       - user-node-modules:/workspace/frontend/miniprogram/node_modules
       - npm-cache:/root/.npm
     depends_on:
-      central: { condition: service_started }
+      app: { condition: service_healthy }
 
 volumes:
   mysql-data:

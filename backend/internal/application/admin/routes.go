@@ -64,7 +64,7 @@ func newRouter(cfg config.Admin, r *resources, authAPI authhttp.AdminAuth, gatew
 	authAPI.Register(router)
 	adminops.DiagnosticsAPI{
 		DB: orm, Auth: authAPI, Transport: serviceclient.Client{HTTP: r.InternalHTTP}, Token: cfg.ServiceToken,
-		GatewayURL: cfg.GatewayInternalURL, WorkerURL: cfg.WorkerInternalURL,
+		GatewayURL: config.GatewayServiceURL, WorkerURL: config.WorkerServiceURL,
 	}.Register(router)
 
 	// 审核时直接查询首位审核人的当前角色和权限，不从缓存读取。

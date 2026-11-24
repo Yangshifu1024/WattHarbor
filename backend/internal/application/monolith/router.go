@@ -18,6 +18,7 @@ var assets embed.FS
 func publicRouter(admin, user http.Handler, roles map[string]http.Handler, ready, syncReady *atomic.Bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/admin/", admin)
+	mux.Handle("GET /api/docs/admin.openapi.json", admin)
 	mux.Handle("/api/v1/user/", user)
 	mux.Handle("/api/v1/public/", user)
 	mux.Handle("/metrics", admin)

@@ -21,7 +21,7 @@ type workerJobTransport struct {
 
 // RoundTrip 核对服务地址、令牌和路径，返回对应任务的成功 JSON；不发送网络请求。
 func (s *workerJobTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Host != "central.invalid" || r.Header.Get("X-Service-Token") != s.token {
+	if r.URL.Host != config.CentralServiceHost || r.Header.Get("X-Service-Token") != s.token {
 		return nil, errors.New("assembled finance client used wrong address or identity")
 	}
 	s.paths = append(s.paths, r.URL.Path)
@@ -39,24 +39,11 @@ func (s *workerJobTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(payload)), Request: r}, nil
 }
 
-// workerUnexpectedTransport 记录错误连接池使用，任何资金请求进入查询连接池即失败。
-type workerUnexpectedTransport struct {
-	calls int
-}
-
-// RoundTrip 记录调用后拒绝，不访问外部网络。
-
-func (s *workerUnexpectedTransport) RoundTrip(*http.Request) (*http.Response, error) {
-	s.calls++
-	return nil, errors.New("finance task used internal query transport")
-}
-
-// TestAssembledFinanceConsumersUseManagedJobTransport 验证三个资金任务使用 JobHTTP 和 central 服务令牌，查询连接池不会收到资金请求。
-func TestAssembledFinanceConsumersUseManagedJobTransport(t *testing.T) {
+// TestAssembledFinanceConsumersUseLocalTransport 验证资金任务使用进程内客户端和中央服务令牌。
+func TestAssembledFinanceConsumersUseLocalTransport(t *testing.T) {
 	jobs := &workerJobTransport{token: "assembled-job-token"}
-	queries := &workerUnexpectedTransport{}
-	r := &resources{JobHTTP: &http.Client{Transport: jobs, Timeout: 30 * time.Second}, InternalHTTP: &http.Client{Transport: queries, Timeout: 5 * time.Second}}
-	a, err := assemble(config.Worker{CentralInternalURL: "http://central.invalid", GatewayInternalURL: "http://gateway.invalid", ServiceToken: jobs.token}, r)
+	r := &resources{InternalHTTP: &http.Client{Transport: jobs, Timeout: 30 * time.Second}}
+	a, err := assemble(config.Worker{ServiceToken: jobs.token}, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +56,7 @@ func TestAssembledFinanceConsumersUseManagedJobTransport(t *testing.T) {
 	if err := a.Jobs.Refunds.Run(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(jobs.paths, []string{contract.AutoStopPath, contract.BillingDispatchPath, contract.RefundDispatchPath}) || queries.calls != 0 ||
-		r.JobHTTP.Transport != jobs || r.InternalHTTP.Transport != queries || r.JobHTTP.Timeout != 30*time.Second || r.InternalHTTP.Timeout != 5*time.Second {
-		t.Fatalf("assembled job paths=%v query calls=%d, managed client configuration changed", jobs.paths, queries.calls)
+	if !reflect.DeepEqual(jobs.paths, []string{contract.AutoStopPath, contract.BillingDispatchPath, contract.RefundDispatchPath}) {
+		t.Fatalf("assembled job paths=%v", jobs.paths)
 	}
 }

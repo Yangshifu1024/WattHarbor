@@ -8,94 +8,62 @@
 
 | 变量 | 使用方及规则 |
 | --- | --- |
-| `DATABASE_URL` | gateway 的 MySQL URL |
-| `DATABASE_URL_CENTRAL` | user / admin / central / worker / migrate，central schema |
-| `DATABASE_URL_GATEWAY` | worker / migrate，gateway schema |
-| `DATABASE_URL_WORKER` | worker / migrate，worker schema；migrate 同时读取另两库 URL |
-| `USER_HTTP_ADDR`、`ADMIN_HTTP_ADDR`、`CENTRAL_HTTP_ADDR`、`WORKER_HTTP_ADDR` | 对应进程默认 `:8080`、`:8081`、`:8082`、`:8085` |
-| `GATEWAY_HTTP_ADDR`、`DC589_ADDR` | gateway，默认 `:8083`、`:9100` |
-| `REDIS_CACHE_URL`、`REDIS_STREAM_URL` | user / admin 使用 Cache 保存会话，central 使用 Cache 做健康检查；worker 使用 Stream 发布 Outbox。gateway 不使用 Redis |
-| `JWT_SECRET` | 仅 user / admin，至少 32 字节 |
-| `SERVICE_TOKEN` | 五个 Go 服务内部 API 共享令牌 |
-| `GATEWAY_INTERNAL_URL`、`CENTRAL_INTERNAL_URL` | 服务间地址，按 Compose 服务名与内网端口配置 |
+| `DATABASE_URL` | 应用的设备库 URL；单库迁移使用此变量 |
+| `DATABASE_URL_CENTRAL`、`DATABASE_URL_GATEWAY`、`DATABASE_URL_WORKER` | 角色数据库连接。生产指向同一个 `wattharbor` 单库，开发分别指向三库 |
+| `APP_UNIFIED_DATABASE` | 生产设为 `true`，使用单库中独立的设备 Outbox；三库模式为 `false` |
+| `APP_HTTP_ADDR`、`DC589_ADDR` | 单体 HTTP 和设备 TCP 监听，默认 `:8080`、`:9100` |
+| `REDIS_CACHE_URL`、`REDIS_STREAM_URL` | 分别用于会话缓存和事件流 |
+| `DB_PASSWORD`、`DB_APP_PASSWORD` | MySQL 维护账号和应用运行账号密码 |
+| `JWT_SECRET` | 用户与后台会话签名，至少 32 字节 |
+| `SERVICE_TOKEN` | 进程内接口共享令牌 |
 | `DEVICE_MAX_CONNECTIONS` | gateway，正整数，默认 10000 |
 | `GATEWAY_DEBUG_HEARTBEAT` | gateway 心跳日志，默认 false；开发 Compose 固定 true |
 | `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD` | 仅 admin，空后台账号表的引导凭证 |
 | `ADMIN_TRUSTED_PROXIES` | 仅 admin，逗号分隔的可信代理 IP／CIDR；默认空，非法值在路由装配时阻止启动。开发直连保留空值 |
-| `ADMIN_PROXY_SUBNET`、`CADDY_ADMIN_PROXY_IP` | 生产 Compose 的专用代理网段及 Caddy 固定 IPv4，默认 `172.30.81.0/29` 与 `172.30.81.2`；后台仅信任这个单一地址 |
+| `ADMIN_PROXY_SUBNET`、`CADDY_ADMIN_PROXY_IP` | 生产 Compose 的专用代理网段及 Caddy 固定 IPv4，默认 `172.30.82.0/24` 与 `172.30.82.2`；后台仅信任这个单一地址 |
 | `LOGIN_MODE` | 仅 user，默认 `wechat`；`development` 要求模拟支付 |
 | `WECHAT_APPID`、`WECHAT_SECRET` | AppID 为 user / central 必填；Secret 仅 user 登录与手机号授权使用 |
 | `PAYMENT_MODE` | user / central，`disabled/simulation/wechat_direct`，默认 disabled；生产 Compose 显式注入 |
 | `WECHAT_MCH_ID`、`WECHAT_CERT_SERIAL`、`WECHAT_APIV3_KEY` | user / central 的微信直连商户 ID、证书序列号及 32 字节 API v3 密钥 |
-| `WECHAT_PRIVATE_KEY_PATH`、`WECHAT_NOTIFY_URL` | user / central 容器内私钥路径及对外支付回调地址；路径变量不代替私钥挂载 |
+| `WECHAT_PRIVATE_KEY_PATH`、`WECHAT_NOTIFY_URL` | 应用容器内私钥路径及对外支付回调地址；路径变量不代替私钥挂载 |
 | `REGULATORY_MODE` | 预留模板／Compose 变量；当前 config 与 worker 不读取，修改值不会启用监管任务 |
 | `REGULATORY_ENDPOINT`、`REGULATORY_SIGNING_SECRET` | 预留对接参数；当前 worker 未装配发送适配器，尚无已接线的平台字段、签名或响应契约 |
 | `EXPORT_DIR` | admin 导出目录，生产已配置持久卷 |
 | `VITE_API_BASE` | 后台 API 地址，构建时使用 |
 | `TARO_APP_API_BASE` | 用户 API 前缀，默认 `/api/v1`；微信发布需绝对 HTTPS 地址 |
 | `TARO_APP_LOGIN_MODE` | 用户构建登录模式，默认 wechat |
-| `DEV_API_PROXY_TARGET` | 后台开发代理指向 admin，H5 开发代理指向 user |
+| `DEV_API_PROXY_TARGET` | 后台和 H5 的开发代理均指向单体 HTTP |
 
 `.env.example` 还含未被当前实现或根 Compose 消费的 `TAG`、`ADMIN_BOOTSTRAP_PHONE`、`WECHAT_REFUND_NOTIFY_URL`、`WECHAT_CUSTOMER_SERVICE_CORP_ID`、`OTEL_EXPORTER_OTLP_ENDPOINT`、`DEFAULT_TIME_OF_USE_JSON`，修改这些值不会启用相应功能。
 
 ## 单体部署
 
-构建命令为 `node tasks.mjs build wattharbor`，产物为 `bin/wattharbor`。日志与 Prometheus 指标使用 WattHarbor 名称，指标以 `wattharbor_` 为前缀。后台和用户端继续读取原浏览器存储键，保留会话和待重试请求的幂等号。监管协议的签名请求头沿用现有契约。
-
-三个 Compose 文件分别使用 `wattharbor-dev`、`wattharbor` 和 `wattharbor-monolith` 项目名。已有本地环境时，启动新项目会使用新项目的数据卷。已有环境切换前需核对原有卷、MySQL 账号及导出挂载路径。
-
-[compose.monolith.yaml](../docker/compose.monolith.yaml) 构建一个含后台和 H5 的应用镜像。填写 `MYSQL_ROOT_PASSWORD`、`DB_PASSWORD`、`REDIS_PASSWORD`、`REDIS_STREAM_PASSWORD`、`JWT_SECRET`、`SERVICE_TOKEN`、`WECHAT_APPID`、`WECHAT_SECRET` 和 `PUBLIC_DOMAIN`。连接 URL 中的密码需要符合 URL 转义规则。首个后台账号由 `ADMIN_BOOTSTRAP_USER` 和 `ADMIN_BOOTSTRAP_PASSWORD` 配置。
+开发和生产均运行 `app`，对应单体命令 `wattharbor`。生产 [compose.prod.yaml](../docker/compose.prod.yaml) 构建内嵌后台与 H5 的镜像。复制 `.env.example` 为 `.env`，配置数据库维护和运行密码、独立 Redis 密码、JWT、服务令牌、微信配置及公开域名。可选的 `ADMIN_BOOTSTRAP_USER` 和 `ADMIN_BOOTSTRAP_PASSWORD` 用于空库首次创建后台管理员。
 
 ```sh
-docker compose -f docker/compose.monolith.yaml config --quiet
-docker compose -f docker/compose.monolith.yaml up -d --build
-docker compose -f docker/compose.monolith.yaml exec app wget -qO- http://127.0.0.1:8080/health/ready
-```
-
-MySQL 和 Redis 就绪后，Goose 先初始化 `wattharbor`。应用装配五个角色，绑定 DC589 和 HTTP 后启动后台任务。首次成功完成同步轮次且依赖检查通过后，`/health/ready` 返回 200。`/health/live` 供进程存活探测。收到 SIGTERM 时停止接收 HTTP 请求及设备连接，等待已接收请求，随后取消设备会话和后台任务，最后关闭资源。应用总关停时限为 15 秒，Compose 留出 20 秒。
-
-Caddy 仅代理后台、H5 和公开 API。其固定代理地址使用 `172.30.82.2`，部署前核对代理子网。内网可在 `/metrics/{admin,user,central,gateway,worker}` 分别抓取各角色的指标。拥有 `audit.read` 权限的后台用户可以在「系统管理 → 运行诊断」查看任务与积压，每次访问记录审计。
-
-已有数据时可用 `node tasks.mjs build wattharbor` 构建单体，并继续使用原三库。按配置表填写原三库 URL，由 `DATABASE_URL` 指向 gateway，`APP_UNIFIED_DATABASE` 留空。切换前停旧进程，避免两套进程同时监听设备和运行任务，并复用原事件 Redis。单库初始化命令为 `cd backend && go run ./cmd/migrate -schema unified`，读取 `DATABASE_URL` 并要求库名为 `wattharbor`。该命令只初始化单库。已有部署如果需要合库，应在备份环境单独校对业务表、两路 Outbox 和 Redis Stream 再切换。
-
-单体部署使用微信直连时，将下节的商户私钥只读挂载加在 `app` 容器，容器进程 UID 为 10001。设备入口仍为 `9100/TCP`。
-
-## 五进程生产部署
-
-[compose.prod.yaml](../docker/compose.prod.yaml) 定义生产拓扑。复制 `.env.example` 为 `.env` 并填写 `MYSQL_ROOT_PASSWORD/DB_PASSWORD/DB_USER_PASSWORD/DB_ADMIN_PASSWORD/DB_CENTRAL_PASSWORD/DB_GATEWAY_PASSWORD/DB_WORKER_PASSWORD/REDIS_PASSWORD/REDIS_STREAM_PASSWORD/JWT_SECRET/SERVICE_TOKEN/WECHAT_APPID/WECHAT_SECRET/PUBLIC_DOMAIN`。数据库和 Redis 仅内网访问，Cache 为 allkeys-lru，Stream 为 noeviction 且启用 AOF。镜像使用非 root distroless；MySQL、事件 Redis、导出和 Caddy 状态使用持久卷。
-
-Caddy 公网暴露 `80/443`，`/api/v1/admin/*` 代理 admin，`/api/v1/user/*` 与 `/api/v1/public/*` 代理 user；内部及其余 API 路径返回 404。`/admin/*` 提供后台静态文件，根路径转向后台。gateway 另暴露 `9100/TCP`，gateway/worker HTTP 不公开。后台静态产物必须先构建，H5 和小程序发布另行配置。
-
-后台反代使用 `admin-proxy-upstream:8081`，该别名仅在 Caddy 与 admin 的 `admin-proxy` 专用内部网络中注册，避免走默认业务网络时来源地址改变。`ADMIN_TRUSTED_PROXIES` 在生产编排直接取 `CADDY_ADMIN_PROXY_IP`，不能配置成整个 Docker 网段。部署前核对代理子网不与已有网络冲突，固定地址属于该子网；调整时同时设置上述两个变量。部署检查器核对单地址信任、网络成员、别名和内部网络属性；实际客户端 IP、限流分桶与审计仍须部署后验证。
-
-```bash
 node scripts/ops/check-deploy.mjs
-docker compose -f docker/compose.prod.yaml up -d --build
-docker compose -f docker/compose.prod.yaml ps
-docker compose -f docker/compose.prod.yaml logs --tail=100 wattharbor-central wattharbor-gateway wattharbor-worker wattharbor-caddy
+docker compose --env-file .env -f docker/compose.prod.yaml up -d --build --wait
+docker compose --env-file .env -f docker/compose.prod.yaml exec app wget -qO- http://127.0.0.1:8080/health/ready
 ```
 
-部署检查核对五个应用服务的配置归属、共享业务库、内部端口隔离、Redis 策略与 Caddy 分流，再用无网络临时容器验证 Caddy 语法；不会启动生产应用。`--config-only` 仅跳过凭据值检查，Compose 的必填变量及挂载路径仍须有效。检查器回归使用 `node --test scripts/ops/check-deploy.test.mjs`。模板检查通过不代表真实凭据、支付私钥或生产连通性已经验收。
+MySQL 就绪后，Goose 初始化 `wattharbor` 单库，随后配置运行账号。MySQL、运行账号配置和 Redis 就绪后，应用装配模块，绑定 HTTP 与 DC589 TCP 并启动后台任务。首次成功完成同步轮次且依赖检查通过后，`/health/ready` 返回 200。收到 SIGTERM 时先停止接收 HTTP 请求与设备连接，等待已接收请求后关闭设备会话和后台任务。应用关停上限为 15 秒，Compose 留出 20 秒。
 
-应用容器当前没有 Compose healthcheck，应主动检查 `/health/ready`。
+Caddy 代理后台、H5、用户 API 和公开通知。默认固定代理地址为 `172.30.82.2`，调整时同时设置 `ADMIN_PROXY_SUBNET` 与 `CADDY_ADMIN_PROXY_IP`。内网从 `/metrics/{admin,user,central,gateway,worker}` 抓取各角色指标，前缀为 `wattharbor_`。配置检查核对数据库、Redis、网络及 Caddy 分流，并在临时容器中验证 Caddy 配置。传入 `--config-only` 可在示例配置上检查结构。
+
+开发项目沿用 `wattharbor-dev` 和已有三库数据卷。`dev-up` 会移除该 Compose 项目的旧进程容器并保留数据卷。生产项目保留既有单体项目名 `wattharbor-monolith` 及其数据卷。从旧生产拓扑切换前，需停旧 Go 进程，核对备份、数据卷、应用运行账号和 Redis Stream。已有三库可用 `node tasks.mjs build wattharbor` 构建单体，配置原三库 URL 运行，其中 `DATABASE_URL` 指向 gateway 库，`APP_UNIFIED_DATABASE=false`。需要合库时先在备份环境核对业务表、两路 Outbox 和 Redis Stream。
 
 ### 微信直连支付
 
-根 Compose 已将支付模式及商户参数显式注入 user 与 central；模板默认 `PAYMENT_MODE=disabled`。user 发起支付并接收对外通知，central 执行内部退款。微信登录密钥 `WECHAT_SECRET` 只注入 user，worker 不持有商户凭据。
-
-真实直连部署须在部署侧设置 `PAYMENT_MODE=wechat_direct`、有效商户参数、`WECHAT_NOTIFY_URL` 和容器内 `WECHAT_PRIVATE_KEY_PATH=/run/secrets/wechat-merchant.pem`。根 Compose 未挂载商户私钥；仅传入路径变量不会创建文件。为 user 与 central 增加受控只读挂载 override，例如：
+生产默认 `PAYMENT_MODE=disabled`。微信直连需要 `PAYMENT_MODE=wechat_direct`、有效商户参数、`WECHAT_NOTIFY_URL` 以及 `WECHAT_PRIVATE_KEY_PATH=/run/secrets/wechat-merchant.pem`。为应用容器提供受控的只读挂载：
 
 ```yaml
 services:
-  wattharbor-user:
-    volumes:
-      - /etc/wattharbor/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
-  wattharbor-central:
+  app:
     volumes:
       - /etc/wattharbor/wechat-merchant.pem:/run/secrets/wechat-merchant.pem:ro
 ```
 
-保存部署侧文件为 `compose.payment.yaml` 后，使用 `docker compose -f docker/compose.prod.yaml -f compose.payment.yaml config --quiet` 检查合并配置，启动及后续维护也使用这两个 `-f` 文件。`check-deploy.mjs` 只检查生产 Compose。商户私钥文件权限须允许容器非 root UID 65532 读取；API v3 密钥为 32 字节。配置加载及 Compose 展开通过不证明私钥可读取、渠道可达或真实微信支付已验收。worker 通过 central 的同一支付提供方执行退款和查询。正式用户端须使用真实 AppID、已配置的 API 域名和微信发布环境。
+将部署侧挂载保存到 `compose.payment.yaml`，启动及维护时在生产 Compose 后追加此文件。商户私钥权限须允许容器 UID 10001 读取，API v3 密钥为 32 字节。正式用户端使用真实 AppID、已配置的 API 域名和微信发布环境。
 
 ### 上线验收
 
@@ -138,7 +106,7 @@ node scripts/git/install-hooks.mjs
 go run ./cmd/migrate -schema all
 ```
 
-MySQL init 脚本仅在空数据卷创建三库和授权，表由 Goose 初始化。项目尚未发布，各 schema 仅保留 `0001_init.sql`，结构调整直接修改定义，不新增发布前递增迁移，也不自动建表。已执行版本不会因文件修改重新应用；既有数据需要兼容迁移，不能只删除 Goose 版本表。MySQL DDL 无事务回滚。
+MySQL init 脚本仅在空数据卷创建三库和授权，表由 Goose 初始化。项目尚未发布，初始化定义和已登记的增量按现有版本顺序执行，发布前结构调整直接修改相应定义，不新增发布前递增迁移，也不自动建表。已执行版本不会因文件修改重新应用；既有数据需要兼容迁移，不能只删除 Goose 版本表。MySQL DDL 无事务回滚。
 
 本次设计兼容更新使用 [upgrade-design.mjs](../scripts/db/upgrade-design.mjs)，仅连接本项目开发编排。先执行无参数预检，再停止业务写入，以 `--apply` 备份至 `.tmp/db-design-backups/` 并补字段、索引与约束。工具发现有效身份冲突、非法金额或月首归一后的唯一键碰撞即停止，不删除或合并数据，也不修改 Goose 版本。DDL 中断后可重复执行补齐缺项；生产数据先在恢复副本验证，再按变更窗口执行经过审核的同等 DDL。
 
@@ -171,32 +139,9 @@ node scripts/db/maintain-partitions.mjs --through=2027-12 --apply
 
 ### 迁移与运行账号
 
-`wattharbor` 保留三库 DDL 与数据权限，仅用于 migrate、测试、devseed、重置与备份恢复。五个服务使用独立账号；密码分别由 `DB_USER_PASSWORD`、`DB_ADMIN_PASSWORD`、`DB_CENTRAL_PASSWORD`、`DB_GATEWAY_PASSWORD`、`DB_WORKER_PASSWORD` 配置。运行账号没有 CREATE、ALTER、DROP、TRUNCATE、GRANT 权限。
+`wattharbor` 是迁移与维护账号。应用使用 `wattharbor_app`，由 `DB_APP_PASSWORD` 配置。部署任务通过本地 MySQL socket 创建账号，按布局仅授予指定 schema 的 SELECT、INSERT、UPDATE 和 DELETE。生产授予 `wattharbor`，开发授予 `central_db`、`gateway_db` 和 `worker_db`。账号配置容器通过 `network_mode: none` 隔离网络，应用容器仅持有运行账号凭据。数据库 URL 中的密码需符合 URL 编码规则。
 
-| 账号 | 数据权限 |
-| --- | --- |
-| `wattharbor_user`、`wattharbor_admin`、`wattharbor_central` | `central_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
-| `wattharbor_gateway` | `gateway_db.*` 的 SELECT / INSERT / UPDATE / DELETE |
-| `wattharbor_worker` | `worker_db.*` 的 SELECT / INSERT / UPDATE / DELETE；`gateway_db.event_outbox`、`central_db.event_outbox`、`central_db.admin_event_outbox` 的 SELECT / UPDATE |
-
-[provision-runtime.mjs](../scripts/db/provision-runtime.mjs) 以 root 创建/更新运行账号并重置其直接权限；不改变 `wattharbor` 权限。脚本使用 Node.js 24 和 MySQL CLI，不依赖 shell、sed 或临时 SQL 文件；Compose 的专用镜像提供两项运行依赖，宿主机仅需 Docker Compose。两套 Compose 均按 MySQL 就绪 → migrate 完成 → provision-runtime 完成 → 服务启动排列依赖。root 凭据只注入 MySQL 与一次性账号配置容器，运行服务不持有它。密码通过环境传入，SQL 经标准输入交给客户端，账号配置容器不输出密码或原始客户端诊断。Compose 将运行密码原值拼入 MySQL URL，须使用 URL 安全字符，可用 Node.js 的 `crypto.randomBytes(32).toString('hex')` 分别生成。开发默认密码仅供本机使用。
-
-MySQL 与账号配置容器共享 `mysql-socket` 卷，后者只读挂载 Unix socket 并连接 `root@localhost`，且设置 `network_mode: none`；新实例显式设置 `MYSQL_ROOT_HOST=localhost`，不需要远程 root。共享 socket 仅挂载到这两个容器。
-
-已有卷不会重新执行 MySQL init 脚本。兼容升级先核对三库和 Goose 版本、确认所需表已迁移，在维护窗口重建 MySQL 容器以挂载 socket 卷，保留原 `mysql-data` 卷，再执行以下账号配置步骤。MySQL 会短暂停机；后续在计划的部署窗口重建业务容器才会采用新账号：
-
-```sh
-# 开发栈：保留数据卷，先挂载共享 socket，再配置账号。
-docker compose -f docker/compose.dev.yaml up -d --no-deps --wait mysql
-docker compose -f docker/compose.dev.yaml run --rm --no-deps provision-runtime
-# 生产栈：先填写五个运行密码；有 override 时仍使用完整 -f 列表。
-docker compose -f docker/compose.prod.yaml up -d --no-deps --wait wattharbor-mysql
-docker compose -f docker/compose.prod.yaml run --rm --no-deps wattharbor-provision-runtime
-```
-
-已有卷的账号不会因 `MYSQL_ROOT_HOST` 变化而重建。若原实例已有远程 root 账号，确认 socket 的 `root@localhost` 登录及维护工具可用后，由管理员在维护窗口撤销不再需要的远程 root 账号；配置脚本不自动删除历史管理员账号。
-
-常规新部署由 Compose 自动执行迁移与账号配置；不要跳过迁移完成条件。修改密码时同步运行密码环境与账号配置，并在计划窗口重建对应服务，避免旧连接回收后继续使用旧密码。devseed、integration 测试、reset 与备份工具仍使用其原有维护连接，不能替换成运行账号；业务服务不可使用维护账号绕过权限限制。运行授权不包含管理账号或其密码哈希；备份恢复后的目标实例仍须重新执行账号配置。
+`provision-runtime` 在迁移成功后由 Compose 执行。已有单体数据卷可继续使用，切换时保留挂载并在维护窗口执行账号配置。备份恢复到其他 MySQL 实例后须重新配置相应权限。测试、种子及数据库维护工具继续使用维护连接。
 
 充值申请的 `idx_payment_order(payment_order_id)` 是非唯一索引，供支付回调锁定所属申请，避免扫描无关申请。已执行旧版初始化的数据库须先备份该表并核对 `SHOW INDEX FROM central_db.wallet_recharge_request`；没有此索引时执行兼容增量更新，无需重建数据：
 
@@ -221,34 +166,32 @@ node scripts/dev/prepare.mjs
 
 ## 备份与恢复
 
-[backup.mjs](../scripts/db/backup.mjs) 和 [restore.mjs](../scripts/db/restore.mjs) 依赖 Node.js 24（gzip 由内置 zlib 提供）与 MySQL 客户端。输出目录须预先存在；容器客户端回退需设置 `MYSQL_CLIENT_CONTAINER`。连接参数为 `MYSQL_HOST/MYSQL_PORT/MYSQL_USER`；原生客户端优先用非空 `MYSQL_PWD`，只提供 `MYSQL_PASSWORD` 时映射到 `MYSQL_PWD`，探库和数据读写使用同一环境。容器回退从 `MYSQL_PASSWORD` 传入密码。凭证从安全环境加载，避免写入命令历史。
+[backup.mjs](../scripts/db/backup.mjs) 和 [restore.mjs](../scripts/db/restore.mjs) 使用 Node.js 24 与 MySQL CLI。先创建输出目录。指定 `MYSQL_CLIENT_CONTAINER` 时使用容器客户端，凭据通过 `MYSQL_PWD` 传入。直连可配置 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER` 和 `MYSQL_PWD`。生产数据库端口保持在 Docker 内网。
 
 ```bash
 mkdir -p .tmp/backups
-node scripts/db/backup.mjs .tmp/backups
+node scripts/db/backup.mjs --unified .tmp/backups
 ```
 
-备份包含三库的 SQL、例程、触发器、事件及 Goose 历史，逐库使用 single-transaction。跨库不保证同一时点，协调停止写入后备份；DDL 与备份也须避免并行。脚本检查压缩完整性和最低大小，不证明可恢复；定期在隔离环境恢复并核对资金、订单和幂等记录。
+不传 `--unified` 时备份开发三库。归档包含相应的 SQL、例程、触发器、事件和 Goose 历史。三库逐库建立一致性快照，备份前协调停止业务写入和 DDL。生产单库的 [对账](../scripts/db/audit-design.mjs) 与 [分区维护](../scripts/db/maintain-partitions.mjs) 也使用 `--unified`。Redis AOF、导出文件、Caddy 状态和部署密钥需单独备份。
 
-SQL 备份不包含 Redis AOF、导出文件、Caddy 状态、密钥和部署配置，须另行备份。已发布 Outbox 不会自动重发事件 Redis 中丢失的全部记录，不能直接清空 Stream 卷后宣称恢复完成。
-
-恢复会先删除归档声明的三库，再重建并导入，失败时可能只完成部分数据。停止业务写入，核对归档及目标环境后执行：
+恢复会替换归档声明的 schema。停止应用、核对目标数据库及归档后，生产设置 `RESTORE_CONFIRM=wattharbor`，开发设置 `RESTORE_CONFIRM="gateway_db central_db worker_db"`：
 
 ```bash
-RESTORE_CONFIRM="gateway_db central_db worker_db" node scripts/db/restore.mjs "$BACKUP_ARCHIVE"
+RESTORE_CONFIRM=wattharbor node scripts/db/restore.mjs "$BACKUP_ARCHIVE"
 ```
 
-`BACKUP_ARCHIVE` 须设置为已核对的归档路径。恢复后核对三库、Goose 版本和关键台账；若执行 migrate，必须配置全部三库 URL。开发服务用 `docker compose -f docker/compose.dev.yaml restart user admin central gateway worker`；生产使用实际部署的全部 Compose 文件重启对应服务。更新或恢复不得使用 `docker compose down -v`。
+恢复后核对 Goose 版本、业务数据和运行权限，再用相应 Compose 配置启动 `app`。生产使用 `migrate -schema unified`，三库使用 `migrate -schema all`。
 
 ## 监控与故障定位
 
-五个 Go 服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。live 只说明进程存活，ready 检查服务依赖。HTTP 指标按已注册路由统计，不能作为 TCP 连接数或设备在线率。
+单体提供 `/health/live`、`/health/ready` 和 `/metrics/{role}`。live 检查进程，ready 核对依赖和同步状态。HTTP 指标按已注册路由统计，不能作为 TCP 连接数或设备在线率。
 
 每池增加 `wattharbor_db_open_connections/in_use_connections/idle_connections/max_open_connections`，以及 `wait_total/wait_seconds_total/max_idle_closed_total/max_idle_time_closed_total/max_lifetime_closed_total` 累计指标。标签仅固定 `service/schema`；等待持续增长时结合在用数、慢查询和锁等待诊断。所有新 MySQL 物理会话显式设置 UTC 和严格 SQL 模式，避免宿主机时区影响数据库时间。
 
 | 现象 | 核对项 |
 | --- | --- |
-| 服务未就绪 | 对应三库 URL、Goose 版本、数据库/Redis 凭证、依赖连通性与日志 |
+| 服务未就绪 | 对应单库或三库 URL、Goose 版本、数据库/Redis 凭证、依赖连通性与日志 |
 | 管理员无法登录 | 引导仅空表执行、账号状态、MFA、Redis 会话、实时权限及限速 |
 | 设备离线 | TCP 9100、设备编号/端口数、开通状态、连接会话与心跳；断线不代表端口已停机 |
 | 已付款未充电 | 支付意图、端口占用、启动命令及回执；先确定结果，不能重复启动或直接退款 |
@@ -279,11 +222,11 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 
 ## 全链路场景验收
 
-本节是把充电、计量、计费与退款主流程做成可重复验收的操作清单。验收对象是开发栈的五个服务加宿主机真实 TCP 模拟器；模拟支付与模拟器结果不构成真实微信商户、实机设备或监管投递的验收，这些仍须按 [上线验收](#上线验收) 的外部条件单独执行。
+本节是把充电、计量、计费与退款主流程做成可重复验收的操作清单。验收对象是开发栈的单体应用和宿主机 TCP 模拟器；模拟支付与模拟器结果不构成真实微信商户、实机设备或监管投递的验收，这些仍须按 [上线验收](#上线验收) 的外部条件单独执行。
 
 ### 环境准备
 
-1. 一键启动：`node tasks.mjs dev-up` 启动开发栈（`docker/compose.dev.yaml`，五个服务以 `go run` 在容器内运行），再执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与方案。user/admin/worker/gateway 的 HTTP 与 gateway 的 9100/TCP 映射到宿主机 loopback；central 8082 仅容器网络可达。
+1. 一键启动：`node tasks.mjs dev-up` 启动开发栈（`docker/compose.dev.yaml`），再执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与方案。单体 HTTP 8080 与设备 TCP 9100 映射到宿主机环回地址。
 2. 场景断言直接落在开发库，统一取库中最新一笔订单。注意集成测试的显式高位主键会把 `central_db.charge_order` 自增抬到超出 16 位十进制 BCD 编码的范围，gateway 启动受理随之持续返回 409（业务码 2000）；这不是业务缺陷，用 `node scripts/db/reset-dev.mjs --reset-development-data` 重建开发数据即消失。
 3. 模拟器经真实 TCP 9100 接入宿主机映射端口，场景用 `-scenario` 选择（`by-energy`、`by-time`、`stop-on-command`、`reject-start`、`fault`、`silent`、`reconnect`），运行中调功率、插拔、刷卡见上一节控制接口。注意 `-power` 等功率参数单位是分瓦：`1500` 是 150 W，不是 1500 W。
 4. 部分场景需要把站点生效方案换成特定模式（如 s4 的 10 分金额套餐），`scenarios.mjs budget` 已自动化该步骤；其余模式切换经后台执行，应用走乐观锁，`expected_version` 须读站点当前生效版本。
@@ -300,7 +243,7 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 | 4 | 预算封顶 | 小额金额套餐加高功率持续充电 | `charge_billing_cutoff` 落 `budget_exhausted`；电费加服务费精确等于套餐价；无人工复核 |
 | 5 | 掉电零功率 | 拔出或 `fault` 后等待满一分钟 | 截止原因 `automatic_stop`；电量为零全额退；不把断线当零功率提前停机 |
 | 6 | 刷卡全流程 | 绑卡、刷卡首购、移卡重刷续购、**不移开重复上报**、用户停机 | 扣款、累计时长、操作凭据同事务；**不移开的第二次上报不产生第二笔扣款**；停机后结算与余额退款到账 |
-| 7 | worker 中断恢复 | 充电中 SIGKILL worker，再用户停机，最后重启 worker | worker 缺席期间中央订单保持充电中且无结束回执；重启后数秒内补齐回执、订单完成、事件与 Outbox 同步补发 |
+| 7 | 单体中断恢复 | 充电中停止应用，启动后等待设备重连并发起停机 | 中断期间订单和设备占用保留；重连后停机、回执与计费完成 |
 | 8 | 断线重连 | `reconnect` 场景断网后恢复 | 恢复后证据连续，不因缺口误判零功率停机 |
 
 **场景 6 含一票否决项**：[ADR-0001](adr/0001-card-swipe-duplicate-report.md) 记录平台有意不引入服务端去重，代价是「同一张卡不移开而被重复上报」只能由设备侧保证不发生。该条因此是上线前的阻断条件：向模拟器控制口连发两次 `{"type":"card","port":<端口>,"card":<同一卡号>}` 且中间不发 `remove-card`，**第二笔不得产生扣款**。该断言不通过即视为阻断上线，不接受「最终余额相符」这类近似豁免——重复扣款会先发生，再被别的路径掩盖。
@@ -327,7 +270,7 @@ SELECT event FROM central_db.charge_event_log ORDER BY id;         -- payment_co
 
 ### 脚本化执行
 
-开发栈就绪后，场景驱动在 `scripts/dev/e2e/scenarios.mjs`：`scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>` 驱动单个场景并自动完成逐表断言，`budget` 子命令创建并应用 10 分金额套餐，仅 s4 前执行一次；s7 对 worker 容器执行 SIGKILL 并重新拉起，与进程级中断等价。断言统一取库中最新订单，不得并行运行多个场景；模拟器仍须按各场景以 `-scenario` 手工启动。S6（刷卡全流程）暂未脚本化，按矩阵手工执行。
+开发栈就绪后，场景驱动在 `scripts/dev/e2e/scenarios.mjs`：`scenarios.mjs <budget|s3|s1|s2|s5|s7|s4|s8>` 驱动单个场景并自动完成逐表断言，`budget` 子命令创建并应用 10 分金额套餐，仅 s4 前执行一次；s7 对应用容器执行 SIGKILL 并重新拉起，测试同一订单能否在设备重连后完成。断言统一取库中最新订单，不得并行运行多个场景；模拟器仍须按各场景以 `-scenario` 手工启动。S6（刷卡全流程）暂未脚本化，按矩阵手工执行。
 
 模拟器须按场景逐个切换，启动命令取自下表（板号是 `prepare.mjs` 建立的 1 号设备，在 `backend` 目录下执行）：
 
@@ -342,7 +285,7 @@ SELECT event FROM central_db.charge_event_log ORDER BY id;         -- payment_co
 | s7 | `go run ./cmd/simulator-dc589 -scenario stop-on-command -board-id 5348240514082652` |
 | s8 | `go run ./cmd/simulator-dc589 -scenario reconnect -board-id 5348240514082652` |
 
-s1、s2、s4、s5、s7 共用 `stop-on-command`，差异全在驱动步骤：s2 调用户端停机，s4 起充后把功率推到 1500 W（`power_deciwatts: 15000`）尽快耗尽 10 分预算，s5 发 `unplug`，s7 请求停机前先 SIGKILL worker。`-power` 只决定起充前的初始功率，默认 150 W 通常无需覆盖。
+s1、s2、s4、s5、s7 共用 `stop-on-command`，差异全在驱动步骤：s2 调用户端停机，s4 起充后把功率推到 1500 W（`power_deciwatts: 15000`）尽快耗尽 10 分预算，s5 发 `unplug`，s7 请求停机前先中断并重启单体，等待设备重连。`-power` 只决定起充前的初始功率，默认 150 W 通常无需覆盖。
 
 s5 起充后由驱动向模拟器控制口发 `unplug`（即拔枪，端口不再连接）模拟掉电，模拟器保持会话，平台才会在连续一分钟零功率后执行自动停机并落 `automatic_stop` 截止点。这里不能用 `-scenario fault`：`fault` 在起充后按 `-fault-after`（默认 5 秒）主动上报故障，设备自行结束充电并上报 `charge_ended`，而 `AutoStopper` 只处理仍处于 `charging` 的订单，于是不会出现 `automatic_stop`，表现为 s5 断言失败。矩阵场景 5 的「拔出或 `fault` 后等待满一分钟」是手工验收口径，脚本化路径固定为「`stop-on-command` 加驱动发 `unplug`」；`fault` 用于验证设备主动报故障的另一条路径。
 
@@ -350,4 +293,4 @@ s5 起充后由驱动向模拟器控制口发 `unplug`（即拔枪，端口不�
 
 ### 退出
 
-停掉模拟器（前台 Ctrl+C 或退出命令）。开发栈可保留供后续联调复用；如需回收，执行 `node tasks.mjs dev-down`（容器与数据卷保留），核对 9100、9190 及 8080/8081/8083/8085 的监听符合预期。保留场景日志与 SQL 导出作为验收证据。
+停掉模拟器（前台 Ctrl+C 或退出命令）。开发栈可保留供后续联调复用；如需回收，执行 `node tasks.mjs dev-down`（容器与数据卷保留），核对 9100、9190 和 8080 的监听符合预期。保留场景日志与 SQL 导出作为验收证据。

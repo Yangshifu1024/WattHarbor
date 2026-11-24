@@ -1,250 +1,151 @@
-# 生产拓扑。环境变量与服务配置以本文件及配置加载代码为准。
-# 本文件位于 docker/，该目录即 Compose 项目目录：文件内宿主机相对路径相对 docker/ 解析。
-name: wattharbor
+# 生产单体部署。环境变量由仓库根目录的 .env 提供。
+name: wattharbor-monolith
 
-# Go 模块位于 backend/，构建上下文即该目录；镜像内编译 ./cmd/<SERVICE>。
-x-go-build: &go-build
-  context: ../backend
-  dockerfile: Dockerfile
+x-app-build: &app-build
+  image: wattharbor:monolith
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.monolith
 
 services:
-  wattharbor-mysql:
+  mysql:
     image: mysql:8.4
-    restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
       MYSQL_ROOT_HOST: localhost
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      MYSQL_DATABASE: wattharbor
       MYSQL_USER: wattharbor
       MYSQL_PASSWORD: ${DB_PASSWORD:?required}
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
-    volumes:
-      - mysql-data:/var/lib/mysql
-      - mysql-socket:/var/run/mysqld
-      - ./mysql/init-databases.sql:/docker-entrypoint-initdb.d/10-wattharbor.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u wattharbor -e 'SELECT 1'"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 20
-      start_period: 30s
-
-  wattharbor-redis-cache:
-    image: redis:8-alpine
+      retries: 24
+    volumes:
+      - monolith-mysql:/var/lib/mysql
+      - mysql-socket:/var/run/mysqld
     restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?required}"]
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD}' ping | grep -q PONG"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
 
-  wattharbor-redis-stream:
+  cache:
     image: redis:8-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_STREAM_PASSWORD:?required}"]
-    volumes: ["redis-stream-data:/data"]
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a '${REDIS_STREAM_PASSWORD}' ping | grep -q PONG"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  wattharbor-migrate:
-    build:
-      <<: *go-build
-      args: { SERVICE: migrate }
-    command: ["--schema", "all"]
-    restart: "no"
     environment:
-      DATABASE_URL_GATEWAY: mysql://wattharbor:${DB_PASSWORD}@wattharbor-mysql:3306/gateway_db
-      DATABASE_URL_CENTRAL: mysql://wattharbor:${DB_PASSWORD}@wattharbor-mysql:3306/central_db
-      DATABASE_URL_WORKER: mysql://wattharbor:${DB_PASSWORD}@wattharbor-mysql:3306/worker_db
-    depends_on:
-      wattharbor-mysql: { condition: service_healthy }
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?required}
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?required}"]
+    healthcheck: &redis-health
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
 
-  wattharbor-provision-runtime:
+  stream:
+    image: redis:8-alpine
+    environment:
+      REDISCLI_AUTH: ${REDIS_STREAM_PASSWORD:?required}
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_STREAM_PASSWORD:?required}"]
+    healthcheck: *redis-health
+    volumes:
+      - monolith-stream:/data
+    restart: unless-stopped
+
+  migrate:
+    <<: *app-build
+    command: ["/usr/local/bin/migrate", "-schema", "unified"]
+    environment:
+      DATABASE_URL: mysql://wattharbor:${DB_PASSWORD:?required}@mysql:3306/wattharbor
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  provision-runtime:
     build:
       context: ./mysql
       dockerfile: runtime-accounts.Dockerfile
-    restart: "no"
+    command: ["--unified"]
     network_mode: none
-    volumes:
-      - ../scripts/db/provision-runtime.mjs:/provision-runtime.mjs:ro
-      - mysql-socket:/var/run/mysqld:ro
     environment:
       MYSQL_SOCKET: /var/run/mysqld/mysqld.sock
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
-      DB_USER_PASSWORD: ${DB_USER_PASSWORD:?required}
-      DB_ADMIN_PASSWORD: ${DB_ADMIN_PASSWORD:?required}
-      DB_CENTRAL_PASSWORD: ${DB_CENTRAL_PASSWORD:?required}
-      DB_GATEWAY_PASSWORD: ${DB_GATEWAY_PASSWORD:?required}
-      DB_WORKER_PASSWORD: ${DB_WORKER_PASSWORD:?required}
-    depends_on:
-      wattharbor-migrate: { condition: service_completed_successfully }
-
-  wattharbor-gateway:
-    build:
-      <<: *go-build
-      args: { SERVICE: gateway }
-    restart: unless-stopped
-    environment:
-      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
-      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
-      DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
-      DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL: mysql://wattharbor_gateway:${DB_GATEWAY_PASSWORD:?required}@wattharbor-mysql:3306/gateway_db
-      SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      DC589_ADDR: :9100
-      CENTRAL_INTERNAL_URL: http://wattharbor-central:8082
-    ports: ["9100:9100"]
-    expose: ["8083"]
-    depends_on:
-      wattharbor-provision-runtime: { condition: service_completed_successfully }
-
-  # C 端。对外只经 Caddy 进入。
-  wattharbor-user:
-    build:
-      <<: *go-build
-      args: { SERVICE: user }
-    restart: unless-stopped
-    environment:
-      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
-      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
-      DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
-      DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://wattharbor_user:${DB_USER_PASSWORD:?required}@wattharbor-mysql:3306/central_db
-      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@wattharbor-redis-cache:6379/0
-      JWT_SECRET: ${JWT_SECRET:?required}
-      SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      WECHAT_APPID: ${WECHAT_APPID:?required}
-      PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
-      WECHAT_MCH_ID: ${WECHAT_MCH_ID:-}
-      WECHAT_CERT_SERIAL: ${WECHAT_CERT_SERIAL:-}
-      WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:-}
-      WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
-      WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
-      WECHAT_SECRET: ${WECHAT_SECRET:?required}
-      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
-    expose: ["8080"]
-    depends_on:
-      wattharbor-provision-runtime: { condition: service_completed_successfully }
-      wattharbor-redis-cache: { condition: service_healthy }
-
-  # central 只在容器网络内接受服务令牌调用，不映射端口，也不签发用户会话。
-  wattharbor-central:
-    build:
-      <<: *go-build
-      args: { SERVICE: central }
-    restart: unless-stopped
-    environment:
-      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
-      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
-      DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
-      DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://wattharbor_central:${DB_CENTRAL_PASSWORD:?required}@wattharbor-mysql:3306/central_db
-      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@wattharbor-redis-cache:6379/0
-      SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      WECHAT_APPID: ${WECHAT_APPID:?required}
-      PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
-      WECHAT_MCH_ID: ${WECHAT_MCH_ID:-}
-      WECHAT_CERT_SERIAL: ${WECHAT_CERT_SERIAL:-}
-      WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:-}
-      WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
-      WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
-      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
-    expose: ["8082"]
-    depends_on:
-      wattharbor-provision-runtime: { condition: service_completed_successfully }
-      wattharbor-redis-cache: { condition: service_healthy }
-
-  # 后台由 Caddy 转发至容器内的 8081，不映射到宿主机。
-  # 后台不处理用户微信登录或发起支付，不读取相关凭据。
-  wattharbor-admin:
-    build:
-      <<: *go-build
-      args: { SERVICE: admin }
-    restart: unless-stopped
-    networks:
-      default: {}
-      admin-proxy:
-        aliases: [admin-proxy-upstream]
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?required}
     volumes:
-      - export-files:/var/lib/wattharbor/exports
+      - ../scripts/db/provision-runtime.mjs:/provision-runtime.mjs:ro
+      - mysql-socket:/var/run/mysqld:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  app:
+    <<: *app-build
     environment:
-      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
-      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
-      DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
-      DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_CENTRAL: mysql://wattharbor_admin:${DB_ADMIN_PASSWORD:?required}@wattharbor-mysql:3306/central_db
-      EXPORT_DIR: /var/lib/wattharbor/exports
-      ADMIN_TRUSTED_PROXIES: ${CADDY_ADMIN_PROXY_IP:-172.30.81.2}
-      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD}@wattharbor-redis-cache:6379/0
+      APP_UNIFIED_DATABASE: "true"
+      DATABASE_URL: &dsn mysql://wattharbor_app:${DB_APP_PASSWORD:?required}@mysql:3306/wattharbor
+      DATABASE_URL_CENTRAL: *dsn
+      DATABASE_URL_GATEWAY: *dsn
+      DATABASE_URL_WORKER: *dsn
+      REDIS_CACHE_URL: redis://:${REDIS_PASSWORD:?required}@cache:6379/0
+      REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD:?required}@stream:6379/0
       JWT_SECRET: ${JWT_SECRET:?required}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
-      WORKER_INTERNAL_URL: http://wattharbor-worker:8085
+      WECHAT_APPID: ${WECHAT_APPID:?required}
+      WECHAT_SECRET: ${WECHAT_SECRET:?required}
+      PAYMENT_MODE: ${PAYMENT_MODE:-disabled}
+      LOGIN_MODE: ${LOGIN_MODE:-wechat}
+      WECHAT_MCH_ID: ${WECHAT_MCH_ID:-}
+      WECHAT_CERT_SERIAL: ${WECHAT_CERT_SERIAL:-}
+      WECHAT_APIV3_KEY: ${WECHAT_APIV3_KEY:-}
+      WECHAT_PRIVATE_KEY_PATH: ${WECHAT_PRIVATE_KEY_PATH:-}
+      WECHAT_NOTIFY_URL: ${WECHAT_NOTIFY_URL:-}
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
-    expose: ["8081"]
-    depends_on:
-      wattharbor-provision-runtime: { condition: service_completed_successfully }
-      wattharbor-redis-cache: { condition: service_healthy }
-
-  wattharbor-worker:
-    build:
-      <<: *go-build
-      args: { SERVICE: worker }
-    restart: unless-stopped
-    environment:
+      EXPORT_DIR: /var/lib/wattharbor/exports
       DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
       DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
-      DATABASE_URL_WORKER: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:?required}@wattharbor-mysql:3306/worker_db
-      DATABASE_URL_GATEWAY: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:?required}@wattharbor-mysql:3306/gateway_db
-      DATABASE_URL_CENTRAL: mysql://wattharbor_worker:${DB_WORKER_PASSWORD:?required}@wattharbor-mysql:3306/central_db
-      REDIS_STREAM_URL: redis://:${REDIS_STREAM_PASSWORD}@wattharbor-redis-stream:6379/0
-      SERVICE_TOKEN: ${SERVICE_TOKEN:?required}
-      CENTRAL_INTERNAL_URL: http://wattharbor-central:8082
-      GATEWAY_INTERNAL_URL: http://wattharbor-gateway:8083
-      REGULATORY_MODE: ${REGULATORY_MODE:-disabled}
-      REGULATORY_ENDPOINT: ${REGULATORY_ENDPOINT:-}
-      REGULATORY_SIGNING_SECRET: ${REGULATORY_SIGNING_SECRET:-}
-    expose: ["8085"]
+      ADMIN_TRUSTED_PROXIES: ${CADDY_ADMIN_PROXY_IP:-172.30.82.2}
+    networks: [default, edge]
+    expose: ["8080"]
+    ports: ["9100:9100"]
+    volumes:
+      - monolith-exports:/var/lib/wattharbor/exports
     depends_on:
-      wattharbor-provision-runtime: { condition: service_completed_successfully }
-      wattharbor-redis-stream: { condition: service_healthy }
-
-  wattharbor-caddy:
-    image: caddy:2.11-alpine
+      provision-runtime: { condition: service_completed_successfully }
+      cache: { condition: service_healthy }
+      stream: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    stop_grace_period: 20s
     restart: unless-stopped
-    networks:
-      default: {}
-      admin-proxy:
-        ipv4_address: ${CADDY_ADMIN_PROXY_IP:-172.30.81.2}
+
+  caddy:
+    image: caddy:2
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?required}
     ports: ["80:80", "443:443"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../frontend/admin-web/dist:/srv/admin:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - monolith-caddy:/data
+    networks:
+      public: {}
+      edge:
+        ipv4_address: ${CADDY_ADMIN_PROXY_IP:-172.30.82.2}
     depends_on:
-      wattharbor-central: { condition: service_started }
+      app: { condition: service_healthy }
+    restart: unless-stopped
 
-# 专用网段仅连接 Caddy 与 admin；后台只信任 Caddy 单一地址，其他服务不能伪造来源。
 networks:
-  admin-proxy:
+  public:
+  edge:
     internal: true
     ipam:
       config:
-        - subnet: ${ADMIN_PROXY_SUBNET:-172.30.81.0/29}
+        - subnet: ${ADMIN_PROXY_SUBNET:-172.30.82.0/24}
 
 volumes:
-  mysql-data:
+  monolith-mysql:
   mysql-socket:
-  redis-stream-data:
-  caddy-data:
-  caddy-config:
-  export-files:
+  monolith-stream:
+  monolith-exports:
+  monolith-caddy:

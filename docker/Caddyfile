@@ -12,34 +12,11 @@
     header X-Content-Type-Options "nosniff"
     header X-Frame-Options "DENY"
 
-    # 服务间接口不对外：容器网络内直连，不经 Caddy。
-    handle /api/v1/internal/* {
+    @public path / /admin /admin/* /h5 /h5/* /api/v1/admin/* /api/v1/user/* /api/v1/public/*
+    handle @public {
+        reverse_proxy app:8080
+    }
+    handle {
         respond 404
     }
-
-    # 运营后台走独立进程。
-    handle /api/v1/admin/* {
-        reverse_proxy admin-proxy-upstream:8081
-    }
-
-    # C 端与支付回调。支付回调由渠道服务器打进来，同样属于对外进程。
-    handle /api/v1/user/* {
-        reverse_proxy wattharbor-user:8080
-    }
-    handle /api/v1/public/* {
-        reverse_proxy wattharbor-user:8080
-    }
-
-    # 其余一律对内，不经 Caddy。
-    handle /api/* {
-        respond 404
-    }
-
-    handle_path /admin/* {
-        root * /srv/admin
-        try_files {path} /index.html
-        file_server
-    }
-
-    redir / /admin/
 }

@@ -19,6 +19,8 @@ import (
 	"wattharbor/internal/application/user"
 	"wattharbor/internal/application/worker"
 	"wattharbor/internal/gateway/listener"
+	gatewayruntime "wattharbor/internal/gateway/runtime"
+	"wattharbor/internal/platform/config"
 	"wattharbor/internal/platform/httpapi"
 )
 
@@ -36,7 +38,7 @@ func Run(ctx context.Context) (err error) {
 	transport := make(localTransport)
 	client := &http.Client{Transport: transport, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
-	u, closeUser, err := user.Prepare(ctx, client, notify)
+	userHandler, closeUser, err := user.Prepare(ctx, client, notify)
 	if err != nil {
 		return fmt.Errorf("user: %w", err)
 	}
@@ -46,7 +48,7 @@ func Run(ctx context.Context) (err error) {
 		return fmt.Errorf("admin: %w", err)
 	}
 	defer func() { err = closePrepared(err, closeAdmin) }()
-	c, closeCentral, err := central.Prepare(ctx, client)
+	centralHandler, closeCentral, err := central.Prepare(ctx, client)
 	if err != nil {
 		return fmt.Errorf("central: %w", err)
 	}
@@ -62,37 +64,51 @@ func Run(ctx context.Context) (err error) {
 	}
 	defer func() { err = closePrepared(err, closeWorker) }()
 
-	transport["central"], transport["gateway"], transport["worker"] = c.Server.Handler, g.Server.Handler, w.Server.Handler
+	transport[config.CentralServiceHost] = centralHandler
+	transport[config.GatewayServiceHost] = g.Handler
+	transport[config.WorkerServiceHost] = w.Handler
 
-	devices, err := listener.Bind(g.Devices.Endpoints)
-	if err != nil {
-		return err
-	}
-	defer devices.Close()
 	addr := os.Getenv("APP_HTTP_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
-	httpPort, err := net.Listen("tcp", addr)
+	var ready, syncReady atomic.Bool
+	w.Jobs.SyncReady = &syncReady
+	w.Jobs.Wake = wake
+	server := &http.Server{
+		Addr: addr, Handler: publicRouter(a.Handler, userHandler,
+			map[string]http.Handler{
+				"user": userHandler, "admin": a.Handler, config.CentralServiceHost: centralHandler,
+				config.GatewayServiceHost: g.Handler, config.WorkerServiceHost: w.Handler,
+			}, &ready, &syncReady),
+		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second,
+	}
+	return serve(ctx, server, g.Devices, &ready, []task{
+		{"sync", w.Jobs.RunSync},
+		{"scheduler", w.Jobs.RunScheduler},
+		{"finance", w.Jobs.RunFinance},
+		{"retry-stops", g.Devices.RetryStops},
+		{"cleanup-device", g.Devices.CleanupSyncHistory},
+		{"cleanup-exports", a.CleanupExports},
+	})
+}
+
+// serve 先绑定 HTTP 和设备端口，再启动任务；停机顺序由单体统一管理。
+func serve(ctx context.Context, server *http.Server, devices gatewayruntime.Runtime, ready *atomic.Bool, jobs []task) (err error) {
+	ports, err := listener.Bind(devices.Endpoints)
 	if err != nil {
-		return fmt.Errorf("listen HTTP %s: %w", addr, err)
+		return err
+	}
+	defer ports.Close()
+	httpPort, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return fmt.Errorf("listen HTTP %s: %w", server.Addr, err)
 	}
 	defer httpPort.Close()
 	if ctx.Err() != nil {
 		return nil
 	}
 
-	var ready, syncReady atomic.Bool
-	w.Jobs.SyncReady = &syncReady
-	w.Jobs.Wake = wake
-	server := &http.Server{
-		Addr: addr, Handler: publicRouter(a.Server.Handler, u.Server.Handler,
-			map[string]http.Handler{
-				"user": u.Server.Handler, "admin": a.Server.Handler, "central": c.Server.Handler,
-				"gateway": g.Server.Handler, "worker": w.Server.Handler,
-			}, &ready, &syncReady),
-		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second,
-	}
 	acceptCtx, stopAccept := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopAccept()
 	sessionCtx, stopSessions := context.WithCancel(context.WithoutCancel(ctx))
@@ -100,24 +116,20 @@ func Run(ctx context.Context) (err error) {
 	jobsCtx, stopJobs := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopJobs()
 	httpDone := make(chan struct{})
-	tasks := []task{
-		{"http", func() error {
+	tasks := append([]task{
+		{"http", func(context.Context) error {
 			defer close(httpDone)
 			return httpapi.ServeOn(acceptCtx, server, httpPort, 5*time.Second)
 		}},
-		{"device", func() error { return devices.Serve(acceptCtx, sessionCtx, g.Devices.Sink, g.Devices.MaxConnections) }},
-		{"sync", func() error { return w.Jobs.RunSync(jobsCtx) }},
-		{"scheduler", func() error { return w.Jobs.RunScheduler(jobsCtx) }},
-		{"finance", func() error { return w.Jobs.RunFinance(jobsCtx) }},
-		{"retry-stops", func() error { return g.Devices.RetryStops(jobsCtx) }},
-		{"cleanup-device", func() error { return g.Devices.CleanupSyncHistory(jobsCtx) }},
-		{"cleanup-exports", func() error { return a.CleanupExports(jobsCtx) }},
-	}
+		{"device", func(context.Context) error {
+			return ports.Serve(acceptCtx, sessionCtx, devices.Sink, devices.MaxConnections)
+		}},
+	}, jobs...)
 	var group sync.WaitGroup
 	exits := make(chan error, len(tasks))
 	for _, job := range tasks {
 		group.Go(func() {
-			exits <- classifyExit(job, acceptCtx)
+			exits <- classifyExit(job, jobsCtx, acceptCtx)
 		})
 	}
 	done := make(chan struct{})
@@ -152,16 +164,16 @@ func Run(ctx context.Context) (err error) {
 
 type task struct {
 	name string
-	run  func() error
+	run  func(context.Context) error
 }
 
-func classifyExit(job task, stopping context.Context) (err error) {
+func classifyExit(job task, ctx, stopping context.Context) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("%s panic: %v", job.name, p)
 		}
 	}()
-	err = job.run()
+	err = job.run(ctx)
 	if err == nil && stopping.Err() == nil {
 		return fmt.Errorf("%s exited unexpectedly", job.name)
 	}

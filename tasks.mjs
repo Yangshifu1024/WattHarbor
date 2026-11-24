@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const SERVICES = ['wattharbor', 'user', 'admin', 'central', 'gateway', 'worker', 'migrate', 'devseed', 'simulator-dc589'];
+const SERVICES = ['wattharbor', 'migrate', 'devseed', 'simulator-dc589'];
 const TASKS = ['fmt', 'lint', 'test', 'test-contract', 'test-integration', 'build', 'build-all', 'check-rules', 'check', 'clean', 'dev-up', 'dev-down'];
 const HELP = `用法：node tasks.mjs <任务>
 任务：${TASKS.join('、')}

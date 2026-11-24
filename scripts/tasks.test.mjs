@@ -84,18 +84,18 @@ test('integration forwards both database and Redis environment with integration 
 
 test('Windows build creates bin and explicitly uses .exe output', t => {
   const f = fixture(t, { platform: 'win32' });
-  assert.equal(main(['build', 'central'], f.options), 0);
+  assert.equal(main(['build', 'wattharbor'], f.options), 0);
   assert.equal(existsSync(join(f.root, 'bin')), true);
   assert.equal(f.calls[0].command, 'go.exe');
-  assert.deepEqual(f.calls[0].args, ['build', '-trimpath', '-o', join(f.root, 'bin/central.exe'), './cmd/central']);
+  assert.deepEqual(f.calls[0].args, ['build', '-trimpath', '-o', join(f.root, 'bin/wattharbor.exe'), './cmd/wattharbor']);
 });
 
 test('build accepts SERVICE and positional service takes priority', t => {
-  const f = fixture(t, { env: { SERVICE: 'worker' } });
+  const f = fixture(t, { env: { SERVICE: 'migrate' } });
   assert.equal(main(['build'], f.options), 0);
-  assert.equal(f.calls[0].args.at(-1), './cmd/worker');
-  assert.equal(main(['build', 'admin'], f.options), 0);
-  assert.equal(f.calls[1].args.at(-1), './cmd/admin');
+  assert.equal(f.calls[0].args.at(-1), './cmd/migrate');
+  assert.equal(main(['build', 'devseed'], f.options), 0);
+  assert.equal(f.calls[1].args.at(-1), './cmd/devseed');
 });
 
 test('build-all builds all deployment units into the root bin directory', t => {

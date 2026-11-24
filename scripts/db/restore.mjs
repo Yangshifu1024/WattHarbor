@@ -33,12 +33,14 @@ const nativeEnv = { ...process.env };
 if (!nativeEnv.MYSQL_PWD && password) nativeEnv.MYSQL_PWD = password;
 
 function resolveCli() {
-  if (spawnSync('mysql', ['--version'], { stdio: 'ignore' }).status === 0) {
-    return { cmd: 'mysql', prefix: [`-h${host}`, `-P${port}`, `-u${user}`] };
-  }
   const container = process.env.MYSQL_CLIENT_CONTAINER;
-  if (!container) fail('no mysql client available; set MYSQL_CLIENT_CONTAINER to the database container');
-  return { cmd: 'docker', prefix: ['exec', '-i', '-e', `MYSQL_PWD=${password}`, container, 'mysql', '-h127.0.0.1', '-u' + user] };
+  if (container) {
+    return { cmd: 'docker', prefix: ['exec', '-i', '-e', 'MYSQL_PWD', container, 'mysql', '-h127.0.0.1', '-u' + user] };
+  }
+  if (spawnSync('mysql', ['--version'], { stdio: 'ignore' }).status !== 0) {
+    fail('no mysql client available; set MYSQL_CLIENT_CONTAINER to the database container');
+  }
+  return { cmd: 'mysql', prefix: [`-h${host}`, `-P${port}`, `-u${user}`] };
 }
 
 function runSql(sqlText) {
@@ -72,6 +74,10 @@ try {
 }
 if (!targets) fail(`archive does not declare which schemas it contains: ${archive}`);
 const schemas = targets.split(/\s+/).filter(Boolean);
+const layout = schemas.join(' ');
+if (layout !== 'wattharbor' && layout !== 'gateway_db central_db worker_db') {
+  fail('unsupported backup schema layout');
+}
 if (schemas.join(' ') !== (process.env.RESTORE_CONFIRM ?? '').trim().split(/\s+/).filter(Boolean).join(' ')) {
   console.error('refusing to restore without confirmation.');
   console.error(`archive contains: ${targets}`);
@@ -93,20 +99,23 @@ for (const schema of schemas) {
     child.on('exit', resolve);
     child.on('error', reject);
   });
-  await pumped.catch(() => {});
+  await pumped;
   if (code !== 0) fail('restore failed while applying the archive; the schemas are partially loaded');
 }
 
-// 恢复后必须重跑 Goose：迁移历史本身就存在数据库里，跳过会让迁移没被记录。
-// 连接串取自环境变量，所以只在配置齐全时才执行。
+// 归档包含 Goose 历史。按归档布局选择版本重放入口。
+const unified = layout === 'wattharbor';
 const hasGo = spawnSync('go', ['version'], { stdio: 'ignore' }).status === 0;
-if (hasGo && process.env.DATABASE_URL_CENTRAL) {
+const hasURLs = unified ? !!process.env.DATABASE_URL
+  : ['CENTRAL', 'GATEWAY', 'WORKER'].every(name => process.env[`DATABASE_URL_${name}`]);
+if (hasGo && hasURLs) {
   console.error('re-applying migrations after restore');
-  // Go 模块位于 backend/，迁移重放在该目录执行。
-  const migrated = spawnSync('go', ['run', './cmd/migrate', '--schema', 'all'], { cwd: join(ROOT, 'backend'), stdio: 'inherit' });
+  const migrated = spawnSync('go', ['run', './cmd/migrate', '--schema', unified ? 'unified' : 'all'], {
+    cwd: join(ROOT, 'backend'), stdio: 'inherit',
+  });
   if (migrated.status !== 0) fail('migration replay failed after restore');
 } else {
-  console.error('skipping migration replay: set DATABASE_URL_* to re-apply migrations');
+  console.error('skipping migration replay: run the deployment migration command before restarting the app');
 }
 
 for (const schema of schemas) {
@@ -116,6 +125,5 @@ for (const schema of schemas) {
 
 // 恢复后提示重启服务，使配置和管理员初始化流程重新执行。
 console.log('');
-console.log('restart the services so they reload the restored data:');
-console.log('  docker compose restart central gateway worker   # development stack');
-console.log('  docker compose -f docker/compose.prod.yaml up -d   # production stack');
+console.log('restart the app after checking the restored data and migration version:');
+console.log(`  docker compose -f docker/compose.${unified ? 'prod' : 'dev'}.yaml restart app`);

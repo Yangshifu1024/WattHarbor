@@ -5,43 +5,24 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"time"
 
 	gatewayclient "wattharbor/internal/integration/gateway"
 	"wattharbor/internal/payment"
 	"wattharbor/internal/platform/config"
-	"wattharbor/internal/platform/httpapi"
 	"wattharbor/internal/platform/serviceclient"
 )
 
-// Run 启动兼容的独立进程。
-func Run(ctx context.Context) (err error) {
-	app, close, err := Prepare(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, close()) }()
-	return app.Run(ctx)
-}
-
-// Prepare 装配应用和资源；非空 internalHTTP 用于同进程内部调用。
-func Prepare(ctx context.Context, internalHTTP *http.Client) (_ *Application, _ func() error, err error) {
+// Prepare 装配本模块的处理器和资源，内部请求使用单体提供的客户端。
+func Prepare(ctx context.Context, internalHTTP *http.Client) (_ http.Handler, _ func() error, err error) {
 	cfg, err := config.LoadCentral()
 	if err != nil {
 		return nil, nil, err
-	}
-	if internalHTTP != nil {
-		cfg.GatewayInternalURL = "http://gateway"
 	}
 	resources, err := openResources(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
-	if internalHTTP != nil {
-		resources.InternalHTTP.CloseIdleConnections()
-		resources.InternalHTTP = internalHTTP
-
-	}
+	resources.InternalHTTP = internalHTTP
 	app, err := assemble(ctx, cfg, resources)
 	if err != nil {
 		return nil, nil, errors.Join(err, resources.Close())
@@ -49,14 +30,8 @@ func Prepare(ctx context.Context, internalHTTP *http.Client) (_ *Application, _ 
 	return app, resources.Close, nil
 }
 
-// application 持有已组装的 HTTP 服务，资源由 run 释放。
-type Application struct {
-	// Server 已装配的 HTTP 服务器，由 httpapi.Serve 独占管理监听、请求 context 与退出等待。
-	Server *http.Server
-}
-
 // assemble 创建退款渠道、网关客户端和内部路由，不启动监听。
-func assemble(ctx context.Context, cfg config.Central, r *resources) (*Application, error) {
+func assemble(ctx context.Context, cfg config.Central, r *resources) (http.Handler, error) {
 	channel, err := payment.NewPaymentChannel(ctx, cfg.PaymentMode, payment.WechatCredentials{
 		AppID: cfg.WeChatAppID, MerchantID: cfg.WechatMchID,
 		CertificateSerial: cfg.WechatCertSerial, APIv3Key: cfg.WechatAPIv3Key,
@@ -66,23 +41,11 @@ func assemble(ctx context.Context, cfg config.Central, r *resources) (*Applicati
 		return nil, err
 	}
 
-	gateway, err := gatewayclient.NewClient(serviceclient.Client{HTTP: r.InternalHTTP}, cfg.GatewayInternalURL, cfg.ServiceToken)
+	gateway, err := gatewayclient.NewClient(serviceclient.Client{HTTP: r.InternalHTTP}, config.GatewayServiceURL, cfg.ServiceToken)
 	if err != nil {
 		return nil, err
 	}
 	router := newRouter(cfg, r, channel, gateway)
-	log.Printf("central: http=%s payment=%s gateway=%s", cfg.HTTPAddr, cfg.PaymentMode, cfg.GatewayInternalURL)
-	return &Application{
-		Server: &http.Server{
-			Addr:              cfg.HTTPAddr,
-			Handler:           router,
-			ReadHeaderTimeout: 5 * time.Second,
-			IdleTimeout:       90 * time.Second,
-		},
-	}, nil
-}
-
-// Run 启动 HTTP 服务，停机宽限为十秒；超时取消请求后仍等待处理器退出。
-func (a *Application) Run(ctx context.Context) error {
-	return httpapi.Serve(ctx, a.Server, 10*time.Second)
+	log.Printf("central: payment=%s", cfg.PaymentMode)
+	return router, nil
 }

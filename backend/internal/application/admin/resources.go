@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -13,15 +12,15 @@ import (
 	"wattharbor/internal/platform/dbconn"
 )
 
-// resources 持有本进程的连接，初始化失败或应用完全退出后统一关闭。
+// resources 持有模块的连接，初始化失败或应用完全退出后统一关闭。
 type resources struct {
 	DB           *sql.DB       // central SQL 连接池，最后释放
 	ORM          *gorm.DB      // 与 DB 共用连接池，无需单独关闭
 	Cache        *redis.Client // 后台会话及缓存 Redis 连接
-	InternalHTTP *http.Client  // 内部 HTTP 客户端，请求结束后清理空闲连接
+	InternalHTTP *http.Client  // InternalHTTP 由单体入口注入并复用。
 }
 
-// openResources 打开本进程的数据库、Redis 和 HTTP 客户端；失败时释放已打开的资源。
+// openResources 打开本进程的数据库和 Redis；失败时释放已打开的资源。
 func openResources(ctx context.Context, cfg config.Admin) (_ *resources, err error) {
 	r := &resources{}
 	defer func() {
@@ -45,19 +44,13 @@ func openResources(ctx context.Context, cfg config.Admin) (_ *resources, err err
 	if err = r.Cache.Ping(ctx).Err(); err != nil {
 		return nil, err
 	}
-	r.InternalHTTP = &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), Timeout: 10 * time.Second}
-
 	return r, nil
 }
 
-// Close 依次清理 HTTP 空闲连接、Redis 和 SQL 池，返回合并后的关闭错误。
+// Close 依次关闭 Redis 和 SQL 池，返回合并后的关闭错误。
 // 调用前必须等待请求和清理任务退出。
 func (r *resources) Close() error {
 	var failures []error
-	if r.InternalHTTP != nil {
-		r.InternalHTTP.CloseIdleConnections()
-	}
-
 	if r.Cache != nil {
 		failures = append(failures, r.Cache.Close())
 	}

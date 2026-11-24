@@ -1,4 +1,4 @@
-// Package config 从环境变量读取各进程的配置，并检查必填项及有效值。
+// Package config 从环境变量读取各模块的配置，并检查必填项及有效值。
 package config
 
 import (
@@ -6,6 +6,16 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+)
+
+// 内部 HTTP 契约在进程内使用固定角色标识，单体传输据此选择处理器。
+const (
+	CentralServiceHost = "central"
+	GatewayServiceHost = "gateway"
+	WorkerServiceHost  = "worker"
+	CentralServiceURL  = "http://" + CentralServiceHost
+	GatewayServiceURL  = "http://" + GatewayServiceHost
+	WorkerServiceURL   = "http://" + WorkerServiceHost
 )
 
 // DatabasePool 设置单个 SQL 连接池的数量和超时；worker 的三个池各使用一份配置。
@@ -27,40 +37,32 @@ func (c DatabasePool) validate() error {
 	return nil
 }
 
-// Gateway 配置设备接入进程的监听、数据库及 central 授权客户端。
+// Gateway 配置设备接入、数据库及 central 授权。
 type Gateway struct {
 	UnifiedDatabase bool `env:"APP_UNIFIED_DATABASE" envDefault:"false"`
 	DatabasePool
-	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
-	HTTPAddr string `env:"GATEWAY_HTTP_ADDR" envDefault:":8083"`
 	// DC589Addr DC589 TCP 监听地址，默认 :9100。
 	DC589Addr string `env:"DC589_ADDR" envDefault:":9100"`
-	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
+	// DatabaseURL 模块所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL,required"`
 	// ServiceToken 服务间请求认证令牌；加载时必须提供，不得写入日志。
 	ServiceToken string `env:"SERVICE_TOKEN,required"`
-	// CentralInternalURL central 内部 HTTP 基址；默认使用容器网络中的 central:8082。
-	CentralInternalURL string `env:"CENTRAL_INTERNAL_URL" envDefault:"http://central:8082"`
 	// MaxConnections 设备 TCP 连接数量上限；默认 10000，必须为正整数。
 	MaxConnections int `env:"DEVICE_MAX_CONNECTIONS" envDefault:"10000"`
 	// DebugHeartbeat 是否输出设备心跳诊断日志；默认关闭。
 	DebugHeartbeat bool `env:"GATEWAY_DEBUG_HEARTBEAT" envDefault:"false"`
 }
 
-// Central 配置内部业务进程；接口使用服务令牌，不需要 JWT 密钥。
-// 退款由本进程执行，因此需要微信 AppID 和商户凭据。
+// Central 配置内部业务；接口使用服务令牌，不需要 JWT 密钥。
+// 退款由 central 执行，因此需要微信 AppID 和商户凭据。
 type Central struct {
 	DatabasePool
-	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
+	// DatabaseURL 模块所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
-	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
-	HTTPAddr string `env:"CENTRAL_HTTP_ADDR" envDefault:":8082"`
 	// RedisCacheURL central 健康检查使用的 Redis 缓存 URL；加载时必须提供。
 	RedisCacheURL string `env:"REDIS_CACHE_URL,required"`
 	// ServiceToken 服务间请求认证令牌；加载时必须提供，不得写入日志。
 	ServiceToken string `env:"SERVICE_TOKEN,required"`
-	// GatewayInternalURL gateway 内部 HTTP 基址；默认使用容器网络中的 gateway:8083。
-	GatewayInternalURL string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
 	// WeChatAppID 微信应用 ID；支付渠道及模拟回调校验使用，加载时必须提供。
 	WeChatAppID string `env:"WECHAT_APPID,required"`
 	// PaymentMode 支付渠道模式：disabled、simulation 或 wechat_direct；默认 disabled。
@@ -78,21 +80,17 @@ type Central struct {
 }
 
 // User 配置 C 端登录、手机号授权和支付，不连接事件流 Redis。
-// 订单曲线与最新采样通过 GATEWAY_INTERNAL_URL 查询 gateway。
+// 订单曲线与最新采样通过进程内接口查询 gateway。
 type User struct {
 	DatabasePool
-	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
+	// DatabaseURL 模块所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
-	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
-	HTTPAddr string `env:"USER_HTTP_ADDR" envDefault:":8080"`
 	// RedisCacheURL 用户或后台会话使用的 Redis 缓存 URL；加载时必须提供。
 	RedisCacheURL string `env:"REDIS_CACHE_URL,required"`
 	// JWTSecret 用户或后台会话签名密钥；加载时必须提供，且至少 32 字节。
 	JWTSecret string `env:"JWT_SECRET,required"`
 	// ServiceToken 服务间请求认证令牌；加载时必须提供，不得写入日志。
 	ServiceToken string `env:"SERVICE_TOKEN,required"`
-	// GatewayInternalURL gateway 内部 HTTP 基址；默认使用容器网络中的 gateway:8083。
-	GatewayInternalURL string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
 	// WeChatAppID 微信登录、手机号授权、支付渠道及支付回调校验使用的应用 ID；加载时必须提供。
 	WeChatAppID string `env:"WECHAT_APPID,required"`
 	// WeChatAppSecret 微信登录及手机号授权使用的应用密钥；仅 user 使用，加载时必须提供。
@@ -119,10 +117,8 @@ type Admin struct {
 	DatabasePool
 	// TrustedProxies 仅列明确的反向代理 IP/CIDR，逗号分隔；空配置不信任转发头。
 	TrustedProxies []string `env:"ADMIN_TRUSTED_PROXIES" envSeparator:","`
-	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
+	// DatabaseURL 模块所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
-	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
-	HTTPAddr string `env:"ADMIN_HTTP_ADDR" envDefault:":8081"`
 	// RedisCacheURL 用户或后台会话使用的 Redis 缓存 URL；加载时必须提供。
 	RedisCacheURL string `env:"REDIS_CACHE_URL,required"`
 	// JWTSecret 用户或后台会话签名密钥；加载时必须提供，且至少 32 字节。
@@ -133,9 +129,6 @@ type Admin struct {
 	AdminBootstrapUser string `env:"ADMIN_BOOTSTRAP_USER"`
 	// AdminBootstrapPassword 首次初始化后台账户时使用的明文密码；仅装配时交给 Bootstrap 哈希，不得写入日志。
 	AdminBootstrapPassword string `env:"ADMIN_BOOTSTRAP_PASSWORD"`
-	// GatewayInternalURL gateway 内部 HTTP 基址；默认使用容器网络中的 gateway:8083。
-	GatewayInternalURL string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
-	WorkerInternalURL  string `env:"WORKER_INTERNAL_URL" envDefault:"http://worker:8085"`
 	// ExportDir 后台导出文件目录；空值使用导出服务的默认目录。
 	ExportDir string `env:"EXPORT_DIR"`
 }
@@ -146,9 +139,7 @@ type Worker struct {
 	DatabasePool
 	// CentralDatabaseURL worker 发布 central 业务事件所用的 central_db MySQL URL；加载时必须提供。
 	CentralDatabaseURL string `env:"DATABASE_URL_CENTRAL,required"`
-	// HTTPAddr 本进程 HTTP 监听地址；未配置时使用对应服务的默认端口。
-	HTTPAddr string `env:"WORKER_HTTP_ADDR" envDefault:":8085"`
-	// DatabaseURL 本进程所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
+	// DatabaseURL 模块所属业务数据库的 MySQL URL；加载时必须提供，连接由资源装配负责。
 	DatabaseURL string `env:"DATABASE_URL_WORKER,required"`
 	// GatewayDatabaseURL worker 读取设备事件并发布 gateway 事件所用的 gateway_db MySQL URL；加载时必须提供。
 	GatewayDatabaseURL string `env:"DATABASE_URL_GATEWAY,required"`
@@ -156,10 +147,6 @@ type Worker struct {
 	RedisStreamURL string `env:"REDIS_STREAM_URL,required"`
 	// ServiceToken 服务间请求认证令牌；加载时必须提供，不得写入日志。
 	ServiceToken string `env:"SERVICE_TOKEN,required"`
-	// CentralInternalURL central 内部 HTTP 基址；默认使用容器网络中的 central:8082。
-	CentralInternalURL string `env:"CENTRAL_INTERNAL_URL" envDefault:"http://central:8082"`
-	// GatewayInternalURL gateway 内部 HTTP 基址；默认使用容器网络中的 gateway:8083。
-	GatewayInternalURL string `env:"GATEWAY_INTERNAL_URL" envDefault:"http://gateway:8083"`
 }
 
 // LoadGateway 读取设备网关配置并检查连接上限。

@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
 // 假客户端同时隔离探库、dump 和 Docker；真实执行备份脚本及压缩读回，不连接任何数据库。
-for (const [name, password, pwd, expected] of [
+for (const [name, password, pwd, expected, unified] of [
   ['MYSQL_PASSWORD mapping', 'test-only-password', undefined, 'test-only-password'],
-  ['MYSQL_PWD wins', 'unused-password', 'explicit-password', 'explicit-password'],
+  ['MYSQL_PWD wins for the production schema', 'unused-password', 'explicit-password', 'explicit-password', true],
 ]) test(name, t => {
   const root = mkdtempSync(join(tmpdir(), 'wattharbor-backup-test-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, 'bin'), out = join(root, 'out'), log = join(root, 'calls'); mkdirSync(bin); mkdirSync(out);
@@ -26,12 +26,15 @@ else process.exit(2);
   for (const tool of ['mysql', 'mysqldump', 'docker']) writeFileSync(join(bin, tool), cli, { mode: 0o755 });
   const env = { PATH: bin, MYSQL_HOST: '127.0.0.1', MYSQL_USER: 'fake-user', MYSQL_PASSWORD: password, EXPECTED_PWD: expected, CALL_LOG: log };
   if (pwd) env.MYSQL_PWD = pwd;
-  const result = spawnSync(process.execPath, [fileURLToPath(new URL('./backup.mjs', import.meta.url)), out], { env, encoding: 'utf8' });
+  const schemas = unified ? ['wattharbor'] : ['gateway_db', 'central_db', 'worker_db'];
+  const options = unified ? ['--unified'] : [];
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('./backup.mjs', import.meta.url)), ...options, out], { env, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(readFileSync(log, 'utf8'), 'mysql\nmysql\nmysql\nmysqldump\nmysqldump\nmysqldump\n');
+  assert.equal(readFileSync(log, 'utf8'), 'mysql\n'.repeat(schemas.length) + 'mysqldump\n'.repeat(schemas.length));
   const archive = readdirSync(out); assert.equal(archive.length, 1);
   const sql = gunzipSync(readFileSync(join(out, archive[0]))).toString();
-  for (const schema of ['gateway_db', 'central_db', 'worker_db']) assert.ok(sql.includes('USE `'+schema+'`;'));
+  assert.ok(sql.includes(`-- schemas: ${schemas.join(' ')}\n`));
+  for (const schema of schemas) assert.ok(sql.includes('USE `'+schema+'`;'));
   assert.ok(sql.endsWith('-- end of backup\n'));
   assert.ok(!(result.stdout + result.stderr).includes(expected));
 });

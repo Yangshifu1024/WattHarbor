@@ -14,11 +14,10 @@ func clearConfigEnvironment(t *testing.T) {
 	for _, key := range []string{
 		"DB_MAX_OPEN_CONNS", "DB_MAX_IDLE_CONNS", "DB_CONN_MAX_LIFETIME", "DB_CONN_MAX_IDLE_TIME",
 		"DATABASE_URL", "DATABASE_URL_CENTRAL", "DATABASE_URL_GATEWAY", "DATABASE_URL_WORKER",
-		"GATEWAY_HTTP_ADDR", "DC589_ADDR", "DEVICE_MAX_CONNECTIONS", "GATEWAY_DEBUG_HEARTBEAT",
-		"CENTRAL_HTTP_ADDR", "USER_HTTP_ADDR", "ADMIN_HTTP_ADDR", "WORKER_HTTP_ADDR",
+		"DC589_ADDR", "DEVICE_MAX_CONNECTIONS", "GATEWAY_DEBUG_HEARTBEAT",
 		"ADMIN_TRUSTED_PROXIES",
 		"REDIS_CACHE_URL", "REDIS_STREAM_URL", "JWT_SECRET", "SERVICE_TOKEN",
-		"CENTRAL_INTERNAL_URL", "GATEWAY_INTERNAL_URL", "WECHAT_APPID", "WECHAT_SECRET",
+		"WECHAT_APPID", "WECHAT_SECRET",
 		"PAYMENT_MODE", "LOGIN_MODE", "WECHAT_MCH_ID", "WECHAT_CERT_SERIAL", "WECHAT_APIV3_KEY",
 		"WECHAT_PRIVATE_KEY_PATH", "WECHAT_NOTIFY_URL", "ADMIN_BOOTSTRAP_USER", "ADMIN_BOOTSTRAP_PASSWORD", "EXPORT_DIR",
 	} {
@@ -55,8 +54,8 @@ func TestLoadGatewayNeedsNoLoginOrRedis(t *testing.T) {
 	t.Setenv("DATABASE_URL", "mysql://fixture:fixture@localhost/gateway_db")
 	t.Setenv("SERVICE_TOKEN", "fixture-service-token")
 	c, err := LoadGateway()
-	if err != nil || c.HTTPAddr != ":8083" || c.DC589Addr != ":9100" || c.MaxConnections != 10000 {
-		t.Fatalf("gateway defaults or loading changed: err=%v http=%q tcp=%q limit=%d", err, c.HTTPAddr, c.DC589Addr, c.MaxConnections)
+	if err != nil || c.DC589Addr != ":9100" || c.MaxConnections != 10000 {
+		t.Fatalf("gateway defaults or loading changed: err=%v tcp=%q limit=%d", err, c.DC589Addr, c.MaxConnections)
 	}
 }
 
@@ -70,7 +69,7 @@ func TestLoadCentralNeedsNoUserCredentialsOrStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("central should ignore user-only configuration: %v", err)
 	}
-	if c.DatabaseURL != "mysql://fixture:fixture@localhost/central_db" || c.RedisCacheURL != "redis://localhost:6379/0" || c.ServiceToken != "fixture-service-token" || c.WeChatAppID != "wx_fixture" || c.PaymentMode != "disabled" || c.HTTPAddr != ":8082" || c.GatewayInternalURL != "http://gateway:8083" {
+	if c.DatabaseURL != "mysql://fixture:fixture@localhost/central_db" || c.RedisCacheURL != "redis://localhost:6379/0" || c.ServiceToken != "fixture-service-token" || c.WeChatAppID != "wx_fixture" || c.PaymentMode != "disabled" {
 		t.Fatal("central required values or defaults changed")
 	}
 }
@@ -181,7 +180,7 @@ func TestLoadWorkerNeedsOnlyItsOwnConfiguration(t *testing.T) {
 	t.Setenv("REDIS_STREAM_URL", "stream-fixture")
 	t.Setenv("SERVICE_TOKEN", "fixture-service-token")
 	c, err := LoadWorker()
-	if err != nil || c.CentralDatabaseURL != "central-fixture" || c.GatewayDatabaseURL != "gateway-fixture" || c.DatabaseURL != "worker-fixture" || c.RedisStreamURL != "stream-fixture" || c.HTTPAddr != ":8085" {
+	if err != nil || c.CentralDatabaseURL != "central-fixture" || c.GatewayDatabaseURL != "gateway-fixture" || c.DatabaseURL != "worker-fixture" || c.RedisStreamURL != "stream-fixture" {
 		t.Fatal("worker own configuration or defaults changed")
 	}
 }
@@ -197,7 +196,7 @@ func TestLoadAdminNeedsNoPaymentOrStream(t *testing.T) {
 	t.Setenv("ADMIN_BOOTSTRAP_USER", "fixture-admin")
 	t.Setenv("ADMIN_BOOTSTRAP_PASSWORD", "fixture-password")
 	c, err := LoadAdmin()
-	if err != nil || c.HTTPAddr != ":8081" || c.AdminBootstrapUser != "fixture-admin" || c.AdminBootstrapPassword != "fixture-password" {
+	if err != nil || c.AdminBootstrapUser != "fixture-admin" || c.AdminBootstrapPassword != "fixture-password" {
 		t.Fatalf("admin own configuration changed: %v", err)
 	}
 	if len(c.TrustedProxies) != 0 {
@@ -227,7 +226,7 @@ func TestLoadUserKeepsLoginSecretRequirement(t *testing.T) {
 	}
 	t.Setenv("WECHAT_SECRET", "fixture-login-secret")
 	c, err := LoadUser()
-	if err != nil || c.LoginMode != "development" || c.PaymentMode != "simulation" || c.HTTPAddr != ":8080" {
+	if err != nil || c.LoginMode != "development" || c.PaymentMode != "simulation" {
 		t.Fatalf("user valid configuration changed: %v", err)
 	}
 	t.Setenv("LOGIN_MODE", "unknown")

@@ -3,10 +3,14 @@
 import { readFileSync } from 'node:fs';
 import { openMySQL } from './mysql-client.mjs';
 
-if (process.argv.length !== 2) throw new Error('用法：node scripts/db/audit-design.mjs');
+const flags = process.argv.slice(2);
+if (flags.length && (flags.length !== 1 || flags[0] !== '--unified')) {
+  throw new Error('用法：node scripts/db/audit-design.mjs [--unified]');
+}
 const db = openMySQL();
 try {
-  const rows = await db.query(readFileSync(new URL('./audit-design.sql', import.meta.url), 'utf8'));
+  const queries = readFileSync(new URL('./audit-design.sql', import.meta.url), 'utf8');
+  const rows = await db.query(flags.length ? queries.replaceAll('central_db.', 'wattharbor.') : queries);
   let differences = 0;
   for (const row of rows) {
     const [name, count] = row.split('\t');

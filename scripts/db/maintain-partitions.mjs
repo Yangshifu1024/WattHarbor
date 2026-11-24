@@ -1,28 +1,33 @@
 // 扩展白名单月分区；默认预览，--apply 执行。仅重组 p_max，不删除或清空分区。
 // 同一 MySQL 会话持有命名锁；并发维护被拒绝，错误和连接关闭自动释放锁。
+import { parseArgs } from 'node:util';
 import { openMySQL } from './mysql-client.mjs';
 
-const args = process.argv.slice(2);
-const apply = args.includes('--apply');
-const throughArg = args.find(arg => /^--through=\d{4}-\d{2}$/.test(arg));
-if (args.some(arg => arg !== '--apply' && arg !== throughArg) || args.filter(arg => arg === '--apply').length > 1) {
-  throw new Error('用法：node scripts/db/maintain-partitions.mjs [--through=YYYY-MM] [--apply]');
+const { values, tokens } = parseArgs({
+  options: { unified: { type: 'boolean' }, through: { type: 'string' }, apply: { type: 'boolean' } },
+  tokens: true,
+});
+if (new Set(tokens.map(token => token.name)).size !== tokens.length ||
+    values.through !== undefined && !/^\d{4}-\d{2}$/.test(values.through)) {
+  throw new Error('用法：node scripts/db/maintain-partitions.mjs [--unified] [--through=YYYY-MM] [--apply]');
 }
+const { apply, through: throughMonth } = values;
 const now = new Date();
-const through = throughArg ? new Date(`${throughArg.slice(10)}-01T00:00:00Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()+12, 1));
-if (Number.isNaN(through.getTime()) || throughArg && through.toISOString().slice(0,7) !== throughArg.slice(10)) throw new Error('Invalid month');
+const through = throughMonth ? new Date(`${throughMonth}-01T00:00:00Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()+12, 1));
+if (Number.isNaN(through.getTime()) || throughMonth && through.toISOString().slice(0,7) !== throughMonth) throw new Error('Invalid month');
 if (through.getUTCFullYear() > now.getUTCFullYear()+5) throw new Error('最多提前扩展5年');
 const allowed = {
   central_db: ['charge_order','payment_order','refund_record','wallet_txn','audit_log','alert_event','fee_calculation'],
   gateway_db: ['device_session'],
   worker_db: ['task_execution_log'],
 };
+const tablesBySchema = values.unified ? { wattharbor: Object.values(allowed).flat() } : allowed;
 const db = openMySQL();
 try {
   const lock = await db.query("SELECT GET_LOCK('wattharbor_partition_maintenance',0); SET SESSION lock_wait_timeout=10; SET SESSION time_zone='+00:00';");
   if (lock[0] !== '1') throw new Error('另一维护会话持有分区锁');
   let planned = 0;
-  for (const [schema,tables] of Object.entries(allowed)) for (const table of tables) {
+  for (const [schema,tables] of Object.entries(tablesBySchema)) for (const table of tables) {
     const rows = await db.query(`SELECT partition_name,partition_description,partition_expression FROM information_schema.partitions WHERE table_schema='${schema}' AND table_name='${table}' ORDER BY partition_ordinal_position;`);
     const parts = rows.map(row => row.split('\t'));
     if (!parts.length || parts.some(p => p[0] === 'NULL')) throw new Error(`${schema}.${table}: 缺少预期分区`);

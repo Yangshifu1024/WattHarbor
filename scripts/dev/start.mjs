@@ -5,14 +5,14 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]$/, '');
 
-const up = spawnSync('docker', ['compose', '-f', `${ROOT}/docker/compose.dev.yaml`, 'up', '-d'], { stdio: 'inherit' });
+const up = spawnSync('docker', ['compose', '-f', `${ROOT}/docker/compose.dev.yaml`, 'up', '-d', '--wait', '--remove-orphans'], { stdio: 'inherit' });
 if (up.status !== 0) {
   console.error('Development stack did not start. Check Docker Desktop and compose logs.');
   process.exit(1);
 }
 
 console.log('Admin: http://127.0.0.1:5173 (admin / ChangeMe!Admin2026)');
-console.log('Admin API: http://127.0.0.1:8081');
+console.log('WattHarbor API: http://127.0.0.1:8080');
 console.log('User H5: http://127.0.0.1:5174 (development account tester-1)');
 console.log('First install can take a minute. Open two terminals for node scripts/dev/simulator.mjs --number 1 and --number 2.');
-console.log('Architecture and roadmap: docs/architecture-boundaries.md and docs/refactor-roadmap.md. This command preserves existing development data.');
+console.log('See docs/operations.md for development and deployment. Existing development data is preserved.');

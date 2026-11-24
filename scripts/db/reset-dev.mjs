@@ -40,7 +40,13 @@ const backupDir = join(ROOT, '.tmp');
 mkdirSync(backupDir, { recursive: true });
 const backup = join(backupDir, `dev-db-before-reset-${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}.sql`);
 
-const stopped = run('docker', [...COMPOSE, 'stop', 'user', 'admin', 'central', 'gateway', 'worker']);
+const running = spawnSync('docker', ['ps', '--filter', 'label=com.docker.compose.project=wattharbor-dev',
+  '--format', '{{ .Label "com.docker.compose.service" }}'], { cwd: ROOT, encoding: 'utf8' });
+if (running.status !== 0) fail('Unable to inspect running development services.');
+if (running.stdout.split(/\s+/).some(service => ['user', 'admin', 'central', 'gateway', 'worker'].includes(service))) {
+  fail('Old development backend containers are still running; switch to the monolith before resetting.');
+}
+const stopped = run('docker', [...COMPOSE, 'stop', 'app']);
 if (stopped.status !== 0) fail('Unable to stop backend services.');
 
 // 备份先于一切破坏性动作落盘；容器内重定向需要 sh，宿主机侧经 docker cp 取回。
@@ -72,7 +78,7 @@ for (const redis of REDIS_CONTAINERS) {
 const migrated = run('docker', [...COMPOSE, 'run', '--rm', 'migrate']);
 if (migrated.status !== 0) fail('Init failed; keep services stopped and inspect the backup.');
 
-const restarted = run('docker', [...COMPOSE, 'up', '-d', 'user', 'admin', 'central', 'gateway', 'worker', 'admin-web']);
+const restarted = run('docker', [...COMPOSE, 'up', '-d', '--wait', '--remove-orphans']);
 if (restarted.status !== 0) fail('Unable to restart the development stack.');
 
 console.log(`Development schemas rebuilt. Backup: ${backup}`);

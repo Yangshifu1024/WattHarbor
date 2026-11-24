@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -22,7 +21,7 @@ type database struct {
 	ORM *gorm.DB
 }
 
-// resources 持有本进程的连接，初始化失败或应用完全退出后统一关闭。
+// resources 持有模块的连接，初始化失败或应用完全退出后统一关闭。
 type resources struct {
 	// GatewayDB gateway_db 的 SQL 池及 GORM 入口，用于设备事件与 Outbox 发布。
 	GatewayDB database
@@ -30,12 +29,10 @@ type resources struct {
 	CentralDB database
 	// WorkerDB worker_db 的 SQL 池及 GORM 入口，用于调度任务。
 	WorkerDB database
-	// Stream 是事件流 Redis 客户端，在 HTTP 空闲连接之后、数据库之前关闭。
+	// Stream 是事件流 Redis 客户端，在数据库之前关闭。
 	Stream *redis.Client
-	// InternalHTTP 是内部服务客户端；等待请求结束后清理空闲连接。
+	// InternalHTTP 由单体入口注入并复用。
 	InternalHTTP *http.Client
-	// JobHTTP 资金任务专用 HTTP 客户端，固定三十秒超时；请求退出后先释放其闲置连接。
-	JobHTTP *http.Client
 }
 
 // openDatabase 打开 SQL 连接池并创建共用该池的 GORM 入口；包装失败时关闭连接池。
@@ -51,7 +48,7 @@ func openDatabase(ctx context.Context, url string, pools ...dbconn.PoolConfig) (
 	return database{SQL: db, ORM: orm}, nil
 }
 
-// openResources 初始化三库、事件流 Redis 和 HTTP 客户端；失败时释放已打开的资源。
+// openResources 初始化三库和事件流 Redis；失败时释放已打开的资源。
 func openResources(ctx context.Context, cfg config.Worker) (_ *resources, err error) {
 	pool := dbconn.PoolConfig{MaxOpen: cfg.MaxOpen, MaxIdle: cfg.MaxIdle, Lifetime: cfg.Lifetime, IdleTime: cfg.IdleTime}
 	return openResourcesWithDatabase(ctx, cfg, func(ctx context.Context, url string) (database, error) {
@@ -59,8 +56,7 @@ func openResources(ctx context.Context, cfg config.Worker) (_ *resources, err er
 	})
 }
 
-// openResourcesWithDatabase 依次打开 gateway、central、worker 数据库，再检查 Redis 并创建 HTTP 客户端。
-// 查询超时为五秒，资金请求超时为三十秒；失败时关闭已打开的资源。
+// openResourcesWithDatabase 依次打开 gateway、central、worker 数据库，再检查 Redis；失败时关闭已打开的资源。
 // open 成功时交出连接池，失败时自行清理未返回的资源。
 func openResourcesWithDatabase(ctx context.Context, cfg config.Worker, open func(context.Context, string) (database, error)) (_ *resources, err error) {
 	r := &resources{}
@@ -86,21 +82,13 @@ func openResourcesWithDatabase(ctx context.Context, cfg config.Worker, open func
 	if err = r.Stream.Ping(ctx).Err(); err != nil {
 		return nil, err
 	}
-	r.InternalHTTP = &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	r.JobHTTP = &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return r, nil
 }
 
-// Close 清理资金和查询客户端的空闲连接，再关闭 Redis，最后依次关闭 worker、central、gateway 数据库。
+// Close 先关闭 Redis，再依次关闭 worker、central、gateway 数据库。
 // 调用前必须等待请求和任务退出；返回合并后的关闭错误。
 func (r *resources) Close() error {
 	var failures []error
-	if r.JobHTTP != nil {
-		r.JobHTTP.CloseIdleConnections()
-	}
-	if r.InternalHTTP != nil {
-		r.InternalHTTP.CloseIdleConnections()
-	}
 	if r.Stream != nil {
 		failures = append(failures, r.Stream.Close())
 	}

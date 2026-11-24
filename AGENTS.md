@@ -14,15 +14,12 @@
 - 用户端 `frontend/miniprogram/` 的后续开发任务与交互优化计划见 [docs/miniprogram-roadmap.md](docs/miniprogram-roadmap.md)；完成任务后原位更新该文件的状态与证据。新增页面只登记 `frontend/miniprogram/src/app.config.ts` 一处，不另建页面清单副本；改动该文件后 Taro dev server 不会热重建路由表，须重启 `user-h5` 容器。
 - 后端状态与枚举字段的类型化计划见 [docs/status-enum-roadmap.md](docs/status-enum-roadmap.md)，记录数据库 ENUM 列、VARCHAR 有限集合与 Go 侧裸字符串的分类维度、放置规则与依赖可行性判定、逐枚举清单、分批顺序与验收标准；数据库列定义仍以 `migrations/*/0001_init.sql` 为准。**P0 批次 12 项枚举已实施**，取值词汇落在 `internal/domain/<域>/`（`order`／`money`／`marketing`／`card`／`devices`／`wallet`／`identity`）、就地升级的 `device.FaultStatus` 与 `operations.ScopeType`，以及各属主包的就地定义（`card`、`marketing`、`order`、`settlement`、`ops`、`pricing`、`export`、`worker/repo`、`gateway/repo`）；类型归属与依赖边界见 [docs/architecture-boundaries.md](docs/architecture-boundaries.md) 的「状态词汇的归属与依赖边界」，保留裸字面量的例外逐条登记在路线图 8.1.2（P0）、8.3.2（P1）与 8.4（P2）节。**P0（12 项）、P1（38 项）与 P2（6 项）批次均已实施并通过 `node tasks.mjs check`、`build-all`、`go vet -tags integration` 与**真实 MySQL 集成测试**（95 个包零失败）；真库运行找出并修复的六个回归登记在路线图 9.2 节，其中**白名单常量串不可直接拼进 SQL 的 `IN (...)`**（会得到单元素列表）一条必须遵守。前后基线也已部分执行：三库 schema 逐字节一致、`central_db` 60 张表中 58 张数据逐字节一致，**接口响应层面的逐字节锁定改由 `node tasks.mjs test-contract` 的 452 条序列化契约用例承担**（覆盖全部 56 项枚举的每个取值，含 `cmd/devseed` 触及不到的 `marketing`／`card`／`ops`／`pricing`／`export`／`worker` 等域）；「改造前后各起服务比对响应体」本身未执行，详见路线图 9.3 与 9.4 节，表述时不得把契约测试说成前后基线。P1 实施前的依赖复核修正见路线图 8.3.1（该节列出的四处原归属结论已被实测推翻），P2 的三项决策见 8.4 节（`delivery` 包因是死代码路径移入 8.5、`domain/charging → protocol` 新增依赖边已授权、测试夹具只做类型适配不改断言值）。
 - `cmd/` 只负责配置、依赖装配与进程生命周期，每个子目录是一个部署单元。**业务实现按 use case 位于 `internal/` 下**：`charging`/`order`/`settlement`/`wallet`/`pricing`/`card`/`device`/`identity`/`marketing`/`payment`/`ops`/`export` 十二个业务模块（charging 的四个生命周期子包与 query 只读组合包），纯规则与跨用例契约在 `internal/domain`，表访问在各 use case 的 `*_repo.go`，进程特有编排在 `internal/worker`、`internal/gateway`、`internal/delivery`，设备契约在 `internal/protocol`，通用能力在 `internal/platform`。
-- 部署单元分两类。**对外**：`user`（C 端，`:8080`）、`admin`（运营后台，`:8081`）。**对内**：`central`（用例编排与内部端点，`:8082`）、`gateway`（设备接入，`:8083` 与 DC589/TCP `:9100`）、`worker`（持久任务扫描、结果同步与 Outbox 发布，`:8085`）。**`central` 的 8082 在两套编排里都不映射端口**，内部调用只在容器网络内可达。开发栈把 `gateway`:8083、`worker`:8085 绑到 `127.0.0.1` 便于本地直连排查；生产编排对这两个进程只写 `expose`，公网 HTTP 入口为 Caddy，设备另走 `9100/TCP`。
-
-五个进程共享同一套 use case 包，差别只在各自注册哪些路由与启动哪些后台循环——进程拆开不等于代码复制。
-- 后台进程不取微信与支付凭据：它不替用户登录，也不发起支付。`config.Admin` 与 `config.Central` 分开定义，让"这个进程需要什么凭据"在类型上就是清楚的——多给一份 `WECHAT_SECRET` 就等于多一处泄露面。
-- 订单快照、历史曲线和过程采样经 `GATEWAY_INTERNAL_URL` 调用 gateway 的 `/api/v1/internal/charge-orders/*`。计量证据和设备摘要也由 gateway 提供。端点位于 `internal/gateway/control`，内部请求携服务令牌。
+- `wattharbor` 是唯一业务进程，统一监听 HTTP `:8080` 和 DC589 TCP `:9100`，并运行 worker 任务。开发与生产编排使用同一入口。生产 Caddy 代理用户、后台、H5 和公网通知。模块间调用走进程内 HTTP 传输，内部路由仍校验服务令牌。
+- 订单快照、历史曲线、过程采样、计量证据和设备摘要由 gateway 模块提供。路由位于 `internal/gateway/control`，订单查询使用 `/api/v1/internal/charge-orders/*`。
 - 业务状态与资金写入由所属领域执行。worker 复用已定义的内部接口、任务与幂等记录，不复制计费算法或资金入账逻辑。
 - HTTP 适配位于 `internal/http/auth`、`internal/http/admin`、`internal/http/central` 与 `internal/http/user/<业务族>`。跨接口族的集成测试集中在 `internal/http/integration`，该目录只有测试文件。公共 HTTP 处理使用 `internal/platform/httpapi`；服务间 HTTP 调用使用 `internal/platform/serviceclient`。设备适配器实现 `protocol.Adapter`，协议解析与数据库访问分离。
 - 服务间 HTTP 的共享端点与 DTO 位于 `internal/contracts/<服务>`，专用客户端位于 `internal/integration/<服务>`。用例定义所需的窄接口，`cmd` 注入客户端；业务代码不持有 URL、服务令牌或通用 HTTP 客户端。contracts 不引用 gin、gorm 或服务实现；integration 不引用业务用例或数据库。具名客户端的请求 DTO 必须以 `Request` 结尾，响应 DTO 必须以 `Reply` 结尾；共享集合中的记录、采样点等子对象保留业务名称，不能用 `Data`、`Result`、`Acceptance` 代替端点响应名。
-- 五个服务进程的入口按职责拆分：`main.go` 处理信号与退出错误，`app.go` 加载配置、装配依赖与等待退出，`resources.go` 打开和释放资源，`routes.go` 注册路由与健康检查。worker/gateway 的定时循环在各自 `runtime` 子包，导出清理在 `internal/export`。资源初始化失败须释放已打开的资源；所有受管理请求和后台任务退出后才能关闭数据库、Redis 与客户端连接池。HTTP 停机使用 `httpapi.Serve`，超时取消请求后仍等待处理器退出；处理器必须响应请求 context，不启动未受管理的后台任务。
+- `cmd/wattharbor/main.go` 处理信号与退出错误，`internal/application/monolith` 装配角色、监听端口并管理退出。各角色在 `app.go` 装配依赖、`resources.go` 打开与释放资源、`routes.go` 注册路由。后台任务位于相应 `runtime` 子包。初始化失败释放已打开的资源；请求、会话和任务退出后关闭连接池。HTTP 使用 `httpapi.ServeOn`，处理器须响应请求 context，避免未受管理的后台任务。
 - 环境变量变更须核对配置加载、进程使用、Compose 注入和模板；仅在 `.env` 中定义不能视为已生效。
 - 当前 worker 调度器的处理器登记表为空；Webhook、通用 DLQ 和监管投递未装配，`REGULATORY_*` 未被配置加载及 worker 消费。保留的事件与发送适配器不代表任务已运行，不能据表、模板变量或组件存在宣称外部投递可用。
 
@@ -148,7 +145,7 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`。见 `docs/agents
 | --- | --- | --- | --- |
 | [golang-google-wire](.agents/skills/golang-google-wire/SKILL.md) | 编译期注入、provider set、接口绑定、cleanup、wireinject build tag 与生成 `wire_gen.go`。 | 项目实际使用 Wire，维护或明确评估编译期生成装配时。 | 核对生成代码、构建 tag 和失败清理；手工装配本身不需要 Wire，不因有构造函数就触发代码生成。 |
 | [golang-uber-dig](.agents/skills/golang-uber-dig/SKILL.md) | 运行期反射容器，Provide/Invoke、In/Out 参数对象、命名值、值组、作用域与装饰。 | 实际使用或明确评估 `go.uber.org/dig`，排查容器依赖图时。 | 负责具体容器解析；需要 Fx 的生命周期和模块时用 uber-fx。不能以容器替代所属用例的窄接口或退出等待。 |
-| [golang-uber-fx](.agents/skills/golang-uber-fx/SKILL.md) | Fx 应用装配、Module、Lifecycle、注解、值组、替换依赖、启动/停止 hook 与测试。 | 实际使用或明确评估 `go.uber.org/fx`，维护 `fx.New` 和资源生命周期时。 | 要证明启动失败清理、取消和任务等待符合现有语义；原始 Dig 容器 API 用 uber-dig，不自动把五个入口迁为 Fx。 |
+| [golang-uber-fx](.agents/skills/golang-uber-fx/SKILL.md) | Fx 应用装配、Module、Lifecycle、注解、值组、替换依赖、启动/停止 hook 与测试。 | 实际使用或明确评估 `go.uber.org/fx`，维护 `fx.New` 和资源生命周期时。 | 要证明启动失败清理、取消和任务等待符合现有语义；原始 Dig 容器 API 用 uber-dig，不自动迁移现有单体装配。 |
 | [golang-samber-do](.agents/skills/golang-samber-do/SKILL.md) | samber/do 类型化容器、provider、别名、作用域、服务生命周期、健康检查与关闭。 | 实际使用 `github.com/samber/do` 或 `/v2`，或明确评估类型化 DI 容器时。 | 与 dependency-injection 配合，核对版本和关闭顺序；普通手工注入不自动采用容器，也不把健康检查等同于完成业务任务退出。 |
 
 ### CLI 框架专项（2 个）
@@ -201,14 +198,13 @@ Issue 与规格以 markdown 文件形式存放在 `.scratch/`。见 `docs/agents
 - Go 版本以 `go.mod` 为准，当前为 Go 1.27；使用其标准库与语言能力，不为旧编译器改写代码。
 - 后端检查直接使用 tasks.mjs：`node tasks.mjs fmt` 调用 `go fmt ./...`，`node tasks.mjs lint` 调用 `go vet ./...`，`node tasks.mjs test` 调用 `go test ./...`；`node tasks.mjs check` 顺序执行 `check-rules`、fmt、lint、test 四项，其中规则层检查 `node tasks.mjs check-rules` 只读文档与迁移 schema（运行方式见 [运行与数据维护](docs/operations.md)）。**涉及 GORM 投影、枚举参数、状态写入、行锁或幂等的改动，除默认门禁外还必须跑 `go vet -tags integration ./...` 与 `node scripts/db/test-integration.mjs`**：前者能在真库执行前发现类型断裂，后者是唯一能发现单元素 `IN` 列表、map 动态类型比较与 GORM Statement 复用问题的门禁（路线图 9.2 节登记了六个此类回归）。目录、依赖方向、表归属与接口契约按本规范和代码评审核对，不使用架构检查脚本。
 - **真库集成测试单列一层**：`node tasks.mjs test-integration`（预先设置 `TEST_MYSQL_URL`） 带 `//go:build integration` 跑真实 MySQL。`node tasks.mjs check` 不含它（不依赖 Docker）。2026-10-06 起 CI workflow 与独立测试实例编排（compose.test.yaml）已移除，集成测试经 `scripts/db/test-integration.mjs` 直接对开发环境执行；行锁、唯一键冲突、幂等重放、`SKIP LOCKED` 需要真实 MySQL 语义验证，详见「并发与幂等」。
-- 目录结构定稿如下。后端 Go 模块整体位于 `backend/`（含 `cmd/`、`internal/`、`migrations/`、`go.mod` 与服务镜像 `Dockerfile`），下图为 `backend/` 内部结构；本文件后文与 `docs/` 提到的 `cmd/`、`internal/`、`migrations/` 路径均相对 `backend/`。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
+- 目录结构定稿如下。后端 Go 模块整体位于 `backend/`（含 `cmd/`、`internal/`、`migrations/`、`go.mod`），下图为 `backend/` 内部结构；本文件后文与 `docs/` 提到的 `cmd/`、`internal/`、`migrations/` 路径均相对 `backend/`。新增或迁移文件时同步维护本图，括号内注明迁移前的位置：
 
 ```text
 wattharbor/backend/          Go 后端模块（仓库根布局见本图末尾）
 │
 ├── cmd                                                   进程入口
 │   ├── wattharbor/main.go                               单体入口
-│   ├── {admin,central,gateway,user,worker}/main.go         五进程部署入口
 │   ├── devseed/{main,scheme}.go
 │   ├── migrate/{main,unified}.go
 │   └── simulator-dc589/main.go
@@ -695,7 +691,6 @@ wattharbor/backend/          Go 后端模块（仓库根布局见本图末尾）
 ├── migrations/central_db/0001_init.sql
 ├── migrations/gateway_db/0001_init.sql
 ├── migrations/worker_db/0001_init.sql
-├── Dockerfile                                            服务镜像：上下文为 backend/，容器内编译 ./cmd/<SERVICE>
 └── go.mod  go.sum  .dockerignore
 
 仓库根（backend/ 之外，路径相对仓库根）：
@@ -828,8 +823,8 @@ wattharbor/backend/          Go 后端模块（仓库根布局见本图末尾）
 - 验证与联调优先用既有路径：`scripts/dev/start.mjs`（开发栈）、`/health/ready` 判定就绪。**不要为"多验证一点"另造旁路脚本**——自建的临时容器、临时二进制、临时灌库脚本既要自己收拾，又复现不了仓库既有的正确做法。需要新验证手段时先用仓库里已有的，或提出方案经确认后再写。
 - 不得自行在宿主机启动常驻本地服务器或 dev server，也不得为 `dist` 另建静态服务；这两类一律用容器内的地址。确需一次性临时服务时避开容器占用端口，用完立即停止并说明用途。
 - 验证前端渲染访问容器内的后台与用户端 H5 地址，并同时确认页面控制台无报错。
-- 本地地址固定：后台 `5173/admin/`、用户 H5 `5174/`、MySQL `3306`、Redis Cache `6379` 与 Stream `6380`、DC589 `9100`；user、admin、gateway、worker HTTP 分别可从宿主机 `127.0.0.1:8080/8081/8083/8085` 访问，central `8082` 只在容器网络可达。五个进程均提供 `/health/live`、`/health/ready` 和 `/metrics`；检查 central 就绪须从开发栈网络内请求。
-- Go 服务没有热重载。修改后按 README 重建受影响的服务，优先只重建该服务而非整个栈；确需重启整栈时先说明理由。
+- 本地地址：后台 `5173/admin/`、用户 H5 `5174/`、单体 HTTP `8080`、MySQL `3306`、Redis Cache `6379` 与 Stream `6380`、DC589 `9100`。开发端口绑定环回。单体提供 `/health/live`、`/health/ready` 和各模块的 `/metrics/{role}`。
+- Go 后端启动时编译。修改后按 README 重新创建 `app`，保留依赖容器和数据卷。
 - 设备联调的两个模拟器须在独立终端分别执行 `scripts/dev/simulator.mjs --number 1` 与 `--number 2`，属前台交互进程，不得作为后台服务重复拉起。模拟器与模拟支付结果不得当作实机或真实资金验收。
 
 ## 并发与幂等

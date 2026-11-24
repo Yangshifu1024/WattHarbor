@@ -20,7 +20,7 @@ WattHarbor（电港）是单客户独立部署的二轮车充电运营平台，�
 
 ## 仓库结构
 
-- `backend/`：后端 Go 模块 `wattharbor`（`cmd/`、`internal/`、`migrations/`、`go.mod`），服务镜像定义为 `backend/Dockerfile`，构建上下文即该目录。后端路径约定见 [AGENTS.md](AGENTS.md)。
+- `backend/`：后端 Go 模块 `wattharbor`（`cmd/`、`internal/`、`migrations/`、`go.mod`），单体镜像定义为 [Dockerfile.monolith](docker/Dockerfile.monolith)。后端路径约定见 [AGENTS.md](AGENTS.md)。
 - `frontend/admin-web/`、`frontend/miniprogram/`：运营后台与用户端前端。
 - `docker/`：Compose 编排（`compose.dev.yaml`、`compose.prod.yaml`）、生产 Caddyfile 与 MySQL 初始化 SQL。
 - 仓库根：`scripts/`（跨平台 Node 脚本）、`docs/` 与根 `tasks.mjs`。
@@ -35,24 +35,23 @@ node scripts/dev/start.mjs
 node scripts/dev/prepare.mjs
 ```
 
-也可直接使用 `docker compose -f docker/compose.dev.yaml up -d`。首次启动会安装前端依赖、编译后端并初始化空库；启动和数据准备均保留已有数据及配置。
+也可直接使用 `docker compose -f docker/compose.dev.yaml up -d --wait --remove-orphans`。首次启动会安装前端依赖、编译后端并初始化空库；启动和数据准备均保留已有数据及配置。
 
 | 入口 | 本地地址 |
 | --- | --- |
 | 运营后台 | http://127.0.0.1:5173/admin/ |
 | 用户 H5 | http://127.0.0.1:5174/ |
-| user / admin API | `127.0.0.1:8080` / `8081` |
-| gateway / worker HTTP | `127.0.0.1:8083` / `8085` |
+| 单体 HTTP | `127.0.0.1:8080`（用户、后台、支付回调、健康检查） |
 | DC589/TCP | `127.0.0.1:9100` |
 | MySQL | `127.0.0.1:3306` |
 | Redis Cache / Stream | `127.0.0.1:6379` / `6380` |
 
 开发后台默认账号为 `admin / ChangeMe!Admin2026`，H5 测试账号为 `tester-1`。后台引导只在账号表为空时执行。准备脚本读取当前进程的 `ADMIN_BOOTSTRAP_USER`、`ADMIN_BOOTSTRAP_PASSWORD`，不自动加载 `.env`；已有账号改密后须传入有效凭证。
 
-开发栈使用开发登录和模拟支付，模拟支付仍走订单、设备、结算和退款流程。Go 服务没有热重载；修改源码后重建对应进程，例如：
+开发栈使用开发登录和模拟支付，模拟支付仍走订单、设备、结算和退款流程。Go 服务启动时编译。修改源码后重新创建应用容器：
 
 ```sh
-docker compose -f docker/compose.dev.yaml up -d --no-deps --force-recreate user admin central gateway worker
+docker compose -f docker/compose.dev.yaml up -d --wait --no-deps --force-recreate app
 ```
 
 修改用户端 `app.config.ts` 后，须重启 `user-h5` 容器才能重建路由表：`docker compose -f docker/compose.dev.yaml restart user-h5`。
@@ -70,61 +69,31 @@ node scripts/dev/simulator.mjs --number 2
 
 联调顺序：确认设备在线 → 用户选择端口和套餐 → 模拟付款 → 调整功率或刷卡 → 停止充电 → 核对计量、账单、退款及钱包流水。TUI 用 `m` 打开菜单、`Tab` 切页、`q` 退出；无界面控制和重启恢复说明见 [模拟器操作](docs/operations.md#模拟器操作)。
 
-## 服务与代码
+## 应用与代码
 
-`wattharbor` 单体命令装配下表中的五个角色，同一进程运行 HTTP、DC589 TCP 和后台任务。新部署可使用一个 MySQL schema；使用现有三库时可在启用单体的同时保留三个 schema。可执行入口位于 `backend/cmd/`，服务装配和生命周期位于 `backend/internal/application/`。
+[wattharbor](backend/cmd/wattharbor/main.go) 是唯一业务入口。HTTP 8080 接收用户、后台与支付通知，DC589 TCP 9100 接收设备连接，任务循环在同一进程执行。
 
-五进程编排的端口与数据库如下。
+| 模块 | 职责 |
+| --- | --- |
+| `user` | 登录、扫码、订单、支付、钱包与卡券 |
+| `admin` | 站点、设备、订单、资金、审计与导出 |
+| `central` | 内部用例编排、授权、回执、计费与退款 |
+| `gateway` | 设备接入、指令、心跳与端口占用 |
+| `worker` | 持久任务扫描、回执同步及 Outbox 发布 |
 
-| 进程 | 职责 | 数据库 | HTTP |
-| --- | --- | --- | --- |
-| `user` | 用户登录、扫码、订单、支付、钱包与卡券 | `central_db` | `8080` |
-| `admin` | 站点、设备、订单、资金、审计与导出 | `central_db` | `8081` |
-| `central` | 内部用例编排、授权、回执、计费与退款 | `central_db` | `8082` |
-| `gateway` | TCP 接入、设备指令、心跳与端口占用 | `gateway_db` | `8083` |
-| `worker` | 持久任务扫描、结果同步与 Outbox 发布 | 三库；执行状态在 `worker_db` | `8085` |
-
-central 的 `8082` 在开发和生产编排中都不映射到宿主机，只能从容器网络访问。生产 HTTP 经 Caddy 分流至 user/admin，gateway/worker HTTP 仅内网可达；设备另走 `9100/TCP`。五个服务均提供 `/health/live`、`/health/ready` 和 `/metrics`。
-
-业务按 `backend/internal/` 下十二个 use case 组织；`backend/internal/http/` 负责 HTTP 适配，`backend/internal/domain/` 保存纯规则。服务间 DTO 在 `contracts/`，具名客户端在 `integration/`；请求以 `Request` 结尾，响应以 `Reply` 结尾。完整职责和维护规则见 [AGENTS.md](AGENTS.md)；规则层按类目各有唯一落点，单一入口是 [规则层入口](docs/rules/README.md)。
-
-下面展示五进程部署的主要调用与存储关系。三库是同一 MySQL 实例中的独立 schema；内部 HTTP 调用携服务令牌。五个进程复用同一套用例包，user/admin 在本进程执行所属用例并访问 `central_db`。
+内部模块调用在进程内保留请求契约与服务令牌。生产通过 Caddy 提供公开 API、后台和 H5。应用内网提供 `/health/live`、`/health/ready` 和各模块的 `/metrics/{role}`。生产默认使用 `wattharbor` 单库，开发沿用同一个 MySQL 实例的三库。
 
 ```mermaid
-flowchart TB
-    Client["微信小程序 / 用户客户端"] --> Edge["Caddy · HTTPS"]
-    Browser["运营后台浏览器"] -->|"后台 API / 静态页面"| Edge
-    Edge -->|"用户 API / 支付通知"| User["user · 8080"]
-    Edge -->|"后台 API"| Admin["admin · 8081"]
-    Device["DC589 设备"] <-->|"TCP · 9100"| Gateway["gateway · 8083"]
-    subgraph Internal["容器内网"]
-        User
-        Admin
-        Central["central · 8082"]
-        Gateway
-        Worker["worker · 8085"]
-        User -->|"扫码 / 订单采样 / 停止"| Gateway
-        Admin -->|"设备读写"| Gateway
-        Gateway -->|"启动 / 停止授权"| Central
-        Central -->|"观测查询 / 自动停止"| Gateway
-        Worker -->|"计费 / 退款 / 回执提交"| Central
-        Worker -->|"启动派发 / 事件读取"| Gateway
-    end
-    subgraph Storage["持久状态与事件"]
-        CDB[("central_db")]
-        GDB[("gateway_db")]
-        WDB[("worker_db")]
-        Stream[("Redis Stream")]
-    end
-    User --> CDB
-    Admin --> CDB
-    Central --> CDB
-    Gateway --> GDB
-    Worker -->|"业务 Outbox"| CDB
-    Worker -->|"设备 Outbox"| GDB
-    Worker -->|"调度记录"| WDB
-    Worker -->|"发布事件"| Stream
+flowchart LR
+    HTTP["管理后台 / H5 / 小程序 / 支付通知"] --> Caddy["Caddy · HTTPS"]
+    Caddy -->|"HTTP 8080"| App["WattHarbor · API、设备、后台任务"]
+    Device["DC589 设备"] <-->|"TCP 9100"| App
+    App --> Database[("MySQL")]
+    App --> Cache[("Redis Cache")]
+    App --> Stream[("Redis Stream")]
 ```
+
+业务用例位于 `backend/internal/`，应用装配位于 `internal/application/`，HTTP 适配位于 `internal/http/`，纯业务规则位于 `internal/domain/`。维护规则见 [AGENTS.md](AGENTS.md) 和 [规则层入口](docs/rules/README.md)。
 
 ## 核心业务流程
 
@@ -394,7 +363,7 @@ flowchart TD
     Mark -->|"提交成功"| Done["发布完成"]
 ```
 
-实现入口：[worker 装配](backend/internal/application/worker/app.go)、[轮询运行时](backend/internal/worker/runtime/runtime.go)、[Outbox 发布器](backend/internal/worker/outbox/publisher.go)。单体在付款确认或关键设备事件提交后立即唤醒同步，并保留每秒补扫。五进程模式每秒同步刷卡、待启动、启动及结束结果并发布 Outbox。两种模式每 10 秒依次触发自动停止、计费及退款。Redis 已写入但发布标记未提交时可能重复发布，事件处理须按稳定 ID 去重。当前调度器处理器表为空，Webhook、通用 DLQ 和监管投递未装配；任务周期、Stream 用途与恢复边界见[异步任务](docs/business-contracts.md#异步任务)。
+实现入口：[worker 装配](backend/internal/application/worker/app.go)、[轮询运行时](backend/internal/worker/runtime/runtime.go)、[Outbox 发布器](backend/internal/worker/outbox/publisher.go)。单体在付款确认或关键设备事件提交后立即唤醒同步，并保留每秒补扫。同步包括刷卡、待启动、启动及结束结果和 Outbox 发布；每 10 秒依次触发自动停止、计费及退款。Redis 已写入但发布标记未提交时可能重复发布，事件处理须按稳定 ID 去重。当前调度器处理器表为空，Webhook、通用 DLQ 和监管投递未装配；任务周期、Stream 用途与恢复边界见[异步任务](docs/business-contracts.md#异步任务)。
 
 ## 接口与业务约定
 
@@ -418,7 +387,7 @@ node tasks.mjs build-all
 node scripts/db/test-integration.mjs
 ```
 
-`node tasks.mjs check` 先运行规则层检查 `node tasks.mjs check-rules`（只读文档与迁移 schema），再依次运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`（go 命令由 tasks.mjs 进入 `backend/` 执行）；pre-commit 钩子依次运行规则层检查、vet 和默认测试（经 scripts/git/pre-commit.mjs，不依赖 Make），**钩子默认未启用，克隆后须先执行 `node scripts/git/install-hooks.mjs`**。任务路径以入口文件定位，可从任意工作目录调用其绝对路径；`node tasks.mjs --help` 查看全部任务。编译产物在 `bin/`，可用 `node tasks.mjs build central` 单独构建。
+`node tasks.mjs check` 先运行规则层检查 `node tasks.mjs check-rules`（只读文档与迁移 schema），再依次运行 `go fmt ./...`、`go vet ./...` 和 `go test ./...`（go 命令由 tasks.mjs 进入 `backend/` 执行）；pre-commit 钩子依次运行规则层检查、vet 和默认测试（经 scripts/git/pre-commit.mjs，不依赖 Make），**钩子默认未启用，克隆后须先执行 `node scripts/git/install-hooks.mjs`**。任务路径以入口文件定位，可从任意工作目录调用其绝对路径；`node tasks.mjs --help` 查看全部任务。编译产物在 `bin/`，可用 `node tasks.mjs build wattharbor` 单独构建。
 
 任务入口覆盖 `fmt`、`lint`、`test`、`test-integration`、`build`、`build-all`、`check-rules`、`check`、`clean`、`dev-up` 和 `dev-down`。`clean` 只清理 `bin/`，`dev-down` 停止开发容器并保留数据卷。任务编排与跨平台路径测试使用 `node --test scripts/tasks.test.mjs`。
 
@@ -435,27 +404,14 @@ node scripts/db/test-integration.mjs
 
 ## 生产部署与维护
 
-新环境可用单体镜像部署。镜像同时内嵌管理后台 `/admin/` 和用户 H5 `/h5/`，启动前用 Goose 初始化 `wattharbor` 单库。
+[compose.prod.yaml](docker/compose.prod.yaml) 构建单体镜像，内嵌后台 `/admin/` 和用户 H5 `/h5/`。复制 [.env.example](.env.example) 为 `.env`，填写凭据及域名：
 
 ```sh
-docker compose -f docker/compose.monolith.yaml config --quiet
-docker compose -f docker/compose.monolith.yaml up -d --build
-```
-
-配置、启动次序、健康检查及已有三库部署的切换方式见 [单体部署](docs/operations.md#单体部署)。
-
-五进程入口为 [compose.prod.yaml](docker/compose.prod.yaml)。复制 [.env.example](.env.example) 为 `.env`，填写实际凭据和域名，先构建后台静态文件，再检查并启动：
-
-```sh
-npm --prefix frontend/admin-web ci
-npm --prefix frontend/admin-web run build
 node scripts/ops/check-deploy.mjs
-docker compose -f docker/compose.prod.yaml up -d --build
+docker compose --env-file .env -f docker/compose.prod.yaml up -d --build --wait
 ```
 
-默认支付模式为 `disabled`。微信直连需要有效商户参数，并在 user 和 central 容器中只读挂载私钥；仅设置路径变量不会创建文件。生产配置、支付挂载、监控及故障定位见 [运行与数据维护](docs/operations.md)。
-
-三库由 Goose 初始化，定义见 [central](backend/migrations/central_db/0001_init.sql)、[gateway](backend/migrations/gateway_db/0001_init.sql)、[worker](backend/migrations/worker_db/0001_init.sql)。已执行的初始化 SQL 修改后不会自动重跑；保留数据时先备份再做兼容更新。开发重建会清空三库及项目 Redis，操作条件见 [数据库维护](docs/operations.md#数据库)。备份恢复说明见 [运行与数据维护](docs/operations.md#备份与恢复)，恢复前须核对归档和目标环境。
+首次启动会由 Goose 初始化 `wattharbor` 单库，并为业务进程配置运行账号。微信直连需设置有效商户参数，并为 `app` 容器挂载只读私钥。已有三库、运行维护及数据备份恢复见 [运行与数据维护](docs/operations.md#单体部署)。
 
 ## 当前边界
 

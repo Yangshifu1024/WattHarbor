@@ -1,4 +1,4 @@
-// 在开发栈调用用户 API、运行 worker 任务，并通过 TCP 设备模拟器执行充电场景。
+// 调用开发单体应用的 API，并通过 TCP 设备模拟器执行充电场景。
 // 场景结束后查询开发数据库，检查订单、费用和退款记录。场景及断言说明见
 // docs/operations.md「全链路场景验收」。
 //
@@ -18,21 +18,20 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\\$/, '');
-const USER = 'http://127.0.0.1:8080/api/v1';
-const ADMIN = 'http://127.0.0.1:8081/api/v1';
-const SIM = 'http://127.0.0.1:9190';
+const API = process.env.DEV_API_BASE_URL || 'http://127.0.0.1:8080/api/v1';
+const SIM = process.env.DEV_SIMULATOR_URL || 'http://127.0.0.1:9190';
 // prepare.mjs 导入的 1 号模拟器设备的 1 号端口业务编码。
 const PORT_CODE = '5348240514082652-1';
-// 使用开发栈 Compose 配置；s7 强制停止 worker 容器后再启动。
-const COMPOSE = ['compose', '-f', 'docker/compose.dev.yaml'];
+// S7 重启单体。指定 COMPOSE_FILE 时，数据库查询和重启动作使用同一个开发栈。
+const COMPOSE = ['compose', ...(process.env.COMPOSE_FILE ? [] : ['-f', 'docker/compose.dev.yaml'])];
 
 // 将不安全的大整数按原 JSON 文本读为 BigInt，写请求时保留整数文本。
 const readJSON = text => JSON.parse(text, (_k, v, ctx) =>
   typeof v === 'number' && Number.isInteger(v) && !Number.isSafeInteger(v) ? BigInt(ctx.source) : v);
 const writeJSON = v => JSON.stringify(v, (_k, i) => typeof i === 'bigint' ? JSON.rawJSON(i.toString()) : i);
 
-async function call(base, method, path, body, token) {
-  const r = await fetch(base + path, {
+async function call(method, path, body, token) {
+  const r = await fetch(API + path, {
     method,
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     ...(body ? { body: writeJSON(body) } : {}),
@@ -50,7 +49,7 @@ const simEvent = async body => {
 };
 
 function sql(db, text) {
-  const out = execFileSync('docker', ['compose', '-f', 'docker/compose.dev.yaml', 'exec', '-T', 'mysql', 'sh', '-c',
+  const out = execFileSync('docker', [...COMPOSE, 'exec', '-T', 'mysql', 'sh', '-c',
     `MYSQL_PWD="$MYSQL_PASSWORD" mysql --protocol=TCP -uwattharbor ${db} -N -B -e '${text}'`],
     { encoding: 'utf8', cwd: ROOT });
   return out.trim().split('\n').filter(l => l !== '').map(l => l.split('\t'));
@@ -107,20 +106,20 @@ const rows1 = rows => rows.length
 
 // 开发登录：dev:<账号> 仅 LOGIN_MODE=development 可用，首登自动建用户与零余额钱包。
 async function login() {
-  const out = await call(USER, 'POST', '/user/auth/login', { code: 'dev:e2e' });
+  const out = await call('POST', '/user/auth/login', { code: 'dev:e2e' });
   return out.token ?? out.jwt;
 }
 
 // 标准下单链路：匿名报价选套餐 → 登录创建支付 → 模拟确认到账；到账后 worker
 // 经 paid_start 队列派发 START。offerMode 取报价项的 mode（amount/duration/energy）。
 async function startCharge(token, offerMode) {
-  const offers = await call(USER, 'POST', '/user/scan/offers', { port_id: PORT_CODE });
+  const offers = await call('POST', '/user/scan/offers', { port_id: PORT_CODE });
   const offer = offers.items.find(o => o.mode === offerMode);
   if (!offer) throw new Error('offers 无可用套餐：' + writeJSON(offers.items));
-  const started = await call(USER, 'POST', '/user/scan/start', {
+  const started = await call('POST', '/user/scan/start', {
     client_request_id: crypto.randomUUID(), port_id: PORT_CODE, offer_id: offer.id,
   }, token);
-  await call(USER, 'POST', '/user/development/payments/confirm', { merchant_order_no: started.merchant_order_no }, token);
+  await call('POST', '/user/development/payments/confirm', { merchant_order_no: started.merchant_order_no }, token);
   return { offers, offer, started };
 }
 
@@ -141,9 +140,9 @@ function verdict(name, order, fail, detail) {
 // budget：创建并应用 10 分金额套餐方案（S4 专用）。应用走乐观锁，
 // expected_version 取站点当前生效版本；需要模拟器在线以解析站点。
 async function budget() {
-  const login0 = await call(ADMIN, 'POST', '/admin/auth/login', { username: 'admin', password: 'ChangeMe!Admin2026' });
+  const login0 = await call('POST', '/admin/auth/login', { username: 'admin', password: 'ChangeMe!Admin2026' });
   const token = login0.token ?? login0.access_token;
-  const schemes = await call(ADMIN, 'GET', '/admin/settings/charging-schemes', null, token);
+  const schemes = await call('GET', '/admin/settings/charging-schemes', null, token);
   let tpl = schemes.items.find(t => t.scheme.name === 'E2E预算方案');
   if (!tpl) {
     const base = schemes.items.find(t => t.scheme.name === '双模拟器测试方案')?.scheme;
@@ -151,11 +150,11 @@ async function budget() {
     const scheme = structuredClone(base);
     scheme.name = 'E2E预算方案';
     scheme.packages = scheme.packages.map(p => p.mode === 'amount' ? { ...p, name: '0.1元预算', price_cents: 10 } : p);
-    tpl = await call(ADMIN, 'POST', '/admin/settings/charging-schemes', { scheme }, token);
+    tpl = await call('POST', '/admin/settings/charging-schemes', { scheme }, token);
   }
-  const offers = await call(USER, 'POST', '/user/scan/offers', { port_id: PORT_CODE });
-  const effective = await call(ADMIN, 'GET', `/admin/stations/${offers.station_id}/charging-scheme`, null, token);
-  const applied = await call(ADMIN, 'POST', '/admin/settings/charging-schemes/apply', {
+  const offers = await call('POST', '/user/scan/offers', { port_id: PORT_CODE });
+  const effective = await call('GET', `/admin/stations/${offers.station_id}/charging-scheme`, null, token);
+  const applied = await call('POST', '/admin/settings/charging-schemes/apply', {
     request_id: crypto.randomUUID(), station_id: offers.station_id,
     template_id: tpl.id, template_version: tpl.version, expected_version: effective.version ?? 0,
   }, token);
@@ -217,7 +216,7 @@ async function s2() {
   const id = o.id;
   await simEvent({ type: 'power', port: 1, power_deciwatts: 2500 });
   await sleep(90000);
-  await call(USER, 'POST', '/user/charge/stop', { order_no: o.order_no }, token);
+  await call('POST', '/user/charge/stop', { order_no: o.order_no }, token);
   const done = await waitOrder(x => x?.status === 'completed', '订单转 completed', 120000);
   await waitJobDone(id);
   const cutoff = await orderCutoff(id);
@@ -266,34 +265,59 @@ async function s5() {
   return verdict('S5 掉电零功率自动停机', done, fail, { cutoff, fee, pay, refunds });
 }
 
-// S7 worker 中断恢复：先强制停止 worker，再请求设备停止充电。
-// worker 停止期间订单应保持 charging 且没有结束回执；重启后应保存结束回执并完成计费。
-// 会话过短可能没有心跳，因此不检查分段数量。
+// S7 单体中断恢复：充电中强制停止应用，检查订单状态与结束回执，
+// 重启后等待模拟器重新注册，再走用户停机和计费链路。
 async function s7() {
   const token = await login();
   const fail = [];
   await startCharge(token, 'amount');
   const o = await waitOrder(x => x?.status === 'charging', '订单转 charging', 90000);
   const id = o.id;
-  execFileSync('docker', [...COMPOSE, 'kill', '--signal=KILL', 'worker'], { cwd: ROOT, stdio: 'pipe' });
-  await sleep(3000);
-  await call(USER, 'POST', '/user/charge/stop', { order_no: o.order_no }, token);
-  // 等待 12 秒，检查 worker 停止期间订单是否仍为 charging 且没有结束回执。
-  await sleep(12000);
-  const stuck = rows1(await latestOrder());
-  const stuckReceipt = await orderEndReceipt(id);
-  assert(stuck.status === 'charging', `worker 缺席期间订单应保持 charging，得到 ${stuck.status}`, fail);
-  assert(stuckReceipt.length === 0, 'worker 缺席期间不应出现结束回执', fail);
-  execFileSync('docker', [...COMPOSE, 'up', '-d', '--wait', 'worker'], { cwd: ROOT, stdio: 'pipe' });
-  const done = await waitOrder(x => x?.status === 'completed', '重启后订单转 completed', 120000);
+  const sampleCount = () => Number(sql('gateway_db',
+    `SELECT COUNT(*) FROM charge_process WHERE charge_order_id = ${id}`)[0][0]);
+  const samples = await until(async () => {
+    const count = sampleCount();
+    return { ok: count > 0, value: count };
+  }, '订单采样写入', 45000);
+  const waitDevice = online => until(async () => {
+    try {
+      const result = await fetch(new URL('/state', SIM), { signal: AbortSignal.timeout(5000) });
+      const data = result.ok ? await result.json() : null;
+      return { ok: data?.state?.online === online, value: result.status };
+    } catch (error) {
+      return { ok: false, value: error.message };
+    }
+  }, online ? '设备重新注册' : '设备连接关闭', 45000);
+
+  let paused;
+  try {
+    execFileSync('docker', [...COMPOSE, 'kill', '--signal=KILL', 'app'], { cwd: ROOT, stdio: 'pipe' });
+    await waitDevice(false);
+    paused = rows1(await latestOrder());
+    assert(paused?.status === 'charging', `应用停止期间订单应保持 charging，得到 ${paused?.status}`, fail);
+    assert(orderEndReceipt(id).length === 0, '应用停止期间订单应尚无结束回执', fail);
+    assert(sampleCount() >= samples, '应用停止前已写入的采样应继续保留', fail);
+  } finally {
+    execFileSync('docker', [...COMPOSE, 'start', '--wait', '--wait-timeout', '90', 'app'], { cwd: ROOT, stdio: 'pipe' });
+  }
+
+  await waitDevice(true);
+  await simEvent({ type: 'heartbeat' });
+  await until(async () => {
+    const count = sampleCount();
+    return { ok: count > samples, value: count };
+  }, '重启后的订单采样写入', 45000);
+  await call('POST', '/user/charge/stop', { order_no: o.order_no }, token);
+  const done = await waitOrder(x => x?.id === id && x.status === 'completed', '重启后订单转 completed', 120000);
   await waitJobDone(id);
   const events = (await orderEvents(id)).map(r => r[0]);
-  const meter = meterSummary((await orderEndReceipt(id))[0]?.[0]);
+  const receipts = await orderEndReceipt(id);
+  const meter = meterSummary(receipts[0]?.[0]);
   const fee = await orderFee(id);
   assert(events.includes('charge_ended'), '恢复后缺少 charge_ended 事件', fail);
-  assert(meter !== null, '恢复后缺少结束回执', fail);
+  assert(receipts.length === 1 && meter !== null, '恢复后应有且仅有一条结束回执', fail);
   assert(fee, '恢复后缺少费用回执', fail);
-  return verdict('S7 worker 中断恢复', done, fail, { stuck, events, meter, fee });
+  return verdict('S7 单体中断恢复', done, fail, { paused, events, meter, fee });
 }
 
 // S4 预算封顶：10 分金额套餐加高功率，预算耗尽自动停机。
@@ -331,7 +355,7 @@ async function s8() {
   const o = await waitOrder(x => x?.status === 'charging', '订单转 charging', 90000);
   const id = o.id;
   await sleep(45000);
-  await call(USER, 'POST', '/user/charge/stop', { order_no: o.order_no }, token);
+  await call('POST', '/user/charge/stop', { order_no: o.order_no }, token);
   const done = await waitOrder(x => x?.status === 'completed', '订单转 completed', 120000);
   await waitJobDone(id);
   const cutoff = await orderCutoff(id);
