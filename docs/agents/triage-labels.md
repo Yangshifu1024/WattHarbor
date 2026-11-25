@@ -4,7 +4,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 Because issues here are **local markdown files** rather than GitLab/GitHub issues, these
 strings are not server-side labels — they are written into the `Status:` line of each file
-under `.scratch/<feature-slug>/issues/`. Keep them exactly as written so the skills'
+under `docs/feats/<feature-slug>/issues/`. Keep them exactly as written so the skills'
 matching stays predictable.
 
 | Label in mattpocock/skills | Label in our tracker | Meaning                                  |

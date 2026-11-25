@@ -51,7 +51,7 @@
 
 ### Issue tracker
 
-议题和规格使用 `.scratch/` 内的 Markdown 文件，计划写明目标、依赖与验收标准。验收后在对应议题记录结果，将历史证据与待办、现行规则区分。见 [议题跟踪约定](docs/agents/issue-tracker.md)。
+议题和规格使用 `docs/feats/` 内的 Markdown 文件，计划写明目标、依赖与验收标准。验收后在对应议题记录结果，将历史证据与待办、现行规则区分。见 [议题跟踪约定](docs/agents/issue-tracker.md)。
 
 ### Triage labels
 
