@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { FROZEN_DOCUMENTS, NEW_LAYER_ENTRY, main } from './check-rules.mjs';
+import { FROZEN_DOCUMENTS, RULES_ENTRY, main } from './check-rules.mjs';
 
 // 记录 main 的全部输出，便于断言报告内容；成功与失败走同一个收集器。
 function capture() {
@@ -41,22 +41,22 @@ test('某条不变量被违反时报红，并点名不变量与涉及文件', ()
 // 冻结清单直接取检查自身的登记处，避免测试里再抄一份、抄漏了也不会失败。
 const FROZEN = FROZEN_DOCUMENTS;
 
-// 声明样板：紧跟标题，含「已冻结」「只读」，并按相对路径链接到新层入口。
+// 声明样板：紧跟标题，含「已冻结」「只读」，并按相对路径链接到维护入口。
 // flaw 用来制造检查应当抓到的各类声明缺陷：整体缺失、措辞不对、缺链接、链接落空、指错入口、位置不对。
 function declaration(docPath, flaw) {
   const lead = flaw === 'wording' ? '**请注意。** ' : '**已冻结、只读。** ';
-  const body = '本文档的规则已迁入新规则层，不再在此新增或修改；现行规则';
+  const body = '不在本文新增或修改规则；维护要求';
   if (flaw === 'nolink') return `> ${lead}${body}见规则层入口。`;
-  const target = { link: 'docs/rules/not-there.md', wrongentry: 'docs/other.md' }[flaw] ?? NEW_LAYER_ENTRY;
+  const target = { link: 'docs/not-there.md', wrongentry: 'docs/other.md' }[flaw] ?? RULES_ENTRY;
   return `> ${lead}${body}见 [规则层入口](${relative(dirname(docPath), target)})。`;
 }
 
-// 搭一个一次性的假仓库，只含新层入口与冻结文档，让检查对受控的文档集合判定。
+// 用一次性仓库验证受控的文档集合。
 async function frozenRepo(t, { flaws = {}, absent = [] } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'check-rules-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(dirname(join(root, NEW_LAYER_ENTRY)), { recursive: true });
-  await writeFile(join(root, NEW_LAYER_ENTRY), '# 规则层入口\n');
+  await writeFile(join(root, RULES_ENTRY), '# 仓库开发约定\n');
+  await mkdir(join(root, 'docs'), { recursive: true });
   // 指错入口这一缺陷需要一个确实存在、只是不是入口的目标，检查才不会靠「文件不存在」蒙混过关。
   await writeFile(join(root, 'docs/other.md'), '# 别的文档\n');
   for (const doc of FROZEN) {
@@ -80,7 +80,7 @@ test('冻结文档顶部缺少声明时报红，并点名该文档', async (t) =
   const status = main([], { ...options, root });
   const output = lines.join('\n');
   assert.notEqual(status, 0);
-  assert.match(output, /冻结文档顶部带冻结声明并指向新层/);
+  assert.match(output, /冻结文档顶部带冻结声明并指向维护入口/);
   assert.match(output, /docs\/business-contracts\.md/);
 });
 
@@ -104,24 +104,24 @@ test('冻结声明没有带链接时报红', async (t) => {
   assert.match(output, /链接/);
 });
 
-test('冻结声明的新层入口链接落空时报红', async (t) => {
+test('冻结声明的维护入口链接落空时报红', async (t) => {
   const root = await frozenRepo(t, { flaws: { [FROZEN[0]]: 'link' } });
   const { lines, options } = capture();
   const status = main([], { ...options, root });
   const output = lines.join('\n');
   assert.notEqual(status, 0);
   assert.match(output, /docs\/architecture-boundaries\.md/);
-  assert.match(output, /rules\/not-there\.md/);
+  assert.match(output, /not-there\.md/);
 });
 
-test('冻结声明指向存在但不是新层入口的文件时报红', async (t) => {
+test('冻结声明指向存在但不是维护入口的文件时报红', async (t) => {
   const root = await frozenRepo(t, { flaws: { [FROZEN[1]]: 'wrongentry' } });
   const { lines, options } = capture();
   const status = main([], { ...options, root });
   const output = lines.join('\n');
   assert.notEqual(status, 0);
   assert.match(output, /docs\/business-contracts\.md/);
-  assert.match(output, /新层入口/);
+  assert.match(output, /维护入口 AGENTS\.md/);
 });
 
 test('冻结声明被导语挤到标题之下时报红', async (t) => {
@@ -149,7 +149,7 @@ test('冻结文档补上声明后判定为绿，并点名该条不变量已实�
   const status = main([], options);
   const output = lines.join('\n');
   assert.equal(status, 0);
-  assert.match(output, /通过：冻结文档顶部带冻结声明并指向新层/);
+  assert.match(output, /通过：冻结文档顶部带冻结声明并指向维护入口/);
   assert.match(output, /0 条失败，4 条尚未实现/);
   assert.doesNotMatch(output, /失败：\[frozen-documents\]/);
 });

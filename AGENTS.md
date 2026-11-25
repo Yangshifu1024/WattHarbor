@@ -10,8 +10,8 @@
 ## 规则与资料入口
 
 - 回复、注释和文档使用中文。
-- 实现以源码、路由注册、初始化 SQL、Compose 和测试为准。维护规范从 [规则层入口](docs/rules/README.md) 查起，按任务阅读 [架构边界](docs/rules/architecture.md)、[业务不变量](docs/rules/business-invariants.md) 或 [验证入口](docs/rules/verification.md)。启动见 [README](README.md#本地运行)，部署、配置和数据维护见 [运行手册](docs/operations.md)。
-- 规则迁移期间，架构和业务仍需读取 [旧架构规则](docs/architecture-boundaries.md) 与 [旧业务契约](docs/business-contracts.md)。[冻结清单](docs/rules/README.md#冻结与归档) 中的文档只读。新增规则写入所属规则文档，实施历史归入 [计划归档](docs/rules/plans/archive/README.md)。
+- 实现以源码、路由注册、初始化 SQL、Compose 和测试为准。调整模块边界先读 [架构边界](docs/architecture-boundaries.md)，调整业务行为先读 [业务契约](docs/business-contracts.md)。启动见 [README](README.md#本地运行)，部署、配置和数据维护见 [运行手册](docs/operations.md)。
+- [冻结清单](scripts/rules/check-rules.mjs) 中的旧文档只读。新增规则按本文件的主题归类；可验证的约束写成断言，本文件只留执行指引。依赖方向、数据归属等无法自动判定的约束由评审核对。
 - 行为或运行契约变化时更新对应文档和受影响的链接。用户端路线图任务完成后更新 [路线图](docs/miniprogram-roadmap.md) 的状态与证据。
 
 ## 架构与编码
@@ -36,12 +36,12 @@
 
 - 联调使用 [现有 Compose 开发栈](README.md#本地运行)，以 `/health/ready` 判定就绪。按任务启停容器，保留数据和依赖卷。前端渲染使用容器入口并查看浏览器控制台。一次性临时服务须避开已有端口，用后停止；禁止另起常驻宿主机服务或重复拉起交互式模拟器。
 - 重建数据卷、`down -v`、重置开发库或清空 Redis 等破坏性动作需用户明确授权。模拟设备和模拟支付仅覆盖模拟链路。
-- 后端业务改动跑默认门禁，依赖变化在 `backend/` 执行 `go mod tidy -diff`，装配或构建变化构建受影响入口，JSON 变化加跑契约测试。受影响的前端执行各自的检查和目标构建。命令见 [验证入口](docs/rules/verification.md) 和 [开发与验证](README.md#开发与验证)。
+- 后端业务改动跑 `node tasks.mjs check`，无需连接数据库或启动容器。依赖变化在 `backend/` 执行 `go mod tidy -diff`，装配或构建变化构建受影响入口，公开 JSON 变化加跑 `node tasks.mjs test-contract`。前端按各自 README 执行检查和目标构建；构建与 Git 钩子见 [开发与验证](README.md#开发与验证)。
 - GORM 投影、枚举参数、状态写入、资金、行锁、唯一键及幂等改动，额外在 `backend/` 运行 `go vet -tags integration ./...`，并从仓库根目录运行 `node scripts/db/test-integration.mjs`。
 - 真库测试使用 `integration` 构建标签。缺少 `TEST_MYSQL_URL`、会话测试所需的 `TEST_REDIS_URL` 或锁观测权限时明确失败。现有脚本使用开发库，写入优先回滚；确需提交的夹具按完整主键清理并检查残留。
 - 并发测试使用独立连接和确定性闸门，按 `FROM` 精确匹配目标表，用 `performance_schema` 确认等待。对承重的行锁、唯一键、隔离级别及幂等判断，移除相应保护后核实相关测试会失败。
 - MySQL `REPEATABLE READ` 下，持有行锁后进行的普通聚合仍可能使用旧快照。额度判断须使用当前读，或在锁内维护已占用额度。依赖 `READ COMMITTED` 的重放路径须有测试固定隔离级别。
-- 纯文档、注释和文案改动核对事实、引用、链接和差异。修改规则文档时运行 `node tasks.mjs check-rules`。交付时报告实际执行的验证、剩余限制和未提交改动。
+- 纯文档、注释和文案改动核对事实、引用、链接和差异。修改规则文档时运行 `node tasks.mjs check-rules`；报告中标为「尚未实现」的断言不算通过。修改检查器时加跑 `node --test scripts/rules/check-rules.test.mjs`，Node 脚本测试不在默认门禁内。交付时报告实际执行的验证、剩余限制和未提交改动。
 
 ## 技能与协作
 
@@ -51,7 +51,7 @@
 
 ### Issue tracker
 
-议题和规格使用 `.scratch/` 内的 Markdown 文件。见 [议题跟踪约定](docs/agents/issue-tracker.md)。
+议题和规格使用 `.scratch/` 内的 Markdown 文件，计划写明目标、依赖与验收标准。验收后在对应议题记录结果，将历史证据与待办、现行规则区分。见 [议题跟踪约定](docs/agents/issue-tracker.md)。
 
 ### Triage labels
 

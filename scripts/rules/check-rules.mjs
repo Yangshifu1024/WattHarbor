@@ -7,11 +7,9 @@ import { fileURLToPath } from 'node:url';
 // ROOT 定位仓库根，使脚本可从任意目录执行。
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
-// NEW_LAYER_ENTRY 是规则层的单一入口；冻结声明必须指向它，指向别的文件不算「指向新层」。
-export const NEW_LAYER_ENTRY = 'docs/rules/README.md';
+export const RULES_ENTRY = 'AGENTS.md';
 
-// FROZEN_DOCUMENTS 登记已冻结、只读的旧规则文档：新层立起后，规则一律进新层，
-// 旧文档保留可读但不再接受新增规则。清单必须与实际冻结的文件同步。
+// FROZEN_DOCUMENTS 登记仍可查阅但不再更新规则的文档。清单必须与实际冻结的文件同步。
 export const FROZEN_DOCUMENTS = [
   'docs/architecture-boundaries.md',
   'docs/business-contracts.md',
@@ -43,7 +41,7 @@ function assertFrozenDeclarations(root) {
     }
     const declaration = freezeDeclaration(readFileSync(join(root, doc), 'utf8'));
     if (!declaration) {
-      violations.push({ file: doc, message: '顶部缺少冻结声明：首个二级标题之前须给出含「已冻结」「只读」并链接新层入口的声明' });
+      violations.push({ file: doc, message: '顶部缺少冻结声明：标题后须有包含「已冻结」「只读」并链接维护入口的声明' });
       continue;
     }
     if (!declaration.includes('已冻结') || !declaration.includes('只读')) {
@@ -52,7 +50,7 @@ function assertFrozenDeclarations(root) {
     }
     const targets = localTargets(declaration);
     if (targets.length === 0) {
-      violations.push({ file: doc, message: '冻结声明须带一个指向新层入口的链接，否则读到它的人无处可去' });
+      violations.push({ file: doc, message: '冻结声明须有指向维护入口的链接' });
       continue;
     }
     for (const target of targets) {
@@ -60,8 +58,8 @@ function assertFrozenDeclarations(root) {
         violations.push({ file: doc, message: `冻结声明的链接指向不存在的文件：${target}` });
       }
     }
-    if (!targets.some(target => normalize(join(dirname(doc), target)) === NEW_LAYER_ENTRY)) {
-      violations.push({ file: doc, message: `冻结声明的链接没有指向新层入口 ${NEW_LAYER_ENTRY}，指向别的文档不算「指向新层」` });
+    if (!targets.some(target => normalize(join(dirname(doc), target)) === RULES_ENTRY)) {
+      violations.push({ file: doc, message: `冻结声明的链接没有指向维护入口 ${RULES_ENTRY}` });
     }
   }
   return violations;
@@ -135,7 +133,7 @@ export const INVARIANTS = [
   { id: 'rule-marker', title: '执行层的规范性语句指向检查入口，或原地标注「本条无对应检查」', assert: null },
   { id: 'enum-value-strings', title: '数据库枚举的取值串不得出现在任何文档中，只能是指向迁移 schema 的指针', assert: null },
   { id: 'cross-doc-links', title: '跨文档引用的文件与锚点均可解析', assert: null },
-  { id: 'frozen-documents', title: '冻结文档顶部带冻结声明并指向新层', assert: assertFrozenDeclarations },
+  { id: 'frozen-documents', title: '冻结文档顶部带冻结声明并指向维护入口', assert: assertFrozenDeclarations },
   { id: 'adr-numbering', title: '架构决策目录编号连续、每份带状态标注', assert: assertAdrNumbering },
 ];
 

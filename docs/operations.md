@@ -71,24 +71,6 @@ services:
 
 REGULATORY_* 当前仅为预留变量，config 与 worker 未消费，设置 http 也不会启动监管投递。仓库保留可复用的发送适配器；目标平台的字段、签名、认证、响应与任务装配尚未接线。没有外部合规认证或可据此保证的 SLA、RPO、RTO。
 
-## 规则层检查
-
-```bash
-node tasks.mjs check-rules
-node --test scripts/rules/check-rules.test.mjs
-```
-
-规则层检查只读文档与迁移 schema，不连数据库、不连网络，秒级完成，是 `node tasks.mjs check` 的第一步。六条不变量的断言位置登记在 [check-rules.mjs](../scripts/rules/check-rules.mjs)，尚未实现的在报告里显式标为「尚未实现」并单独计数，**不算作已验证**——退出码 0 表示当前无违反，不表示六条都已断言化。**当前只有「冻结文档顶部带冻结声明并指向新层」一条有断言**，其余五条逐条报「尚未实现」；哪几条已实现以实际输出为准，见 [验证入口](rules/verification.md)。依赖方向、表归属与接口契约机器判不了，不由本检查判定，仍按 [仓库维护规则](../AGENTS.md) 由人工核对。
-
-`.mjs` 检查器与门禁编排的测试不进 `node tasks.mjs check`，按需单独执行；Go 检查仍在同一门禁内。
-
-Git 提交钩子也跑这一项，但**钩子默认未启用**，克隆后需显式安装一次：
-
-```bash
-node scripts/git/install-hooks.mjs
-```
-
-安装后每次提交依次执行 `check-rules`、`go vet ./...`、`go test ./...`，任一步失败即拒绝提交。格式化不在钩子内，仍需先执行 `node tasks.mjs fmt` 再暂存。卸载执行 `git config --unset core.hooksPath`。
 
 ## 数据库
 

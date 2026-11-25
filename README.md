@@ -93,7 +93,7 @@ flowchart LR
     App --> Stream[("Redis Stream")]
 ```
 
-业务用例位于 `backend/internal/`，应用装配位于 `internal/application/`，HTTP 适配位于 `internal/http/`，纯业务规则位于 `internal/domain/`。维护规则见 [AGENTS.md](AGENTS.md) 和 [规则层入口](docs/rules/README.md)。
+业务用例位于 `backend/internal/`，应用装配位于 `internal/application/`，HTTP 适配位于 `internal/http/`，纯业务规则位于 `internal/domain/`。维护规则见 [AGENTS.md](AGENTS.md)。
 
 ## 核心业务流程
 
@@ -373,7 +373,7 @@ flowchart TD
 - 金额使用整数分；用户 Snowflake ID 为十进制字符串，前端须保留精度。数据库时间按 UTC，计费日界及 DC589 本地时间按北京时间。
 - 下单冻结方案与价格；启动受理、设备启动、充电结束、结算及退款到账分别确认。未知设备结果保留占用，渠道结果未知复用原退款号查询。
 
-计价、钱包、卡、审核、权限和异步恢复的规则现行落点是 [业务不变量](docs/rules/business-invariants.md)，迁移前仍读冻结的 [业务与接口契约](docs/business-contracts.md)；设备报文见 [DC589 协议](docs/protocols/dc589.md)。
+计价、钱包、卡、审核、权限和异步恢复的维护要求见 [AGENTS.md](AGENTS.md#数据与业务安全)，细节参考冻结的 [业务与接口契约](docs/business-contracts.md)；设备报文见 [DC589 协议](docs/protocols/dc589.md)。
 
 ## 开发与验证
 

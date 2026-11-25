@@ -4,13 +4,7 @@
 
 配套文档：[架构边界与组织约束](architecture-boundaries.md)、[模块重构计划](refactor-roadmap.md)。
 
-## 生命周期与数据边界
-
-- start 拥有启动授权、待启动查询和回执事务；stop 拥有停止授权、截止冻结和恢复；finish 拥有结束回执、端口释放和结算任务提交。三个子包互不 import，measurement 无 IO。
-- 启动拒绝的余额退款调用 settlement，刷卡状态调用 card；结束回执同事务提交结算任务，回执、状态、资金、日志及 Outbox 没有拆成多次提交。
-- 启动与结束回执事务不再直接写订单与 Outbox：订单锁读及 paid→charging、paid→refunding、charging→completed 的推进走 order 的 LifecycleView 与三个 InTx 能力，订单事件走 order.AppendEventInTx，Outbox 走 ops.AppendEventInTx，均在原事务原位置调用。charge_start_receipt、charge_end_receipt 与 active_port_charge 的写模型已从 order 移到 charging 各阶段，order 不再导出公共回执类型，start 与 finish 仍互不引用。
-- stop 调用 card.PurchasedMinutesForOrder／LockPurchaseForOrder 及 order.LockChargingState。卡到期路径保持 card 会话→order 锁顺序；所属模块提供当前读取，不引入网络调用或反向依赖。
-- charging 下八个持久化文件已由 *_store.go 改为 *_repo.go；原目录不留别名或转发。迁移及新增字段、方法、接口和核心恢复逻辑补齐中文注释。
+当前实现见 [启动回执事务](../backend/internal/charging/start/result_repo.go)、[停止截止事务](../backend/internal/charging/stop/deadline_repo.go)和[结束回执事务](../backend/internal/charging/finish/result_repo.go)。下文保留当时的关闭证据，不作为当前实现说明。
 
 ## 问题与关闭证据
 
@@ -21,7 +15,7 @@
 | C-03 | [deadline_repo.go](../backend/internal/charging/stop/deadline_repo.go) 不再自己映射 card_charge 或 charge_order，使用所属模块的锁定能力。已有 cutoff 返回可恢复停机状态 | 刷卡到期恢复及回执 integration 回归保持原锁顺序和幂等事务 |
 | 生命周期订单归属 | [lifecycle_repo.go](../backend/internal/order/lifecycle_repo.go) 提供 LifecycleView 与三个状态推进能力；[start/receipt_schema.go](../backend/internal/charging/start/receipt_schema.go)、[finish/receipt_schema.go](../backend/internal/charging/finish/receipt_schema.go) 接管回执与端口占用的写模型。order 删除 StartReceiptRecord／EndReceiptRecord／ActivePortChargeRecord，无别名或转发 | 启动成功与重放、最终 Outbox 写入后 storage-error 与取消的整体回滚（start／finish 各两例）、中央新 owner 条件释放、结束 owner 不匹配回滚，以及既有启动拒绝退款、结束重放与计量冲突回归在独立 3307 三库与 6381 Redis 上通过 |
 
-30 秒上限基于当前充电心跳 15 秒周期，允许一个周期的抖动，定义在共享证据契约；协议周期变化须重新核对。停止受理只证明 gateway 持久命令，设备停止与订单结束由异步回执确认。
+心跳周期与取证窗口的关系见[共享取证契约](../backend/internal/contracts/gateway/charging.go)；协议周期变化须重新核对。
 
 ## 实际验证范围
 
