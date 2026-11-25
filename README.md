@@ -400,7 +400,7 @@ node scripts/db/test-integration.mjs
 | `frontend/admin-web` | `npm ci`、`npm run dev` | `npm test`、`npm run lint`、`npm run build` |
 | `frontend/miniprogram` | `npm ci`、`npm run dev:h5` 或 `npm run dev:weapp` | `npm run typecheck`、`npm test`、`npm run build:h5`、`npm run build:weapp` |
 
-产物为 `frontend/admin-web/dist`、`frontend/miniprogram/dist/h5` 和 `frontend/miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI workflow 已于 2026-10-06 移除：提交前在本地执行 `node tasks.mjs check`（pre-commit 钩子含规则层检查、vet 与默认测试）与 `node scripts/db/test-integration.mjs`，用户端检查需单独执行。用户端后续开发与交互优化计划见 [miniprogram-roadmap.md](docs/miniprogram-roadmap.md)。
+产物为 `frontend/admin-web/dist`、`frontend/miniprogram/dist/h5` 和 `frontend/miniprogram/dist/weapp`。微信开发工具导入 `dist/weapp` 并配置真实 AppID。CI workflow 已于 2026-10-06 移除：提交前在本地执行 `node tasks.mjs check`（pre-commit 钩子含规则层检查、vet 与默认测试）与 `node scripts/db/test-integration.mjs`，用户端检查需单独执行。用户端后续计划见[小程序后续工作](docs/feats/miniprogram-follow-up/spec.md)。
 
 ## 生产部署与维护
 
@@ -420,4 +420,4 @@ docker compose --env-file .env -f docker/compose.prod.yaml up -d --build --wait
 - 微信订阅消息、电子发票签发、汇付天下、自动银行出款、自动渠道账单下载、MQTT、OTA、月卡/年卡及混合支付未接入。多主体分账、提现与对账已移除。
 - 公告列表只返回全局公告；站点详情另包含本站生效公告，城市定向尚未接线。
 
-重构进度与后续验收见 [refactor-roadmap.md](docs/refactor-roadmap.md#9-进度与交付记录)。商业授权以签订合同为准。
+商业授权以签订合同为准。

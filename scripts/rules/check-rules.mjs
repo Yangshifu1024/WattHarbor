@@ -13,8 +13,7 @@ export const RULES_ENTRY = 'AGENTS.md';
 export const FROZEN_DOCUMENTS = [
   'docs/architecture-boundaries.md',
   'docs/business-contracts.md',
-  'docs/refactor-roadmap.md',
-  'docs/status-enum-roadmap.md',
+
 ];
 
 // 冻结声明必须紧跟在标题之后：跳过标题行与空行，第一行非空内容就得是引用块。

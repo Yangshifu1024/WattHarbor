@@ -27,7 +27,7 @@ type announcementQueryRow struct {
 // status 与 scope 保留内联字面量（对应 announcement 两列词表：AnnouncementPublished／
 // AnnouncementScopeGlobal／AnnouncementScopeStation）。原因：本查询在事务型 *gorm.DB 上
 // 先构造基础 Where 再按条件分支追加 Where，把 status 改成绑定参数会使追加的
-// 条件在真库下不生效（实测返回 0 行），详见 docs/status-enum-roadmap.md 的回归登记。
+// 条件曾在真实 MySQL 回归中返回 0 行。
 // 若改为绑定参数，须先验证整条链在真实 MySQL 上的结果，不要只看生成 SQL 是否正确。
 func (r AnnouncementQueryRepo) Active(ctx context.Context, now time.Time, offset, limit int, stationOnly bool) ([]announcementQueryRow, error) {
 	rows := []announcementQueryRow{}

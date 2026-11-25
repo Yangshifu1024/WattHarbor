@@ -85,22 +85,22 @@ test('冻结文档顶部缺少声明时报红，并点名该文档', async (t) =
 });
 
 test('冻结声明缺「已冻结」「只读」字样时报红', async (t) => {
-  const root = await frozenRepo(t, { flaws: { [FROZEN[2]]: 'wording' } });
+  const root = await frozenRepo(t, { flaws: { [FROZEN[0]]: 'wording' } });
   const { lines, options } = capture();
   const status = main([], { ...options, root });
   const output = lines.join('\n');
   assert.notEqual(status, 0);
-  assert.match(output, /docs\/refactor-roadmap\.md/);
+  assert.match(output, /docs\/architecture-boundaries\.md/);
   assert.match(output, /已冻结.*只读/);
 });
 
 test('冻结声明没有带链接时报红', async (t) => {
-  const root = await frozenRepo(t, { flaws: { [FROZEN[3]]: 'nolink' } });
+  const root = await frozenRepo(t, { flaws: { [FROZEN[1]]: 'nolink' } });
   const { lines, options } = capture();
   const status = main([], { ...options, root });
   const output = lines.join('\n');
   assert.notEqual(status, 0);
-  assert.match(output, /docs\/status-enum-roadmap\.md/);
+  assert.match(output, /docs\/business-contracts\.md/);
   assert.match(output, /链接/);
 });
 

@@ -110,8 +110,8 @@ func refundView(row WalletRefundRequestRow, parts []WalletRefundPartRow, review 
 		case money.RefundSuccess:
 			out.RefundedCents += part.RefundCents
 		// 保留裸字面量：needs_review 不是 money.RefundStatus 的取值，作为 switch 输入永不命中，
-		// 属 docs/status-enum-roadmap.md 第 10 节独立缺陷 1，本轮只做类型化不顺手修正；
 		// 但 needs_review 作为输出值仍有效，由 query_test.go 覆盖。
+		// 钱包分笔按自动策略执行，不走人工退款驳回；钱包风控拒绝由审核结果单独表示。
 		case money.RefundFailed, "needs_review":
 			out.Status = RefundViewNeedsReview
 		case money.RefundProcessing:
