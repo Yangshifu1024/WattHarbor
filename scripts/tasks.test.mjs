@@ -120,7 +120,7 @@ test('development tasks preserve the existing start script and stop semantics', 
   assert.deepEqual(f.calls[0].args, [join(f.root, 'scripts/dev/start.mjs')]);
   assert.equal(main(['dev-down'], f.options), 0);
   assert.equal(f.calls[1].command, 'docker.exe');
-  assert.deepEqual(f.calls[1].args, ['compose', '-f', join(f.root, 'docker/compose.dev.yaml'), 'stop']);
+  assert.deepEqual(f.calls[1].args, ['compose', '-f', join(f.root, 'deploy/compose.dev.yaml'), 'stop']);
 });
 
 test('missing executables, signal termination and missing status report failure', t => {

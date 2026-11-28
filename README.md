@@ -20,9 +20,9 @@ WattHarbor（电港）是单客户独立部署的二轮车充电运营平台，�
 
 ## 仓库结构
 
-- `backend/`：后端 Go 模块 `wattharbor`（`cmd/`、`internal/`、`migrations/`、`go.mod`），单体镜像定义为 [Dockerfile.monolith](docker/Dockerfile.monolith)。后端路径约定见 [AGENTS.md](AGENTS.md)。
+- `backend/`：后端 Go 模块 `wattharbor`（`cmd/`、`internal/`、`migrations/`、`go.mod`），单体镜像定义为 [Dockerfile.monolith](deploy/Dockerfile.monolith)。后端路径约定见 [AGENTS.md](AGENTS.md)。
 - `frontend/admin-web/`、`frontend/miniprogram/`：运营后台与用户端前端。
-- `docker/`：Compose 编排（`compose.dev.yaml`、`compose.prod.yaml`）、生产 Caddyfile 与 MySQL 初始化 SQL。
+- `deploy/`：Compose 编排（`compose.dev.yaml`、`compose.prod.yaml`）、生产 Caddyfile 与 MySQL 初始化 SQL。
 - 仓库根：`scripts/`（跨平台 Node 脚本）、`docs/` 与根 `tasks.mjs`。
 
 ## 本地运行
@@ -35,7 +35,7 @@ node scripts/dev/start.mjs
 node scripts/dev/prepare.mjs
 ```
 
-也可直接使用 `docker compose -f docker/compose.dev.yaml up -d --wait --remove-orphans`。首次启动会安装前端依赖、编译后端并初始化空库；启动和数据准备均保留已有数据及配置。
+也可直接使用 `docker compose -f deploy/compose.dev.yaml up -d --wait --remove-orphans`。首次启动会安装前端依赖、编译后端并初始化空库；启动和数据准备均保留已有数据及配置。
 
 | 入口 | 本地地址 |
 | --- | --- |
@@ -51,10 +51,10 @@ node scripts/dev/prepare.mjs
 开发栈使用开发登录和模拟支付，模拟支付仍走订单、设备、结算和退款流程。Go 服务启动时编译。修改源码后重新创建应用容器：
 
 ```sh
-docker compose -f docker/compose.dev.yaml up -d --wait --no-deps --force-recreate app
+docker compose -f deploy/compose.dev.yaml up -d --wait --no-deps --force-recreate app
 ```
 
-修改用户端 `app.config.ts` 后，须重启 `user-h5` 容器才能重建路由表：`docker compose -f docker/compose.dev.yaml restart user-h5`。
+修改用户端 `app.config.ts` 后，须重启 `user-h5` 容器才能重建路由表：`docker compose -f deploy/compose.dev.yaml restart user-h5`。
 
 ### 模拟器
 
@@ -391,7 +391,7 @@ node scripts/db/test-integration.mjs
 
 任务入口覆盖 `fmt`、`lint`、`test`、`test-integration`、`build`、`build-all`、`check-rules`、`check`、`clean`、`dev-up` 和 `dev-down`。`clean` 只清理 `bin/`，`dev-down` 停止开发容器并保留数据卷。任务编排与跨平台路径测试使用 `node --test scripts/tasks.test.mjs`。
 
-真库测试由 `integration` tag 隔离，不包含在 `node tasks.mjs check` 中。按 2026-10-06 的决定，集成测试直接使用开发环境（3306/6379/6380）：`node scripts/db/test-integration.mjs` 会起依赖服务、补 [锁观测只读授权](docker/mysql/test-lock-observer.sql)、迁移三库并注入连接串。注意集成测试的显式主键会抬高开发库自增序号，必要时用 reset-dev 重建；直接执行 `node tasks.mjs test-integration` 须自行配置 `TEST_MYSQL_URL` 和 `TEST_REDIS_URL`。
+真库测试由 `integration` tag 隔离，不包含在 `node tasks.mjs check` 中。按 2026-10-06 的决定，集成测试直接使用开发环境（3306/6379/6380）：`node scripts/db/test-integration.mjs` 会起依赖服务、补 [锁观测只读授权](deploy/mysql/test-lock-observer.sql)、迁移三库并注入连接串。注意集成测试的显式主键会抬高开发库自增序号，必要时用 reset-dev 重建；直接执行 `node tasks.mjs test-integration` 须自行配置 `TEST_MYSQL_URL` 和 `TEST_REDIS_URL`。
 
 前端命令在对应目录执行：
 
@@ -404,14 +404,16 @@ node scripts/db/test-integration.mjs
 
 ## 生产部署与维护
 
-[compose.prod.yaml](docker/compose.prod.yaml) 构建单体镜像，内嵌后台 `/admin/` 和用户 H5 `/h5/`。复制 [.env.example](.env.example) 为 `.env`，填写凭据及域名：
+[compose.prod.yaml](deploy/compose.prod.yaml) 构建单体镜像，内嵌后台 `/admin/` 和用户 H5 `/h5/`。复制 [.env.example](.env.example) 为 `.env`，填写凭据及域名：
 
 ```sh
 node scripts/ops/check-deploy.mjs
-docker compose --env-file .env -f docker/compose.prod.yaml up -d --build --wait
+docker compose --env-file .env -f deploy/compose.prod.yaml up -d --build --wait
 ```
 
 首次启动会由 Goose 初始化 `wattharbor` 单库，并为业务进程配置运行账号。微信直连需设置有效商户参数，并为 `app` 容器挂载只读私钥。已有三库、运行维护及数据备份恢复见 [运行与数据维护](docs/operations.md#单体部署)。
+
+首次发布微信小程序前，按[微信小程序与支付上线申请](docs/operations.md#微信小程序与支付上线申请)核对主体认证、备案、经营类目、商户进件、验签模式和实机验收。
 
 ## 当前边界
 

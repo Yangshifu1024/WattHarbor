@@ -58,7 +58,7 @@ export function main(argv, {
     build: [[executable, ['build', '-trimpath', '-o', join(bin, `${selected}${platform === 'win32' ? '.exe' : ''}`), `./cmd/${selected}`], backend]],
     'build-all': [[executable, ['build', '-trimpath', '-o', `${bin}/`, './cmd/...'], backend]],
     'dev-up': [[process.execPath, [join(root, 'scripts/dev/start.mjs')], root]],
-    'dev-down': [[platform === 'win32' ? 'docker.exe' : 'docker', ['compose', '-f', join(root, 'docker/compose.dev.yaml'), 'stop'], root]],
+    'dev-down': [[platform === 'win32' ? 'docker.exe' : 'docker', ['compose', '-f', join(root, 'deploy/compose.dev.yaml'), 'stop'], root]],
   };
   try {
     if (task === 'clean') {

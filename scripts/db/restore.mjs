@@ -126,4 +126,4 @@ for (const schema of schemas) {
 // 恢复后提示重启服务，使配置和管理员初始化流程重新执行。
 console.log('');
 console.log('restart the app after checking the restored data and migration version:');
-console.log(`  docker compose -f docker/compose.${unified ? 'prod' : 'dev'}.yaml restart app`);
+console.log(`  docker compose -f deploy/compose.${unified ? 'prod' : 'dev'}.yaml restart app`);

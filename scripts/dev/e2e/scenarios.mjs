@@ -3,7 +3,7 @@
 // docs/operations.md「全链路场景验收」。
 //
 // 前置：开发栈已启动（node tasks.mjs dev-up）且 prepare.mjs 已建立厂商、站点、设备与
-// 方案基础数据；测试直连开发环境（docker/compose.dev.yaml）。模拟器已按场景
+// 方案基础数据；测试直连开发环境（deploy/compose.dev.yaml）。模拟器已按场景
 // 以 -scenario <x> 接入宿主机 9100 端口（控制口 9190）。场景与模拟器场景的对应关系：
 //   s3 → reject-start        s1 → by-time            s2 → stop-on-command
 //   s5 → stop-on-command     s7 → stop-on-command    s4 → stop-on-command（先执行 budget）
@@ -23,7 +23,7 @@ const SIM = process.env.DEV_SIMULATOR_URL || 'http://127.0.0.1:9190';
 // prepare.mjs 导入的 1 号模拟器设备的 1 号端口业务编码。
 const PORT_CODE = '5348240514082652-1';
 // S7 重启单体。指定 COMPOSE_FILE 时，数据库查询和重启动作使用同一个开发栈。
-const COMPOSE = ['compose', ...(process.env.COMPOSE_FILE ? [] : ['-f', 'docker/compose.dev.yaml'])];
+const COMPOSE = ['compose', ...(process.env.COMPOSE_FILE ? [] : ['-f', 'deploy/compose.dev.yaml'])];
 
 // 将不安全的大整数按原 JSON 文本读为 BigInt，写请求时保留整数文本。
 const readJSON = text => JSON.parse(text, (_k, v, ctx) =>

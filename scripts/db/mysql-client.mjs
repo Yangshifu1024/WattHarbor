@@ -20,7 +20,7 @@ export function openMySQL() {
     env.MYSQL_PWD ||= env.MYSQL_PASSWORD || '';
     args = [...flags, '-h', env.MYSQL_HOST || '127.0.0.1', '-P', env.MYSQL_PORT || '3306', '-u', env.MYSQL_USER || 'root'];
   } else {
-    args = ['compose', '-f', 'docker/compose.dev.yaml', 'exec', '-T', 'mysql', 'sh', '-c',
+    args = ['compose', '-f', 'deploy/compose.dev.yaml', 'exec', '-T', 'mysql', 'sh', '-c',
       'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --batch --raw --skip-column-names --unbuffered --default-character-set=utf8mb4 -uroot'];
   }
   const child = spawn(command, args, { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });

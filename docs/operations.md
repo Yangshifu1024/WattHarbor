@@ -38,19 +38,57 @@
 
 ## 单体部署
 
-开发和生产均运行 `app`，对应单体命令 `wattharbor`。生产 [compose.prod.yaml](../docker/compose.prod.yaml) 构建内嵌后台与 H5 的镜像。复制 `.env.example` 为 `.env`，配置数据库维护和运行密码、独立 Redis 密码、JWT、服务令牌、微信配置及公开域名。可选的 `ADMIN_BOOTSTRAP_USER` 和 `ADMIN_BOOTSTRAP_PASSWORD` 用于空库首次创建后台管理员。
+开发和生产均运行 `app`，对应单体命令 `wattharbor`。生产 [compose.prod.yaml](../deploy/compose.prod.yaml) 构建内嵌后台与 H5 的镜像。复制 `.env.example` 为 `.env`，配置数据库维护和运行密码、独立 Redis 密码、JWT、服务令牌、微信配置及公开域名。可选的 `ADMIN_BOOTSTRAP_USER` 和 `ADMIN_BOOTSTRAP_PASSWORD` 用于空库首次创建后台管理员。
 
 ```sh
 node scripts/ops/check-deploy.mjs
-docker compose --env-file .env -f docker/compose.prod.yaml up -d --build --wait
-docker compose --env-file .env -f docker/compose.prod.yaml exec app wget -qO- http://127.0.0.1:8080/health/ready
+docker compose --env-file .env -f deploy/compose.prod.yaml up -d --build --wait
+docker compose --env-file .env -f deploy/compose.prod.yaml exec app wget -qO- http://127.0.0.1:8080/health/ready
 ```
 
 MySQL 就绪后，Goose 初始化 `wattharbor` 单库，随后配置运行账号。MySQL、运行账号配置和 Redis 就绪后，应用装配模块，绑定 HTTP 与 DC589 TCP 并启动后台任务。首次成功完成同步轮次且依赖检查通过后，`/health/ready` 返回 200。收到 SIGTERM 时先停止接收 HTTP 请求与设备连接，等待已接收请求后关闭设备会话和后台任务。应用关停上限为 15 秒，Compose 留出 20 秒。
 
-Caddy 代理后台、H5、用户 API 和公开通知。默认固定代理地址为 `172.30.82.2`，调整时同时设置 `ADMIN_PROXY_SUBNET` 与 `CADDY_ADMIN_PROXY_IP`。内网从 `/metrics/{admin,user,central,gateway,worker}` 抓取各角色指标，前缀为 `wattharbor_`。配置检查核对数据库、Redis、网络及 Caddy 分流，并在临时容器中验证 Caddy 配置。传入 `--config-only` 可在示例配置上检查结构。
+Caddy 代理后台、H5、用户 API 和公开通知。默认固定代理地址为 `172.30.82.2`，调整时同时设置 `ADMIN_PROXY_SUBNET` 与 `CADDY_ADMIN_PROXY_IP`。内网从 `/metrics/{admin,user,central,gateway,worker}` 抓取各角色指标，前缀为 `wattharbor_`。配置检查核对数据库、Redis、网络及 Caddy 分流，并在临时容器中验证 Caddy 配置。从仓库根目录运行 `COMPOSE_ENV_FILES=.env.example node scripts/ops/check-deploy.mjs --config-only` 可用示例配置检查结构。
 
 开发项目沿用 `wattharbor-dev` 和已有三库数据卷。`dev-up` 会移除该 Compose 项目的旧进程容器并保留数据卷。生产项目保留既有单体项目名 `wattharbor-monolith` 及其数据卷。从旧生产拓扑切换前，需停旧 Go 进程，核对备份、数据卷、应用运行账号和 Redis Stream。已有三库可用 `node tasks.mjs build wattharbor` 构建单体，配置原三库 URL 运行，其中 `DATABASE_URL` 指向 gateway 库，`APP_UNIFIED_DATABASE=false`。需要合库时先在备份环境核对业务表、两路 Outbox 和 Redis Stream。
+
+### 微信小程序与支付上线申请
+
+本清单按中国大陆运营主体、单一充电运营方收款、普通商户直连整理。平台规则核对日期为 2026-11-28。若小程序、实际服务方和收款方主体不同，先确认合同、交易展示、结算及平台授权关系，再提交进件。
+
+| 顺序 | 办理事项 | 材料及完成标志 |
+| --- | --- | --- |
+| 1 | 在微信公众平台注册并完成微信认证 | 准备营业执照、法定代表人和管理员信息、管理员实名微信、注册邮箱，以及页面要求的授权材料。填写名称、头像、简介，保存正式小程序 AppID。微信认证费用以后台为准。[微信小程序接入指南](https://developers.weixin.qq.com/miniprogram/introduction) |
+| 2 | 选服务类目，核实上线功能 | 境内主体按实际业务在后台核对「交通服务 → 充电服务」。站点查询、普通扫码、单次充电付费和钱包余额充值按实申报。将钱包充值、余额消费和原充值单退款的完整流程提交平台核实，取得类目和所需材料的明确答复。[微信小程序开放类目](https://developers.weixin.qq.com/miniprogram/product/material/) |
+| 3 | 办小程序备案，同时推进 API 域名备案 | 在小程序后台「去备案」提交营业执照、主体负责人和小程序负责人证件、联系方式、服务说明，以及实际要求的授权或补充材料。依次完成负责人核验、平台初审、工信部短信核验和通管局审核，取得小程序备案编号并按要求展示。另确认 API 域名已完成 ICP 备案。通管局收到齐全准确材料后的办理时限为 20 个工作日，另给初审和补件留时间。[微信备案操作指引](https://developers.weixin.qq.com/miniprogram/product/record/record_guidelines.html) · [工信部 APP 备案通知](https://www.miit.gov.cn/zwgk/zcwj/wjfb/tz/art/2023/art_920db564162e4312916a01bed6540ad8.html) |
+| 4 | 申请普通微信支付商户，开通 JSAPI 支付 | 企业准备营业执照、法定代表人身份证、对公结算账户及开户行信息、经办联系人、正式 AppID 和经营场景截图。新商户按「小程序」场景提交进件，完成审核、账户验证和签约。已有商户在「产品中心」核对 JSAPI 权限，缺少时申请开通。费率和结算周期以实际进件及签约页面为准。[普通商户小程序接入指引](https://pay.weixin.qq.com/static/applyment_guide/applyment_detail_miniapp.shtml) · [小程序 JSAPI 权限申请](https://pay.wechatpay.cn/doc/v3/merchant/4012791895) |
+| 5 | 确认商户号和 AppID 绑定，配置 API 安全 | 若后台尚未显示有效关联，由商户平台发起授权，小程序管理员在公众平台「微信支付 → 商户号管理」确认，回商户平台复核绑定结果。准备商户 API 证书序列号、对应私钥和 APIv3 密钥，确认商户验签模式符合[微信直连支付](#微信直连支付)。[AppID 绑定指引](https://pay.wechatpay.cn/doc/v3/merchant/4013287010) · [证书与密钥说明](https://pay.wechatpay.cn/doc/v3/merchant/4024350132) |
+| 6 | 配置微信能力，上传体验版并提审发布 | 在公众平台配置 `request` 合法域名、用户隐私保护指引和位置接口权限，确认手机号验证资源包。配置正式构建、实机验证后提交代码审核。提审材料附站点及端口测试方式、专用测试二维码、操作路径、价格和退款页面，以及页面要求的测试账号或说明。审核通过后按后台流程发布。[网络配置](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html) · [用户隐私保护指引](https://developers.weixin.qq.com/miniprogram/dev/framework/user-privacy) · [提审与发布](https://developers.weixin.qq.com/miniprogram/introduction) |
+
+钱包储值与单次充电订单支付分别确认。微信公开类目表中，境外主体「出行与交通 → 充电服务」注明暂不支持预付储值与余额充值。境内主体的对应条目未列这条注释。境内运营方若拟开放钱包，应书面核实微信审核口径，以及运营地对充值余额、使用范围、退款和预付资金的要求。若首发采用单次充电，提审前落实相应上线范围，并验证充值入口和后台新充值能力都已关闭。已有余额的退款和售后另行安排。[微信小程序开放类目](https://developers.weixin.qq.com/miniprogram/product/material/) · [商务部单用途商业预付卡管理办法](https://www.mofcom.gov.cn/zfxxgk/zc/gz/art/2021/art_82805c1937a64a4186ea15c23fc675c5.html)
+
+附近站点使用 `wx.getLocation`，类目通过后在「开发管理 → 接口设置」开通权限，隐私指引按实填写定位、手机号等信息的用途。`getPhoneNumber` 面向已认证的非个人小程序，企业上线前应检查可用额度。体验版核对用户拒绝授权时仍可使用无需该信息的功能。充电现场和小程序醒目位置分别展示充电电价、服务费及收费标准。[位置接口](https://developers.weixin.qq.com/miniprogram/dev/api/location/wx.getLocation.html) · [手机号验证组件](https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/getPhoneNumber.html) · [交通服务运营规范](https://developers.weixin.qq.com/miniprogram/product/jiaotonglei.html) · [电动自行车充电收费通知](https://www.ndrc.gov.cn/xwdt/tzgg/202406/t20240620_1391225.html)
+
+### 微信上线材料与资质总表
+
+按境内企业运营主体整理。同一份证照可供不同申请复用，按各平台页面要求分别提交。资料收集时可直接按下表核对，按需项以实际经营范围、主体关系、属地要求和后台提示为准。
+
+| 材料或资质 | 准备内容 | 用途与适用条件 |
+| --- | --- | --- |
+| 企业营业执照 | 有效营业执照的清晰彩色扫描件或照片，完整显示企业名称、统一社会信用代码和登记信息。已经三证合一的企业通常可使用统一证照。 | 小程序认证、备案、微信支付商户进件。未合一或页面要求时补充组织机构代码证等材料。[微信认证](https://developers.weixin.qq.com/miniprogram/product/renzheng.html) · [商户进件](https://pay.weixin.qq.com/static/applyment_guide/applyment_detail_miniapp.shtml) |
+| 法定代表人及负责人证件 | 法定代表人、主体负责人及小程序负责人使用各自的有效身份证件，按页面要求准备正反面清晰影像。填报姓名、证件号码、有效期、通讯地址等信息。 | 小程序认证、备案及支付进件。负责人核验照片按备案页面现场采集。[备案材料示例](https://developers.weixin.qq.com/miniprogram/product/record/record_material.html) |
+| 账号及联系人 | 注册邮箱、管理员实名微信、管理员手机、商户管理员及经办联系人信息。备案另备主体负责人、小程序负责人和应急联系人的号码，保证本人可接听或接收核验短信。 | 账号注册、扫码核身、备案核验、授权及签约。账号持有人和岗位按各后台实际要求填写。[小程序接入](https://developers.weixin.qq.com/miniprogram/introduction) · [备案指引](https://developers.weixin.qq.com/miniprogram/product/record/record_guidelines.html) |
+| 授权公函、商标或主体关系材料 | 按当前门户模板准备授权书和公函。以商标或授权品牌命名时，按要求准备商标注册证明及品牌授权。小程序与商户异主体时，准备 AppID 认证主体信息、平台授权承诺及支撑实际运营和结算关系的材料。 | 按需提交。采用委托经办、品牌授权或异主体经营时提前核对。[微信认证](https://developers.weixin.qq.com/miniprogram/product/renzheng.html) · [异主体绑定](https://pay.wechatpay.cn/doc/v3/merchant/4013287010) |
+| 企业对公结算账户 | 账户名称、账号、开户行及省市信息，可配合完成账户验证。 | 支付进件和资金结算。按签约页面核对结算主体、费率和周期。[商户进件](https://pay.weixin.qq.com/static/applyment_guide/applyment_detail_miniapp.shtml) |
+| 小程序资料及经营说明 | 名称、头像、简介、服务内容说明、正式 AppID。准备站点查询、设备扫码、端口选择、计价、下单支付、订单和退款的实际页面截图。 | 注册认证、类目申请、备案填报、支付经营场景审核。界面、描述和实际上线范围一致。[小程序接入](https://developers.weixin.qq.com/miniprogram/introduction) · [小程序支付申请](https://pay.wechatpay.cn/doc/v3/merchant/4012791895) |
+| 充电业务类目及专项材料 | 境内「交通服务 → 充电服务」公开类目未单列专项资质。根据实际站点、自营或受托经营关系和运营地要求，核实是否需准备场地使用或运营协议及主管部门要求的许可、备案或审批材料。 | 按需提交。业务涉及其他类目或前置审批时，依对应要求补材料。[服务类目](https://developers.weixin.qq.com/miniprogram/product/material/) · [备案指引](https://developers.weixin.qq.com/miniprogram/product/record/record_guidelines.html) |
+| 钱包充值与预付资金材料 | 若开放余额充值，准备充值、消费和原充值单退款的页面及流程，说明使用范围、退款规则、资金归属和处理方式，留存微信审核答复及属地要求的适用材料。 | 钱包功能纳入上线范围时准备。单次订单支付、按单预付款及差额退款可单独说明。[服务类目](https://developers.weixin.qq.com/miniprogram/product/material/) · [单用途商业预付卡管理办法](https://www.mofcom.gov.cn/zfxxgk/zc/gz/art/2021/art_82805c1937a64a4186ea15c23fc675c5.html) |
+| 小程序备案资料及结果 | 备案服务内容、负责人和应急联系人信息、核验材料、互联网信息服务承诺书。由平台提供真实性核验单，按实际后台要求补授权或审批文件。审核后留存小程序备案编号及展示位置。 | 小程序 APP 备案。以所在地通管局的补件要求为准。[微信备案指引](https://developers.weixin.qq.com/miniprogram/product/record/record_guidelines.html) · [工信部备案通知](https://www.miit.gov.cn/zwgk/zcwj/wjfb/tz/art/2023/art_920db564162e4312916a01bed6540ad8.html) |
+| 正式域名、ICP 备案和 HTTPS | API 域名及管理权限、域名 ICP 备案信息、DNS 配置和有效 HTTPS 证书。需要新办域名备案时，按接入服务商要求提供主体、负责人及域名证明等材料。记录 `request` 合法域名、API 地址和支付回调完整地址。 | 网站域名备案、公众平台合法域名配置和生产反代。小程序备案编号和 API 域名备案信息分别留存。[小程序网络要求](https://developers.weixin.qq.com/miniprogram/dev/framework/ability/network.html) |
+| 隐私、接口权限与收费展示 | 用户隐私保护指引、实际收集信息和用途说明、定位接口申请所需的场景说明、手机号快速验证额度。准备充电电价、服务费、计费规则和退款说明页面。 | 隐私配置、能力开通及提审。按实际使用的定位、手机号能力填写。[用户隐私保护](https://developers.weixin.qq.com/miniprogram/dev/framework/user-privacy) · [定位接口](https://developers.weixin.qq.com/miniprogram/dev/api/location/wx.getLocation.html) · [手机号验证](https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/getPhoneNumber.html) · [充电收费通知](https://www.ndrc.gov.cn/xwdt/tzgg/202406/t20240620_1391225.html) |
+| 支付开通及绑定记录 | 直连商户号、商户签约结果、JSAPI 已开通状态及商户号与正式 AppID 的绑定记录。 | 支付接入验收。签约和权限状态从商户平台核对。[JSAPI 权限申请](https://pay.wechatpay.cn/doc/v3/merchant/4012791895) · [AppID 绑定](https://pay.wechatpay.cn/doc/v3/merchant/4013287010) |
+| 部署凭据 | 小程序 AppSecret、商户 API 证书序列号及对应私钥、32 字节 APIv3 密钥、商户侧已启用的验签模式。现有实现使用平台证书验签，SDK 下载平台证书。 | 仅用于服务端部署和验签。通过受控渠道交付，工单和文档只记录配置项及核验结果。[本项目部署配置](#微信直连支付) · [证书与密钥说明](https://pay.wechatpay.cn/doc/v3/merchant/4024350132) |
+| 体验版及提审测试资料 | 正式 AppID 对应的 `weapp` 构建和体验版、审核可访问的测试环境、测试站点及端口、测试二维码、操作说明，以及提交页面要求的测试账号。留存实机小额付款、差额原路退款和商户账单的验收记录。 | 提审及上线验收。测试资料要覆盖实际公开的服务路径。[提审与发布](https://developers.weixin.qq.com/miniprogram/introduction) · [上线验收](#上线验收) |
 
 ### 微信直连支付
 
@@ -64,6 +102,17 @@ services:
 ```
 
 将部署侧挂载保存到 `compose.payment.yaml`，启动及维护时在生产 Compose 后追加此文件。商户私钥权限须允许容器 UID 10001 读取，API v3 密钥为 32 字节。正式用户端使用真实 AppID、已配置的 API 域名和微信发布环境。
+
+| 部署项 | 核对值 |
+| --- | --- |
+| 登录 | `LOGIN_MODE=wechat`。`WECHAT_APPID` 使用实际发布的 AppID，并与开发者工具、支付商户绑定一致。`WECHAT_SECRET` 为该小程序的 AppSecret，仅留服务端。 |
+| 商户签名及通知解密 | `WECHAT_MCH_ID` 为直连商户号，`WECHAT_CERT_SERIAL` 为商户 API 证书序列号，`WECHAT_PRIVATE_KEY_PATH` 指向对应商户私钥，`WECHAT_APIV3_KEY` 为商户平台设置的 APIv3 密钥。私钥和密钥通过部署侧受控渠道交付。 |
+| 付款通知 | `WECHAT_NOTIFY_URL` 填公网 HTTPS 全路径，例如 `https://charge.example.com/api/v1/public/payments/wechat/callback`。确认反代可接收微信的 `POST`，回调处理不需要用户登录，按渠道签名验签及解密。当前退款通过原退款号查询确认，`WECHAT_REFUND_NOTIFY_URL` 为预留配置。 |
+| 小程序构建 | 从 `frontend/miniprogram` 执行 `npm ci`，设置 `TARO_APP_LOGIN_MODE=wechat` 和 `TARO_APP_API_BASE=https://charge.example.com/api/v1` 后执行 `npm run build:weapp`。在微信开发者工具用正式 AppID 导入 `dist/weapp`。公众平台的 `request` 合法域名登记 `https://charge.example.com`。真机体验关闭跳过域名和证书校验的调试选项。 |
+
+新申请商户默认使用微信支付公钥。[当前 SDK 装配](../backend/internal/payment/channel_wechat.go) 从微信支付下载平台证书，用于验签 API 响应和回调。接入前让商户管理员核对「API 安全」中的实际模式。沿用现有代码时，按微信指引确认同一商户号下的其他系统已停用公钥模式，再切换到平台证书。商户须跟踪证书到期日并安排轮换。如需保留公钥模式，须先改造并验证响应及通知验签。商户证书序列号与微信支付公钥 ID 分属不同凭据。[官方切换指引](https://pay.wechatpay.cn/doc/v3/merchant/4015419357) · [小程序下单](https://pay.wechatpay.cn/doc/v3/merchant/4012791897)
+
+用体验版和真实商户做小额闭环。核对微信登录、扫码选端口、付款取消、付款后服务端确认、设备启动、结束计费、预付款差额原路退回、商户账单和实际到账。付款界面返回成功后仍需等待服务端确认。复核重复通知不重复入账，退款处理中按原退款号核实。钱包若纳入已确认的发布范围，另验充值到账及按原充值单退回。
 
 ### 上线验收
 
@@ -208,7 +257,7 @@ Invoke-RestMethod http://127.0.0.1:9190/events -Method Post -ContentType applica
 
 ### 环境准备
 
-1. 一键启动：`node tasks.mjs dev-up` 启动开发栈（`docker/compose.dev.yaml`），再执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与方案。单体 HTTP 8080 与设备 TCP 9100 映射到宿主机环回地址。
+1. 一键启动：`node tasks.mjs dev-up` 启动开发栈（`deploy/compose.dev.yaml`），再执行 `node scripts/dev/prepare.mjs` 建立厂商、站点、两台设备与方案。单体 HTTP 8080 与设备 TCP 9100 映射到宿主机环回地址。
 2. 场景断言直接落在开发库，统一取库中最新一笔订单。注意集成测试的显式高位主键会把 `central_db.charge_order` 自增抬到超出 16 位十进制 BCD 编码的范围，gateway 启动受理随之持续返回 409（业务码 2000）；这不是业务缺陷，用 `node scripts/db/reset-dev.mjs --reset-development-data` 重建开发数据即消失。
 3. 模拟器经真实 TCP 9100 接入宿主机映射端口，场景用 `-scenario` 选择（`by-energy`、`by-time`、`stop-on-command`、`reject-start`、`fault`、`silent`、`reconnect`），运行中调功率、插拔、刷卡见上一节控制接口。注意 `-power` 等功率参数单位是分瓦：`1500` 是 150 W，不是 1500 W。
 4. 部分场景需要把站点生效方案换成特定模式（如 s4 的 10 分金额套餐），`scenarios.mjs budget` 已自动化该步骤；其余模式切换经后台执行，应用走乐观锁，`expected_version` 须读站点当前生效版本。

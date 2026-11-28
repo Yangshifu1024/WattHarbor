@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { main, validateDeployment } from './check-deploy.mjs';
 
-const caddyText = readFileSync(new URL('../../docker/Caddyfile', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const caddyText = readFileSync(new URL('../../deploy/Caddyfile', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 function configuration() {
   const runtime = 'mysql://wattharbor_app:fixture-app-password@mysql:3306/wattharbor';

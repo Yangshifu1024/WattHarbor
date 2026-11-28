@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url)).replace(/[\\/]$/, '');
-const COMPOSE = ['compose', '-f', 'docker/compose.dev.yaml'];
+const COMPOSE = ['compose', '-f', 'deploy/compose.dev.yaml'];
 const CONTAINER = 'wattharbor-dev-mysql-1';
 const REDIS_CONTAINERS = ['wattharbor-dev-redis-cache-1', 'wattharbor-dev-redis-stream-1'];
 

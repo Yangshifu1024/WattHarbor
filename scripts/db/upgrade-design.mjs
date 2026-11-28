@@ -12,7 +12,7 @@ const apply = process.argv.slice(2).includes('--apply');
 // review-fixes 仅处理本报告新增结构，避免顺带更新既有设计项；默认仍只预检。
 const reviewFixes = process.argv.slice(2).includes('--review-fixes');
 if (process.argv.slice(2).some(arg => !['--apply', '--review-fixes'].includes(arg))) throw new Error('用法：node scripts/db/upgrade-design.mjs [--review-fixes] [--apply]');
-const compose = ['compose', '-f', 'docker/compose.dev.yaml'];
+const compose = ['compose', '-f', 'deploy/compose.dev.yaml'];
 // 仅连接仓库开发编排，不从日志或命令行传递密码。
 function sql(statement) {
   const result = spawnSync('docker', [...compose, 'exec', '-T', 'mysql', 'sh', '-c',

@@ -226,18 +226,18 @@ export function main(args = process.argv.slice(2)) {
   try {
     const envPath = resolve(root, '.env');
     const envArgs = !process.env.COMPOSE_ENV_FILES && existsSync(envPath) ? ['--env-file', envPath] : [];
-    const output = docker(['compose', ...envArgs, '-f', 'docker/compose.prod.yaml', 'config', '--format', 'json'],
+    const output = docker(['compose', ...envArgs, '-f', 'deploy/compose.prod.yaml', 'config', '--format', 'json'],
       'Compose validation failed. Check .env and run docker compose config --quiet.');
     let config;
     try { config = JSON.parse(output); } catch { throw new Error('Unable to read Compose configuration JSON.'); }
-    const caddy = resolve(root, 'docker/Caddyfile');
+    const caddy = resolve(root, 'deploy/Caddyfile');
     validateDeployment(config, { configOnly: args.includes('--config-only'), caddyText: readFileSync(caddy, 'utf8') });
     validatePaths(config);
     console.log('Compose and topology checks passed; validating Caddy configuration...');
     const proxy = config.services.caddy;
     docker(['run', '--rm', '--network', 'none', '-e', `PUBLIC_DOMAIN=${proxy.environment.PUBLIC_DOMAIN}`,
       '-v', `${caddy}:/etc/caddy/Caddyfile:ro`, proxy.image, 'caddy', 'adapt', '--config', '/etc/caddy/Caddyfile', '--validate'],
-    'Caddy validation failed. Check Docker image availability and docker/Caddyfile.');
+    'Caddy validation failed. Check Docker image availability and deploy/Caddyfile.');
     console.log('Compose, bind paths, ports, database URLs, Redis policies and Caddy validation passed.');
     return 0;
   } catch (error) {

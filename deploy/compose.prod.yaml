@@ -5,7 +5,7 @@ x-app-build: &app-build
   image: wattharbor:monolith
   build:
     context: ..
-    dockerfile: docker/Dockerfile.monolith
+    dockerfile: deploy/Dockerfile.monolith
 
 services:
   mysql:
