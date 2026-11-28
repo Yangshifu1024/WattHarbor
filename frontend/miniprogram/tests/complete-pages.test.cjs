@@ -46,6 +46,29 @@ test('the page list has no second copy that can drift from app.config.ts', () =>
   assert.ok(!fs.existsSync(path.join(root, 'src', 'app-manifest.json')), 'app-manifest.json 应已删除，页面清单只以 app.config.ts 为准');
 });
 
+test('H5 首页在根路径和生产子路径都能匹配', async () => {
+  const UniversalRouter = require('universal-router');
+  const root = path.join(__dirname, '..');
+  const filename = path.join(root, 'config', 'index.ts');
+  const source = fs.readFileSync(filename, 'utf8');
+  const home = `/${registeredPages(root)[0]}`;
+  for (const [env, publicPath, homePath] of [
+    [{}, '/', home],
+    [{ H5_BASE_PATH: '/h5/' }, '/h5/', `/h5${home}`],
+  ]) {
+    let config;
+    vm.runInNewContext(source.replace(/^import .*\n/m, '').replace(/^export default /m, ''), {
+      defineConfig: value => { config = value; },
+      process: { env },
+    }, { filename });
+    assert.equal(config.h5.publicPath, publicPath);
+    const router = new UniversalRouter([{ path: home, action: () => home }], {
+      baseUrl: config.h5.router.basename,
+    });
+    assert.equal(await router.resolve(homePath), home);
+  }
+});
+
 test('coupon list requests the selected status and paginates without dropping prior rows', async () => {
   const calls = [];
   const app = { globalData: { token: 'token' }, request: async (_method, _url, query) => { calls.push(query); return { items: [{ grant_id: query.page, name: '券', discount_type: 'amount', discount_value_cents: 500, min_charge_cents: 0, expired_at: '2026-10-01T00:00:00Z', status: 'unused' }], total: 2 }; } };

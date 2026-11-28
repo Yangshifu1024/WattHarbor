@@ -1,5 +1,7 @@
 import { defineConfig } from '@tarojs/cli'
 
+const h5BasePath = process.env.H5_BASE_PATH || '/'
+
 export default defineConfig({
   projectName: 'wattharbor-user',
   date: '2026-10-01',
@@ -24,9 +26,10 @@ export default defineConfig({
   plugins: ['@tarojs/plugin-platform-h5', '@tarojs/plugin-platform-weapp'],
   mini: { postcss: { pxtransform: { enable: true }, cssModules: { enable: false } } },
   h5: {
-    publicPath: process.env.H5_BASE_PATH || '/',
+    publicPath: h5BasePath,
     staticDirectory: 'static',
-    router: { mode: 'hash', basename: process.env.H5_BASE_PATH || '/' },
+    // 路由库移除 basename 时须保留页面路径开头的斜杠。静态资源前缀沿用部署配置。
+    router: { mode: 'hash', basename: h5BasePath.replace(/\/$/, '') },
     devServer: {
       host: '0.0.0.0',
       port: 5174,

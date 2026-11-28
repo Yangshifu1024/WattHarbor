@@ -1,5 +1,6 @@
 # 议题索引
 
+- [首发上线验收](first-release/spec.md)：微信单次扫码充电、钱包充值和在线卡的首发范围及验收证据。
 - [小程序后续工作](miniprogram-follow-up/spec.md)：下单用券、订阅消息、导航保活与实机验收。
 - [审查后续分诊](review-follow-up/spec.md)：尚缺测量或产品决策的事项，不是已确认缺陷或发布承诺。
 
