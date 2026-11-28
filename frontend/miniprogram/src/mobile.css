@@ -1,0 +1,101 @@
+/* 首页业务和账户共用四页布局。底部导航占位包含安全区，提交按钮随内容滚动。 */
+.mobile-shell { background:#fff; min-height:100vh; color:#13191c; --primary:#13191c; --text:#13191c; --text-secondary:#526068 }
+.mobile-page { box-sizing:border-box; max-width:960Px; margin:0 auto; padding:0 17Px 18Px }
+.brand-bar,.account-head,.section-line,.list-entry,.brand-mark { display:flex; align-items:center }
+.brand-bar { gap:6Px; font-size:21Px; font-weight:750 }
+.brand-en { font:600 12Px/1.2 Arial,sans-serif; color:#526068 }
+.brand-mark { gap:2Px; height:25Px; margin:0 3Px; transform:skewX(-21deg) }
+.brand-mark > view,.brand-mark > taro-view-core { width:5Px; height:16Px; background:#13191c }
+.brand-mark > :first-child { height:10Px; align-self:flex-start }
+.brand-mark > :last-child { height:19Px; align-self:flex-end; background:#50717c }
+.charging-banner { position:relative; overflow:hidden; border-radius:11Px; background:#151b20; height:151Px; margin-bottom:22Px; color:#fff }
+.charging-banner.compact { height:105Px; margin-bottom:18Px }
+.banner-image { display:block; width:100%; height:100% }
+.banner-copy { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; padding:0 17Px; background:linear-gradient(90deg,rgba(8,12,15,.72),transparent 75%); font-size:12Px }
+.banner-title { display:block; font-size:24Px; font-weight:720; margin-bottom:2Px }
+.compact .banner-title { font-size:21Px }
+.ad-label { position:absolute; z-index:1; top:7Px; right:8Px; color:white; background:#283137; border:1px solid #8f9ba0; border-radius:3Px; padding:0 3Px; font-size:10Px }
+.section-line { justify-content:space-between; gap:8Px; margin-bottom:11Px }
+.section-title,.section-subtitle,.entry-title,.muted { display:block }
+.section-title { font-size:25Px; font-weight:720; line-height:30Px; letter-spacing:-.045em }
+.section-subtitle { font-size:20Px; font-weight:650 }
+.spaced { margin-top:17Px; margin-bottom:8Px }
+.spaced-small { margin-top:6Px }
+.muted,.entry-tail { font-size:14Px; color:#526068; line-height:1.5 }
+.small { font-size:12Px }
+.mobile-page .list-entry,.mobile-page .plain-action,.mobile-page .metal-modes button { margin:0; min-height:46Px; border:0; border-radius:0; background:transparent; line-height:1.4 }
+.mobile-page .list-entry { width:100%; padding:13Px 0; gap:10Px; border-bottom:1Px solid #dbe1e3; text-align:left; justify-content:space-between }
+.station-cover { flex:none; width:70Px; height:64Px; border-radius:7Px; overflow:hidden; position:relative }
+.entry-copy { flex:1; min-width:0; overflow-wrap:anywhere }
+.entry-title { font-size:17Px; font-weight:650 }
+.entry-tail { flex-shrink:0; max-width:30%; text-align:right }
+.mobile-page .plain-action { padding:0; font-size:14Px; color:#13566a }
+.device-symbol { display:flex; align-items:center; justify-content:center; width:44Px; height:52Px; box-sizing:border-box; flex:none; background:linear-gradient(120deg,#fbfcfc,#c9d1d5); border:1Px solid #b6c2c7; border-radius:5Px }
+.device-symbol > view,.device-symbol > taro-view-core { width:18Px; height:8Px; background:#44535a; border-bottom:2Px solid #a5d7e0 }
+.serial { overflow-wrap:anywhere }
+.metal-ports,.metal-offers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6Px }
+.mobile-page .metal-option { width:100%; min-width:0; min-height:57Px; position:relative; margin:0; padding:5Px 3Px; border:1Px solid #c7d0d4; border-radius:7Px; font-size:14Px; line-height:1.35; overflow-wrap:anywhere }
+.mobile-page .metal-option[disabled]:not([disabled='false']) { background:#f1f3f4; color:#667278; border-color:transparent }
+.mobile-page .metal-option.chosen { border-color:#2a505d; background:#ecf8fb; box-shadow:inset 0 0 0 1Px #2a505d }
+.metal-option.chosen:before { content:'✓'; position:absolute; right:4Px; top:2Px; font-size:11Px; color:#13566a }
+.port-number,.offer-value { display:block; font-size:20Px; font-weight:650; font-variant-numeric:tabular-nums }
+.metal-modes { display:flex; margin:4Px 0 8Px; border-bottom:1Px solid #dbe1e3 }
+.mobile-page .metal-modes button,.mobile-page .metal-modes taro-button-core { margin:0; border:0; border-radius:0; min-height:46Px; background:transparent; width:auto; flex:none; padding:0 12Px; line-height:46Px; font-size:14Px }
+.mobile-page .metal-modes .mode-current { box-shadow:inset 0 -2Px #13191c; font-weight:700 }
+.account-head { gap:13Px; margin:8Px 0 15Px }
+.avatar { display:flex; align-items:center; justify-content:center; width:48Px; height:48Px; border-radius:50%; background:#e8eff1 }
+.mobile-page .wallet-panel,.mobile-page taro-button-core.wallet-panel[disabled='false'] { display:block; width:100%; margin:0 0 24Px; padding:18Px; min-height:170Px; text-align:left; border:none; border-radius:12Px; color:white!important; background:linear-gradient(115deg,#151b1e,#344046); font-size:14Px; line-height:1.5 }
+.wallet-panel text,.wallet-panel taro-text-core { display:block }
+.wallet-amount { font:650 37Px/1.3 Arial,sans-serif; margin:2Px 0 }
+.service-entry { font-size:16Px }
+/* H5 的 Taro 按钮默认占满行，列表行与页头的文字操作分别控制宽度。 */
+.mobile-page .plain-action { width:auto; flex:none; line-height:1.4; min-height:46Px }
+.mobile-page taro-button-core.list-entry { border:0!important; border-bottom:1Px solid #dbe1e3!important }
+.mobile-page taro-button-core.plain-action,.mobile-page taro-button-core.wallet-panel,.mobile-page .metal-modes taro-button-core { border:0!important }
+.mobile-page taro-button-core.metal-option.chosen { border-color:#2a505d!important; background:#ecf8fb!important }
+/* 页面边界与四页设计稿对齐；剩余高度随真实业务行数增长。 */
+.brand-bar { height:54Px; margin:0 -17Px 14Px; padding:0 17Px; border-bottom:1Px solid #dbe1e3 }
+.native-head-gap { height:14Px }
+.mobile-page .parent-link { color:#13191c; font-size:16Px }
+.mobile-page .list-entry[disabled]:not([disabled='false']) { background:#fff!important; color:#526068!important }
+.entry-numbers { flex:none; text-align:right; font-size:20Px; font-weight:650; line-height:1.2; font-variant-numeric:tabular-nums }
+.entry-numbers .muted { font-weight:400; font-size:12Px }
+.chevron { color:#748188; font-size:19Px }
+.mobile-page .section-line + .list-entry { box-shadow:inset 0 1Px #dbe1e3 }
+.mobile-page .account-head { margin-top:0 }
+.station-cover .cover-strip { position:absolute; top:0; left:0; width:300%; height:100% }
+.station-cover .cover-1 { left:-100% }
+.station-cover .cover-2 { left:-200% }
+.mobile-page .metal-ports .metal-option,.mobile-page .metal-offers .metal-option { border-radius:6Px }
+.wallet-panel .section-line { min-height:44Px }
+.wallet-panel .section-line > :last-child { text-decoration:underline }
+.account-head { padding:10Px 0 8Px }
+.mobile-page .service-entry { min-height:56Px }
+
+.mobile-page .compact ~ .section-title + .muted { margin-top:5Px }
+.mobile-page .section-line .section-subtitle { line-height:27Px; font-size:21Px }
+.mobile-page .metal-ports { gap:8Px }
+.mobile-page .metal-ports .metal-option { min-height:63Px }
+.mobile-page .parent-link { display:flex; align-items:center; font-weight:400 }
+
+.home-page .section-line { margin-bottom:12Px }
+.station-page .section-line.spaced { margin-bottom:16Px }
+.device-page .section-line.spaced { margin-bottom:12Px }
+
+.home-page .station-loading { padding:12Px 0; text-align:center; font-size:13Px }
+
+/* 个人中心按会话展示资料；测试账号选择器仅在主动打开时占用空间。 */
+.account-head { flex-wrap:wrap }
+.identity-copy { flex:1; min-width:0 }
+.mobile-page .identity-name,.mobile-page .identity-phone { display:block; width:100%; margin:0; padding:0; text-align:left; border:0!important; background:transparent; line-height:1.3; min-height:0; border-radius:0 }
+.mobile-page .identity-name { font-size:23Px; font-weight:700; overflow-wrap:anywhere }
+.mobile-page .identity-phone { font-size:14Px; color:#526068; margin-top:4Px; font-variant-numeric:tabular-nums }
+.mobile-page .account-switch { width:auto; flex:none; min-height:44Px; margin:0; padding:0 14Px; border-radius:22Px; font-size:13Px; line-height:42Px; border:1Px solid #dbe1e3!important; background:white }
+.account-picker { flex-basis:100%; min-width:0; box-sizing:border-box; padding:16Px; background:#f4f6f7; border-radius:12Px }
+.picker-title { display:block; margin-bottom:4Px; font-size:17Px; font-weight:650 }
+.account-picker .muted { font-size:13Px }
+.account-choices,.nickname-actions { display:flex; flex-wrap:wrap; gap:6Px; margin-top:12Px }
+.account-picker .account-choices > *, .nickname-actions > * { width:auto; margin:0; min-height:44Px; padding:0 10Px; line-height:42Px; font-size:13Px; border-radius:8Px; overflow-wrap:anywhere }
+.account-picker .account-choices .picked { border-color:#49727c!important; background:#e8f8fb!important }
+.account-picker .error,.identity-copy .error { display:block; margin-top:8Px; font-size:13Px }
+.mobile-page .account-logout { margin-top:18Px; border:1Px solid #dbe1e3!important; background:#fff; font-size:15Px }

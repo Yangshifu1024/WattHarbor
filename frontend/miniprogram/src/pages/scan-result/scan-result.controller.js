@@ -5,8 +5,15 @@ import {normalizeCode,portView,deviceView} from '../../utils/scan';
 import {paymentParams,newRequestId} from '../../utils/payment';
 
 export default defineController({
- data:{deviceId:'',deviceStatus:'',deviceStatusLabel:'',deviceNotice:'',ports:[],selected:null,offers:[],selectedOffer:null,offerMode:'amount',loading:false,error:'',paying:false,paymentNotice:'',paymentNo:'',startAttempted:false,canRetryPayment:false,feeText:'',display:{},stopWhenFull:false},
- onLoad(query){try{this._code=decodeURIComponent(query.code || '');}catch(_){this._code='';}this._generation=0;this._gone=false;this._unloaded=false;},
+ data:{stationName:'',number:'',singlePort:false,deviceId:'',deviceStatus:'',deviceStatusLabel:'',deviceNotice:'',ports:[],selected:null,offers:[],selectedOffer:null,offerMode:'amount',loading:false,error:'',paying:false,paymentNotice:'',paymentNo:'',startAttempted:false,canRetryPayment:false,feeText:'',display:{},stopWhenFull:false},
+ onLoad(query){
+  try { this._code=decodeURIComponent(query.code || ''); } catch { this._code=''; }
+  // 站点名称与序号只用于展示。设备与端口身份由解析接口核验。
+  let stationName='';
+  try { stationName=decodeURIComponent(query.station || ''); } catch { /* 编码异常时显示设备编号。 */ }
+  this.setData({stationName,number:/^\d+$/.test(query.number) ? query.number : ''});
+  this._generation=0;this._gone=false;this._unloaded=false;
+ },
  onShow(){this._gone=false;if(this._openChargingOnShow){this._openChargingOnShow=false;this.charging();return;}if(this._paying || this.data.startAttempted)return;return this.load();},
  onHide(){this._gone=true;this._generation++;},
  onUnload(){this._unloaded=true;this.onHide();},
@@ -22,7 +29,7 @@ export default defineController({
    const operation=deviceView(result.device_status);
    const ports=(result.kind==='port' ? [result.port] : result.ports).map(portView);
    if(ports.some(p=>p.device_id!==result.device_id||p.device_status!==operation.deviceStatus) || new Set(ports.map(p=>p.port_id)).size!==ports.length)throw new Error('端口信息异常，请重试');
-   this.setData({deviceId:result.device_id,...operation,ports,selected:result.kind==='port' ? ports[0] : null});
+   this.setData({deviceId:result.device_id,singlePort:result.kind==='port',...operation,ports,selected:result.kind==='port' ? ports[0] : null});
    if(result.kind==='port' && ports[0].selectable)await this.loadOffers(ports[0].port_id,generation);
   }catch(e){if(!this._gone && generation===this._generation)this.setData({error:e.message || '二维码解析失败'});}
   finally{if(!this._gone && generation===this._generation)this.setData({loading:false});}
@@ -81,7 +88,7 @@ export default defineController({
    }
    if(this._gone || this._unloaded)return;
    const session=app._generation;
-   const confirmed=await new Promise(resolve=>wx.showModal({title:'确认充电方案',content:'端口 '+port.port_no+'，'+offer.name+'，支付 '+offer.priceText+'。'+offer.ruleText,success:r=>resolve(r.confirm),fail:()=>resolve(false)}));
+   const confirmed=await new Promise(resolve=>wx.showModal({title:'确认充电方案',content:(this.data.stationName ? this.data.stationName+'，' : '')+'设备 '+port.device_id+'，端口 '+port.port_no+'，'+offer.name+'，支付 '+offer.priceText+'。'+offer.ruleText,success:r=>resolve(r.confirm),fail:()=>resolve(false)}));
    if(!confirmed || this._gone || this._unloaded)return;
    if(session!==app._generation || (this._checkout && this._checkoutGeneration!==session))throw new Error('登录账号已变化，请重新核实');
    if(!this._checkout){

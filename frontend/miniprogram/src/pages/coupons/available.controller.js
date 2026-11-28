@@ -29,6 +29,14 @@ export default defineController({
     } catch (error) { if (!this._gone && generation === this._generation) this.setData({ error: error.message || '可用券读取失败', needsLogin: !couponApp.globalData.token }); }
     finally { if (!this._gone && generation === this._generation) this.setData({ loading: false }); }
   },
-  goMine() { wx.navigateTo({ url: '/pages/coupons/my' }); },
-  goScan() { wx.reLaunch({ url: '/pages/scan/scan' }); },
+  goMine() {
+    // 从券包进入时返回原页，保留之前选中的筛选状态。
+    const pages = wx.getCurrentPages();
+    if (pages[pages.length - 2]?.route?.replace(/^\//, '') === 'pages/coupons/my') {
+      wx.navigateBack({ delta: 1 });
+    } else {
+      wx.navigateTo({ url: '/pages/coupons/my' });
+    }
+  },
+  goScan() { wx.navigateTo({ url: '/pages/scan/scan' }); },
 });

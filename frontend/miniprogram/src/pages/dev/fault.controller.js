@@ -1,14 +1,35 @@
 import { defineController, getApp, wx } from "../../runtime";
+import {resolveFaultDevice} from '../../utils/scan';
 const faultApp = getApp();
 const types = ['机械损坏', '电气异常', '通讯异常', '显示异常', '其他'];
 const values = ['mechanical', 'electrical', 'communication', 'display', 'other'];
 const statuses = { open: '待派单', dispatched: '处理中', fixed: '已修复', closed: '已关闭' };
 const eventLabels = { reported: '已提交报修', dispatched: '已派单', reassigned: '已重新指派', fixed: '已标记修复', closed: '已关闭' };
 export default defineController({
-  scanDevice(){wx.navigateTo({url:'/pages/scan/scan?report_fault=1'});},
-  data: { deviceId: '', faultTypeIndex: 0, faultTypes: types, description: '', submitting: false, needsLogin: false, error: '', historyError: '', notice: '', reports: [], reportsPage: 1, reportsHasMore: false, loadingReports: false, expandedReport: '', reportHistory: [], reportHistoryLoading: false, reportHistoryError: '' },
-  onLoad(options) { this._gone = false; this._deviceId = (options.device_id || '').trim(); this.setData({ deviceId: this._deviceId }); },
-  onShow() { this._gone = false; if (faultApp.globalData.token) void this.loadReports(true); },
+  changeDevice() {
+    if (!this.data.canChangeDevice || this.data.submitting) return;
+    this._deviceId = '';
+    this.setData({deviceId: '', manualCode: '', deviceError: '', error: '', notice: ''});
+  },
+  inputCode(event) { this.setData({manualCode: event.detail.value, deviceError: ''}); },
+  scanDevice() { return this.identifyDevice(true); },
+  manualDevice() { return this.identifyDevice(false); },
+  async identifyDevice(useCamera) {
+    if (this._gone || this.data.resolving || this.data.submitting) return;
+    this.setData({resolving: true, deviceError: ''});
+    try {
+      const code = useCamera ? (await wx.scanCode({onlyFromCamera:true, scanType:['qrCode']})).result : this.data.manualCode.trim();
+      const deviceId = await resolveFaultDevice(faultApp, code);
+      if (this._gone) return;
+      this._deviceId = deviceId;
+      this.setData({deviceId, manualCode: '', error: ''});
+    } catch (error) {
+      if (!this._gone && !/cancel/i.test(error.errMsg || '')) this.setData({deviceError: error.message || '无法识别设备，请输入设备编号或端口码'});
+    } finally { this.setData({resolving: false}); }
+  },
+  data: { deviceId: '', canChangeDevice: false, manualCode: '', deviceError: '', resolving: false, faultTypeIndex: 0, faultTypes: types, description: '', submitting: false, needsLogin: false, error: '', historyError: '', notice: '', reports: [], reportsPage: 1, reportsHasMore: false, loadingReports: false, expandedReport: '', reportHistory: [], reportHistoryLoading: false, reportHistoryError: '' },
+  onLoad(options) { this._gone = false; this._deviceId = (options.device_id || '').trim(); this.setData({ deviceId: this._deviceId, canChangeDevice: !this._deviceId }); },
+  onShow() { this._gone = false; this.setData({needsLogin: !faultApp.globalData.token}); if (faultApp.globalData.token) void this.loadReports(true); },
   onHide() { this._gone = true; this._reportsGeneration = (this._reportsGeneration || 0) + 1; this._historyGeneration = (this._historyGeneration || 0) + 1; this.setData({ loadingReports: false, reportHistoryLoading: false }); },
   onUnload() { this.onHide(); },
   async login() { try { await faultApp.login(); if (!this._gone) { this.setData({ needsLogin: false }); await this.loadReports(true); } } catch (error) { if (!this._gone) this.setData({ error: error.message || '登录失败' }); } },
@@ -65,7 +86,7 @@ export default defineController({
   async submit() {
     if (this.data.submitting || this._gone) return;
     if (!faultApp.globalData.token) { this.setData({ needsLogin: true, error: '请先登录后提交报修' }); return; }
-    if (!this._deviceId || !/^[A-Za-z0-9_-]{1,64}$/.test(this._deviceId)) { this.setData({ error: '设备编号无效，请从订单或设备页面进入报修' }); return; }
+    if (!this._deviceId || !/^[A-Za-z0-9_-]{1,64}$/.test(this._deviceId)) { this.setData({ error: '请先识别需要报修的设备' }); return; }
     if (this.data.description.length > 2000) { this.setData({ error: '故障说明最多 2000 字' }); return; }
     const generation = faultApp._generation;
     this._requesting = true;

@@ -63,7 +63,7 @@ test('station device selection reaches scan resolver only for an online device',
  const { p, routes } = page('pages/stations/detail.js', app);
  p.onLoad({ id: '1' }); await p.load();
  p.openDevice(choose('DEV002')); p.openDevice(choose('DEV003')); assert.equal(routes.length, 0);
- p.openDevice(choose('DEV001')); assert.equal(routes[0], '/pages/scan-result/scan-result?code=DEV001');
+ p.openDevice(choose('DEV001')); assert.equal(routes[0], '/pages/scan-result/scan-result?code=DEV001&station=%E7%AB%99%E7%82%B9&number=01');
 });
 test('location refusal still loads public stations without fake coordinates', async () => {
  const calls = [];
@@ -137,4 +137,52 @@ test('payment without a created order shows confirmation and retries instead of 
  const { p } = page('pages/charge/charging.js', app); p.onLoad({ payment_no: 'P1', device_id: 'DEV001', port_no: '1' });
  await p.onShow(); assert.equal(p.data.waitingOrder, true); assert.equal(snapshotQueries.length, 0);
  orderReady = true; await p.load(); assert.equal(p.data.waitingOrder, false); assert.equal(snapshotQueries[0], 'C1'); assert.equal(p.data.snapshot.statusLabel, '启动确认中');
+});
+test('站点分页用完整十进制编号去重并进入正确详情', async () => {
+ const ids = Array.from({ length: 21 }, (_, i) => String(9054542607526958549n + BigInt(i)));
+ const rows = ids.map(id => ({ id: Number(id), id_text: id, name: '测试站' }));
+ const app = { request: async (_method, _url, query) => ({ items: query.page === 1 ? rows.slice(0, 20) : rows.slice(19) }) };
+ const { p, routes } = page('pages/index/index.js', app);
+ await p.loadStations(); assert.equal(p.data.moreStations, true);
+ const loading = p.onReachBottom(); assert.equal(p.onReachBottom(), undefined);
+ await loading; assert.equal(p.onReachBottom(), undefined); assert.deepEqual(Array.from(p.data.stations, row => row.id), ids);
+ assert.equal(p.data.moreStations, false);
+ p.goStation(choose(p.data.stations.at(-1).id));
+ assert.equal(routes[0], '/pages/stations/detail?id=' + ids.at(-1));
+});
+test('个人中心直接进入报修，识别端口码后保留已填写的故障描述', async () => {
+ const profile = page('pages/profile/profile.js', {});
+ profile.p.goFault();
+ assert.deepEqual(profile.routes, ['/pages/dev/fault']);
+ const { p, routes } = page('pages/dev/fault.js', { request: async (method, url, body, auth) => {
+  assert.equal(method, 'POST'); assert.equal(url, '/user/scan/resolve');
+  assert.equal(body.code, 'DEV001:3'); assert.equal(auth, false);
+  return { device_id: 'DEV001' };
+ } });
+ p.onLoad({});
+ p.onDescription({ detail: { value: '接口损坏' } });
+ p.inputCode({ detail: { value: 'DEV001:3' } });
+ await p.manualDevice();
+ assert.equal(p.data.deviceId, 'DEV001');
+ assert.equal(p.data.description, '接口损坏');
+ assert.deepEqual(routes, []);
+});
+
+test('从券包查询可用券后返回原券包，从独立查询入口可打开券包', () => {
+ const app = { globalData: {} };
+ const stack = [{ route: 'pages/coupons/my' }, { route: 'pages/coupons/available' }];
+ let back = 0;
+ const { p, routes } = page('pages/coupons/available.js', app, {
+  getCurrentPages: () => stack, navigateBack: ({ delta }) => { back += delta; },
+ });
+ p.goScan();
+ p.goMine();
+ assert.deepEqual(routes, ['/pages/scan/scan']);
+ assert.equal(back, 1);
+ stack.shift();
+ p.goMine();
+ assert.deepEqual(routes, ['/pages/scan/scan', '/pages/coupons/my']);
+ const mine = page('pages/coupons/my.js', app);
+ mine.p.goScan();
+ assert.deepEqual(mine.routes, ['/pages/scan/scan']);
 });

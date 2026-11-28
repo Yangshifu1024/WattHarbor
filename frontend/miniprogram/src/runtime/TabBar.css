@@ -1,7 +1,19 @@
-.tab-bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; height: 112rpx; padding-bottom: env(safe-area-inset-bottom); border-top: 2rpx solid #e4ece7; background: #fff; z-index: 30; }
-.tab-item { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; }
-.tab-icon-wrap { height: 46rpx; display: flex; align-items: center; }
-.tab-icon { font-size: 40rpx; color: #718078; }
-.tab-label { margin-top: 6rpx; font-size: 24rpx; color: #718078; }
-.tab-item-active .tab-icon, .tab-item-active .tab-label { color: #168665; }
-.tab-bar-spacer { height: calc(112rpx + env(safe-area-inset-bottom)); }
+.tab-bar { position:fixed; z-index:30; left:0; right:0; bottom:0; display:flex; justify-content:center; height:62Px; padding-bottom:env(safe-area-inset-bottom); box-sizing:content-box; border-top:1Px solid #dbe1e3; background:#fff }
+.tab-bar .tab-item { width:33.33%; max-width:166Px; min-height:46Px; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2Px; background:transparent; border:0; border-radius:0; line-height:1.25; color:#526068 }
+.tab-icon-wrap { width:42Px; height:25Px; display:flex; align-items:center; justify-content:center; border-radius:12Px }
+.tab-label { font-size:12Px }
+.tab-item-active .tab-icon-wrap { background:#c3f1fb; color:#13191c }
+.tab-item-active .tab-label { color:#13191c; font-weight:700 }
+.tab-scan .tab-icon-wrap { background:#13191c; color:white; border-radius:8Px }
+.tab-bar-spacer { height:calc(68Px + env(safe-area-inset-bottom)) }
+.tab-bar taro-button-core.tab-item { border:0!important }
+.scan-overlay { position:fixed; z-index:50; inset:0; padding:12Px; display:flex; align-items:center; justify-content:center; background:rgba(12,20,24,.55) }
+.scan-dialog { width:100%; max-width:390px; box-sizing:border-box; padding:19Px; background:white; border-radius:11Px }
+.scan-dialog .muted { margin-top:6Px }
+.tab-bar { height:63Px }
+.tab-scan .tab-icon-wrap { width:46Px; height:33Px; border-radius:11Px }
+.scan-frame { position:relative; width:17Px; height:14Px; border:2Px solid currentColor; border-radius:3Px }
+.scan-frame:before,.scan-frame:after { content:''; position:absolute; background:#13191c }
+.scan-frame:before { top:-2Px; bottom:-2Px; left:4Px; right:4Px }
+.scan-frame:after { left:-2Px; right:-2Px; top:4Px; bottom:4Px }
+.scan-frame > view,.scan-frame > taro-view-core { position:absolute; z-index:1; top:45%; left:2Px; right:2Px; height:1Px; background:#fff }

@@ -1,7 +1,7 @@
 /* 统一视觉采用逻辑像素的两倍 rpx，匹配 750 设计宽度。 */
 page, body, .taro_page {
-  --primary: #168665; --success: #168665; --warning: #b87812; --danger: #d94747;
-  --text: #182823; --text-secondary: #718078; --bg: #f5f7f6;
+  --primary: #13191c; --success: #13191c; --warning: #b87812; --danger: #d94747;
+  --text: #13191c; --text-secondary: #526068; --bg: #f6f7f8;
   background: var(--bg); color: var(--text); font-size: 32rpx;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
   line-height: 1.55;
@@ -10,7 +10,7 @@ page, body, .taro_page {
 .page-header { display: flex; align-items: center; gap: 16rpx; padding: 12rpx 0 32rpx; }
 .page-title { display: block; font-size: 44rpx; font-weight: 650; }
 .page-subtitle { display: block; color: var(--text-secondary); font-size: 26rpx; margin-top: 6rpx; }
-.card { background: #fff; border: 2rpx solid #eaf0ed; border-radius: 32rpx; padding: 32rpx; margin-bottom: 24rpx; overflow-wrap: anywhere; }
+.card { background: #fff; border: 2rpx solid #dbe1e3; border-radius: 32rpx; padding: 32rpx; margin-bottom: 24rpx; overflow-wrap: anywhere; }
 .heading, .section-heading { font-size: 34rpx; font-weight: 600; margin-bottom: 20rpx; }
 .row, .money-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
 .money-row { padding: 14rpx 0; }
@@ -19,10 +19,10 @@ page, body, .taro_page {
 .page-footnote { margin: 20rpx 0; }
 .money-large { font-size: 72rpx; font-weight: 650; line-height: 1.2; margin: 16rpx 0 24rpx; }
 .tag { display: inline-block; padding: 6rpx 16rpx; border-radius: 12rpx; font-size: 24rpx; margin-right: 12rpx; background: #eef3f0; color: #53665d; }
-.tag-blue, .tag-green { background: #e7f5ef; color: #168665; }
+.tag-blue, .tag-green { background: #ecf8fb; color: #13191c; }
 .tag-orange { background: #fff5e5; color: #a3690a; }
 .tag-red { background: #fff0ef; color: #c83d3d; }
-.tag-grey { background: #f0f2f1; color: #718078; }
+.tag-grey { background: #f0f2f1; color: #526068; }
 .field { padding: 24rpx 0; border-bottom: 2rpx solid #edf1ee; }
 .error { color: var(--danger); } .success { color: var(--primary); }
 .notice { font-size: 28rpx; }
@@ -36,10 +36,6 @@ taro-button-core[type='primary'][disabled='false'] { color: #fff !important; bac
 .back-button { margin: 0; padding: 0; min-height: 88rpx; width: 72rpx; flex-shrink: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; }
 input, textarea, taro-input-core, taro-textarea-core { box-sizing: border-box; background: #f7f9f8; border: 2rpx solid #e3ebe6; border-radius: 16rpx; padding: 24rpx; margin: 20rpx 0; font-size: 30rpx; min-height: 92rpx; }
 textarea, taro-textarea-core { width: 100%; min-height: 180rpx; }
-.segments-scroll { margin-bottom: 24rpx; white-space: nowrap; }
-.segments { display: flex; gap: 12rpx; width: max-content; padding: 4rpx 0; }
-.segment { min-height: 80rpx; line-height: 80rpx; margin: 0; padding: 0 28rpx; flex-shrink: 0; font-size: 28rpx; border-color: transparent; background: #edf1ef; }
-.segment.is-selected { color: #168665; background: #e7f5ef; border-color: #a9d6c4; }
 .service-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20rpx; }
 .service-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .service-button { border: 0; margin: 0; min-width: 0; padding: 12rpx 0; line-height: 1.4; font-size: 26rpx; }
@@ -50,26 +46,25 @@ textarea, taro-textarea-core { width: 100%; min-height: 180rpx; }
 .fixed-checkout { position: fixed; z-index: 20; bottom: 0; left: 0; right: 0; background: #fff; border-top: 2rpx solid #e4ece7; padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom)); display: flex; gap: 20rpx; align-items: center; justify-content: space-between; }
 .fixed-checkout button { margin: 0; width: 320rpx; flex-shrink: 0; }
 .checkout-spacer { height: calc(180rpx + env(safe-area-inset-bottom)); }
-.checkout-amount { color: #168665; font-size: 40rpx; font-weight: 600; }
+.checkout-amount { color: #13191c; font-size: 40rpx; font-weight: 600; }
 .port-grid, .offer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16rpx; }
 .offer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .port-button, .offer-button { display: block; margin: 0; padding: 20rpx 8rpx; line-height: 1.4; font-size: 30rpx; background: #fff; }
 .port-button text, .offer-button text { display: block; }
-.port-button.is-selected, .offer-button.is-selected { border-color: #168665; background: #e7f5ef; color: #168665; }
+.port-button.is-selected, .offer-button.is-selected { border-color: #13191c; background: #ecf8fb; color: #13191c; }
 .offer-button { padding: 28rpx 20rpx; text-align: left; }
 .offer-price { display: block; font-size: 40rpx; font-weight: 600; }
 .offer-name { font-size: 28rpx; white-space: normal; overflow-wrap: anywhere; }
 .offer-rule { font-size: 26rpx; background: #eef7f2; color: #496657; border-radius: 20rpx; padding: 24rpx; margin-top: 24rpx; }
 .step-title { font-weight: 600; margin: 32rpx 0 20rpx; font-size: 34rpx; }
-.step-number { background: #168665; color: #fff; border-radius: 50%; padding: 4rpx 16rpx; margin-right: 12rpx; }
+.step-number { background: #13191c; color: #fff; border-radius: 50%; padding: 4rpx 16rpx; margin-right: 12rpx; }
 .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16rpx; }
 .metric-value { display: block; font-size: 36rpx; font-weight: 600; margin-top: 8rpx; overflow-wrap: anywhere; }
 .charging-hero { text-align: center; padding: 24rpx 0 36rpx; }
-.charging-ring { width: 204rpx; height: 204rpx; margin: 28rpx auto; border: 8rpx solid #d1eade; border-top-color: #168665; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #168665; }
+.charging-ring { width: 204rpx; height: 204rpx; margin: 28rpx auto; border: 8rpx solid #b9dce6; border-top-color: #13191c; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #13191c; }
 .danger-button { border-color: #d94747; color: #d94747; }
 .curve-row { padding: 20rpx 0; border-bottom: 2rpx solid #edf1ee; font-size: 26rpx; }
-.development-panel { border-color: #b8d8c8; background: #edf6f1; }
-.development-panel text, .map-summary text { display: block; margin-bottom: 16rpx; }
+.map-summary text { display: block; margin-bottom: 16rpx; }
 .map-summary { background: #eef7f2; padding: 24rpx; border-radius: 24rpx; }
 .profile-head { display: flex; align-items: center; gap: 24rpx; margin: 12rpx 0 32rpx; }
 .profile-avatar { width: 112rpx; height: 112rpx; border-radius: 50%; background: #e5ece7; display: flex; align-items: center; justify-content: center; }
@@ -79,7 +74,7 @@ textarea, taro-textarea-core { width: 100%; min-height: 180rpx; }
 /* H5 自定义元素的默认按钮伪边框不属于本设计，统一移除。 */
 taro-button-core::after { border: none; }
 taro-button-core[size='mini'][disabled='false'] { background: #fff; }
-taro-button-core.is-selected[disabled='false'] { background: #e7f5ef !important; color: #168665 !important; }
+taro-button-core.is-selected[disabled='false'] { background: #ecf8fb !important; color: #13191c !important; }
 taro-button-core.back-button { width: 72rpx; flex: 0 0 72rpx; }
 taro-button-core.service-button { width: 100%; }
 /* Taro H5 用空 disabled 属性表示禁用，用字符串 false 表示可用。 */
@@ -88,13 +83,17 @@ taro-button-core[disabled='false'] { background: #fff; }
 taro-button-core[type='primary']:not([disabled]), taro-button-core[type='primary'][disabled='false'] { background: var(--primary) !important; color: #fff !important; }
 taro-button-core[disabled]:not([disabled='false']) { background: #eef1ef !important; color: #9aa69f !important; border-color: #e4e9e6 !important; }
 taro-button-core.port-button[disabled='false'], taro-button-core.offer-button[disabled='false'] { background: #fff; }
-taro-button-core.segment.is-selected[disabled='false'], taro-button-core.port-button.is-selected[disabled='false'], taro-button-core.offer-button.is-selected[disabled='false'] { background: #e7f5ef !important; }
+taro-button-core.port-button.is-selected[disabled='false'], taro-button-core.offer-button.is-selected[disabled='false'] { background: #ecf8fb !important; }
 /* 页面与按钮的组件默认样式加载晚于全局样式，显式保留设计边框。 */
 .taro_page.taro_page_show { background: var(--bg) !important; }
 taro-button-core { border: 2rpx solid #dde7e1 !important; }
 taro-button-core.back-button, taro-button-core.service-button, taro-button-core.section-link, taro-button-core.scan-main, taro-button-core.scan-manual { border: 0 !important; }
-taro-button-core.is-selected { border-color: #168665 !important; }
-taro-button-core.segment { border-color: transparent !important; }
-taro-button-core.segment[disabled='false'] { background: #edf1ef; }
-taro-button-core.segment.is-selected[disabled='false'] { background: #e7f5ef !important; border-color: #a9d6c4 !important; }
+taro-button-core.is-selected { border-color: #13191c !important; }
 taro-button-core.danger-button { border-color: #d94747 !important; }
+
+/* 固定数量的状态等分可用宽度，整格可点，短线与字重共同标记选中态。 */
+.filter-tabs { display:flex; border-bottom:1Px solid #dbe1e3; margin:8Px 0 16Px }
+.filter-tabs .filter-tab { position:relative; flex:1 1 0; width:0; min-width:0; min-height:48Px; margin:0; padding:0; line-height:48Px; border:0!important; border-radius:0; background:transparent; color:#526068; font-size:15Px; text-align:center; white-space:nowrap }
+.filter-tabs taro-button-core.filter-tab[disabled='false'] { background:transparent; color:#526068!important }
+.filter-tabs .filter-tab.current,.filter-tabs taro-button-core.filter-tab.current[disabled='false'] { color:#13191c!important; font-weight:650 }
+.filter-tabs .filter-tab.current::before { content:''; position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:26Px; height:3Px; border-radius:2Px; background:#13191c }

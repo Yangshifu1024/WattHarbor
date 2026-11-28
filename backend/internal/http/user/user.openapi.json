@@ -119,15 +119,19 @@
               },
               "nickname": {
                 "type": "string",
-                "description": "未授权昵称时为空串"
+                "description": "用户自愿填写的昵称，未设置时为空串"
               },
               "avatar_url": {
                 "type": "string",
                 "description": "未设置时为空串"
               },
+              "phone": {
+                "type": "string",
+                "description": "当前会话所属用户已绑定的完整手机号，未绑定时为空串"
+              },
               "phone_bound": {
                 "type": "boolean",
-                "description": "是否已绑定手机号；未绑定时不下发号码本身"
+                "description": "是否已绑定手机号"
               },
               "registered_at": {
                 "type": "string",
@@ -451,45 +455,38 @@
         }
       },
       "StationRow": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "站点主键，十进制字符串"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StationBase"
           },
-          "name": {
-            "type": "string"
-          },
-          "address": {
-            "type": "string",
-            "nullable": true
-          },
-          "longitude": {
-            "type": "string",
-            "description": "经度，字符串形式"
-          },
-          "latitude": {
-            "type": "string",
-            "description": "纬度，字符串形式"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "disabled",
-              "construction"
-            ]
-          },
-          "contact_phone": {
-            "type": "string",
-            "nullable": true
-          },
-          "distance_km": {
-            "type": "number",
-            "nullable": true,
-            "description": "距当前定位的公里数；未传经纬度时为 null"
+          {
+            "type": "object",
+            "required": [
+              "distance_km",
+              "available_port_count",
+              "total_port_count"
+            ],
+            "properties": {
+              "distance_km": {
+                "type": "number",
+                "nullable": true,
+                "description": "距当前定位的公里数；未传经纬度时为 null"
+              },
+              "available_port_count": {
+                "type": "integer",
+                "minimum": 0,
+                "nullable": true,
+                "description": "可扫码充电的端口数，缺少任一设备的可用数时为 null"
+              },
+              "total_port_count": {
+                "type": "integer",
+                "minimum": 0,
+                "nullable": true,
+                "description": "未删除的物理端口总数，缺少任一设备的摘要时为 null"
+              }
+            }
           }
-        }
+        ]
       },
       "StationPageResponse": {
         "type": "object",
@@ -522,20 +519,32 @@
         "type": "object",
         "properties": {
           "data": {
-            "type": "object",
-            "properties": {
-              "station": {
-                "$ref": "#/components/schemas/StationRow"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StationBase"
               },
-              "port_count": {
-                "type": "integer",
-                "description": "在营充电端口数"
-              },
-              "available_offer_count": {
-                "type": "integer",
-                "description": "可选价格档数量"
+              {
+                "type": "object",
+                "required": [
+                  "devices",
+                  "announcements"
+                ],
+                "properties": {
+                  "announcements": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AnnouncementRow"
+                    }
+                  },
+                  "devices": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/StationDevice"
+                    }
+                  }
+                }
               }
-            }
+            ]
           }
         }
       },
@@ -888,7 +897,9 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "integer",
+            "format": "uint64",
+            "description": "公告主键"
           },
           "title": {
             "type": "string"
@@ -2184,6 +2195,99 @@
             "description": "计量证据或冻结方案不足等无法估价的原因，正常省略。"
           }
         }
+      },
+      "StationBase": {
+        "type": "object",
+        "required": ["id", "id_text"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "uint64",
+            "description": "站点数字主键，兼容既有调用方"
+          },
+          "id_text": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "同一站点主键的十进制表示，客户端用作列表标识和路由参数"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "description": "经度，字符串形式"
+          },
+          "latitude": {
+            "type": "string",
+            "description": "纬度，字符串形式"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "construction"
+            ]
+          },
+          "contact_phone": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "StationDevice": {
+        "type": "object",
+        "required": [
+          "device_id",
+          "status",
+          "last_heartbeat_at",
+          "online",
+          "runtime_available",
+          "available_port_count",
+          "total_port_count"
+        ],
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled",
+              "fault"
+            ]
+          },
+          "last_heartbeat_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "online": {
+            "type": "boolean",
+            "description": "已知且最后心跳在一小时内"
+          },
+          "runtime_available": {
+            "type": "boolean",
+            "description": "是否读取到此设备的网关摘要"
+          },
+          "available_port_count": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "按扫码规则可用的端口数量；缺少可用数时为 null"
+          },
+          "total_port_count": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "设备未删除的物理端口数；未取得摘要时为 null"
+          }
+        }
       }
     }
   },
@@ -2363,6 +2467,49 @@
               }
             }
           }
+        }
+      }
+    },
+    "/api/v1/user/profile/nickname": {
+      "post": {
+        "summary": "保存当前用户主动填写的昵称",
+        "operationId": "user_profile_nickname",
+        "tags": ["auth"],
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["nickname"],
+                "additionalProperties": false,
+                "properties": {
+                  "nickname": {
+                    "type": "string",
+                    "description": "首尾空白去除后为 1 至 64 个 Unicode 码点，保留内部空格，拒绝控制字符和换行"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "昵称已保存，重复提交同一昵称返回相同结果。",
+            "content": {"application/json": {"schema": {
+              "type": "object",
+              "properties": {"data": {
+                "type": "object",
+                "required": ["nickname"],
+                "properties": {"nickname": {"type": "string", "minLength": 1, "maxLength": 64}}
+              }}
+            }}}
+          },
+          "400": {"description": "昵称或请求格式无效"},
+          "401": {"description": "需要有效登录会话"},
+          "403": {"description": "账号已冻结"},
+          "503": {"description": "认证或用户存储暂不可用"}
         }
       }
     },

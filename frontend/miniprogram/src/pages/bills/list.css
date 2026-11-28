@@ -1,11 +1,5 @@
-/* 账单列表样式：未读标记与金额层级。尺寸以 rpx 表述，与 designWidth 750 的基准一致。 */
-
-.bill-card { padding: 28rpx; }
-
-.bill-card-unread { border-left: 6rpx solid #168665; }
-
-.bill-head { display: flex; align-items: center; justify-content: space-between; }
-.bill-no { font-size: 26rpx; color: #718078; }
-.bill-unread-tag { padding: 2rpx 12rpx; border-radius: 6rpx; background: #e7f5ef; color: #168665; font-size: 22rpx; }
-.bill-amount { margin: 12rpx 0 8rpx; font-size: 40rpx; font-weight: 600; color: #182823; }
-.bill-more { padding: 16rpx 0; text-align: center; }
+.bill-head { display:flex; align-items:center; justify-content:space-between; gap:8Px }
+.bill-no { font-size:14Px; color:#526068 }
+.bill-unread-tag { flex:none; padding:2Px 6Px; border-radius:4Px }
+.bill-amount { margin:6Px 0 4Px; font-size:22Px; font-weight:650 }
+.bill-more { padding:8Px 0; text-align:center }

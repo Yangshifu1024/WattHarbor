@@ -1,13 +1,6 @@
 import { defineController, getApp, wx } from "../../runtime";
-// 首页：功能入口、快捷服务、附近电站列表与底部导航。
+// 首页按服务端默认顺序分页展示公开站点。
 const app = getApp();
-
-// 距离按设计稿展示为“距你 60m”，不足 1 公里时换算为米。
-function distanceText(km) {
-  if (typeof km !== "number" || !Number.isFinite(km)) return "距离未知";
-  if (km < 1) return "距你" + Math.round(km * 1000) + "m";
-  return "距你" + km.toFixed(1) + "km";
-}
 
 // 进行中订单的服务端状态原文展示；未列出的状态直接回落为"处理中"，
 // 不在客户端推断充电是否真的开始。
@@ -18,23 +11,23 @@ const ONGOING_LABELS = {
 };
 
 export default defineController({
-  _locationAttempted: false,
+  _listGeneration: 0,
   data: {
     ongoing: null,
     announcements: [],
-    latitude: null,
-    longitude: null,
     stations: [],
-    markers: [],
-    mapError: '',
-    locationNotice: '',
-    locating: false,
+    page: 0,
+    stationLoading: false,
+    moreStations: false,
+    stationError: '',
   },
 
   onShow() {
     this.refresh();
-    if (!this._locationAttempted) this.locate();
+    if (!this.data.stations.length) this.loadStations();
   },
+
+  onPullDownRefresh() { return this.loadStations().finally(() => wx.stopPullDownRefresh()); },
 
   async refresh() {
     try {
@@ -49,47 +42,38 @@ export default defineController({
     } catch (_error) { this.setData({ ongoing: null }); }
   },
 
-  locate() {
-    this._locationAttempted = true;
-    this.setData({ locating: true, mapError: '', locationNotice: '' });
-    wx.getLocation({ type: 'gcj02', success: (location) => {
-      this.setData({ latitude: location.latitude, longitude: location.longitude, mapError: '', locating: false });
-      this.loadStations();
-    }, fail: () => {
-      // 未开启定位时接口按创建时间倒序返回最新站点，距离字段为 null。
-      this.setData({ locating: false, locationNotice: '未开启定位，以下按创建时间展示最新电站。' });
-      this.loadStations();
-    } });
+  // 连续触底共用一次在途请求，失败后保留列表，由重试入口续读原页。
+  onReachBottom() {
+    if (this.data.moreStations && !this.data.stationLoading && !this.data.stationError) return this.loadStations(true);
   },
+  retryStations() { return this.loadStations(this.data.page > 0); },
 
-  // 重新定位：忽略首次定位标记，强制取一次新坐标并重查附近电站。
-  relocate() { this._locationAttempted = false; this.locate(); },
-
-  async loadStations() {
-    // 没有坐标时不传参，后端返回最新站点而非按距离排序的结果。
-    const located = this.data.latitude !== null && this.data.longitude !== null;
-    const query = located ? { latitude: this.data.latitude, longitude: this.data.longitude, radius_km: 5 } : {};
+  // 下拉刷新重新读取第一页，丢弃刷新前发出的旧分页响应。
+  async loadStations(append = false) {
+    const generation = ++this._listGeneration;
+    const page = append ? this.data.page + 1 : 1;
+    const query = { page, page_size: 20 };
+    this.setData({ stationLoading: true, stationError: '', ...(append ? {} : { stations: [], page: 0, moreStations: false }) });
     try {
       const result = await app.request('GET', '/user/station/nearby', query, false);
-      const stations = (result.items || []).map(station => ({
-        ...station,
-        latitude: Number(station.latitude),
-        longitude: Number(station.longitude),
-        // distance_km 在未开启定位时为 null，不能经 Number() 转换，
-        // 否则 null 会变成 0 并被显示成“距你0m”。
-        distanceText: distanceText(station.distance_km),
-      }));
-      this.setData({
-        stations,
-        markers: stations.map(station => ({ id: station.id, latitude: station.latitude, longitude: station.longitude, title: station.name })),
-        mapError: '',
+      if (generation !== this._listGeneration) return;
+      const rows = result.items.map(station => {
+        // 站点主键可能超过安全整数。封面只取末位分配示意图，导航保留完整十进制编号。
+        const id = station.id_text ?? station.id;
+        return { ...station, id, coverIndex: Number(String(id).slice(-1)) % 3 };
       });
-    } catch (error) { this.setData({ mapError: error.message || '附近电站读取失败' }); }
+      const seen = new Set(this.data.stations.map(station => station.id));
+      this.setData({
+        stations: this.data.stations.concat(rows.filter(station => !seen.has(station.id))),
+        page, moreStations: rows.length === query.page_size,
+      });
+    } catch (error) {
+      if (generation === this._listGeneration) this.setData({ stationError: error.message || '站点读取失败' });
+    } finally {
+      if (generation === this._listGeneration) this.setData({ stationLoading: false });
+    }
   },
 
-  onScanTap() { wx.navigateTo({ url: '/pages/scan/scan' }); },
-
-  goMap() { wx.navigateTo({ url: '/pages/stations/nearby' }); },
   goAnnouncements() { wx.navigateTo({ url: '/pages/announcement/list' }); },
   goOrders() { wx.navigateTo({ url: '/pages/charge/history' }); },
   goProfile() { wx.reLaunch({ url: '/pages/profile/profile' }); },
@@ -99,13 +83,8 @@ export default defineController({
     }
   },
 
-  // 常用电站尚无对应页面，明确提示而不跳转到相近但无关的页面。
-  comingSoon(title) { wx.showToast({ title, icon: 'none' }); },
-  goFrequent() { this.comingSoon('常用电站即将上线'); },
-  goDeviceMap() { wx.navigateTo({ url: '/pages/stations/nearby' }); },
-
   goStation(event) {
-    const id = event.currentTarget.dataset.id || event.detail?.markerId;
+    const id = event.currentTarget.dataset.id;
     wx.navigateTo({ url: '/pages/stations/detail?id=' + encodeURIComponent(id) });
   },
 });

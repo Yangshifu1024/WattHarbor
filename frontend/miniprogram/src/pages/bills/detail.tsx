@@ -7,12 +7,12 @@ import controller from "./detail.controller";
 export default function PageView() {
 const { data, event } = useController(controller);
 const { bill, loading, error, needsLogin, readSaving, readNotice, readError } = data;
-return (<><View className="container"><PageHeader title="账单详情" />
+return (<><View className="container account-page"><PageHeader title="账单详情" />
 {!!(needsLogin) && (<View className="card"><Text>{"登录后查看结算账单"}</Text>
-<Button type="primary" onClick={event("login", {})} loading={loading}>{"微信登录"}</Button></View>)}
+<Button className="account-action" type="primary" onClick={event("login", {})} loading={loading}>{"微信登录"}</Button></View>)}
 {!!(loading && !bill) && (<View className="card">{"正在读取账单…"}</View>)}
 {!!(error) && (<View className="card error"><View>{error}</View>
-<Button onClick={event("load", {})} disabled={loading}>{"重试"}</Button></View>)}
+<Button className="account-action" onClick={event("load", {})} disabled={loading}>{"重试"}</Button></View>)}
 {!!(bill) && (<Fragment>
 <View className="card">
 <Text className="text-secondary">{"账单号 "}{bill?.bill_no}</Text>
@@ -28,7 +28,7 @@ return (<><View className="container"><PageHeader title="账单详情" />
 {!!(readNotice) && (<View className="success">{readNotice}</View>)}
 {!!(readError) && (<View className="error">{readError}</View>)}
 </View>
-<Button onClick={event("orderDetail", {})} disabled={!bill?.order_no}>{"查看来源订单"}</Button>
+<Button className="account-action" onClick={event("orderDetail", {})} disabled={!bill?.order_no}>{"查看来源订单"}</Button>
 </Fragment>)}
 </View>
 </>);

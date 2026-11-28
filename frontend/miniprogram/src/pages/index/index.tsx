@@ -1,32 +1,27 @@
-import { Button, Text, View } from '@tarojs/components'
-import { AtIcon } from 'taro-ui'
+import { Button, Image, Text, View } from '@tarojs/components'
 import { useController } from '../../runtime'
 import { TabBar } from '../../runtime/TabBar'
-import { Notice } from '../../runtime/ui'
+import { ChargingBanner } from '../../runtime/ChargingBanner'
+import { MobileHeader, Notice } from '../../runtime/ui'
+import cover from '../../assets/station-cover.jpg'
 import controller from './index.controller'
-import './index.css'
 
-/** 首页只组织公开浏览与进行中订单，支付登录留在充电选择流程。 */
+/** 站点使用通用封面，空闲端口数取自公开站点摘要。 */
 export default function PageView() {
   const { data, event } = useController(controller)
-  const stations = data.stations || []
-  const announcements = data.announcements || []
-  return <>
-    <View className='home'>
-      <View className='home-brand'><AtIcon value='lightning-bolt' size={26} color='#168665' /><View><Text className='brand-name'>电港充电</Text><Text className='page-subtitle'>充电，从这里开始</Text></View></View>
-      <View className='scan-hero'>
-        <Button className='scan-main' onClick={event('onScanTap')}><AtIcon value='camera' size={34} /><View><Text className='scan-title'>扫码充电</Text><Text className='scan-description'>扫描设备或插座二维码</Text></View></Button>
-        <Button className='scan-manual' onClick={event('onScanTap')}>手动输入编号 ›</Button>
-      </View>
-      {data.ongoing && <View className='ongoing-banner' onClick={event('goOngoing')}><AtIcon value='lightning-bolt' size={24} /><View className='ongoing-body'><Text className='ongoing-label'>{data.ongoing.statusLabel}</Text><Text className='ongoing-meta'>设备 {data.ongoing.device_id} · 插座 {data.ongoing.port_no ?? '—'}</Text></View><Text className='ongoing-action'>查看状态 ›</Text></View>}
-      {announcements.length > 0 && <View className='announcement-bar' onClick={event('goAnnouncements')}><AtIcon value='notification' size={18} /><Text className='announcement-title'>公告 · {announcements[0].title}</Text><Text>›</Text></View>}
-      <View className='section-head'><Text className='section-heading'>附近电站</Text><Button className='section-link' onClick={event('goMap')}>查看全部 ›</Button></View>
-      {data.locating && <Notice>正在获取位置…</Notice>}
-      {data.locationNotice && <Notice retry={event('relocate')}>{data.locationNotice}</Notice>}
-      {data.mapError && <Notice tone='error' retry={event('relocate')}>{data.mapError}</Notice>}
-      {stations.map((station: any) => <View className='station-card card' key={station.id} onClick={event('goStation', { id: station.id })}><AtIcon value='map-pin' size={24} color='#168665' /><View className='station-body'><Text className='station-name'>{station.name || '未命名电站'}</Text><Text className='station-address'>{station.address || '地址未填写'}</Text></View><View className='station-distance'><Text>{station.distanceText}</Text><Text className='text-secondary'>查看设备 ›</Text></View></View>)}
-      {!stations.length && !data.mapError && !data.locating && <Notice retry={event('relocate')}>暂无可显示的电站</Notice>}
-      <View className='page-footnote'>选择站点后查看设备，再选择插座与套餐</View>
-    </View><TabBar active='home' />
-  </>
+  return <View className='mobile-shell'><View className='mobile-page home-page'>
+    <MobileHeader />
+    <ChargingBanner />
+    <View className='section-line'><Text className='section-title'>充电站</Text><Text className='muted'>{data.moreStations ? '已加载' : '共'} {data.stations.length} 个站点</Text></View>
+    {data.stations.map((station: any) => <Button key={station.id} className='list-entry' onClick={event('goStation', { id: station.id })}>
+      <View className='station-cover'><Image className={'cover-strip cover-' + station.coverIndex} src={cover} mode='scaleToFill' /></View>
+      <View className='entry-copy'><Text className='entry-title'>{station.name || '未命名电站'}</Text><Text className='muted'>{station.address || '地址未填写'}</Text></View>
+      <View className='entry-numbers'><Text>{station.available_port_count ?? '—'}</Text><Text className='muted'>空闲端口</Text></View><Text className='chevron'>›</Text>
+    </Button>)}
+    {data.stationLoading && <View className='station-loading muted'>{data.stations.length ? '正在加载更多站点…' : '正在读取充电站…'}</View>}
+    {data.stationError && <Notice tone='error' retry={event('retryStations')}>{data.stationError}</Notice>}
+    {!data.stationError && !data.stationLoading && !data.stations.length && <Notice>暂无可显示的充电站</Notice>}
+    {data.ongoing && <Button className='list-entry' onClick={event('goOngoing')}><View className='entry-copy'><Text className='entry-title'>{data.ongoing.statusLabel}</Text><Text className='muted'>设备 {data.ongoing.device_id} · 端口 {data.ongoing.port_no ?? '—'}</Text></View><Text className='entry-tail'>查看状态 ›</Text></Button>}
+    {data.announcements.length > 0 && <Button className='list-entry' onClick={event('goAnnouncements')}><Text>公告 · {data.announcements[0].title}</Text><Text>›</Text></Button>}
+  </View><TabBar active='home' /></View>
 }

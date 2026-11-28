@@ -9,7 +9,7 @@ import { isH5, developmentLogin } from '../../runtime/platform';
 export default function PageView() {
 const { data, event, page } = useController(controller);
 const { busy, error, manualCode } = data;
-return (<><View className="container"><PageHeader title="扫码充电" />{page._reportFault && <View className="page-footnote">扫描设备或插座二维码，识别后进入设备报修</View>}<View className="card"><View>{"请扫描充电设备或端口上的二维码"}</View>
+return (<><View className="container"><PageHeader title={page._reportFault ? "识别报修设备" : "扫码充电"} />{page._reportFault && <View className="page-footnote">扫描设备或插座二维码，识别后进入设备报修</View>}<View className="card"><View>{"请扫描充电设备或端口上的二维码"}</View>
 {!isH5 && <Button type="primary" onClick={event("scan", {})} loading={busy} disabled={busy}>{"打开相机扫码"}</Button>}
 {isH5 && <View className='text-secondary'>当前浏览器请粘贴二维码内容，或输入设备编号 / 插座码。</View>}</View>
 <View className="card"><View>{"也可以输入设备编号或端口码"}</View>

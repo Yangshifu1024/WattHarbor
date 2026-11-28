@@ -143,8 +143,36 @@ func TestRegisteredIdentityRoutesUseRealUserWalletAndRedis(t *testing.T) {
 	}
 	var profile identity.Profile
 	decode(call("GET", "/api/v1/user/profile", "", first.Token), &profile)
-	if profile.UserID != id || profile.PhoneBound || profile.Wallet.AvailableCents != 0 {
+	if profile.UserID != id || profile.PhoneBound || profile.Phone != "" || profile.Wallet.AvailableCents != 0 {
 		t.Fatal("initial profile changed")
+	}
+	const nicknamePath = "/api/v1/user/profile/nickname"
+	if w := call("POST", nicknamePath, "{}", ""); w.Code != 401 {
+		t.Fatalf("匿名改昵称 HTTP %d", w.Code)
+	}
+	for _, invalid := range []string{`{}`, `{"nickname":"　 "}`, `{"nickname":"正文\n换行"}`, `{"nickname":"\ud800"}`, `{"nickname":"有效","user_id":"1"}`, `{"nickname":"` + string([]byte{0xff}) + `"}`, `{"nickname":"` + strings.Repeat("名", 65) + `"}`} {
+		if w := call("POST", nicknamePath, invalid, first.Token); w.Code != 400 {
+			t.Fatalf("无效昵称请求 HTTP %d", w.Code)
+		}
+	}
+	nickname := strings.Repeat("名", 60) + " A🔋港"
+	var nicknameResult identity.NicknameReply
+	for range 2 {
+		decode(call("POST", nicknamePath, fmt.Sprintf(`{"nickname":"　%s "}`, nickname), first.Token), &nicknameResult)
+		if nicknameResult.Nickname != nickname {
+			t.Fatal("昵称回执未保留完整 Unicode 文本")
+		}
+	}
+	decode(call("GET", "/api/v1/user/profile", "", first.Token), &profile)
+	if profile.Nickname != nickname {
+		t.Fatal("已更新昵称未在本人资料显示")
+	}
+	var other identity.LoginResult
+	decode(call("POST", "/api/v1/user/auth/login", fmt.Sprintf(`{"code":"dev:%s_other"}`, account), ""), &other)
+	var otherProfile identity.Profile
+	decode(call("GET", "/api/v1/user/profile", "", other.Token), &otherProfile)
+	if otherProfile.UserID == id || otherProfile.Nickname != "" {
+		t.Fatal("昵称资料跨账号泄露")
 	}
 	for _, invalid := range []string{"{}", fmt.Sprintf("{\"phone\":\"%s\"}", number), fmt.Sprintf("{\"code\":\"verified-code\",\"phone\":\"%s\"}", number)} {
 		if w := call("POST", "/api/v1/user/phone/bind", invalid, first.Token); w.Code != 400 {
@@ -163,11 +191,20 @@ func TestRegisteredIdentityRoutesUseRealUserWalletAndRedis(t *testing.T) {
 		t.Fatal("phone result leaked or changed")
 	}
 	decode(call("GET", "/api/v1/user/profile", "", first.Token), &profile)
-	if !profile.PhoneBound {
+	if !profile.PhoneBound || profile.Phone != number {
 		t.Fatal("phone was not committed")
 	}
+	decode(call("GET", "/api/v1/user/profile", "", other.Token), &otherProfile)
+	if otherProfile.Phone != "" || otherProfile.PhoneBound {
+		t.Fatal("手机号资料跨账号泄露")
+	}
+
 	if w := call("POST", "/api/v1/user/phone/unbind", "", first.Token); w.Code != 200 {
 		t.Fatalf("unbind=%d", w.Code)
+	}
+	decode(call("GET", "/api/v1/user/profile", "", first.Token), &profile)
+	if profile.PhoneBound || profile.Phone != "" {
+		t.Fatal("解绑后资料仍含手机号")
 	}
 	var phone *string
 	if err := tx.Table("user").Where("id=?", id).Select("phone").Scan(&phone).Error; err != nil || phone != nil {
@@ -192,6 +229,12 @@ func TestRegisteredIdentityRoutesUseRealUserWalletAndRedis(t *testing.T) {
 	}
 	if w := call("GET", "/api/v1/user/profile", "", again.Token); w.Code != 403 {
 		t.Fatalf("frozen profile=%d", w.Code)
+	}
+	if w := call("POST", nicknamePath, `{"nickname":"冻结修改"}`, again.Token); w.Code != 403 {
+		t.Fatalf("冻结账号改昵称 HTTP %d", w.Code)
+	}
+	if err := users.SetNickname(t.Context(), id, "冻结修改"); !errors.Is(err, identity.ErrAccountFrozen) {
+		t.Fatalf("写入时未核对冻结状态 %v", err)
 	}
 	if w := call("POST", "/api/v1/user/phone/unbind", "", again.Token); w.Code != 403 {
 		t.Fatalf("frozen phone=%d", w.Code)

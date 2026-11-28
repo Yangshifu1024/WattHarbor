@@ -50,7 +50,8 @@ func (r UserStationRepo) Find(ctx context.Context, id uint64) (userStationRow, e
 
 // stationDeviceRow 保存未退役设备的编号和运营状态。
 type stationDeviceRow struct {
-	DeviceID string `gorm:"column:device_id"` // 设备业务号
+	StationID uint64 `gorm:"column:station_id"` // 所属站点，用于分页内跨站点汇总
+	DeviceID  string `gorm:"column:device_id"`  // 设备业务号
 	// Status 读的是 device_meta.status（devices.DeviceMetaStatus，enabled/disabled/retired/fault），
 	// 不是 station.status，不得改成 StationStatus。
 	Status devices.DeviceMetaStatus `gorm:"column:status"`
@@ -58,8 +59,11 @@ type stationDeviceRow struct {
 
 // Devices 按设备号读取站点中未删除、未退役设备，返回非 nil 数组。
 // status<>'retired' 是 device_meta.status 的字面量（devices.DeviceRetired），与 station.status 无关，不要改。
-func (r UserStationRepo) Devices(ctx context.Context, stationID uint64) ([]stationDeviceRow, error) {
+func (r UserStationRepo) Devices(ctx context.Context, stationIDs []uint64) ([]stationDeviceRow, error) {
 	rows := []stationDeviceRow{}
-	err := r.DB.WithContext(ctx).Table("device_meta").Select("device_id,status").Where("station_id=? AND deleted_at IS NULL AND status<>'retired'", stationID).Order("device_id ASC").Find(&rows).Error
+	if len(stationIDs) == 0 {
+		return rows, nil
+	}
+	err := r.DB.WithContext(ctx).Table("device_meta").Select("station_id,device_id,status").Where("station_id IN ? AND deleted_at IS NULL AND status<>'retired'", stationIDs).Order("station_id,device_id").Find(&rows).Error
 	return rows, err
 }

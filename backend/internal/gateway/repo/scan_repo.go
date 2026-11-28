@@ -99,7 +99,18 @@ type scanPortRow struct {
 
 // scanPort 允许心跳晚于当前时间最多 1 分钟、早于当前时间最多 2 分钟，并结合端口占用判断是否可用。
 func scanPort(code, deviceID string, number uint8, status money.PortStatus, current sql.NullString, seen sql.NullTime) ScanPort {
-	online := seen.Valid && time.Since(seen.Time) <= 2*time.Minute && time.Since(seen.Time) >= -time.Minute
+	online := portDeviceOnline(seen, time.Now())
 	return ScanPort{PortID: code, DeviceID: deviceID, PortNo: number, Status: status, Online: online,
-		Available: status == money.PortIdle && !current.Valid && online}
+		Available: portAvailable(status, current, online)}
+}
+
+// portDeviceOnline 使用最近可见时间判断扫码窗口，允许设备时钟最多快一分钟。
+func portDeviceOnline(seen sql.NullTime, now time.Time) bool {
+	age := now.Sub(seen.Time)
+	return seen.Valid && age <= 2*time.Minute && age >= -time.Minute
+}
+
+// portAvailable 供扫码与列表摘要复用，仅在线、空闲且没有订单占用的端口可用。
+func portAvailable(status money.PortStatus, current sql.NullString, online bool) bool {
+	return online && status == money.PortIdle && !current.Valid
 }

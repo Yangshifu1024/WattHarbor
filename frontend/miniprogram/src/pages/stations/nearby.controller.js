@@ -1,7 +1,7 @@
 import { defineController, getApp, wx } from "../../runtime";
 const stationApp = getApp();
 export default defineController({
-  data: { items: [], markers: [], latitude: null, longitude: null, loading: false, error: '', radiusIndex: 1, radii: [1,5,10,20,50], needsLogin: false, locationNotice: '' },
+  data: { items: [], latitude: null, longitude: null, loading: false, error: '', radiusIndex: 1, radii: [1,5,10,20,50], needsLogin: false, locationNotice: '' },
   onLoad() { this._generation=0; this._gone=false; },
   onShow() { this._gone=false; return this.locate(); },
   onHide() { this._gone=true; this._generation++; this.setData({loading:false}); },
@@ -30,12 +30,12 @@ export default defineController({
   onRadius(event) { this.setData({radiusIndex:Number(event.detail.value)}); this.load(); },
   async load() {
     const generation=++this._generation;
-    this.setData({loading:true,error:'',items:[],markers:[]});
+    this.setData({loading:true,error:'',items:[]});
     try {
       const query=this.data.latitude==null ? {} : {latitude:this.data.latitude,longitude:this.data.longitude,radius_km:this.data.radii[this.data.radiusIndex]};
       const result=await stationApp.request('GET','/user/station/nearby',query,false);
       if (this._gone || generation!==this._generation) return;
-      this.setData({items:result.items.map(s=>({...s,distanceText:typeof s.distance_km==='number'?s.distance_km.toFixed(2)+' 公里':'距离未知'})),markers:result.items.map(s=>({id:s.id,latitude:s.latitude,longitude:s.longitude,title:s.name}))});
+      this.setData({items:result.items.map(s=>({...s,id:s.id_text ?? s.id,distanceText:typeof s.distance_km==='number'?s.distance_km.toFixed(2)+' 公里':'距离未知'}))});
     } catch(e) { if (!this._gone && generation===this._generation) this.setData({error:e.message || '站点查询失败'}); }
     finally { if (!this._gone && generation===this._generation) this.setData({loading:false}); }
   },

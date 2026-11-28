@@ -2,11 +2,13 @@
 package identity
 
 import (
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	authhttp "wattharbor/internal/http/auth"
 	"wattharbor/internal/identity"
 	"wattharbor/internal/platform/httpapi"
 )
@@ -22,6 +24,7 @@ func (a API) Register(router *gin.Engine) {
 	router.POST("/api/v1/user/auth/refresh", a.refresh)
 	router.POST("/api/v1/user/auth/logout", a.logout)
 	router.GET("/api/v1/user/profile", a.profile)
+	router.POST("/api/v1/user/profile/nickname", a.nickname)
 }
 
 // login 用微信登录 code 创建或恢复用户会话。
@@ -91,6 +94,7 @@ func (a API) logout(c *gin.Context) {
 
 // profile 核对当前会话和账号状态，返回用户资料。
 func (a API) profile(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
 	out, err := a.Service.Profile(c.Request.Context(), bearer(c))
 	if err == nil {
 		httpapi.OK(c, out)
@@ -110,6 +114,32 @@ func (a API) profile(c *gin.Context) {
 		httpapi.Write(c, 503, 5001, "session storage unavailable", nil)
 	default:
 		httpapi.Write(c, 503, 5001, "user status unavailable", nil)
+	}
+}
+
+// nickname 先核对会话，再读取单一 UTF-8 JSON 请求；拒绝无效 Unicode 和客户端指定的身份。
+func (a API) nickname(c *gin.Context) {
+	ctx := c.Request.Context()
+	id, err := a.Service.Authenticate(ctx, bearer(c))
+	if err != nil {
+		authhttp.WriteError(c, err)
+		return
+	}
+	var in identity.NicknameRequest
+	if err := jsonv2.UnmarshalRead(http.MaxBytesReader(c.Writer, c.Request.Body, 4096), &in, jsonv2.RejectUnknownMembers(true)); err != nil {
+		httpapi.BadRequest(c, "昵称请求无效")
+		return
+	}
+	out, err := a.Service.UpdateNickname(ctx, id, in)
+	switch {
+	case err == nil:
+		httpapi.OK(c, out)
+	case errors.Is(err, identity.ErrNicknameInvalid):
+		httpapi.BadRequest(c, identity.ErrNicknameInvalid.Error())
+	case errors.Is(err, identity.ErrAccountFrozen):
+		authhttp.WriteError(c, err)
+	default:
+		httpapi.Write(c, 503, 5001, "昵称暂时无法保存", nil)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -57,7 +58,8 @@ func (e *StationQueryError) Unwrap() error { return e.Cause }
 
 // stationView 是公开站点字段，坐标保留字符串、ID 保留数字，并保留可空字段。
 type stationView struct {
-	ID        uint64        `json:"id"`            // 主键
+	ID        uint64        `json:"id"`            // 数字主键，兼容既有客户端
+	IDText    string        `json:"id_text"`       // 同一主键的十进制字符串，供客户端无损跳转
 	Name      string        `json:"name"`          // 站名
 	Address   *string       `json:"address"`       // 可空地址
 	Longitude string        `json:"longitude"`     // DECIMAL 经度
@@ -66,9 +68,30 @@ type stationView struct {
 	Phone     *string       `json:"contact_phone"` // 可空电话
 }
 
-// stationListView 在站点资料上添加距离，未定位时距离为 null。
+// portCounts 使用非负整数区分已知零值和未知。站点任一设备缺少某项时，该项总数为 null。
+type portCounts struct {
+	AvailablePortCount *int `json:"available_port_count"` // 当前可供用户扫码充电的端口数
+	TotalPortCount     *int `json:"total_port_count"`     // 网关未删除的物理端口数
+}
+
+// add 将相同口径的设备计数加到站点，已缺失的计数保持未知。
+func (p *portCounts) add(device portCounts) {
+	if p.AvailablePortCount == nil || device.AvailablePortCount == nil {
+		p.AvailablePortCount = nil
+	} else {
+		*p.AvailablePortCount += *device.AvailablePortCount
+	}
+	if p.TotalPortCount == nil || device.TotalPortCount == nil {
+		p.TotalPortCount = nil
+	} else {
+		*p.TotalPortCount += *device.TotalPortCount
+	}
+}
+
+// stationListView 在站点资料上添加距离与端口数量，未定位时距离为 null。
 type stationListView struct {
 	stationView          // 公开资料
+	portCounts           // 本站所有未退役设备的端口汇总
 	DistanceKM  *float64 `json:"distance_km"` // 公里；null 表示未知
 }
 
@@ -82,6 +105,7 @@ type StationPage struct {
 
 // stationRuntimeView 组合中央运营状态和网关运行信息，未知时不补造心跳。
 type stationRuntimeView struct {
+	portCounts                                // 当前设备可用端口和物理端口总数
 	DeviceID         string                   `json:"device_id"`         // 设备业务号
 	Status           devices.DeviceMetaStatus `json:"status"`            // 中央运营状态，词表见 domain/devices
 	LastHeartbeatAt  *time.Time               `json:"last_heartbeat_at"` // 心跳；未知为 null
@@ -108,11 +132,14 @@ func (s UserStationService) Nearby(ctx context.Context, q StationQuery) (Station
 	if q.Located && (!finite(q.Longitude) || !finite(q.Latitude) || q.Longitude < -180 || q.Longitude > 180 || q.Latitude < -90 || q.Latitude > 90) {
 		return StationPage{}, &StationInputError{"经纬度超出有效范围"}
 	}
-	rows, err := (UserStationRepo{DB: s.DB}).List(ctx, q)
+	repo := UserStationRepo{DB: s.DB}
+	rows, err := repo.List(ctx, q)
 	if err != nil {
 		return StationPage{}, err
 	}
 	out := StationPage{Items: []stationListView{}, Page: q.Page, PageSize: q.PageSize, Located: q.Located}
+	ids := make([]uint64, 0, len(rows))
+	byStation := make(map[uint64]int, len(rows))
 	for _, row := range rows {
 		if q.Located && row.DistanceKM != nil && *row.DistanceKM > 50 {
 			continue
@@ -121,7 +148,20 @@ func (s UserStationService) Nearby(ctx context.Context, q StationQuery) (Station
 		if q.Located {
 			distance = row.DistanceKM
 		}
-		out.Items = append(out.Items, stationListView{stationPublicView(row), distance})
+		ids = append(ids, row.ID)
+		byStation[row.ID] = len(out.Items)
+		out.Items = append(out.Items, stationListView{stationView: stationPublicView(row), DistanceKM: distance, portCounts: portCounts{new(int), new(int)}})
+	}
+	deviceRows, err := repo.Devices(ctx, ids)
+	if err != nil {
+		return StationPage{}, err
+	}
+	devices, err := s.runtime(ctx, deviceRows)
+	if err != nil {
+		return StationPage{}, err
+	}
+	for i, device := range devices {
+		out.Items[byStation[deviceRows[i].StationID]].portCounts.add(device.portCounts)
 	}
 	return out, nil
 }
@@ -147,7 +187,7 @@ func (s UserStationService) Detail(ctx context.Context, id uint64) (StationDetai
 	if announcements == nil {
 		announcements = []ops.PublicAnnouncement{}
 	}
-	rows, err := repo.Devices(ctx, id)
+	rows, err := repo.Devices(ctx, []uint64{id})
 	if err != nil {
 		return StationDetail{}, &StationQueryError{"devices", err}
 	}
@@ -161,7 +201,7 @@ func (s UserStationService) Detail(ctx context.Context, id uint64) (StationDetai
 // runtime 按设备顺序每 100 台查询一次摘要，共用五秒请求超时。
 // 失败批次保留未知，不合并额外或重复设备；取消后不继续查询，结果为非 nil 数组。
 func (s UserStationService) runtime(ctx context.Context, rows []stationDeviceRow) ([]stationRuntimeView, error) {
-	heartbeats := map[string]contract.DeviceSummary{}
+	summaries := map[string]contract.DeviceSummary{}
 	if s.Summaries != nil && len(rows) > 0 {
 		queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
@@ -194,7 +234,7 @@ func (s UserStationService) runtime(ctx context.Context, rows []stationDeviceRow
 			}
 			if valid {
 				for _, summary := range extra {
-					heartbeats[summary.DeviceID] = summary
+					summaries[summary.DeviceID] = summary
 				}
 			}
 		}
@@ -205,17 +245,26 @@ func (s UserStationService) runtime(ctx context.Context, rows []stationDeviceRow
 	now := time.Now().UTC()
 	items := make([]stationRuntimeView, 0, len(rows))
 	for _, row := range rows {
-		summary, known := heartbeats[row.DeviceID]
+		summary, known := summaries[row.DeviceID]
 		last := summary.LastHeartbeatAt
 		online := known && last != nil && now.Sub(*last) < time.Hour
-		items = append(items, stationRuntimeView{row.DeviceID, row.Status, last, online, known})
+		counts := portCounts{}
+		if known && summary.Ports != nil {
+			total := len(summary.Ports)
+			counts.TotalPortCount = &total
+			counts.AvailablePortCount = summary.AvailablePortCount
+			if row.Status != devices.DeviceEnabled {
+				counts.AvailablePortCount = new(int)
+			}
+		}
+		items = append(items, stationRuntimeView{DeviceID: row.DeviceID, Status: row.Status, LastHeartbeatAt: last, Online: online, RuntimeAvailable: known, portCounts: counts})
 	}
 	return items, nil
 }
 
 // stationPublicView 只返回公开站点字段，不含数据库映射或距离。
 func stationPublicView(row userStationRow) stationView {
-	return stationView{row.ID, row.Name, row.Address, row.Longitude, row.Latitude, row.Status, row.Phone}
+	return stationView{ID: row.ID, IDText: strconv.FormatUint(row.ID, 10), Name: row.Name, Address: row.Address, Longitude: row.Longitude, Latitude: row.Latitude, Status: row.Status, Phone: row.Phone}
 }
 
 // finite 检查数值有限，禁止将 NaN 或无穷值传入 SQL。

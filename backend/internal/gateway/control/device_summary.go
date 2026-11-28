@@ -1,6 +1,8 @@
 package control
 
 import (
+	"time"
+
 	contract "wattharbor/internal/contracts/gateway"
 	gatewayrepo "wattharbor/internal/gateway/repo"
 
@@ -46,7 +48,7 @@ func (a DeviceSummaryAPI) list(c *gin.Context) {
 	byDevice := make(map[string]int, len(rows))
 	for i := range rows {
 		row := rows[i]
-		out.Items = append(out.Items, contract.DeviceSummary{DeviceID: row.DeviceID, VendorName: row.VendorName, LastHeartbeatAt: row.LastHeartbeatAt, SignalStrength: row.SignalStrength, SignalAt: row.SignalAt, Ports: []contract.DevicePortSummary{}})
+		out.Items = append(out.Items, contract.DeviceSummary{DeviceID: row.DeviceID, VendorName: row.VendorName, LastHeartbeatAt: row.LastHeartbeatAt, SignalStrength: row.SignalStrength, SignalAt: row.SignalAt, AvailablePortCount: new(int), Ports: []contract.DevicePortSummary{}})
 		byDevice[rows[i].DeviceID] = i
 	}
 	if len(rows) > 0 {
@@ -55,8 +57,12 @@ func (a DeviceSummaryAPI) list(c *gin.Context) {
 			httpapi.Write(c, 503, 5001, "设备端口状态暂不可读取", nil)
 			return
 		}
+		now := time.Now()
 		for _, port := range ports {
 			if i, ok := byDevice[port.DeviceID]; ok {
+				if port.Available(now) {
+					(*out.Items[i].AvailablePortCount)++
+				}
 				out.Items[i].Ports = append(out.Items[i].Ports, contract.DevicePortSummary{PortNo: port.PortNo, StatusCode: port.StatusCode, StatusAt: port.StatusAt})
 			}
 		}

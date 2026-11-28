@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>电港充电 · WattHarbor</title>
+<style>
+:root{color-scheme:light;--paper:#faf7f2;--white:#fffcf7;--ink:#28221f;--muted:#6c6159;--line:#d8cfc4;--red:#b63b19;--pale:#fbe7d8;--dark:#332a26}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}button,input,select{font:inherit;color:inherit}button{border:0;background:none;cursor:pointer}button:disabled{cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #943312;outline-offset:3px}h1,h2,h3,p{margin:0}h1,h2,h3{line-height:1.17}h1{font-size:clamp(32px,4.1vw,57px);font-weight:760;letter-spacing:-.055em}h2{font-size:24px;letter-spacing:-.04em}h3{font-size:18px}small,.note{color:var(--muted);font-size:14px}button{min-height:44px}[hidden]{display:none!important}
+.frame{max-width:1160px;margin:auto;padding:0 40px}.header{border-bottom:1px solid var(--line)}.bar,.pair,.tools,.brand,.actions,.station,.row,.foot,.submitbar{display:flex;align-items:center}.bar,.pair,.row,.foot,.submitbar{justify-content:space-between}.bar{min-height:78px;gap:12px}.brand{gap:12px;font-weight:780;padding:0;text-align:left}.brand strong{display:block;font-size:23px;line-height:1.05;letter-spacing:-.045em}.brand em{display:block;margin-top:3px;font:italic 650 12px/1.1 Georgia,serif}.mark{display:block;background:var(--red);width:30px;height:38px;clip-path:polygon(44% 0,79% 0,57% 36%,100% 36%,18% 100%,38% 54%,0 54%)}.tools{gap:20px}.nav{font-size:15px;font-weight:600;padding:0}.nav:hover,.link:hover{text-decoration:underline}.hero{display:grid;grid-template-columns:1.23fr 1fr;margin:32px 0 38px;overflow:hidden;border:1px solid var(--line);border-radius:22px;background:var(--white)}.hero figure{margin:0;min-width:0;position:relative;min-height:340px}.hero img{position:absolute;width:100%;height:100%;object-fit:cover;object-position:61% 47%}.panel{padding:clamp(24px,3.3vw,48px);align-self:center;min-width:0}.panel p{margin:12px 0 22px}.action,.quiet{border-radius:9px;padding:13px 18px;font-weight:650;min-height:48px}.action{background:var(--red);color:white}.action:hover:not(:disabled){background:#982d11}.quiet{background:#eee8e0}.action:disabled{background:#e4dcd3;color:#625a55}.entry{display:flex;align-items:center;border:1px solid #ab9d8e;border-radius:9px;background:white;padding:4px}.entry input{min-width:0;flex:1;width:100%;height:45px;border:0;background:transparent;padding:0 9px;font-size:16px}.entry button{flex:0 0 46px;height:46px;background:var(--red);color:white;border-radius:6px;font-size:23px}.link{padding:0;color:var(--red);font-size:14px}.full{width:100%}.stations{margin-bottom:34px}.listhead{margin-bottom:14px}.station-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-block:1px solid var(--line)}.station{padding:20px 16px;min-width:0;gap:12px;text-align:left}.station+ .station{border-left:1px solid var(--line)}.station:first-child{padding-left:0}.station strong,.station small{display:block}.station strong{font-size:17px}.station small{margin-top:3px}.station:hover{background:#f1eae1}.siteIcon{flex:0 0 32px;height:32px;border:1.5px solid #8b6f5a;border-radius:9px;position:relative}.siteIcon:before,.portIcon:before{content:"";position:absolute;left:30%;top:32%;height:28%;width:2px;background:currentColor;transform:rotate(22deg)}.siteIcon:after,.portIcon:after{content:"";position:absolute;right:30%;top:32%;height:28%;width:2px;background:currentColor;transform:rotate(-22deg)}.arrow{margin-left:auto;color:var(--red)}.foot{gap:10px;border-top:1px solid var(--line);padding:17px 0 30px}.foot select{border:0;border-bottom:1px solid var(--line);background:transparent;min-height:44px;font-size:14px}.foot small{font-size:13px}.return{margin-top:18px;width:100%;border-radius:10px;padding:14px 18px;text-align:left;background:var(--dark);color:#fff1df;font-weight:650}
+.back{color:var(--muted);padding:0}.subhead{margin:8px 0 24px}.twocol{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:clamp(28px,6vw,86px);align-items:start;margin-bottom:40px}.plate,.receipt{position:relative;background:var(--dark);color:#fff7eb;border-radius:15px;overflow:hidden}.plate{padding:28px;background:linear-gradient(130deg,#493a32,#292420 70%);border:5px solid #443931;box-shadow:inset 0 0 0 1px #78665b}.plate:before,.plate:after{content:"";width:5px;height:5px;position:absolute;top:12px;border-radius:50%;background:#af9b8a}.plate:before{left:12px}.plate:after{right:12px}.plate h2{font-size:23px}.plate small,.receipt small{color:#d4c4b4}.plate .number{display:block;font-size:clamp(42px,6vw,72px);letter-spacing:-.055em;color:#ffc099;margin:12px 0;font-weight:710}.device{border-top:1px solid #746257;padding-top:12px;font:14px/1.6 ui-monospace,monospace;overflow-wrap:anywhere}.ports,.offers{display:grid;margin:12px 0 22px;gap:8px}.ports{grid-template-columns:repeat(3,1fr)}.ports button,.offers button{padding:9px;background:var(--white);border:1px solid #baad9f;border-radius:9px;min-width:0}.ports strong,.ports small{display:block}.ports strong{font:650 24px/1.18 ui-monospace,monospace}.ports button:disabled{background:#eee9e2;border-color:transparent}.ports button[aria-pressed=true],.offers button[aria-pressed=true]{background:var(--pale);border:2px solid var(--red);padding:8px;color:#872b12}.offers{grid-template-columns:1fr 1fr}.offers button{font-size:20px;font-weight:680}.submitbar{margin-top:17px}.receipt{background:#302823}.receiptHead{padding:24px 26px}.receiptHead h2{margin:9px 0 16px;font-size:32px}.number{font-variant-numeric:tabular-nums}.time{font:650 clamp(46px,6vw,78px)/1.06 ui-monospace,monospace;color:#ffc099;letter-spacing:-.08em}.time span{font:16px/1.4 sans-serif;margin-left:8px;color:white}.strip{display:flex;gap:35px;position:relative;border-top:1px dashed #877164;padding:18px 26px}.strip:before,.strip:after{content:"";position:absolute;border-radius:50%;width:16px;height:16px;background:var(--paper);top:-8px}.strip:before{left:-8px}.strip:after{right:-8px}.strip b{display:block;font-size:19px}.progress{list-style:none;padding:0;margin:18px 0}.progress li{position:relative;border-left:1px solid #bdafa3;margin-left:5px;padding:0 0 16px 18px}.progress li:before{content:"";position:absolute;left:-5px;top:7px;width:9px;height:9px;border-radius:50%;background:var(--red)}.progress li:last-child{border-color:transparent}summary{cursor:pointer;min-height:44px;padding:10px 0}details{border-block:1px solid var(--line);margin:16px 0}details p{padding-bottom:12px}dialog{width:min(380px,92vw);border:1px solid var(--line);border-radius:16px;padding:24px;background:var(--white);color:var(--ink)}dialog::backdrop{background:#211b17a3}dialog p{margin:12px 0}dialog input{width:100%;padding:12px;margin:4px 0;border:1px solid #ad9988;border-radius:8px}dialog button{margin:4px 0}.error{font-size:14px;color:#99300d}
+@media(max-width:720px){.frame{padding:0 17px}.bar{min-height:63px}.tools{gap:14px}.brand strong{font-size:20px}.brand em{font-size:11px}.brand{gap:8px}.mark{width:23px;height:31px}.nav{font-size:14px}.hero{display:flex;flex-direction:column;margin:16px 0 23px;border-radius:16px}.hero figure{height:clamp(147px,44vw,244px);min-height:0}.hero img{object-position:50% 61%}.panel{padding:18px 19px 12px;width:100%}.panel h1{font-size:34px}.panel p{margin:6px 0 12px}.station-list{display:block}.station,.station:first-child{width:100%;padding:11px 0}.station+ .station{border:0;border-top:1px solid var(--line)}.listhead{margin-bottom:6px}.stations{margin-bottom:20px}.foot{padding:8px 0 14px}.foot small{font-size:12px}.twocol{display:block;margin-bottom:22px}.subhead{margin:4px 0 16px}.plate,.receipt{margin-bottom:22px}.plate{padding:19px}.plate .number{font-size:38px;margin:6px 0}.plate h2{font-size:20px}.receiptHead{padding:22px}.time{font-size:54px}.offers,.ports{margin-bottom:16px}.submitbar{position:sticky;bottom:0;background:var(--paper);padding:7px 0 max(7px,env(safe-area-inset-bottom))}}
+</style></head>
+<body><header class="header"><div class="frame bar"><button class="brand" data-page="home" aria-label="电港充电首页"><span class="mark"></span><span><strong>电港充电</strong><em>WattHarbor</em></span></button><nav class="tools"><button class="nav" id="records">充电记录</button><button class="nav" id="account">我的</button></nav></div></header>
+<main class="frame">
+<section class="screen" id="home">
+<button class="return" id="returnOrder" data-page="live" hidden></button>
+<div class="hero"><figure><img src="mobile-redesign-scooter.jpg" alt="一辆橘红色电动两轮车停在充电处"></figure><div class="panel"><h1>开始充电</h1><p class="note" id="intro">输入桩身设备编号或插座码。</p>
+<form id="homeForm"><div class="entry"><input id="homeCode" aria-label="设备编号或插座码" placeholder="设备编号或插座码" autocomplete="off" required><button aria-label="查找插座">→</button></div><div class="error" role="status" id="homeError"></div><button type="button" class="link" id="example">填入示例插座码</button></form>
+<div hidden id="wxActions"><button class="action full" id="start">扫码充电</button><button class="link" id="openManual">手动输入编号</button></div></div></div>
+<div class="stations"><div class="row listhead"><h2>充电站点</h2></div><div class="station-list">
+<button class="station" data-site="0"><span class="siteIcon" aria-hidden="true"></span><span><strong>北苑车棚充电站</strong><small>北门 · 自行车停车区</small></span><span class="arrow">↗</span></button>
+<button class="station" data-site="1"><span class="siteIcon" aria-hidden="true"></span><span><strong>西门充电站</strong><small>西门 · 办公楼西侧</small></span><span class="arrow">↗</span></button>
+<button class="station" data-site="2"><span class="siteIcon" aria-hidden="true"></span><span><strong>东区停车棚</strong><small>东区 · 宿舍楼下</small></span><span class="arrow">↗</span></button>
+</div></div></section>
+<section class="screen" id="checkout" hidden><button class="back" data-page="home">← 充电首页</button><h1 class="subhead">确认充电</h1>
+<div class="twocol"><div class="plate"><h2 id="siteName"></h2><strong class="number" id="plateNo"></strong><div class="device" id="device"></div></div>
+<div><div class="row"><h3>选择插座</h3><small id="portLabel"></small></div><button class="link" id="changePort" hidden>更换插座</button><div class="ports" id="ports"></div>
+<div class="row"><h3>预付金额</h3><small>按实际消费结算</small></div><div class="offers"><button data-fee="2" aria-pressed="false">¥2.00</button><button data-fee="5" aria-pressed="false">¥5.00</button></div><p class="note">剩余款项按订单规则退款。</p><div class="submitbar"><button class="action full" disabled id="pay">请选择插座和金额</button></div></div></div></section>
+<section class="screen" id="live" hidden><button class="back" data-page="home">← 充电首页</button><h1 class="subhead">本次订单</h1><div class="twocol">
+<div class="receipt" aria-live="polite"><div class="receiptHead"><small id="orderSite">北苑车棚充电站 · 06 号插座</small><h2 id="status">充电中</h2><div id="telemetry"><small>已充时长</small><div class="time" id="duration">38<span>分钟</span></div></div></div>
+<div class="strip" id="readings"><div><small>累计电量</small><b id="energy">0.32 kWh</b></div><div><small>实时功率</small><b id="power">486 W</b></div></div></div>
+<div><h3>订单进度</h3><ol class="progress" id="log"><li>支付已确认</li><li>设备已确认启动</li></ol><details><summary>费用明细</summary><p id="feeDetail">预付 ¥2.00，最终费用待结算。</p></details><button id="next" class="quiet full">停止充电</button></div></div></section>
+<footer class="foot"><small>交互样稿 · 模拟设备与支付</small><select id="platform" aria-label="选择预览平台"><option value="h5">普通 H5</option><option value="wx">微信小程序</option></select></footer></main>
+<dialog id="sheet" aria-labelledby="sheetTitle"><form id="form"><h3 id="sheetTitle"></h3><p id="help" class="note"></p><input id="code" aria-label="设备编号或插座码" autocomplete="off"><p id="error" class="error" role="status"></p><button class="action full" id="submit"></button><button type="button" class="quiet full" id="cancel">关闭</button><button type="button" class="link" id="manual" hidden>改为输入编号</button></form></dialog>
+<script>
+
+const el = id => document.getElementById(id);
+const sites=['北苑车棚充电站','西门充电站','东区停车棚'];
+const devices=['5348240514082652','5348240514082653','5348240514082654'];
+let collapsed=false;
+let site=0, port=0, fee=0, submitted=false, state='running', dialogAction;
+function page(id) {
+  document.querySelectorAll('.screen').forEach(screen=>{screen.hidden=screen.id!==id;});
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>page(b.dataset.page));
+function modal(title,help,action,button,input=false) {
+  el('sheetTitle').textContent=title; el('help').textContent=help; el('submit').textContent=button;
+  el('code').hidden=!input; el('code').value=''; el('error').textContent=''; el('manual').hidden=true;
+  dialogAction=action;
+  if(!el('sheet').open) el('sheet').showModal();
+  if(input) el('code').focus();
+}
+el('form').onsubmit=e=>{e.preventDefault(); if(dialogAction()!==false) el('sheet').close();};
+el('cancel').onclick=()=>el('sheet').close();
+function render() {
+  el('siteName').textContent=sites[site]; el('device').textContent='设备 '+devices[site];
+  el('plateNo').textContent=port?String(port).padStart(2,'0')+' 号插座':'待选插座';
+  el('portLabel').textContent=port?'已选 '+String(port).padStart(2,'0')+' 号':'请核对桩身编号';
+  el('ports').hidden=collapsed; el('changePort').hidden=!collapsed||submitted;
+  el('ports').replaceChildren();
+  for(const n of [1,2,3,4,5,6]){
+    const b=document.createElement('button'), free=[1,4,6].includes(n);
+    const num=document.createElement('strong'),label=document.createElement('small');
+    num.textContent=String(n).padStart(2,'0');label.textContent=free?'空闲':n===5?'故障':'使用中';
+    b.append(num,label); b.disabled=!free||submitted; b.setAttribute('aria-pressed',String(n===port));
+    b.onclick=()=>{port=n;fee=0;render();};el('ports').append(b);
+  }
+  document.querySelectorAll('[data-fee]').forEach(b=>{b.setAttribute('aria-pressed',String(+b.dataset.fee===fee));b.disabled=submitted||!port;});
+  el('pay').disabled=!port||!fee||submitted;
+  el('pay').textContent=submitted?'已提交，请查看订单':fee?'预付 ¥'+fee.toFixed(2)+' 并充电':port?'请选择预付金额':'请选择插座和金额';
+}
+function choose(i,n){if(submitted){page('live');return;}site=i;port=n;fee=0;collapsed=Boolean(n);render();page('checkout');}
+el('changePort').onclick=()=>{collapsed=false;render();};
+document.querySelectorAll('[data-site]').forEach(b=>b.onclick=()=>choose(+b.dataset.site,0));
+document.querySelectorAll('[data-fee]').forEach(b=>b.onclick=()=>{fee=+b.dataset.fee;render();});
+function resolveCode(raw, error) {
+  const value=raw.trim();
+  const index=devices.indexOf(value.split('-')[0]);
+  if(index<0 || (value!==devices[index] && value!==devices[index]+'-06')){
+    error.textContent='未识别此编号，可用示例 5348240514082652-06。';
+    return false;
+  }
+  error.textContent='';
+  choose(index,value.endsWith('-06')?6:0);
+  return true;
+}
+function openManual(){
+  modal('输入设备编号或插座码','示例插座码 5348240514082652-06',()=>resolveCode(el('code').value,el('error')),'查找插座',true);
+}
+el('homeForm').onsubmit=event=>{
+  event.preventDefault();
+  resolveCode(el('homeCode').value,el('homeError'));
+};
+el('example').onclick=()=>{
+  el('homeCode').value=devices[0]+'-06';
+  el('homeError').textContent='';
+  el('homeCode').focus();
+};
+el('manual').onclick=openManual;
+el('openManual').onclick=openManual;
+el('start').onclick=()=>{
+  modal('扫码充电','使用北苑车棚 06 号插座码模拟扫码。',()=>choose(0,6),'模拟扫到插座码');
+  el('manual').hidden=false;
+};
+function startLabel(){
+  const wx=el('platform').value==='wx';
+  el('homeForm').hidden=wx;
+  el('wxActions').hidden=!wx;
+  el('intro').textContent=wx?'扫描设备或插座上的二维码。':'输入桩身设备编号或插座码。';
+  document.querySelector('.hero').hidden=submitted;
+}
+el('platform').onchange=startLabel;
+el('records').onclick=()=>{
+  if(submitted){page('live');return;}
+  modal('充电记录','本次预览尚未创建订单，可查看一笔模拟进行中的订单。',()=>{
+    submitted=true;port=6;fee=2;site=0;render();startLabel();
+    updateOrder('充电中',['支付已确认','设备已确认启动'],'停止充电');page('live');
+  },'查看示例订单');
+};
+el('account').onclick=()=>modal('我的','充电订单 · 钱包充值与余额退款 · 在线卡。单次充电退款在对应订单中查看。',()=>{},'知道了');
+function updateOrder(label,steps,action) {
+  el('status').textContent=label;el('telemetry').hidden=el('readings').hidden=state!=='running';
+  el('log').replaceChildren(...steps.map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));
+  el('returnOrder').textContent=label+' · '+el('orderSite').textContent+' ›';el('returnOrder').hidden=false;
+  el('next').textContent=action;el('next').disabled=state==='stopping';
+}
+el('pay').onclick=()=>{
+  submitted=true;state='waiting';render();startLabel();
+  el('orderSite').textContent=sites[site]+' · '+String(port).padStart(2,'0')+' 号插座';
+  el('feeDetail').textContent='预付 ¥'+fee.toFixed(2)+'，最终费用待结算。';
+  updateOrder('设备启动确认中',['支付已确认','等待设备回执'],'演示设备确认启动');page('live');
+};
+el('next').onclick=()=>{
+  if(state==='waiting'){state='running';el('duration').textContent='刚刚开始';el('energy').textContent=el('power').textContent='暂无数据';updateOrder('充电中',['支付已确认','设备已确认启动'],'停止充电');return;}
+  modal('停止本次充电？',el('orderSite').textContent+'。提交后仍需等待设备确认。',()=>{state='stopping';submitted=true;render();startLabel();updateOrder('停止请求已提交',['设备已确认启动','等待设备确认停止'],'等待设备确认');},'确认停止');
+};
+render();
+
+</script></body></html>

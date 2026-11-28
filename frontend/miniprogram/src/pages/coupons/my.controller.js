@@ -35,5 +35,5 @@ export default defineController({
     finally { if (!this._gone && generation === this._generation) this.setData({ loading: false }); }
   },
   goAvailable() { wx.navigateTo({ url: '/pages/coupons/available' }); },
-  goScan() { wx.reLaunch({ url: '/pages/scan/scan' }); },
+  goScan() { wx.navigateTo({ url: '/pages/scan/scan' }); },
 });

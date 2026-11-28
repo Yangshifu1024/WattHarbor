@@ -2,6 +2,7 @@ package device
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -23,7 +24,7 @@ func (f stationSummaryFunc) DeviceSummaries(ctx context.Context, ids []string) (
 func TestStationRuntimeBatchesAndPreservesUnknown(t *testing.T) {
 	rows := make([]stationDeviceRow, 201)
 	for i := range rows {
-		rows[i] = stationDeviceRow{fmt.Sprintf("station-%03d", i), "active"}
+		rows[i] = stationDeviceRow{DeviceID: fmt.Sprintf("station-%03d", i), Status: "enabled"}
 	}
 	call := 0
 	recent, old := time.Now().Add(-time.Minute), time.Now().Add(-2*time.Hour)
@@ -67,7 +68,7 @@ func TestStationRuntimeBatchesAndPreservesUnknown(t *testing.T) {
 func TestStationRuntimeRejectsWrongIdentityAndStopsOnCancel(t *testing.T) {
 	for _, extras := range [][]contract.DeviceSummary{{{DeviceID: "outside"}}, {{DeviceID: "one"}, {DeviceID: "one"}}} {
 		s := UserStationService{Summaries: stationSummaryFunc(func(context.Context, []string) ([]contract.DeviceSummary, error) { return extras, nil })}
-		out, err := s.runtime(context.Background(), []stationDeviceRow{{"one", "active"}})
+		out, err := s.runtime(context.Background(), []stationDeviceRow{{DeviceID: "one", Status: "enabled"}})
 		if err != nil || out[0].RuntimeAvailable {
 			t.Fatalf("bad identity %+v %v", out, err)
 		}
@@ -95,5 +96,56 @@ func TestStationAdmissionBeforeStorage(t *testing.T) {
 	}
 	if _, err := (UserStationService{}).Detail(context.Background(), 0); err == nil {
 		t.Fatal("zero station accepted")
+	}
+}
+
+// TestStationPortCountContract 核对旧网关缺少可用数、停用设备、缺失摘要和已知空站的公开 JSON。
+func TestStationPortCountContract(t *testing.T) {
+	rows := []stationDeviceRow{{DeviceID: "旧网关", Status: "enabled"}, {DeviceID: "停用", Status: "disabled"}, {DeviceID: "未同步", Status: "enabled"}}
+	service := UserStationService{Summaries: stationSummaryFunc(func(context.Context, []string) ([]contract.DeviceSummary, error) {
+		return []contract.DeviceSummary{
+			{DeviceID: "旧网关", Ports: []contract.DevicePortSummary{{PortNo: 1}}},
+			{DeviceID: "停用", Ports: []contract.DevicePortSummary{{PortNo: 1}}, AvailablePortCount: new(1)},
+		}, nil
+	})}
+	devices, err := service.runtime(context.Background(), rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	station := portCounts{new(int), new(int)}
+	check := func(counts portCounts, want string) {
+		t.Helper()
+		got, err := json.Marshal(counts)
+		if err != nil || string(got) != want {
+			t.Fatalf("端口字段 %s，预期 %s，错误 %v", got, want, err)
+		}
+	}
+	check(station, `{"available_port_count":0,"total_port_count":0}`)
+	check(devices[0].portCounts, `{"available_port_count":null,"total_port_count":1}`)
+	check(devices[1].portCounts, `{"available_port_count":0,"total_port_count":1}`)
+	for _, device := range devices[:2] {
+		station.add(device.portCounts)
+	}
+	check(station, `{"available_port_count":null,"total_port_count":2}`)
+	station.add(devices[2].portCounts)
+	check(station, `{"available_port_count":null,"total_port_count":null}`)
+}
+
+// TestPublicStationIDsKeepAdjacentKeys 验证双精度 JSON 客户端仍能区分相邻站点，并保留数字 id 兼容字段。
+func TestPublicStationIDsKeepAdjacentKeys(t *testing.T) {
+	const id uint64 = 9054542607526958568
+	data, err := json.Marshal([]stationView{
+		stationPublicView(userStationRow{ID: id}), stationPublicView(userStationRow{ID: id + 1}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded[0]["id"] != float64(id) || decoded[1]["id"] != decoded[0]["id"] ||
+		decoded[0]["id_text"] != "9054542607526958568" || decoded[1]["id_text"] != "9054542607526958569" {
+		t.Fatalf("大整数站点编号未按兼容契约保留：%s", data)
 	}
 }

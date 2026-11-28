@@ -134,7 +134,7 @@ func (s UserRepo) Profile(ctx context.Context, id uint64) (Profile, error) {
 	if result.RowsAffected != 1 {
 		return Profile{}, gorm.ErrRecordNotFound
 	}
-	profile := Profile{UserID: row.ID, Nickname: row.Nickname.String, AvatarURL: row.AvatarURL.String, PhoneBound: row.Phone.Valid && row.Phone.String != "", RegisteredAt: row.FirstSeenAt.UTC(), CouponUnusedCount: row.CouponUnusedCount}
+	profile := Profile{UserID: row.ID, Nickname: row.Nickname.String, AvatarURL: row.AvatarURL.String, Phone: row.Phone.String, PhoneBound: row.Phone.Valid && row.Phone.String != "", RegisteredAt: row.FirstSeenAt.UTC(), CouponUnusedCount: row.CouponUnusedCount}
 	profile.Wallet.Status = row.WalletStatus
 	profile.Wallet.AvailableCents = row.BalanceCents - row.FrozenCents
 	profile.Wallet.FrozenCents = row.FrozenCents
@@ -163,5 +163,22 @@ func (s UserRepo) BindPhone(ctx context.Context, userID uint64, value *string) e
 		}
 		return tx.Table("user").Where("id = ? AND deleted_at IS NULL", userID).
 			Updates(map[string]any{"phone": bound}).Error
+	})
+}
+
+// SetNickname 在当前用户行上核对启用状态并修改昵称。重复设置相同值成功，冻结、删除或不存在返回 ErrAccountFrozen。
+// 行锁覆盖状态核验和写入，避免同时冻结账号时仍写入旧状态下的昵称。
+func (s UserRepo) SetNickname(ctx context.Context, userID uint64, nickname string) error {
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user UserAccount
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").
+			Where("id=? AND status=? AND deleted_at IS NULL", userID, identitydomain.UserActive).Take(&user).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrAccountFrozen
+		}
+		if err != nil {
+			return err
+		}
+		return tx.Model(&user).Update("nickname", nickname).Error
 	})
 }

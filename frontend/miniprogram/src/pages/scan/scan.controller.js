@@ -1,6 +1,6 @@
 import { defineController, getApp, wx } from "../../runtime";
 const scanApp=getApp();
-import {normalizeCode} from '../../utils/scan';
+import {normalizeCode,resolveFaultDevice} from '../../utils/scan';
 export default defineController({
  data:{busy:false,error:'',manualCode:''},
  onLoad(query={}){this._reportFault=query.report_fault==='1';this._gone=false;this._unloaded=false;},
@@ -12,10 +12,9 @@ export default defineController({
   const valid=normalizeCode(code);
   if(this._gone)return;
   if(this._reportFault){
-   const result=await scanApp.request('POST','/user/scan/resolve',{code:valid},false);
+   const deviceId=await resolveFaultDevice(scanApp,valid);
    if(this._gone)return;
-   if(!result || typeof result.device_id!=='string' || !result.device_id)throw new Error('未识别到设备，请重新扫码');
-   await new Promise((resolve,reject)=>wx.navigateTo({url:'/pages/dev/fault?device_id='+encodeURIComponent(result.device_id),success:resolve,fail:reject}));
+   await new Promise((resolve,reject)=>wx.navigateTo({url:'/pages/dev/fault?device_id='+encodeURIComponent(deviceId),success:resolve,fail:reject}));
    return;
   }
   await new Promise((resolve,reject)=>wx.navigateTo({url:'/pages/scan-result/scan-result?code='+encodeURIComponent(valid),success:resolve,fail:reject}));

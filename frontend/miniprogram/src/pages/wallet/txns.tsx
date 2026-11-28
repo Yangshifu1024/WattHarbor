@@ -8,7 +8,7 @@ import controller from "./txns.controller";
 export default function PageView() {
 const { data, event } = useController(controller);
 const { items, total, page, loading, error, needsLogin, statusIndex, statusNames, statusValues } = data;
-return (<><View className="container"><PageHeader title="余额流水" />{!!(needsLogin) && (<View className="card"><Button type="primary" onClick={event("login", {})}>{"登录查看流水"}</Button></View>)}
+return (<><View className="container account-page"><PageHeader title="余额流水" />{!!(needsLogin) && (<View className="card"><Button className="account-action" type="primary" onClick={event("login", {})}>{"登录查看流水"}</Button></View>)}
 <Segments labels={statusNames} selected={statusIndex} onSelect={index => event('onStatus')({ detail: { value: index } })} />
 {(items || []).map((item: any, index: number) => (<View className="card" key={String(item?.txn_no ?? index)}><View>{item?.typeText}
 {"　"}
@@ -22,7 +22,7 @@ return (<><View className="container"><PageHeader title="余额流水" />{!!(nee
 {item?.txn_no}</View></View>))}
 {!!(loading) && (<View className="card">{"正在读取流水…"}</View>)}
 {!!(error) && (<View className="card"><Text>{error}</Text>
-<Button onClick={event("retry", {})}>{"重试"}</Button></View>)}
+<Button className="account-action" onClick={event("retry", {})}>{"重试"}</Button></View>)}
 {!!(!loading && !error && !needsLogin && total === 0) && (<View className="card">{"暂无资金流水"}</View>)}
 {!!(items?.length < total && !loading) && (<View className="text-secondary">继续上滑加载更多</View>)}</View>
 </>);

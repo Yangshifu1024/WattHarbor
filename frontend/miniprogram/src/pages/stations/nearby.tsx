@@ -2,13 +2,12 @@ import { PageHeader } from "../../runtime/ui";
 import { Fragment, useState } from "react";
 import { Button, Input, Picker, View } from "@tarojs/components";
 import { useController, isH5 } from "../../runtime";
-import { inlineStyle, StationMap } from "../../runtime/components";
 import controller from "./nearby.controller";
 
 export default function PageView() {
 const { data, event } = useController(controller);
 const [coordinatesOpen, setCoordinatesOpen] = useState(false);
-const { items, markers, latitude, longitude, loading, error, radiusIndex, radii, needsLogin } = data;
+const { items, loading, error, radiusIndex, radii, needsLogin } = data;
 return (<><View className="container"><PageHeader title="附近电站" /><Button onClick={event("locate", {})} disabled={loading}>{"获取当前位置"}</Button>
 {data.locationNotice && <View className="card text-secondary">{data.locationNotice}</View>}
 {isH5 && data.locationNotice && <Button onClick={() => setCoordinatesOpen(!coordinatesOpen)}>{coordinatesOpen ? "收起坐标输入" : "定位不可用？手动输入坐标"}</Button>}
@@ -16,7 +15,6 @@ return (<><View className="container"><PageHeader title="附近电站" /><Button
 <Picker range={radii} value={radiusIndex} onChange={event("onRadius", {})}><View className="card">{"搜索半径："}
 {radii?.[radiusIndex]}
 {" 公里 ▾"}</View></Picker>
-{!!(latitude != null) && (<StationMap latitude={latitude} longitude={longitude} markers={markers} showLocation={true} onMarkerTap={event("open", {})} style={inlineStyle({"width": "100%", "height": "400rpx"})}></StationMap>)}
 {!!(error) && (<View className="card">{error}
 <Button onClick={event("load", {})} disabled={loading}>{"重试"}</Button></View>)}
 {!!(loading) && (<View className="card">{"正在查询…"}</View>)}

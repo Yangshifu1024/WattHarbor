@@ -24,6 +24,7 @@ type Profile struct {
 	UserID       uint64    `json:"user_id,string"` // 精确用户 ID
 	Nickname     string    `json:"nickname"`       // 公开昵称，未设置为空
 	AvatarURL    string    `json:"avatar_url"`     // 头像地址，未设置为空
+	Phone        string    `json:"phone"`          // 仅向本人返回已绑定的完整手机号，未绑定为空串
 	PhoneBound   bool      `json:"phone_bound"`    // 是否存在已绑定号码
 	RegisteredAt time.Time `json:"registered_at"`  // 首次注册 UTC 时间
 	Wallet       struct {

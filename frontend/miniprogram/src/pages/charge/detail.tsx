@@ -8,11 +8,11 @@ import controller from "./detail.controller";
 export default function PageView() {
 const { data, event } = useController(controller);
 const { order, loading, error, needsLogin, paying, paymentNotice, curve, curveLoading, curveError, feedbackRatingIndex, feedbackCategoryIndex, feedbackRatings, feedbackCategories, feedbackCategoryValues, feedbackContent, feedbackBusy, feedbackError, feedbackNotice } = data;
-return (<><View className="container"><PageHeader title="订单详情" />{!!(needsLogin) && (<Button onClick={event("login", {})}>{"登录查看订单"}</Button>)}
+return (<><View className="container account-page"><PageHeader title="订单详情" />{!!(needsLogin) && (<Button className="account-action" onClick={event("login", {})}>{"登录查看订单"}</Button>)}
 {!!(loading) && (<View className="card">{"正在加载…"}</View>)}
 {!!(error) && (<View className="card"><Text>{error}</Text>
-<Button onClick={event("load", {})} disabled={loading}>{"重试"}</Button></View>)}
-{!!(order) && (<Fragment>{!!(order?.status === 'pending_payment') && (<Button onClick={event("pay", {})} loading={paying} disabled={paying || loading}>{"继续付款"}</Button>)}
+<Button className="account-action" onClick={event("load", {})} disabled={loading}>{"重试"}</Button></View>)}
+{!!(order) && (<Fragment>{!!(order?.status === 'pending_payment') && (<Button className="account-action" onClick={event("pay", {})} loading={paying} disabled={paying || loading}>{"继续付款"}</Button>)}
 {!!(paymentNotice) && (<View className="card">{paymentNotice}</View>)}
 <View className="card"><View className="text-secondary">{order?.order_no}</View>
 <View className="tag tag-blue">{order?.statusLabel}</View>
@@ -53,7 +53,7 @@ return (<><View className="container"><PageHeader title="订单详情" />{!!(nee
 {item?.status === 'confirming' ? '确认中' : item?.status === 'confirmed' ? '已确认' : '明确失败，已补偿退款'}</View>))}
 {!!(order?.failure_reason) && (<View className="card">{"异常原因："}
 {order?.failure_reason}</View>)}
-{!!(['completed','refunding','refunded'].includes(order?.status)) && (<View className="card"><Button onClick={event("loadCurve", {})} loading={curveLoading} disabled={curveLoading}>{curve ? '刷新历史曲线' : '查看历史曲线'}</Button>
+{!!(['completed','refunding','refunded'].includes(order?.status)) && (<View className="card"><Button className="account-action" onClick={event("loadCurve", {})} loading={curveLoading} disabled={curveLoading}>{curve ? '刷新历史曲线' : '查看历史曲线'}</Button>
 {!!(curveError) && (<View className="error">{curveError}</View>)}
 {!!(curve) && (<View>{!!(!curve?.series?.length) && (<View className="text-secondary">{"没有可显示的聚合遥测。"}</View>)}
 {(curve?.series || []).map((item: any, index: number) => (<View className="curve-row" key={String(item?.bucket_start ?? index)}><View>{item?.bucketText}</View>
@@ -80,13 +80,13 @@ return (<><View className="container"><PageHeader title="订单详情" />{!!(nee
 <Picker range={feedbackCategories} value={feedbackCategoryIndex} onChange={event("onFeedbackCategory", {})}><View className="field">{"类型："}
 {feedbackCategories?.[feedbackCategoryIndex]}
 {" ▾"}</View></Picker>
-<Textarea placeholder="说说充电体验或需要跟进的问题（选填）" maxlength={2000} value={feedbackContent} onInput={event("onFeedbackContent", {})} autoHeight={true}></Textarea>
+<Textarea className="account-description" placeholder="说说充电体验或需要跟进的问题（选填）" maxlength={2000} value={feedbackContent} onInput={event("onFeedbackContent", {})} />
 {!!(feedbackError) && (<View className="error">{feedbackError}</View>)}
 {!!(feedbackNotice) && (<View className="success">{feedbackNotice}</View>)}
-<Button type="primary" onClick={event("submitFeedback", {})} loading={feedbackBusy} disabled={feedbackBusy}>{"提交反馈"}</Button></View>)}
+<Button className="account-action" type="primary" onClick={event("submitFeedback", {})} loading={feedbackBusy} disabled={feedbackBusy}>{"提交反馈"}</Button></View>)}
 {!!(order?.feedback_submitted) && (<View className="card success">{"已收到本订单反馈，谢谢。"}</View>)}
-{!!(order?.device_id) && (<View className="card"><Button onClick={event("reportFault", {})}>{"设备报修"}</Button>
-</View>)}{!!(['completed','refunding','refunded'].includes(order?.status)) && (<View className="card"><Button onClick={event("invoice", {})}>申请发票</Button><Button onClick={event("goBill", {})}>{"查看结算账单"}</Button>
+{!!(order?.device_id) && (<View className="card"><Button className="account-action" onClick={event("reportFault", {})}>{"设备报修"}</Button>
+</View>)}{!!(['completed','refunding','refunded'].includes(order?.status)) && (<View className="card"><Button className="account-action" onClick={event("invoice", {})}>申请发票</Button><Button className="account-action" onClick={event("goBill", {})}>{"查看账单列表"}</Button>
 </View>)}</Fragment>)}</View>
 </>);
 }

@@ -39,10 +39,10 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 	if central.Error != nil || gw.Error != nil {
 		t.Fatalf("begin %v %v", central.Error, gw.Error)
 	}
-	id := testfixture.NewID()
+	id := testfixture.NewID() &^ 15 // 保证相邻站点编号转成 JavaScript Number 后相同。
 	tag := uuid.NewString()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	for i, status := range []string{"active", "active", "disabled", "construction", "active"} {
+	for i, status := range []string{"active", "active", "disabled", "construction", "active", "active"} {
 		row := map[string]any{"id": id + uint64(i), "name": tag + fmt.Sprint(i), "longitude": "-147.12345678", "latitude": -77 + float64(i)/100, "status": status, "created_at": now.Add(time.Duration(i) * time.Minute)}
 		if i == 4 {
 			row["deleted_at"] = now
@@ -51,9 +51,16 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for i := 0; i < 101; i++ {
+	if err := gw.Table("vendor").Create(map[string]any{"id": id, "vendor_code": tag, "vendor_name": tag, "adapter_class": "dc589", "status": "enabled"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 102; i++ {
 		board := fmt.Sprintf("SQ%s-%03d", tag[:20], i)
-		if err := central.Table("device_meta").Create(map[string]any{"device_id": board, "station_id": id, "vendor_id": 1, "protocol_adapter": "dc589", "status": "enabled"}).Error; err != nil {
+		station := id
+		if i == 101 {
+			station = id + 5
+		}
+		if err := central.Table("device_meta").Create(map[string]any{"device_id": board, "station_id": station, "vendor_id": 1, "protocol_adapter": "dc589", "status": "enabled"}).Error; err != nil {
 			t.Fatal(err)
 		}
 		var heartbeat any = now.Add(-time.Minute)
@@ -66,8 +73,22 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 		if i == 2 {
 			continue
 		} // 中央设备尚未在网关开通，运行态未知
-		if err := gw.Table("device").Create(map[string]any{"device_id": board, "vendor_id": 1, "station_id": id, "port_count": 1, "status": "enabled", "last_heartbeat_at": heartbeat}).Error; err != nil {
+		if err := gw.Table("device").Create(map[string]any{"device_id": board, "vendor_id": id, "station_id": station, "port_count": 4, "status": "enabled", "last_heartbeat_at": heartbeat, "last_seen_at": heartbeat}).Error; err != nil {
 			t.Fatal(err)
+		}
+		if i == 1 || i == 3 || i == 101 {
+			for j, status := range []string{"idle", "charging", "idle", "idle"} {
+				port := map[string]any{"device_id": board, "port_no": j + 1, "port_code": fmt.Sprintf("%s-%d", board, j+1), "status": status}
+				if j == 2 {
+					port["current_order_id"] = "reserved"
+				}
+				if j == 3 {
+					port["deleted_at"] = now
+				}
+				if err := gw.Table("device_port").Create(port).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 		}
 	}
 	if err := central.Table("device_meta").Create(map[string]any{"device_id": "retired-" + tag, "station_id": id, "vendor_id": 1, "protocol_adapter": "dc589", "status": "retired"}).Error; err != nil {
@@ -100,7 +121,7 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 	key := "station_query_" + tag
 	if err := central.Callback().Query().Before("gorm:query").Register(key, func(q *gorm.DB) {
 		if q.Statement.Table == "station" {
-			q.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.IN{Column: "id", Values: []any{id, id + 1, id + 2, id + 3, id + 4}}}})
+			q.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.IN{Column: "id", Values: []any{id, id + 1, id + 2, id + 3, id + 4, id + 5}}}})
 		}
 		if q.Statement.Table == "announcement" {
 			q.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.Gte{Column: "id", Value: id}, clause.Lt{Column: "id", Value: id + 8}}})
@@ -131,8 +152,30 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 	}
 	nearby := "/api/v1/user/station/nearby"
 	w := call(nearby)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"page_size":10`) || !strings.Contains(w.Body.String(), `"located":false`) || strings.Count(w.Body.String(), `"distance_km":null`) != 2 || !strings.Contains(w.Body.String(), `"longitude":"-147.12345678"`) {
+	if w.Code != 200 || calls != 2 || !strings.Contains(w.Body.String(), `"page_size":10`) || !strings.Contains(w.Body.String(), `"located":false`) || strings.Count(w.Body.String(), `"distance_km":null`) != 3 || !strings.Contains(w.Body.String(), `"longitude":"-147.12345678"`) {
 		t.Fatalf("unlocated %d %s", w.Code, w.Body)
+	}
+	var page struct {
+		Data struct {
+			Items []struct {
+				IDText    string          `json:"id_text"`              // 客户端可直接用于导航的无损字符串。
+				ID        uint64          `json:"id"`                   // 站点主键，用于对应不同站点的摘要。
+				Available json.RawMessage `json:"available_port_count"` // 区分字段缺省、零和 null。
+				Total     json.RawMessage `json:"total_port_count"`     // 未删除的端口。
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	for _, station := range page.Data.Items {
+		want := map[uint64][2]string{id: {"null", "null"}, id + 1: {"0", "0"}, id + 5: {"1", "3"}}[station.ID]
+		if station.IDText != strconv.FormatUint(station.ID, 10) {
+			t.Fatalf("站点编号丢失精度 %d %s", station.ID, station.IDText)
+		}
+		if string(station.Available) != want[0] || string(station.Total) != want[1] {
+			t.Fatalf("站点端口统计错误 %+v", station)
+		}
 	}
 	for _, query := range []string{"?longitude=1", "?longitude=NaN&latitude=0", "?radius_km=Inf", "?radius_km=51", "?page_size=101"} {
 		if w := call(nearby + query); w.Code != 400 {
@@ -143,9 +186,12 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"located":true`) || !strings.Contains(w.Body.String(), `"distance_km":0`) || strings.Contains(w.Body.String(), tag+"1") {
 		t.Fatalf("located %d %s", w.Code, w.Body)
 	}
+	if calls != 4 {
+		t.Fatalf("两次列表查询共请求网关 %d 次，预期 4 次", calls)
+	}
 	detail := "/api/v1/user/station/" + strconv.FormatUint(id, 10)
 	w = call(detail)
-	if w.Code != 200 || calls != 2 || strings.Contains(w.Body.String(), "distance_km") {
+	if w.Code != 200 || calls != 6 || !strings.Contains(w.Body.String(), fmt.Sprintf(`"id_text":"%d"`, id)) || strings.Contains(w.Body.String(), "distance_km") {
 		t.Fatalf("detail %d calls=%d %s", w.Code, calls, w.Body)
 	}
 	var reply struct {
@@ -161,7 +207,9 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 				// Known gateway 回执中的设备状态是否已知。
 				Known bool `json:"runtime_available"`
 				// Last gateway 回执中的最后在线时刻。
-				Last *time.Time `json:"last_heartbeat_at"`
+				Last      *time.Time      `json:"last_heartbeat_at"`
+				Available json.RawMessage `json:"available_port_count"` // 已测量可用数，缺失摘要为 null。
+				Total     json.RawMessage `json:"total_port_count"`     // 已测量端口总数。
 			} `json:"devices"`
 		} `json:"data"`
 	}
@@ -172,6 +220,18 @@ func TestRegisteredPublicStationQueriesUseOwnedSources(t *testing.T) {
 		t.Fatalf("shape %s", w.Body)
 	}
 	for i, d := range reply.Data.Devices {
+		available, total := "0", "0"
+		switch i {
+		case 1:
+			total = "3"
+		case 2:
+			available, total = "null", "null"
+		case 3:
+			available, total = "1", "3"
+		}
+		if string(d.Available) != available || string(d.Total) != total {
+			t.Fatalf("设备 %d 端口数错误 %+v", i, d)
+		}
 		if i == 0 {
 			if !d.Known || d.Last != nil || d.Online {
 				t.Fatal("nil heartbeats guessed")

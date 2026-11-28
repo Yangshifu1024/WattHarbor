@@ -40,9 +40,10 @@ func TestProfileSerializesUserIDAsDecimalString(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wire struct {
-		UserID string `json:"user_id"` // 客户端收到的精确身份
+		UserID string  `json:"user_id"` // 客户端收到的精确身份
+		Phone  *string `json:"phone"`   // 未绑定必须序列化为空串，不能缺省
 	}
-	if err := json.Unmarshal(raw, &wire); err != nil || wire.UserID != strconv.FormatUint(userID, 10) {
+	if err := json.Unmarshal(raw, &wire); err != nil || wire.UserID != strconv.FormatUint(userID, 10) || wire.Phone == nil || *wire.Phone != "" {
 		t.Fatalf("profile lost ID precision: %s %v", raw, err)
 	}
 }

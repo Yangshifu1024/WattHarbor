@@ -26,7 +26,7 @@ export default defineAppConfig({
   ],
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#f5f7f6",
+    "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTitleText": "电港充电",
     "navigationBarTextStyle": "black"
   },

@@ -15,6 +15,7 @@ export interface ChargeUserProfile {
   nickname: string;
   avatar_url: string;
   phone_bound: boolean;
+  phone: string; // 当前用户的已绑定手机号，解绑后为空串。
   registered_at: string;
   wallet: { status: string; available_cents: number; frozen_cents: number };
   coupon_unused_count: number;

@@ -2,8 +2,10 @@ package repo
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
+	"wattharbor/internal/domain/money"
 	"wattharbor/internal/protocol"
 
 	"gorm.io/gorm"
@@ -139,14 +141,29 @@ type DevicePortStatusRow struct {
 	StatusCode *uint8 `json:"status_code" gorm:"column:reported_status"`
 	// StatusAt 端口状态上报时刻，可空。
 	StatusAt *time.Time `json:"status_at" gorm:"column:reported_status_at"`
+	// Status 为端口业务状态，区别于协议原始读数。
+	Status money.PortStatus `json:"-" gorm:"column:status"`
+	// CurrentOrderID 为占用端口的订单号，NULL 表示无占用。
+	CurrentOrderID sql.NullString `json:"-" gorm:"column:current_order_id"`
+	// LastSeenAt 为网关最近可见时间，NULL 表示从未通信。
+	LastSeenAt sql.NullTime `json:"-" gorm:"column:last_seen_at"`
+	// Enabled 表示设备和所属厂商同时启用。
+	Enabled bool `json:"-" gorm:"column:enabled"`
+}
+
+// Available 根据本批摘要的查询时刻，按扫码准入规则判断可用性。
+func (r DevicePortStatusRow) Available(now time.Time) bool {
+	return r.Enabled && portAvailable(r.Status, r.CurrentOrderID, portDeviceOnline(r.LastSeenAt, now))
 }
 
 // ListDevicePortStatuses 查询设备未删除端口的上报状态；未上报保持 NULL。
 func ListDevicePortStatuses(ctx context.Context, db *gorm.DB, deviceIDs []string) ([]DevicePortStatusRow, error) {
 	rows := []DevicePortStatusRow{}
-	err := db.WithContext(ctx).Table("device_port").
-		Select("device_id,port_no,reported_status,reported_status_at").
-		Where("device_id IN ? AND deleted_at IS NULL", deviceIDs).
-		Order("device_id,port_no").Scan(&rows).Error
+	err := db.WithContext(ctx).Table("device_port p").
+		Select("p.device_id,p.port_no,p.reported_status,p.reported_status_at,p.status,p.current_order_id,d.last_seen_at,IF(d.status='enabled' AND v.status='enabled',1,0) AS enabled").
+		Joins("JOIN device d ON d.device_id=p.device_id AND d.deleted_at IS NULL").
+		Joins("LEFT JOIN vendor v ON v.id=d.vendor_id AND v.deleted_at IS NULL").
+		Where("p.device_id IN ? AND p.deleted_at IS NULL", deviceIDs).
+		Order("p.device_id,p.port_no").Scan(&rows).Error
 	return rows, err
 }

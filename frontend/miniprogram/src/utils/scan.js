@@ -16,4 +16,12 @@ function portView(port){
  const active=operation==='enabled';
  return {...port,status,statusLabel:!active ? deviceLabels[operation] : port.online===false ? '离线' : labels[status],selectable:active && port.online!==false && status==='idle' && port.available===true};
 }
-export {normalizeCode,portView,deviceView};
+// 报修只从公开识别接口取设备编号，设备码和端口码都指向同一张报修表单。
+async function resolveFaultDevice(app, code) {
+ const result = await app.request('POST', '/user/scan/resolve', {code: normalizeCode(code)}, false);
+ if (typeof result?.device_id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(result.device_id)) {
+  throw new Error('未识别到报修设备，请核对设备编号或端口码');
+ }
+ return result.device_id;
+}
+export {normalizeCode,portView,deviceView,resolveFaultDevice};

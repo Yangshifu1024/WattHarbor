@@ -14,12 +14,13 @@ type DevicePortSummary struct {
 
 // DeviceSummary 返回设备心跳、信号和端口状态；不包含 central 设置的启停状态。
 type DeviceSummary struct {
-	DeviceID        string              `json:"device_id"`         // 设备业务标识
-	VendorName      *string             `json:"vendor_name"`       // 未删除厂商名；无可用厂商为 null
-	LastHeartbeatAt *time.Time          `json:"last_heartbeat_at"` // 最后心跳；从未上报为 null
-	SignalStrength  *uint8              `json:"signal_strength"`   // 信号值；null 为未知，零为有效值
-	SignalAt        *time.Time          `json:"signal_at"`         // 信号采样时刻；未知为 null
-	Ports           []DevicePortSummary `json:"ports"`             // 端口状态；服务端无端口时返回空数组
+	DeviceID           string              `json:"device_id"`            // 设备业务标识
+	VendorName         *string             `json:"vendor_name"`          // 未删除厂商名；无可用厂商为 null
+	LastHeartbeatAt    *time.Time          `json:"last_heartbeat_at"`    // 最后心跳；从未上报为 null
+	SignalStrength     *uint8              `json:"signal_strength"`      // 信号值；null 为未知，零为有效值
+	SignalAt           *time.Time          `json:"signal_at"`            // 信号采样时刻；未知为 null
+	AvailablePortCount *int                `json:"available_port_count"` // 按网关扫码规则可用的端口个数；旧网关未提供时为 nil
+	Ports              []DevicePortSummary `json:"ports"`                // 端口状态；服务端无端口时返回空数组
 }
 
 // DeviceSummariesReply 返回找到的设备运行信息，不为未找到的设备补默认值。

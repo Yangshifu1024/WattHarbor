@@ -3,16 +3,19 @@ const stationDetailApp=getApp();
 
 // 在线状态由服务端按最后心跳时间判定（1 小时内为在线）。
 // 客户端只负责展示，不重复推导这条业务规则。
-function deviceView(device) {
+function deviceView(device, index) {
   const online = device?.online === true;
   const known = device?.runtime_available !== false;
   return {
     device_id: device?.device_id || '',
     online,
+    number: String(index + 1).padStart(2, '0'),
+    available: device.available_port_count ?? null,
+    total: device.total_port_count ?? null,
     // 运行态取不到时不谎称离线，明确表达为状态未知。
     statusText: online ? '在线' : (known ? '离线' : '状态未知'),
     lastHeartbeatText: device?.last_heartbeat_at ? formatTime(device.last_heartbeat_at) : '从未上报',
-    clickable: online,
+    clickable: online && (!device.status || device.status === 'enabled'),
   };
 }
 
@@ -50,6 +53,6 @@ export default defineController({
     const id = event.currentTarget.dataset.id;
     const device = this.data.devices.find((item) => item.device_id === id);
     if (!device || !device.clickable) return;
-    wx.navigateTo({ url:'/pages/scan-result/scan-result?code='+encodeURIComponent(id) });
+    wx.navigateTo({ url:'/pages/scan-result/scan-result?code='+encodeURIComponent(id) + '&station=' + encodeURIComponent(this.data.station.name || '') + '&number=' + device.number });
   },
 });

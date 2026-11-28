@@ -18,6 +18,8 @@ type UserRepository interface {
 	Active(ctx context.Context, id uint64) (bool, error)
 	// Profile 读取 id 档案，返回公开查询结果，缺失时返回错误。
 	Profile(ctx context.Context, id uint64) (Profile, error)
+	// SetNickname 仅写入本人启用账号的昵称，冻结或已删除时返回 ErrAccountFrozen。
+	SetNickname(ctx context.Context, userID uint64, nickname string) error
 }
 
 // SessionRepository 提供会话创建、原子轮换、注销和存在性，不包含 HTTP 凭据提取。
